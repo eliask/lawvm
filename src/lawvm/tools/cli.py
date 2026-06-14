@@ -8065,14 +8065,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
     nz_replay_chain_p = nz_corpus_sub.add_parser(
         "replay-chain",
-        help="experimental amendment-chain replay (repeal-only) on one evolving tree vs the archived oracle",
+        help="experimental amendment-chain replay (all families) on one evolving tree vs the archived oracle",
         description=(
             "First NZ end-to-end replay. Enumerate a base work's authorized "
-            "repeal witnesses, group them by effective amendment date into "
-            "ordered transitions, start from the EARLIEST archived consolidated "
-            "version, and apply each transition's repeals to a SINGLE evolving "
-            "tree carried forward across the whole chain (unlike the per-window "
-            "dry-run, which resets to each window's archived before-tree). At "
+            "amendment witnesses across all four operation families (repeal, "
+            "text_replace, replace, insert; restrict with --families), group them "
+            "by effective amendment date into ordered transitions, start from the "
+            "EARLIEST archived consolidated version, and apply each transition's "
+            "ops to a SINGLE evolving tree carried forward across the whole chain "
+            "(unlike the per-window dry-run, which resets to each window's "
+            "archived before-tree). At "
             "every archived version date, materialize the evolving tree and "
             "compare it to the archived consolidated oracle with the core "
             "section_similarity metric, producing a similarity CURVE plus typed "
@@ -8089,6 +8091,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="Farchive DB path (default: data/nz_legislation.farchive)",
     )
     nz_replay_chain_p.add_argument("--work-id", required=True, metavar="ID", help="archived base work_id")
+    nz_replay_chain_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "operation families to fold into the chain: 'all' (default; repeal + "
+            "text_replace + replace + insert), 'repeal' (repeal-only baseline), or "
+            "a comma-separated subset (e.g. 'repeal,text_replace')"
+        ),
+    )
     nz_replay_chain_p.add_argument(
         "--summary-only", action="store_true", help="omit per-transition/per-skip detail from JSON"
     )

@@ -9,12 +9,17 @@ import pytest
 from lawvm.new_zealand.effect_candidates import NZEffectCandidatePreflightReport
 
 from lawvm.new_zealand.chain_replay import (
+    CHAIN_FAMILY_ORDER,
     SKIP_ALREADY_TOMBSTONED,
     SKIP_AMBIGUOUS_TARGET,
+    SKIP_AMENDING_UNRESOLVED,
     SKIP_FUTURE,
+    SKIP_INSERT_ALREADY_PRESENT,
     SKIP_TARGET_ABSENT,
+    SKIP_TEXT_OCCURRENCE_MISMATCH,
     SKIP_UNEXTRACTABLE,
     SKIP_UNRESOLVED_TARGET,
+    NZChainOp,
     NZChainRepealOp,
     NZChainTransition,
     _apply_transition,
@@ -23,7 +28,9 @@ from lawvm.new_zealand.chain_replay import (
     _stable_path,
     build_archived_work_chain_replay,
     build_chain_replay,
+    build_nz_chain,
     build_nz_repeal_chain,
+    resolve_families,
 )
 from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode
 from lawvm.new_zealand.version_diff import NZArchivedVersion
@@ -69,15 +76,21 @@ def _op(
     date: str,
     source_path: tuple[str, ...] | None,
     *,
+    family: str = "repeal",
     amending: str = "amend_act",
     resolution: str = "exact_source_path",
+    operation: object = None,
+    amending_provision_href: str = "",
 ) -> NZChainRepealOp:
     return NZChainRepealOp(
+        family=family,
         row_id=row_id,
         amendment_date_iso=date,
         amending_work_id=amending,
         source_path=source_path,
         target_resolution_status=resolution,
+        operation=operation,
+        amending_provision_href=amending_provision_href,
     )
 
 
@@ -144,13 +157,14 @@ def test_apply_transition_tombstones_exact_target_on_evolving_tree() -> None:
         amendment_date_iso="2010-01-01", ops=(_op("r1", "2010-01-01", ("prov:2",)),)
     )
 
-    applied, skips, applied_paths = _apply_transition(
+    applied, skips, applied_ops = _apply_transition(
         tree, transition, latest_version_date="2024-01-01"
     )
 
     assert applied == 1
     assert skips == []
-    assert applied_paths == [("prov:2",)]
+    assert [op.target_path for op in applied_ops] == [("prov:2",)]
+    assert [op.family for op in applied_ops] == ["repeal"]
     index = {n.path: n for n in tree.document.nodes}
     assert index[("prov:2",)].deletion_status  # tombstoned
     assert not index[("prov:1",)].deletion_status  # untouched neighbour
@@ -198,12 +212,12 @@ def test_apply_transition_types_every_unapplicable_op() -> None:
     )
     transition = NZChainTransition("2010-01-01", ops)
 
-    applied, skips, applied_paths = _apply_transition(
+    applied, skips, applied_ops = _apply_transition(
         tree, transition, latest_version_date="2024-01-01"
     )
 
     assert applied == 0
-    assert applied_paths == []
+    assert applied_ops == []
     buckets = {skip.row_id: skip.bucket for skip in skips}
     assert buckets == {
         "future": SKIP_FUTURE,
@@ -349,12 +363,13 @@ def test_build_chain_replay_over_fixture_chain(monkeypatch: pytest.MonkeyPatch) 
 
     # One authorized repeal on prov:2 effective on the V1 date.
     transition = NZChainTransition("2011-01-01", (_op("r1", "2011-01-01", ("prov:2",)),))
-    monkeypatch.setattr(mod, "build_nz_repeal_chain", lambda _pf: (transition,))
+    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
 
     report = build_chain_replay(
         archive,
         work_id=work_id,
         preflight=cast(NZEffectCandidatePreflightReport, object()),
+        families="repeal",
     )
 
     assert report.base_version_date == "2010-01-01"
@@ -385,6 +400,23 @@ def test_cli_exposes_nz_corpus_replay_chain() -> None:
     assert args.nz_corpus_command == "replay-chain"
     assert args.work_id == "act_public_1989_157"
     assert args.json is True
+    # Default families is all (the all-families chain replay).
+    assert args.families == "all"
+
+
+def test_cli_replay_chain_families_flag() -> None:
+    parser = _build_parser()
+    args = parser.parse_args(
+        [
+            "nz-corpus",
+            "replay-chain",
+            "--work-id",
+            "act_public_1989_157",
+            "--families",
+            "repeal",
+        ]
+    )
+    assert args.families == "repeal"
 
 
 # --- Real-archive regression on the canary ---
@@ -398,38 +430,509 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
-def test_chain_replay_canary_act_public_1989_157() -> None:
-    report = build_archived_work_chain_replay(_REAL_DB, "act_public_1989_157")
+def test_chain_replay_repeal_only_canary_act_public_1989_157() -> None:
+    report = build_archived_work_chain_replay(
+        _REAL_DB, "act_public_1989_157", families="repeal"
+    )
     summary = report.summary()
 
     # The canary has a real 33-version chain.
     assert summary["n_archived_versions"] == 33
     assert summary["base_version_date"] == "2007-09-03"
     assert summary["n_transitions"] >= 1
+    assert summary["families_requested"] == ["repeal"]
 
-    # Replayed + skipped = full enumerated repeal-op census (nothing dropped).
+    # Applied + skipped = full enumerated repeal-op census (nothing dropped).
     assert summary["repeals_applied"] + summary["repeals_skipped"] == summary["total_repeal_ops"]
     assert summary["repeals_applied"] > 0
 
     # Repeal direction is overwhelmingly correct against the oracle (the family
     # that works); a low number here would be a real replay-direction regression.
+    # In repeal-only mode every applied op is a repeal, so this equals applied.
     agree = summary["oracle_tombstone_agreements"]
     disagree = summary["oracle_tombstone_disagreements"]
     assert agree + disagree == summary["repeals_applied"]
     assert agree / (agree + disagree) >= 0.95
 
-    # Surviving-node text similarity stays high; the union/whole-tree combined is
-    # lower because repeal-only cannot reproduce skipped non-repeal structure.
     final = report.final_similarity()
     assert final is not None
     assert final.shared_mean_similarity >= 0.80
     assert final.combined_similarity_stable >= final.combined_similarity
 
-    # The curve starts at a perfect base (no transition applied yet at V0) and
-    # degrades as skipped non-repeal changes accumulate down the chain.
+    # Repeal-only: no transition applies at the base version (the earliest repeal
+    # is later than the base date), so the curve starts at a perfect base and
+    # degrades as skipped non-repeal structure accumulates down the chain.
     assert report.similarity_curve[0].combined_similarity == pytest.approx(1.0)
     assert report.similarity_curve[-1].combined_similarity < report.similarity_curve[0].combined_similarity
 
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+def test_chain_replay_all_families_beats_repeal_only_canary() -> None:
+    repeal_only = build_archived_work_chain_replay(
+        _REAL_DB, "act_public_1989_157", families="repeal"
+    )
+    all_families = build_archived_work_chain_replay(
+        _REAL_DB, "act_public_1989_157", families="all"
+    )
+
+    repeal_final = repeal_only.final_similarity()
+    all_final = all_families.final_similarity()
+    assert repeal_final is not None and all_final is not None
+
+    # The headline deliverable: folding all four families onto the single evolving
+    # tree must RAISE the stable combined similarity vs the repeal-only baseline,
+    # because genuinely-more-correct ops are applied (not loosened comparison).
+    assert all_final.combined_similarity_stable > repeal_final.combined_similarity_stable
+    assert all_final.combined_similarity > repeal_final.combined_similarity
+
+    # All four families are enumerated and the non-repeal families apply > 0 ops
+    # with high per-op oracle agreement (the lift is from correct ops).
+    stats = {stat.family: stat for stat in all_families.per_family_stats}
+    assert set(stats) == {"repeal", "text_replace", "replace", "insert"}
+    for family in ("text_replace", "replace", "insert"):
+        stat = stats[family]
+        assert stat.applied > 0, f"{family} applied nothing"
+        oracle_total = stat.oracle_agreements + stat.oracle_disagreements
+        assert oracle_total == stat.applied
+        assert stat.oracle_agreements / oracle_total >= 0.75
+
+    # Honesty: applied + skipped = the full enumerated census per family (no silent
+    # drops anywhere across families).
+    for stat in all_families.per_family_stats:
+        assert stat.applied + stat.skipped == stat.enumerated
+
     # Honesty: experimental, no replay claims.
-    assert report.replay_claims is False
-    assert report.skip_bucket_counts()  # typed buckets present
+    assert all_families.replay_claims is False
+    assert all_families.skip_bucket_counts()  # typed buckets present
+
+
+# --- All-families: per-op kernels applied on the evolving tree ---
+
+
+class _FakeTextSelector:
+    def __init__(self, match_text: str, occurrence: int = 1) -> None:
+        self.match_text = match_text
+        self.occurrence = occurrence
+
+
+class _FakeTextPatch:
+    def __init__(self, match_text: str, replacement: str | None, occurrence: int = 1) -> None:
+        self.selector = _FakeTextSelector(match_text, occurrence)
+        self.replacement = replacement
+
+
+class _FakeTextOp:
+    def __init__(self, match_text: str, replacement: str | None, occurrence: int = 1) -> None:
+        self.text_patch = _FakeTextPatch(match_text, replacement, occurrence)
+
+
+def _text_op(
+    row_id: str,
+    date: str,
+    source_path: tuple[str, ...],
+    *,
+    match_text: str,
+    replacement: str | None,
+    occurrence: int = 1,
+) -> NZChainOp:
+    return _op(
+        row_id,
+        date,
+        source_path,
+        family="text_replace",
+        operation=_FakeTextOp(match_text, replacement, occurrence),
+    )
+
+
+def _struct_payload(root_path: tuple[str, ...], *, root_text: str, descendants=()):
+    """A minimal NZStructuralReplacement-like payload for swap/insert kernels.
+
+    The kernels read only ``payload.root`` and ``payload.descendants``; the chain
+    rebases their paths onto the resolved target. A tiny stand-in keeps the test
+    independent of the amend-XML extractor.
+    """
+
+    from lawvm.new_zealand.source_tree import NZStructuralReplacement
+
+    root = _node(root_path, text=root_text)
+    return NZStructuralReplacement(root=root, descendants=tuple(descendants))
+
+
+def test_text_replace_op_substitutes_single_occurrence_on_evolving_tree() -> None:
+    tree = _EvolvingTree(_doc((_node(("prov:1",), text="the quick brown fox"),)))
+    transition = NZChainTransition(
+        "2010-01-01",
+        (_text_op("t1", "2010-01-01", ("prov:1",), match_text="quick", replacement="slow"),),
+    )
+
+    applied, skips, applied_ops = _apply_transition(
+        tree, transition, latest_version_date="2024-01-01"
+    )
+
+    assert applied == 1
+    assert skips == []
+    assert applied_ops[0].family == "text_replace"
+    index = {n.path: n for n in tree.document.nodes}
+    assert index[("prov:1",)].text == "the slow brown fox"
+
+
+def test_text_replace_op_skips_when_old_text_not_single_occurrence() -> None:
+    tree = _EvolvingTree(_doc((_node(("prov:1",), text="ab ab ab"),)))
+    transition = NZChainTransition(
+        "2010-01-01",
+        (_text_op("t1", "2010-01-01", ("prov:1",), match_text="ab", replacement="cd"),),
+    )
+
+    applied, skips, _applied_ops = _apply_transition(
+        tree, transition, latest_version_date="2024-01-01"
+    )
+
+    assert applied == 0
+    assert [s.bucket for s in skips] == [SKIP_TEXT_OCCURRENCE_MISMATCH]
+    assert skips[0].family == "text_replace"
+    # The tree is untouched (a wrong op never mutates).
+    assert {n.path: n.text for n in tree.document.nodes}[("prov:1",)] == "ab ab ab"
+
+
+def test_evolving_tree_swap_subtree_replaces_node_and_descendants() -> None:
+    tree = _EvolvingTree(
+        _doc(
+            (
+                _node(("prov:1",), text="old root"),
+                _node(("prov:1", "subprov:1"), text="old child"),
+                _node(("prov:2",), text="neighbour"),
+            )
+        )
+    )
+    payload = _struct_payload(
+        ("amend",),
+        root_text="new root",
+        descendants=(_node(("amend", "subprov:1"), text="new child"),),
+    )
+
+    tree.swap_subtree(("prov:1",), payload.root, payload.descendants)
+
+    by_path = {n.path: n.text for n in tree.document.nodes}
+    assert by_path[("prov:1",)] == "new root"
+    assert by_path[("prov:1", "subprov:1")] == "new child"  # descendant rebased
+    assert by_path[("prov:2",)] == "neighbour"  # neighbour untouched
+    # Document order preserved: the swapped subtree sits where the target was.
+    paths = [n.path for n in tree.document.nodes]
+    assert paths == [("prov:1",), ("prov:1", "subprov:1"), ("prov:2",)]
+
+
+def test_evolving_tree_insert_node_after_anchor_keeps_neighbours() -> None:
+    tree = _EvolvingTree(
+        _doc(
+            (
+                _node(("prov:18",), text="anchor body"),
+                _node(("prov:18", "subprov:1"), text="anchor child"),
+                _node(("prov:19",), text="next"),
+            )
+        )
+    )
+    payload = _struct_payload(("amend",), root_text="brand new 18A")
+
+    tree.insert_node(
+        ("prov:18",),
+        "after",
+        ("prov:18A",),
+        payload.root,
+        payload.descendants,
+    )
+
+    paths = [n.path for n in tree.document.nodes]
+    # The new node lands after the anchor's WHOLE subtree, before prov:19.
+    assert paths == [
+        ("prov:18",),
+        ("prov:18", "subprov:1"),
+        ("prov:18A",),
+        ("prov:19",),
+    ]
+    by_path = {n.path: n.text for n in tree.document.nodes}
+    assert by_path[("prov:18A",)] == "brand new 18A"
+    assert by_path[("prov:18",)] == "anchor body"  # anchor unchanged
+
+
+def test_evolving_tree_insert_node_before_anchor() -> None:
+    tree = _EvolvingTree(
+        _doc((_node(("prov:a",), text="a body"), _node(("prov:b",), text="b body")))
+    )
+    payload = _struct_payload(("amend",), root_text="inserted before b")
+
+    tree.insert_node(("prov:b",), "before", ("prov:aa",), payload.root, payload.descendants)
+
+    paths = [n.path for n in tree.document.nodes]
+    assert paths == [("prov:a",), ("prov:aa",), ("prov:b",)]
+
+
+def test_cross_family_carry_forward_compose_on_one_tree() -> None:
+    # repeal -> text_replace -> insert composed on one evolving tree; each op sees
+    # the prior op's mutation.
+    tree = _EvolvingTree(
+        _doc(
+            (
+                _node(("prov:1",), text="repeal me"),
+                _node(("prov:2",), text="alpha beta"),
+            )
+        )
+    )
+    t1 = NZChainTransition("2010-01-01", (_op("r1", "2010-01-01", ("prov:1",)),))
+    t2 = NZChainTransition(
+        "2011-01-01",
+        (_text_op("t2", "2011-01-01", ("prov:2",), match_text="beta", replacement="gamma"),),
+    )
+
+    _apply_transition(tree, t1, latest_version_date="2024-01-01")
+    _apply_transition(tree, t2, latest_version_date="2024-01-01")
+
+    by_path = {n.path: n for n in tree.document.nodes}
+    assert by_path[("prov:1",)].deletion_status  # repealed
+    assert by_path[("prov:2",)].text == "alpha gamma"  # text substituted after
+
+
+def test_structural_op_skips_when_archive_absent() -> None:
+    # replace/insert require the amending act XML; with archive=None the op is a
+    # typed amending-unresolved skip, never a silent drop and never a crash.
+    tree = _EvolvingTree(_doc((_node(("prov:1",), text="x"),)))
+    transition = NZChainTransition(
+        "2010-01-01",
+        (
+            _op(
+                "rep1",
+                "2010-01-01",
+                ("prov:1",),
+                family="replace",
+                amending_provision_href="p1",
+            ),
+        ),
+    )
+
+    applied, skips, _applied = _apply_transition(
+        tree, transition, latest_version_date="2024-01-01", archive=None
+    )
+
+    assert applied == 0
+    assert [s.bucket for s in skips] == [SKIP_AMENDING_UNRESOLVED]
+    assert skips[0].family == "replace"
+
+
+def test_insert_op_skips_when_target_already_present() -> None:
+    tree = _EvolvingTree(_doc((_node(("prov:18A",), text="already here"),)))
+    transition = NZChainTransition(
+        "2010-01-01",
+        (
+            _op(
+                "ins1",
+                "2010-01-01",
+                ("prov:18A",),
+                family="insert",
+                amending_provision_href="p1",
+            ),
+        ),
+    )
+
+    # A non-None archive sentinel: the already-present check runs before any XML.
+    applied, skips, _applied = _apply_transition(
+        tree, transition, latest_version_date="2024-01-01", archive=object()
+    )
+
+    assert applied == 0
+    assert [s.bucket for s in skips] == [SKIP_INSERT_ALREADY_PRESENT]
+
+
+# --- families flag + enumeration filtering ---
+
+
+def test_resolve_families_spec() -> None:
+    assert resolve_families(None) == frozenset(CHAIN_FAMILY_ORDER)
+    assert resolve_families("all") == frozenset(CHAIN_FAMILY_ORDER)
+    assert resolve_families("repeal") == frozenset({"repeal"})
+    assert resolve_families("repeal,insert") == frozenset({"repeal", "insert"})
+    with pytest.raises(ValueError):
+        resolve_families("bogus")
+
+
+def test_build_nz_chain_orders_families_within_a_transition(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lawvm.new_zealand.chain_replay as mod
+
+    # All four families effective on the SAME date must be emitted in
+    # CHAIN_FAMILY_ORDER so the documented within-transition apply order holds.
+    monkeypatch.setattr(
+        mod,
+        "_enumerate_repeal_ops",
+        lambda _pf: [_op("rep", "2010-01-01", ("prov:9",))],
+    )
+    monkeypatch.setattr(
+        mod,
+        "_enumerate_text_replace_ops",
+        lambda _pf: [_op("txt", "2010-01-01", ("prov:9",), family="text_replace")],
+    )
+
+    class _Surface:
+        rows: tuple = ()
+
+    def _fake_struct(_surface, family):
+        return [_op(family, "2010-01-01", ("prov:9",), family=family)]
+
+    monkeypatch.setattr(mod, "_enumerate_structural_ops", _fake_struct)
+
+    transitions = build_nz_chain(
+        cast(NZEffectCandidatePreflightReport, object()),
+        _Surface(),
+        families=frozenset(CHAIN_FAMILY_ORDER),
+    )
+
+    assert len(transitions) == 1
+    assert [op.family for op in transitions[0].ops] == list(CHAIN_FAMILY_ORDER)
+
+
+def test_build_nz_chain_respects_family_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lawvm.new_zealand.chain_replay as mod
+
+    monkeypatch.setattr(
+        mod, "_enumerate_repeal_ops", lambda _pf: [_op("rep", "2010-01-01", ("prov:1",))]
+    )
+    monkeypatch.setattr(
+        mod,
+        "_enumerate_text_replace_ops",
+        lambda _pf: [_op("txt", "2010-01-01", ("prov:2",), family="text_replace")],
+    )
+
+    transitions = build_nz_chain(
+        cast(NZEffectCandidatePreflightReport, object()),
+        None,
+        families=frozenset({"repeal"}),
+    )
+
+    families = {op.family for t in transitions for op in t.ops}
+    assert families == {"repeal"}
+
+
+# --- Multi-family fixture transition + divergence detection ---
+
+
+def test_build_chain_replay_multi_family_transition(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lawvm.new_zealand.chain_replay as mod
+
+    work_id = "act_test_mf"
+    base = _doc(
+        (
+            _node(("prov:1",), text="repeal me"),
+            _node(("prov:2",), text="alpha beta"),
+            _node(("prov:3",), text="old body"),
+            _node(("prov:18",), text="anchor"),
+        ),
+        version_id="act_test_mf_en_2010-01-01",
+    )
+    # Oracle V1 reflects: prov:1 repealed, prov:2 text substituted, prov:3 replaced,
+    # prov:18A inserted after prov:18.
+    oracle_v1 = _doc(
+        (
+            _node(("prov:1",), text="repeal me", deletion="repealed"),
+            _node(("prov:2",), text="alpha gamma"),
+            _node(("prov:3",), text="new body"),
+            _node(("prov:18",), text="anchor"),
+            _node(("prov:18A",), text="inserted body"),
+        ),
+        version_id="act_test_mf_en_2011-01-01",
+    )
+    archive = _FakeArchive(work_id, ["2010-01-01", "2011-01-01"])
+    docs_by_version = {base.version_id: base, oracle_v1.version_id: oracle_v1}
+    monkeypatch.setattr(
+        mod,
+        "_parse_archived_version",
+        lambda _archive, version, _cache: docs_by_version[version.version_id],
+    )
+    # Stub the amend-XML payload extractors so the structural kernels run without
+    # real XML (the chain rebases these onto the resolved/anchored paths).
+    monkeypatch.setattr(
+        mod,
+        "_extract_replacement_payload",
+        lambda _op, _arch, _cache: _struct_payload(("amend",), root_text="new body"),
+    )
+    monkeypatch.setattr(
+        mod,
+        "_extract_insertion_payload",
+        lambda _op, _k, _l, _arch, _cache: _struct_payload(("amend",), root_text="inserted body"),
+    )
+
+    transition = NZChainTransition(
+        "2011-01-01",
+        (
+            _op("rep", "2011-01-01", ("prov:1",), family="repeal"),
+            _text_op("txt", "2011-01-01", ("prov:2",), match_text="beta", replacement="gamma"),
+            _op("rpl", "2011-01-01", ("prov:3",), family="replace", amending_provision_href="h"),
+            _op("ins", "2011-01-01", ("prov:18A",), family="insert", amending_provision_href="h"),
+        ),
+    )
+    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
+
+    report = build_chain_replay(
+        archive,
+        work_id=work_id,
+        preflight=cast(NZEffectCandidatePreflightReport, object()),
+        surface=object(),
+        families="all",
+    )
+
+    stats = {s.family: s for s in report.per_family_stats}
+    assert stats["repeal"].applied == 1
+    assert stats["text_replace"].applied == 1
+    assert stats["replace"].applied == 1
+    assert stats["insert"].applied == 1
+    # The final materialized tree matches the oracle very closely (all four ops
+    # produced the right content), so there are no divergences.
+    assert report.divergences == ()
+    final = report.final_similarity()
+    assert final is not None
+    assert final.combined_similarity_stable >= 0.95
+
+
+def test_divergence_flagged_when_op_produces_wrong_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lawvm.new_zealand.chain_replay as mod
+
+    work_id = "act_test_div"
+    base = _doc(
+        (_node(("prov:3",), text="old body"),),
+        version_id="act_test_div_en_2010-01-01",
+    )
+    # The oracle's prov:3 is utterly different from what the (wrong) replace payload
+    # produces -> a LOUD op-local divergence (a wrong op corrupting the tree).
+    oracle_v1 = _doc(
+        (_node(("prov:3",), text="the genuine consolidated replacement body"),),
+        version_id="act_test_div_en_2011-01-01",
+    )
+    archive = _FakeArchive(work_id, ["2010-01-01", "2011-01-01"])
+    docs_by_version = {base.version_id: base, oracle_v1.version_id: oracle_v1}
+    monkeypatch.setattr(
+        mod,
+        "_parse_archived_version",
+        lambda _archive, version, _cache: docs_by_version[version.version_id],
+    )
+    monkeypatch.setattr(
+        mod,
+        "_extract_replacement_payload",
+        lambda _op, _arch, _cache: _struct_payload(("amend",), root_text="zzz totally wrong"),
+    )
+
+    transition = NZChainTransition(
+        "2011-01-01",
+        (_op("rpl", "2011-01-01", ("prov:3",), family="replace", amending_provision_href="h"),),
+    )
+    monkeypatch.setattr(mod, "build_nz_chain", lambda _pf, _surface, families=None: (transition,))
+
+    report = build_chain_replay(
+        archive,
+        work_id=work_id,
+        preflight=cast(NZEffectCandidatePreflightReport, object()),
+        surface=object(),
+        families="replace",
+    )
+
+    assert len(report.divergences) == 1
+    div = report.divergences[0]
+    assert div.family == "replace"
+    assert div.row_id == "rpl"
+    assert div.target_path == ("prov:3",)
+    assert div.local_similarity < 0.5
