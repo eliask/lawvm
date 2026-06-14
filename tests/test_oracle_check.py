@@ -145,6 +145,24 @@ def test_classify_statute_1974_258_repeal_stub_is_editorial_convention() -> None
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
 
 
+def test_classify_statute_1988_451_subsection_repeal_not_extra() -> None:
+    """1988/451 17 §: 2011/590 replaces momentti 2 and repeals momentti 3.
+
+    The whole-section timeline snapshot for that amendment must not carry the
+    repealed momentti 3's pre-amendment content forward when it rebases onto the
+    latest exact whole-section snapshot.  Before the rebase honored same-group
+    subsection REPEAL ops, the stale momentti 3 survived and the section
+    classified as REPLAY_EXTRA against the oracle's repeal tombstone.  The
+    repealed momentti now resolves as the oracle's editorial repeal note.
+    """
+    result = _classify_statute("1988/451", "official_consolidation")
+
+    assert result is not None
+    row = next(item for item in result.section_results if item["section"] == "section:17")
+    assert row["diagnosis"] != "REPLAY_EXTRA"
+    assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
 def test_diagnose_oracle_repeal_stub_source_limit_when_out_of_window() -> None:
     # Repealing statute not in the applicable amendment set → unreachable or
     # out-of-window → replay could not apply it → source-limit, not a bug.

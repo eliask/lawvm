@@ -895,6 +895,15 @@ def _emit_section_snapshot(
             return None
 
         replacements: dict[str, IRNode] = {}
+        # Subsection REPEAL ops in the same group must not let the prior whole-
+        # section snapshot carry the repealed subsection's stale content forward.
+        # Resolve each repealed subsection against the post-apply section payload:
+        # under the placeholder profile it survives as a repeal tombstone (which
+        # we overlay onto the rebased parent); under the removing profile it is
+        # gone and must be dropped from the rebased parent rather than inherited
+        # verbatim from the latest exact snapshot.
+        repealed_overlay: dict[str, IRNode] = {}
+        repealed_dropped: set[str] = set()
         for rop in group_rops:
             if not rop.is_replace_action or not rop.targets_subsection_only():
                 continue
@@ -905,7 +914,19 @@ def _emit_section_snapshot(
             if replacement is None:
                 continue
             replacements[_norm_num_token(target_label)] = replacement
-        if not replacements:
+        for rop in group_rops:
+            if not rop.is_repeal_action or not rop.targets_subsection_only():
+                continue
+            target_label = str(rop.resolved_target_subsection_label or "").strip()
+            if not target_label:
+                continue
+            target_norm_label = _norm_num_token(target_label)
+            applied = _subsection_child_by_label(section_payload, target_label)
+            if applied is not None and applied.attrs.get("lawvm_repeal_placeholder") == "1":
+                repealed_overlay[target_norm_label] = applied
+            else:
+                repealed_dropped.add(target_norm_label)
+        if not replacements and not repealed_overlay and not repealed_dropped:
             return None
 
         changed = False
@@ -919,6 +940,16 @@ def _emit_section_snapshot(
                     new_children.append(replacement)
                     seen.add(child_norm)
                     changed = changed or replacement != child
+                    continue
+                repealed_tombstone = repealed_overlay.get(child_norm)
+                if repealed_tombstone is not None:
+                    new_children.append(repealed_tombstone)
+                    seen.add(child_norm)
+                    changed = changed or repealed_tombstone != child
+                    continue
+                if child_norm in repealed_dropped:
+                    seen.add(child_norm)
+                    changed = True
                     continue
             new_children.append(child)
         if not changed:
