@@ -756,7 +756,9 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
             "kumottavien",
         }
     )
-    _VALIOTSIKKO_SKIP = frozenset({"sen", "pykälän"})
+    # "sen"/"pykälän" = singular anaphor; "niiden" = plural anaphor for a
+    # preceding section range ("7—9 § ja niiden edellä oleva väliotsikko").
+    _VALIOTSIKKO_SKIP = frozenset({"sen", "pykälän", "niiden"})
 
     n = len(tokens)
     annotations: list[Annotation] = []

@@ -50,6 +50,7 @@ _EXAMPLE_EXEMPT_RULES = {
     "fi.anaphoric_pykala_ill",
     "fi.anaphoric_momentti_ill",
     "fi.anaphoric_bare_uusi",
+    "fi.anaphoric_determiner_insert",
     "fi.cross_verb_momentti",
     "fi.cross_verb_bare_uusi",
     "fi.cross_verb_move_retarget",

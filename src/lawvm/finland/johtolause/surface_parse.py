@@ -962,15 +962,40 @@ def _sub_ref(s: Stream) -> Optional[list[SubRef]]:
         s.pos += 1
         return [SubRef(facet=FacetKind.INTRO)]
 
-    # "edellä oleva (väli)otsikko"
-    if t and t.cat == "EDELLA":
+    # "edellä oleva (väli)otsikko" — heading-CHANGE reference (locative
+    # "edellä" + participle of "olla"), distinct from the heading-INSERT form
+    # "N §:n edelle uusi väliotsikko" (allative "edelle" + "uusi") guarded in
+    # _section_ref. The change form binds the preceding section number as a
+    # heading-amend target so the enclosing kumotaan/muutetaan list keeps going.
+    if t and t.cat == "EDELLA" and (t.text or "").lower() == "edellä":
         saved_e = s.save()
         s.pos += 1
         if (t := s.peek()) and t.lemma == "olla":
+            # "edellä oleva [luvun] otsikko" — optional LUKU genitive
+            # ("luvun otsikko" = the chapter heading preceding the section).
             s.pos += 1
+            if (t := s.peek()) and t.cat == "LUKU":
+                s.pos += 1
             if (t := s.peek()) and t.cat == "OTSIKKO":
                 s.pos += 1
                 return [SubRef(facet=FacetKind.HEADING)]
+        elif (t := s.peek()) and (t.text or "").lower() == "olevien":
+            # Plural participle: "edellä olevien lukujen otsikoiden numerointi"
+            # — a heading-renumbering reference distributed over the preceding
+            # section list. Consume the descriptive tail up to "numerointi".
+            tail_saved = s.save()
+            s.pos += 1
+            saw_otsikko = False
+            while (t := s.peek()) and t.cat in ("LUKU", "OTSIKKO", "WORD"):
+                if t.cat == "OTSIKKO" or (t.text or "").lower().startswith("otsiko"):
+                    saw_otsikko = True
+                consumed_numerointi = (t.text or "").lower().startswith("numeroin")
+                s.pos += 1
+                if consumed_numerointi:
+                    break
+            if saw_otsikko:
+                return [SubRef(facet=FacetKind.HEADING)]
+            s.restore(tail_saved)
         s.restore(saved_e)
 
     # Recursive descent coordination: handles momentti and kohta at all depths.

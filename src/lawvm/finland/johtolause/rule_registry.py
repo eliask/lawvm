@@ -691,6 +691,21 @@ def _build_registry() -> RuleRegistry:
 
     reg.register(
         ParseRule(
+            rule_id="fi.anaphoric_determiner_insert",
+            description=(
+                "Anaphoric determiner insertion: sanottuun/mainittuun/samaan "
+                "pykälään|momenttiin|lakiin uusi ... (inherits the last mentioned "
+                "section/momentti so the continuation loop does not abort)"
+            ),
+            node_kind="SurfaceInsertion",
+            category="resolution",
+            shape="DET (PYKALA|MOMENTTI|DOC):ILL [PROV] UUSI ...",
+            examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
             rule_id="fi.cross_verb_momentti",
             description="Cross-verb-group: MOMENTTI:ILL uusi sub_target (inherits section from VerbGroupContext)",
             node_kind="SurfaceInsertion",
@@ -1264,6 +1279,7 @@ _OLD_TO_NEW: dict[str, str] = {
     "resolution.anaphoric_pykala_ill": "fi.anaphoric_pykala_ill",
     "resolution.anaphoric_momentti_ill": "fi.anaphoric_momentti_ill",
     "resolution.anaphoric_bare_uusi": "fi.anaphoric_bare_uusi",
+    "resolution.anaphoric_determiner_insert": "fi.anaphoric_determiner_insert",
     "resolution.cross_verb_momentti": "fi.cross_verb_momentti",
     "resolution.cross_verb_bare_uusi": "fi.cross_verb_bare_uusi",
     "resolution.cross_verb_move_retarget": "fi.cross_verb_move_retarget",
