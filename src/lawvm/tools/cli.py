@@ -5375,6 +5375,57 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit machine-readable UK effect classification rows and summary",
     )
 
+    # --- uk-cross-statute-graph ---
+    uk_cross_statute_graph_p = sub.add_parser(
+        "uk-cross-statute-graph",
+        help="extract the UK cross-statute reference/delegation graph",
+        description=(
+            "Read-only §23 instrumentation. Extracts typed cross-statute edges "
+            "(source provision --relation--> target provision) from one or more "
+            "statutes' effects feeds, reusing the UK effect feed and "
+            "source-adjudication classifiers. Never replays or mutates ops; emits "
+            "a deterministic, canonically-sorted, diffable edge artifact with "
+            "node/edge counts by relation, dangling-target detection, and "
+            "delegation depth."
+        ),
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "statute_id",
+        nargs="+",
+        help="one or more UK statute IDs, e.g. ukpga/2000/26",
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "--relation",
+        metavar="RELATION",
+        help=(
+            "only show edges of this relation "
+            "(amends/repeals/commences/applies_by_reference/confers_power/"
+            "modifies/references)"
+        ),
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "--applicability-mode",
+        dest="uk_applicability_mode",
+        choices=UK_APPLICABILITY_MODE_CHOICES,
+        default=None,
+        help="UK replay applicability lens annotated on the report",
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="print only aggregate node/edge/relation summary statistics",
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="Farchive DB path (default: data/uk_legislation.farchive)",
+    )
+    uk_cross_statute_graph_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the machine-readable cross-statute graph evidence report",
+    )
+
     # --- uk-eids ---
     uk_eids_p = sub.add_parser(
         "uk-eids",
@@ -12089,6 +12140,11 @@ def _main_impl() -> None:
         from lawvm.tools.uk_effects import main as uk_effects_main
 
         uk_effects_main(args)
+
+    elif args.command == "uk-cross-statute-graph":
+        from lawvm.tools.uk_cross_statute_graph import main as uk_cross_statute_graph_main
+
+        uk_cross_statute_graph_main(args)
 
     elif args.command == "uk-eids":
         from lawvm.tools.uk_eids import main as uk_eids_main
