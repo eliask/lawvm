@@ -286,13 +286,15 @@ def _inject_pure_kumotaan_repeal_ops(
             # section:26``); rebuilding a bare ``(chapter, section)`` address
             # would lose that part scope, leaving the REPEAL unresolvable when
             # the chapter is nested under a part — and ambiguous when several
-            # parts contain the same chapter number.  Drop the synthetic
-            # ``hcontainer`` document root so the address matches the structural
-            # addresses other ops carry.
+            # parts contain the same chapter number.  Strip empty-label steps
+            # (synthetic ``body``/``hcontainer`` wrappers carry no label) so the
+            # address matches the timeline address space, which only keys nodes
+            # with a non-empty label — the same convention the sibling
+            # subsection-repeal injection uses.
             target_path: Tuple[Tuple[str, str], ...] = tuple(
                 (str(step_kind), str(step_label))
                 for step_kind, step_label in sec_path
-                if str(step_kind) != "hcontainer"
+                if str(step_label)
             )
 
             op_id = (

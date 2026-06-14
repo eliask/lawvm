@@ -658,6 +658,50 @@ def test_spaced_suffix_labels_in_insertion_context():
         assert ins.kind.name == "SECTION", f"{ins.label} should be SECTION, got {ins.kind.name}"
 
 
+def test_insertion_momentin_kohta_genitive_subtarget():
+    """'uusi N momentin M kohta' inserts kohta M into momentti N, not momentti N.
+
+    The genitive 'momentin' is a container qualifier for a kohta insertion,
+    mirroring the REPLACE shape 'N §:n M momentin K kohta'.  Previously parsed
+    as a bare momentti insertion, dropping the trailing kohta.
+    """
+    text = "lisätään 102 §:ään uusi 1 momentin 4 kohta seuraavasti:"
+    codes = [op.code() for op in parse_clause(text).parsed_ops]
+    assert codes == ["L P 102 1 4"], codes
+
+
+def test_insertion_anaphoric_momentti_continuation_without_uusi():
+    """'uusi N momentin M kohta ja P momentti' shares 'uusi' across the conjunction.
+
+    The bare 'ja P momentti' continuation inserts momentti P into the same
+    section without repeating 'uusi'.
+    """
+    text = "lisätään 102 §:ään uusi 1 momentin 4 kohta ja 4 momentti seuraavasti:"
+    codes = [op.code() for op in parse_clause(text).parsed_ops]
+    assert codes == ["L P 102 1 4", "L P 102 4"], codes
+
+
+def test_insertion_trailing_lakiin_uusi_section_after_subtarget_list():
+    """A trailing 'ja lakiin uusi N §' coordinated after sub-target inserts is parsed.
+
+    Real shape (arvonlisäverolaki amendment 1994/1483): the law-level section
+    insert 'lakiin uusi 102 b §' used to be dropped because the preceding
+    'N §:ään uusi 1 momentin 4 kohta ja 4 momentti' arm truncated the list.
+    """
+    text = (
+        "lisätään 1 §:ään uusi 5 momentti, 102 §:ään uusi 1 momentin 4 kohta "
+        "ja 4 momentti ja lakiin uusi 102 b § sekä 141 §:ään uusi 5 kohta seuraavasti:"
+    )
+    codes = [op.code() for op in parse_clause(text).parsed_ops]
+    assert codes == [
+        "L P 1 5",
+        "L P 102 1 4",
+        "L P 102 4",
+        "L P 102b",
+        "L P 141 1 5",
+    ], codes
+
+
 # ---------------------------------------------------------------------------
 # Gap 3: Anaphoric lookup must handle SurfaceScopeBlock and
 #         SurfaceDescendantCoordination as predecessors (Pro audit #3)

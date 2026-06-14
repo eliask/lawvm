@@ -889,6 +889,78 @@ class TestPartContextCases:
             f"flat children: {[type(n).__name__ for n in flat_children]}"
         )
 
+    def test_mid_list_part_switch_does_not_leak_old_part_chapter_onto_section(self):
+        """A mid-list part switch must not stamp a following bare section with a
+        chapter inherited from the pre-switch scope.
+
+        ``muutetaan II osan 4 luvun otsikko, III osan otsikko sekä 38 §``:
+        chapter 4 belongs to part II ("II osan 4 luvun"), then the part switches
+        to III ("III osan otsikko").  The trailing bare ``38 §`` follows the
+        new part III, so it must take part III with NO chapter — never the stale
+        chapter 4 from part II, which would be an internally contradictory
+        address (part from one part, chapter from another).
+        """
+        from lawvm.core.clause_ast import clause_ast_to_legal_ops
+
+        result = parse_clause(
+            "muutetaan II osan 4 luvun otsikko, III osan otsikko sekä 38 §"
+        )
+        ops = clause_ast_to_legal_ops(result.clause_ast)
+        sec_ops = [op for op in ops if op.target.path and op.target.path[-1][0] == "section"]
+        assert len(sec_ops) == 1, f"Expected one section op, got {[op.target.path for op in ops]}"
+        path = sec_ops[0].target.path
+        parts = [label for kind, label in path if kind == "part"]
+        chapters = [label for kind, label in path if kind == "chapter"]
+        assert parts == ["III"], f"Section 38 must take the switched-to part III, got {path}"
+        assert chapters == [], (
+            f"Section 38 must not inherit chapter 4 from the prior part II "
+            f"(contradictory address), got {path}"
+        )
+
+    def test_mid_list_part_switch_keeps_new_part_chapters(self):
+        """The legitimate multi-part case must still switch chapters to the new
+        part: ``V osan 4 luvun ..., VI osan otsikon ..., 1-3 luvun ...`` — the
+        1-3 luvun renumbers belong to the new part VI, and a bare section after
+        them takes part VI without a stale chapter.
+
+        Regression companion to
+        ``test_parse_clause_carries_explicit_part_scope_within_same_verb_group``;
+        the section assertion guards the live 2020/1256 megaclause where §230
+        must resolve to part VI with no spurious chapter 3.
+        """
+        from lawvm.core.clause_ast import clause_ast_to_legal_ops
+
+        result = parse_clause(
+            "muutetaan V osan 4 luvun numero 25:ksi, "
+            "VI osan otsikon ruotsinkielinen sanamuoto, "
+            "1-3 luvun numero 26-28:ksi, 230 §:n 3 momentti"
+        )
+        ops = clause_ast_to_legal_ops(result.clause_ast)
+
+        # Chapters 1-3 (renumbered) must belong to the new part VI.
+        chapter_ops = [
+            op
+            for op in ops
+            if op.target.path and op.target.path[-1][0] == "chapter"
+            and op.target.path[-1][1] in {"1", "2", "3"}
+        ]
+        assert len(chapter_ops) == 3, f"Expected chapters 1-3 retargeted, got {[op.target.path for op in ops]}"
+        for op in chapter_ops:
+            parts = [label for kind, label in op.target.path if kind == "part"]
+            assert parts == ["VI"], f"Chapter must take new part VI, got {op.target.path}"
+
+        # The trailing bare §230 takes part VI with no stale chapter.
+        sec_ops = [
+            op for op in ops
+            if op.target.path and any(k == "section" and label == "230" for k, label in op.target.path)
+        ]
+        assert len(sec_ops) == 1, f"Expected one §230 op, got {[op.target.path for op in ops]}"
+        path = sec_ops[0].target.path
+        parts = [label for kind, label in path if kind == "part"]
+        chapters = [label for kind, label in path if kind == "chapter"]
+        assert parts == ["VI"], f"§230 must take part VI, got {path}"
+        assert chapters == [], f"§230 must not inherit stale chapter 3, got {path}"
+
 
 # ===========================================================================
 # 10. Resolution provenance fields (resolution_kind, resolution_detail)

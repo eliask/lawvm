@@ -259,7 +259,7 @@ def test_test_shard_new_zealand_group_expands_to_subshards() -> None:
         "new_zealand_effects",
         "new_zealand_reports",
     ]
-    assert module.shard_plan("new_zealand")["assigned_file_count"] == 22
+    assert module.shard_plan("new_zealand")["assigned_file_count"] == 25
     assert module.affected_shards(["tests/test_new_zealand_acquisition.py"]) == [
         "new_zealand_sources"
     ]
@@ -269,7 +269,7 @@ def test_test_shard_evidence_group_expands_to_subshards() -> None:
     module = _load_test_shard_module()
 
     assert module.expand_shard_names(["evidence"]) == EVIDENCE_EXECUTION_SHARDS
-    assert module.shard_plan("evidence")["assigned_file_count"] == 16
+    assert module.shard_plan("evidence")["assigned_file_count"] == 17
     assert module.affected_shards(["tests/test_evidence.py"]) == ["evidence_claims"]
     assert module.affected_shards(["tests/test_explain_facade.py"]) == ["evidence_reports"]
 

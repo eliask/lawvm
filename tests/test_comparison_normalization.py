@@ -116,7 +116,14 @@ def test_inline_comparison_rules_validate() -> None:
 
 
 def test_normalize_inline_comparison_text_normalizes_whitespace_and_punctuation() -> None:
-    assert normalize_inline_comparison_text("  old \n text  , (  a )  ") == "old text, (a )"
+    # Display spaces are removed both after an opening paren and before a closing
+    # paren/bracket, so "(  a )" collapses to "(a)".
+    assert normalize_inline_comparison_text("  old \n text  , (  a )  ") == "old text, (a)"
+
+
+def test_normalize_inline_comparison_text_removes_space_before_closing_paren() -> None:
+    assert normalize_inline_comparison_text("section 197 )") == "section 197)"
+    assert normalize_inline_comparison_text("item 4 ]") == "item 4]"
 
 
 def test_normalized_inline_occurrence_count_uses_shared_normalization() -> None:

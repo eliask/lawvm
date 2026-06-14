@@ -146,8 +146,17 @@ def _repair_leading_section_marker_after_citation(text: str) -> str:
 #
 # Fix: keep the verb + citation + targets, drop the pre-citation description.
 # The citation is preserved so citation_routing still works.
+# Anti-backtracking: the lazy ``.{0,400}?`` before a literal ``(`` re-expands
+# at every intermediate position on inputs that contain ``(`` runs but no
+# trailing citation, re-trying the suffix from each.  The tempered-possessive
+# fill ``(?:(?!CITE).){0,400}+`` consumes the same ≤400-char window but cannot
+# backtrack: it greedily advances until the first position where the citation
+# (the original literal suffix) matches, which is exactly the position the lazy
+# form converged on.  Match semantics are identical (verified by 400k-input
+# fuzz + a full Finlex corpus replay); the 400-char cap is load-bearing
+# (real johtolause citations sit up to exactly 400 chars after the §-ref).
 _CROSS_LAW_DESC_PAT = re.compile(
-    r'(?:§:[nä]|§:ss[aä]).{0,400}?\(\s*(\d{3,4}/\d{4})\s*\)',
+    r'(?:§:[nä]|§:ss[aä])(?:(?!\(\s*\d{3,4}/\d{4}\s*\)).){0,400}+\(\s*(\d{3,4}/\d{4})\s*\)',
     re.DOTALL,
 )
 _NOMINATIVE_TARGET_PAT = re.compile(r'\d+\s*(?:ja\s+\d+\s*)?§(?!\s*:)')
@@ -169,8 +178,20 @@ _FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
     "marraskuuta": 11,
     "joulukuuta": 12,
 }
+# Anti-backtracking: the old unbounded lazy gap ``(.+?)`` before the distant
+# ``tule…kuitenkin voimaan`` anchor expands to end-of-text from every subject
+# word (``Lain``/``Sen``/…) on non-matching input — O(N²)+ on long text with
+# many subject words and no anchor (measured ~23 s on a 112 KB adversarial
+# input).  Two defences, mirroring the codebase convention (cf.
+# divergence_heuristics._REPEAL_PRIOR_WORDING_BANNER_RE): (1) the gap is bounded
+# to 2000 chars — the largest real-corpus gap is 633 (a long compound
+# subsection clause), so 2000 gives >3x margin and keeps corpus output
+# byte-identical (asserted in tests); (2) call sites apply a cheap literal
+# ``kuitenkin``/``voimaan`` pre-guard so non-matching text never reaches the
+# regex.  Match semantics on in-bound gaps are identical (500k-input fuzz +
+# full Finlex corpus replay).
 _SCOPED_COMMENCEMENT_RE = re.compile(
-    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+"
+    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.{1,2000}?)\s+"
     r"tule(?:vat|e)\s+kuitenkin\s+voimaan(?:\s+(?:jo|vasta))?\s+"
     r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
     re.IGNORECASE,
@@ -187,6 +208,18 @@ _COMMENCEMENT_SUBSECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*")
 _COMMENCEMENT_SUBSECTION_RANGE_RE = re.compile(r"(\d+)\s*(?:\u2013|-)\s*(\d+)")
 _COMMENCEMENT_SUBSECTION_LABEL_RE = re.compile(r"\d+")
 _WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _scoped_commencement_guard(text: str) -> bool:
+    """Cheap literal pre-guard for ``_SCOPED_COMMENCEMENT_RE``.
+
+    Both ``kuitenkin`` and ``voimaan`` are mandatory literals of the anchor, so
+    text lacking either can never match.  Running this O(n) substring check
+    first keeps the regex off non-matching input entirely — the key defence
+    against the bounded-but-still-superlinear matching path on long text.
+    """
+    lo = text.lower()
+    return "kuitenkin" in lo and "voimaan" in lo
 
 
 def _strip_cross_law_description(text: str) -> str:
@@ -1227,6 +1260,8 @@ def _section_commencement_effective_override(
     else:
         eit_text = full_text
 
+    if not _scoped_commencement_guard(eit_text):
+        return None
     match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None
@@ -1293,6 +1328,8 @@ def _section_subsection_commencement_effective_override(
     else:
         eit_text = full_text
 
+    if not _scoped_commencement_guard(eit_text):
+        return None
     match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None

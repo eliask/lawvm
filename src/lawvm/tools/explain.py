@@ -128,6 +128,13 @@ def _source_pathology_diagnosis_for_blame(
             continue
         detail = row.get("detail") if isinstance(row, dict) else {}
         detail = detail if isinstance(detail, dict) else {}
+        # Same chapter guard oracle_check._source_pathology_diagnosis_for_blame
+        # applies: a pathology row scoped to a different chapter than the blamed
+        # op must not be borrowed to demote this section, otherwise explain would
+        # over-demote relative to the authoritative classifier.
+        detail_target_chapter = str(detail.get("target_chapter") or "")
+        if target_chapter and detail_target_chapter and detail_target_chapter != target_chapter:
+            continue
         if exact_target_label and str(row.get("target_label") or "") == exact_target_label:
             matched_codes.add(code)
             continue

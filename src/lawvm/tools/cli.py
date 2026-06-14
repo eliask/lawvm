@@ -8159,6 +8159,49 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only corpus summary counts (suppress per-work rows)"
     )
     nz_dry_run_corpus_p.add_argument("--json", action="store_true", help="emit corpus dry-run report JSON")
+    nz_spec_ledger_p = nz_corpus_sub.add_parser(
+        "spec-ledger",
+        help="materialize the discovered spec of NZ amendment law as a witness-attribution ledger",
+        description=(
+            "Run the NZ dry-run loop over a corpus across every supported family "
+            "(repeal, text_replace, replace, insert), then attribute each per-op "
+            "oracle outcome back to the named rule responsible. The result is the "
+            "discovered-spec artifact: per rule_id its believed_spec, confidence, "
+            "firing count, and corroborated (oracle agrees) vs contradicted (honest "
+            "residual) counts with exemplar works. Reuses the jurisdiction-neutral "
+            "spec-ledger core read-only; never enables actual replay or mutates the "
+            "archive."
+        ),
+    )
+    nz_spec_ledger_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_spec_ledger_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to the --corpus population",
+    )
+    nz_spec_ledger_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus_smoke.csv. An explicit --work-id list still wins."
+        ),
+    )
+    nz_spec_ledger_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
+    nz_spec_ledger_p.add_argument(
+        "--json", action="store_true", help="emit the discovered-spec ledger JSON to stdout"
+    )
+    nz_spec_ledger_p.add_argument(
+        "--json-out", default="", metavar="PATH", help="also write the ledger JSON to PATH"
+    )
     nz_dry_run_north_star_p = nz_corpus_sub.add_parser(
         "dry-run-north-star",
         help="report the stable combined replay-coverage north-star over all supported dry-run families",
@@ -11228,6 +11271,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_corpus import main as nz_corpus_dry_run_corpus_main
 
             nz_corpus_dry_run_corpus_main(args)
+        elif args.nz_corpus_command == "spec-ledger":
+            from lawvm.new_zealand.spec_ledger_adapter import main as nz_corpus_spec_ledger_main
+
+            nz_corpus_spec_ledger_main(args)
         elif args.nz_corpus_command == "dry-run-north-star":
             from lawvm.new_zealand.dry_run_north_star import main as nz_corpus_dry_run_north_star_main
 
