@@ -38,6 +38,9 @@ def test_registry_no_duplicate_ids():
 # These are valid catalog entries for witness tracking but don't need
 # example corpus entries for testing.
 _EXAMPLE_EXEMPT_RULES = {
+    "fi.section_ref_pykala_prefix",
+    "fi.insertion_section_postfix_chapter",
+    "fi.coordinated_part_chapter_heading_ref",
     "fi.insertion_chapter_anaphoric",
     "fi.insertion_chapter_scoped",
     "fi.sub_target_momentti",

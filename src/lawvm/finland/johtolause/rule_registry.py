@@ -210,6 +210,39 @@ def _build_registry() -> RuleRegistry:
 
     reg.register(
         ParseRule(
+            rule_id="fi.section_ref_pykala_prefix",
+            description="Section reference in genitive-plural prefix form (pykälien N, M ...)",
+            node_kind="SurfaceTargetRef",
+            category="structural",
+            shape="PYKALIEN NUM+",
+            examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
+            rule_id="fi.insertion_section_postfix_chapter",
+            description="Section insertion whose chapter scope trails the section (lisätään uusi N § ... lukuun)",
+            node_kind="SurfaceInsertion",
+            category="insertion",
+            shape="INSERT SECTION ... LUKU",
+            examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
+            rule_id="fi.coordinated_part_chapter_heading_ref",
+            description="Coordinated part+chapter heading reference (osan/luvun otsikko)",
+            node_kind="SurfaceTargetRef",
+            category="structural",
+            shape="OSA LUKU OTSIKKO",
+            examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
             rule_id="fi.chapter_ref",
             description="Chapter reference: number_list LUKU with optional sub-refs",
             node_kind="SurfaceTargetRef",
