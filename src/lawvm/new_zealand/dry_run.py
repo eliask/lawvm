@@ -148,6 +148,15 @@ NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID = "nz_dry_run_structural_insert_r
 NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID = (
     "nz_dry_run_structural_insert_residual_new_node_content_mismatch_in_oracle"
 )
+# Residual: the inserted node is present in the oracle with matching content, but
+# its immediately-preceding same-kind sibling in the oracle is NOT the anchor we
+# derived (the new node landed in a different position than the derived anchor
+# claims). This catches a derived anchor that is content-correct but
+# position-wrong — e.g. a block insert where every member would otherwise anchor
+# on the same single predecessor. Never counted as agreement.
+NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID = (
+    "nz_dry_run_structural_insert_residual_new_node_position_mismatch_in_oracle"
+)
 
 # Structural-insert refusals (typed, no mutation performed).
 NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID = "nz_dry_run_refused_structural_insert_target_address_not_candidate"
@@ -2147,6 +2156,100 @@ def _derive_insert_anchor(leaf_kind: str, leaf_label: str) -> tuple[str, str] | 
     return None
 
 
+# A whole-provision leaf label is a bare-numeric ("7") or a multi-letter suffix
+# ("14AB", "147ZA") when the single-trailing-letter convention does not apply.
+# Both anchor on an EXISTING sibling and therefore must be validated against the
+# before-tree's top-level sibling group; their derivation is deferred (the
+# single-trailing-letter case stays a pure label derivation with no before-tree
+# dependency).
+_BARE_NUMERIC_LABEL_RE = re.compile(r"[0-9]+")
+_MULTI_LETTER_SUFFIX_LABEL_RE = re.compile(r"[0-9]+[A-Za-z]{2,}")
+
+
+def _is_before_tree_dependent_insert_label(leaf_label: str) -> bool:
+    """Whether the top-level anchor for ``leaf_label`` needs the before-tree.
+
+    True for a bare-numeric label (its predecessor is the greatest numerically
+    smaller existing sibling) and for a multi-letter suffix label (its
+    predecessor is the label with the final suffix letter removed, which must be
+    present). False for everything else — including the single-trailing-letter
+    convention (derived up front) and genuinely non-derivable labels (Roman
+    numerals, empty), which are refused up front.
+    """
+
+    return bool(
+        _BARE_NUMERIC_LABEL_RE.fullmatch(leaf_label)
+        or _MULTI_LETTER_SUFFIX_LABEL_RE.fullmatch(leaf_label)
+    )
+
+
+def _derive_top_level_insert_anchor(
+    leaf_label: str,
+    sibling_labels: tuple[str, ...],
+) -> tuple[str, str] | None:
+    """Derive a whole-provision anchor that depends on the before-tree siblings.
+
+    Two before-tree-dependent label shapes (the single-trailing-letter shape is
+    handled by :func:`_derive_insert_anchor` without the before-tree):
+
+    - **Bare-numeric leaf** (``7``): inserted AFTER the existing same-kind sibling
+      with the greatest numeric label strictly less than ``7`` (e.g. ``6``).
+      Comparison is numeric, not lexical (``7`` > ``6``, ``100`` > ``99``). Only
+      the purely-numeric portion of a sibling label is comparable, so suffixed
+      siblings (``6A``) are not predecessors of a bare numeric. If no smaller
+      numeric sibling exists (``7`` would be first), refuse — never guess an
+      append/renumber position.
+    - **Multi-letter suffix leaf** (``14AB``, ``147ZA``): inserted AFTER the
+      label with the final suffix letter removed (``14A``, ``147Z``), which must
+      be present among the siblings; otherwise refuse.
+
+    Returns ``(anchor_sibling_label, "after")`` or ``None`` (typed refusal in the
+    caller). The derived anchor is matched against the actual sibling set, so an
+    unresolvable position never produces a guess.
+    """
+
+    sibling_set = set(sibling_labels)
+
+    if _MULTI_LETTER_SUFFIX_LABEL_RE.fullmatch(leaf_label):
+        # The multi-letter predecessor is, in order of preference:
+        #   1. the prior label in the suffix sequence (decrement the final
+        #      letter: 14AC -> 14AB, 147ZB -> 147ZA) when present, then
+        #   2. the label with the final suffix letter stripped (14AB -> 14A,
+        #      147ZA -> 147Z, 18AA -> 18A) when present.
+        # Both candidates are validated against the actual siblings; the oracle
+        # position check is the final arbiter regardless. If neither is present,
+        # refuse (no guessed position).
+        last = leaf_label[-1]
+        prior_in_sequence: str | None = None
+        if last not in ("a", "A"):
+            prior_in_sequence = leaf_label[:-1] + chr(ord(last) - 1)
+        if prior_in_sequence is not None and prior_in_sequence in sibling_set:
+            return (prior_in_sequence, "after")
+        stripped = leaf_label[:-1]
+        if stripped in sibling_set:
+            return (stripped, "after")
+        return None
+
+    if _BARE_NUMERIC_LABEL_RE.fullmatch(leaf_label):
+        target_value = int(leaf_label)
+        # Candidate predecessors: purely-numeric siblings strictly smaller than N.
+        numeric_siblings = [
+            (int(label), label)
+            for label in sibling_labels
+            if _BARE_NUMERIC_LABEL_RE.fullmatch(label)
+        ]
+        smaller = [(value, label) for value, label in numeric_siblings if value < target_value]
+        if not smaller:
+            # N would be first (or no comparable numeric sibling): a renumber/
+            # append we will not guess.
+            return None
+        # Greatest numeric predecessor wins (insert immediately after it).
+        _, anchor_label = max(smaller, key=lambda item: item[0])
+        return (anchor_label, "after")
+
+    return None
+
+
 def _derive_nested_insert_anchor(
     leaf_kind: str,
     leaf_label: str,
@@ -2274,9 +2377,18 @@ def _dry_run_one_insert(
     parent_source_path = new_node_source_path[:-1]
 
     top_level_anchor: tuple[str, str] | None = None
-    if not is_nested:
-        # Whole-provision insert: derive the top-level anchor from the label
-        # convention up front (no before-tree dependency). Unchanged behavior.
+    # A bare-numeric ("7") or multi-letter suffix ("14AB") whole-provision label
+    # anchors on an EXISTING sibling and so is derived against the before-tree's
+    # top-level sibling group below; defer it. The single-trailing-letter
+    # convention (18A -> 18) stays a pure up-front label derivation.
+    top_level_anchor_deferred = (
+        not is_nested and _is_before_tree_dependent_insert_label(leaf_label)
+    )
+    if not is_nested and not top_level_anchor_deferred:
+        # Whole-provision insert with the single-trailing-letter convention:
+        # derive the top-level anchor from the label up front (no before-tree
+        # dependency). Genuinely non-derivable labels (Roman numerals, empty) are
+        # refused here. Unchanged behavior.
         top_level_anchor = _derive_insert_anchor(leaf_kind, leaf_label)
         if top_level_anchor is None:
             return NZDryRunRefusal(
@@ -2445,6 +2557,28 @@ def _dry_run_one_insert(
             )
         anchor_label, direction = nested_anchor
         anchor_source_path = (*resolved_parent_path, f"{leaf_kind}:{anchor_label}")
+    elif top_level_anchor_deferred:
+        # Whole-provision bare-numeric / multi-letter suffix insert: derive the
+        # anchor from the before-tree's top-level same-kind sibling group. A
+        # top-level provision is pathed either at the root (``prov:6``) or under
+        # a single part (``part:1/prov:6``); collect both shapes.
+        sibling_labels = _top_level_sibling_labels(before_doc, leaf_kind)
+        top_level_anchor = _derive_top_level_insert_anchor(leaf_label, sibling_labels)
+        if top_level_anchor is None:
+            return NZDryRunRefusal(
+                op_id=op_id,
+                rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID,
+                message="dry-run structural-insert refused because no anchor sibling is derivable from the inserted node's label and the before-tree sibling group",
+                target_address=target_address,
+                amendment_date_iso=amendment_date_iso,
+                detail={
+                    "inserted_leaf_kind": leaf_kind,
+                    "inserted_leaf_label": leaf_label,
+                    "top_level_sibling_labels": list(sibling_labels),
+                },
+            )
+        anchor_label, direction = top_level_anchor
+        anchor_source_path = (f"{leaf_kind}:{anchor_label}",)
     else:
         assert top_level_anchor is not None  # derived above for the whole-provision path
         anchor_label, direction = top_level_anchor
@@ -2510,6 +2644,9 @@ def _dry_run_one_insert(
         new_node_source_path,
         candidate_root=payload.root,
         candidate_descendants=payload.descendants,
+        derived_anchor_label=anchor_label,
+        derived_anchor_kind=leaf_kind,
+        derived_direction=direction,
     )
 
     return NZMutationBoundaryProof(
@@ -2548,22 +2685,77 @@ def _dry_run_one_insert(
     )
 
 
+def _oracle_adjacent_sibling_label(
+    oracle_doc: NZSourceDocument,
+    node: NZSourceNode,
+    leaf_kind: str,
+    direction: str,
+) -> str | None:
+    """Label of the oracle's same-kind sibling immediately adjacent to ``node``.
+
+    For ``direction == "after"`` this is the sibling that immediately PRECEDES
+    ``node`` in document order under the same parent (the anchor the new node was
+    inserted after); for ``direction == "before"`` it is the sibling that
+    immediately FOLLOWS. Returns ``None`` when no such adjacent same-kind sibling
+    exists (the new node is first/last among its kind) — that case cannot confirm
+    or refute a derived anchor and is handled by the caller.
+    """
+
+    parent = node.path[:-1]
+    order = {id(n): i for i, n in enumerate(oracle_doc.nodes)}
+    node_index = order[id(node)]
+    siblings = [
+        n
+        for n in oracle_doc.nodes
+        if n.path != node.path
+        and n.path[:-1] == parent
+        and n.kind == leaf_kind
+        and n.label
+    ]
+    if direction == "after":
+        preceding = [n for n in siblings if order[id(n)] < node_index]
+        if not preceding:
+            return None
+        return max(preceding, key=lambda n: order[id(n)]).label
+    following = [n for n in siblings if order[id(n)] > node_index]
+    if not following:
+        return None
+    return min(following, key=lambda n: order[id(n)]).label
+
+
 def _oracle_partition_insert(
     oracle_doc: NZSourceDocument,
     new_node_source_path: tuple[str, ...],
     *,
     candidate_root: NZSourceNode,
     candidate_descendants: tuple[NZSourceNode, ...],
+    derived_anchor_label: str,
+    derived_anchor_kind: str,
+    derived_direction: str,
 ) -> tuple[str, str, bool, str, str]:
     """Classify whether the on-or-after oracle carries the inserted node.
 
     Honest classification:
 
     - ``agrees``: the oracle carries the new node at its address with a subtree
-      whose normalized signature matches the candidate new-node payload.
+      whose normalized signature matches the candidate new-node payload AND the
+      new node's adjacent same-kind sibling in the oracle (preceding for an
+      ``after`` anchor, following for a ``before`` anchor) is the anchor we
+      derived. Both content and position must hold.
+    - ``residual_insert_position_mismatch``: the new node is present with matching
+      content but its adjacent oracle sibling is NOT the derived anchor — the
+      derived position is wrong (e.g. a block insert where several new members
+      would all otherwise anchor on the same single predecessor). NEVER agreement.
     - ``residual_insert_content_mismatch``: the new node is present in the oracle
       but its content differs from the candidate payload. NEVER agreement.
     - ``residual_insert_not_present``: the new node is absent from the oracle.
+
+    The position check is the arbiter of the derived anchor: a content-correct but
+    position-wrong derivation cannot masquerade as agreement. When the new node is
+    first/last among its kind in the oracle there is no adjacent sibling to check;
+    the position is then taken as consistent (content match alone decides), since
+    the derivation only ever claims an EXISTING-sibling anchor and an absent
+    adjacent sibling cannot refute it.
     """
 
     oracle_matches = _resolve_target_nodes(oracle_doc, new_node_source_path)
@@ -2581,17 +2773,31 @@ def _oracle_partition_insert(
     candidate_sig = _normalized_subtree_signature(candidate_root, candidate_descendants, root_path=candidate_root.path)
     oracle_sig = _normalized_subtree_signature(oracle_root, oracle_descendants, root_path=oracle_root.path)
     oracle_subtree_digest = _subtree_digest(oracle_root, oracle_descendants)
-    if candidate_sig == oracle_sig:
+    if candidate_sig != oracle_sig:
         return (
-            "agrees",
-            NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
+            "residual_insert_content_mismatch",
+            NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_subtree_digest,
+        )
+    # Content matches. Validate the derived anchor against the oracle's actual
+    # adjacent same-kind sibling. A mismatch is a position residual, never an
+    # agreement — this keeps a derived guess from masquerading as confirmed.
+    oracle_adjacent = _oracle_adjacent_sibling_label(
+        oracle_doc, oracle_root, derived_anchor_kind, derived_direction
+    )
+    if oracle_adjacent is not None and oracle_adjacent != derived_anchor_label:
+        return (
+            "residual_insert_position_mismatch",
+            NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
             True,
             oracle_occupancy,
             oracle_subtree_digest,
         )
     return (
-        "residual_insert_content_mismatch",
-        NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
+        "agrees",
+        NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
         True,
         oracle_occupancy,
         oracle_subtree_digest,
@@ -2894,6 +3100,32 @@ def _child_nodes_of_kind(
         and node.path[:depth] == parent_path
         and node.kind == kind
     )
+
+
+def _top_level_sibling_labels(document: NZSourceDocument, kind: str) -> tuple[str, ...]:
+    """Labels of top-level same-kind provisions in the live body, document order.
+
+    A whole-provision insert (``new_node_source_path`` has one segment) lands
+    among the top-level provisions of its kind. Those provisions are pathed
+    either at the root (``prov:6``) or under a single part (``part:1/prov:6``) —
+    the same one-extra-leading-``part`` shape that :func:`_resolve_target_nodes`
+    accepts for a single-segment address. Collect both shapes from the live body
+    only (never an end-of-document skeleton copy), so the derived predecessor is
+    validated against the real consolidated sibling group.
+    """
+
+    labels: list[str] = []
+    for node in document.nodes:
+        if node.source_zone in _NON_BODY_SOURCE_ZONES:
+            continue
+        if node.kind != kind or not node.label:
+            continue
+        path = node.path
+        if len(path) == 1:
+            labels.append(node.label)
+        elif len(path) == 2 and path[0].split(":", 1)[0] == "part":
+            labels.append(node.label)
+    return tuple(labels)
 
 
 def _occupancy(node: NZSourceNode) -> str:

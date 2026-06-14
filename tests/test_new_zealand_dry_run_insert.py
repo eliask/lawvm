@@ -21,6 +21,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID,
+    NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
     NZ_DRY_RUN_NOT_IN_SCOPE_INSERT_TARGET_NOT_CANDIDATE,
     NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY,
     NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID,
@@ -34,6 +35,8 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     _derive_insert_anchor,
     _derive_nested_insert_anchor,
+    _derive_top_level_insert_anchor,
+    _is_before_tree_dependent_insert_label,
     build_dry_run_insert,
     scope_from_arg,
 )
@@ -237,6 +240,57 @@ def test_anchor_derivation_refuses_multi_letter_suffix() -> None:
     assert _derive_insert_anchor("prov", "18AA") is None
 
 
+# --- Before-tree-dependent (bare-numeric / multi-letter) anchor unit tests. ---
+
+
+def test_before_tree_dependent_label_classifies_bare_numeric_and_multi_letter() -> None:
+    assert _is_before_tree_dependent_insert_label("7") is True
+    assert _is_before_tree_dependent_insert_label("100") is True
+    assert _is_before_tree_dependent_insert_label("14AB") is True
+    assert _is_before_tree_dependent_insert_label("147ZA") is True
+    # Single-trailing-letter convention is derived up front, not deferred.
+    assert _is_before_tree_dependent_insert_label("18A") is False
+    # Genuinely non-derivable labels are not deferred (refused up front).
+    assert _is_before_tree_dependent_insert_label("IV") is False
+    assert _is_before_tree_dependent_insert_label("") is False
+
+
+def test_top_level_anchor_bare_numeric_after_greatest_smaller_predecessor() -> None:
+    # Section 7 inserted where 6 (and lower) exist -> after 6.
+    assert _derive_top_level_insert_anchor("7", ("4", "5", "6", "8", "9")) == ("6", "after")
+
+
+def test_top_level_anchor_bare_numeric_uses_numeric_not_lexical_ordering() -> None:
+    # 100 must anchor after 99 (numeric), not after "9" (lexical max of digits).
+    assert _derive_top_level_insert_anchor("100", ("9", "10", "99", "101")) == ("99", "after")
+    # 7 after 6 even though "60" sorts lexically after "7".
+    assert _derive_top_level_insert_anchor("7", ("6", "60", "70")) == ("6", "after")
+
+
+def test_top_level_anchor_bare_numeric_without_smaller_predecessor_refused() -> None:
+    # 1 would be first; no smaller numeric sibling -> refuse (never guess append).
+    assert _derive_top_level_insert_anchor("1", ("2", "3")) is None
+    # Only larger or non-numeric siblings -> refuse.
+    assert _derive_top_level_insert_anchor("5", ("6", "7")) is None
+
+
+def test_top_level_anchor_bare_numeric_ignores_suffixed_siblings() -> None:
+    # Suffixed siblings (6A) are not numeric predecessors of a bare numeric;
+    # with only 6A present and no bare predecessor, refuse.
+    assert _derive_top_level_insert_anchor("7", ("6A", "8")) is None
+
+
+def test_top_level_anchor_multi_letter_suffix_after_stripped_predecessor() -> None:
+    assert _derive_top_level_insert_anchor("14AB", ("14", "14A", "15")) == ("14A", "after")
+    assert _derive_top_level_insert_anchor("147ZA", ("147", "147Z", "148")) == ("147Z", "after")
+    assert _derive_top_level_insert_anchor("18AA", ("18", "18A")) == ("18A", "after")
+
+
+def test_top_level_anchor_multi_letter_suffix_missing_predecessor_refused() -> None:
+    # 14AB needs 14A present; only 14 present -> refuse (no guessed position).
+    assert _derive_top_level_insert_anchor("14AB", ("14", "15")) is None
+
+
 # --- New-node payload extractor unit tests. ----------------------------------
 
 
@@ -365,8 +419,10 @@ def test_insert_added_family_is_in_scope() -> None:
 
 
 def test_insert_refuses_when_anchor_not_derivable() -> None:
-    # A bare numeric inserted label (no suffix letter) has no derivable anchor.
-    row = _FakeWitnessRow(target_path=(("section", "38"),), amended_provision="Section 38")
+    # A Roman-numeral inserted label has no derivable anchor under any convention
+    # (not single-suffix, not bare-numeric, not multi-letter suffix) -> refused up
+    # front before any before-tree dependency.
+    row = _FakeWitnessRow(target_path=(("section", "IV"),), amended_provision="Section IV")
     report = _run(_AFTER_XML_AGREES, (row,))
     assert report.proofs == ()
     assert len(report.refusals) == 1
@@ -483,6 +539,303 @@ def test_insert_agreement_surface_is_structural_insert_named() -> None:
     report = _run(_AFTER_XML_AGREES, (_FakeWitnessRow(),))
     surface = report.agreement_surface()
     assert surface["agreement_surface"] == "nz_dry_run_structural_insert"
+
+
+# =============================================================================
+# Whole-provision bare-numeric / multi-letter suffix insert (the anchor is an
+# EXISTING sibling derived against the before-tree's top-level sibling group):
+# "section 7 inserted" -> after section 6; "section 14AB inserted" -> after 14A.
+# =============================================================================
+
+# Before: sections 6 and 8 present (numeric gap at 7), plus section 14A (anchor
+# for a multi-letter 14AB insert). Section 7 / 14AB absent.
+_NUMERIC_BEFORE_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+    <prov id="DLMb8" deletion-status=""><label>8</label><heading>Section eight</heading>
+      <prov.body><para><text>8 Section eight The body of section 8.</text></para></prov.body></prov>
+    <prov id="DLMb14A" deletion-status=""><label>14A</label><heading>Section fourteen A</heading>
+      <prov.body><para><text>14A Section fourteen A The body of section 14A.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# After: section 7 present between 6 and 8 with the new body; 14AB present after
+# 14A. Pre-existing sections untouched.
+_NUMERIC_AFTER_XML_AGREES = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+    <prov id="DLMb7" deletion-status=""><label>7</label><heading>New section seven</heading>
+      <prov.body><para><text>7 New section seven The brand new body of section 7.</text></para></prov.body></prov>
+    <prov id="DLMb8" deletion-status=""><label>8</label><heading>Section eight</heading>
+      <prov.body><para><text>8 Section eight The body of section 8.</text></para></prov.body></prov>
+    <prov id="DLMb14A" deletion-status=""><label>14A</label><heading>Section fourteen A</heading>
+      <prov.body><para><text>14A Section fourteen A The body of section 14A.</text></para></prov.body></prov>
+    <prov id="DLMb14AB" deletion-status=""><label>14AB</label><heading>New section fourteen AB</heading>
+      <prov.body><para><text>14AB New section fourteen AB The brand new body of section 14AB.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# Amending act: a single amend subtree inserting section 7, and another inserting
+# 14AB. Per-witness label selects the single inserted node.
+_NUMERIC_AMENDING_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMins7"><label>3</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted after <citation jurisdiction="nz"><extref href="DLMb6">section 6</extref></citation>:</text>
+        <amend>
+          <prov id="newDLMb7"><label>7</label><heading>New section seven</heading>
+            <prov.body><para><text>7 New section seven The brand new body of section 7.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+    <prov id="DLMins14AB"><label>4</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted after <citation jurisdiction="nz"><extref href="DLMb14A">section 14A</extref></citation>:</text>
+        <amend>
+          <prov id="newDLMb14AB"><label>14AB</label><heading>New section fourteen AB</heading>
+            <prov.body><para><text>14AB New section fourteen AB The brand new body of section 14AB.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+    <prov id="DLMins8"><label>5</label><heading>Section eight (already present)</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb8dup"><label>8</label><heading>Section eight</heading>
+            <prov.body><para><text>8 Section eight The body of section 8.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+
+_NUMERIC_HREF_7 = "DLMins7"
+_NUMERIC_HREF_14AB = "DLMins14AB"
+_NUMERIC_HREF_8 = "DLMins8"
+
+
+def _run_numeric(rows: tuple[_FakeWitnessRow, ...], *, after_xml: bytes = _NUMERIC_AFTER_XML_AGREES):
+    base = _archive(after_xml, amending_xml=_NUMERIC_AMENDING_XML)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _NUMERIC_BEFORE_XML
+    return build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface(rows))
+
+
+def test_bare_numeric_insert_lands_after_numeric_predecessor_and_agrees() -> None:
+    # Section 7 inserted; predecessor 6 present (8 follows). Anchor = 6.
+    row = _FakeWitnessRow(
+        target_path=(("section", "7"),),
+        amended_provision="Section 7",
+        amending_provision_hrefs=(_NUMERIC_HREF_7,),
+    )
+    report = _run_numeric((row,))
+    assert report.summary()["dry_run_oracle_agreements"] == 1
+    assert report.summary()["operations_refused"] == 0
+    proof = report.proofs[0]
+    assert proof.insert_new_node_source_path[-1] == "prov:7"
+    assert proof.insert_anchor_source_path[-1] == "prov:6"
+    assert proof.insert_direction == "after"
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_INSERT_AGREES_RULE_ID
+    assert proof.neighbors_unchanged is True
+
+
+def test_multi_letter_suffix_insert_lands_after_stripped_predecessor_and_agrees() -> None:
+    # Section 14AB inserted; predecessor 14A present. Anchor = 14A.
+    row = _FakeWitnessRow(
+        target_path=(("section", "14AB"),),
+        amended_provision="Section 14AB",
+        amending_provision_hrefs=(_NUMERIC_HREF_14AB,),
+    )
+    report = _run_numeric((row,))
+    assert report.summary()["dry_run_oracle_agreements"] == 1
+    proof = report.proofs[0]
+    assert proof.insert_new_node_source_path[-1] == "prov:14AB"
+    assert proof.insert_anchor_source_path[-1] == "prov:14A"
+    assert proof.insert_direction == "after"
+    assert proof.oracle_match == "agrees"
+
+
+def test_bare_numeric_insert_refuses_when_no_smaller_predecessor() -> None:
+    # Section 1 inserted but the before-tree has no smaller numeric sibling -> a
+    # renumber/append we will not guess. Honest anchor-not-derivable refusal.
+    amending = b"""\
+<act>
+  <body>
+    <prov id="DLMins1"><label>3</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb1"><label>1</label><heading>New first section</heading>
+            <prov.body><para><text>1 New first section The body of section 1.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+    base = _archive(_NUMERIC_AFTER_XML_AGREES, amending_xml=amending)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _NUMERIC_BEFORE_XML
+    row = _FakeWitnessRow(
+        target_path=(("section", "1"),),
+        amended_provision="Section 1",
+        amending_provision_hrefs=("DLMins1",),
+    )
+    report = build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID
+
+
+def test_multi_letter_suffix_insert_refuses_when_predecessor_absent() -> None:
+    # Section 14CD inserted but predecessor 14C absent from before-tree -> refuse.
+    amending = b"""\
+<act>
+  <body>
+    <prov id="DLMins14CD"><label>3</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb14CD"><label>14CD</label><heading>New section</heading>
+            <prov.body><para><text>14CD New section The body.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+    base = _archive(_NUMERIC_AFTER_XML_AGREES, amending_xml=amending)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _NUMERIC_BEFORE_XML
+    row = _FakeWitnessRow(
+        target_path=(("section", "14CD"),),
+        amended_provision="Section 14CD",
+        amending_provision_hrefs=("DLMins14CD",),
+    )
+    report = build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID
+
+
+def test_bare_numeric_insert_already_present_in_before_refuses() -> None:
+    # Section 8 already exists in the before-tree -> not an insert (refuse).
+    row = _FakeWitnessRow(
+        target_path=(("section", "8"),),
+        amended_provision="Section 8",
+        amending_provision_hrefs=(_NUMERIC_HREF_8,),
+    )
+    report = _run_numeric((row,))
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_INSERT_TARGET_ALREADY_IN_BEFORE_RULE_ID
+
+
+# --- Position guard: a derived anchor that is content-correct but lands the new
+# node in the wrong position is a position residual, NEVER agreement. This is the
+# block-insert hazard: section 8 inserted when the before-tree has only section 6
+# derives anchor=6, but the oracle places 8 after section 7 (also newly present),
+# so the oracle's real predecessor (7) != the derived anchor (6). -------------
+
+# Before: only section 6 present (7, 8 absent). A bare-numeric insert of 8 derives
+# anchor=6 (greatest numeric < 8).
+_POS_BEFORE_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# Oracle (after): 7 and 8 both present; 8's immediately-preceding sibling is 7,
+# NOT the derived anchor 6. The 8 content matches the candidate payload.
+_POS_AFTER_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+    <prov id="DLMb7" deletion-status=""><label>7</label><heading>Section seven</heading>
+      <prov.body><para><text>7 Section seven The body of section 7.</text></para></prov.body></prov>
+    <prov id="DLMb8" deletion-status=""><label>8</label><heading>New section eight</heading>
+      <prov.body><para><text>8 New section eight The brand new body of section 8.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+_POS_AMENDING_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMins8pos"><label>3</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb8pos"><label>8</label><heading>New section eight</heading>
+            <prov.body><para><text>8 New section eight The brand new body of section 8.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+
+
+def test_bare_numeric_insert_position_mismatch_is_residual_not_agreement() -> None:
+    # Section 8 inserted; before-tree has only 6 -> derived anchor 6. The oracle
+    # places 8 after 7 (oracle predecessor != derived anchor) -> position
+    # residual. Content matches, so this is NOT a content mismatch and NOT an
+    # agreement: a derived position guess never masquerades as confirmed.
+    base = _archive(_POS_AFTER_XML, amending_xml=_POS_AMENDING_XML)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _POS_BEFORE_XML
+    row = _FakeWitnessRow(
+        target_path=(("section", "8"),),
+        amended_provision="Section 8",
+        amending_provision_hrefs=("DLMins8pos",),
+    )
+    report = build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    assert report.summary()["dry_run_oracle_agreements"] == 0
+    assert len(report.proofs) == 1
+    proof = report.proofs[0]
+    assert proof.insert_anchor_source_path[-1] == "prov:6"  # the (wrong) derived anchor
+    assert proof.oracle_match == "residual_insert_position_mismatch"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID
+
+
+def test_bare_numeric_insert_position_match_agrees() -> None:
+    # Same shape but the oracle places 8 immediately after 6 (no intervening 7),
+    # so the oracle predecessor == derived anchor -> genuine agreement.
+    after_xml = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+    <prov id="DLMb8" deletion-status=""><label>8</label><heading>New section eight</heading>
+      <prov.body><para><text>8 New section eight The brand new body of section 8.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+    base = _archive(after_xml, amending_xml=_POS_AMENDING_XML)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _POS_BEFORE_XML
+    row = _FakeWitnessRow(
+        target_path=(("section", "8"),),
+        amended_provision="Section 8",
+        amending_provision_hrefs=("DLMins8pos",),
+    )
+    report = build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    assert report.summary()["dry_run_oracle_agreements"] == 1
+    proof = report.proofs[0]
+    assert proof.insert_anchor_source_path[-1] == "prov:6"
+    assert proof.oracle_match == "agrees"
+
+
+def test_multi_letter_suffix_prefers_prior_in_sequence_predecessor() -> None:
+    # 14AC's predecessor is 14AB (prior in the suffix sequence) when present,
+    # not the stripped 14A. Verified at the derivation level.
+    assert _derive_top_level_insert_anchor("14AC", ("14A", "14AB", "15")) == ("14AB", "after")
+    # Falls back to the stripped label when the prior-in-sequence is absent.
+    assert _derive_top_level_insert_anchor("14AC", ("14A", "15")) == ("14A", "after")
+    # 14AA strips to 14A (no prior-in-sequence since the final letter is A).
+    assert _derive_top_level_insert_anchor("14AA", ("14", "14A")) == ("14A", "after")
 
 
 # =============================================================================
