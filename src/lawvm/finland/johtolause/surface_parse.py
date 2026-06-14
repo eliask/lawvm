@@ -155,6 +155,18 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
     # repeating "<section> laissa <cite>" enumeration where each citation is
     # internal, so its closure must NOT resume the target list.
     seen_surviving_internal_verb = False
+    # True once a date phrase ("N päivänä <month> NNNN", recognised as a NUM
+    # immediately followed by the word "päivänä") is seen while the internal-verb
+    # flag is active.  A date between the internal verb and the closing comma is
+    # the positive hallmark of an ANAPHORIC provenance ("se on [edellä
+    # mainitussa] N päivänä <month> NNNN annetussa asetuksessa,"): it names a
+    # specific dated statute and then resumes the real target list.  The
+    # surviving-verb enumerations this skip must NOT break out of — whether
+    # per-arm-citation ("ovat, 2 §:n ... laissa X ja 10 §:n ... laissa Y") or
+    # bare-number coordination ("niistä ovat, 4, 11, 12 ja 16 §, 18 §:n ...") —
+    # never carry a date in that span.  Requiring the date keeps the anaphoric
+    # exit from firing inside any surviving-verb enumeration.
+    seen_date_after_internal_verb = False
 
     # When citation stripping runs before provenance detection (the normal
     # pipeline), the "kuin ne/se ovat/on ... laissa NNN/YYYY" words between
@@ -208,6 +220,13 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
         if t.text.lower() in _PROV_INTERNAL_VERBS:
             seen_internal_verb = True
             seen_surviving_internal_verb = True
+        if (
+            t.cat == "NUM"
+            and seen_internal_verb
+            and i + 1 < n
+            and tokens[i + 1].text.lower() == "päivänä"
+        ):
+            seen_date_after_internal_verb = True
         # The appositive's closing citation ("... laissa (NNN/YY)") collapses
         # into a CITATION_SPAN sentinel.  Once we pass it, an "ovat ... laissa"
         # provenance phrase whose internal verb survived as a real token can be
@@ -252,6 +271,32 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
                 continue
             if nxt.cat == "NUM" and not seen_internal_verb:
                 # Check if number leads to structural target
+                for k in range(i + 2, min(i + 5, n)):
+                    if tokens[k].cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
+                        i += 1  # consume comma
+                        return i
+                    if tokens[k].cat not in ("NUM", "LETTER", "DASH", "COMMA", "CONJ"):
+                        break
+            # Anaphoric provenance ("..., sellaisena kuin se on [edellä
+            # mainitussa] N päivänä <month> NNNN annetussa asetuksessa, 34 §:n
+            # ...") carries a real internal verb (on/ovat) but its appositive
+            # names a specific dated statute and enumerates no sections of its
+            # own, so it closes with a statute noun and no closing citation.  The
+            # surviving-verb clearing logic above only fires on a real closing
+            # CITATION_SPAN, so this anaphoric span keeps seen_internal_verb set
+            # and swallows the genuine targets that follow.  Exit at the comma
+            # into the next structural target — but ONLY for the anaphoric shape,
+            # identified by the date phrase ("N päivänä ... annettu") between the
+            # internal verb and this comma.  Surviving-verb enumerations carry no
+            # such date, whether per-arm-citation ("ovat, 2 §:n ... laissa X ja
+            # 10 §:n ... laissa Y") or bare-number coordination ("niistä ovat, 4,
+            # 11, 12 ja 16 §, 18 §:n ..."), so requiring the date keeps this exit
+            # from firing inside them.
+            if (
+                nxt.cat == "NUM"
+                and seen_internal_verb
+                and seen_date_after_internal_verb
+            ):
                 for k in range(i + 2, min(i + 5, n)):
                     if tokens[k].cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
                         i += 1  # consume comma
@@ -512,10 +557,30 @@ def _sep(s: Stream) -> Optional[Token]:
     may appear between targets and their separators.
     """
     # Skip tag-not-delete span tokens before the separator
+    sep_start = s.pos
     s.skip_sentinels()
+    skipped_sentinel = s.pos > sep_start
     t = s.peek()
     if t is None:
         return None
+    # A provenance/citation span may carry the list separator INSIDE it when the
+    # comma that delimits two targets was absorbed into the span's leading edge
+    # (anaphoric provenance: "33 §, sellaisena kuin se on ... asetuksessa, 34 §"
+    # tags from the first comma through to just before "34 §").  Here the span
+    # sits directly between two targets with no surrounding comma, so the
+    # ordinary "COMMA" / "CONJ" branches never fire.  When a sentinel was
+    # skipped and the next token begins a fresh structural target (NUM -> § /
+    # luku / liite ...), the sentinel itself is the separator: return it so the
+    # resuming target is not silently dropped.
+    if skipped_sentinel and t.cat == "NUM":
+        for k in range(s.pos + 1, min(s.pos + 4, len(s.tokens))):
+            kt = s.tokens[k]
+            if kt.cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE", "MOMENTTI", "KOHTA"):
+                # The skipped sentinel is the separator; stream already points at
+                # the resuming target's leading NUM.
+                return s.tokens[sep_start]
+            if kt.cat not in ("NUM", "LETTER", "DASH", "CONJ"):
+                break
     if t.cat == "COMMA":
         s.pos += 1
         # A tag-not-delete span (provenance / citation, e.g. "sellaisena kuin
