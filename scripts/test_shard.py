@@ -393,6 +393,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_proof_gate_summary.py",
         "test_self_consistency.py",
         "test_spec_ledger.py",
+        "test_spec_ledger_report.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
