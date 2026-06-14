@@ -878,4 +878,16 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A text patch whose target/source chain has a gap, recorded rather than guessed through.",
     "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient":
         "An unquoted-preimage substitution whose source is insufficient to fix the preimage.",
+    "uk_savings_scoped_omission_claim_validated":  # FLAG(union-merge)
+        "A savings-scoped omission claim's owned scope is well-formed, bound to a real savings-qualified omission effect, and coherent against the target, so it may emit a non-replayable preserved-scope finding.",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_claim_rejected_schema":  # FLAG(union-merge)
+        "A savings-scoped omission claim is rejected because its kind/ids/target/omitted-text/anchor/saving-basis/scope/snippet schema is malformed.",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_claim_rejected_source_mismatch":  # FLAG(union-merge)
+        "A savings-scoped omission claim is rejected because its source snippet or bound effect is not a real savings-qualified text omission, blocking free-form or unconditional-omission overrides.",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_claim_rejected_scope":  # FLAG(union-merge)
+        "A savings-scoped omission claim is rejected because its saving scope predicate is not anchored to the saving clause, not distinct from the omitted span, or (for the cross-reference basis) names no reference target.",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_preserved_scope_finding":  # FLAG(union-merge)
+        "A validated savings-scoped omission claim emits a non-replayable typed finding recording the saving's preserved scope, leaving the affected base text intact (the safe under-application default; never a silent over-omission).",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_finding_withheld_unvalidated":  # FLAG(union-merge)
+        "An unvalidated savings-scoped omission claim withholds its preserved-scope finding, so the omission stays on the manual frontier byte-unchanged.",  # FLAG(union-merge)
 }

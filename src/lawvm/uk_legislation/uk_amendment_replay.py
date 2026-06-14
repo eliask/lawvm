@@ -104,6 +104,11 @@ from lawvm.uk_legislation.appropriate_place_claim import (
     gate_appropriate_place_insert,
     validate_appropriate_place_claim,
 )
+from lawvm.uk_legislation.savings_omission_claim import (  # FLAG(union-merge)
+    SavingsScopedOmissionClaim,  # FLAG(union-merge)
+    gate_savings_scoped_omission_claim,  # FLAG(union-merge)
+    validate_savings_scoped_omission_claim,  # FLAG(union-merge)
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -293,6 +298,9 @@ class UKReplayPipeline:
         deixis_application_claims: Optional[
             "Sequence[DeixisInApplicationClaim]"
         ] = None,
+        savings_omission_claims: Optional[  # FLAG(union-merge)
+            "Sequence[SavingsScopedOmissionClaim]"  # FLAG(union-merge)
+        ] = None,  # FLAG(union-merge)
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -413,6 +421,32 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(dx_validation.to_dict())
                 if dx_validation.validated:
                     validated_deixis_application_claims[str(dx_claim.effect_id)] = dx_claim
+
+        # §savings_omission: build an index of VALIDATED savings-scoped omission  # FLAG(union-merge)
+        # claims by bound effect_id. Opt-in and symmetric with the indices above:  # FLAG(union-merge)
+        # with no claims authored the index is empty and the loop below emits no  # FLAG(union-merge)
+        # finding — the savings-qualified omission stays on the manual frontier  # FLAG(union-merge)
+        # byte-unchanged. Each claim is validated against the bound effect  # FLAG(union-merge)
+        # (savings-omission source-binding via the source_adjudication classifier  # FLAG(union-merge)
+        # + scope-consistency) before it can emit. The gate emits ONLY a non-  # FLAG(union-merge)
+        # replayable typed finding (never a text op): the safe default is under-  # FLAG(union-merge)
+        # application, NEVER a silent over-omission.  # FLAG(union-merge)
+        validated_savings_omission_claims: dict[str, SavingsScopedOmissionClaim] = {}  # FLAG(union-merge)
+        if savings_omission_claims:  # FLAG(union-merge)
+            effect_by_id_sv = {  # FLAG(union-merge)
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")  # FLAG(union-merge)
+            }  # FLAG(union-merge)
+            for sv_claim in savings_omission_claims:  # FLAG(union-merge)
+                if sv_claim.statute_id and sv_claim.statute_id != affected_act_id:  # FLAG(union-merge)
+                    continue  # FLAG(union-merge)
+                bound_effect = effect_by_id_sv.get(str(sv_claim.effect_id))  # FLAG(union-merge)
+                sv_validation = validate_savings_scoped_omission_claim(  # FLAG(union-merge)
+                    sv_claim, effect=bound_effect  # FLAG(union-merge)
+                )  # FLAG(union-merge)
+                if effect_diagnostics_out is not None:  # FLAG(union-merge)
+                    effect_diagnostics_out.append(sv_validation.to_dict())  # FLAG(union-merge)
+                if sv_validation.validated:  # FLAG(union-merge)
+                    validated_savings_omission_claims[str(sv_claim.effect_id)] = sv_claim  # FLAG(union-merge)
 
         replayable = list(effects)
         if pit_date:
@@ -604,6 +638,20 @@ class UKReplayPipeline:
                         effect_diagnostics_out.append(dx_gate.to_dict())
                         if dx_gate.emitted and dx_gate.finding is not None:
                             effect_diagnostics_out.append(dx_gate.finding.to_dict())
+                # §savings_omission: a validated, bound savings-scoped omission  # FLAG(union-merge)
+                # claim records the saving's preserved scope and emits a NON-  # FLAG(union-merge)
+                # replayable typed finding to the diagnostics stream. It NEVER  # FLAG(union-merge)
+                # mutates ``compiled`` (no text op): the base text is left intact,  # FLAG(union-merge)
+                # the safe under-application default — never a silent over-omission.  # FLAG(union-merge)
+                # Absent a claim the index is empty and nothing is emitted, so  # FLAG(union-merge)
+                # replay is byte-unchanged.  # FLAG(union-merge)
+                sv_claim = validated_savings_omission_claims.get(str(e.effect_id))  # FLAG(union-merge)
+                if sv_claim is not None:  # FLAG(union-merge)
+                    sv_gate = gate_savings_scoped_omission_claim(sv_claim, validated=True)  # FLAG(union-merge)
+                    if effect_diagnostics_out is not None:  # FLAG(union-merge)
+                        effect_diagnostics_out.append(sv_gate.to_dict())  # FLAG(union-merge)
+                        if sv_gate.emitted and sv_gate.finding is not None:  # FLAG(union-merge)
+                            effect_diagnostics_out.append(sv_gate.finding.to_dict())  # FLAG(union-merge)
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before
