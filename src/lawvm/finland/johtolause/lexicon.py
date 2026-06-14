@@ -282,8 +282,14 @@ _RANGE_RE = re.compile(rf"^(\d+)\s*{_DASH_CLASS}\s*(\d+)$")  # 21\u201323
 _ROMAN_RE = re.compile(r"^[IVXLCDM]+$")
 _LETTER_RE = re.compile(r"^[a-z]$")
 _NUM_RE = re.compile(r"^\d+$")
+# NB: the dash alternatives use ``{_DASH_CLASS}+`` (one-or-more) so a doubled
+# ASCII hyphen ``--`` (a Finlex/OCR variant of an en-dash range, e.g.
+# ``21--23 \u00a7``) splits as a single range delimiter.  With a single dash the
+# first ``-`` failed its ``(?=[\d\s])`` lookahead on the following ``-`` and the
+# whole ``21--23`` collapsed into one opaque WORD token, truncating the
+# enclosing target-list (1978/612, 2004/1172, 1975/319 ...).
 _SPLIT_RE = re.compile(
-    rf"(\s+|,|;|:(?=[^a-z\u00e4\u00f6\u00e5\u00a7])|[()]|\u00a7(?!:)|\u00a7:[a-z\u00e4\u00f6\u00e5]+|(?<=[a-z\u00e4\u00f6\u00e50-9]){_DASH_CLASS}(?=[\d\s])|(?<=\s){_DASH_CLASS}(?=\d)|\d+/+\d{{2,4}}\)?)"
+    rf"(\s+|,|;|:(?=[^a-z\u00e4\u00f6\u00e5\u00a7])|[()]|\u00a7(?!:)|\u00a7:[a-z\u00e4\u00f6\u00e5]+|(?<=[a-z\u00e4\u00f6\u00e50-9]){_DASH_CLASS}+(?=[\d\s])|(?<=\s){_DASH_CLASS}+(?=\d)|\d+/+\d{{2,4}}\)?)"
 )
 # Genitive number pattern: "1:n" \u2192 NUM with genitive flag
 _GEN_NUM_RE = re.compile(r"^(\d+):n$")

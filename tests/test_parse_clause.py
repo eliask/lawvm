@@ -1652,6 +1652,20 @@ def test_parse_clause_chapter_heading_insert_can_continue_to_section_range() -> 
     assert codes.count("L P L:3 18") == 1
 
 
+def test_double_hyphen_section_range_does_not_truncate_the_list() -> None:
+    """``21--23 §`` (doubled ASCII hyphen) must tokenize as a range, not a WORD.
+
+    Regression for 1978/612: the Finlex source wrote the en-dash range
+    ``21--23 §`` with two ASCII hyphens.  The lexer collapsed ``21--23`` into a
+    single opaque WORD (the single-dash split's lookahead failed on the second
+    hyphen), so the target-list continuation broke and every target after it —
+    ``24 §:n 1 ja 2 momentti, 25 ja 27 §, ...`` — was silently dropped.  A run
+    of dash characters now splits as one DASH delimiter.
+    """
+    codes = [op.code() for op in parse_clause("muutetaan 19, 21--23 §, 24 §").parsed_ops]
+    assert codes == ["M P 19", "M P 21", "M P 22", "M P 23", "M P 24"], codes
+
+
 def test_parse_clause_multi_target_heading_arm_does_not_truncate_enumeration() -> None:
     """``<list/range> §:n edelle uusi väliotsikko`` must not abort the parse.
 
