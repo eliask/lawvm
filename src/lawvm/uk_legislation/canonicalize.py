@@ -102,10 +102,15 @@ def canonicalize_compare_eid(eid: str) -> str:
     ``_COMPARE_ROMAN_NUMBERED_KINDS``, only when UPPERCASE), so leaf labels like a
     paragraph ``(iv)`` and lettered schedules (``schedule-C``) are left untouched.
 
+    A cosmetic trailing dot on a label token (the oracle renders ``part-I.`` /
+    ``section-14.`` where the enacted text has ``part-I`` / ``section-14``) is a
+    number-formatting artifact, not a real difference, so it is stripped per token
+    before matching.
+
     Comparison-layer only: this never changes compiled or materialized eIds, only
     how two eId sets are matched when scoring against the oracle.
     """
-    tokens = eid.split("-")
+    tokens = [t[:-1] if t.endswith(".") else t for t in eid.split("-")]
     out: list[str] = []
     i = 0
     n = len(tokens)

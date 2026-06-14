@@ -39,6 +39,17 @@ def test_leaf_labels_and_letters_preserved():
     assert canonicalize_compare_eid("section-IIA") == "section-IIA"
 
 
+def test_cosmetic_trailing_dot_stripped():
+    # The oracle renders "part-I." / "section-14." where the enacted text has
+    # "part-I" / "section-14"; the trailing dot is a formatting artifact.
+    assert canonicalize_compare_eid("part-I.") == "part-1"
+    assert canonicalize_compare_eid("section-14.") == "section-14"
+    # An internal dot (decimal-style numbering) is NOT touched.
+    assert canonicalize_compare_eid("section-1.10.") == "section-1.10"
+    assert _score_eids({"part-I."}, {"part-1"}) == 1.0
+    assert _score_eids({"section-14."}, {"section-14"}) == 1.0
+
+
 def test_score_is_numbering_scheme_invariant():
     # The headline fix: a Roman-numbered Act scores common with its Arabic oracle.
     enacted = {"section-I", "section-II", "section-LIX"}
