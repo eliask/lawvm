@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from typing import Any, cast
+
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
 
@@ -14,6 +17,8 @@ from lawvm.norway.sources import ingest_no_public_archives
 from lawvm.norway.verify import (
     NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED,
     _infer_no_source_signal,
+    _no_compare_child_path,
+    _no_kind_value,
     _normalize_no_compare_tree,
     _partition_primary_divergences,
     no_paths_related,
@@ -317,6 +322,25 @@ def test_infer_no_source_signal_leaves_real_two_amendment_case_unclassified() ->
         )
         is None
     )
+
+
+def test_no_kind_value_coerces_enum_kind() -> None:
+    assert _no_kind_value(IRNodeKind.SENTENCE) == "sentence"
+
+
+def test_no_kind_value_coerces_plain_str_kind() -> None:
+    # Some parse paths that build the comparison tree assign a plain str kind
+    # rather than the IRNodeKind enum member; the compare/verify path must
+    # tolerate both (regression for the _no_kind_value str-vs-enum crash).
+    assert _no_kind_value(cast(Any, "sentence")) == "sentence"
+
+
+def test_no_kind_value_does_not_crash_in_child_path_with_str_kind() -> None:
+    # IRNode.kind is statically typed IRNodeKind, but the comparison tree can
+    # carry a plain str kind at runtime; exercise that shape end-to-end.
+    child = IRNode(kind=cast(Any, "sentence"), label="1", text="x")
+    path = _no_compare_child_path((), child)
+    assert path == (("sentence", "1"),)
 
 
 def test_no_paths_related_treats_last_item_anchor_as_touching_concrete_item() -> None:

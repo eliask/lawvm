@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.ir import IRNode, IRStatute
+from lawvm.core.ir_helpers import kind_str
 from lawvm.core.mutation_boundary import (
     TreePath,
     normalize_tree_path_for_relation,
@@ -265,8 +266,12 @@ def _infer_no_source_signal(
     return None
 
 
-def _no_kind_value(kind: IRNodeKind) -> str:
-    return kind.value
+def _no_kind_value(kind: IRNodeKind | str) -> str:
+    # IRNode.kind is annotated IRNodeKind, but parse paths that build the
+    # comparison tree may assign a plain str (e.g. "sentence") rather than the
+    # enum member. Mirror the canonical core.ir_helpers.kind_str coercion so the
+    # Norway compare/verify path tolerates both forms.
+    return kind_str(kind)
 
 
 def _append_no_compare_projection(
