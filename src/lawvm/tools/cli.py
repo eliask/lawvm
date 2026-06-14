@@ -8076,6 +8076,50 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_replay_actual_p = nz_corpus_sub.add_parser(
+        "replay-actual",
+        help="strict actual (canonical) replay of dry-run-verified ops, fail-closed",
+        description=(
+            "Phase-4 actual replay. Consume ONLY operations the dry-run surface "
+            "already verified (a per-op mutation-boundary proof that agrees with "
+            "the archived on-or-after oracle AND preserved its neighbours), "
+            "materialize ONE transition at a time as (archived before version) + "
+            "(authorized ops) -> (candidate after version), and re-confirm the "
+            "materialized target slice against the archived on-or-after oracle. "
+            "It FAILS CLOSED: a declared transition is materialized only when "
+            "EVERY op in its change window is dry-run-verified; any unverified op "
+            "blocks the whole transition with a distinct named diagnostic and "
+            "nothing is materialized for it (never a silent skip). Only the two "
+            "safest families are promotable: direct repeal and direct "
+            "single-occurrence text substitution. The output is a separate "
+            "artifact from the official NZ XML, labeled candidate/replay/oracle; "
+            "the archived oracle is what the replay is checked against, never the "
+            "replay's payload authority. The actually-replayed transition count "
+            "is reported separately from the fail-closed-blocked candidate rows. "
+            "This is the only NZ surface where replay_claims is True."
+        ),
+    )
+    nz_replay_actual_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_actual_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_replay_actual_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "promotable families to actually replay: 'all' (default; repeal + "
+            "text_replace), or a comma-separated subset (e.g. 'repeal'). Only "
+            "repeal and text_replace are promotable; any other family is rejected."
+        ),
+    )
+    nz_replay_actual_p.add_argument(
+        "--summary-only", action="store_true", help="omit per-transition/per-refusal detail from JSON"
+    )
+    nz_replay_actual_p.add_argument("--json", action="store_true", help="emit actual-replay report JSON")
     nz_replay_chain_p = nz_corpus_sub.add_parser(
         "replay-chain",
         help="experimental amendment-chain replay (all families) on one evolving tree vs the archived oracle",
@@ -11711,6 +11755,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "replay-actual":
+            from lawvm.new_zealand.actual_replay import main as nz_corpus_replay_actual_main
+
+            nz_corpus_replay_actual_main(args)
         elif args.nz_corpus_command == "replay-chain":
             from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
 

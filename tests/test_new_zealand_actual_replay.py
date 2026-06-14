@@ -1,0 +1,423 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
+from lawvm.core.provenance import OperationSource
+from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
+from lawvm.new_zealand.actual_replay import (
+    NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+    NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
+    NZ_ACTUAL_REPLAY_SLICE_AGREES_RULE_ID,
+    build_actual_replay,
+)
+from lawvm.new_zealand.effect_candidates import (
+    NZCanonicalEffectCandidateReport,
+    NZCanonicalEffectCandidateRow,
+    build_effect_candidate_preflight,
+)
+
+
+_WORK_ID = "act_public_2005_87"
+_BEFORE_VERSION = "act_public_2005_87_en_2017-04-19"
+_AFTER_VERSION = "act_public_2005_87_en_2019-10-24"
+
+# Before: section 108 substantive (repeal target); section 110(1) carries a
+# phrase once (text-replace target); siblings 109 / 110(2) untouched.
+_BEFORE_XML = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>No review</heading>
+      <prov.body><para><text>Old section 108 text.</text></para></prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+    <prov id="DLM360604" deletion-status=""><label>110</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360604s1"><label>1</label><para><text>An application must be in the prescribed form.</text></para></subprov>
+        <subprov id="DLM360604s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+  </body>
+</act>
+"""
+
+# Oracle (on-or-after) reflects the window changes:
+#   108 -> repealed tombstone, body text erased (NZ consolidation convention).
+#          The boring repeal kernel agrees in DIRECTION (tombstone) even though
+#          the oracle additionally erased the body text.
+#   110(1) -> "prescribed form" substituted with "approved form".
+#   109 / 110(2) -> untouched.
+_AFTER_XML = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status="repealed"><label>108</label><heading>No review</heading>
+      <prov.body></prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+    <prov id="DLM360604" deletion-status=""><label>110</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360604s1"><label>1</label><para><text>An application must be in the approved form.</text></para></subprov>
+        <subprov id="DLM360604s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+  </body>
+</act>
+"""
+
+# A divergent oracle where the repeal path is NOT a tombstone (section 108 stays
+# substantive). The repeal op cannot be dry-run-verified against this oracle, so
+# actual replay must FAIL CLOSED on the transition.
+_AFTER_XML_REPEAL_DIVERGES = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>No review</heading>
+      <prov.body><para><text>Section 108 was never repealed in this oracle.</text></para></prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+    <prov id="DLM360604" deletion-status=""><label>110</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360604s1"><label>1</label><para><text>An application must be in the approved form.</text></para></subprov>
+        <subprov id="DLM360604s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+  </body>
+</act>
+"""
+
+
+class _FakeArchive:
+    def __init__(self, rows: dict[str, bytes]) -> None:
+        self.rows = rows
+
+    def get(self, locator: str, *, at: object | None = None) -> bytes | None:
+        return self.rows.get(locator)
+
+    def locators(self, pattern: str = "%") -> list[str]:
+        prefix = pattern[:-1] if pattern.endswith("%") else pattern
+        return sorted(locator for locator in self.rows if locator.startswith(prefix))
+
+    def close(self) -> None:
+        pass
+
+
+def _version_detail(version_id: str, date: str) -> bytes:
+    return json.dumps(
+        {
+            "version_id": version_id,
+            "formats": [
+                {
+                    "type": "xml",
+                    "url": f"https://www.legislation.govt.nz/act/public/2005/87/en/{date}.xml",
+                }
+            ],
+        }
+    ).encode()
+
+
+def _archive(after_xml: bytes = _AFTER_XML) -> _FakeArchive:
+    return _FakeArchive(
+        {
+            f"https://api.legislation.govt.nz/v0/versions/{_BEFORE_VERSION}/": _version_detail(
+                _BEFORE_VERSION, "2017-04-19"
+            ),
+            "https://www.legislation.govt.nz/act/public/2005/87/en/2017-04-19.xml": _BEFORE_XML,
+            f"https://api.legislation.govt.nz/v0/versions/{_AFTER_VERSION}/": _version_detail(
+                _AFTER_VERSION, "2019-10-24"
+            ),
+            "https://www.legislation.govt.nz/act/public/2005/87/en/2019-10-24.xml": after_xml,
+        }
+    )
+
+
+def _repeal_operation() -> LegalOperation:
+    return LegalOperation(
+        op_id=f"nz:{_WORK_ID}:nz-opw-1:repeal",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "108"),)),
+        payload=None,
+        source=OperationSource(statute_id="act_public_2019_5", effective="2019-10-24"),
+        provenance_tags=("new_zealand", "history_note", "candidate_only", "not_replayed"),
+        witness_rule_id="nz_repeal_candidate_from_history_note_payload_witness",
+    )
+
+
+def _repeal_row() -> NZCanonicalEffectCandidateRow:
+    return NZCanonicalEffectCandidateRow(
+        row_id="nz-effect-candidate-1",
+        operation_row_id="nz-opw-1",
+        effect_readiness_row_id="nz-readiness-1",
+        status="candidate_emitted",
+        action=str(StructuralAction.REPEAL),
+        target_address="section:108",
+        operation=_repeal_operation(),
+        source_path=("prov:108",),
+        amendment_date_iso="2019-10-24",
+        repeal_payload_corroboration_status="not_required_non_direct_repeal_payload",
+        latest_oracle_target_resolution_status="",
+    )
+
+
+def _text_replace_operation() -> LegalOperation:
+    return LegalOperation(
+        op_id=f"nz:{_WORK_ID}:nz-opw-2:text_replace",
+        sequence=2,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "110"), ("subsection", "1"))),
+        payload=None,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="the prescribed form", occurrence=1),
+            replacement="the approved form",
+        ),
+        source=OperationSource(statute_id="act_public_2019_5", effective="2019-10-24"),
+        provenance_tags=("new_zealand", "history_note", "candidate_only", "not_replayed"),
+        witness_rule_id="nz_text_replace_candidate_from_direct_instruction_workqueue",
+    )
+
+
+def _text_replace_row() -> NZCanonicalEffectCandidateRow:
+    return NZCanonicalEffectCandidateRow(
+        row_id="nz-effect-candidate-2",
+        operation_row_id="nz-opw-2",
+        effect_readiness_row_id="nz-readiness-2",
+        status="candidate_emitted",
+        action=str(StructuralAction.TEXT_REPLACE),
+        target_address="section:110/subsection:1",
+        operation=_text_replace_operation(),
+        amendment_date_iso="2019-10-24",
+        operation_family="amended",
+        old_text="the prescribed form",
+        new_text="the approved form",
+        latest_oracle_target_resolution_status="exact_source_path",
+    )
+
+
+def _preflight(rows: tuple[NZCanonicalEffectCandidateRow, ...]):
+    report = NZCanonicalEffectCandidateReport(work_id=_WORK_ID, rows=rows)
+    return build_effect_candidate_preflight(report)
+
+
+# --- 1. Happy path: verified ops materialize and the slice agrees -----------
+
+
+def test_actual_replay_materializes_verified_transition_and_slice_agrees() -> None:
+    report = build_actual_replay(
+        _archive(),
+        work_id=_WORK_ID,
+        preflight=_preflight((_repeal_row(), _text_replace_row())),
+    )
+    summary = report.summary()
+
+    # Both families' ops were dry-run-verified and live in the same window, so a
+    # single transition is ACTUALLY replayed with two ops; nothing is refused.
+    assert summary["transitions_replayed"] == 1
+    assert summary["transitions_refused"] == 0
+    assert summary["ops_replayed"] == 2
+    assert summary["target_slice_agreements"] == 2
+    assert summary["all_slices_agree"] is True
+    # This is the one NZ surface where replay_claims is True.
+    assert summary["replay_claims"] is True
+    assert summary["dry_run_claims"] is False
+
+    transition = report.transitions[0]
+    # Temporal witnesses: the materialized after came from the archived before
+    # snapshot and is checked against the archived on-or-after snapshot.
+    assert transition.before_version_id == "act_public_2005_87_en_2017-04-19"
+    assert transition.oracle_version_id == "act_public_2005_87_en_2019-10-24"
+    assert transition.amendment_date_iso == "2019-10-24"
+    assert transition.target_slice_agrees is True
+
+    # The materialized after-document is the actual replay output (a separate
+    # artifact). The repeal target became a tombstone; the text-replace target
+    # carries the substituted text. Other nodes are untouched.
+    after_by_path = {node.path: node for node in transition.materialized_after.nodes}
+    assert after_by_path[("prov:108",)].deletion_status == "repealed"
+    assert "the approved form" in after_by_path[("prov:110", "subprov:1")].text
+    assert "the prescribed form" not in after_by_path[("prov:110", "subprov:1")].text
+    assert "The Registrar keeps the register." in after_by_path[("prov:110", "subprov:2")].text
+
+
+# --- 2. Labels / claims / forbidden shortcuts -------------------------------
+
+
+def test_actual_replay_surface_is_labeled_actual_replay_not_dry_run() -> None:
+    report = build_actual_replay(
+        _archive(), work_id=_WORK_ID, preflight=_preflight((_repeal_row(),))
+    )
+    payload = report.to_jsonable()
+
+    assert payload["report_kind"] == "actual_replay"
+    assert payload["replay_claims"] is True
+    assert payload["dry_run_claims"] is False
+    assert payload["fail_closed"] is True
+    assert "oracle_consolidation_view_as_replay_payload_authority" in payload["forbidden_shortcuts"]
+    assert "blocked_candidate_row_as_replayed_transition" in payload["forbidden_shortcuts"]
+
+    surface = report.agreement_surface()
+    assert surface["agreement_surface"] == "nz_actual_replay"
+    # Actually-reconstructed legal state, NOT a proposed_future_branch candidate.
+    assert surface["materialization_kind"] == "legal_text_state"
+    assert surface["comparison_materialization_kind"] == "official_consolidation_view"
+    assert all(residual["owner_phase"] == "actual_replay" for residual in surface["residuals"])
+    assert all(
+        residual["rule_id"] == NZ_ACTUAL_REPLAY_SLICE_AGREES_RULE_ID
+        for residual in surface["residuals"]
+    )
+
+
+# --- 3. FAIL CLOSED: an unverified op blocks the whole transition -----------
+
+
+def test_actual_replay_fails_closed_when_a_declared_op_does_not_verify() -> None:
+    # The repeal op's dry-run proof will NOT agree (oracle keeps 108 substantive),
+    # so the whole transition is blocked and NOTHING is materialized — even though
+    # the text-replace op in the same window would verify on its own.
+    report = build_actual_replay(
+        _archive(after_xml=_AFTER_XML_REPEAL_DIVERGES),
+        work_id=_WORK_ID,
+        preflight=_preflight((_repeal_row(), _text_replace_row())),
+    )
+    summary = report.summary()
+
+    assert summary["transitions_replayed"] == 0
+    assert summary["ops_replayed"] == 0
+    assert summary["transitions_refused"] >= 1
+    # No actual-replay claim survives a fail-closed refusal of the transition.
+    assert summary["replay_claims"] is False
+
+    # The refusal is a DISTINCT NAMED diagnostic, never a silent skip.
+    refusal_rules = {refusal.rule_id for refusal in report.refusals}
+    assert NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID in refusal_rules
+    # The same-window verified text-replace op is reported as part of the blocked
+    # transition (never partially materialized).
+    assert NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID in refusal_rules
+
+    # The blocked declared transition keeps the repeal op id; the verified
+    # sibling op id appears in the "whole transition blocked" refusal.
+    residual_refusal = next(
+        refusal
+        for refusal in report.refusals
+        if refusal.rule_id == NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID
+    )
+    assert residual_refusal.op_ids == (f"nz:{_WORK_ID}:nz-opw-1:repeal",)
+    sibling_block = next(
+        refusal
+        for refusal in report.refusals
+        if refusal.rule_id == NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID
+    )
+    assert sibling_block.op_ids == (f"nz:{_WORK_ID}:nz-opw-2:text_replace",)
+
+
+def test_replayed_count_is_separable_from_blocked_candidate_rows() -> None:
+    # Replayed-transition count and fail-closed-blocked count are always
+    # separately reported, so actually-replayed work never hides behind blocked
+    # candidate rows.
+    blocked = build_actual_replay(
+        _archive(after_xml=_AFTER_XML_REPEAL_DIVERGES),
+        work_id=_WORK_ID,
+        preflight=_preflight((_repeal_row(), _text_replace_row())),
+    )
+    assert blocked.summary()["transitions_replayed"] == 0
+    assert blocked.summary()["transitions_refused"] > 0
+
+    clean = build_actual_replay(
+        _archive(), work_id=_WORK_ID, preflight=_preflight((_repeal_row(), _text_replace_row()))
+    )
+    assert clean.summary()["transitions_replayed"] == 1
+    assert clean.summary()["transitions_refused"] == 0
+
+
+# --- 4. FAIL CLOSED: a dry-run refusal blocks the op ------------------------
+
+
+def test_actual_replay_fails_closed_on_target_recovered_op() -> None:
+    # A target-recovered repeal candidate is refused by the dry-run kernel; it
+    # must never be promoted to actual replay.
+    recovered = _repeal_row()
+    recovered = NZCanonicalEffectCandidateRow(
+        row_id=recovered.row_id,
+        operation_row_id=recovered.operation_row_id,
+        effect_readiness_row_id=recovered.effect_readiness_row_id,
+        status=recovered.status,
+        action=recovered.action,
+        target_address=recovered.target_address,
+        operation=recovered.operation,
+        source_path=recovered.source_path,
+        amendment_date_iso=recovered.amendment_date_iso,
+        repeal_payload_corroboration_status=recovered.repeal_payload_corroboration_status,
+        latest_oracle_target_resolution_status="recovered_by_label",
+    )
+    report = build_actual_replay(
+        _archive(), work_id=_WORK_ID, preflight=_preflight((recovered,))
+    )
+    summary = report.summary()
+    assert summary["transitions_replayed"] == 0
+    assert summary["transitions_refused"] >= 1
+    assert summary["replay_claims"] is False
+    # Distinct named diagnostic, not a silent drop.
+    assert NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID in {
+        refusal.rule_id for refusal in report.refusals
+    }
+
+
+# --- 5. Non-promotable family is rejected -----------------------------------
+
+
+def test_actual_replay_rejects_non_promotable_family() -> None:
+    with pytest.raises(ValueError, match="not promotable"):
+        build_actual_replay(
+            _archive(),
+            work_id=_WORK_ID,
+            preflight=_preflight((_repeal_row(),)),
+            families=("replace",),
+        )
+
+
+def test_actual_replay_repeal_only_family_subset() -> None:
+    report = build_actual_replay(
+        _archive(),
+        work_id=_WORK_ID,
+        preflight=_preflight((_repeal_row(), _text_replace_row())),
+        families=("repeal",),
+    )
+    summary = report.summary()
+    assert summary["families"] == ["repeal"]
+    assert summary["transitions_replayed"] == 1
+    assert summary["ops_replayed"] == 1
+
+
+# --- 6. Real archive canary -------------------------------------------------
+
+
+_REAL_DB = (
+    Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT") or Path(__file__).resolve().parents[1])
+    / "data"
+    / "nz_legislation.farchive"
+)
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+def test_actual_replay_canary_replays_transitions_against_archived_oracle() -> None:
+    from lawvm.new_zealand.actual_replay import build_archived_work_actual_replay
+
+    report = build_archived_work_actual_replay(_REAL_DB, _WORK_ID)
+    summary = report.summary()
+
+    # The canary actually replays its verified repeal transitions from archived
+    # inputs only, and every materialized target slice agrees with the archived
+    # on-or-after oracle.
+    assert summary["transitions_replayed"] >= 1
+    assert summary["ops_replayed"] >= 1
+    assert summary["all_slices_agree"] is True
+    assert summary["target_slice_agreements"] == summary["target_slice_nodes"]
+    assert summary["replay_claims"] is True
+    assert summary["dry_run_claims"] is False
+
+    # Oracle agreement consumes the replay OUTPUT (the materialized after-tree),
+    # not a hand-picked candidate XML.
+    for transition in report.transitions:
+        assert transition.materialized_after is not None
+        assert transition.materialized_node_count > 0
+        assert transition.target_slice_agrees is True
