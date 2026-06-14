@@ -1,0 +1,530 @@
+"""lawvm bench -j nz — New Zealand actual (canonical) replay benchmark.
+
+This scores the **actual replay** surface (``build_archived_work_actual_replay``),
+the single NZ surface where ``replay_claims`` is ``True``. For each curated work
+it materializes every transition whose change window is fully dry-run-verified,
+then scores the materialized after-tree against the archived on-or-after oracle
+with a FI-style **dual similarity** (text + tree), reusing the existing NZ
+primitives — it invents no new metric:
+
+* text similarity  : ``core.evidence_support.section_similarity`` over the union
+  of node paths (the ``combined_similarity`` track of ``chain_replay``).
+* tree similarity  : the path-Jaccard / stable combined-similarity track of
+  ``chain_replay._similarity_point`` (positional/identity churn collapsed).
+
+Both are computed by reusing ``chain_replay._similarity_point`` directly on the
+materialized after-document vs the re-parsed archived oracle document.
+
+Reporting is deliberately **multi-lane** and never flattens coverage into the
+similarity headline. A high similarity over a tiny replayed fraction must not
+look like broad success, so the score is always reported ALONGSIDE the replayed
+fraction. The coverage lanes are kept separate and prominent:
+
+* transitions actually replayed (the strict, fail-closed count),
+* transitions fail-closed-blocked (refused: a declared transition whose window
+  contained an unverified op), split into:
+    - verification-failed   : a proof was formed but it disagreed with the oracle
+      (or perturbed a neighbour), and
+    - refusal-blocked       : the dry-run kernel declined to even form a
+      candidate (payload-not-extractable / anchor-not-derivable / target absent),
+* families requested but not attempted (e.g. a structural family with no
+  operation surface).
+
+A REPORT-ONLY extra lane, **would-replay-if-refusals-ignored**, exposes the
+conservatism: how many additional transitions WOULD materialize if the dry-run
+REFUSAL-blocked ops in a window (ops the kernel declined to even form a candidate
+for) were treated as not-declared rather than blocking, while
+verification-failed ops keep blocking. This NEVER materializes those transitions
+and NEVER weakens the fail-closed contract — the strict replayed count above is
+untouched. It only counts the windows that are blocked *solely* by refusals.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from lawvm.new_zealand.acquisition import open_farchive
+from lawvm.new_zealand.actual_replay import (
+    NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES,
+    NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+    NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID,
+    NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
+    NZActualReplayReport,
+    build_actual_replay,
+)
+from lawvm.new_zealand.chain_replay import _similarity_point
+from lawvm.new_zealand.dry_run import _parse_archived_version
+from lawvm.new_zealand.effect_candidates import (
+    build_archived_work_effect_candidate_preflight,
+)
+from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+from lawvm.new_zealand.version_diff import archived_xml_version_change_window
+
+_DEFAULT_DB = Path("data/nz_legislation.farchive")
+_DEFAULT_CORPUS = Path("data/nz/bench_corpus.csv")
+_SMOKE_CORPUS = Path("data/nz/bench_corpus_smoke.csv")
+
+# Refusal rule ids whose presence in a window means a proof WAS formed but failed
+# verification (oracle disagreed or a neighbour was perturbed). These keep
+# blocking even in the would-replay-if-refusals-ignored lane — only the kernel's
+# "declined to form a candidate" refusals are the conservatism that lane exposes.
+_VERIFICATION_FAILED_REFUSAL_RULE_IDS = frozenset(
+    {
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_NEIGHBOURS_PERTURBED_RULE_ID,
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Corpus loading
+# ---------------------------------------------------------------------------
+
+
+def _load_corpus(csv_path: Path, max_works: int | None) -> list[str]:
+    """Load work_ids from a curated NZ bench corpus CSV (in file order)."""
+    work_ids: list[str] = []
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None or "work_id" not in reader.fieldnames:
+            raise ValueError(
+                f"NZ bench corpus {csv_path} is missing a 'work_id' column "
+                f"(found {reader.fieldnames})"
+            )
+        for row in reader:
+            wid = (row.get("work_id") or "").strip()
+            if wid:
+                work_ids.append(wid)
+    if max_works is not None and max_works > 0:
+        work_ids = work_ids[:max_works]
+    return work_ids
+
+
+# ---------------------------------------------------------------------------
+# Per-work scoring
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _TransitionScore:
+    amendment_date_iso: str
+    text_similarity: float
+    tree_similarity: float
+    tree_similarity_stable: float
+    path_jaccard: float
+    slice_node_count: int
+    slice_agreements: int
+    ops: int
+
+
+@dataclass
+class _WorkResult:
+    work_id: str
+    families: tuple[str, ...]
+    status: str
+    transitions_replayed: int
+    transitions_refused: int
+    ops_replayed: int
+    slice_nodes: int
+    slice_agreements: int
+    all_slices_agree: bool
+    # Coverage lanes (kept separate — never folded into the similarity headline).
+    refusals_verification_failed: int
+    refusals_refusal_blocked: int
+    families_not_attempted: int
+    # REPORT-ONLY conservatism lane.
+    would_replay_if_refusals_ignored: int
+    # Dual similarity over actually-replayed transitions.
+    text_similarity: float
+    tree_similarity: float
+    tree_similarity_stable: float
+    transition_scores: list[_TransitionScore] = field(default_factory=list)
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "work_id": self.work_id,
+            "families": list(self.families),
+            "status": self.status,
+            "transitions_replayed": self.transitions_replayed,
+            "transitions_refused": self.transitions_refused,
+            "ops_replayed": self.ops_replayed,
+            "target_slice_nodes": self.slice_nodes,
+            "target_slice_agreements": self.slice_agreements,
+            "all_slices_agree": self.all_slices_agree,
+            "refusals_verification_failed": self.refusals_verification_failed,
+            "refusals_refusal_blocked": self.refusals_refusal_blocked,
+            "families_not_attempted": self.families_not_attempted,
+            "would_replay_if_refusals_ignored": self.would_replay_if_refusals_ignored,
+            "text_similarity": round(self.text_similarity, 6),
+            "tree_similarity": round(self.tree_similarity, 6),
+            "tree_similarity_stable": round(self.tree_similarity_stable, 6),
+            "transition_scores": [
+                {
+                    "amendment_date_iso": ts.amendment_date_iso,
+                    "text_similarity": round(ts.text_similarity, 6),
+                    "tree_similarity": round(ts.tree_similarity, 6),
+                    "tree_similarity_stable": round(ts.tree_similarity_stable, 6),
+                    "path_jaccard": round(ts.path_jaccard, 6),
+                    "slice_node_count": ts.slice_node_count,
+                    "slice_agreements": ts.slice_agreements,
+                    "ops": ts.ops,
+                }
+                for ts in self.transition_scores
+            ],
+        }
+
+
+def _classify_refusal_lanes(report: NZActualReplayReport) -> tuple[int, int, int]:
+    """Split refusals into (verification_failed, refusal_blocked, would_replay).
+
+    * verification_failed : a proof was formed but disagreed / perturbed.
+    * refusal_blocked     : the dry-run kernel declined to form a candidate
+      (NOT_DRY_RUN_VERIFIED carrying a ``dry_run_refusal_rule_id``), distinct
+      from sibling-blocked verified ops (NOT_DRY_RUN_VERIFIED without one).
+    * would_replay        : transitions blocked SOLELY by refusal-blocked ops —
+      they carry no verification-failed refusal, so they WOULD materialize if the
+      kernel's "declined to form a candidate" conservatism were dropped. This is
+      report-only and never materializes anything.
+    """
+
+    verification_failed = 0
+    refusal_blocked = 0
+    # Per change window (amendment date): does it carry any verification-failed
+    # refusal, and does it carry any refusal-blocked op?
+    window_has_verification_failed: dict[str, bool] = {}
+    window_has_refusal_blocked: dict[str, bool] = {}
+    for refusal in report.refusals:
+        date = refusal.amendment_date_iso
+        window_has_verification_failed.setdefault(date, False)
+        window_has_refusal_blocked.setdefault(date, False)
+        if refusal.rule_id in _VERIFICATION_FAILED_REFUSAL_RULE_IDS:
+            verification_failed += 1
+            window_has_verification_failed[date] = True
+        elif refusal.rule_id == NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID:
+            # NOT_DRY_RUN_VERIFIED is overloaded: a kernel refusal carries a
+            # dry_run_refusal_rule_id; a sibling-blocked verified op does not.
+            if "dry_run_refusal_rule_id" in refusal.detail:
+                refusal_blocked += 1
+                window_has_refusal_blocked[date] = True
+            # else: sibling-blocked verified op — not a refusal-blocked op; it does
+            # not by itself make a window "blocked solely by refusals".
+        else:
+            # Any other (window-level) refusal rule id is treated as a hard block
+            # that the conservatism lane does not get to ignore.
+            window_has_verification_failed[date] = True
+
+    would_replay = sum(
+        1
+        for date, has_refusal in window_has_refusal_blocked.items()
+        if has_refusal and not window_has_verification_failed.get(date, False)
+    )
+    return verification_failed, refusal_blocked, would_replay
+
+
+def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
+    """Build the actual-replay report for one work and score its transitions."""
+
+    try:
+        preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
+        surface = build_archived_work_operation_surface(db_path, work_id)
+        report = build_actual_replay(
+            archive,
+            work_id=work_id,
+            preflight=preflight,
+            families=NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES,
+            surface=surface,
+        )
+    except Exception as exc:  # surface the failure loudly per-work, never silent
+        return _WorkResult(
+            work_id=work_id,
+            families=(),
+            status=f"EXC:{type(exc).__name__}:{str(exc)[:80]}",
+            transitions_replayed=0,
+            transitions_refused=0,
+            ops_replayed=0,
+            slice_nodes=0,
+            slice_agreements=0,
+            all_slices_agree=False,
+            refusals_verification_failed=0,
+            refusals_refusal_blocked=0,
+            families_not_attempted=0,
+            would_replay_if_refusals_ignored=0,
+            text_similarity=0.0,
+            tree_similarity=0.0,
+            tree_similarity_stable=0.0,
+        )
+
+    summary = report.summary()
+    verification_failed, refusal_blocked, would_replay = _classify_refusal_lanes(report)
+
+    transition_scores: list[_TransitionScore] = []
+    parsed_cache: dict[str, Any] = {}
+    for transition in report.transitions:
+        change_window = archived_xml_version_change_window(
+            archive, work_id=work_id, version_date=transition.amendment_date_iso
+        )
+        oracle_version = change_window.on_or_after
+        text_sim = 0.0
+        tree_sim = 0.0
+        tree_sim_stable = 0.0
+        path_jaccard = 0.0
+        if oracle_version is not None:
+            oracle_doc = _parse_archived_version(archive, oracle_version, parsed_cache)
+            if oracle_doc is not None:
+                point = _similarity_point(
+                    transition.materialized_after,
+                    oracle_doc,
+                    oracle_version,
+                    transitions_applied=0,
+                    repeals_applied=0,
+                    repeals_skipped=0,
+                )
+                text_sim = point.combined_similarity
+                tree_sim = point.path_jaccard
+                tree_sim_stable = point.combined_similarity_stable
+                path_jaccard = point.path_jaccard
+        transition_scores.append(
+            _TransitionScore(
+                amendment_date_iso=transition.amendment_date_iso,
+                text_similarity=text_sim,
+                tree_similarity=tree_sim,
+                tree_similarity_stable=tree_sim_stable,
+                path_jaccard=path_jaccard,
+                slice_node_count=transition.target_slice_node_count,
+                slice_agreements=transition.target_slice_agreements,
+                ops=len(transition.mutations),
+            )
+        )
+
+    n = len(transition_scores)
+    text_mean = sum(ts.text_similarity for ts in transition_scores) / n if n else 0.0
+    tree_mean = sum(ts.tree_similarity for ts in transition_scores) / n if n else 0.0
+    tree_stable_mean = (
+        sum(ts.tree_similarity_stable for ts in transition_scores) / n if n else 0.0
+    )
+
+    return _WorkResult(
+        work_id=work_id,
+        families=tuple(summary["families"]),
+        status="OK",
+        transitions_replayed=summary["transitions_replayed"],
+        transitions_refused=summary["transitions_refused"],
+        ops_replayed=summary["ops_replayed"],
+        slice_nodes=summary["target_slice_nodes"],
+        slice_agreements=summary["target_slice_agreements"],
+        all_slices_agree=summary["all_slices_agree"],
+        refusals_verification_failed=verification_failed,
+        refusals_refusal_blocked=refusal_blocked,
+        families_not_attempted=len(report.families_not_attempted),
+        would_replay_if_refusals_ignored=would_replay,
+        text_similarity=text_mean,
+        tree_similarity=tree_mean,
+        tree_similarity_stable=tree_stable_mean,
+        transition_scores=transition_scores,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Aggregate + report
+# ---------------------------------------------------------------------------
+
+
+def _aggregate(results: list[_WorkResult]) -> dict[str, Any]:
+    ok = [r for r in results if r.status == "OK"]
+    errs = [r for r in results if r.status != "OK"]
+    replayed_works = [r for r in ok if r.transitions_replayed > 0]
+
+    total_transitions_replayed = sum(r.transitions_replayed for r in ok)
+    total_transitions_refused = sum(r.transitions_refused for r in ok)
+    total_would_replay = sum(r.would_replay_if_refusals_ignored for r in ok)
+    total_verification_failed = sum(r.refusals_verification_failed for r in ok)
+    total_refusal_blocked = sum(r.refusals_refusal_blocked for r in ok)
+    total_families_not_attempted = sum(r.families_not_attempted for r in ok)
+    total_ops_replayed = sum(r.ops_replayed for r in ok)
+    total_slice_nodes = sum(r.slice_nodes for r in ok)
+    total_slice_agreements = sum(r.slice_agreements for r in ok)
+
+    # Similarity is the mean over actually-replayed TRANSITIONS (node-weighted by
+    # transition count via per-work means averaged over replayed works). Reported
+    # ALWAYS next to the replayed fraction so a high score over a tiny replayed
+    # slice cannot masquerade as broad success.
+    all_scores = [ts for r in replayed_works for ts in r.transition_scores]
+    nt = len(all_scores)
+    text_sim = sum(ts.text_similarity for ts in all_scores) / nt if nt else 0.0
+    tree_sim = sum(ts.tree_similarity for ts in all_scores) / nt if nt else 0.0
+    tree_sim_stable = (
+        sum(ts.tree_similarity_stable for ts in all_scores) / nt if nt else 0.0
+    )
+
+    # The replayed fraction: actually-replayed transitions over all declared
+    # transitions (replayed + fail-closed-refused). This is the coverage the
+    # similarity score is computed over.
+    declared_transitions = total_transitions_replayed + total_transitions_refused
+    replayed_fraction = (
+        total_transitions_replayed / declared_transitions if declared_transitions else 0.0
+    )
+    # If the refusal-only blocked transitions were treated as not-declared, what
+    # fraction could replay? Report-only — does NOT change the strict count.
+    hypothetical_replayed = total_transitions_replayed + total_would_replay
+    would_replay_fraction = (
+        hypothetical_replayed / declared_transitions if declared_transitions else 0.0
+    )
+
+    slice_agreement_ratio = (
+        total_slice_agreements / total_slice_nodes if total_slice_nodes else 0.0
+    )
+
+    return {
+        "n_works": len(results),
+        "n_ok": len(ok),
+        "n_errors": len(errs),
+        "n_works_with_replay": len(replayed_works),
+        # Coverage lanes — kept separate and prominent.
+        "transitions_replayed": total_transitions_replayed,
+        "transitions_refused": total_transitions_refused,
+        "declared_transitions": declared_transitions,
+        "replayed_fraction": round(replayed_fraction, 6),
+        "refusals_verification_failed": total_verification_failed,
+        "refusals_refusal_blocked": total_refusal_blocked,
+        "families_not_attempted": total_families_not_attempted,
+        # REPORT-ONLY conservatism lane.
+        "would_replay_if_refusals_ignored": total_would_replay,
+        "hypothetical_replayed_if_refusals_ignored": hypothetical_replayed,
+        "would_replay_fraction": round(would_replay_fraction, 6),
+        # Replay yield.
+        "ops_replayed": total_ops_replayed,
+        "target_slice_nodes": total_slice_nodes,
+        "target_slice_agreements": total_slice_agreements,
+        "slice_agreement_ratio": round(slice_agreement_ratio, 6),
+        # Dual similarity over actually-replayed transitions.
+        "transitions_scored": nt,
+        "text_similarity": round(text_sim, 6),
+        "tree_similarity": round(tree_sim, 6),
+        "tree_similarity_stable": round(tree_sim_stable, 6),
+    }
+
+
+def _print_report(results: list[_WorkResult], agg: dict[str, Any], corpus: Path) -> None:
+    print(f"\n=== NZ actual-replay bench: {corpus} ===")
+    print(
+        f"Works: {agg['n_works']} (ok={agg['n_ok']}, errors={agg['n_errors']}, "
+        f"with-replay={agg['n_works_with_replay']})"
+    )
+    print("\nCoverage lanes (kept separate — NOT folded into the similarity score):")
+    print(
+        f"  transitions actually replayed : {agg['transitions_replayed']}"
+        f"  /  declared {agg['declared_transitions']}"
+        f"  (replayed fraction = {agg['replayed_fraction']:.1%})"
+    )
+    print(f"  transitions fail-closed-blocked: {agg['transitions_refused']}")
+    print(f"    - verification-failed ops    : {agg['refusals_verification_failed']}")
+    print(f"    - refusal-blocked ops        : {agg['refusals_refusal_blocked']}")
+    print(f"  families requested not attempted: {agg['families_not_attempted']}")
+    print(
+        f"  would-replay-if-refusals-ignored: +{agg['would_replay_if_refusals_ignored']}"
+        f"  -> {agg['hypothetical_replayed_if_refusals_ignored']} "
+        f"({agg['would_replay_fraction']:.1%}) [REPORT-ONLY; strict count unchanged]"
+    )
+    print("\nReplay yield:")
+    print(f"  ops replayed                  : {agg['ops_replayed']}")
+    print(
+        f"  target slice agreements       : {agg['target_slice_agreements']}"
+        f"/{agg['target_slice_nodes']}  ({agg['slice_agreement_ratio']:.1%})"
+    )
+    print("\nDual similarity over ACTUALLY-REPLAYED transitions "
+          f"(N={agg['transitions_scored']} transitions; "
+          f"replayed fraction {agg['replayed_fraction']:.1%}):")
+    print(f"  text similarity               : {agg['text_similarity']:.1%}")
+    print(f"  tree similarity (path jaccard): {agg['tree_similarity']:.1%}")
+    print(f"  tree similarity (stable)      : {agg['tree_similarity_stable']:.1%}")
+
+    replayed_works = sorted(
+        (r for r in results if r.transitions_replayed > 0),
+        key=lambda r: -r.transitions_replayed,
+    )
+    if replayed_works:
+        print(f"\nTop replayed works (showing {min(15, len(replayed_works))}):")
+        for r in replayed_works[:15]:
+            print(
+                f"  {r.work_id:28s} repl={r.transitions_replayed:3d} "
+                f"refused={r.transitions_refused:3d} "
+                f"ops={r.ops_replayed:3d} "
+                f"slice={r.slice_agreements}/{r.slice_nodes} "
+                f"text={r.text_similarity:.1%} tree={r.tree_similarity:.1%} "
+                f"would+={r.would_replay_if_refusals_ignored}"
+            )
+    errs = [r for r in results if r.status != "OK"]
+    if errs:
+        print(f"\nErrors ({len(errs)}):")
+        for r in errs[:15]:
+            print(f"  {r.work_id}: {r.status}")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main(args: Any) -> None:
+    db_path = Path(getattr(args, "db", None) or _DEFAULT_DB)
+    if not db_path.exists():
+        print(f"NZ farchive not found: {db_path}", file=sys.stderr)
+        raise SystemExit(2)
+
+    explicit_corpus = getattr(args, "corpus", None)
+    if explicit_corpus:
+        corpus = Path(explicit_corpus)
+    elif getattr(args, "smoke", False):
+        corpus = _SMOKE_CORPUS
+    else:
+        corpus = _DEFAULT_CORPUS
+    if not corpus.exists():
+        print(f"NZ bench corpus not found: {corpus}", file=sys.stderr)
+        raise SystemExit(2)
+
+    max_works = getattr(args, "max_works", None)
+    work_ids = _load_corpus(corpus, max_works)
+    if not work_ids:
+        print(f"NZ bench corpus {corpus} contained no work_ids", file=sys.stderr)
+        raise SystemExit(2)
+
+    t0 = time.time()
+    archive = open_farchive(db_path)
+    results: list[_WorkResult] = []
+    try:
+        for i, work_id in enumerate(work_ids):
+            results.append(_score_one_work(archive, work_id, db_path))
+            if (i + 1) % 25 == 0:
+                elapsed = time.time() - t0
+                print(f"  [{i + 1}/{len(work_ids)}] {elapsed:.0f}s", file=sys.stderr)
+    finally:
+        archive.close()
+
+    agg = _aggregate(results)
+
+    output_json = getattr(args, "output_json", None)
+    if getattr(args, "json", False) or output_json:
+        payload = {
+            "jurisdiction": "nz",
+            "bench_kind": "actual_replay",
+            "corpus": str(corpus),
+            "summary": agg,
+            "works": [r.to_jsonable() for r in results],
+        }
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        if output_json:
+            Path(output_json).write_text(text + "\n", encoding="utf-8")
+            print(f"NZ bench JSON written: {output_json}", file=sys.stderr)
+        if getattr(args, "json", False):
+            print(text)
+        if not getattr(args, "json", False):
+            _print_report(results, agg, corpus)
+        return
+
+    _print_report(results, agg, corpus)

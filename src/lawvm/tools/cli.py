@@ -1852,6 +1852,33 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "oracle (fin@YYYYNNNN) in the corpus store; requires data/finlex.farchive; "
         "rate-limited at ~1 req/sec",
     )
+    bench_p.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "[-j nz] use the curated smoke corpus (data/nz/bench_corpus_smoke.csv) "
+            "instead of the full corpus for a quick run"
+        ),
+    )
+    bench_p.add_argument(
+        "--max-works",
+        type=int,
+        default=None,
+        dest="max_works",
+        metavar="N",
+        help="[-j nz] score only the first N works of the corpus (stride for quick runs)",
+    )
+    bench_p.add_argument(
+        "--json",
+        action="store_true",
+        help="[-j nz] emit the multi-lane bench report as JSON to stdout",
+    )
+    bench_p.add_argument(
+        "--output-json",
+        dest="output_json",
+        metavar="PATH",
+        help="[-j nz] write the multi-lane bench report JSON to PATH",
+    )
 
     # --- blame ---
     blame_p = sub.add_parser(
@@ -11661,19 +11688,9 @@ def _main_impl() -> None:
 
             uk_bench_main(args)
         elif j == "nz":
-            # NZ has no actual-replay oracle yet (every effect is dry-run /
-            # replay-blocked), so the FI-style replay benchmark does not apply.
-            # Fail loudly here rather than silently scoring the Finland corpus.
-            print(
-                "error: 'lawvm bench -j nz' is not a replay benchmark — NZ replay is dry-run only.\n"
-                "Use the NZ surfaces over a curated corpus instead:\n"
-                "  lawvm nz-corpus build-corpus            # generate data/nz/bench_corpus{,_smoke}.csv\n"
-                "  lawvm nz-corpus dry-run-corpus --corpus data/nz/bench_corpus_smoke.csv "
-                "--scope selected-family-repeal --summary-only\n"
-                "  lawvm nz-corpus benchmark --corpus data/nz/bench_corpus.csv",
-                file=sys.stderr,
-            )
-            raise SystemExit(2)
+            from lawvm.tools.nz_bench import main as nz_bench_main
+
+            nz_bench_main(args)
         elif j == "fi":
             from lawvm.tools.bench import main as bench_main
 
