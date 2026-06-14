@@ -2418,10 +2418,15 @@ def iter_no_document_change_ops(
     return grouped
 
 
-def _no_sort_key(label: Optional[str]) -> tuple[int, str, int]:
+def _no_sort_key(
+    label: Optional[str],
+    *,
+    roman_single_letters: bool = False,
+) -> tuple[int, str, int]:
     if not label:
         return (-1, "", 0)
-    normalized = _normalize_label(label).lower()
+    cased = _normalize_label(label)
+    normalized = cased.lower()
     hyphen_match = re.match(r"^(\d+)-(\d+)([a-z]*)$", normalized)
     if hyphen_match:
         major, minor, suffix = hyphen_match.groups()
@@ -2430,10 +2435,41 @@ def _no_sort_key(label: Optional[str]) -> tuple[int, str, int]:
     if letter_match:
         number, suffix = letter_match.groups()
         return (int(number), suffix, 0)
-    roman = _roman_to_int(normalized)
-    if roman is not None:
-        return (roman, "", 0)
+    # Roman-numeral ordering is genuine for chapter/part labels (uppercase
+    # ``I, II, ... IX``) and for multi-character lowercase roman sub-items
+    # (``ii, iii, iv``). A *single* lowercase Latin letter is normally a
+    # Norwegian litra (bokstav: ``a, b, c, d, e, ...``), NOT a roman numeral --
+    # treating ``c`` as 100 or ``d`` as 500 breaks the alphabetic ordering of
+    # litra lists and spuriously trips the replay order invariant on untouched
+    # subtrees. The single exception is a sibling group that is itself a roman
+    # sequence (``i, ii, ..., v, ..., ix``), where a lone ``v``/``x`` IS roman;
+    # callers that know the sibling context pass ``roman_single_letters=True``.
+    is_single_lowercase_letter = len(cased) == 1 and cased.islower() and cased.isalpha()
+    if roman_single_letters or not is_single_lowercase_letter:
+        roman = _roman_to_int(cased)
+        if roman is not None:
+            return (roman, "", 0)
     return tree_ops.default_label_sort_key(normalized)
+
+
+def _no_sibling_group_uses_roman_single_letters(labels: Sequence[Optional[str]]) -> bool:
+    """Decide whether an ordered same-kind sibling group is a roman sequence.
+
+    Lone lowercase ``i``/``v``/``x``/``l``/``c``/``d``/``m`` are ambiguous: they
+    are litra in an alphabetic bokstav list (``a, b, c, ...``) but roman in a
+    roman list (``i, ii, iii, iv, v, ...``). The deciding signal is the sibling
+    set: a roman list contains a multi-character lowercase roman label
+    (``ii``/``iii``/...) and never contains a non-roman litra letter
+    (``a``/``b``/``f``/``g``/``h``/``j``/``k``/...).
+    """
+    norm = [(_normalize_label(label).lower()) for label in labels if label]
+    if not norm:
+        return False
+    has_multichar_roman = any(len(s) > 1 and re.fullmatch(r"[ivxlcdm]+", s) for s in norm)
+    if not has_multichar_roman:
+        return False
+    # Any single letter outside the roman alphabet means this is a litra list.
+    return all(re.fullmatch(r"[ivxlcdm]+", s) for s in norm)
 
 
 def _resolve_no_path(body: IRNode, target: LegalAddress) -> Optional[tree_ops.Path]:
@@ -3027,13 +3063,54 @@ def apply_no_ops(
 
     no_replay_tree_invariant_families = CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 
+    def _resolve_invariant_parent(path: tree_ops.InvariantPath) -> Optional[IRNode]:
+        """Walk ``body`` along an invariant path (root step is the body itself)."""
+        node: Optional[IRNode] = body
+        for kind, label in path[1:]:
+            if node is None:
+                return None
+            node = next(
+                (
+                    child
+                    for child in node.children
+                    if _no_kind_value(child.kind) == kind and (child.label or None) == label
+                ),
+                None,
+            )
+        return node
+
+    def _sort_order_violation_is_spurious(violation: tree_ops.TreeInvariantViolation) -> bool:
+        """True if a roman sibling group is actually ordered under roman semantics.
+
+        The context-free ``_no_sort_key`` treats a lone lowercase ``i``/``v``/``x``
+        as litra, which is correct for bokstav lists but wrong inside a roman
+        sub-item sequence (``i, ii, ..., v, ..., ix``). Re-check the offending
+        sibling group with sibling context before flagging it.
+        """
+        if violation.kind != "sort_order":
+            return False
+        parent = _resolve_invariant_parent(violation.path)
+        if parent is None:
+            return False
+        labels = [
+            child.label
+            for child in parent.children
+            if _no_kind_value(child.kind) == violation.child_kind and child.label
+        ]
+        if not _no_sibling_group_uses_roman_single_letters(labels):
+            return False
+        keys = [_no_sort_key(label, roman_single_letters=True) for label in labels]
+        return keys == sorted(keys)
+
     def _assert_no_invariant_violations(op: LegalOperation) -> None:
         typed_violations = tuple(
-            tree_ops.iter_tree_invariant_violations(
+            violation
+            for violation in tree_ops.iter_tree_invariant_violations(
                 body,
                 sort_key=_no_sort_key,
                 families=no_replay_tree_invariant_families,
             )
+            if not _sort_order_violation_is_spurious(violation)
         )
         violations = tuple(violation.message for violation in typed_violations)
         if not violations:

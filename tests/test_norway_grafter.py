@@ -2751,6 +2751,179 @@ def test_apply_no_ops_invariant_check_uses_norway_roman_chapter_sort() -> None:
     assert [child.label for child in updated.body.children if child.kind is IRNodeKind.CHAPTER] == ["VIII", "IX"]
 
 
+def _no_litra_statute() -> IRStatute:
+    """Statute whose UNTOUCHED subtree carries an a..e litra (bokstav) list.
+
+    The lone letters ``c`` (roman 100) and ``d`` (roman 500) previously fooled
+    the Norway sort key into reporting ``item out of order: d > e`` and aborting
+    the whole replay over a perfectly well-ordered bokstav list.
+    """
+    return IRStatute(
+        statute_id="no/lov/2006-08-18-61",
+        title="Litra ordering test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=tuple(
+                                IRNode(kind=IRNodeKind.ITEM, label=litra, text=f"bokstav {litra}")
+                                for litra in ("a", "b", "c", "d", "e")
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.SENTENCE, label="1", text="Gammel tekst."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def test_apply_no_ops_litra_list_in_untouched_subtree_does_not_abort() -> None:
+    statute = _no_litra_statute()
+    source = OperationSource(
+        statute_id="no/lovtid/2022-12-20-122",
+        enacted="2022-12-20",
+        effective="2022-12-20",
+    )
+    # The op only touches section:2; the a..e litra list lives under section:1.
+    op = LegalOperation(
+        op_id="replace-section-2-sentence",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "2"), ("sentence", "1"))),
+        payload=IRNode(kind=IRNodeKind.SENTENCE, label="1", text="Ny tekst."),
+        source=source,
+    )
+
+    updated = apply_no_ops(statute, [op])
+
+    touched = updated.body.children[1].children[0].children[0]
+    assert touched.text == "Ny tekst."
+    litra = updated.body.children[0].children[0]
+    assert [child.label for child in litra.children] == ["a", "b", "c", "d", "e"]
+
+
+def test_apply_no_ops_genuine_order_violation_still_aborts() -> None:
+    """Honesty: a real out-of-order list must still abort the replay.
+
+    The litra/roman relaxation only down-grades the *spurious* ``d > e`` family
+    on well-ordered bokstav/roman lists; a genuinely disordered list (here a
+    numeric item run ``3, 1``) must still raise.
+    """
+    statute = IRStatute(
+        statute_id="no/lov/2006-08-18-61",
+        title="Genuine disorder test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.ITEM, label="3", text="tredje"),
+                                IRNode(kind=IRNodeKind.ITEM, label="1", text="forste"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(
+        statute_id="no/lovtid/2022-12-20-122",
+        enacted="2022-12-20",
+        effective="2022-12-20",
+    )
+    op = LegalOperation(
+        op_id="replace-item-3",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", "3"))),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="3", text="tredje endret"),
+        source=source,
+    )
+
+    with pytest.raises(ValueError, match="out of order"):
+        apply_no_ops(statute, [op], strict_invariants=True)
+
+
+def test_apply_no_ops_lowercase_roman_subitem_list_orders_numerically() -> None:
+    """A roman sub-item list (i, ii, ..., v, ..., ix) must not flag v as litra."""
+    statute = IRStatute(
+        statute_id="no/lov/2005-06-03-33",
+        title="Roman sub-item ordering test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=tuple(
+                                IRNode(kind=IRNodeKind.ITEM, label=rn, text=f"romertall {rn}")
+                                for rn in ("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix")
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Gammel tekst."),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(
+        statute_id="no/lovtid/2022-12-20-122",
+        enacted="2022-12-20",
+        effective="2022-12-20",
+    )
+    op = LegalOperation(
+        op_id="replace-section-2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "1"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Ny tekst."),
+        source=source,
+    )
+
+    # Must not raise: i..ix is a correctly ordered roman sequence even though
+    # lone ``v``/``x`` look like litra to a context-free sort key.
+    updated = apply_no_ops(statute, [op], strict_invariants=True)
+    roman_items = updated.body.children[0].children[0]
+    assert [child.label for child in roman_items.children] == [
+        "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix",
+    ]
+
+
 def test_apply_no_ops_insert_reuses_existing_target_as_replace() -> None:
     statute = IRStatute(
         statute_id="no/lov/2025-01-01-1",
