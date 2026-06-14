@@ -99,6 +99,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_amount_specified_source_target_mismatch",
         "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
+        "uk_manual_frontier_conditional_temporal_repeal_resolution_candidate",
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_crossheading_source_target_mismatch",

@@ -177,6 +177,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_routes_effect_to_temporal_applicability_model",
         ),
     },
+    "uk_manual_frontier_conditional_temporal_repeal_resolution_candidate": {
+        "candidate_operation_family": "contingent_commencement_resolution",
+        "required_validator_checks": (
+            "claim_binds_source_snippet_to_real_conditional_temporal_repeal",
+            "claim_owns_trigger_resolution_commenced_or_did_not_commence",
+            "claim_witnesses_commenced_resolution_with_si_and_date",
+            "claim_gates_repeal_to_pit_past_contingency_deadline",
+        ),
+    },
     "uk_manual_frontier_empty_type_whole_act_action_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (

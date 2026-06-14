@@ -28,6 +28,7 @@ import json as json
 import time
 from lxml import etree as ET
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, List, Optional
 
 from lawvm.core.ir import (
@@ -83,6 +84,11 @@ from lawvm.uk_legislation.source_context import (
 )
 from lawvm.uk_legislation.prospective_effect_warrant import (
     prospective_effect_applied_observation,
+)
+from lawvm.uk_legislation.contingent_commencement_claim import (
+    ContingentCommencementClaim,
+    gate_contingent_repeal_at_pit,
+    validate_contingent_commencement_claim,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
@@ -261,6 +267,9 @@ class UKReplayPipeline:
         diagnostic_replay_filter_mode: UKDiagnosticReplayFilterMode = (
             UKDiagnosticReplayFilterMode.ENFORCE
         ),
+        contingent_commencement_claims: Optional[
+            "Sequence[ContingentCommencementClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -307,11 +316,41 @@ class UKReplayPipeline:
         if lowering_rejections_out is not None:
             lowering_rejections_out.extend(dict(row) for row in temporal_observations)
 
+        # §contingent_commencement: build an index of VALIDATED claims by bound
+        # effect_id. This is opt-in: with no claims authored the index is empty
+        # and the PIT filter below is byte-unchanged. Each claim is validated
+        # against the bound effect (source-snippet binding + witness) before it
+        # can gate replay; an unvalidated/mismatched claim never reaches the gate.
+        validated_contingent_claims: dict[str, ContingentCommencementClaim] = {}
+        if contingent_commencement_claims:
+            effect_by_id = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for claim in contingent_commencement_claims:
+                if claim.statute_id and claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id.get(str(claim.effect_id))
+                validation = validate_contingent_commencement_claim(
+                    claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(validation.to_dict())
+                if validation.validated:
+                    validated_contingent_claims[str(claim.effect_id)] = claim
+
         replayable = list(effects)
         if pit_date:
             pit_replayable: list[UKEffectRecord] = []
             affecting_xml_by_act: dict[str, Optional[bytes]] = {}
             for e in replayable:
+                contingent_claim = validated_contingent_claims.get(str(e.effect_id))
+                if contingent_claim is not None:
+                    gate = gate_contingent_repeal_at_pit(contingent_claim, pit_date)
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(gate.to_dict())
+                    if gate.applies:
+                        pit_replayable.append(e)
+                    continue
                 if e.is_prospective_only and e.is_structural_for_replay(
                     applicability_mode=applicability_mode,
                 ):
