@@ -250,6 +250,26 @@ def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     assert _section_text("4", "32").startswith("32 § Hallinto-oikeuden päätökseen ei saa hakea muutosta")
 
 
+def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() -> None:
+    """A chapter-scoped kumotaan repeals the named chapter's section, not a homonym.
+
+    2004/1320 declares "kumotaan ... 10 luvun 5 d ja 9 b § ...".  Section 5 d also
+    exists in chapter 1, so an unscoped uncovered-kumotaan recovery resolved the
+    bare label to the first 5 d in document order (chapter 1) and removed the wrong
+    section, leaving the genuinely-repealed chapter:10/section:5d live.  The
+    chapter-aware recovery must repeal chapter:10/section:5d and leave
+    chapter:1/section:5d untouched.
+    """
+    replay = pinned_replay("1987/1250", mode="official_consolidation", quiet=True)
+
+    repealed = replay.materialized_state.find_node("section", "5d", "chapter", "10")
+    assert repealed is None, "10 luvun 5 d § must be repealed by 2004/1320"
+
+    untouched = replay.materialized_state.find_node("section", "5d", "chapter", "1")
+    assert untouched is not None, "1 luvun 5 d § must remain live"
+    assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
+
+
 def test_replay_xml_1987_1203_preserves_jolloin_section_renumber_chain() -> None:
     replay = pinned_replay("1987/1203", mode="official_consolidation", quiet=True)
 

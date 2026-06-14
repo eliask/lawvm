@@ -705,3 +705,31 @@ def test_reconcile_unique_unscoped_aliases_aligns_unique_extra_part_prefix() -> 
         "part:ii/chapter:9a/section:1",
         "part:ii/chapter:9a/section:2",
     }
+
+
+def test_reconcile_unique_unscoped_aliases_does_not_alias_same_depth_different_chapter() -> None:
+    # A whole-section repeal removed chapter:14/section:14 from replay, leaving an
+    # oracle "14 § on kumottu" stub.  A same-numbered live section survives in a
+    # different chapter (chapter:9/section:14).  Both keys become unique-for-leaf
+    # "14" among the unmatched sets at equal path depth.  They are GENUINELY
+    # different addresses and must NOT be aliased onto each other — doing so would
+    # fuse the surviving chapter:9 section onto the chapter:14 repeal stub and
+    # manufacture a spurious REPLAY_UNREPEALED divergence.
+    replay = {"chapter:9/section:14": "live audit section"}
+    oracle = {"chapter:14/section:14": "14 § on kumottu L:lla 2009/1231"}
+
+    aligned_replay, aligned_oracle = reconcile_unique_unscoped_aliases(replay, oracle)
+
+    assert set(aligned_replay) == {"chapter:9/section:14"}
+    assert set(aligned_oracle) == {"chapter:14/section:14"}
+
+
+def test_reconcile_unique_unscoped_aliases_does_not_alias_same_depth_different_part() -> None:
+    # Same hazard one level up: equal-depth keys differing in the part label.
+    replay = {"part:1/chapter:4/section:4a": "live"}
+    oracle = {"part:2/chapter:5/section:4a": "4 a § on kumottu"}
+
+    aligned_replay, aligned_oracle = reconcile_unique_unscoped_aliases(replay, oracle)
+
+    assert set(aligned_replay) == {"part:1/chapter:4/section:4a"}
+    assert set(aligned_oracle) == {"part:2/chapter:5/section:4a"}

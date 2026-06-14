@@ -489,6 +489,8 @@ def _clean_section_text(text: str) -> str:
 
 
 def _section_text(node: Any) -> str:
+    if isinstance(node, str):
+        return node
     if isinstance(node, etree._Element):
         return etree.tostring(node, method="text", encoding="unicode").strip()
     from lawvm.core.ir_helpers import irnode_to_text
@@ -506,13 +508,21 @@ def reconcile_unique_unscoped_aliases(
     Finlex sometimes nests a section under deeper container paths in the
     consolidated oracle even when the base/source artifact keeps the same
     uniquely-numbered section at body level or with fewer container prefixes.
-    Treat these as equivalent only when:
-    - the unmatched replay/oracle section labels are unique on both sides
+    Treat these as equivalent only when the unmatched replay/oracle section
+    labels are unique on both sides AND one of:
     - one key is a strict suffix of the other at container-path granularity
-      (depth mismatch), OR
-    - the keys have the same path depth and kind-sequence but differ in
-      container label values (e.g. Arabic vs Roman numeral part indices:
-      ``part:1/chapter:1/section:1`` vs ``part:i/chapter:1/section:1``).
+      (depth mismatch — one side simply omits a leading container prefix), OR
+    - the keys have the same path depth and kind-sequence but differ in a
+      container label value (e.g. a section nested under a different chapter/part
+      on each side) AND the two nodes carry near-identical provision text.
+
+    The text-similarity gate on the same-depth case is load-bearing: a
+    whole-section repeal that leaves the oracle holding a bare
+    ``N § on kumottu`` stub while a same-numbered LIVE section survives in another
+    chapter must NOT be aliased.  The stub and the live body share no text, so
+    the gate rejects the pairing — preventing the surviving section from being
+    fused onto the repeal stub and manufacturing a spurious ``REPLAY_UNREPEALED``.
+    Genuinely relocated provisions keep their body, so they still pair.
 
     Real text differences should remain visible as compared provisions, not
     inflate into paired ``MISSING``/``EXTRA`` noise just because one side
@@ -549,11 +559,31 @@ def reconcile_unique_unscoped_aliases(
         elif len(oparts) < len(rparts) and rparts[-len(oparts):] == oparts:
             oracle[rkey] = oracle.pop(okey)
         elif len(rparts) == len(oparts) and _same_kind_sequence(rparts, oparts):
-            # Same structural shape but differing container labels (e.g. Arabic vs
-            # Roman numeral parts: part:1/chapter:1/section:1 vs
-            # part:i/chapter:1/section:1).  The leaf is unique on both sides so
-            # it is safe to remap the replay key to the oracle key.
-            replay[okey] = replay.pop(rkey)
+            # Same path depth and kind-sequence but a differing container label
+            # (e.g. a section nested under a different chapter/part on each side).
+            # Only alias when the two nodes carry essentially the same provision
+            # body: a genuinely relocated section keeps its text, so pairing it
+            # across the label difference removes spurious MISSING/EXTRA noise.
+            #
+            # The discriminator must reject the repeal-stub trap: a whole-section
+            # repeal that leaves the oracle holding a bare "N § on kumottu" stub
+            # while a same-numbered LIVE section survives in another chapter must
+            # NOT be aliased, or the surviving section is fused onto the repeal
+            # stub and manufactures a spurious REPLAY_UNREPEALED.  Repeal stubs are
+            # tiny ("14 §" → 2 chars; "4 a § on kumottu L:lla …" → ~27 chars);
+            # relocated provisions are substantial bodies.  Alias when the bodies
+            # are near-identical (handles verbatim relocations of any length), or
+            # when BOTH bodies are substantial and reasonably similar (handles a
+            # relocation that was also amended) — never when either side is a
+            # stub-sized fragment.
+            getter = text_getter or _section_text
+            r_text = _clean_section_text(getter(replay[rkey]))
+            o_text = _clean_section_text(getter(oracle[okey]))
+            if r_text and o_text:
+                ratio = SequenceMatcher(None, r_text, o_text).ratio()
+                both_substantial = min(len(r_text), len(o_text)) >= 40
+                if ratio >= 0.9 or (both_substantial and ratio >= 0.6):
+                    replay[okey] = replay.pop(rkey)
 
     return replay, oracle
 
@@ -562,7 +592,7 @@ def _same_kind_sequence(parts_a: list[str], parts_b: list[str]) -> bool:
     """Return True if two split key paths have the same sequence of kinds.
 
     Used to detect structurally identical paths that differ only in their
-    container label values (e.g. Arabic vs Roman numeral part indices).
+    container label values.
     """
     if len(parts_a) != len(parts_b):
         return False
