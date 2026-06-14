@@ -175,6 +175,31 @@ def _build_oracle_norm_text_map(
     return result
 
 
+def _build_oracle_retain_text_elided_norm_map(
+    retain_text_elided_text_map: dict[str, str],
+) -> dict[str, str]:
+    """Build {normalized_eid -> retained-repeal-elided oracle text}.
+
+    Parallel to ``_build_oracle_norm_text_map`` but over the comparison-only
+    ``retain_text_elided_text_map`` from ``extract_eid_map_bytes`` (the oracle
+    text with each ``<Repeal RetainText="true">`` retained phrase removed).
+    Used so the comparison accepts EITHER the retained-included or the
+    retained-elided form for an affected provision — neutralizing the 1-D
+    consolidation artifact without changing replay.  See the grafter's
+    ``_oracle_text_eliding_retained_repeals`` and the FI analogue
+    ``fi_oracle_aiempi_sanamuoto_marker``.
+    """
+    from lawvm.uk_legislation.source_adjudication import (
+        _normalize_uk_source_container_eid,
+    )
+    result: dict[str, str] = {}
+    for raw_eid, norm_text in retain_text_elided_text_map.items():
+        norm = _normalize_uk_source_container_eid(raw_eid)
+        if norm and norm not in result:
+            result[norm] = norm_text
+    return result
+
+
 def _classify_eids(
     replay_raw_texts: dict[str, str],
     oracle_norm_text_map: dict[str, str],
@@ -182,6 +207,7 @@ def _classify_eids(
     oracle_norm_set: frozenset[str],
     replay_norm_to_raw: dict[str, str],
     replay_leaf_eids: frozenset[str] = frozenset(),
+    oracle_retain_text_elided_norm_map: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Classify every EID in the union of normalized sets.
 
@@ -214,7 +240,18 @@ def _classify_eids(
             }
         else:
             replay_norm_text = _normalize_text(replay_raw_text)
-            texts_match = _compare_key(replay_norm_text) == _compare_key(oracle_norm_text)
+            replay_key = _compare_key(replay_norm_text)
+            texts_match = replay_key == _compare_key(oracle_norm_text)
+            # presentation_cleanup: if the provision carries a
+            # <Repeal RetainText="true"> retained phrase, also accept the
+            # retained-elided oracle form.  The artifact makes the oracle text
+            # ambiguous between repeal-applied and repeal-not-applied; replay
+            # matching EITHER is not a divergence (the genuine partial-
+            # commencement modeling is LawVM's own job, not the comparison's).
+            if not texts_match and oracle_retain_text_elided_norm_map:
+                elided_oracle = oracle_retain_text_elided_norm_map.get(norm_eid)
+                if elided_oracle is not None and replay_key == _compare_key(elided_oracle):
+                    texts_match = True
             # Only trust a text difference at a tree leaf: container nodes
             # concatenate their EID-bearing descendants differently from the
             # oracle XML walk, so a container "text_diff" is tokenization noise.

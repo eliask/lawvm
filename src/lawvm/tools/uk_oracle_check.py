@@ -423,6 +423,7 @@ def _compute_uk_divergence_state(
         _collect_replay_eid_texts,
         _build_norm_to_raw,
         _build_oracle_norm_text_map,
+        _build_oracle_retain_text_elided_norm_map,
         _classify_eids,
         _CLASS_ONLY_REPLAY,
         _CLASS_ONLY_ORACLE,
@@ -457,6 +458,9 @@ def _compute_uk_divergence_state(
         oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=None)
         eid_map: dict[str, str] = oracle_data.get("eid_map", {})
         text_map: dict[str, str] = oracle_data.get("text_map", {})
+        retain_text_elided_text_map: dict[str, str] = oracle_data.get(
+            "retain_text_elided_text_map", {}
+        )
         oracle_physical_eid_aliases: dict[str, str] = oracle_data.get(
             "physical_eid_aliases", {}
         )
@@ -502,6 +506,9 @@ def _compute_uk_divergence_state(
 
     replay_norm_to_raw = _build_norm_to_raw(replayed_eids)
     oracle_norm_text_map = _build_oracle_norm_text_map(text_map)
+    oracle_retain_text_elided_norm_map = _build_oracle_retain_text_elided_norm_map(
+        retain_text_elided_text_map
+    )
 
     classified = _classify_eids(
         replay_eid_texts,
@@ -510,6 +517,7 @@ def _compute_uk_divergence_state(
         oracle_norm_set=frozenset(oracle_compare_eids),
         replay_norm_to_raw=replay_norm_to_raw,
         replay_leaf_eids=frozenset(replay_leaf_eids),
+        oracle_retain_text_elided_norm_map=oracle_retain_text_elided_norm_map,
     )
 
     only_replay_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_REPLAY}
@@ -573,6 +581,7 @@ def oracle_check_uk_statute(
         _collect_replay_eid_texts,
         _build_norm_to_raw,
         _build_oracle_norm_text_map,
+        _build_oracle_retain_text_elided_norm_map,
         _classify_eids,
         _CLASS_ONLY_REPLAY,
         _CLASS_ONLY_ORACLE,
@@ -618,6 +627,9 @@ def oracle_check_uk_statute(
         oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=None)
         eid_map: dict[str, str] = oracle_data.get("eid_map", {})
         text_map: dict[str, str] = oracle_data.get("text_map", {})
+        retain_text_elided_text_map: dict[str, str] = oracle_data.get(
+            "retain_text_elided_text_map", {}
+        )
         oracle_physical_eid_aliases: dict[str, str] = oracle_data.get(
             "physical_eid_aliases", {}
         )
@@ -667,6 +679,9 @@ def oracle_check_uk_statute(
 
     replay_norm_to_raw = _build_norm_to_raw(replayed_eids)
     oracle_norm_text_map = _build_oracle_norm_text_map(text_map)
+    oracle_retain_text_elided_norm_map = _build_oracle_retain_text_elided_norm_map(
+        retain_text_elided_text_map
+    )
 
     classified = _classify_eids(
         replay_eid_texts,
@@ -675,6 +690,7 @@ def oracle_check_uk_statute(
         oracle_norm_set=frozenset(oracle_compare_eids),
         replay_norm_to_raw=replay_norm_to_raw,
         replay_leaf_eids=frozenset(replay_leaf_eids),
+        oracle_retain_text_elided_norm_map=oracle_retain_text_elided_norm_map,
     )
 
     only_replay_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_REPLAY}
