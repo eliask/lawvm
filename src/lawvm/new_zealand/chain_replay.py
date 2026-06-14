@@ -45,6 +45,7 @@ ops + typed skips = the full op census.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -786,6 +787,24 @@ class _AppliedOp:
     amendment_date_iso: str = ""
 
 
+_BASE_WORK_ID_RE = re.compile(r"^act_public_(?P<year>\d{4})_(?P<number>[0-9A-Za-z]+)$")
+
+
+def _base_work_year_number(work_id: str) -> tuple[str, str]:
+    """Parse a base ``act_public_{year}_{number}`` work id into (year, number).
+
+    Returns ``("", "")`` for any other work-id shape. The number is normalized the
+    same way :func:`parse_public_act_citation` normalizes a schedule-group heading
+    citation (leading zeros stripped) so the two compare exactly when keying a
+    schedule amendment group to the base act.
+    """
+    match = _BASE_WORK_ID_RE.match(work_id or "")
+    if match is None:
+        return ("", "")
+    number = match.group("number")
+    return (match.group("year"), number.lstrip("0") or "0")
+
+
 def _apply_transition(
     tree: _EvolvingTree,
     transition: NZChainTransition,
@@ -793,6 +812,8 @@ def _apply_transition(
     latest_version_date: str,
     archive: Any = None,
     amending_root_cache: dict[str, Any] | None = None,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> tuple[int, list[NZChainSkip], list[_AppliedOp]]:
     """Apply one transition's authorized ops (all families) to the evolving tree.
 
@@ -802,6 +823,8 @@ def _apply_transition(
     a silent drop. ``archive`` + ``amending_root_cache`` are required only for the
     structural families (replace/insert) that re-extract the amending-act payload;
     a repeal/text_replace-only transition tolerates ``archive=None``.
+    ``base_work_year``/``base_work_number`` identify the act being replayed so a
+    schedule-indirection amendment can be keyed to its schedule amendment group.
     """
 
     if amending_root_cache is None:
@@ -824,9 +847,15 @@ def _apply_transition(
         elif op.family == "text_replace":
             result = _apply_text_replace_op(tree, op)
         elif op.family == "replace":
-            result = _apply_replace_op(tree, op, archive, amending_root_cache)
+            result = _apply_replace_op(
+                tree, op, archive, amending_root_cache,
+                base_work_year=base_work_year, base_work_number=base_work_number,
+            )
         elif op.family == "insert":
-            result = _apply_insert_op(tree, op, archive, amending_root_cache)
+            result = _apply_insert_op(
+                tree, op, archive, amending_root_cache,
+                base_work_year=base_work_year, base_work_number=base_work_number,
+            )
         else:
             skips.append(_skip(SKIP_UNEXTRACTABLE, op))
             continue
@@ -896,6 +925,9 @@ def _apply_replace_op(
     op: NZChainOp,
     archive: Any,
     amending_root_cache: dict[str, Any],
+    *,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> _AppliedOp | NZChainSkip:
     assert op.source_path is not None
     if not op.amending_work_id or not op.amending_provision_href or archive is None:
@@ -907,7 +939,10 @@ def _apply_replace_op(
         return _skip(SKIP_AMBIGUOUS_TARGET, op)
     target = matches[0]
 
-    replacement = _extract_replacement_payload(op, archive, amending_root_cache)
+    replacement = _extract_replacement_payload(
+        op, archive, amending_root_cache,
+        base_work_year=base_work_year, base_work_number=base_work_number,
+    )
     if replacement is None:
         return _skip(SKIP_PAYLOAD_NOT_EXTRACTABLE, op)
 
@@ -923,6 +958,9 @@ def _apply_insert_op(
     op: NZChainOp,
     archive: Any,
     amending_root_cache: dict[str, Any],
+    *,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> _AppliedOp | NZChainSkip:
     assert op.source_path is not None
     if not op.amending_work_id or not op.amending_provision_href or archive is None:
@@ -938,7 +976,10 @@ def _apply_insert_op(
     if len(_resolve_target_nodes(tree.document, new_node_source_path)) > 0:
         return _skip(SKIP_INSERT_ALREADY_PRESENT, op)
 
-    payload = _extract_insertion_payload(op, leaf_kind, leaf_label, archive, amending_root_cache)
+    payload = _extract_insertion_payload(
+        op, leaf_kind, leaf_label, archive, amending_root_cache,
+        base_work_year=base_work_year, base_work_number=base_work_number,
+    )
     if payload is None:
         return _skip(SKIP_PAYLOAD_NOT_EXTRACTABLE, op)
 
@@ -989,12 +1030,17 @@ def _extract_replacement_payload(
     op: NZChainOp,
     archive: Any,
     amending_root_cache: dict[str, Any],
+    *,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> Any:
     """Re-extract the one-to-one structural replacement payload for ``op``.
 
     Returns an ``NZStructuralReplacement`` or ``None`` (unresolvable amending act/
     href, or a non-clean one-to-one payload — the SAME typed blocker the dry-run
-    kernel raises, here collapsed to a skip).
+    kernel raises, here collapsed to a skip). ``base_work_year``/
+    ``base_work_number`` let a schedule-indirection amendment resolve its payload
+    from the schedule amendment group keyed to the base act.
     """
 
     assert op.source_path is not None
@@ -1010,6 +1056,8 @@ def _extract_replacement_payload(
         amending_node,
         target_leaf_kind=leaf_kind,
         target_leaf_label=leaf_label,
+        base_work_year=base_work_year,
+        base_work_number=base_work_number,
     )
     if isinstance(replacement, str):
         return None
@@ -1022,8 +1070,15 @@ def _extract_insertion_payload(
     leaf_label: str,
     archive: Any,
     amending_root_cache: dict[str, Any],
+    *,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> Any:
-    """Re-extract the single new-node insertion payload for ``op`` (or ``None``)."""
+    """Re-extract the single new-node insertion payload for ``op`` (or ``None``).
+
+    ``base_work_year``/``base_work_number`` let a schedule-indirection amendment
+    resolve its payload from the schedule amendment group keyed to the base act.
+    """
 
     amending_root = _amending_act_root(archive, op.amending_work_id, amending_root_cache)
     if amending_root is None:
@@ -1035,6 +1090,8 @@ def _extract_insertion_payload(
         amending_node,
         inserted_leaf_kind=leaf_kind,
         inserted_leaf_label=leaf_label,
+        base_work_year=base_work_year,
+        base_work_number=base_work_number,
     )
     if isinstance(payload, str):
         return None
@@ -1419,6 +1476,7 @@ def build_chain_replay(
 
     parsed_cache: dict[str, NZSourceDocument | None] = {}
     amending_root_cache: dict[str, Any] = {}
+    base_work_year, base_work_number = _base_work_year_number(work_id)
     base_version = versions_asc[0]
     base_doc = _parse_archived_version(archive, base_version, parsed_cache)
     if base_doc is None:
@@ -1446,6 +1504,8 @@ def build_chain_replay(
             latest_version_date=latest_version_date,
             archive=archive,
             amending_root_cache=amending_root_cache,
+            base_work_year=base_work_year,
+            base_work_number=base_work_number,
         )
         ops_applied += applied
         all_skips.extend(skips)

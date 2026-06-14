@@ -41,6 +41,9 @@ from lawvm.new_zealand.dry_run import (
     scope_from_arg,
 )
 from lawvm.new_zealand.source_tree import (
+    NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED,
+    NZ_STRUCTURAL_BLOCKED_SCHEDULE_NO_MATCHING_CHILD,
+    NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER,
     NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH,
     NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE,
     NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD,
@@ -1135,3 +1138,186 @@ def test_extractor_refuses_schedule_indirection_amending_provision() -> None:
     node = _amending_node(xml, "SCHED")
     result = extract_structural_insertion(node, inserted_leaf_kind="subprov", inserted_leaf_label="3")
     assert result == NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION
+
+
+# --- Schedule-indirection payload RESOLUTION (follow the indirection). --------
+#
+# When the base work is known, a schedule-indirection amendment is no longer
+# refused: the payload is read from the ``<schedule.amendments.group2>`` block
+# keyed to the base act, in either the bare-``<para>`` or the ``<legtable>`` row
+# shape. The same leaf-matchers run as for an inline ``<amend>`` subtree.
+
+# group2 form: each amended act is one group keyed by its heading citation; the
+# operative section delegates ("...specified in Schedule 1 ... as set out in that
+# schedule"). Two different base acts share the amending act; keying by (year,
+# number) selects exactly one group.
+_SCHEDULE_GROUP_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>9</label><heading>Consequential amendments</heading><prov.body>
+      <subprov><label></label><para>
+        <text>Amend the enactments specified in <citation jurisdiction="nz"><intref href="SCH1">Schedule 1</intref></citation> as set out in that schedule.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH1"><label>1</label><heading>Consequential amendments</heading>
+    <schedule.amendments>
+      <schedule.amendments.group2 id="G_A"><heading>Forests Act 1949 (1949 No 19)</heading>
+        <para><text>After <citation jurisdiction="nz"><extref href="x">section 67C(1)(g)(iii)</extref></citation>, insert:</text>
+          <amend><label-para><label>iv</label><para><text>iv harvested from a forest under the Forests Act.</text></para></label-para></amend>
+        </para>
+      </schedule.amendments.group2>
+      <schedule.amendments.group2 id="G_B"><heading>Crimes Act 1961 (1961 No 43)</heading>
+        <para><text>After <citation jurisdiction="nz"><extref href="y">section 9(2)(a)</extref></citation>, insert:</text>
+          <amend><label-para><label>iv</label><para><text>iv a Crimes Act paragraph, not the Forests one.</text></para></label-para></amend>
+        </para>
+      </schedule.amendments.group2>
+    </schedule.amendments>
+  </schedule>
+</act>
+"""
+
+
+def test_schedule_indirection_resolves_payload_from_group_for_base_work() -> None:
+    node = _amending_node(_SCHEDULE_GROUP_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="label-para",
+        inserted_leaf_label="iv",
+        base_work_year="1949",
+        base_work_number="19",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "iv"
+    assert "harvested from a forest" in result.root.text
+    # The colliding 'iv' in the Crimes Act group is NOT chosen: keying by the base
+    # act's (year, number) scopes to the Forests Act group only.
+    assert "Crimes Act paragraph" not in result.root.text
+
+
+def test_schedule_indirection_keys_other_base_work_to_other_group() -> None:
+    node = _amending_node(_SCHEDULE_GROUP_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="label-para",
+        inserted_leaf_label="iv",
+        base_work_year="1961",
+        base_work_number="43",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert "Crimes Act paragraph" in result.root.text
+
+
+def test_schedule_indirection_without_base_work_still_refused() -> None:
+    # No base-work identity -> the payload cannot be keyed to a group; the typed
+    # schedule-indirection blocker stands (no guess).
+    node = _amending_node(_SCHEDULE_GROUP_XML, "OP")
+    result = extract_structural_insertion(node, inserted_leaf_kind="label-para", inserted_leaf_label="iv")
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION
+
+
+def test_schedule_indirection_no_group_for_base_work_is_typed_blocker() -> None:
+    # The base act has no schedule amendment group in this amending act.
+    node = _amending_node(_SCHEDULE_GROUP_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="label-para",
+        inserted_leaf_label="iv",
+        base_work_year="2000",
+        base_work_number="1",
+    )
+    assert result == NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
+
+
+# legtable form: the payload sits in the amendment column of a 3-column table
+# (Location | Amendment | Code), one row per target. A descendant scan reaches
+# the row's ``<amend>`` the same way as the bare-para form.
+_SCHEDULE_LEGTABLE_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>3</label><heading>Schedule amendments</heading><prov.body>
+      <subprov><label>1</label><para>
+        <text>Amend the Acts set out in the tables in <citation jurisdiction="nz"><intref href="SCH2">Schedules 1 to 32</intref></citation> of this Act.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH2"><label>2</label><heading>Department of Corrections</heading>
+    <schedule.amendments>
+      <schedule.amendments.group2 id="G_C"><heading>Corrections Act 2004 (2004 No 50)</heading>
+        <para><legtable><table><tgroup cols="3"><tbody>
+          <row>
+            <entry><para><text>After section 31(3)</text></para></entry>
+            <entry/>
+            <entry><para><text>Insert:</text>
+              <amend><subprov><label>4</label><para><text>4 Rules under subsection (1) are made by the chief executive.</text></para></subprov></amend>
+            </para></entry>
+          </row>
+        </tbody></tgroup></table></legtable></para>
+      </schedule.amendments.group2>
+    </schedule.amendments>
+  </schedule>
+</act>
+"""
+
+
+def test_schedule_indirection_resolves_payload_from_legtable_row() -> None:
+    node = _amending_node(_SCHEDULE_LEGTABLE_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="subprov",
+        inserted_leaf_label="4",
+        base_work_year="2004",
+        base_work_number="50",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "4"
+    assert "made by the chief executive" in result.root.text
+
+
+def test_schedule_indirection_no_matching_leaf_in_group_is_typed_blocker() -> None:
+    node = _amending_node(_SCHEDULE_LEGTABLE_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="subprov",
+        inserted_leaf_label="99",
+        base_work_year="2004",
+        base_work_number="50",
+    )
+    assert result == NZ_STRUCTURAL_BLOCKED_SCHEDULE_NO_MATCHING_CHILD
+
+
+# Placeholder form: the omnibus operative section substitutes a ``[standard
+# text]`` token after the schedule payload is laid down; the raw payload would be
+# a known-wrong node, so it is refused as typed residue.
+_SCHEDULE_PLACEHOLDER_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>3</label><heading>Schedule amendments</heading><prov.body>
+      <subprov><label>1</label><para>
+        <text>Amend the Acts set out in the tables in <citation jurisdiction="nz"><intref href="SCH3">Schedules 1 to 32</intref></citation> of this Act.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH3"><label>2</label><heading>Department of Corrections</heading>
+    <schedule.amendments>
+      <schedule.amendments.group2 id="G_D"><heading>Corrections Act 2004 (2004 No 50)</heading>
+        <para><text>After <citation jurisdiction="nz"><extref href="z">section 2(2)</extref></citation>, insert:</text>
+          <amend><subprov><label>3</label><para><text>3 An order under this section is [<emphasis style="italic">standard text</emphasis>].</text></para></subprov></amend>
+        </para>
+      </schedule.amendments.group2>
+    </schedule.amendments>
+  </schedule>
+</act>
+"""
+
+
+def test_schedule_indirection_refuses_unresolved_placeholder_payload() -> None:
+    node = _amending_node(_SCHEDULE_PLACEHOLDER_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="subprov",
+        inserted_leaf_label="3",
+        base_work_year="2004",
+        base_work_number="50",
+    )
+    assert result == NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER

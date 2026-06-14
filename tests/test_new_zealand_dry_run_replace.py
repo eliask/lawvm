@@ -241,6 +241,54 @@ def test_extractor_returns_clean_one_to_one_replacement() -> None:
     assert "brand new body" in result.root.text
 
 
+# A schedule-indirection REPLACE ("Amend the enactments specified in Schedule 1
+# ... as set out in that schedule" delivering a whole-provision replace) resolves
+# its payload from the schedule amendment group keyed to the base act, the same
+# as the insert path.
+_SCHEDULE_REPLACE_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>9</label><heading>Consequential amendments</heading><prov.body>
+      <subprov><label></label><para>
+        <text>Amend the enactments specified in <citation jurisdiction="nz"><intref href="SCH1">Schedule 1</intref></citation> as set out in that schedule.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH1"><label>1</label><heading>Consequential amendments</heading>
+    <schedule.amendments>
+      <schedule.amendments.group2 id="G_A"><heading>Forests Act 1949 (1949 No 19)</heading>
+        <para><text>Replace <citation jurisdiction="nz"><extref href="x">section 67V</extref></citation> with:</text>
+          <amend><prov><label>67V</label><para><text>67V Replacement section about resource management.</text></para></prov></amend>
+        </para>
+      </schedule.amendments.group2>
+    </schedule.amendments>
+  </schedule>
+</act>
+"""
+
+
+def test_schedule_indirection_resolves_replacement_for_base_work() -> None:
+    node = _amending_node(_SCHEDULE_REPLACE_XML, "OP")
+    result = extract_structural_replacement(
+        node,
+        target_leaf_kind="prov",
+        target_leaf_label="67V",
+        base_work_year="1949",
+        base_work_number="19",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "67V"
+    assert "resource management" in result.root.text
+
+
+def test_schedule_indirection_replacement_without_base_work_blocks() -> None:
+    # No base-work identity: the payload cannot be keyed to a schedule group, and
+    # the operative section carries no inline amend subtree -> typed blocker.
+    node = _amending_node(_SCHEDULE_REPLACE_XML, "OP")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="67V")
+    assert isinstance(result, str)
+
+
 def test_extractor_selects_witness_child_from_one_to_many_expansion() -> None:
     # The amend carries subprov 2 AND subprov 2A. The per-witness target leaf
     # (subprov 2) selects exactly its own child; the sibling 2A belongs to its

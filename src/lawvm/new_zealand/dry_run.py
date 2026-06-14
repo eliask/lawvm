@@ -1773,11 +1773,14 @@ def _dry_run_one_replace(
             amendment_date_iso=amendment_date_iso,
             detail={"amending_work_id": row.amending_work_id, "amending_provision_href": href},
         )
+    base_year, base_number = _base_work_year_number(work_id)
     replacement = extract_structural_replacement(
         amending_node,
         target_leaf_kind=leaf_kind,
         target_leaf_label=leaf_label,
         target_provision_label=provision_label,
+        base_work_year=base_year,
+        base_work_number=base_number,
     )
     if isinstance(replacement, str):
         return NZDryRunRefusal(
@@ -2450,11 +2453,14 @@ def _dry_run_one_insert(
     # whole-provision insert the new node IS the section, so there is no enclosing
     # section to scope by (None falls back to leaf-only matching).
     insert_provision_label = _top_level_provision_label(parent_source_path) if is_nested else None
+    base_year, base_number = _base_work_year_number(work_id)
     payload = extract_structural_insertion(
         amending_node,
         inserted_leaf_kind=leaf_kind,
         inserted_leaf_label=leaf_label,
         target_provision_label=insert_provision_label,
+        base_work_year=base_year,
+        base_work_number=base_number,
     )
     if isinstance(payload, str):
         return NZDryRunRefusal(
@@ -2850,6 +2856,24 @@ def _leaf_source_label(source_path: tuple[str, ...]) -> str:
         if separator in leaf:
             return leaf.split(separator, 1)[1]
     return ""
+
+
+_BASE_WORK_ID_RE = re.compile(r"^act_public_(?P<year>\d{4})_(?P<number>[0-9A-Za-z]+)$")
+
+
+def _base_work_year_number(work_id: str) -> tuple[str, str]:
+    """Parse a base ``act_public_{year}_{number}`` work id into (year, number).
+
+    Returns ``("", "")`` for any other work-id shape. The number is normalized the
+    same way :func:`parse_public_act_citation` normalizes a schedule-group heading
+    citation (leading zeros stripped) so the two compare exactly when keying a
+    schedule amendment group to the base act.
+    """
+    match = _BASE_WORK_ID_RE.match(work_id or "")
+    if match is None:
+        return ("", "")
+    number = match.group("number")
+    return (match.group("year"), number.lstrip("0") or "0")
 
 
 def _top_level_provision_label(source_path: tuple[str, ...]) -> str | None:

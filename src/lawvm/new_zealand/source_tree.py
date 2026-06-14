@@ -590,6 +590,8 @@ def extract_structural_replacement(
     target_leaf_kind: str,
     target_leaf_label: str,
     target_provision_label: str | None = None,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -616,6 +618,21 @@ def extract_structural_replacement(
         return NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE
     normalized_label = _normalize_text(target_leaf_label)
     normalized_provision = _normalize_text(target_provision_label) if target_provision_label else ""
+
+    # A schedule-indirection amending provision delivers its replacement payload
+    # through schedule tables, not its own ``<amend>`` subtree. When the base work
+    # is known we follow the indirection into the schedule amendment group keyed to
+    # that act; otherwise the plain "no amend subtree" blocker below stands.
+    if _amending_node_is_schedule_indirection(amending_node):
+        return _resolve_schedule_indirection(
+            amending_node,
+            leaf_kind=target_leaf_kind,
+            normalized_label=normalized_label,
+            normalized_provision=normalized_provision,
+            base_work_year=base_work_year,
+            base_work_number=base_work_number,
+            insertion=False,
+        )
 
     amend_subtrees = [
         element
@@ -774,18 +791,223 @@ NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH = "structural_insert_multiple_amend
 NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD = "structural_insert_extracted_node_is_empty"
 NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE = "structural_insert_inserted_leaf_kind_or_label_unusable"
 NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION = "structural_insert_amending_provision_is_schedule_indirection"
+# Schedule-indirection where the schedule payload could not be resolved for the
+# base work: the operative provision delegates to a schedule but no schedule
+# amendment group keyed to the base act, or no matching ``<amend>`` for the
+# target leaf within it, was found. Distinct from the plain "no schedule support"
+# blocker so the residue is attributable to the schedule lane, never a guess.
+NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED = "structural_schedule_indirection_no_amend_group_for_base_work"
+NZ_STRUCTURAL_BLOCKED_SCHEDULE_NO_MATCHING_CHILD = "structural_schedule_indirection_no_amend_child_matches_target_leaf"
+NZ_STRUCTURAL_BLOCKED_SCHEDULE_AMBIGUOUS_MATCH = "structural_schedule_indirection_multiple_amend_children_match_target_leaf"
+# The schedule payload carries an unresolved ``[standard text]`` placeholder that
+# the operative provision instructs to substitute (the Secondary Legislation Act
+# 2021 omnibus shape). The substituted form, not the placeholder form, is what the
+# oracle holds, so emitting the raw payload would be a known-wrong node. Resolving
+# the substitution is a separate grammar; until then this is typed residue.
+NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER = "structural_schedule_indirection_payload_has_unresolved_placeholder"
+
+# The placeholder token the omnibus operative provision substitutes. Matched on
+# the flattened payload text ("... is [standard text].").
+_SCHEDULE_PAYLOAD_PLACEHOLDER = re.compile(r"\[\s*standard text\s*\]", re.IGNORECASE)
 
 # Schedule-indirection amending provisions ("Amend the Acts set out in the
-# tables in Schedules 1 to 32 of this Act, in each case,—") deliver their
-# inserted content through schedule TABLES, not through the ``<amend>`` subtree
-# the history-note href points to. That href instead resolves to the amending
-# act's OWN illustrative provision body, whose structural nodes (subprov 1/2/3,
-# label-para a/b) share labels with the genuinely inserted node and would be
-# spuriously matched. The inserted content is not recoverable from this shape,
-# so the extractor refuses it as a typed blocker rather than emit a false node.
+# tables in Schedules 1 to 32 of this Act, in each case,—" / "Amend the
+# enactments specified in Schedule N ... as set out in that schedule") deliver
+# their payload through schedule TABLES, not through the ``<amend>`` subtree the
+# history-note href points to. The href resolves to the amending act's OPERATIVE
+# section, whose own illustrative body nodes would be spuriously matched. The
+# real payload lives in ``<schedule.amendments.group2>`` blocks (one per amended
+# act, sometimes wrapped in a ``<legtable>``) elsewhere in the amending act. When
+# the base work is known we follow the indirection to the group keyed to that
+# act and extract from its ``<amend>`` subtrees with the SAME leaf-matchers the
+# inline path uses; otherwise we still refuse with a typed blocker.
+#
+# The detector matches the omnibus shapes seen across the corpus: "Acts" /
+# "enactments" / "legislation" / "provisions" "specified|set out|listed" in a
+# "Schedule(s) N", optionally with "as set out in that schedule" / "in the
+# manner set out". The bare ``amend the acts set out ... schedules`` form is kept
+# as a fast-path so existing behaviour is unchanged where it already fired.
 _SCHEDULE_INDIRECTION_INSTRUCTION = re.compile(
     r"\bamend the acts?\s+set out\b.*\bschedules?\b", re.IGNORECASE | re.DOTALL
 )
+_SCHEDULE_INDIRECTION_DELEGATION = re.compile(
+    r"\b(?:acts?|enactments?|legislation|provisions?|instruments?)\b"
+    r".{0,80}?\b(?:specified|set out|listed)\b.{0,40}?\bschedules?\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_SCHEDULE_INDIRECTION_SET_OUT = re.compile(
+    r"\b(?:as\s+)?set out in (?:that schedule|the (?:tables? in )?schedules?)\b"
+    r"|\bin the manner (?:specified|set out)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _is_schedule_indirection_text(flat_text: str) -> bool:
+    """True when an amending provision's prose delegates its payload to a schedule.
+
+    Recognizes the bare ``amend the acts set out ... schedules`` form and the
+    broader ``<kind> specified/set out in Schedule N`` + ``set out in that
+    schedule`` / ``in the manner set out`` omnibus delegation. Conservative:
+    requires both a schedule reference and a delegation verb so an incidental
+    "schedule" mention is not mistaken for indirection.
+    """
+    if _SCHEDULE_INDIRECTION_INSTRUCTION.search(flat_text):
+        return True
+    if _SCHEDULE_INDIRECTION_DELEGATION.search(flat_text) and _SCHEDULE_INDIRECTION_SET_OUT.search(flat_text):
+        return True
+    return False
+
+
+def _amending_node_is_schedule_indirection(amending_node: etree._Element) -> bool:
+    for text_node in amending_node.iter():
+        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+            continue
+        if _is_schedule_indirection_text(_node_text(text_node)):
+            return True
+    return False
+
+
+def _schedule_amendment_groups_for_base_work(
+    amending_root: etree._Element,
+    *,
+    base_work_year: str,
+    base_work_number: str,
+) -> list[etree._Element]:
+    """``<schedule.amendments.group2>`` blocks keyed to the base act.
+
+    Each schedule-table amendment group carries a ``<heading>`` naming the amended
+    act ("Forests Act 1949 (1949 No 19)" / "Corrections Act 2004 (2004 No 50)").
+    We parse that citation and keep the groups whose (year, number) match the base
+    work being replayed — an exact key, never a name-substring guess. A heading
+    that does not parse to a public-act (year, number) (e.g. an SR-numbered
+    regulation, or an empty continuation heading) is skipped: it cannot be the
+    public-act base work. Returns every matching group across all schedules.
+    """
+    if not base_work_year or not base_work_number:
+        return []
+    groups: list[etree._Element] = []
+    for group in amending_root.iter():
+        if not isinstance(group.tag, str) or _localname(group) != "schedule.amendments.group2":
+            continue
+        heading = _direct_child_text(group, "heading")
+        if not heading:
+            continue
+        parsed = parse_public_act_citation(heading)
+        if parsed is None:
+            continue
+        _title, year, number = parsed
+        if year == base_work_year and number == base_work_number:
+            groups.append(group)
+    return groups
+
+
+def _schedule_group_amend_subtrees(groups: list[etree._Element]) -> list[etree._Element]:
+    """All ``<amend>`` payload subtrees inside the given schedule amendment groups.
+
+    Within a group the ``<amend>`` subtrees sit either directly under instruction
+    ``<para>``s ("After section 67C(1)(g)(iii), insert: <amend>…") or inside the
+    rows of a ``<legtable>`` (location column + amendment column). A descendant
+    scan reaches both shapes uniformly; the per-row instruction citation that
+    precedes each ``<amend>`` is what later disambiguates by section, mirroring the
+    inline ``_amend_subtree_section_label`` logic.
+    """
+    amends: list[etree._Element] = []
+    for group in groups:
+        for element in group.iter():
+            if isinstance(element.tag, str) and _localname(element) == "amend":
+                amends.append(element)
+    return amends
+
+
+def _extract_from_schedule_amends(
+    amend_subtrees: list[etree._Element],
+    *,
+    leaf_kind: str,
+    normalized_label: str,
+    normalized_provision: str,
+    insertion: bool,
+) -> "NZStructuralReplacement | str":
+    """Run the shared leaf-matchers over schedule-table ``<amend>`` subtrees.
+
+    Reuses the inline insertion/replacement matchers so a schedule-delivered
+    payload is parsed into the identical :class:`NZStructuralReplacement` node
+    model. Disambiguates by the per-instruction section citation when more than
+    one subtree matches the same leaf. Typed blockers (no match / ambiguous /
+    empty) mirror the inline path; nothing is guessed.
+    """
+    match_fn = _insertion_leaf_matches if insertion else _replacement_leaf_matches
+    matches = match_fn(amend_subtrees, leaf_kind, normalized_label)
+    if len(matches) > 1 and normalized_provision:
+        section_scoped = [
+            amend
+            for amend in amend_subtrees
+            if _amend_subtree_section_label(amend) == normalized_provision
+        ]
+        if section_scoped:
+            scoped_matches = match_fn(section_scoped, leaf_kind, normalized_label)
+            if scoped_matches:
+                matches = scoped_matches
+    if not matches:
+        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_NO_MATCHING_CHILD
+    if len(matches) > 1:
+        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_AMBIGUOUS_MATCH
+    # The omnibus shape leaves a ``[standard text]`` placeholder in the schedule
+    # payload that the operative provision substitutes; the oracle holds the
+    # substituted form. Refuse the raw payload rather than emit a known-wrong node.
+    if _SCHEDULE_PAYLOAD_PLACEHOLDER.search(_node_text(matches[0])):
+        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER
+    nodes: list[NZSourceNode] = []
+    _walk_source_nodes(matches[0], path=("amend",), nodes=nodes, attached_history_note_keys=set())
+    if not nodes or not nodes[0].text.strip():
+        return (
+            NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
+            if insertion
+            else NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
+        )
+    return NZStructuralReplacement(root=nodes[0], descendants=tuple(nodes[1:]))
+
+
+def _resolve_schedule_indirection(
+    amending_node: etree._Element,
+    *,
+    leaf_kind: str,
+    normalized_label: str,
+    normalized_provision: str,
+    base_work_year: str,
+    base_work_number: str,
+    insertion: bool,
+) -> "NZStructuralReplacement | str":
+    """Extract a schedule-delivered payload for the target leaf, or a typed blocker.
+
+    Without the base work identity the payload cannot be keyed to its schedule
+    group, so the caller's plain schedule-indirection blocker stands. With it we
+    locate the ``<schedule.amendments.group2>`` block(s) for the base act and run
+    the shared leaf-matchers over their ``<amend>`` subtrees.
+    """
+    if not base_work_year or not base_work_number:
+        return (
+            NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION
+            if insertion
+            else NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
+        )
+    amending_root = amending_node.getroottree().getroot()
+    groups = _schedule_amendment_groups_for_base_work(
+        amending_root,
+        base_work_year=base_work_year,
+        base_work_number=base_work_number,
+    )
+    if not groups:
+        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
+    amend_subtrees = _schedule_group_amend_subtrees(groups)
+    if not amend_subtrees:
+        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
+    return _extract_from_schedule_amends(
+        amend_subtrees,
+        leaf_kind=leaf_kind,
+        normalized_label=normalized_label,
+        normalized_provision=normalized_provision,
+        insertion=insertion,
+    )
 
 
 def extract_structural_insertion(
@@ -794,6 +1016,8 @@ def extract_structural_insertion(
     inserted_leaf_kind: str,
     inserted_leaf_label: str,
     target_provision_label: str | None = None,
+    base_work_year: str = "",
+    base_work_number: str = "",
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -822,13 +1046,20 @@ def extract_structural_insertion(
     normalized_provision = _normalize_text(target_provision_label) if target_provision_label else ""
 
     # A schedule-indirection amending provision does not carry the inserted node
-    # in its ``<amend>`` subtree (the content lives in schedule tables); its own
-    # body structural nodes would be spuriously matched by label. Refuse.
-    for text_node in amending_node.iter():
-        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
-            continue
-        if _SCHEDULE_INDIRECTION_INSTRUCTION.search(_node_text(text_node)):
-            return NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION
+    # in its own ``<amend>`` subtree (the content lives in schedule tables); its
+    # body structural nodes would be spuriously matched by label. When the base
+    # work is known we follow the indirection into the schedule amendment group
+    # keyed to that act; otherwise we refuse with a typed blocker.
+    if _amending_node_is_schedule_indirection(amending_node):
+        return _resolve_schedule_indirection(
+            amending_node,
+            leaf_kind=inserted_leaf_kind,
+            normalized_label=normalized_label,
+            normalized_provision=normalized_provision,
+            base_work_year=base_work_year,
+            base_work_number=base_work_number,
+            insertion=True,
+        )
 
     amend_subtrees = [
         element
