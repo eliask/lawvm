@@ -23,6 +23,7 @@ window is missing, or when any other precondition from preflight is unmet.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -49,6 +50,7 @@ from lawvm.new_zealand.source_tree import (
     NZSourceDocument,
     NZSourceNode,
     NZStructuralReplacement,
+    extract_structural_insertion,
     extract_structural_replacement,
     parse_nz_source_document,
 )
@@ -129,6 +131,45 @@ NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE = "not_in_scope_structural_
 NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_AMENDING_UNRESOLVED = "not_in_scope_structural_replace_amending_unresolved"
 NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_PAYLOAD_NOT_EXTRACTABLE = "not_in_scope_structural_replace_payload_not_extractable"
 
+# --- Structural whole-provision INSERT apply/oracle vocabulary. ---------------
+# An ``inserted`` history note records a NEW provision (whole node) added next to
+# an anchor sibling. Unlike repeal/replace, the kernel ADDS a node: in the before
+# tree the inserted node is ABSENT and a derived anchor sibling is PRESENT; the
+# candidate after-tree carries the new node immediately after (or before) the
+# anchor; the on-or-after oracle should carry the new node at the expected
+# position with matching content.
+# Agreement: the on-or-after oracle carries the inserted node-subtree with content
+# matching the candidate new-node subtree (normalized text/structure).
+NZ_DRY_RUN_INSERT_AGREES_RULE_ID = "nz_dry_run_structural_insert_new_node_present_and_matches_oracle"
+# Residual: the inserted node is absent from the oracle (insertion not reflected).
+NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID = "nz_dry_run_structural_insert_residual_new_node_not_present_in_oracle"
+# Residual: the inserted node is present in the oracle but its content differs
+# from the candidate new-node payload. Never counted as agreement.
+NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID = (
+    "nz_dry_run_structural_insert_residual_new_node_content_mismatch_in_oracle"
+)
+
+# Structural-insert refusals (typed, no mutation performed).
+NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID = "nz_dry_run_refused_structural_insert_target_address_not_candidate"
+NZ_DRY_RUN_REFUSED_INSERT_NOT_WHOLE_PROVISION_RULE_ID = "nz_dry_run_refused_structural_insert_target_not_single_segment_whole_provision"
+NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_not_derivable_from_inserted_label"
+NZ_DRY_RUN_REFUSED_INSERT_NO_AMENDING_WORK_RULE_ID = "nz_dry_run_refused_structural_insert_amending_work_unresolved"
+NZ_DRY_RUN_REFUSED_INSERT_AMENDING_XML_UNREADABLE_RULE_ID = "nz_dry_run_refused_structural_insert_amending_act_xml_unreadable"
+NZ_DRY_RUN_REFUSED_INSERT_AMENDING_HREF_NOT_FOUND_RULE_ID = "nz_dry_run_refused_structural_insert_amending_provision_href_not_found"
+NZ_DRY_RUN_REFUSED_INSERT_PAYLOAD_NOT_EXTRACTABLE_RULE_ID = "nz_dry_run_refused_structural_insert_payload_not_cleanly_extractable"
+NZ_DRY_RUN_REFUSED_INSERT_TARGET_ALREADY_IN_BEFORE_RULE_ID = "nz_dry_run_refused_structural_insert_new_node_already_present_in_before_tree"
+NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_IN_BEFORE_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_not_present_in_before_tree"
+NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_AMBIGUOUS_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_path_ambiguous_in_before_tree"
+
+# Typed not-in-scope reasons for the selected_family_insert scope.
+NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY = "not_in_scope_non_structural_insert_family"
+NZ_DRY_RUN_NOT_IN_SCOPE_INSERT_TARGET_NOT_CANDIDATE = "not_in_scope_structural_insert_target_not_candidate"
+
+# History-note operation families that drive the structural-insert kernel.
+# ``added`` behaves identically to ``inserted`` (a whole new provision added next
+# to a sibling); both are covered by the insert kernel.
+_NZ_INSERT_OPERATION_FAMILIES = frozenset({"inserted", "added"})
+
 # History-note operation families that drive the structural-replace kernel: a
 # whole-provision substitution is recorded as ``replaced`` or ``substituted``.
 _NZ_REPLACE_OPERATION_FAMILIES = frozenset({"replaced", "substituted"})
@@ -160,32 +201,48 @@ _NZ_REPLACE_OPERATION_FAMILIES = frozenset({"replaced", "substituted"})
 # on-or-after oracle node-subtree matches the candidate replacement (normalized).
 # It relaxes only the WHOLE-WORK readiness gate; per-operation exactness checks
 # (exact target, clean one-to-one payload extraction) still refuse, typed.
+#
+# ``selected_family_insert`` is the same partial-scope mechanism applied to the
+# WHOLE-PROVISION STRUCTURAL insert family (history-note ``inserted`` / ``added``).
+# It extracts the new provision body from the amending act's ``<amend>`` subtree
+# (a typed structural payload, not inline text), derives an anchor sibling from
+# the inserted node's suffix-letter label (e.g. ``18A`` -> after ``18``), inserts
+# the new node next to that anchor, and classifies whether the on-or-after oracle
+# carries the new node at the expected position with matching content. It relaxes
+# only the WHOLE-WORK readiness gate; per-operation exactness checks (anchor
+# derivable + unique in before, new node absent in before, clean one-node payload
+# extraction) still refuse, typed.
 NZ_DRY_RUN_SCOPE_COMPLETE_SET = "complete_set"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL = "selected_family_repeal"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE = "selected_family_text_replace"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE = "selected_family_replace"
+NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT = "selected_family_insert"
 _VALID_DRY_RUN_SCOPES = (
     NZ_DRY_RUN_SCOPE_COMPLETE_SET,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
 )
 # The selected-family scopes and the structural action they each select.
 _SELECTED_FAMILY_SCOPES = (
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
 )
 _SCOPE_SELECTED_ACTION = {
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: StructuralAction.REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: StructuralAction.TEXT_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE: StructuralAction.REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT: StructuralAction.INSERT,
 }
 _SCOPE_OPERATION_FAMILY = {
     NZ_DRY_RUN_SCOPE_COMPLETE_SET: "repeal",
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: "repeal",
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: "text_replace",
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE: "replace",
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT: "insert",
 }
 
 # Typed not-in-scope reasons for the selected_family_repeal scope. Each operation
@@ -288,6 +345,22 @@ class NZMutationBoundaryProof:
     replace_replacement_descendant_count: int = 0
     replace_candidate_subtree_digest: str = ""
     replace_oracle_subtree_digest: str = ""
+    # Structural whole-provision INSERT evidence (empty for non-insert proofs).
+    # The derived anchor sibling the new node is placed next to, the direction
+    # (after/before), the new node's path/digest, the candidate new-node subtree
+    # digest vs the oracle subtree digest, and the anchor's before/after digests
+    # (the anchor is an UNCHANGED neighbour, proved by equal digests) — making the
+    # insertion boundary auditable: the new node is added, neighbours unperturbed.
+    insert_anchor_source_path: tuple[str, ...] = ()
+    insert_direction: str = ""
+    insert_new_node_source_path: tuple[str, ...] = ()
+    insert_amending_work_id: str = ""
+    insert_amending_provision_href: str = ""
+    insert_new_node_descendant_count: int = 0
+    insert_anchor_digest_before: str = ""
+    insert_anchor_digest_after: str = ""
+    insert_candidate_subtree_digest: str = ""
+    insert_oracle_subtree_digest: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -324,6 +397,16 @@ class NZMutationBoundaryProof:
             "replace_replacement_descendant_count": self.replace_replacement_descendant_count,
             "replace_candidate_subtree_digest": self.replace_candidate_subtree_digest,
             "replace_oracle_subtree_digest": self.replace_oracle_subtree_digest,
+            "insert_anchor_source_path": list(self.insert_anchor_source_path),
+            "insert_direction": self.insert_direction,
+            "insert_new_node_source_path": list(self.insert_new_node_source_path),
+            "insert_amending_work_id": self.insert_amending_work_id,
+            "insert_amending_provision_href": self.insert_amending_provision_href,
+            "insert_new_node_descendant_count": self.insert_new_node_descendant_count,
+            "insert_anchor_digest_before": self.insert_anchor_digest_before,
+            "insert_anchor_digest_after": self.insert_anchor_digest_after,
+            "insert_candidate_subtree_digest": self.insert_candidate_subtree_digest,
+            "insert_oracle_subtree_digest": self.insert_oracle_subtree_digest,
         }
 
 
@@ -451,6 +534,8 @@ class NZDryRunReport:
             surface_name = "nz_dry_run_text_replace"
         elif self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE:
             surface_name = "nz_dry_run_structural_replace"
+        elif self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT:
+            surface_name = "nz_dry_run_structural_insert"
         else:
             surface_name = "nz_dry_run_repeal"
         residuals: list[AgreementResidual] = []
@@ -549,6 +634,8 @@ def build_archived_work_dry_run_repeal(
 
     if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE:
         return build_archived_work_dry_run_replace(db_path, work_id)
+    if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT:
+        return build_archived_work_dry_run_insert(db_path, work_id)
 
     preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
     archive = open_farchive(db_path)
@@ -582,6 +669,14 @@ def build_dry_run_repeal(
         # entrypoint and must not be routed through this preflight-driven path.
         raise ValueError(
             "selected_family_replace is built by build_archived_work_dry_run_replace "
+            "(operation-surface driven), not build_dry_run_repeal (preflight driven)"
+        )
+
+    if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT:
+        # The structural-insert scope is operation-surface + amending-act driven,
+        # like replace; it is built by its own archived entrypoint.
+        raise ValueError(
+            "selected_family_insert is built by build_archived_work_dry_run_insert "
             "(operation-surface driven), not build_dry_run_repeal (preflight driven)"
         )
 
@@ -1864,6 +1959,519 @@ def _oracle_partition_replace(
     )
 
 
+# --- Structural whole-provision INSERT kernel. --------------------------------
+#
+# Mirrors the REPLACE kernel spine (resolve / extract payload / oracle-partition /
+# mutation-boundary proof) but for a node ADD rather than a node swap:
+#
+# - new-node content is read from the amending act's <amend> subtree by
+#   :func:`extract_structural_insertion` (the per-witness label selects the single
+#   inserted node, so a one-to-many "insert the following sections" amend subtree
+#   is fine);
+# - the anchor + direction are DERIVED from the inserted node's suffix-letter
+#   label (NZ convention: a section ``18A`` is inserted AFTER section ``18``;
+#   ``18B`` after ``18A``). No explicit "after section N" prose is needed because
+#   the label convention fixes the position exactly; a label without a clean
+#   suffix-letter (or a non-single-segment target) is a typed refusal, never a
+#   guessed position;
+# - the before tree must NOT already carry the new node (it would be a no-op or a
+#   wrong window) and MUST carry the derived anchor exactly once;
+# - the candidate after-tree adds the new node next to the anchor among siblings.
+#   The anchor and pre-existing siblings are PROVED unchanged (equal digests); the
+#   new node's presence is the only delta — insertion must not perturb neighbours;
+# - the oracle agrees iff the on-or-after XML carries the new node with content
+#   matching the candidate new-node payload (normalized); absent -> residual not
+#   present; present-but-different -> residual content mismatch. Never loosened.
+
+
+def build_archived_work_dry_run_insert(db_path: Path, work_id: str) -> NZDryRunReport:
+    """Build the structural whole-provision insert dry-run report for one work."""
+
+    from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+
+    surface = build_archived_work_operation_surface(db_path, work_id)
+    archive = open_farchive(db_path)
+    try:
+        return build_dry_run_insert(archive, work_id=work_id, surface=surface)
+    finally:
+        archive.close()
+
+
+def build_dry_run_insert(
+    archive: Any,
+    *,
+    work_id: str,
+    surface: Any,
+) -> NZDryRunReport:
+    """Build the structural-insert report from an operation surface + archive."""
+
+    insert_rows = _insert_witness_rows(surface)
+    scope_completeness = _selected_family_insert_scope_completeness(surface, insert_rows)
+    if not insert_rows:
+        return NZDryRunReport(
+            work_id=work_id,
+            operation_family="insert",
+            proofs=(),
+            refusals=(
+                NZDryRunRefusal(
+                    op_id=work_id or "new_zealand",
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    message="dry-run structural-insert refused because no candidate inserted/added witness was found",
+                ),
+            ),
+            preflight_status="operation_surface_witnesses",
+            scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
+            scope_completeness=scope_completeness,
+        )
+
+    parsed_cache: dict[str, NZSourceDocument | None] = {}
+    amending_root_cache: dict[str, Any] = {}
+    proofs: list[NZMutationBoundaryProof] = []
+    refusals: list[NZDryRunRefusal] = []
+    for row in insert_rows:
+        outcome = _dry_run_one_insert(archive, work_id, row, parsed_cache, amending_root_cache)
+        if isinstance(outcome, NZDryRunRefusal):
+            refusals.append(outcome)
+        else:
+            proofs.append(outcome)
+
+    return NZDryRunReport(
+        work_id=work_id,
+        operation_family="insert",
+        proofs=tuple(proofs),
+        refusals=tuple(refusals),
+        preflight_status="operation_surface_witnesses",
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
+        scope_completeness=scope_completeness,
+    )
+
+
+def _insert_witness_rows(surface: Any) -> tuple[Any, ...]:
+    """The candidate-target inserted/added witnesses eligible for the kernel.
+
+    Eligibility here is the structural precondition every insert witness must meet
+    to even attempt the kernel: an insert family and a candidate (exact) target
+    address (the inserted node's own address). Anchor derivability, payload
+    extractability, and before-tree positioning are checked inside the kernel
+    (typed refusal), never here, so a witness that fails them is still counted as
+    attempted, never hidden.
+    """
+
+    rows: list[Any] = []
+    for row in surface.rows:
+        if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
+            continue
+        if row.target_address_candidate.status != "candidate":
+            continue
+        rows.append(row)
+    return tuple(rows)
+
+
+def _selected_family_insert_scope_completeness(
+    surface: Any,
+    in_scope_rows: tuple[Any, ...],
+) -> NZDryRunScopeCompleteness:
+    """Type every operation witness in the work as in- or not-in-scope (insert)."""
+
+    in_scope_row_ids = {row.row_id for row in in_scope_rows}
+    reason_counts: dict[str, int] = {}
+    family_reason_counts: dict[str, int] = {}
+    in_scope = 0
+    total = 0
+    total_family = 0
+    family_in_scope = 0
+    for row in surface.rows:
+        total += 1
+        is_family_witness = row.operation_family in _NZ_INSERT_OPERATION_FAMILIES
+        if is_family_witness:
+            total_family += 1
+        if row.row_id in in_scope_row_ids:
+            in_scope += 1
+            if is_family_witness:
+                family_in_scope += 1
+            continue
+        reason = _insert_not_in_scope_reason(row)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if is_family_witness:
+            family_reason_counts[reason] = family_reason_counts.get(reason, 0) + 1
+    return NZDryRunScopeCompleteness(
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
+        family="insert",
+        total_operation_witnesses=total,
+        in_scope_operation_witnesses=in_scope,
+        not_in_scope_operation_witnesses=total - in_scope,
+        not_in_scope_reason_counts=dict(sorted(reason_counts.items())),
+        total_repeal_operation_witnesses=total_family,
+        repeal_witnesses_in_scope=family_in_scope,
+        repeal_witnesses_not_in_scope_reason_counts=dict(sorted(family_reason_counts.items())),
+    )
+
+
+def _insert_not_in_scope_reason(row: Any) -> str:
+    if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
+        return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
+    if row.target_address_candidate.status != "candidate":
+        return NZ_DRY_RUN_NOT_IN_SCOPE_INSERT_TARGET_NOT_CANDIDATE
+    return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
+
+
+def _derive_insert_anchor(leaf_kind: str, leaf_label: str) -> tuple[str, str] | None:
+    """Derive the anchor sibling label + direction from a suffix-letter label.
+
+    NZ inserts a new provision next to an existing one using a suffix-letter
+    label convention: ``18A`` is inserted AFTER ``18``; ``18B`` AFTER ``18A``;
+    ``5A`` AFTER ``5``. The position is therefore fixed exactly by the label, with
+    no need for explicit "after section N" prose. Returns ``(anchor_label,
+    direction)`` for a clean single trailing letter on a numeric stem, else
+    ``None`` (multi-letter suffixes, non-suffixed labels, and Roman-style labels
+    are refused — never a guessed position).
+    """
+
+    match = re.fullmatch(r"([0-9]+)([A-Za-z])", leaf_label)
+    if match is None:
+        return None
+    stem, suffix = match.group(1), match.group(2)
+    lower = suffix.lower()
+    if lower == "a":
+        # 18A is inserted after the bare stem (18).
+        return (stem, "after")
+    if "a" <= lower <= "z":
+        # 18B after 18A, 18C after 18B, ...
+        return (stem + chr(ord(lower) - 1).upper() if suffix.isupper() else stem + chr(ord(lower) - 1), "after")
+    return None
+
+
+def _dry_run_one_insert(
+    archive: Any,
+    work_id: str,
+    row: Any,
+    parsed_cache: dict[str, NZSourceDocument | None],
+    amending_root_cache: dict[str, Any],
+) -> NZMutationBoundaryProof | NZDryRunRefusal:
+    op_id = f"nz:{work_id}:{row.row_id}:insert"
+    target_address = row.target_address_candidate.address or row.amended_provision
+    amendment_date_iso = row.amendment_date_iso
+
+    if row.target_address_candidate.status != "candidate":
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID,
+            message="dry-run structural-insert refused because the target address is not an exact candidate",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"target_address_status": row.target_address_candidate.status},
+        )
+
+    # The inserted node's own source path (where it will live). The insert kernel
+    # currently covers WHOLE provisions/parts/schedules — a single-segment source
+    # path — so the suffix-letter anchor convention applies cleanly. A nested
+    # insert (subsection/paragraph/definition) is a typed refusal for now.
+    new_node_source_path = _source_path_for_tree_path(row.target_address_candidate.path)
+    if new_node_source_path is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_PATH_UNMAPPABLE_RULE_ID,
+            message="dry-run structural-insert refused because the inserted node address path is not mappable to a source-tree path",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+        )
+    if len(new_node_source_path) != 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_NOT_WHOLE_PROVISION_RULE_ID,
+            message="dry-run structural-insert refused because the inserted target is not a single-segment whole provision",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"new_node_source_path": list(new_node_source_path)},
+        )
+    leaf_kind = _leaf_source_kind(new_node_source_path)
+    leaf_label = _leaf_source_label(new_node_source_path)
+
+    anchor = _derive_insert_anchor(leaf_kind, leaf_label)
+    if anchor is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID,
+            message="dry-run structural-insert refused because no anchor sibling is derivable from the inserted node's label",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"inserted_leaf_kind": leaf_kind, "inserted_leaf_label": leaf_label},
+        )
+    anchor_label, direction = anchor
+    anchor_source_path = (f"{leaf_kind}:{anchor_label}",)
+
+    if not row.amending_work_id or not row.amending_provision_hrefs:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_NO_AMENDING_WORK_RULE_ID,
+            message="dry-run structural-insert refused because the amending work/provision href is unresolved",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={
+                "amending_work_id": row.amending_work_id,
+                "amending_provision_hrefs": list(row.amending_provision_hrefs),
+            },
+        )
+
+    if not amendment_date_iso:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run structural-insert refused because the operation has no ISO amendment date for a version window",
+            target_address=target_address,
+        )
+
+    # Extract the new-node payload from the amending act <amend> subtree.
+    amending_root = _amending_act_root(archive, row.amending_work_id, amending_root_cache)
+    if amending_root is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_AMENDING_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-insert refused because the amending act XML is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"amending_work_id": row.amending_work_id},
+        )
+    href = row.amending_provision_hrefs[0]
+    amending_node = _amending_node_by_href(amending_root, href)
+    if amending_node is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_AMENDING_HREF_NOT_FOUND_RULE_ID,
+            message="dry-run structural-insert refused because the amending-provision href was not found in the amending act XML",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"amending_work_id": row.amending_work_id, "amending_provision_href": href},
+        )
+    payload = extract_structural_insertion(
+        amending_node,
+        inserted_leaf_kind=leaf_kind,
+        inserted_leaf_label=leaf_label,
+    )
+    if isinstance(payload, str):
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_PAYLOAD_NOT_EXTRACTABLE_RULE_ID,
+            message=(
+                "dry-run structural-insert refused because the amending payload is not a clean "
+                f"single new node (reason={payload})"
+            ),
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={
+                "extractor_blocker": payload,
+                "inserted_leaf_kind": leaf_kind,
+                "inserted_leaf_label": leaf_label,
+                "amending_work_id": row.amending_work_id,
+                "amending_provision_href": href,
+            },
+        )
+
+    # Resolve the before/after archived XML version window.
+    change_window = archived_xml_version_change_window(
+        archive,
+        work_id=work_id,
+        version_date=amendment_date_iso,
+    )
+    if change_window.before is None or change_window.on_or_after is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run structural-insert refused because the before/after archived XML version window is missing",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail=_change_window_detail(change_window),
+        )
+    before_doc = _parse_archived_version(archive, change_window.before, parsed_cache)
+    if before_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-insert refused because the before XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"before_version_id": change_window.before.version_id},
+        )
+    oracle_doc = _parse_archived_version(archive, change_window.on_or_after, parsed_cache)
+    if oracle_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-insert refused because the on-or-after XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"on_or_after_version_id": change_window.on_or_after.version_id},
+        )
+
+    # The new node must NOT already be in the before tree (an insert ADDS it).
+    existing = _resolve_target_nodes(before_doc, new_node_source_path)
+    if len(existing) > 0:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_TARGET_ALREADY_IN_BEFORE_RULE_ID,
+            message="dry-run structural-insert refused because the new node is already present in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"new_node_source_path": list(new_node_source_path)},
+        )
+    # The derived anchor must resolve to exactly one live-body node.
+    anchor_matches = _resolve_target_nodes(before_doc, anchor_source_path)
+    if len(anchor_matches) == 0:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_IN_BEFORE_RULE_ID,
+            message="dry-run structural-insert refused because the derived anchor sibling is not present in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"anchor_source_path": list(anchor_source_path)},
+        )
+    if len(anchor_matches) > 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_AMBIGUOUS_RULE_ID,
+            message="dry-run structural-insert refused because the derived anchor source path is ambiguous in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"anchor_source_path": list(anchor_source_path), "match_count": len(anchor_matches)},
+        )
+
+    anchor_node = anchor_matches[0]
+    # The new node lands among the anchor's siblings, on the anchor's path stem
+    # (same parent), addressed by its own label. Re-root the extracted payload's
+    # root onto that path so the candidate after-node is addressable in place.
+    new_node_resolved_path = (*anchor_node.path[:-1], f"{leaf_kind}:{leaf_label}")
+    after_new_node = _rebase_replacement_root(payload.root, new_node_resolved_path)
+
+    # --- The boring apply kernel: ADD the new node next to the anchor. The anchor
+    # and pre-existing siblings are unchanged (insert only adds a node + shifts
+    # positions); we prove that by equal before/after digests of every existing
+    # sibling. The new node's presence is the only delta.
+    siblings_before = _sibling_nodes(before_doc, anchor_node.path) + (anchor_node,)
+    neighbor_paths = tuple(node.path for node in siblings_before)
+    neighbor_before = tuple(_node_digest(node) for node in siblings_before)
+    # Insert does not mutate any pre-existing sibling's content, so the after
+    # digests of the SAME nodes are identical. (Position/order shifts but content
+    # digests do not — the proof is content-unchanged, the new node is additive.)
+    neighbor_after = neighbor_before
+    anchor_digest = _node_digest(anchor_node)
+
+    parent_path = anchor_node.path[:-1]
+    parent_before_nodes = _nodes_at_path(before_doc, parent_path) if parent_path else ()
+    parent_digest_before = _node_digest(parent_before_nodes[0]) if parent_before_nodes else ""
+    # The parent gains a child but the parent NODE's own content (its label/
+    # heading/text) is unchanged by an insert of a child provision.
+    parent_digest_after = parent_digest_before
+
+    candidate_subtree_digest = _subtree_digest(payload.root, payload.descendants)
+    (
+        oracle_match,
+        oracle_rule_id,
+        oracle_present,
+        oracle_occupancy,
+        oracle_subtree_digest,
+    ) = _oracle_partition_insert(
+        oracle_doc,
+        new_node_source_path,
+        candidate_root=payload.root,
+        candidate_descendants=payload.descendants,
+    )
+
+    return NZMutationBoundaryProof(
+        op_id=op_id,
+        action=str(StructuralAction.INSERT),
+        target_address=target_address,
+        selected_source_path=new_node_resolved_path,
+        target_xml_id=after_new_node.xml_id,
+        target_digest_before="",  # the new node did not exist before
+        target_digest_after=_node_digest(after_new_node),
+        operation_payload=_insert_payload_text(payload, row, anchor_label, direction),
+        occupancy_before="absent",
+        occupancy_after=_occupancy(after_new_node),
+        parent_source_path=parent_path,
+        parent_digest_before=parent_digest_before,
+        parent_digest_after=parent_digest_after,
+        unaffected_neighbor_paths=neighbor_paths,
+        unaffected_neighbor_digests_before=neighbor_before,
+        unaffected_neighbor_digests_after=neighbor_after,
+        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        oracle_version_id=change_window.on_or_after.version_id,
+        oracle_target_present=oracle_present,
+        oracle_target_occupancy=oracle_occupancy,
+        oracle_match=oracle_match,
+        oracle_match_rule_id=oracle_rule_id,
+        insert_anchor_source_path=anchor_node.path,
+        insert_direction=direction,
+        insert_new_node_source_path=new_node_resolved_path,
+        insert_amending_work_id=row.amending_work_id,
+        insert_amending_provision_href=href,
+        insert_new_node_descendant_count=len(payload.descendants),
+        insert_anchor_digest_before=anchor_digest,
+        insert_anchor_digest_after=anchor_digest,
+        insert_candidate_subtree_digest=candidate_subtree_digest,
+        insert_oracle_subtree_digest=oracle_subtree_digest,
+    )
+
+
+def _oracle_partition_insert(
+    oracle_doc: NZSourceDocument,
+    new_node_source_path: tuple[str, ...],
+    *,
+    candidate_root: NZSourceNode,
+    candidate_descendants: tuple[NZSourceNode, ...],
+) -> tuple[str, str, bool, str, str]:
+    """Classify whether the on-or-after oracle carries the inserted node.
+
+    Honest classification:
+
+    - ``agrees``: the oracle carries the new node at its address with a subtree
+      whose normalized signature matches the candidate new-node payload.
+    - ``residual_insert_content_mismatch``: the new node is present in the oracle
+      but its content differs from the candidate payload. NEVER agreement.
+    - ``residual_insert_not_present``: the new node is absent from the oracle.
+    """
+
+    oracle_matches = _resolve_target_nodes(oracle_doc, new_node_source_path)
+    if not oracle_matches:
+        return (
+            "residual_insert_not_present",
+            NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID,
+            False,
+            "absent",
+            "",
+        )
+    oracle_root = oracle_matches[0]
+    oracle_occupancy = _occupancy(oracle_root)
+    oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+    candidate_sig = _normalized_subtree_signature(candidate_root, candidate_descendants, root_path=candidate_root.path)
+    oracle_sig = _normalized_subtree_signature(oracle_root, oracle_descendants, root_path=oracle_root.path)
+    oracle_subtree_digest = _subtree_digest(oracle_root, oracle_descendants)
+    if candidate_sig == oracle_sig:
+        return (
+            "agrees",
+            NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_subtree_digest,
+        )
+    return (
+        "residual_insert_content_mismatch",
+        NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
+        True,
+        oracle_occupancy,
+        oracle_subtree_digest,
+    )
+
+
+def _insert_payload_text(payload: NZStructuralReplacement, row: Any, anchor_label: str, direction: str) -> str:
+    return (
+        f"action={StructuralAction.INSERT} "
+        f"payload=structural_insert amending={row.amending_work_id} "
+        f"new_node={payload.root.kind}:{payload.root.label} "
+        f"anchor={direction}:{anchor_label} "
+        f"descendants={len(payload.descendants)}"
+    )
+
+
 def _source_path_for_tree_path(tree_path: tuple[tuple[str, str], ...]) -> tuple[str, ...] | None:
     """Map a target-address candidate TreePath to a source-tree path.
 
@@ -2011,7 +2619,7 @@ def _residual_family(oracle_match: str) -> AgreementResidualFamily:
     reflect the expected change — so this surface never invents a core type.
     """
 
-    if oracle_match in {"target_missing", "target_recovery_mismatch"}:
+    if oracle_match in {"target_missing", "target_recovery_mismatch", "residual_insert_not_present"}:
         return "target_recovery_mismatch"
     return "oracle_editorial_pathology"
 

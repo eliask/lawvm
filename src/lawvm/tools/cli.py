@@ -7967,6 +7967,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "selected-family-repeal",
             "selected-family-text-replace",
             "selected-family-replace",
+            "selected-family-insert",
         ),
         default="complete-set",
         help=(
@@ -7975,7 +7976,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "even when the work's full candidate set is incomplete; 'selected-family-text-replace' "
             "dry-runs the ready single-occurrence text-substitution operations instead; "
             "'selected-family-replace' dry-runs the structural whole-provision replaced/substituted "
-            "operations (amend-subtree payload swapped for the target subtree). The selected-"
+            "operations (amend-subtree payload swapped for the target subtree); "
+            "'selected-family-insert' dry-runs the structural whole-provision inserted/added operations "
+            "(new node from the amend-subtree payload added next to a derived anchor sibling). The selected-"
             "family scopes declare the partial scope and the typed not-in-scope operation-witness counts"
         ),
     )
@@ -8128,6 +8131,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "selected-family-repeal",
             "selected-family-text-replace",
             "selected-family-replace",
+            "selected-family-insert",
         ),
         default="complete-set",
         help=(
@@ -8135,7 +8139,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "'selected-family-repeal' dry-runs the ready repeal operations in every sampled work; "
             "'selected-family-text-replace' dry-runs the ready single-occurrence text-substitution "
             "operations instead; 'selected-family-replace' dry-runs the structural whole-provision "
-            "replaced/substituted operations. The selected-family scopes report the corpus-wide "
+            "replaced/substituted operations; 'selected-family-insert' dry-runs the structural "
+            "whole-provision inserted/added operations. The selected-family scopes report the corpus-wide "
             "family-witness replay-coverage scoreboard"
         ),
     )

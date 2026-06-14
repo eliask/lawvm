@@ -612,6 +612,96 @@ def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, norm
     return _normalize_text(child_label) == normalized_label
 
 
+# Inserted-node (whole-provision INSERT) payload extraction. -------------------
+#
+# An ``inserted`` instruction in an amending act reads "the following section is
+# inserted:" / "After section N, insert:" followed by a typed ``<amend>`` subtree
+# carrying the NEW provision body. Unlike a REPLACE, the new node has no live-body
+# target to swap; it is ADDED next to an anchor sibling. The new content is one
+# (or more) structural child nodes under an ``<amend>`` subtree, the same node
+# model the live body uses.
+#
+# This extractor reads the ``<amend>`` child whose kind/label match the inserted
+# node's own (label, kind) and parses it into an ``NZSourceNode`` subtree. Unlike
+# the REPLACE extractor, it INTENTIONALLY accepts a multi-child ``<amend>`` subtree
+# ("the following sections are inserted: 18A ... 18B ...") because each inserted
+# node is its own history-note witness with its own label — so pulling the single
+# child whose label matches the witness is a clean one-node extraction, not a
+# one-to-many flatten. It still refuses (typed blocker) when no child matches, when
+# more than one child matches the same label (genuinely ambiguous), or when the
+# extracted node is empty. It never guesses which child is the inserted node.
+
+NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE = "structural_insert_no_amend_subtree_in_amending_node"
+NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD = "structural_insert_no_amend_child_matches_inserted_leaf"
+NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH = "structural_insert_multiple_amend_children_match_inserted_leaf"
+NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD = "structural_insert_extracted_node_is_empty"
+NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE = "structural_insert_inserted_leaf_kind_or_label_unusable"
+
+
+def extract_structural_insertion(
+    amending_node: etree._Element,
+    *,
+    inserted_leaf_kind: str,
+    inserted_leaf_label: str,
+) -> "NZStructuralReplacement | str":
+    """Extract the new provision node a whole-provision INSERT adds.
+
+    ``amending_node`` is the amending act provision element resolved from the
+    history-note ``amending-provision`` href. ``inserted_leaf_kind`` /
+    ``inserted_leaf_label`` describe the NEW node the instruction inserts (e.g.
+    ``prov``/``18A`` for "section 18A", ``part``/``5A`` for "Part 5A").
+
+    Returns an :class:`NZStructuralReplacement` (reused as the new-node subtree
+    carrier — ``root`` is the new node, ``descendants`` its nested structural
+    nodes) when EXACTLY ONE ``<amend>`` child across the amending node matches the
+    inserted leaf's kind+label; otherwise a typed blocker reason string. A
+    multi-child ``<amend>`` subtree is allowed: the per-witness label selects the
+    single inserted node, so this is a clean one-node extraction, never a flatten.
+    """
+
+    if not inserted_leaf_kind or not inserted_leaf_label:
+        return NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE
+    normalized_label = _normalize_text(inserted_leaf_label)
+
+    amend_subtrees = [
+        element
+        for element in amending_node.iter()
+        if isinstance(element.tag, str) and _localname(element) == "amend"
+    ]
+    if not amend_subtrees:
+        return NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE
+
+    matches: list[etree._Element] = []
+    for amend in amend_subtrees:
+        for child in amend:
+            if not isinstance(child.tag, str):
+                continue
+            if _localname(child) not in _STRUCTURAL_TAGS:
+                continue
+            if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
+                matches.append(child)
+
+    if not matches:
+        return NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
+    if len(matches) > 1:
+        return NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
+
+    inserted_element = matches[0]
+    nodes: list[NZSourceNode] = []
+    _walk_source_nodes(
+        inserted_element,
+        path=("amend",),
+        nodes=nodes,
+        attached_history_note_keys=set(),
+    )
+    if not nodes:
+        return NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
+    root = nodes[0]
+    if not root.text.strip():
+        return NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
+    return NZStructuralReplacement(root=root, descendants=tuple(nodes[1:]))
+
+
 def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
     """Read typed ``<amend.in>``/citation instructions from an amending node.
 

@@ -54,10 +54,10 @@ def test_denominator_is_history_witness_count_partitioned_into_pinned_buckets() 
 
     # Total denominator universe = sum of all history-note witnesses.
     assert summary["total_amendment_operation_witnesses"] == 55
-    # Supported = repealed + amended + replaced + substituted.
-    assert summary["supported_family_witnesses"] == 36
-    # Frontier = inserted + added (replaced/substituted are now supported).
-    assert summary["remaining_frontier_witnesses"] == 8
+    # Supported = repealed + amended + replaced + substituted + inserted + added.
+    assert summary["supported_family_witnesses"] == 44
+    # Frontier is empty: inserted/added moved to the supported insert family.
+    assert summary["remaining_frontier_witnesses"] == 0
     # Non-executable-by-design is a separate bucket, NOT a coverage miss.
     assert summary["non_executable_by_design_witnesses"] == 8
     # Unclassified is its own bucket too.
@@ -102,7 +102,11 @@ def test_combined_north_star_is_supported_agreeing_over_supported_total() -> Non
     work = _census(
         "act_public_2010_1",
         history={"repealed": 10, "amended": 20, "inserted": 100},
-        agreeing={"repeal": ("nz-opw-1", "nz-opw-2"), "text_replace": ("nz-opw-3",)},
+        agreeing={
+            "repeal": ("nz-opw-1", "nz-opw-2"),
+            "text_replace": ("nz-opw-3",),
+            "insert": ("nz-opw-4", "nz-opw-5"),
+        },
     )
     report = NZDryRunNorthStarReport(
         db_path="data/nz_legislation.farchive",
@@ -111,13 +115,13 @@ def test_combined_north_star_is_supported_agreeing_over_supported_total() -> Non
     )
     summary = report.summary()
 
-    # The north-star numerator/denominator only count SUPPORTED families. The
-    # frontier (inserted=100) does NOT dilute the supported denominator; it is
-    # reported separately as the remaining frontier.
-    assert summary["supported_family_dry_run_agreeing"] == 3
-    assert summary["supported_family_witnesses"] == 30
-    assert summary["combined_coverage_fraction"] == pytest.approx(3 / 30)
-    assert summary["remaining_frontier_witnesses"] == 100
+    # The north-star numerator/denominator count every SUPPORTED family. The
+    # insert family is now supported, so inserted=100 is part of the supported
+    # denominator (not a separate frontier bucket).
+    assert summary["supported_family_dry_run_agreeing"] == 5
+    assert summary["supported_family_witnesses"] == 130
+    assert summary["combined_coverage_fraction"] == pytest.approx(5 / 130)
+    assert summary["remaining_frontier_witnesses"] == 0
 
 
 def test_denominator_is_stable_under_candidate_extraction_growth() -> None:
@@ -191,7 +195,9 @@ def test_non_executable_bucket_is_separated_not_a_coverage_miss() -> None:
     assert summary["combined_coverage_fraction"] is None
 
 
-def test_remaining_frontier_breakdown_orders_next_family_to_build() -> None:
+def test_all_known_executable_families_are_supported_no_frontier() -> None:
+    # repealed/amended/replaced/substituted/inserted/added are all supported now,
+    # so a work spanning only those leaves an empty remaining-frontier bucket.
     work = _census(
         "act_public_2010_1",
         history={
@@ -200,6 +206,7 @@ def test_remaining_frontier_breakdown_orders_next_family_to_build() -> None:
             "replaced": 350,
             "substituted": 190,
             "added": 60,
+            "amended": 12,
         },
     )
     report = NZDryRunNorthStarReport(
@@ -207,12 +214,25 @@ def test_remaining_frontier_breakdown_orders_next_family_to_build() -> None:
         work_censuses=(work,),
         selected_work_ids=("act_public_2010_1",),
     )
+    summary = report.summary()
+    assert summary["remaining_frontier_family_counts"] == {}
+    assert summary["remaining_frontier_witnesses"] == 0
+
+
+def test_unbucketed_real_family_surfaces_as_frontier_loudly() -> None:
+    # A real (classified) history family that is in no pinned bucket must surface
+    # as remaining frontier, never be silently dropped — the loud-surface guard.
+    work = _census(
+        "act_public_2010_1",
+        history={"repealed": 5, "some_future_executable_family": 7},
+    )
+    report = NZDryRunNorthStarReport(
+        db_path="data/nz_legislation.farchive",
+        work_censuses=(work,),
+        selected_work_ids=("act_public_2010_1",),
+    )
     counts = report.summary()["remaining_frontier_family_counts"]
-    # replaced/substituted are now the supported ``replace`` family, so the
-    # remaining frontier is insert/add; the largest count (inserted) orders the
-    # next cycle's kernel.
-    assert counts == {"added": 60, "inserted": 1400}
-    assert max(counts, key=lambda family: counts[family]) == "inserted"
+    assert counts == {"some_future_executable_family": 7}
 
 
 def test_aggregation_sums_across_works_and_dedupes_witness_rows() -> None:

@@ -55,6 +55,7 @@ from typing import Any, Iterator
 from lawvm.new_zealand.corpus_cache import active_corpus_run_cache, corpus_run_cache
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
@@ -80,10 +81,17 @@ NZ_NORTH_STAR_BUCKET_UNCLASSIFIED = "unclassified"
 #                                structural substitution: the target node's
 #                                subtree is swapped for the amending act's
 #                                <amend> payload, oracle-checked by subtree match)
+# - insert       <- "inserted"/"added" history notes (whole-provision structural
+#                                insert: a new node is ADDED next to a derived
+#                                anchor sibling — the new node's content comes from
+#                                the amending act's <amend> payload, the anchor is
+#                                derived from the suffix-letter label, oracle-checked
+#                                by the new node being present with matching content)
 NZ_NORTH_STAR_SUPPORTED_FAMILIES: dict[str, tuple[str, ...]] = {
     "repeal": ("repealed",),
     "text_replace": ("amended",),
     "replace": ("replaced", "substituted"),
+    "insert": ("inserted", "added"),
 }
 
 # The dry-run scope that drives each supported family's kernel.
@@ -91,16 +99,15 @@ _SUPPORTED_FAMILY_SCOPE: dict[str, str] = {
     "repeal": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     "text_replace": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
     "replace": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    "insert": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
 }
 
 # Executable amendment operations we do not yet support: the remaining frontier.
-# ``replaced``/``substituted`` moved to the supported ``replace`` family this
-# cycle (structural whole-provision replace kernel); the frontier is now the
-# insert/add families.
-NZ_NORTH_STAR_FRONTIER_FAMILIES: tuple[str, ...] = (
-    "inserted",
-    "added",
-)
+# ``inserted``/``added`` moved to the supported ``insert`` family this cycle
+# (structural whole-provision insert kernel). The frontier is now empty of pinned
+# families; any unbucketed real family surfaces here loudly via the unbucketed
+# default.
+NZ_NORTH_STAR_FRONTIER_FAMILIES: tuple[str, ...] = ()
 
 # Not replayable structural mutations by design — never a coverage miss.
 NZ_NORTH_STAR_NON_EXECUTABLE_FAMILIES: tuple[str, ...] = (
