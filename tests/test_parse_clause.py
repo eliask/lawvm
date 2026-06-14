@@ -1115,6 +1115,133 @@ def test_parse_clause_preserves_target_version_bindings_for_2000_755_2018_945() 
 
 
 # ---------------------------------------------------------------------------
+# Anaphoric provenance must not over-consume the resuming target list
+# ---------------------------------------------------------------------------
+#
+# An anaphoric provenance ("sellaisena kuin se on edellä mainitussa ...
+# annetussa asetuksessa") refers to a statute named earlier in the clause and
+# therefore carries no closing "(NNN/YY)" citation.  The provenance-span skip
+# (_skip_prov_span) relies on a closing citation to know the appositive ended;
+# without one it used to keep its internal-verb guard active and swallow the
+# real targets that followed the appositive until the next unrelated citation.
+# These cases pin the boundary: the targets after the anaphoric appositive
+# survive, while the two surviving-verb-enumeration shapes (which genuinely list
+# provenance section-refs that must stay swallowed) are NOT disturbed.
+
+
+def test_anaphoric_provenance_no_closing_citation_preserves_following_targets() -> None:
+    """"33 §, sellaisena kuin se on edellä mainitussa ... asetuksessa, 34 §, 36 §"
+
+    The appositive names an earlier statute (no closing citation).  The "34 §"
+    and "36 §" after it are real targets resuming the list, not provenance.
+    """
+    text = (
+        "muutetaan 33 §, sellaisena kuin se on edellä mainitussa "
+        "9 päivänä maaliskuuta 1979 annetussa asetuksessa, "
+        "34 §:n 2 momentti, 36 §, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    assert nums == ["33", "34", "36"], (
+        "anaphoric provenance (no closing citation) must terminate at the "
+        f"resuming '34 §' target, not swallow it; got {nums}"
+    )
+
+
+def test_anaphoric_provenance_longer_list_survives() -> None:
+    """The whole post-appositive list resumes, not just the first item."""
+    text = (
+        "muutetaan 24 §:n 1 momentin 5 ja 6 kohta, sellaisina kuin mainitut "
+        "kohdat ovat 20 päivänä elokuuta 1993 annetussa asetuksessa, "
+        "26 §:n 1 momentin 2 ja 3 kohta, 27 §:n 3 momentti, 28 §, 32 §, "
+        "33 § ja 36 §:n 2 momentti, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    # "24 §:n 1 momentin 5 ja 6 kohta" / "26 §:n 1 momentin 2 ja 3 kohta" each
+    # enumerate two kohta sub-refs, so "24" and "26" each appear twice; the
+    # load-bearing assertion is that every section AFTER the appositive
+    # (26..36) survives instead of being swallowed.
+    assert nums == ["24", "24", "26", "26", "27", "28", "32", "33", "36"], (
+        "every target after the anaphoric appositive must resume the list; "
+        f"got {nums}"
+    )
+
+
+def test_closing_citation_provenance_still_separates_targets() -> None:
+    """Control: a provenance WITH a closing citation keeps the targets too.
+
+    This is the shape the anaphoric fix must leave unchanged — the appositive
+    collapses into a CITATION_SPAN and the surrounding commas already separate
+    "33 §" from "34 §" / "36 §".
+    """
+    text = (
+        "muutetaan 33 §, sellaisena kuin se on 9 päivänä maaliskuuta 1979 "
+        "annetussa asetuksessa (269/79), 34 §:n 2 momentti, 36 §, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    assert nums == ["33", "34", "36"], nums
+
+
+def test_surviving_verb_per_arm_citation_enumeration_stays_swallowed() -> None:
+    """"sellaisina kuin ne ovat, 16 §:n ... laissa X ja 34 §:n ... laissa Y"
+
+    Here the section-refs inside the appositive are per-arm version bindings
+    (each "NUM § laissa <cite>"), NOT resuming targets.  There is no date phrase
+    in the appositive, so the anaphoric exit must NOT fire — only the two real
+    targets ("16 §", "34 §") before the appositive are emitted; the appositive's
+    "16 §" / "34 §" stay provenance.
+    """
+    text = (
+        "muutetaan 16 §:n 2 momentti ja 34 §:n 1 momentin 5 kohta, "
+        "sellaisina kuin ne ovat, 16 §:n 2 momentti laissa 385/2007 ja "
+        "34 §:n 1 momentin 5 kohta laissa 495/2005, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    assert nums == ["16", "34"], (
+        "surviving-verb per-arm-citation provenance enumeration must stay "
+        f"swallowed; got {nums}"
+    )
+
+
+def test_surviving_verb_section_enumeration_trailing_citation_stays_swallowed() -> None:
+    """"sellaisina kuin niistä ovat 4 §:n 6 kohta, 21 ja 26 § asetuksessa X"
+
+    The appositive enumerates its own section-refs closed by a single trailing
+    citation.  Those "21" / "26 §" are provenance, not resuming targets — with no
+    date phrase in the appositive the anaphoric exit must NOT fire.
+    """
+    text = (
+        "muutetaan 4 §, 21 ja 26 §, sellaisina kuin niistä ovat 4 §:n 6 kohta, "
+        "21 ja 26 § asetuksessa 1040/2008, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    assert nums == ["4", "21", "26"], (
+        "surviving-verb section enumeration with a trailing citation must stay "
+        f"swallowed; got {nums}"
+    )
+
+
+def test_surviving_verb_bare_number_coordination_stays_swallowed() -> None:
+    """"sellaisina kuin niistä ovat, 4, 11, 12 ja 16 §, 18 §:n ... laissa X"
+
+    The appositive opens with a bare-number coordination ("4, 11, 12 ja 16 §")
+    that shares one trailing "§", then continues with further provenance items
+    closed by a citation.  None of these are resuming targets.  The comma between
+    the bare numbers must NOT be mistaken for a list separator: with no date
+    phrase in the appositive the anaphoric exit must NOT fire (regression guard
+    for the "niistä ovat, <bare numbers> §" shape).
+    """
+    text = (
+        "muutetaan 339, 344 ja 345 §, sellaisina kuin niistä ovat, "
+        "4, 11, 12 ja 16 §, 18 §:n 5 momentti laissa 1003/2018, seuraavasti:"
+    )
+    nums = [op.number for op in parse_clause(text).parsed_ops]
+    assert nums == ["339", "344", "345"], (
+        "surviving-verb bare-number coordination must stay swallowed; "
+        f"got {nums}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pro audit #10: Explicit scope modeling must be representation-independent
 # ---------------------------------------------------------------------------
 
