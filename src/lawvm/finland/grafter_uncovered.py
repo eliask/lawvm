@@ -2142,6 +2142,14 @@ def _apply_uncovered_kumotaan_typed(
         if op.voimaantulo_repeal:
             continue
         if op.target_unit_kind == "section" and op.target_section:
+            # A heading-only op ("X §:n otsikko" / "X §:n edellä oleva
+            # väliotsikko") targets the section heading, not the section body.
+            # When a "kumotaan X § ja sen edellä oleva väliotsikko" clause repeals
+            # the section together with its preceding subheading, the heading op
+            # must not mask the section repeal: the section body still has to be
+            # tombstoned by the kumotaan recovery below.
+            if op.target_special in {"otsikko", "otsikko_edella"}:
+                continue
             covered_labels.add(_norm_num_token(op.target_section))
         elif op.target_unit_kind in {"chapter", "part"} and op.target_section:
             covered_containers.add(

@@ -188,8 +188,9 @@ def test_classify_statute_1993_1501_eu_accession_repeal_stubs_are_source_limit()
     # 1993/1501 ch.4 §47-54 and ch.10 §107-109 are oracle repeal stubs from the
     # contingent-effective EU-accession restructure 1994/1218 (entry into force
     # could not be pinned), so replay legitimately kept them: source-limit, not a
-    # replay bug.  §46/§55/§68a are repealed by reachable, in-window, non-contingent
-    # statutes yet survived — genuine missed-repeal bugs.
+    # replay bug.  §46/§55/§68a are repealed by "kumotaan N § ja sen edellä oleva
+    # väliotsikko" clauses; the heading op no longer masks the section repeal, so
+    # replay now tombstones the section to match the oracle repeal stub.
     result = _classify_statute_sync("1993/1501", "official_consolidation")
 
     assert result is not None
@@ -209,7 +210,7 @@ def test_classify_statute_1993_1501_eu_accession_repeal_stubs_are_source_limit()
         "part:1/chapter:4/section:55",
         "part:1/chapter:5/section:68a",
     ):
-        assert by_section[label]["diagnosis"] == "REPLAY_UNREPEALED"
+        assert by_section[label]["diagnosis"] != "REPLAY_UNREPEALED"
 
 
 def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomplete() -> None:
