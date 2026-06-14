@@ -4900,6 +4900,21 @@ def test_chapter_chunks_accept_grouped_luku_form() -> None:
     assert _chapter_chunks_from_johtolause(text) == [("4", ", 47 §:n 1-4 ja 7 momentti sekä 48 §")]
 
 
+def test_chapter_chunks_truncate_repealed_chapter_at_later_scope_verb() -> None:
+    # A repealed chapter (``kumotaan ... 14 luku``) must not absorb sections
+    # introduced by a later scope verb. The new 176 § (inserted "kumotun 176 §:n
+    # tilalle") belongs to its own home chapter, not the repealed chapter 14, so
+    # the "14 luku" chunk ends at "muutetaan" and excludes 176 §.
+    text = (
+        "kumotaan arvonlisäverolain ( 1501/1993 ) 14 luku, muutetaan 72 j §:n 2 momentti, "
+        "lisätään lakiin siitä lailla 773/2016 kumotun 176 §:n tilalle uusi 176 § seuraavasti:"
+    )
+    chunks = _chapter_chunks_from_johtolause(text)
+
+    assert chunks == [("14", ", ")]
+    assert all("176" not in chunk for _label, chunk in chunks)
+
+
 def test_assign_chapter_scope_handles_grouped_luku_form() -> None:
     text = "kumotaan 3 ja 4 luku, 47 §:n 1-4 ja 7 momentti"
     legal_ops = extract_johtolause_legal_ops(text)

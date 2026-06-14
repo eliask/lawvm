@@ -117,8 +117,44 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
             continue
         start = match.end()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        # A nominative "N luku" governed by a preceding "kumotaan" is a chapter
+        # *repeal target* (``kumotaan ... 14 luku``). Sections repealed in the
+        # same kumotaan clause (``kumotaan 3 ja 4 luku, 47 § sekä 48 §``) belong
+        # to that chapter, so the chunk must still cover them. But a later scope
+        # verb (``muutetaan``/``lisätään``/``siirretään``) starts an unrelated op
+        # group whose sections must not be dragged into the repealed chapter —
+        # e.g. ``kumotaan ... 14 luku, muutetaan ... lisätään ... uusi 176 §``,
+        # where the new 176 § belongs to its own home chapter, not 14. End the
+        # repealed chapter's chunk at the first such verb.
+        if _chapter_match_is_repeal_target(text, match):
+            verb_boundary = re.search(
+                r"\b(?:muutetaan|lisätään|siirretään|korvataan)\b",
+                text[start:end],
+                re.I,
+            )
+            if verb_boundary is not None:
+                end = start + verb_boundary.start()
         chunks.append((labels[-1], text[start:end]))
     return chunks
+
+
+def _chapter_match_is_repeal_target(text: str, match: "re.Match[str]") -> bool:
+    """Return True when a "N luku" match is a kumotaan-governed repeal target.
+
+    The chapter is a repeal target when its surface form is the nominative
+    ``N luku`` (not the genitive ``N luvun``/illative ``N lukuun`` that head a
+    scope) and the nearest governing amendment verb before it is ``kumotaan``,
+    with no intervening scope verb (``muutetaan``/``lisätään``/``siirretään``).
+    """
+    if not re.match(r"\d+(?:\s*,\s*\d+|\s+ja\s+\d+)*\s+luku\b", text[match.start():], re.I):
+        return False
+    prefix = text[: match.start()]
+    last_verb = None
+    for verb_match in re.finditer(
+        r"\b(kumotaan|muutetaan|lisätään|siirretään|korvataan)\b", prefix, re.I
+    ):
+        last_verb = verb_match.group(1).lower()
+    return last_verb == "kumotaan"
 
 
 def find_body_section_chapter(
