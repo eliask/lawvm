@@ -10342,20 +10342,23 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
-        help="corpus-wide grammar-coverage benchmark (fi + ee free-text grammars)",
+        help="corpus-wide coverage benchmark (fi/ee=grammar coverage; us/nz/uk=lowering coverage)",
         description=(
-            "Parse-only grammar benchmark (the grammar counterpart to `bench`); "
-            "dispatches on the global -j/--jurisdiction flag. "
-            "fi: iterates the FULL statute corpus (~59k, no replay/oracle needed) "
+            "Parse-only coverage benchmark (the parse counterpart to `bench`); "
+            "dispatches on the global -j/--jurisdiction flag. Two DISTINCT metrics. "
+            "fi/ee = GRAMMAR coverage (free-text amendment grammars): "
+            "fi iterates the FULL statute corpus (~59k, no replay/oracle needed) "
             "and reports the fraction of amendment johtolauses the parser consumes "
-            "with no interior/trailing silent drop (token-witness coverage). "
-            "ee: scans the amendment corpus and reports the fraction of verb-bearing "
-            "op-items with no silently-dropped target LABEL (label coverage — the EE "
-            "analog of FI's unmatched_section tier). Both emit a ranked inventory of "
-            "uncovered shapes (the grammar worklist). Defined only for the free-text-"
-            "grammar jurisdictions (fi, ee); structured jurisdictions (uk/us/nz/no/se) "
-            "print a pointer to their own coverage report and exit 0. Grammar-"
-            "sensitive where the replay bench is blind."
+            "with no interior/trailing silent drop (token-witness coverage); "
+            "ee reports the fraction of verb-bearing op-items with no silently-dropped "
+            "target LABEL (label coverage). "
+            "us/nz/uk = LOWERING coverage (structured amendment data — NOT grammar "
+            "coverage): the fraction of pre-typed amendment instructions/effects "
+            "already in the corpus that LOWERED into produced ops, plus a ranked "
+            "worklist of unhandled/rejected instruction shapes (read-only reuse of "
+            "each frontend's existing instruments, replay-free; uk defaults to a "
+            "bounded/sampled run honoring --limit). "
+            "no/se have neither metric yet and print a pointer to their own report."
         ),
     )
     parse_bench_p.add_argument(

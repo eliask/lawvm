@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import pytest
+
 from lawvm.estonia.coverage_audit import (
     TIER_UNMATCHED_SECTION,
     TIER_VERB_NO_OP,
@@ -176,12 +178,98 @@ class _Args:
     json: bool = False
 
 
-def test_parse_bench_structured_jurisdiction_guard(capsys) -> None:
-    """`-j uk parse-bench` prints the guard pointer and does not crash."""
+def test_parse_bench_no_se_still_hit_pointer_guard(capsys) -> None:
+    """`-j no parse-bench` still prints the pointer guard (no lowering adapter)."""
     from lawvm.tools.parse_bench import main
 
-    main(_Args(jurisdiction="uk"))
+    main(_Args(jurisdiction="no"))
     out = capsys.readouterr().out
-    assert "free-text-grammar jurisdictions (fi, ee)" in out
-    assert "STRUCTURED" in out
-    assert "uk" in out
+    assert "nor a lowering adapter yet" in out
+    assert "no" in out
+
+
+def test_parse_bench_lowering_jurisdictions_no_longer_hit_guard(monkeypatch) -> None:
+    """`-j us/nz/uk parse-bench` dispatches to a lowering adapter, not the guard.
+
+    Each adapter is stubbed so the dispatch is corpus-independent: dispatch must
+    route us->run_us, nz->run_nz, uk->run_uk and never fall through to the
+    structured-jurisdiction pointer guard.
+    """
+    import lawvm.tools.parse_bench as pb
+
+    called: dict[str, bool] = {}
+    monkeypatch.setattr(pb, "run_us", lambda args: called.__setitem__("us", True))
+    monkeypatch.setattr(pb, "run_nz", lambda args: called.__setitem__("nz", True))
+    monkeypatch.setattr(pb, "run_uk", lambda args: called.__setitem__("uk", True))
+
+    for jur in ("us", "nz", "uk"):
+        pb.main(_Args(jurisdiction=jur))
+    assert called == {"us": True, "nz": True, "uk": True}
+
+
+# ---------------------------------------------------------------------------
+# Lowering-coverage adapters (archive-gated end-to-end JSON smoke)
+# ---------------------------------------------------------------------------
+
+def _canonical_data_available(farchive_name: str) -> bool:
+    import os
+    from pathlib import Path
+
+    root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT")
+    if not root:
+        return False
+    return (Path(root) / "data" / farchive_name).exists()
+
+
+def _run_lowering_json(jurisdiction: str, capsys, *, limit: int) -> dict:
+    import json as _json
+
+    from lawvm.tools.parse_bench import main
+
+    main(_Args(jurisdiction=jurisdiction, limit=limit, workers=1, json=True))
+    out = capsys.readouterr().out.strip().splitlines()
+    return _json.loads(out[-1])
+
+
+def _assert_lowering_payload(payload: dict, jurisdiction: str) -> None:
+    assert payload["metric"] == "lowering_coverage"
+    assert payload["jurisdiction"] == jurisdiction
+    pct = payload["lowering_coverage_pct"]
+    assert isinstance(pct, (int, float))
+    assert 0.0 <= float(pct) <= 100.0
+    # The worklist structure is always present (possibly empty on a tiny sample).
+    assert "top_shapes" in payload
+    assert isinstance(payload["top_shapes"], list)
+
+
+@pytest.mark.skipif(
+    not _canonical_data_available("us_federal.farchive"),
+    reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_us_lowering_coverage_smoke(capsys) -> None:
+    payload = _run_lowering_json("us", capsys, limit=30)
+    _assert_lowering_payload(payload, "us")
+    assert payload["unit"] == "amendatory_instruction"
+
+
+@pytest.mark.skipif(
+    not _canonical_data_available("nz_legislation.farchive"),
+    reason="canonical nz_legislation.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_nz_lowering_coverage_smoke(capsys) -> None:
+    payload = _run_lowering_json("nz", capsys, limit=30)
+    _assert_lowering_payload(payload, "nz")
+    assert payload["unit"] == "effect_row"
+
+
+@pytest.mark.skipif(
+    not _canonical_data_available("uk_legislation.farchive"),
+    reason="canonical uk_legislation.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_uk_lowering_coverage_smoke(capsys) -> None:
+    payload = _run_lowering_json("uk", capsys, limit=10)
+    _assert_lowering_payload(payload, "uk")
+    assert payload["unit"] == "effect_record"
+    # UK is the bounded/sampled adapter and must say so.
+    assert payload["bounded_sample"] is True
+    assert "bounded/sampled run" in payload["cost_note"]
