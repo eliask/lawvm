@@ -41,6 +41,8 @@ data/**
 !data/estonia/current_replayable_corpus_notes.md
 !data/estonia/replayable_corpus.csv
 !data/estonia/replayable_corpus_notes.md
+!data/ee/
+!data/ee/spec_authority_grounding.json
 !data/nz/
 !data/nz/bench_corpus.csv
 !data/nz/bench_corpus_smoke.csv
