@@ -239,16 +239,26 @@ def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
         ``surface_parse._insertion_sub_target`` (genitive ``momentin`` qualifier
         and the bare ``uusi``-sharing momentti continuation).
 
-    Still recovered here (genuine PEG3 gaps; do NOT remove the regexes until
-    these are grammar-covered): law-level section inserts trailing long
-    provenance preambles, em-dash section ranges (``134 a–134 r §``),
-    ``... kumotun N §:n tilalle uusi N §`` reinstatements, and decision-text
-    ``päätökseen uuden N §`` inserts (``_INSERT_SECTION_UUDEN_FALLBACK_RE``).
+    Status as of 2026-06-14 (verified via ``parse_clause(...).parsed_ops``):
+    the PEG3 grammar now natively owns every shape this fallback once uniquely
+    caught — provenance-trailing inserts, em-dash section ranges
+    (``134 a–134 r §``), ``kumotun N §:n tilalle uusi N §`` reinstatements, and
+    ``päätökseen uuden N §`` decision-text inserts. On the 690-statute bench,
+    disabling this fallback (``LAWVM_DISABLE_INSERT_SECTION_FALLBACK=1``) is
+    byte-identical for 689 statutes and regresses exactly ONE section in ONE
+    statute: ``1993/1501`` gains one ``REPLAY_MISSING`` (4 -> 5) on the
+    official_consolidation PIT path (the legal_pit/dump path is unaffected).
 
-    Removal criterion (unchanged): ``lawvm bench --compare`` must show 0
-    regressions after disabling — currently disabling still regresses one
-    arvonlisäverolaki replay via amendments that emit the shapes above.
+    Removal criterion: close that single residual PEG3 insert gap in 1993/1501
+    (identify the section via the official_consolidation REPLAY_MISSING delta,
+    on vs off under ``LAWVM_DISABLE_INSERT_SECTION_FALLBACK``), then delete
+    this function and its call sites (``_extract_root_insert_ops_fallback``
+    and the insert family in ``parse_ops_fallback_heuristic``) plus the grafter
+    re-export, and confirm ``bench --compare`` shows 0 regressions.
     """
+    import os as _os
+    if _os.environ.get("LAWVM_DISABLE_INSERT_SECTION_FALLBACK"):
+        return []
     ops: List[AmendmentOp] = []
     seen: Set[str] = set()
     for m in re.finditer(
