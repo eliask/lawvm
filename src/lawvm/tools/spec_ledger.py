@@ -272,15 +272,24 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
 }
 
-# Fold in the FI catalog supplement (the firing parse-witness rules + the fallback-
-# extraction lane id) authored in a sibling module — keeps this seed literal small
-# while the anti-drift test (tests/test_spec_ledger_fi_catalog.py) guards full
-# coverage of the parse-witness surface.
-try:
-    from lawvm.tools.spec_ledger_fi_catalog_supplement import _FI_RULE_SPECS_SUPPLEMENT
-    _FI_RULE_SPECS.update(_FI_RULE_SPECS_SUPPLEMENT)
-except ImportError:
-    pass
+# Fold the FI catalog supplement (firing parse-witness rules + the fallback-extraction
+# lane id, authored in a sibling module) into a SEPARATE merged catalog used by the
+# ledger, leaving the seed ``_FI_RULE_SPECS`` literal pure (the anti-drift test in
+# tests/test_spec_ledger_fi_catalog.py checks base and supplement separately). Mirrors
+# the UK split.
+def _load_fi_rule_specs() -> Dict[str, str]:
+    specs = dict(_FI_RULE_SPECS)
+    try:
+        from lawvm.tools.spec_ledger_fi_catalog_supplement import (
+            _FI_RULE_SPECS_SUPPLEMENT,
+        )
+        specs.update(_FI_RULE_SPECS_SUPPLEMENT)
+    except ImportError:
+        pass
+    return specs
+
+
+_FI_RULE_SPECS_FULL: Dict[str, str] = _load_fi_rule_specs()
 
 
 def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
@@ -767,7 +776,7 @@ def _load_ee_corpus_pairs(fuller: bool = False) -> List[str]:
 def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
     if jurisdiction == "fi":
         inputs = list(fi_ledger_inputs(sids, mode))
-        catalog = _FI_RULE_SPECS
+        catalog = _FI_RULE_SPECS_FULL
     elif jurisdiction == "uk":
         inputs = list(uk_ledger_inputs(sids, mode))
         catalog = _UK_RULE_SPECS
