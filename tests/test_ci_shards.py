@@ -756,7 +756,7 @@ def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
         "finland_sources",
         *TOOLS_EXECUTION_SHARDS_SORTED,
     ]
-    assert module.affected_shards(["src/lawvm/us_federal/bootstrap.py"]) == ["starter"]
+    assert module.affected_shards(["src/lawvm/us_federal/bootstrap.py"]) == ["us_federal"]
 
 
 def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
@@ -934,8 +934,8 @@ def test_test_shard_affected_plan_explains_shared_non_core_shards() -> None:
             "finland_replay_products_support",
             "finland_replay_rules",
             "finland_sources",
-            "starter",
             *TOOLS_EXECUTION_SHARDS_SORTED,
+            "us_federal",
         ],
         "paths": [
             {
@@ -960,8 +960,8 @@ def test_test_shard_affected_plan_explains_shared_non_core_shards() -> None:
             },
             {
                 "path": "src/lawvm/us_federal/bootstrap.py",
-                "shards": ["starter"],
-                "reason": "known frontend prefix src/lawvm/us_federal/ maps to starter",
+                "shards": ["us_federal"],
+                "reason": "known frontend prefix src/lawvm/us_federal/ maps to us_federal",
             },
         ],
     }

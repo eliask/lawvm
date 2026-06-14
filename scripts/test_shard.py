@@ -113,9 +113,16 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_eu_*.py",
     ),
     "starter": (
-        "test_jurisdiction_starter_*.py",
+        # Generic scaffold/starter frontend tests. The U.S. federal jurisdiction
+        # frontend tests (``test_jurisdiction_starter_us_federal_*.py``) are owned
+        # by the dedicated ``us_federal`` shard below, so this glob is scoped to
+        # the ``p5`` runtime-scaffold family to avoid double-ownership.
+        "test_jurisdiction_starter_p5_*.py",
         "test_open_law_frontend.py",
         "test_scaffold_tool.py",
+    ),
+    "us_federal": (
+        "test_jurisdiction_starter_us_federal_*.py",
     ),
     "finland_sources": (
         "test_amendment_index.py",
@@ -522,7 +529,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/open_law/", ("starter",)),
     ("src/lawvm/sweden/", ("sweden",)),
     ("src/lawvm/uk_legislation/", ("uk",)),
-    ("src/lawvm/us_federal/", ("starter",)),
+    ("src/lawvm/us_federal/", ("us_federal",)),
     ("src/lawvm/tools/ee_", ("estonia", "tools")),
     ("src/lawvm/tools/eu_", ("eu", "tools")),
     ("src/lawvm/tools/finland_", ("finland", "tools")),
