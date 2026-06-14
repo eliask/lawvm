@@ -635,21 +635,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- self-consistency ---
     self_consistency_p = sub.add_parser(
         "self-consistency",
+        parents=_P,
         help="enumerate amendment-chain self-consistency violations across the corpus",
         description=(
             "Replay every curated statute in parallel and harvest every "
             "self-consistency signal: typed apply-failures, silently-swallowed "
             "target-absent ops, unhandled/dropped ops, source pathologies, "
             "skipped amendments, coverage gaps, structural invariant violations, "
-            "and governed ELAB findings.  Grouped by signal type then category."
+            "and governed ELAB findings.  Grouped by signal type then category. "
+            "Use -j uk / -j ee to route to the UK/EE harness, which harvest "
+            "replay adjudications + compile rejections instead."
         ),
-    )
-    self_consistency_p.add_argument(
-        "-j",
-        "--jurisdiction",
-        default="fi",
-        choices=["fi", "uk", "ee"],
-        help="jurisdiction to audit (default: fi). UK/EE harvest replay adjudications + compile rejections.",
     )
     self_consistency_p.add_argument(
         "--statutes",

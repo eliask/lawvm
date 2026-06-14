@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 import lawvm.tools.self_consistency as sc
+from lawvm.tools.cli import _build_parser
 from lawvm.tools.self_consistency import (
     ALL_SIGNAL_TYPES,
     _category,
@@ -19,6 +20,61 @@ from lawvm.tools.self_consistency import (
     _occupancy_scope,
     _parse_replay_log,
 )
+
+
+# ---------------------------------------------------------------------------
+# CLI jurisdiction dispatch
+#
+# The root-level ``-j`` selects the jurisdiction; the self-consistency
+# subparser must inherit it (rather than redefine ``-j`` with a hard ``fi``
+# default that clobbers ``-j uk`` back to ``fi`` and routes UK ids into the
+# Finland corpus resolver).
+# ---------------------------------------------------------------------------
+
+def _parse_self_consistency(*argv: str):
+    return _build_parser().parse_args(["self-consistency", *argv])
+
+
+def test_root_jurisdiction_reaches_self_consistency() -> None:
+    # ``-j uk self-consistency`` must surface as jurisdiction="uk" so main()
+    # routes to the UK harness, not _main_fi (the FI corpus resolver).
+    ns = _build_parser().parse_args(
+        ["-j", "uk", "self-consistency", "--statutes", "ukpga/1991/22"]
+    )
+    assert ns.jurisdiction == "uk"
+
+
+def test_root_jurisdiction_ee_reaches_self_consistency() -> None:
+    ns = _build_parser().parse_args(["-j", "ee", "self-consistency"])
+    assert ns.jurisdiction == "ee"
+
+
+def test_self_consistency_jurisdiction_default_is_fi() -> None:
+    ns = _parse_self_consistency("--statutes", "1958/370")
+    assert ns.jurisdiction == "fi"
+
+
+def test_self_consistency_jurisdiction_accepts_post_subcommand_flag() -> None:
+    ns = _parse_self_consistency("-j", "uk", "--statutes", "ukpga/1991/22")
+    assert ns.jurisdiction == "uk"
+
+
+def test_self_consistency_main_routes_uk_without_fi_resolver(monkeypatch) -> None:
+    # main() must dispatch jurisdiction="uk" to the UK harness and never touch
+    # the Finland corpus store (whose absence previously crashed the UK path).
+    called = {}
+
+    def _fail_fi(_args):  # pragma: no cover - asserted not called
+        raise AssertionError("UK dispatch reached the FI self-consistency path")
+
+    monkeypatch.setattr(sc, "_main_fi", _fail_fi)
+    monkeypatch.setattr(sc, "_main_uk", lambda _args: called.setdefault("uk", True))
+
+    ns = _build_parser().parse_args(
+        ["-j", "uk", "self-consistency", "--statutes", "ukpga/1991/22"]
+    )
+    sc.main(ns)
+    assert called.get("uk") is True
 
 
 # ---------------------------------------------------------------------------
