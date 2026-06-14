@@ -1859,6 +1859,77 @@ def _paragrahv_to_act_id(title: str) -> str:
     return _tr_paragrahv_to_act_id(title)
 
 
+_EE_SOURCE_LOCAL_PAYLOAD_AUTHORS_RENAME_TARGET_RULE = (
+    "ee_source_local_global_text_replace_payload_authors_rename_target_surface_skipped"
+)
+
+
+def _node_flat_surface(node: IRNode) -> str:
+    """Flatten an IR payload node's own + descendant text into one search surface."""
+    parts = [node.text or ""]
+    parts.extend(_node_flat_surface(child) for child in node.children)
+    return " ".join(part for part in parts if part)
+
+
+def _payload_authors_rename_target_surface(
+    text: str | None,
+    *,
+    old: str,
+    new: str,
+    case_inflected: bool,
+) -> bool:
+    """Return True when a structural payload already authors the rename's *new* surface.
+
+    A same-act statute-wide lexical rename (``asendatakse sõna X sõnaga Y``)
+    operates on the standing text of the target statute. When the same act *also*
+    fully rewrites a provision (``§ N ... sõnastatakse``) or inserts a new one,
+    the rewrite payload is the drafters' final, hand-authored wording. If that
+    payload already spells out the rename's replacement surface (``new``) as a
+    standalone token — independently of any ``old`` occurrence it may also carry —
+    the drafters deliberately chose both surfaces (e.g. assigning supervision to
+    *Ravimiamet* in one subsection and keeping *Terviseamet* in the next). The
+    statute-wide rename must not be composed into such a payload, or it would
+    collapse a distinction the source draws on purpose.
+
+    Conversely, payloads that reproduce only the *old* terminology (a reference
+    written in pre-rename wording, e.g. ``ühenduse tollimaksuvabastuse süsteem``)
+    do not author the new surface here, so composition still applies to them.
+    """
+    if not text or not old or not new:
+        return False
+    variants = _ee_text_replace_variants(old, new, case_inflected=case_inflected)
+    new_forms = sorted(
+        {new_form for _old_form, new_form in variants if new_form},
+        key=len,
+        reverse=True,
+    )
+    if not new_forms:
+        return False
+    # Quoted legal titles (e.g. a cited regulation name) are not body wording the
+    # rename edits — and the composition pass already protects them — so a new
+    # surface that appears only inside a quoted title does not count as the
+    # drafters authoring the replacement.
+    masked = _EE_QUOTED_TITLE_RE.sub("\x00", text)
+    # Mask every old-surface occurrence so an ``old`` form that merely *contains*
+    # a ``new`` substring (e.g. ``alamvesikond`` containing ``vesikond``) is not
+    # mistaken for the drafters authoring the new surface.
+    old_forms = sorted(
+        {old_form for old_form, _new_form in variants if old_form} | {old},
+        key=len,
+        reverse=True,
+    )
+    for old_form in old_forms:
+        masked = re.sub(re.escape(old_form), "\x00", masked, flags=re.IGNORECASE)
+    for new_form in new_forms:
+        if re.search(
+            r"(?<![0-9A-Za-zÕÄÖÜŠŽõäöüšž])" + re.escape(new_form) + r"(?![0-9A-Za-zÕÄÖÜŠŽõäöüšž])",
+            masked,
+            re.IGNORECASE,
+        ):
+            return True
+    return False
+
+
 def parse_ee_amendment_ops(
     xml_bytes: bytes,
     source_id: str = "",
@@ -2267,7 +2338,20 @@ def parse_ee_amendment_ops(
                         payload = updated_payload
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
+                authored_rename_target = False
+                payload_surface = _node_flat_surface(payload) if active_rewrites else ""
                 for old, new, case_inflected, _exclude_paths in active_rewrites:
+                    if _payload_authors_rename_target_surface(
+                        payload_surface,
+                        old=old,
+                        new=new,
+                        case_inflected=case_inflected,
+                    ):
+                        # The same act hand-authored this provision with the
+                        # rename's replacement surface already in place; the
+                        # statute-wide rename does not re-edit it.
+                        authored_rename_target = True
+                        continue
                     updated_payload, rewrite_protected_quote = _rewrite_node(
                         updated_payload,
                         old=old,
@@ -2275,7 +2359,7 @@ def parse_ee_amendment_ops(
                         case_inflected=case_inflected,
                     )
                     protected_quote = protected_quote or rewrite_protected_quote
-                if updated_payload is not payload or protected_quote:
+                if updated_payload is not payload or protected_quote or authored_rename_target:
                     updated_op = replace(
                         op,
                         payload=updated_payload,
@@ -2289,6 +2373,11 @@ def parse_ee_amendment_ops(
                             *(
                                 ("ee_source_local_payload_composition_quoted_title_skipped",)
                                 if protected_quote
+                                else ()
+                            ),
+                            *(
+                                (_EE_SOURCE_LOCAL_PAYLOAD_AUTHORS_RENAME_TARGET_RULE,)
+                                if authored_rename_target
                                 else ()
                             ),
                         ),
