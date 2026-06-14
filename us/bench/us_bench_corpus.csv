@@ -14,18 +14,67 @@
 #
 # Columns: title,before_year,after_year,include,window_law_count,prior_edition_years,note
 title,before_year,after_year,include,window_law_count,prior_edition_years,note
+11,2014,2016,false,0,,no new source-credit public law in the 2016 edition
+11,2016,2018,true,1,,114th-115th Congress Title 11 amendment
 11,2018,2020,true,8,,116th Congress: SBRA/CARES substantive Title 11 textual amendments
 11,2020,2022,true,4,2018,117th Congress: includes the SBRA debt-limit re-extension
 11,2022,2023,false,0,,no new source-credit public law in the 2023 edition
 11,2023,2024,true,1,2018 2022,PL 118-42 omnibus; 109/1182 are SBRA sunset reversions
+18,2014,2016,true,15,,Title 18 crimes: 114th-Congress window
+18,2016,2018,true,20,,Title 18 crimes: 115th-Congress window
+18,2018,2020,true,15,,Title 18 crimes: 116th-Congress window
 18,2020,2022,true,20,,Title 18 crimes: large 117th-Congress window
 18,2022,2023,true,3,,118th Congress early crimes amendments
 18,2023,2024,true,9,,118th Congress crimes amendments
+35,2014,2016,true,1,,Title 35 patents: single 114th-Congress amendment
+35,2016,2018,false,0,,no new source-credit public law in the 2018 edition
 35,2018,2020,true,1,,Title 35 patents: single 116th-Congress amendment
 35,2020,2022,true,3,,117th Congress patent amendments
 35,2022,2023,false,0,,no new source-credit public law in the 2023 edition
 35,2023,2024,true,1,,PL 118-151 patent amendment
+28,2014,2016,true,4,,Title 28 judiciary: 114th-Congress amendments
+28,2016,2018,true,5,,Title 28 judiciary: 115th-Congress amendments
+28,2018,2020,true,8,,Title 28 judiciary: 116th-Congress amendments
+28,2020,2022,true,9,,Title 28 judiciary: 117th-Congress amendments
 28,2022,2023,true,1,,Title 28 judiciary: single 118th-Congress amendment
 28,2023,2024,true,4,,118th Congress judiciary amendments
+38,2014,2016,true,18,,Title 38 veterans: 114th-Congress amendments
+38,2016,2018,true,21,,Title 38 veterans: 115th-Congress amendments
+38,2018,2020,true,21,,Title 38 veterans: 116th-Congress amendments
+38,2020,2022,true,27,,Title 38 veterans: large 117th-Congress window
 38,2022,2023,true,5,,Title 38 veterans: 118th-Congress amendments
 38,2023,2024,true,10,,118th Congress veterans amendments
+# Title 10 Armed Forces (positive law) — newly acquired ladder.
+10,2014,2016,true,6,,Title 10 armed forces: 114th-Congress amendments
+10,2016,2018,true,4,,Title 10 armed forces: 115th-Congress amendments
+10,2018,2020,true,4,,Title 10 armed forces: 116th-Congress amendments
+10,2020,2022,true,7,,Title 10 armed forces: 117th-Congress amendments
+10,2022,2023,true,1,,Title 10 armed forces: single 118th-Congress amendment
+10,2023,2024,true,1,,Title 10 armed forces: single 118th-Congress amendment
+# Title 31 Money & Finance (positive law) — newly acquired ladder.
+31,2014,2016,true,8,,Title 31 money and finance: 114th-Congress amendments
+31,2016,2018,true,12,,Title 31 money and finance: 115th-Congress amendments
+31,2018,2020,true,12,,Title 31 money and finance: 116th-Congress amendments
+31,2020,2022,true,8,,Title 31 money and finance: 117th-Congress amendments
+31,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+31,2023,2024,true,5,,Title 31 money and finance: 118th-Congress amendments
+# Title 49 Transportation (positive law) — newly acquired ladder.
+49,2014,2016,true,18,,Title 49 transportation: 114th-Congress amendments
+49,2016,2018,true,15,,Title 49 transportation: 115th-Congress amendments
+49,2018,2020,true,7,,Title 49 transportation: 116th-Congress amendments
+49,2020,2022,true,9,,Title 49 transportation: 117th-Congress amendments
+49,2022,2023,true,2,,Title 49 transportation: 118th-Congress amendments
+49,2023,2024,true,6,,Title 49 transportation: 118th-Congress amendments
+# Non-positive-law titles — for the act->USC mapping replay extension.
+7,2020,2022,true,7,,Title 7 agriculture (non-positive): 117th-Congress window
+7,2022,2023,true,2,,Title 7 agriculture (non-positive): 118th-Congress amendments
+7,2023,2024,true,6,,Title 7 agriculture (non-positive): 118th-Congress amendments
+20,2020,2022,true,9,,Title 20 education (non-positive): 117th-Congress window
+20,2022,2023,true,2,,Title 20 education (non-positive): 118th-Congress amendments
+20,2023,2024,true,6,,Title 20 education (non-positive): 118th-Congress amendments
+26,2020,2022,true,10,,Title 26 internal revenue (non-positive): 117th-Congress window
+26,2022,2023,true,2,,Title 26 internal revenue (non-positive): 118th-Congress amendments
+26,2023,2024,true,7,,Title 26 internal revenue (non-positive): 118th-Congress amendments
+42,2020,2022,true,42,,Title 42 public health (non-positive): large 117th-Congress window
+42,2022,2023,true,5,,Title 42 public health (non-positive): 118th-Congress amendments
+42,2023,2024,true,29,,Title 42 public health (non-positive): large 118th-Congress window
