@@ -1857,6 +1857,57 @@ def test_replay_ee_to_pit_preserves_quoted_title_in_later_payload_composition() 
     assert "chapter:1/section:2/subsection:2" not in divergence_addresses
 
 
+def test_parse_ee_amendment_ops_skips_global_rename_in_self_authored_rewrite_payload() -> None:
+    """A same-act statute-wide rename must not re-edit a provision the same act rewrites.
+
+    ``120112024001`` item 1 renames ``Terviseamet`` → ``Ravimiamet`` throughout
+    the statute (except §41¹); item 11 rewrites §33 in full, deliberately keeping
+    supervision split: subsection (1) → Ravimiamet, subsection (2) → Terviseamet.
+    Composing the rename into the §33 payload would collapse that distinction and
+    diverge from the official consolidation, which keeps Terviseamet in §33(2).
+    """
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("120112024001", archive),
+        "ee/120112024001",
+        target_title="Meditsiiniseadme seadus",
+    )
+
+    section_33 = next(
+        op for op in ops if op.target.path and op.target.path[-1] == ("section", "33")
+    )
+    assert section_33.payload is not None
+    payload_text = section_33.payload.text or ""
+    # Subsection (1) keeps the renamed agency; subsection (2) keeps the original.
+    assert "haldusjärelevalvet Ravimiamet." in payload_text
+    assert "tervishoiuteenuse osutamisel teeb riiklikku ja haldusjärelevalvet Terviseamet." in payload_text
+    assert (
+        "ee_source_local_global_text_replace_payload_authors_rename_target_surface_skipped"
+        in section_33.provenance_tags
+    )
+
+
+def test_replay_ee_to_pit_keeps_self_authored_agency_in_replaced_section() -> None:
+    """End-to-end: §33/subsection:2 keeps Terviseamet and the pair is consistent."""
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    result = replay_ee_to_pit(
+        "122122022020",
+        "2025-01-01",
+        archive=archive,
+        oracle_id="120112024002",
+    )
+
+    assert result.error is None
+    divergence_addresses = {str(div.address) for div in result.divergences}
+    assert "chapter:4/section:33/subsection:2" not in divergence_addresses
+    assert "chapter:4/section:33" not in divergence_addresses
+    assert "chapter:4" not in divergence_addresses
+
+
 def test_replay_ee_to_pit_recovers_marutaudi_old_format_regulation_items() -> None:
     from lawvm.estonia.fetch import open_rt_archive
 
