@@ -1894,7 +1894,16 @@ def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None
 
     assert payload["status"] == "selected"
     assert payload["resolved_address"]["text"] == "part:6/chapter:1/section:125"
-    assert payload["address_match"]["mode"] == "unique_live_suffix_over_exact_tombstone"
+    # The bare ``section:125`` query now resolves cleanly by unique suffix to
+    # the live part-qualified section.  Earlier, an injected pure-kumotaan
+    # REPEAL lost its enclosing part scope and landed on a bare ``section:125``
+    # address, manufacturing a phantom tombstone timeline that shadowed the
+    # live ``part:6/chapter:1/section:125`` one.  The resolver had to break
+    # that tie via the ``unique_live_suffix_over_exact_tombstone`` seam.  With
+    # the repeal now targeting the resolved part-scoped path, the phantom
+    # tombstone is gone, leaving a single timeline ending in ``section:125`` —
+    # so a plain unique-suffix match is the correct, more accurate mode.
+    assert payload["address_match"]["mode"] == "unique_suffix"
     assert payload["version"]["content_state"] == "live"
     assert payload["source"]["statute_id"] == "2025/1141"
     assert "Työtulovähennys" in payload["text"]["rendered"]
