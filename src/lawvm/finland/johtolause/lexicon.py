@@ -163,8 +163,17 @@ for _form in (
     _v(_form, "johdantokappale", "JOHD", "NOM")
 
 # Sub-heading
-for _form in ("väliotsikko", "väliotsikon"):
+for _form in ("väliotsikko", "väliotsikon", "väliotsikkoa"):
     _v(_form, "väliotsikko", "OTSIKKO", "NOM")
+# "väliotsake" — older drafting synonym for väliotsikko (1970s–80s acts, e.g.
+# 1979/229 "muutetaan ... 9 §:n edellä oleva väliotsake").
+for _form in ("väliotsake", "väliotsakkeen", "väliotsaketta"):
+    _v(_form, "väliotsikko", "OTSIKKO", "NOM")
+# Sub-heading variant "alaotsikko" (e.g. 1985/32, 1989/1255
+# "muutetaan ... N §:n edellä oleva alaotsikko"). Without it the heading
+# reference degrades to a bare WORD and the enclosing enumeration is dropped.
+for _form in ("alaotsikko", "alaotsikon", "alaotsikkoa"):
+    _v(_form, "alaotsikko", "OTSIKKO", "NOM")
 
 # Appendix
 _v("liite", "liite", "LIITE", "NOM")

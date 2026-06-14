@@ -319,6 +319,96 @@ def test_parse_clause_named_row_residue_does_not_truncate_later_targets():
     ]
 
 
+def test_parse_clause_edella_oleva_otsikko_change_target_keeps_later_targets() -> None:
+    """`N §:n edellä oleva otsikko` heading-change target must not drop the rest.
+
+    The locative ``edellä oleva`` (heading-CHANGE) form is distinct from the
+    allative ``edelle uusi`` (heading-INSERT) placement form. It binds the
+    preceding section as a heading-amend target, and the enclosing
+    kumotaan/muutetaan list must continue past it.
+    """
+    result = parse_clause(
+        "kumotaan 12 §, 13 §:n edellä oleva otsikko, 17 § ja 59 §"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "K P 12",
+        "K P 13 o",
+        "K P 17",
+        "K P 59",
+    ]
+
+
+def test_parse_clause_edella_oleva_luvun_otsikko_change_target_keeps_later_targets() -> None:
+    """`N §:n edellä oleva luvun otsikko` (chapter-heading variant) must continue."""
+    result = parse_clause(
+        "kumotaan 12 §, 13 §:n edellä oleva luvun otsikko, 17 § ja 59 §"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "K P 12",
+        "K P 13 o",
+        "K P 17",
+        "K P 59",
+    ]
+
+
+def test_parse_clause_edella_oleva_alaotsikko_change_target_keeps_later_targets() -> None:
+    """`N §:n edellä oleva alaotsikko` sub-heading variant must continue.
+
+    ``alaotsikko`` is an OTSIKKO synonym (1980s drafting); without it the
+    reference degraded to a bare WORD and the whole muutetaan list was dropped.
+    """
+    result = parse_clause(
+        "muutetaan 4 §:n 1 momentti, 14 §:n edellä oleva alaotsikko, 14 §:n 1 momentti, 18 §"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 4 1",
+        "M P 14 o",
+        "M P 14 1",
+        "M P 18",
+    ]
+
+
+def test_parse_clause_edella_olevien_lukujen_otsikoiden_numerointi_keeps_later_targets() -> None:
+    """`N §:n edellä olevien lukujen otsikoiden numerointi` renumbering form must continue."""
+    result = parse_clause(
+        "kumotaan 23, 36 ja 41 §:n edellä olevien lukujen otsikoiden numerointi ja 59 §"
+    )
+
+    codes = [op.code() for op in result.parsed_ops]
+    # The heading-renumbering reference must not abort the list: the trailing
+    # ``59 §`` target survives, and the preceding section labels are all present.
+    assert "K P 59" in codes
+    assert {"K P 23", "K P 36"}.issubset(set(codes))
+    assert any(c.startswith("K P 41") for c in codes)
+
+
+def test_parse_clause_sen_edella_oleva_valiotsikko_change_target_keeps_later_targets() -> None:
+    """`N § ja sen edellä oleva väliotsikko` anaphoric heading ref must continue."""
+    result = parse_clause(
+        "muutetaan 11 § ja sen edellä oleva väliotsikko, 12 §, 23 §"
+    )
+
+    codes = [op.code() for op in result.parsed_ops]
+    assert "M P 11" in codes
+    assert "M P 12" in codes
+    assert "M P 23" in codes
+
+
+def test_parse_clause_niiden_edella_oleva_valiotsikko_change_target_keeps_later_targets() -> None:
+    """`N—M § ja niiden edellä oleva väliotsikko` plural anaphor must continue."""
+    result = parse_clause(
+        "muutetaan 3 §:n 2 momentti, 7—9 § ja niiden edellä oleva väliotsikko, 11 §:n 7 kohta"
+    )
+
+    codes = [op.code() for op in result.parsed_ops]
+    assert "M P 3 2" in codes
+    assert "M P 7" in codes and "M P 9" in codes
+    assert "M P 11 1 7" in codes
+
+
 def test_parse_clause_glued_numeric_conjunction_keeps_both_section_targets() -> None:
     """Glued `18ja 20 §` transport noise must split into two section targets."""
     text = "muutetaan 18ja 20 §"
