@@ -16,7 +16,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, cast
+from typing import Any, Dict, Iterable, List, Literal, Optional, cast
 
 import yaml
 from lxml import etree
@@ -38,6 +38,11 @@ from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.grafter import (
     get_ground_truth_tree,
     replay_xml,
+)
+from lawvm.finland.replay_request import (
+    ReplayXmlRequest,
+    ReplayXmlSinks,
+    call_replay_xml,
 )
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.tools._compile_report_record import report_record_from_facade
@@ -3319,13 +3324,18 @@ def build_evidence_bundle(
     replay_canonical_ops: List[Any] = []
     replay_failed_ops: List[Any] = []
     replay_result = _run_quietly(
+        call_replay_xml,
         replay_xml,
-        statute_id,
-        mode=mode,
-        compiled_ops_out=replay_compiled_ops,
-        replay_meta_out=replay_meta,
-        lo_ops_out=replay_canonical_ops,
-        failed_ops_out=replay_failed_ops,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
+        ),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=replay_compiled_ops,
+            replay_meta_out=replay_meta,
+            lo_ops_out=replay_canonical_ops,
+            failed_ops_out=replay_failed_ops,
+        ),
     )
 
     oracle_result = _run_quietly(

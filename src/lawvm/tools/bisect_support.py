@@ -272,12 +272,15 @@ def _section_bisect_support(
             ir = snap_state_before.ir
         else:
             rr = _run_quietly(
+                call_replay_xml,
                 replay_xml,
-                statute_id,
-                mode=mode,
-                stop_before=stop_before,
-                corpus=corpus,
-                quiet=True,
+                request=ReplayXmlRequest(
+                    parent_id=statute_id,
+                    mode=mode,
+                    stop_before=stop_before,
+                    corpus=corpus,
+                    quiet=True,
+                ),
             )
             ir = None
             if rr is not None:
