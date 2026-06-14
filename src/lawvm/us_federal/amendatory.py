@@ -57,6 +57,9 @@ RULE_ADD_AT_END = "us_amend_add_at_end"
 RULE_AMEND_TO_READ = "us_amend_to_read"
 RULE_REPEAL = "us_amend_repeal"
 RULE_REDESIGNATE = "us_amend_redesignate"
+RULE_STRIKE_UNIT = "us_amend_strike_structural_unit"
+RULE_REDESIGNATE_RANGE = "us_amend_redesignate_range"
+RULE_INSERT_NODE_AFTER = "us_amend_insert_node_after_unit"
 
 UNLOWERED_FINDING_RULE_ID = "us_amendatory_unlowered"
 TARGET_UNRESOLVED_FINDING_RULE_ID = "us_amendatory_target_unresolved"
@@ -113,6 +116,10 @@ class USAmendmentInstruction:
     target_href: str = ""
     target_address: LegalAddress | None = None
     operation: LegalOperation | None = None
+    # Additional ops a single instruction lowers to (a range redesignation lowers
+    # to one RENUMBER per member). ``operation`` is the first/primary op; these are
+    # the rest, materialized in the same source order.
+    extra_operations: tuple[LegalOperation, ...] = ()
     finding: USAmendatoryFinding | None = None
     parse_witness: ParseWitness | None = None
     raw_text: str = ""
@@ -144,7 +151,12 @@ class USAmendatoryReport:
     findings: tuple[USAmendatoryFinding, ...] = ()
 
     def operations(self) -> tuple[LegalOperation, ...]:
-        return tuple(i.operation for i in self.instructions if i.operation is not None)
+        out: list[LegalOperation] = []
+        for i in self.instructions:
+            if i.operation is not None:
+                out.append(i.operation)
+            out.extend(i.extra_operations)
+        return tuple(out)
 
     def coverage(self) -> dict[str, Any]:
         total = len(self.instructions)
@@ -204,6 +216,58 @@ _HREF_TARGET_RE = re.compile(
     r"^/us/usc/t(?P<title>\d+)/s(?P<section>\d+[A-Za-z]*(?:[-‐‑‒–]\d+)?)"
     r"(?P<rest>(?:/[^/]+)*)$"
 )
+# A RELATIVE prose target: "Section 3680(a)(3) of such title", "in section
+# 3672(b)(2)(C)", "in subsection (d)". The title is NOT named — it is inherited
+# from the enclosing instruction (a parent unit / the section ref). The leaf may
+# be a bare "section X(...)" anchored mid-instruction ("in section X, by ...") or
+# the head of the instruction ("Section X of such title is amended"). We capture
+# the section number and any parenthesized sub-section segments. The match must be
+# anchored at a word boundary so a stray "section 116 of title 18" cross-reference
+# inside the inserted text is never mistaken for the amendment target — those
+# carry the explicit "of title N" form handled by the absolute parser.
+_RELATIVE_PROSE_TARGET_RE = re.compile(
+    r"(?:^|\b)(?:in\s+)?[Ss]ection\s+"
+    r"(?P<section>\d+[A-Za-z]*(?:[-‐‑‒–]\d+)?)"
+    r"(?P<segments>(?:\s*\([0-9A-Za-z]+\))*)"
+    r"(?:\s+of\s+such\s+title\b|\s+is\s+amended\b|\s*,)"
+)
+
+
+# A leading sub-section anchor in an instruction unit: "(1) in subsection (a),
+# by inserting …", "in paragraph (3), by striking …". This refines an inherited
+# section/sub-section address by ONE more level: the edit applies inside the named
+# sub-unit, not the whole inherited node. Anchored at the unit head so a mid-prose
+# cross-reference ("in paragraph (1) of section 1322") is not mistaken for the
+# edit's own scope. Only the first such anchor is consumed.
+_LEADING_SUBUNIT_ANCHOR_RE = re.compile(
+    r"^\s*(?:\([0-9A-Za-z]+\)\s*)?"
+    r"in\s+(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
+    r"\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?P<more>(?:\s*\([0-9A-Za-z]+\))*)"
+    r"\s*,"
+)
+
+
+def _refine_with_leading_subunit_anchor(
+    address: LegalAddress, raw_text: str
+) -> LegalAddress:
+    """Append a leading "in subsection (X)[(Y)...]" anchor to ``address``.
+
+    Returns ``address`` unchanged when the unit has no leading sub-unit anchor (the
+    edit applies directly to the inherited node). This is what disambiguates two
+    sibling ops "(1) in subsection (a), by inserting …" / "(2) in subsection (b),
+    …" that otherwise collapse to the same section address (and double-apply at the
+    section-text surface). The named sub-unit's USC kind is taken from the prose
+    verb ("subsection"/"paragraph"/...) — the enacted language is authoritative.
+    """
+    match = _LEADING_SUBUNIT_ANCHOR_RE.match(raw_text)
+    if match is None:
+        return address
+    base_index = max(address.depth() - 1, 0)
+    segments: list[tuple[str, str]] = [(match.group("kind"), match.group("label"))]
+    for i, seg in enumerate(_SEGMENT_RE.findall(match.group("more") or "")):
+        segments.append((_label_level(seg, base_index + 1 + i), seg))
+    return LegalAddress(path=(*address.path, *segments))
 
 
 def _label_level(label: str, index: int) -> str:
@@ -249,6 +313,36 @@ def parse_usc_target_phrase(phrase: str) -> LegalAddress | None:
     for i, seg in enumerate(_SEGMENT_RE.findall(match.group("segments") or "")):
         path.append((_label_level(seg, i), seg))
     return LegalAddress(path=tuple(path))
+
+
+def parse_relative_usc_target(phrase: str, *, inherited_title: str) -> LegalAddress | None:
+    """Parse a relative target ("section X(...) of such title") under ``inherited_title``.
+
+    Returns ``None`` when the phrase carries no bare "section X" head and no
+    inherited title is known. Used for the nested-instruction-list threading: a
+    leaf unit ("(B) in section 3675(b)(3), by striking ...") names its USC section
+    in prose but inherits the title from the enclosing instruction. Never invents a
+    title — if ``inherited_title`` is empty the relative target is unresolved.
+    """
+    if not inherited_title:
+        return None
+    match = _RELATIVE_PROSE_TARGET_RE.search(phrase)
+    if match is None:
+        return None
+    section = match.group("section")
+    path: list[tuple[str, str]] = [("title", inherited_title), ("section", section)]
+    for i, seg in enumerate(_SEGMENT_RE.findall(match.group("segments") or "")):
+        path.append((_label_level(seg, i), seg))
+    return LegalAddress(path=tuple(path))
+
+
+def _address_title(address: LegalAddress | None) -> str:
+    if address is None:
+        return ""
+    for kind, label in address.path:
+        if kind == "title":
+            return label
+    return ""
 
 
 def parse_usc_target_href(href: str) -> LegalAddress | None:
@@ -415,11 +509,28 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
 def _resolve_target(
     target_phrase: str,
     target_href: str,
+    *,
+    raw_text: str = "",
+    inherited_address: LegalAddress | None = None,
 ) -> tuple[LegalAddress | None, str]:
     """Resolve the instruction target; prose is canonical, href corroborates.
 
     Returns ``(address, resolution_status)`` where status is one of
-    ``prose``, ``href``, ``prose_href_agree``, or ``unresolved``.
+    ``prose``, ``href``, ``prose_href_agree``, ``relative_prose``, ``inherited``,
+    or ``unresolved``.
+
+    Resolution order (each strictly more specific than the next):
+
+    1. The unit's own absolute prose / href ("Section X(...) of title N").
+    2. The unit's own RELATIVE prose ("section X(...) of such title" / "in section
+       X, by ...") combined with the title inherited from the enclosing
+       instruction — this threads the nested-instruction-list form where the leaf
+       names its USC section in prose but inherits the title from a parent unit.
+    3. The inherited target itself ("(1) by striking ..." with no ref of its own
+       inherits the parent unit's resolved section address verbatim).
+
+    The relative/inherited steps NEVER invent a title; they only carry one that an
+    enclosing instruction already resolved (no silent target hijack).
     """
     prose_addr = parse_usc_target_phrase(target_phrase) if target_phrase else None
     href_addr = parse_usc_target_href(target_href) if target_href else None
@@ -432,6 +543,27 @@ def _resolve_target(
         return prose_addr, "prose"
     if href_addr is not None:
         return href_addr, "href"
+
+    # (2) Relative prose under the inherited title. The leaf names a different
+    # section than the inherited address (a conforming amendment to a sibling
+    # section), so the section comes from the leaf's prose, the title from the
+    # inherited address.
+    inherited_title = _address_title(inherited_address)
+    if raw_text and inherited_title:
+        rel = parse_relative_usc_target(raw_text, inherited_title=inherited_title)
+        if rel is not None:
+            return _refine_with_leading_subunit_anchor(rel, raw_text), "relative_prose"
+
+    # (3) Pure inheritance: the leaf carries no section of its own; it amends the
+    # same node the enclosing instruction resolved — refined by any leading
+    # "in subsection (X)" anchor so sibling sub-unit edits do not collapse onto the
+    # same address (and double-apply at the section-text surface).
+    if inherited_address is not None:
+        return (
+            _refine_with_leading_subunit_anchor(inherited_address, raw_text),
+            "inherited",
+        )
+
     return None, "unresolved"
 
 
@@ -491,6 +623,106 @@ def _redesignate_destination(
     return from_addr, to_addr
 
 
+_KIND_WORDS = "subsection|paragraph|subparagraph|clause|subclause"
+_STRIKE_UNIT_RE = re.compile(
+    rf"by\s+striking\s+(?P<kind>{_KIND_WORDS})\s+\((?P<label>[0-9A-Za-z]+)\)\s*\.?\s*$",
+    re.IGNORECASE,
+)
+# A strike-subsection instruction with FUTURE-effective language ("Effective on the
+# date that is N ... after …", "Effective <date>, …", "shall take effect …") is a
+# SUNSET / deferred repeal, not an in-window amendment. The temporal layer owns it;
+# lowering it to an immediate REPEAL would (wrongly) delete a node that is still in
+# force in the window's after edition. We refuse to lower these as immediate ops.
+_FUTURE_EFFECTIVE_RE = re.compile(
+    r"effective\s+(?:on\s+the\s+date|[A-Z][a-z]+\s+\d|\w+\s+\d{1,2},\s*\d{4})"
+    r"|shall\s+take\s+effect\b",
+    re.IGNORECASE,
+)
+# "redesignating paragraphs (3) through (7) as paragraphs (4) through (8)" — a
+# contiguous range relabel. The two endpoints define the shift; each member is
+# relabelled by the same offset (the USC labels in a numeric range are
+# consecutive). Only the digit-numbered (paragraph) range is materializable as a
+# pure relabel without knowing the alphabet sequence, so we keep both endpoints
+# and let the dry-run relabel the members it can enumerate.
+_REDESIGNATE_RANGE_RE = re.compile(
+    rf"redesignating\s+(?:{_KIND_WORDS})s?\s+"
+    r"\((?P<from_lo>[0-9A-Za-z]+)\)\s+through\s+\((?P<from_hi>[0-9A-Za-z]+)\)\s+as\s+"
+    rf"(?:{_KIND_WORDS})s?\s+"
+    r"\((?P<to_lo>[0-9A-Za-z]+)\)\s+through\s+\((?P<to_hi>[0-9A-Za-z]+)\)",
+    re.IGNORECASE,
+)
+# "inserting after paragraph (N) the following[ new <kind>]: <block>" — splice the
+# quoted block as a NEW node positioned after the named anchor unit.
+_INSERT_NODE_AFTER_RE = re.compile(
+    rf"inserting\s+after\s+(?P<kind>{_KIND_WORDS})\s+\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?:\s*\([0-9A-Za-z]+\))*\s+(?:\(as\s+so\s+redesignated\)\s+)?the\s+following",
+    re.IGNORECASE,
+)
+
+
+def _strike_structural_unit(
+    raw_text: str, target: LegalAddress
+) -> LegalAddress | None:
+    """Parse ``by striking subsection (X)`` into the struck node's address.
+
+    The struck node hangs off ``target`` (the section/sub-section the instruction
+    resolved to). Returns ``None`` when the instruction is not a bare structural
+    strike (e.g. it strikes a quoted phrase, handled by the text path).
+    """
+    if _FUTURE_EFFECTIVE_RE.search(raw_text):
+        # Deferred / sunset repeal — the temporal layer owns the reversion; never
+        # lower it to an immediate REPEAL (it would delete an in-force node).
+        return None
+    m = _STRIKE_UNIT_RE.search(raw_text)
+    if m is None:
+        return None
+    label = m.group("label")
+    # The struck unit hangs ONE level below the resolved target. Index from the
+    # target's own depth below the section so "subsection (g)" off a section types
+    # as a subsection, not floored to a deeper level by a stale leaf index.
+    base_index = max(target.depth() - 2, 0)
+    kind = _label_level(label, base_index)
+    return LegalAddress(path=(*target.path, (kind, label)))
+
+
+def _redesignate_range(
+    raw_text: str, target: LegalAddress
+) -> tuple[tuple[LegalAddress, LegalAddress], ...] | None:
+    """Parse a ``redesignating (a) through (b) as (c) through (d)`` range.
+
+    Returns a tuple of ``(from_addr, to_addr)`` pairs, one per member of the
+    digit-numbered range, or ``None`` when the form is not a numeric range (an
+    alphabetic range cannot be enumerated without the label alphabet, so it is left
+    as a typed finding rather than guessed).
+    """
+    m = _REDESIGNATE_RANGE_RE.search(raw_text)
+    if m is None:
+        return None
+    lo, hi = m.group("from_lo"), m.group("from_hi")
+    to_lo, to_hi = m.group("to_lo"), m.group("to_hi")
+    if not (lo.isdigit() and hi.isdigit() and to_lo.isdigit() and to_hi.isdigit()):
+        return None
+    span = int(hi) - int(lo)
+    if span < 0 or (int(to_hi) - int(to_lo)) != span:
+        return None
+    offset = int(to_lo) - int(lo)
+    leaf_index = max(target.depth() - 1, 0)
+    pairs: list[tuple[LegalAddress, LegalAddress]] = []
+    # Relabel from the HIGH end down so an intermediate relabel never collides with
+    # a member not yet moved (e.g. (3)->(4),(4)->(5) must move (4) first).
+    for n in range(int(hi), int(lo) - 1, -1):
+        from_label = str(n)
+        to_label = str(n + offset)
+        kind = _label_level(from_label, leaf_index)
+        pairs.append(
+            (
+                LegalAddress(path=(*target.path, (kind, from_label))),
+                LegalAddress(path=(*target.path, (kind, to_label))),
+            )
+        )
+    return tuple(pairs)
+
+
 def _lower_instruction(
     *,
     statute_id: str,
@@ -503,9 +735,15 @@ def _lower_instruction(
     quoted: list[str],
     actions: list[str],
     payload_node: IRNode | None,
+    inherited_address: LegalAddress | None = None,
 ) -> USAmendmentInstruction:
     source = OperationSource(statute_id=statute_id, enacted=enacted, raw_text=raw_text)
-    address, resolution_status = _resolve_target(target_phrase, target_href)
+    address, resolution_status = _resolve_target(
+        target_phrase,
+        target_href,
+        raw_text=raw_text,
+        inherited_address=inherited_address,
+    )
     family = _classify_action(actions, raw_text)
 
     def _finding(rule_id: str, message: str) -> USAmendatoryFinding:
@@ -546,6 +784,7 @@ def _lower_instruction(
         on_title_11 = False
 
     op: LegalOperation | None = None
+    extra_ops: list[LegalOperation] = []
     witness_rule_id = UNLOWERED_FINDING_RULE_ID
     status = "unsupported"
     finding: USAmendatoryFinding | None = None
@@ -622,12 +861,30 @@ def _lower_instruction(
             )
             witness_rule_id = RULE_STRIKE
         else:
-            finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
-                "strike with no quoted string (structural-unit strike not yet lowered)",
-            )
+            # "is amended by striking subsection (X)" — a structural-unit strike (a
+            # sub-section REPEAL), no quoted phrase. Lower to a REPEAL of the named
+            # node so the dry-run can remove it at sub-section granularity.
+            struck = _strike_structural_unit(raw_text, address)
+            if struck is not None:
+                op = LegalOperation(
+                    op_id=instruction_id,
+                    sequence=sequence,
+                    action=StructuralAction.REPEAL,
+                    target=struck,
+                    source=source,
+                    witness_rule_id=RULE_STRIKE_UNIT,
+                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                )
+                address = struck
+                witness_rule_id = RULE_STRIKE_UNIT
+            else:
+                finding = _finding(
+                    UNLOWERED_FINDING_RULE_ID,
+                    "strike with no quoted string and no recognizable structural unit",
+                )
     elif family == "insert_after":
-        if len(quoted) >= 2:
+        node_anchor = _INSERT_NODE_AFTER_RE.search(raw_text)
+        if len(quoted) >= 2 and node_anchor is None:
             new_text, anchor_text = quoted[0], quoted[1]
             op = _make_op(
                 StructuralAction.TEXT_REPLACE,
@@ -639,6 +896,21 @@ def _lower_instruction(
                 ),
             )
             witness_rule_id = RULE_INSERT_AFTER
+        elif node_anchor is not None and payload_node is not None:
+            # "inserting after paragraph (N) the following: <block>" — splice the
+            # quoted block as a NEW node positioned AFTER the named anchor unit. The
+            # anchor node hangs off the resolved target; the dry-run inserts the
+            # payload immediately after that node's span.
+            anchor_label = node_anchor.group("label")
+            anchor_kind = _label_level(anchor_label, max(address.depth() - 1, 0))
+            anchor_addr = LegalAddress(path=(*address.path, (anchor_kind, anchor_label)))
+            op = _make_op(
+                StructuralAction.INSERT,
+                rule_id=RULE_INSERT_NODE_AFTER,
+                payload=payload_node,
+                anchor=anchor_addr,
+            )
+            witness_rule_id = RULE_INSERT_NODE_AFTER
         else:
             finding = _finding(
                 UNLOWERED_FINDING_RULE_ID,
@@ -680,6 +952,7 @@ def _lower_instruction(
         witness_rule_id = RULE_REPEAL
     elif family == "redesignate":
         pair = _redesignate_destination(raw_text, address)
+        range_pairs = None if pair is not None else _redesignate_range(raw_text, address)
         if pair is not None:
             from_addr, to_addr = pair
             op = LegalOperation(
@@ -693,10 +966,29 @@ def _lower_instruction(
                 provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
             )
             witness_rule_id = RULE_REDESIGNATE
+        elif range_pairs:
+            # "redesignating paragraphs (3) through (7) as (4) through (8)" — one
+            # RENUMBER per member (high-end first so relabels never collide).
+            for idx, (from_addr, to_addr) in enumerate(range_pairs):
+                node_op = LegalOperation(
+                    op_id=f"{instruction_id}#r{idx}",
+                    sequence=sequence,
+                    action=StructuralAction.RENUMBER,
+                    target=from_addr,
+                    destination=to_addr,
+                    source=source,
+                    witness_rule_id=RULE_REDESIGNATE_RANGE,
+                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                )
+                if op is None:
+                    op = node_op
+                else:
+                    extra_ops.append(node_op)
+            witness_rule_id = RULE_REDESIGNATE_RANGE
         else:
             finding = _finding(
                 UNLOWERED_FINDING_RULE_ID,
-                "redesignation is multi-unit or range form (not yet lowered to a single RENUMBER)",
+                "redesignation is multi-unit or non-numeric range form (not lowered to RENUMBER)",
             )
     else:
         finding = _finding(
@@ -722,6 +1014,7 @@ def _lower_instruction(
         target_href=target_href,
         target_address=address,
         operation=op,
+        extra_operations=tuple(extra_ops),
         finding=finding,
         parse_witness=ParseWitness(rule_id=witness_rule_id),
         raw_text=raw_text,
@@ -749,25 +1042,90 @@ def _first_usc_ref(content: ET.Element) -> tuple[str, str]:
     return "", ""
 
 
+def _unit_own_target(unit: ET.Element, *, exclude: ET.Element | None = None) -> LegalAddress | None:
+    """Resolve a unit's OWN absolute USC target from its direct prose/ref, if any.
+
+    Only the unit's own ``<content>`` text (not its nested amendatory sub-units) is
+    consulted, so a parent's "Section X of title N is amended—" resolves to X
+    without bleeding a child's "in section Y" into the parent's target. ``exclude``
+    drops a sub-tree (the descendant leaf units) from the prose scan.
+    """
+    phrase, href = _first_usc_ref(unit)
+    addr, status = _resolve_target(phrase, href)
+    if addr is not None:
+        return addr
+    # No ref: try the unit's own direct prose head ("Section X of title N ...").
+    # Scan only text outside the excluded descendant sub-units.
+    own_text = _shallow_text(unit, exclude=exclude)
+    return parse_usc_target_phrase(own_text)
+
+
+def _shallow_text(elem: ET.Element, *, exclude: ET.Element | None = None) -> str:
+    """Concatenated text of ``elem`` excluding the ``exclude`` sub-tree's text."""
+    parts: list[str] = []
+
+    def _walk(node: ET.Element) -> None:
+        if node is exclude:
+            if node.tail:
+                parts.append(node.tail)
+            return
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            _walk(child)
+            if child.tail and child is not exclude:
+                parts.append(child.tail)
+
+    if elem.text:
+        parts.append(elem.text)
+    for child in elem:
+        _walk(child)
+        if child.tail:
+            parts.append(child.tail)
+    return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
 def _iter_instruction_units(
     section: ET.Element,
-) -> Iterable[tuple[str, ET.Element]]:
-    """Yield ``(unit_id, element)`` for each amendatory unit inside a section.
+) -> Iterable[tuple[str, ET.Element, LegalAddress | None]]:
+    """Yield ``(unit_id, element, inherited_address)`` for each amendatory unit.
 
     A unit is either the section's own direct ``<content>`` (flat instruction) or
     each nested ``<paragraph>/<subparagraph>`` that carries its own amendingAction
-    ("(1) in subsection (b)— (A) by striking…"). We carry the enclosing section
-    target into sub-units that lack their own ref.
+    ("(1) in subsection (b)— (A) by striking…"). The third element is the USC
+    address resolved by the nearest ENCLOSING instruction (a parent unit's
+    "Section X of title N is amended—"), threaded down so a leaf that names no
+    title of its own ("(1) by striking …") or only a relative section ("(B) in
+    section Y, …") can be resolved (no silent target hijack — the inherited title
+    is one a parent already resolved, never invented).
     """
     unit_tags = ("subsection", "paragraph", "subparagraph", "clause")
-    nested = [
-        elem
-        for elem in section.iter()
-        if _localname(elem.tag) in unit_tags
-        and any(_localname(a.tag) == "amendingAction" for a in elem.iter())
-        # only leaf-ish units: a unit whose own descendants do not themselves carry
-        # a deeper amendingAction-bearing unit
-    ]
+
+    def _is_unit(elem: ET.Element) -> bool:
+        return _localname(elem.tag) in unit_tags and any(
+            _localname(a.tag) == "amendingAction" for a in elem.iter()
+        )
+
+    nested = [elem for elem in section.iter() if _is_unit(elem)]
+
+    # Map each unit to its nearest amendatory-unit ancestor (within the section),
+    # so we can thread the parent instruction's resolved target into leaf units.
+    parent_of: dict[ET.Element, ET.Element | None] = {}
+    stack: list[ET.Element] = []
+
+    def _descend(node: ET.Element) -> None:
+        pushed = False
+        if node is not section and _is_unit(node):
+            parent_of[node] = stack[-1] if stack else None
+            stack.append(node)
+            pushed = True
+        for child in node:
+            _descend(child)
+        if pushed:
+            stack.pop()
+
+    _descend(section)
+
     leaf_units = []
     for elem in nested:
         has_deeper = any(
@@ -782,10 +1140,26 @@ def _iter_instruction_units(
     if leaf_units:
         for elem in leaf_units:
             uid = elem.get("identifier") or elem.get("id") or ""
-            yield uid, elem
+            # Inherited target = the nearest ancestor instruction whose OWN prose/ref
+            # resolves to a USC address (excluding this leaf's sub-tree from that
+            # ancestor's prose so the leaf's own "in section Y" never leaks up).
+            inherited: LegalAddress | None = None
+            ancestor = parent_of.get(elem)
+            child_for_exclude = elem
+            while ancestor is not None and inherited is None:
+                inherited = _unit_own_target(ancestor, exclude=child_for_exclude)
+                child_for_exclude = ancestor
+                ancestor = parent_of.get(ancestor)
+            if inherited is None:
+                # Fall back to the section's own content ref ("Section X ... — (1)...").
+                section_content = section.find("u:content", _NS)
+                if section_content is not None:
+                    sp, sh = _first_usc_ref(section_content)
+                    inherited, _ = _resolve_target(sp, sh)
+            yield uid, elem, inherited
         return
     # Flat instruction: the section's own content blocks.
-    yield (section.get("identifier") or section.get("id") or ""), section
+    yield (section.get("identifier") or section.get("id") or ""), section, None
 
 
 def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "") -> USAmendatoryReport:
@@ -820,11 +1194,14 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
         if not any(_localname(a.tag) == "amendingAction" for a in section.iter()):
             continue
 
-        for unit_id, unit in _iter_instruction_units(section):
+        for unit_id, unit, inherited_address in _iter_instruction_units(section):
             actions = _amending_actions(unit)
             if not actions:
                 continue
             unit_phrase, unit_href = _first_usc_ref(unit)
+            # The leaf's OWN ref/prose is canonical; the section-level ref is only a
+            # last resort (it would mis-target a leaf that amends a sibling section).
+            # The inherited ancestor address threads the title for relative prose.
             target_phrase = unit_phrase or sec_phrase
             target_href = unit_href or sec_href
             raw_text = _text_of(unit)
@@ -842,6 +1219,7 @@ def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "
                 quoted=quoted,
                 actions=actions,
                 payload_node=payload_node,
+                inherited_address=inherited_address,
             )
             instructions.append(instr)
             if instr.finding is not None:

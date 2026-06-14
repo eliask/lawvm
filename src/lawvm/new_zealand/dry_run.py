@@ -1749,6 +1749,7 @@ def _dry_run_one_replace(
         )
     leaf_kind = _leaf_source_kind(source_path)
     leaf_label = _leaf_source_label(source_path)
+    provision_label = _top_level_provision_label(source_path)
 
     # Extract the replacement payload from the amending act <amend> subtree.
     amending_root = _amending_act_root(archive, row.amending_work_id, amending_root_cache)
@@ -1776,6 +1777,7 @@ def _dry_run_one_replace(
         amending_node,
         target_leaf_kind=leaf_kind,
         target_leaf_label=leaf_label,
+        target_provision_label=provision_label,
     )
     if isinstance(replacement, str):
         return NZDryRunRefusal(
@@ -2443,10 +2445,16 @@ def _dry_run_one_insert(
             amendment_date_iso=amendment_date_iso,
             detail={"amending_work_id": row.amending_work_id, "amending_provision_href": href},
         )
+    # For a NESTED insert the witness's enclosing section disambiguates which of
+    # the amending section's several <amend> subtrees carries the new node; for a
+    # whole-provision insert the new node IS the section, so there is no enclosing
+    # section to scope by (None falls back to leaf-only matching).
+    insert_provision_label = _top_level_provision_label(parent_source_path) if is_nested else None
     payload = extract_structural_insertion(
         amending_node,
         inserted_leaf_kind=leaf_kind,
         inserted_leaf_label=leaf_label,
+        target_provision_label=insert_provision_label,
     )
     if isinstance(payload, str):
         return NZDryRunRefusal(
@@ -2842,6 +2850,24 @@ def _leaf_source_label(source_path: tuple[str, ...]) -> str:
         if separator in leaf:
             return leaf.split(separator, 1)[1]
     return ""
+
+
+def _top_level_provision_label(source_path: tuple[str, ...]) -> str | None:
+    """The first ``prov:`` segment's label in a source path, if any.
+
+    A sub-provision target ``part:3/prov:88/subprov:4`` is anchored in section
+    "88"; this returns that section label so the structural-payload extractor can
+    disambiguate which of the amending section's several ``<amend>`` subtrees (one
+    per instruction) carries the operation. Returns ``None`` when the path has no
+    ``prov:`` segment (e.g. a schedule-only target), in which case the extractor
+    falls back to section-agnostic leaf matching.
+    """
+
+    for segment in source_path:
+        kind, _, label = segment.partition(":")
+        if kind == "prov" and label:
+            return label
+    return None
 
 
 def _rebase_replacement_root(replacement_root: NZSourceNode, resolved_path: tuple[str, ...]) -> NZSourceNode:

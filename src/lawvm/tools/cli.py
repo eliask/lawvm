@@ -10937,6 +10937,180 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
 
+    # --- BEGIN us_federal jurisdiction tooling (additive, self-contained) ---
+    # Thin CLI shims over lawvm.us_federal.*; logic stays in those modules.
+    us_import_plaw_p = sub.add_parser(
+        "us-import-plaw",
+        help="import U.S. Public Law (PLAW) USLM XML zips into the U.S. farchive",
+        description=(
+            "Import U.S. federal Public Law source units from one or more USLM "
+            "XML zip distributions (or URLs) into the canonical U.S. farchive. "
+            "Thin shim over lawvm.us_federal.import_plaw."
+        ),
+    )
+    us_import_plaw_p.add_argument(
+        "sources",
+        nargs="+",
+        metavar="SOURCE",
+        help="one or more PLAW zip paths or URLs",
+    )
+    us_import_plaw_p.add_argument(
+        "--dest",
+        metavar="PATH",
+        default=None,
+        help="farchive DB path (default: canonical data/us_federal.farchive)",
+    )
+    us_import_plaw_p.add_argument(
+        "--skip-existing",
+        dest="skip_existing",
+        action="store_true",
+        help="skip entries already present in the farchive (resume mode)",
+    )
+    us_import_plaw_p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="report what would be imported without writing to the farchive",
+    )
+
+    us_import_usc_p = sub.add_parser(
+        "us-import-usc",
+        help="import U.S. Code annual-edition htm titles into the U.S. farchive",
+        description=(
+            "Import U.S. Code annual-edition title documents (htm or htm zips, "
+            "paths or URLs) into the canonical U.S. farchive. Thin shim over "
+            "lawvm.us_federal.import_usc."
+        ),
+    )
+    us_import_usc_p.add_argument(
+        "sources",
+        nargs="+",
+        metavar="SOURCE",
+        help="one or more USC title htm/zip paths or URLs",
+    )
+    us_import_usc_p.add_argument(
+        "--dest",
+        metavar="PATH",
+        default=None,
+        help="farchive DB path (default: canonical data/us_federal.farchive)",
+    )
+    us_import_usc_p.add_argument(
+        "--skip-existing",
+        dest="skip_existing",
+        action="store_true",
+        help="skip entries already present in the farchive (resume mode)",
+    )
+    us_import_usc_p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="report what would be imported without writing to the farchive",
+    )
+
+    us_inventory_p = sub.add_parser(
+        "us-inventory",
+        help="inventory U.S. federal PLAW source units in the U.S. farchive",
+        description=(
+            "List U.S. federal Public Law units present in the canonical (or "
+            "given) U.S. farchive, with per-Congress counts. Thin shim over "
+            "lawvm.us_federal.inventory."
+        ),
+    )
+    us_inventory_p.add_argument(
+        "--dest",
+        metavar="PATH",
+        default=None,
+        help="explicit farchive path (default: canonical data/us_federal.farchive)",
+    )
+    us_inventory_p.add_argument(
+        "--congress",
+        type=int,
+        default=None,
+        help="restrict the inventory to a single Congress",
+    )
+    us_inventory_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the inventory as JSON instead of a human summary",
+    )
+
+    us_bench_p = sub.add_parser(
+        "us-bench",
+        help="run the U.S. federal dry-run bench corpus",
+        description=(
+            "Evaluate the U.S. federal dry-run bench corpus (per-window "
+            "witness-anchored coverage). Thin shim over lawvm.us_federal.bench."
+        ),
+    )
+    us_bench_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default=None,
+        help="bench corpus CSV (default: us/bench/us_bench_corpus.csv)",
+    )
+    us_bench_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the machine-readable JSON report instead of the table",
+    )
+
+    us_dry_run_p = sub.add_parser(
+        "us-dry-run",
+        help="run the U.S. federal dry-run kernel for one edition window",
+        description=(
+            "Derive the window's public laws from the before/after USC edition "
+            "witness delta and run the dry-run section-replay kernel directly "
+            "from the U.S. farchive. Prints the report summary. Thin shim over "
+            "lawvm.us_federal.bench.derive_window_law_locators + "
+            "lawvm.us_federal.dry_run.build_us_dry_run_from_archive."
+        ),
+    )
+    us_dry_run_p.add_argument(
+        "--title", type=int, required=True, help="USC title number (e.g. 11)"
+    )
+    us_dry_run_p.add_argument(
+        "--before", type=int, required=True, dest="before_year",
+        help="before-edition year (YYYY)",
+    )
+    us_dry_run_p.add_argument(
+        "--after", type=int, required=True, dest="after_year",
+        help="after-edition year (YYYY)",
+    )
+    us_dry_run_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the machine-readable JSON report instead of the summary",
+    )
+
+    us_source_p = sub.add_parser(
+        "us-source",
+        help="dump a parsed U.S. Code section (or title summary) from the farchive",
+        description=(
+            "Parse one USC annual-edition title from the U.S. farchive and dump "
+            "the address, heading, and statutory text for one section (or a "
+            "title-level section summary when --section is omitted). Thin shim "
+            "over lawvm.us_federal.source_tree."
+        ),
+    )
+    us_source_p.add_argument(
+        "--title", type=int, required=True, help="USC title number (e.g. 11)"
+    )
+    us_source_p.add_argument(
+        "--year", type=int, required=True, help="USC edition year (YYYY)"
+    )
+    us_source_p.add_argument(
+        "--section",
+        default=None,
+        metavar="S",
+        help="section number to dump (default: title-level section summary)",
+    )
+    us_source_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of human text",
+    )
+    # --- END us_federal jurisdiction tooling ---
+
     # --- recipes ---
     sub.add_parser(
         "recipes",
@@ -12257,6 +12431,217 @@ def _main_impl() -> None:
         from lawvm.tools.certificate_bundle import main as certificate_bundle_main
 
         certificate_bundle_main(args)
+
+    # --- BEGIN us_federal jurisdiction dispatch (additive, self-contained) ---
+    elif args.command == "us-import-plaw":
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.import_plaw import import_plaw_sources
+
+        _dest = _Path(args.dest) if getattr(args, "dest", None) else None
+        report = import_plaw_sources(
+            list(args.sources),
+            db_path=_dest,
+            skip_existing=bool(getattr(args, "skip_existing", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
+        print(
+            f"PLAW import: scanned={report.total_scanned:,} "
+            f"imported={report.total_imported:,} "
+            f"skipped={report.total_skipped:,} errors={report.total_errors:,}"
+        )
+        if report.total_errors:
+            sys.exit(1)
+
+    elif args.command == "us-import-usc":
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.import_usc import import_usc_sources
+
+        _dest = _Path(args.dest) if getattr(args, "dest", None) else None
+        report = import_usc_sources(
+            list(args.sources),
+            db_path=_dest,
+            skip_existing=bool(getattr(args, "skip_existing", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
+        print(
+            f"USC import: scanned={report.total_scanned:,} "
+            f"imported={report.total_imported:,} "
+            f"skipped={report.total_skipped:,} errors={report.total_errors:,}"
+        )
+        if report.total_errors:
+            sys.exit(1)
+
+    elif args.command == "us-inventory":
+        import json
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.inventory import inventory_us_federal
+
+        _dest = _Path(args.dest) if getattr(args, "dest", None) else None
+        inv = inventory_us_federal(
+            db_path=_dest, congress=getattr(args, "congress", None)
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(inv.to_dict(), indent=2, ensure_ascii=False))
+        else:
+            print("U.S. federal PLAW inventory (amendment-source units only):")
+            print(f"  Total Public Laws: {inv.total_units:,}")
+            for congress in inv.congresses:
+                print(
+                    f"    Congress {congress}: "
+                    f"{inv.counts_per_congress[congress]:,}"
+                )
+
+    elif args.command == "us-bench":
+        import json
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.bench import (
+            DEFAULT_CORPUS_PATH,
+            run_bench,
+            _render_table,
+            load_corpus,
+        )
+        from lawvm.us_federal.sources import open_us_federal_farchive
+
+        _corpus = (
+            _Path(args.corpus) if getattr(args, "corpus", None) else DEFAULT_CORPUS_PATH
+        )
+        if not _corpus.exists():
+            print(f"error: bench corpus not found: {_corpus}", file=sys.stderr)
+            sys.exit(1)
+        _windows = load_corpus(_corpus)
+        _archive = open_us_federal_farchive(readonly=True)
+        try:
+            _report = run_bench(_archive, _windows, corpus_path=str(_corpus))
+        finally:
+            _archive.close()
+        if getattr(args, "json", False):
+            print(json.dumps(_report.to_jsonable(), indent=2, sort_keys=True))
+        else:
+            print(_render_table(_report))
+            _agg = _report.aggregate()
+            _cov = _agg["coverage_fraction"]
+            _cov_str = "-" if _cov is None else f"{_cov:.4f}"
+            print()
+            print(
+                f"AGGREGATE  windows={_agg['windows_evaluated']} "
+                f"(skipped {_agg['windows_skipped']})  "
+                f"witness-anchored coverage={_agg['agreements_total']}/"
+                f"{_agg['oracle_changed_section_total']} = {_cov_str}"
+            )
+            print(f"  disposition breakdown: {_agg['disposition_breakdown']}")
+            print("  replay_authorized: False (dry-run gate)")
+
+    elif args.command == "us-dry-run":
+        import json
+
+        from lawvm.us_federal.bench import derive_window_law_locators
+        from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
+        from lawvm.us_federal.sources import open_us_federal_farchive
+
+        _archive = open_us_federal_farchive(readonly=True)
+        try:
+            _locators = derive_window_law_locators(
+                _archive,
+                title=args.title,
+                before_year=args.before_year,
+                after_year=args.after_year,
+            )
+            if _locators is None:
+                print(
+                    "error: before/after USC edition missing from the U.S. "
+                    f"farchive for title {args.title} "
+                    f"({args.before_year}->{args.after_year})",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            _report = build_us_dry_run_from_archive(
+                _archive,
+                title=args.title,
+                before_year=args.before_year,
+                after_year=args.after_year,
+                plaw_locators=_locators,
+            )
+        finally:
+            _archive.close()
+        if getattr(args, "json", False):
+            print(json.dumps(_report.to_jsonable(), indent=2, sort_keys=True))
+        else:
+            print(json.dumps(_report.summary(), indent=2, sort_keys=True))
+
+    elif args.command == "us-source":
+        import json
+
+        from lawvm.us_federal.source_tree import parse_usc_title_document
+        from lawvm.us_federal.sources import (
+            open_us_federal_farchive,
+            read_usc_annual,
+            usc_annual_locator,
+        )
+
+        _archive = open_us_federal_farchive(readonly=True)
+        try:
+            _blob = read_usc_annual(_archive, args.year, args.title)
+        finally:
+            _archive.close()
+        if _blob is None:
+            print(
+                "error: USC edition not in the U.S. farchive: "
+                f"{usc_annual_locator(args.year, args.title)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _doc = parse_usc_title_document(
+            _blob,
+            title=args.title,
+            year=str(args.year),
+            locator=usc_annual_locator(args.year, args.title),
+        )
+        _section = getattr(args, "section", None)
+        if _section is None:
+            if getattr(args, "json", False):
+                print(json.dumps(_doc.to_jsonable(), indent=2, ensure_ascii=False))
+            else:
+                print(
+                    f"USC title {_doc.title} ({_doc.year}) "
+                    f"{_doc.locator}: {_doc.report.section_count} sections "
+                    f"({_doc.report.repealed_count} repealed)"
+                )
+                for s in _doc.sections:
+                    _flag = " [repealed]" if s.repealed else ""
+                    print(f"  § {s.section}  {s.heading}{_flag}")
+        else:
+            _sec = _doc.section_by_number(_section)
+            if _sec is None:
+                print(
+                    f"error: section {_section} not found in USC title "
+                    f"{args.title} ({args.year})",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if getattr(args, "json", False):
+                print(
+                    json.dumps(
+                        _sec.to_jsonable(include_paragraphs=True),
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                )
+            else:
+                print(f"address: {_sec.address}")
+                print(f"heading: § {_sec.section}. {_sec.heading}")
+                print(f"repealed: {_sec.repealed}")
+                if _sec.chapter or _sec.subchapter:
+                    print(
+                        f"container: chapter {_sec.chapter or '-'} "
+                        f"subchapter {_sec.subchapter or '-'}"
+                    )
+                print("statutory_text:")
+                print(_sec.statutory_text)
+    # --- END us_federal jurisdiction dispatch ---
 
     elif args.command is None:
         parser.print_help()

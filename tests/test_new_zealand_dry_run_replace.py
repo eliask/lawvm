@@ -29,7 +29,6 @@ from lawvm.new_zealand.dry_run import (
 )
 from lawvm.new_zealand.source_tree import (
     NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH,
-    NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION,
     NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE,
     NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD,
     NZStructuralReplacement,
@@ -108,8 +107,11 @@ _AMENDING_XML = b"""\
 </act>
 """
 
-# Amending act with a one-to-many expansion (target subprov 2 -> several new
-# subprovs) so the extractor blocks it as a multi-child expansion.
+# Amending act with a one-to-many expansion ("the following subsections are
+# substituted:" -> several new subprovs). Each affected subprov is its own
+# upstream history-note witness, so the extractor selects the single child whose
+# label matches the per-witness target leaf (subprov 2) and leaves the siblings
+# (subprov 2A) to their own witnesses.
 _AMENDING_XML_MULTI = b"""\
 <act>
   <body>
@@ -239,10 +241,36 @@ def test_extractor_returns_clean_one_to_one_replacement() -> None:
     assert "brand new body" in result.root.text
 
 
-def test_extractor_blocks_one_to_many_expansion() -> None:
+def test_extractor_selects_witness_child_from_one_to_many_expansion() -> None:
+    # The amend carries subprov 2 AND subprov 2A. The per-witness target leaf
+    # (subprov 2) selects exactly its own child; the sibling 2A belongs to its
+    # own witness and is not flattened into this replacement.
     node = _amending_node(_AMENDING_XML_MULTI, "DLM9000020")
     result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="2")
-    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "subprov"
+    assert result.root.label == "2"
+    assert "New subsection two" in result.root.text
+    assert "two-A" not in result.root.text
+
+
+def test_extractor_selects_sibling_child_from_same_one_to_many_expansion() -> None:
+    # A different witness over the SAME amend selects the OTHER child (subprov 2A)
+    # — proving the multi-child amend serves per-witness extraction, not a flatten.
+    node = _amending_node(_AMENDING_XML_MULTI, "DLM9000020")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="2A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "subprov"
+    assert result.root.label == "2A"
+    assert "two-A" in result.root.text
+
+
+def test_extractor_blocks_unmatched_leaf_in_one_to_many_expansion() -> None:
+    # A leaf absent from the multi-child amend (subprov 9) is a typed no-match,
+    # never a spurious select of an unrelated sibling.
+    node = _amending_node(_AMENDING_XML_MULTI, "DLM9000020")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="9")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
 
 
 def test_extractor_blocks_when_no_amend_subtree() -> None:
@@ -272,6 +300,75 @@ def test_extractor_blocks_ambiguous_multiple_amend_children() -> None:
 """
     node = _amending_node(xml, "AMB")
     result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="41")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+# An amending section with two instructions that each amend a DIFFERENT section's
+# sub-provision with the SAME label (section 81(1) and section 88(1)): a leaf-only
+# match across the node is ambiguous, but the cited section disambiguates exactly.
+_AMENDING_XML_CROSS_SECTION = b"""\
+<act>
+  <body>
+    <prov id="DLM9000030"><label>30</label><heading>Cross-section</heading>
+      <prov.body>
+        <para>
+          <text>Replace <citation jurisdiction="nz"><extref href="DLMs81">section 81(1)</extref></citation> with:</text>
+          <amend>
+            <subprov><label>1</label><para><text>1 New section 81 subsection one.</text></para></subprov>
+          </amend>
+        </para>
+        <para>
+          <text>Replace <citation jurisdiction="nz"><extref href="DLMs88">section 88(1) to (4)</extref></citation> with:</text>
+          <amend>
+            <subprov><label>1</label><para><text>1 New section 88 subsection one.</text></para></subprov>
+            <subprov><label>2</label><para><text>2 New section 88 subsection two.</text></para></subprov>
+          </amend>
+        </para>
+      </prov.body></prov>
+  </body>
+</act>
+"""
+
+
+def test_extractor_disambiguates_cross_section_collision_by_provision() -> None:
+    # subprov 1 exists under BOTH the section-81 and section-88 instructions.
+    # Leaf-only is ambiguous; the witness section label selects exactly one.
+    node = _amending_node(_AMENDING_XML_CROSS_SECTION, "DLM9000030")
+    s81 = extract_structural_replacement(
+        node, target_leaf_kind="subprov", target_leaf_label="1", target_provision_label="81"
+    )
+    assert isinstance(s81, NZStructuralReplacement)
+    assert "section 81 subsection one" in s81.root.text
+    s88 = extract_structural_replacement(
+        node, target_leaf_kind="subprov", target_leaf_label="1", target_provision_label="88"
+    )
+    assert isinstance(s88, NZStructuralReplacement)
+    assert "section 88 subsection one" in s88.root.text
+
+
+def test_extractor_cross_section_collision_stays_ambiguous_without_provision() -> None:
+    # Single-argument behaviour is unchanged: without the section label the same
+    # cross-section collision is still a typed ambiguity, never a guess.
+    node = _amending_node(_AMENDING_XML_CROSS_SECTION, "DLM9000030")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="1")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_extractor_same_section_ambiguity_stays_blocked_with_provision() -> None:
+    # Two instructions citing the SAME section that each carry a subprov 1 cannot
+    # be disambiguated by section; it stays a typed ambiguity even with the label.
+    xml = b"""\
+<act><body><prov id="SAME"><prov.body>
+  <para><text>Replace <citation jurisdiction="nz"><extref href="x">section 16(1)</extref></citation> with:</text>
+    <amend><subprov><label>1</label><para><text>1 First.</text></para></subprov></amend></para>
+  <para><text>Also replace <citation jurisdiction="nz"><extref href="y">section 16(1)</extref></citation> with:</text>
+    <amend><subprov><label>1</label><para><text>1 Second.</text></para></subprov></amend></para>
+</prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "SAME")
+    result = extract_structural_replacement(
+        node, target_leaf_kind="subprov", target_leaf_label="1", target_provision_label="16"
+    )
     assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
 
 

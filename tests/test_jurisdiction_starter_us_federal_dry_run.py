@@ -669,8 +669,114 @@ def test_section_level_insert_with_plain_text_payload_still_materializes() -> No
 
 
 # ---------------------------------------------------------------------------
+# Structural materialization at sub-section granularity (strike / insert / renumber)
+# ---------------------------------------------------------------------------
+
+
+def test_strike_subsection_repeal_removes_the_node_and_recomposes() -> None:
+    # "by striking subsection (b)" -> remove subsection (b) (and its paragraphs)
+    # from the section text; subsection (a) survives verbatim.
+    section = _section77_before()
+    op = LegalOperation(
+        op_id="strike-subsection-b",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("title", "11"), ("section", "77"), ("subsection", "b"))),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert "first subsection mentions a 15-year" in materialized
+    assert "second subsection has paragraphs" not in materialized
+
+
+def test_strike_subsection_of_an_absent_node_is_refused_not_a_wrong_deletion() -> None:
+    # A strike of a sub-section node NOT present in the before edition (introduced
+    # by an un-lowered sibling op, or a conditional/sunset strike) is a no-op
+    # against the before text — a typed refusal, never a wrong (over-broad) deletion
+    # that would tank the section's other ops.
+    section = _section77_before()
+    op = LegalOperation(
+        op_id="strike-absent-subsection-z",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("title", "11"), ("section", "77"), ("subsection", "z"))),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID
+
+
+def test_insert_node_after_a_paragraph_splices_payload_after_the_anchor_node() -> None:
+    # An INSERT anchored at subsection (b) paragraph (1) splices the payload
+    # immediately AFTER that node's span (not at the section end).
+    section = _section77_before()
+    op = LegalOperation(
+        op_id="insert-node-after-b1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("title", "11"), ("section", "77"))),
+        anchor=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1"))
+        ),
+        payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="1A", text="(1A) a spliced paragraph;"),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # The spliced node sits between paragraph (1) and paragraph (2).
+    one = materialized.index("first paragraph mentions a 15-year window;")
+    spliced = materialized.index("(1A) a spliced paragraph;")
+    two = materialized.index("second paragraph stands alone.")
+    assert one < spliced < two
+
+
+def test_renumber_subsection_relabels_only_the_leading_enumerator() -> None:
+    # "redesignating paragraph (1) as paragraph (1A)" relabels ONLY the node's
+    # leading "(1)" enumerator inside its located span, never a cross-reference.
+    section = _section77_before()
+    op = LegalOperation(
+        op_id="renumber-b1-to-b1A",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1"))
+        ),
+        destination=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1A"))
+        ),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert "(1A) the first paragraph mentions a 15-year window;" in materialized
+    # Subsection (a)'s leading "(a)" and paragraph (2) are untouched.
+    assert "(2) the second paragraph stands alone." in materialized
+
+
+# ---------------------------------------------------------------------------
 # Editorial quote/spacing classification (generalized F1 -> oracle_suspect)
 # ---------------------------------------------------------------------------
+
+
+def test_norm_editorial_undoes_comma_anchor_courtesy_space() -> None:
+    # The comma-anchor generalization of F1: the enacted insert-after places matter
+    # directly after a comma anchor (no space; the quotedText carries no leading
+    # space); the published Code adds a courtesy space.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    faithful = "the positions of physician,optometrist, dentist"
+    published = "the positions of physician, optometrist, dentist"
+    assert normalize_inline_comparison_text(faithful) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(faithful) == _norm_editorial(published)
+    # It does NOT mask a real content divergence into a false agreement.
+    other = "the positions of physician, dentist"
+    assert _norm_editorial(faithful) != _norm_editorial(other)
 
 
 def test_norm_editorial_undoes_olrc_quote_and_dash_paren_spacing() -> None:

@@ -99,7 +99,7 @@ from lawvm.finland.apply_ir_ops import (
     _relabel_section_ir,
 )
 from lawvm.finland.kumotaan import (
-    _extract_kumotaan_section_refs,
+    _extract_kumotaan_chapter_section_map,
     _extract_kumotaan_container_refs,
 )
 from lawvm.finland.metadata import (
@@ -2163,10 +2163,28 @@ def _apply_uncovered_kumotaan_typed(
         amendment_id=amendment_id,
     )
 
-    kumotaan_refs = _extract_kumotaan_section_refs(johto)
+    # Chapter-scoped kumotaan section refs.  Extracting only bare section labels
+    # discards the "N luvun" chapter context, so a clause like "10 luvun 5 d §"
+    # collapses to bare "5d".  When the same section number lives in several
+    # chapters (e.g. 5 d § exists in both chapter 1 and chapter 10), the
+    # recovery's unscoped find_section_path(label) then resolved the FIRST
+    # document-order match and repealed the wrong section, leaving the
+    # genuinely-repealed one live.  Carry the chapter so the lookup targets the
+    # address the johtolause actually named.
+    kumotaan_chap_map = _extract_kumotaan_chapter_section_map(johto)
+    kumotaan_section_targets: List[tuple[Optional[str], str]] = []
+    seen_section_targets: Set[tuple[Optional[str], str]] = set()
+    for chapter_label, labels in kumotaan_chap_map.items():
+        for label in labels:
+            target = (chapter_label, label)
+            if label and target not in seen_section_targets:
+                kumotaan_section_targets.append(target)
+                seen_section_targets.add(target)
     for label in vts_section_refs:
-        if label and label not in kumotaan_refs:
-            kumotaan_refs.append(label)
+        target = (None, label)
+        if label and target not in seen_section_targets:
+            kumotaan_section_targets.append(target)
+            seen_section_targets.add(target)
     kumotaan_containers = _extract_kumotaan_container_refs(johto)
     for kind_name, labels in vts_container_refs.items():
         if labels:
@@ -2181,7 +2199,7 @@ def _apply_uncovered_kumotaan_typed(
         findings_out=findings_out,
     )
 
-    for ref in kumotaan_refs:
+    for chapter_label, ref in kumotaan_section_targets:
         label = _norm_num_token(ref)
         if not label:
             finding_emitter.append_skip(
@@ -2203,7 +2221,7 @@ def _apply_uncovered_kumotaan_typed(
             continue
         covered_labels.add(label)
 
-        sec_path = state.find_section_path(label)
+        sec_path = state.find_section_path(label, chapter_label)
         if sec_path is None:
             finding_emitter.append_skip(
                 target_norm=label,
@@ -2213,7 +2231,13 @@ def _apply_uncovered_kumotaan_typed(
 
         sec_node = _tops.resolve(state.ir, sec_path)
         assert sec_node is not None, f"resolve failed for {sec_path}"
-        _base_path = _tops.find(ctx.base_ir, "section", label)
+        _base_path = _tops.find(
+            ctx.base_ir,
+            "section",
+            label,
+            scope_kind=IRNodeKind.CHAPTER.value if chapter_label else None,
+            scope_label=chapter_label,
+        )
         base_sec = _tops.resolve(ctx.base_ir, _base_path) if _base_path is not None else None
         if base_sec is not None:
             # Extract issue date from op_source if available

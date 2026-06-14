@@ -349,6 +349,39 @@ def test_extractor_blocks_genuinely_ambiguous_duplicate_label() -> None:
     assert result == NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
 
 
+_INSERT_CROSS_SECTION_XML = b"""\
+<act><body><prov id="XSEC"><prov.body>
+  <para><text>In <citation jurisdiction="nz"><extref href="s12">section 12</extref></citation>, insert:</text>
+    <amend><subprov><label>4A</label><para><text>4A New section 12 subsection.</text></para></subprov></amend></para>
+  <para><text>In <citation jurisdiction="nz"><extref href="s40">section 40</extref></citation>, insert:</text>
+    <amend><subprov><label>4A</label><para><text>4A New section 40 subsection.</text></para></subprov></amend></para>
+</prov.body></prov></body></act>
+"""
+
+
+def test_insert_extractor_disambiguates_cross_section_collision_by_provision() -> None:
+    # subprov 4A is inserted into BOTH section 12 and section 40. Leaf-only is
+    # ambiguous; the witness's enclosing section selects exactly one.
+    node = _amending_node(_INSERT_CROSS_SECTION_XML, "XSEC")
+    s12 = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A", target_provision_label="12"
+    )
+    assert isinstance(s12, NZStructuralReplacement)
+    assert "section 12 subsection" in s12.root.text
+    s40 = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A", target_provision_label="40"
+    )
+    assert isinstance(s40, NZStructuralReplacement)
+    assert "section 40 subsection" in s40.root.text
+
+
+def test_insert_extractor_cross_section_collision_stays_ambiguous_without_provision() -> None:
+    # Single-argument behaviour unchanged: no section label -> typed ambiguity.
+    node = _amending_node(_INSERT_CROSS_SECTION_XML, "XSEC")
+    result = extract_structural_insertion(node, inserted_leaf_kind="subprov", inserted_leaf_label="4A")
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
+
+
 # --- Kernel apply + oracle classification tests. -----------------------------
 
 
