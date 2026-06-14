@@ -90,6 +90,14 @@ from lawvm.finland.replay_notices import replay_print as _replay_print
 
 logger = logging.getLogger(__name__)
 
+# Stable witness rule id minted on structural ops recovered by the
+# fallback-extraction lane (Heuristic #29, parse_ops_fallback_heuristic_with_coverage).
+# These ops carry op.fallback_provenance=True and the
+# "extraction_fallback_heuristic" extraction-provenance tag, but no parser-rule
+# witness; this id makes the lane visible to the spec ledger.  Diagnostic-only
+# metadata with zero replay semantics.
+FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID = "fi.fallback_extraction_recovery"
+
 # ---------------------------------------------------------------------------
 # _tree_title — tiny lxml helper, lives here because it was first introduced
 # to serve _enrich_ops_from_amendment_tree.  Re-exported from grafter.py.
@@ -2273,6 +2281,11 @@ def normalize_and_compile_ops(
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_fallback_heuristic"))
             )
+            # Tag the fallback-extraction lane so the spec ledger can see it.
+            # Diagnostic-only metadata (zero replay semantics); never overwrite a
+            # real parser-rule id already carried by an upstream rule.
+            if not op.witness_rule_id:
+                op.witness_rule_id = FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID
         enriched_fallback_ops, rejected_overbroad_fallback_repeals = _reject_overbroad_section_repeals_for_deep_targets(
             enriched_fallback_ops,
             johto=johto,
