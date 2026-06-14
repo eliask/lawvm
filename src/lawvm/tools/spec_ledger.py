@@ -132,6 +132,9 @@ class SpecLedger:
     rules: Dict[str, RuleLedgerEntry] = field(default_factory=dict)
     # divergences with a real diagnosis but no attributable witness rule = blind spots
     unattributed: List[Dict[str, str]] = field(default_factory=list)
+    # per-statute count of falsifying (real-bug-suspect) divergences = efficient
+    # mining targets: statutes where real bugs concentrate, vs the diffuse per-rule view
+    statute_real_bugs: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
     def _rule(self, rule_id: str, catalog: Mapping[str, str]) -> RuleLedgerEntry:
         if rule_id not in self.rules:
@@ -158,6 +161,9 @@ class SpecLedger:
             "n_unattributed": len(self.unattributed),
             "rules": [e.to_dict() for e in self.ranked_entries()],
             "unattributed": self.unattributed[:40],
+            "top_statutes": sorted(
+                self.statute_real_bugs.items(), key=lambda kv: kv[1], reverse=True
+            )[:30],
         }
 
 
@@ -175,6 +181,8 @@ def build_ledger(
         for rule_id, count in inp.rule_firings.items():
             ledger._rule(rule_id, catalog).firings += count
         for div in inp.divergences:
+            if div.disposition in _FALSIFYING:
+                ledger.statute_real_bugs[div.sid] += 1
             if div.rule_id:
                 entry = ledger._rule(div.rule_id, catalog)
                 entry.by_disposition[div.disposition] += 1
