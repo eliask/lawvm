@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -441,7 +442,11 @@ def test_scope_from_arg_normalizes_and_rejects_unknown() -> None:
         scope_from_arg("everything")
 
 
-_REAL_DB = Path("<DATA_ROOT>/data/nz_legislation.farchive")
+_REAL_DB = (
+    Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT") or Path(__file__).resolve().parents[1])
+    / "data"
+    / "nz_legislation.farchive"
+)
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")

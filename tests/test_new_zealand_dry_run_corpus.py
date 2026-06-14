@@ -420,7 +420,7 @@ def test_repeal_witness_coverage_excludes_whole_work_no_candidate_refusal() -> N
 
 
 _REAL_DB = (
-    Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT", "<DATA_ROOT>"))
+    Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT") or Path(__file__).resolve().parents[1])
     / "data"
     / "nz_legislation.farchive"
 )
