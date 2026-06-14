@@ -517,6 +517,39 @@ def test_normalize_no_compare_tree_flattens_sentence_only_subsection() -> None:
     assert normalized.children == ()
 
 
+def test_normalize_no_compare_tree_takes_same_branch_for_str_kind() -> None:
+    # Parse paths can assign a plain str kind (e.g. "subsection"/"sentence")
+    # instead of the IRNodeKind enum. The compare-tree normalizer must take the
+    # same branch for the str case as for the equivalent enum case; otherwise
+    # `kind is IRNodeKind.X` silently evaluates False and the sentence-only
+    # collapse is skipped, mis-normalizing the compare tree.
+    enum_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.SENTENCE, label="1", text="Første punktum."),
+            IRNode(kind=IRNodeKind.SENTENCE, label="2", text="Andre punktum."),
+        ),
+    )
+    str_subsection = IRNode(
+        kind=cast(Any, "subsection"),
+        label="2",
+        children=(
+            IRNode(kind=cast(Any, "sentence"), label="1", text="Første punktum."),
+            IRNode(kind=cast(Any, "sentence"), label="2", text="Andre punktum."),
+        ),
+    )
+
+    enum_normalized = _normalize_no_compare_tree(enum_subsection)
+    str_normalized = _normalize_no_compare_tree(str_subsection)
+
+    # The str case must collapse its sentence children into parent text exactly
+    # like the enum case did, rather than leaving them as separate children.
+    assert _no_kind_value(str_normalized.kind) == _no_kind_value(enum_normalized.kind)
+    assert str_normalized.text == enum_normalized.text == "Første punktum. Andre punktum."
+    assert str_normalized.children == enum_normalized.children == ()
+
+
 def test_normalize_no_compare_tree_flattens_sentence_prefix_but_keeps_items() -> None:
     subsection = IRNode(
         kind=IRNodeKind.SUBSECTION,

@@ -274,6 +274,21 @@ def _no_kind_value(kind: IRNodeKind | str) -> str:
     return kind_str(kind)
 
 
+def _no_kind_is(kind: IRNodeKind | str, target: IRNodeKind) -> bool:
+    # `kind is target` silently evaluates False when `kind` is a plain str
+    # mirroring the enum value (e.g. "sentence" vs IRNodeKind.SENTENCE). Coerce
+    # both sides to their canonical string form so the str case takes the same
+    # branch the equivalent enum case would, without altering enum-case logic.
+    return _no_kind_value(kind) == target.value
+
+
+def _no_kind_in(kind: IRNodeKind | str, targets: frozenset[IRNodeKind]) -> bool:
+    # Membership counterpart of _no_kind_is; tolerates a str kind that mirrors an
+    # enum member without changing the enum-case outcome.
+    value = _no_kind_value(kind)
+    return any(value == target.value for target in targets)
+
+
 def _append_no_compare_projection(
     projections_out: list[NOCompareProjection] | None,
     *,
@@ -342,7 +357,7 @@ def _concretize_no_relation_path(
         parent = tree_ops.resolve(body, concrete) if concrete else body
         if parent is None:
             return path
-        candidates = [child for child in parent.children if child.kind == kind and child.label]
+        candidates = [child for child in parent.children if _no_kind_value(child.kind) == kind and child.label]
         if not candidates:
             return path
         chosen = candidates[-1] if label == "last" else candidates[0]
@@ -443,18 +458,18 @@ def irnode_to_no_comparison_text(node: IRNode) -> str:
     children so verify focuses on operative text and structure rather than
     heading-only editorial drift.
     """
-    if node.kind in {IRNodeKind.SUBSECTION, IRNodeKind.ITEM} and node.children:
+    if _no_kind_in(node.kind, frozenset({IRNodeKind.SUBSECTION, IRNodeKind.ITEM})) and node.children:
         parts = [node.text or ""]
         parts.extend(irnode_to_no_comparison_text(child) for child in node.children)
         return " ".join(part for part in parts if part)
     if node.text:
         return node.text
     children = node.children
-    if node.kind is IRNodeKind.SECTION:
+    if _no_kind_is(node.kind, IRNodeKind.SECTION):
         children = [
             child
             for child in children
-            if child.kind is not IRNodeKind.HEADING
+            if not _no_kind_is(child.kind, IRNodeKind.HEADING)
         ]
     parts = [irnode_to_no_comparison_text(child) for child in children]
     return " ".join(part for part in parts if part)
@@ -485,9 +500,9 @@ def _normalize_no_compare_tree(
         )
         for child in node.children
     ]
-    if node.kind in {IRNodeKind.SUBSECTION, IRNodeKind.ITEM}:
-        sentence_children = [child for child in normalized_children if child.kind is IRNodeKind.SENTENCE]
-        other_children = [child for child in normalized_children if child.kind is not IRNodeKind.SENTENCE]
+    if _no_kind_in(node.kind, frozenset({IRNodeKind.SUBSECTION, IRNodeKind.ITEM})):
+        sentence_children = [child for child in normalized_children if _no_kind_is(child.kind, IRNodeKind.SENTENCE)]
+        other_children = [child for child in normalized_children if not _no_kind_is(child.kind, IRNodeKind.SENTENCE)]
         if sentence_children:
             text = " ".join(child.text for child in sentence_children if child.text).strip()
             if text:
@@ -527,8 +542,8 @@ def _normalize_no_compare_tree(
                 after=after,
             )
             return after
-        nested_item_children = [child for child in other_children if child.kind is IRNodeKind.ITEM]
-        if node.kind is IRNodeKind.ITEM and nested_item_children and text:
+        nested_item_children = [child for child in other_children if _no_kind_is(child.kind, IRNodeKind.ITEM)]
+        if _no_kind_is(node.kind, IRNodeKind.ITEM) and nested_item_children and text:
             normalized_parent = normalize_no_comparison_text(text)
             cut_points = [
                 normalized_parent.find(child_text)
@@ -542,9 +557,9 @@ def _normalize_no_compare_tree(
                     NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED,
                     "Parent item text duplicated in nested item children is suppressed for compare-only materialization.",
                 )
-    if node.kind is IRNodeKind.SECTION:
-        heading_children = [child for child in normalized_children if child.kind is IRNodeKind.HEADING]
-        non_heading_children = [child for child in normalized_children if child.kind is not IRNodeKind.HEADING]
+    if _no_kind_is(node.kind, IRNodeKind.SECTION):
+        heading_children = [child for child in normalized_children if _no_kind_is(child.kind, IRNodeKind.HEADING)]
+        non_heading_children = [child for child in normalized_children if not _no_kind_is(child.kind, IRNodeKind.HEADING)]
         if (
             not non_heading_children
             and _is_no_self_section_lead_shell(node.label, node.text or "")
@@ -569,9 +584,9 @@ def _normalize_no_compare_tree(
         heading_texts = [
             normalize_no_comparison_text(child.text or "").lower()
             for child in normalized_children
-            if child.kind is IRNodeKind.HEADING and child.text
+            if _no_kind_is(child.kind, IRNodeKind.HEADING) and child.text
         ]
-        subsection_children = [child for child in normalized_children if child.kind is IRNodeKind.SUBSECTION]
+        subsection_children = [child for child in normalized_children if _no_kind_is(child.kind, IRNodeKind.SUBSECTION)]
         if subsection_children and any(
             _is_no_contingent_other_laws_placeholder(child.text or "") for child in subsection_children
         ):
@@ -597,7 +612,7 @@ def _normalize_no_compare_tree(
             intro_text = normalize_no_comparison_text(first.text or "")
             if intro_text.lower().endswith("forstås med:"):
                 rebuilt_items: list[IRNode] = []
-                if first.children and all(child.kind is IRNodeKind.ITEM for child in first.children):
+                if first.children and all(_no_kind_is(child.kind, IRNodeKind.ITEM) for child in first.children):
                     rebuilt_items = [
                         IRNode(
                             kind=IRNodeKind.ITEM,
@@ -647,7 +662,7 @@ def _normalize_no_compare_tree(
                     kept_children: list[IRNode] = []
                     replaced = False
                     for child in normalized_children:
-                        if child.kind is IRNodeKind.SUBSECTION:
+                        if _no_kind_is(child.kind, IRNodeKind.SUBSECTION):
                             if not replaced:
                                 kept_children.append(rebuilt_first)
                                 replaced = True
@@ -694,7 +709,7 @@ def _normalize_no_compare_tree(
             kept_children: list[IRNode] = []
             detail_seen = 0
             for child in normalized_children:
-                if child.kind is not IRNodeKind.SUBSECTION:
+                if not _no_kind_is(child.kind, IRNodeKind.SUBSECTION):
                     kept_children.append(child)
                     continue
                 if detail_seen == first_detail_index:
