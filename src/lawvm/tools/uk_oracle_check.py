@@ -38,6 +38,10 @@ from lawvm.uk_legislation.grounding_collateral import (
 )
 from lawvm.uk_legislation.phase_discipline import UK_PHASE_REPLAY_INVARIANTS
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
+from lawvm.uk_legislation.source_adjudication import (
+    UK_EFFECT_COMPARE_SHAPE_CLASSES,
+    UK_EFFECT_SOURCE_PATHOLOGY_CLASSES,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -59,6 +63,14 @@ _OUT_OF_SCOPE_RULE_IDS = frozenset(
 
 # Repeal source warrant rule
 _REPEAL_NOT_WARRANTED_RULE_ID = "uk_repeal_target_not_source_warranted"
+
+# ── finer per-EID source-pathology label ────────────────────────────────────
+# Loud sentinel for a divergence whose covering diagnostic carries no finer
+# source-pathology / manual-frontier / compare-shape class.  Never silently "":
+# an empty label would be indistinguishable from "no covering row at all", and
+# would hide an unclassified-but-covered divergence from the later ledger
+# adapter.
+_UNCLASSIFIED_SOURCE_PATHOLOGY_LABEL = "unclassified"
 
 
 def _is_manual_frontier_rule(rule_id: str) -> bool:
@@ -240,6 +252,17 @@ class UKDivergenceRow:
     compile rejection/diagnostic when one is attributable. ``phase_owner`` and
     ``authority_layer`` let UK blind-spots be bucketed by owning phase / source
     purity; they are "" when not attributable.
+
+    ``source_pathology_label`` is a FINER, parallel signal to ``diagnosis``: the
+    covering effect's own source-pathology / manual-frontier / compare-shape
+    class (from ``source_adjudication``), where the coarse bucket ``diagnosis``
+    only names ``deterministic_gap`` / ``manual_frontier`` / ``oracle_suspect`` /
+    ``text_diff``.  It is a loud ``"unclassified"`` sentinel — never silently ""
+    — whenever a covering diagnostic row exists but carries no finer class, so an
+    unclassified-but-covered divergence stays visible.  It is "" only when no
+    covering diagnostic row was found at all (same condition under which
+    ``blame_source`` / ``phase_owner`` / ``rule_id`` are also "").  This field is
+    additive: it does NOT alter ``diagnosis``, which the ledger adapter keys on.
     """
 
     eid: str
@@ -248,6 +271,7 @@ class UKDivergenceRow:
     phase_owner: str = ""
     authority_layer: str = ""
     rule_id: str = ""
+    source_pathology_label: str = ""
 
 
 @dataclass
@@ -286,6 +310,47 @@ def _covering_diagnostic_row(eid: str, rows: list[dict[str, Any]]) -> dict[str, 
         if ap_lower in eid_lower or eid_lower in ap_lower:
             return row
     return None
+
+
+def _source_pathology_label_for_cover(cover: dict[str, Any] | None) -> str:
+    """Derive the finer per-EID source-pathology label from a covering row.
+
+    The coarse ``diagnosis`` bucket is left untouched; this is the parallel finer
+    signal.  Derivation precedence (stable / deterministic, first hit wins):
+
+      1. the covering effect's ``source_pathology`` class when it is a recognized
+         ``UK_EFFECT_SOURCE_PATHOLOGY_CLASSES`` / ``UK_EFFECT_COMPARE_SHAPE_CLASSES``
+         class from ``source_adjudication`` (the finest, type-checked signal);
+      2. the manual-frontier classification id (``manual_compile_rule_id`` /
+         ``nonblocking_reclassification`` manual id, or any ``uk_manual_frontier_*``
+         rule_id) when the covering row is a manual-frontier classification;
+      3. a non-empty but *unrecognized* ``source_pathology`` string surfaced
+         verbatim (loud, not dropped — an unmodelled finer class is still a finer
+         class and must stay visible for the next adapter to model);
+      4. otherwise the loud ``_UNCLASSIFIED_SOURCE_PATHOLOGY_LABEL`` sentinel.
+
+    Returns "" only when there is no covering diagnostic row at all (caller's
+    ``cover is None`` branch), matching the other covering-derived fields.
+    """
+    if cover is None:
+        return ""
+    raw_pathology = str(cover.get("source_pathology") or "")
+    if (
+        raw_pathology in UK_EFFECT_SOURCE_PATHOLOGY_CLASSES
+        or raw_pathology in UK_EFFECT_COMPARE_SHAPE_CLASSES
+    ):
+        return raw_pathology
+    manual_id = str(cover.get("manual_compile_rule_id") or "")
+    if _is_manual_frontier_rule(manual_id):
+        return manual_id
+    rule_id = str(cover.get("rule_id") or "")
+    if _is_manual_frontier_rule(rule_id):
+        return rule_id
+    if raw_pathology:
+        # Covered, with a finer class we do not yet model — surface it loudly
+        # rather than collapse to the sentinel, so a new class is discoverable.
+        return raw_pathology
+    return _UNCLASSIFIED_SOURCE_PATHOLOGY_LABEL
 
 
 def uk_divergence_rows_for_statute(
@@ -329,6 +394,7 @@ def uk_divergence_rows_for_statute(
                     phase_owner=phase_owner,
                     authority_layer=authority_layer,
                     rule_id=rule_id,
+                    source_pathology_label=_source_pathology_label_for_cover(cover),
                 )
             )
     return rows
