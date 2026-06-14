@@ -652,6 +652,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
     # compiler does not lower deterministically: each labels *why* an effect is at
     # the manual-review frontier (a typed "do not silently mutate" verdict per the
     # drafting ledger's ambiguity-stays-explicit decision order).
+    "uk_manual_compile_frontier_classified":
+        "A compiled effect carries a typed manual-compile-frontier verdict (the umbrella diagnostic emitted when an effect is classified into the manual-review frontier rather than lowered deterministically).",
     "uk_manual_frontier_unclassified":
         "An effect at the manual frontier with no more specific classification (catch-all, loud).",
     "uk_manual_frontier_deterministic_supported":

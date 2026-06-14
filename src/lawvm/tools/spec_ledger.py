@@ -412,7 +412,7 @@ _seed_uk_pathology_dispositions()
 # an empty dict so this adapter works whether or not that module exists yet.
 def _load_uk_rule_specs() -> Dict[str, str]:
     try:
-        from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS  # type: ignore
+        from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS
     except ImportError:
         return {}
     return dict(_UK_RULE_SPECS)

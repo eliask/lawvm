@@ -187,6 +187,37 @@ def test_grounding_unknown_status_degrades_to_gap():
     assert "NONSENSE" not in md
 
 
+def test_grounding_renders_from_stream_c_authority_grounding_rows():
+    """The real Stream C shape — ``dict[str, AuthorityGrounding]`` — must
+    normalize via the frozen row's fields, not degrade through the str(value)
+    fallback (which would render the dataclass repr and force GAP)."""
+    from lawvm.tools.spec_authority import AuthorityGrounding
+
+    ledger = _synthetic_ledger()
+    grounding = {
+        "r.alpha": AuthorityGrounding(
+            rule_id="r.alpha",
+            authority_tier=1,
+            source_ref="Interpretation Act 1978 s.5",
+            status="HAVE",
+        ),
+        "r.beta": AuthorityGrounding(
+            rule_id="r.beta",
+            authority_tier="1/2",
+            source_ref="OPC drafting guidance",
+            status="SPEC",
+        ),
+    }
+    md = render_report_markdown(ledger, grounding=grounding)
+    header = next(line for line in md.splitlines() if line.startswith("| rule_id"))
+    assert "grounding" in header
+    # Tier + status read straight off the frozen row; no degraded GAP for these.
+    assert "1/HAVE" in md
+    assert "1/2/SPEC" in md
+    # The dataclass repr must never leak into the rendered column.
+    assert "AuthorityGrounding(" not in md
+
+
 # ---------------------------------------------------------------------------
 # Catalog-coverage regression guard
 # ---------------------------------------------------------------------------

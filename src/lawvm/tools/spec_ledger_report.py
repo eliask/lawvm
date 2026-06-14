@@ -17,32 +17,45 @@ path.  It owns three jobs:
    that lost its ``believed_spec``, or a new uncataloged rule appearing) so the
    spec catalog cannot silently rot.
 
-Authority grounding (``spec_authority``) is an *optional* sibling module; it is
-guard-imported, and when absent the rendered report simply omits the grounding
-column.  This keeps Stream D independent of Stream A's landing order.
+Authority grounding (``spec_authority``, Stream C) is an *optional* sibling
+module; it is guard-imported, and when absent the rendered report simply omits
+the grounding column.  This keeps Stream D independent of Stream C's landing
+order.  When present, ``load_uk_authority_grounding()`` returns
+``dict[str, AuthorityGrounding]`` and each grounded UK rule row gains an
+``authority_tier`` + ``HAVE|GAP|SPEC`` column read straight off the frozen row.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, cast
 
 from lawvm.tools.spec_ledger import SpecLedger
 
+if TYPE_CHECKING:
+    from lawvm.tools.spec_authority import AuthorityGrounding
+
 # ---------------------------------------------------------------------------
-# Optional authority grounding (Stream A).  Guard-import: absent => no column.
+# Optional authority grounding (Stream C).  Guard-import: absent => no column.
+# Bind the imported names to ``Optional`` aliases so the absent-sibling fallback
+# is type-clean (a missing module degrades to ``None``, never a type error) while
+# the present path reads the real frozen ``AuthorityGrounding`` rows.
 # ---------------------------------------------------------------------------
+_AuthorityGroundingType: type | None
+_load_uk_authority_grounding: Callable[..., dict[str, Any]] | None
 try:  # pragma: no cover - exercised by the import-present/absent tests via inject
-    from lawvm.tools.spec_authority import (  # type: ignore
-        AuthorityGrounding,
-        load_uk_authority_grounding,
+    from lawvm.tools.spec_authority import (
+        AuthorityGrounding as _AuthorityGroundingImport,
+    )
+    from lawvm.tools.spec_authority import (
+        load_uk_authority_grounding as _load_uk_authority_grounding_import,
     )
 
-    _HAVE_AUTHORITY = True
+    _AuthorityGroundingType = _AuthorityGroundingImport
+    _load_uk_authority_grounding = _load_uk_authority_grounding_import
 except ImportError:
-    AuthorityGrounding = None  # type: ignore[assignment,misc]
-    load_uk_authority_grounding = None  # type: ignore[assignment]
-    _HAVE_AUTHORITY = False
+    _AuthorityGroundingType = None
+    _load_uk_authority_grounding = None
 
 
 # A grounding lookup maps rule_id -> (authority_tier, status) where status is one
@@ -69,27 +82,20 @@ def _normalize_grounding(
 
     Accepts:
       * ``None`` -> None (no grounding column);
-      * a plain ``dict`` (test injection / persisted JSON) whose values are
-        either ``(tier, status)`` pairs or ``{"authority_tier":..,"status":..}``;
-      * an ``AuthorityGrounding``-like object exposing ``.rule_rows()`` ->
-        mapping of the same shape, or ``.as_dict()``.
+      * a plain ``dict`` whose values are either Stream C
+        ``AuthorityGrounding`` rows (the real loader shape:
+        ``load_uk_authority_grounding() -> dict[str, AuthorityGrounding]``),
+        ``(tier, status)`` pairs, or ``{"authority_tier":..,"status":..}``
+        dicts (test injection / persisted JSON).
 
     Unknown statuses degrade to ``"GAP"`` (loud-ish: visible, not silently HAVE).
     """
     if grounding is None:
         return None
+    if not isinstance(grounding, dict):
+        return None
 
-    raw: Dict[object, object]
-    if isinstance(grounding, dict):
-        raw = cast(Dict[object, object], grounding)
-    else:
-        accessor = getattr(grounding, "rule_rows", None) or getattr(
-            grounding, "as_dict", None
-        )
-        if accessor is None:
-            return None
-        raw = dict(accessor())
-
+    raw = cast(Dict[object, object], grounding)
     out: Dict[str, GroundingRow] = {}
     for rule_id, value in raw.items():
         tier, status = _coerce_grounding_value(value)
@@ -98,7 +104,17 @@ def _normalize_grounding(
 
 
 def _coerce_grounding_value(value: object) -> GroundingRow:
-    if isinstance(value, dict):
+    # Stream C's frozen AuthorityGrounding row: read its fields directly so the
+    # real ``load_uk_authority_grounding()`` map normalizes to (tier, status)
+    # instead of degrading via the str(value) fallback.
+    if (
+        _AuthorityGroundingType is not None
+        and isinstance(value, _AuthorityGroundingType)
+    ):
+        row = cast("AuthorityGrounding", value)
+        tier = str(row.authority_tier)
+        status = str(row.status)
+    elif isinstance(value, dict):
         vd = cast(Dict[object, object], value)
         tier = str(vd.get("authority_tier") or vd.get("tier") or "")
         status = str(vd.get("status") or "")
@@ -118,14 +134,14 @@ def _coerce_grounding_value(value: object) -> GroundingRow:
 def _load_grounding_for(jurisdiction: str) -> Optional[Dict[str, GroundingRow]]:
     """Best-effort load of authority grounding for a jurisdiction, or None.
 
-    Only UK has a loader in Stream A's first cut.  Absence degrades to None so
+    Only UK has a loader in Stream C's first cut.  Absence degrades to None so
     the report renders without a grounding column.
     """
-    if not _HAVE_AUTHORITY or load_uk_authority_grounding is None:
+    if _load_uk_authority_grounding is None:
         return None
     if jurisdiction != "uk":
         return None
-    grounding = load_uk_authority_grounding()
+    grounding = _load_uk_authority_grounding()
     return _normalize_grounding(grounding)
 
 
