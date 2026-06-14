@@ -1652,6 +1652,37 @@ def test_parse_clause_chapter_heading_insert_can_continue_to_section_range() -> 
     assert codes.count("L P L:3 18") == 1
 
 
+def test_parse_clause_multi_target_heading_arm_does_not_truncate_enumeration() -> None:
+    """``<list/range> §:n edelle uusi väliotsikko`` must not abort the parse.
+
+    Regression for 2009/886 <- 1501/1993 (arvonlisäverolaki): the DOC:ILL
+    insert enumeration parsed ``lakiin uusi 69 a § ja 69 b–69 i §`` then hit
+    ``sekä 69 b–69 e ja 69 g–69 i §:n edelle uusi väliotsikko`` — a heading
+    placement whose target is a list/range — and silently dropped every
+    following clause (69 j, 69 k, and the trailing ``138 §`` reinstatement).
+    The arm is now parsed and the enumeration continues.
+    """
+    text = (
+        "lisätään lakiin uusi 69 a § ja 69 b–69 i § "
+        "sekä 69 b–69 e ja 69 g–69 i §:n edelle uusi väliotsikko, "
+        "lakiin uusi 69 j ja 69 k § "
+        "sekä lakiin siitä lailla 1218/1994 kumotun 138 §:n tilalle uusi 138 §"
+    )
+
+    ops = parse_clause(text).parsed_ops
+    numbers = [op.number for op in ops]
+
+    # The whole-section inserts before AND after the heading arm survive.
+    for sec in ("69a", "69b", "69i", "69j", "69k", "138"):
+        assert sec in numbers, f"{sec} dropped: {numbers}"
+
+    # The heading arm fired with the dedicated target-list witness rule.
+    heading_rule = "fi.heading_edelle_otsikko_target_list"
+    assert any(
+        op.witness is not None and op.witness.rule_id == heading_rule for op in ops
+    ), [op.witness.rule_id if op.witness else None for op in ops]
+
+
 def test_parse_clause_stripped_alakohta_tail_does_not_block_later_section_targets() -> None:
     """Qualifier stripping must not leave ``ja sekä`` residue that truncates the list.
 

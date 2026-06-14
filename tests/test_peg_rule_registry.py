@@ -70,6 +70,7 @@ _EXAMPLE_EXEMPT_RULES = {
     "fi.text_amend_target",
     "fi.chapter_ref_reversed",
     "fi.heading_edelle_otsikko_after_uusi",
+    "fi.heading_edelle_otsikko_target_list",
     "fi.including_preceding_heading_target",
     "fi.target_version_binding",
     "meta_parse:commencement",

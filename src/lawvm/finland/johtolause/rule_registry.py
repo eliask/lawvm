@@ -1181,6 +1181,21 @@ def _build_registry() -> RuleRegistry:
 
     reg.register(
         ParseRule(
+            rule_id="fi.heading_edelle_otsikko_target_list",
+            description=(
+                "Target-first heading placement with a list/range of sections: "
+                "<num_list> §:n edelle uusi otsikko, inside a coordinated insert "
+                "enumeration (the multi-target form previously aborted the parse)"
+            ),
+            node_kind="SurfaceHeadingPlacement",
+            category="structural",
+            shape="NUM_LIST PYKALA:GEN EDELLA UUSI? OTSIKKO",
+            examples=(),
+        )
+    )
+
+    reg.register(
+        ParseRule(
             rule_id="fi.including_preceding_heading_target",
             description="Section target including its preceding heading: N § otsikko",
             node_kind="SurfaceTargetRef",
