@@ -473,6 +473,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bench_comparable.py",
         "test_bench_curate.py",
         "test_parse_bench.py",
+        "test_parse_characterize.py",
         "test_corpus.py",
         "test_divergence_heuristics.py",
         "test_frontier.py",

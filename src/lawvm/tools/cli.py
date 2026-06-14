@@ -10385,6 +10385,38 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit JSON with coverage, tier counts, top shapes, and dropped statutes",
     )
 
+    # --- parse-characterize ---
+    parse_char_p = sub.add_parser(
+        "parse-characterize",
+        help="snapshot/verify the johtolause parser's behavior (rewrite oracle)",
+        description=(
+            "Characterization golden corpus for the johtolause parser: snapshot "
+            "the canonical op codes the parser produces TODAY (bugs included) for "
+            "every amendment johtolause, labeled clean/known-drop by parse-bench. "
+            "`verify` re-runs and diffs vs a saved golden, reporting regressions "
+            "(a clean row whose ops changed) and fixes (a known-drop row now "
+            "clean) — the safety net that makes a parser rewrite mechanical."
+        ),
+    )
+    parse_char_p.add_argument(
+        "characterize_cmd",
+        choices=["snapshot", "verify"],
+        help="snapshot: write the golden corpus; verify: diff current behavior vs a saved golden",
+    )
+    parse_char_p.add_argument(
+        "--out",
+        default="",
+        help="snapshot output path (default: data/finland/parse_characterization_golden.jsonl)",
+    )
+    parse_char_p.add_argument(
+        "--golden",
+        default="",
+        help="verify: path to the saved golden corpus to diff against",
+    )
+    parse_char_p.add_argument("--limit", type=int, default=0, help="cap to first N statutes")
+    parse_char_p.add_argument("--workers", type=int, default=0, help="worker processes (default 8)")
+    parse_char_p.add_argument("--json", action="store_true", help="verify: emit JSON diff")
+
     # --- rebuild-indexes ---
     ri_p = sub.add_parser(
         "rebuild-indexes",
@@ -12708,6 +12740,11 @@ def _main_impl() -> None:
         from lawvm.tools.parse_bench import main as parse_bench_main
 
         parse_bench_main(args)
+
+    elif args.command == "parse-characterize":
+        from lawvm.tools.parse_characterize import main as parse_characterize_main
+
+        parse_characterize_main(args)
 
     elif args.command == "fi-source-label-audit":
         from lawvm.tools.fi_source_label_audit import main as fi_source_label_audit_main
