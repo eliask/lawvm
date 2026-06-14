@@ -29,6 +29,7 @@ from lawvm.tools.explain import (
     _print_compile_summary,
     _print_facade_summary,
     _print_temporal_debug_block,
+    _source_pathology_diagnosis_for_blame,
     main as explain_main,
 )
 
@@ -695,6 +696,64 @@ def test_explain_sync_demotes_2012_916_section_1_unknown_to_source_pathology(
     assert "Diagnosis    : SOURCE_PATHOLOGY" in out
     assert "ITEM_TARGET_STRUCTURE_ABSENT" in out
     assert "degraded uncovered-body coverage" in out
+
+
+def _master_with_pathology_in_chapter(detail_chapter: str) -> SimpleNamespace:
+    """A fake replay master carrying one source-pathology row + degraded-coverage
+    finding scoped to ``detail_chapter`` for blamed amendment 2020/5."""
+
+    def source_pathology_rows() -> list[dict[str, Any]]:
+        return [
+            {
+                "source_statute": "2020/5",
+                "code": "ITEM_TARGET_STRUCTURE_ABSENT",
+                "target_label": "",
+                "detail": {"target_section": "7", "target_chapter": detail_chapter},
+            }
+        ]
+
+    degraded = SimpleNamespace(
+        kind="COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+        source_statute="2020/5",
+        detail={"amendment_id": "2020/5"},
+    )
+    return cast(
+        Any,
+        SimpleNamespace(
+            source_pathology_rows=source_pathology_rows,
+            findings=(degraded,),
+        ),
+    )
+
+
+def test_source_pathology_demotion_fires_when_chapter_matches_blame() -> None:
+    master = _master_with_pathology_in_chapter("3")
+    blame_op = {
+        "source_statute": "2020/5",
+        "target_norm": "7",
+        "target_chapter": "3",
+    }
+
+    result = _source_pathology_diagnosis_for_blame(master, blame_op)
+
+    assert result is not None
+    assert result[0] == "SOURCE_PATHOLOGY"
+
+
+def test_source_pathology_demotion_skips_pathology_in_other_chapter() -> None:
+    # The pathology row is scoped to chapter 9 while the blamed op targets
+    # chapter 3.  oracle_check._source_pathology_diagnosis_for_blame skips such a
+    # cross-chapter row, so explain must too — otherwise explain would demote a
+    # real REPLAY_MISSING/EXTRA to SOURCE_PATHOLOGY that the authoritative
+    # classifier keeps as a bug suspect.
+    master = _master_with_pathology_in_chapter("9")
+    blame_op = {
+        "source_statute": "2020/5",
+        "target_norm": "7",
+        "target_chapter": "3",
+    }
+
+    assert _source_pathology_diagnosis_for_blame(master, blame_op) is None
 
 
 def test_oracle_selector_helper_prefers_explicit_version_id() -> None:
