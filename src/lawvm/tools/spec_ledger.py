@@ -500,15 +500,25 @@ def _load_uk_bench_ids() -> List[str]:
 # ---------------------------------------------------------------------------
 
 # EE is NOT an oracle-*check* like FI/UK: it replays as a *consistency verification*
-# against AUTHORITATIVE consolidated law (Riigi Teataja).  The oracle is therefore a
-# strong witness, so a bare consistency divergence leans ``lawvm_wrong``.  When a
-# post-hoc residual *bucket* is available for the divergence address (the adjudicated
-# residual inventory), it refines the disposition: e.g. an adjudicated source/oracle-
-# drift residual is ``oracle_suspect``, not our bug.
+# against the official consolidated text (Riigi Teataja terviktekst).  That text is
+# law-in-force — but legal force is NOT consolidation-correctness: consolidating the
+# amendment acts into a running text is an editorial act that can mis-render them, and
+# a wrong terviktekst stays in force until corrected.  So even here LawVM replaying the
+# primary amendment acts can be RIGHT while the in-force consolidation is WRONG.
+# ``oracle_suspect`` is therefore a first-class outcome and a high-value finding (the
+# adoption wedge, AGENTS.md §2.1/§3) — NOT a rare escape hatch, and the authoritative
+# oracle is never presumed correct.
+#
+# The raw-divergence default below is ``lawvm_wrong`` only as the conservative, *humble*
+# discovery stance — "suspect our own rule first" — never as deference to the
+# consolidation's correctness: over-attributing a divergence to ourselves is the safe
+# direction; presuming the in-force text correct is the dangerous one.  An adjudicated
+# residual bucket flips it to ``oracle_suspect`` (consolidation drift / correction
+# notice) or ``missing_source`` (the amendment source itself is incomplete).
 #
 # Two layers map onto the neutral WitnessDisposition:
 #   1. residual bucket (preferred, when the address is adjudicated), and
-#   2. raw consistency divergence_type (fallback, when no residual record exists).
+#   2. raw consistency divergence_type (provisional default, no residual record).
 # Anything unmapped in either layer falls to "unknown" (loud, never a silent pass).
 _EE_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
     # -- raw consistency divergence_type (no adjudicated residual record) --
