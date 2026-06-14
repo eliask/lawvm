@@ -822,15 +822,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
         ),
     },
-    "uk_manual_frontier_non_textual_modification_overlay_candidate": {  # FLAG(union-merge)
-        "candidate_operation_family": "non_textual_application_modification_overlay",  # FLAG(union-merge)
-        "required_validator_checks": (  # FLAG(union-merge)
-            "claim_binds_source_snippet_to_real_non_textual_application_modification_effect",  # FLAG(union-merge)
-            "claim_names_overlay_kind_scope_predicate_and_applying_instrument",  # FLAG(union-merge)
-            "claim_scope_predicate_and_temporal_window_are_coherent_against_target",  # FLAG(union-merge)
-            "claim_emits_non_replayable_finding_without_base_text_mutation",  # FLAG(union-merge)
-        ),  # FLAG(union-merge)
-    },  # FLAG(union-merge)
+    "uk_manual_frontier_non_textual_modification_overlay_candidate": {
+        "candidate_operation_family": "non_textual_application_modification_overlay",
+        "required_validator_checks": (
+            "claim_binds_source_snippet_to_real_non_textual_application_modification_effect",
+            "claim_names_overlay_kind_scope_predicate_and_applying_instrument",
+            "claim_scope_predicate_and_temporal_window_are_coherent_against_target",
+            "claim_emits_non_replayable_finding_without_base_text_mutation",
+        ),
+    },
 }
 
 

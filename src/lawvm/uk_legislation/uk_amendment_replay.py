@@ -119,6 +119,11 @@ from lawvm.uk_legislation.application_overlay_claim import (
     gate_application_overlay_claim,
     validate_application_overlay_claim,
 )
+from lawvm.uk_legislation.source_feed_reconciliation_claim import (
+    SourceFeedReconciliationClaim,
+    gate_source_feed_reconciliation_claim,
+    validate_source_feed_reconciliation_claim,
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -317,6 +322,9 @@ class UKReplayPipeline:
         application_overlay_claims: Optional[
             "Sequence[ApplicationOverlayClaim]"
         ] = None,
+        source_feed_reconciliation_claims: Optional[
+            "Sequence[SourceFeedReconciliationClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -511,6 +519,36 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(ao_validation.to_dict())
                 if ao_validation.validated:
                     validated_application_overlay_claims[str(ao_claim.effect_id)] = ao_claim
+
+        # §source_feed_reconciliation: VALIDATED N5 source/feed target-reconciliation
+        # claims by bound effect_id, symmetric with the indices above. Opt-in; with
+        # no claims authored the index is empty and the gate emits nothing, so the
+        # source/feed target-conflict frontier item stays byte-unchanged. The gate
+        # emits a typed finding only (never a text op into ``compiled``): the
+        # parent-authoritative / genuinely-ambiguous bases are non-replayable
+        # findings (under-application default), and the child-locatable basis emits
+        # a replayable child-target resolution for a downstream compiler — neither
+        # mutates the base text here.
+        validated_source_feed_reconciliation_claims: dict[
+            str, SourceFeedReconciliationClaim
+        ] = {}
+        if source_feed_reconciliation_claims:
+            effect_by_id_sfr = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for sfr_claim in source_feed_reconciliation_claims:
+                if sfr_claim.statute_id and sfr_claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id_sfr.get(str(sfr_claim.effect_id))
+                sfr_validation = validate_source_feed_reconciliation_claim(
+                    sfr_claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(sfr_validation.to_dict())
+                if sfr_validation.validated:
+                    validated_source_feed_reconciliation_claims[
+                        str(sfr_claim.effect_id)
+                    ] = sfr_claim
 
         replayable = list(effects)
         if pit_date:
@@ -747,6 +785,27 @@ class UKReplayPipeline:
                         effect_diagnostics_out.append(ao_gate.to_dict())
                         if ao_gate.emitted and ao_gate.finding is not None:
                             effect_diagnostics_out.append(ao_gate.finding.to_dict())
+                # §source_feed_reconciliation: a validated, bound N5 claim records
+                # which surface (source-named child vs feed-named parent) is
+                # authoritative for the conflict and emits a typed finding to the
+                # diagnostics stream only. It NEVER mutates ``compiled`` here: the
+                # ambiguous / parent-authoritative bases are non-replayable findings
+                # (base text intact, the safe §2.1 default); the child-locatable
+                # basis emits a replayable child-target resolution a downstream
+                # compiler consumes — still no base-text mutation in this pass.
+                # Absent a claim the index is empty and nothing is emitted, so replay
+                # is byte-unchanged.
+                sfr_claim = validated_source_feed_reconciliation_claims.get(
+                    str(e.effect_id)
+                )
+                if sfr_claim is not None:
+                    sfr_gate = gate_source_feed_reconciliation_claim(
+                        sfr_claim, validated=True
+                    )
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(sfr_gate.to_dict())
+                        if sfr_gate.emitted and sfr_gate.finding is not None:
+                            effect_diagnostics_out.append(sfr_gate.finding.to_dict())
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before

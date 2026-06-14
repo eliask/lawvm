@@ -744,6 +744,20 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated range-to-container claim emits a non-replayable typed finding naming the concrete ordered member eids the range denotes, leaving the affected base text intact (the safe under-application default for an uncertain container boundary).",
     "uk_range_to_container_finding_withheld_unvalidated":
         "An unvalidated range-to-container claim withholds its resolved-members finding, so the effect stays on the manual frontier byte-unchanged.",
+    "uk_source_feed_reconciliation_claim_validated":
+        "An N5 source/feed target-reconciliation claim's owned decision is well-formed, bound to a real child-qualified word-omission target-conflict effect, names two genuinely-different surfaces (source-named child vs feed-named parent), and resolves to one of them, so it may emit a reconciliation finding.",
+    "uk_source_feed_reconciliation_claim_rejected_schema":
+        "An N5 source/feed reconciliation claim is rejected because its kind/ids/named-targets/resolved-target/basis/effect-type/source-snippet schema is malformed.",
+    "uk_source_feed_reconciliation_claim_rejected_source_mismatch":
+        "An N5 source/feed reconciliation claim is rejected because its source snippet/effect-type or bound effect is not a real child-qualified word-omission target-mismatch source, blocking free-form or non-child-scoped overrides.",
+    "uk_source_feed_reconciliation_claim_rejected_resolution":
+        "An N5 source/feed reconciliation claim is rejected because the two named targets are identical, the resolved target is neither named surface, or the child-locatable basis's resolved child is absent from the supplied live target view.",
+    "uk_source_feed_reconciliation_child_target_resolved":
+        "A validated source-child-locatable N5 reconciliation claim emits a replayable child-target resolution naming the source-named child a downstream compiler may retarget the omission to (proved locatable in the live target); the gate itself mutates no base text.",
+    "uk_source_feed_reconciliation_adjudication_finding":
+        "A validated parent-authoritative or genuinely-ambiguous N5 reconciliation claim emits a non-replayable typed finding naming the authoritative surface, leaving the affected base text intact (the safe §2.1 default — never a silent over-omission).",
+    "uk_source_feed_reconciliation_finding_withheld_unvalidated":
+        "An unvalidated N5 source/feed reconciliation claim withholds its finding, so the source/feed target-conflict effect stays on the manual frontier byte-unchanged.",
     "uk_manual_frontier_as_if_application_modification_out_of_scope":
         "An 'as if' application/modification effect treated as out of current replay scope.",
     "uk_manual_frontier_application_modification_payload_out_of_scope":
@@ -904,18 +918,18 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated savings-scoped omission claim emits a non-replayable typed finding recording the saving's preserved scope, leaving the affected base text intact (the safe under-application default; never a silent over-omission).",
     "uk_savings_scoped_omission_finding_withheld_unvalidated":
         "An unvalidated savings-scoped omission claim withholds its preserved-scope finding, so the omission stays on the manual frontier byte-unchanged.",
-    "uk_manual_frontier_non_textual_modification_overlay_candidate":  # FLAG(union-merge)
-        "A non-textual application/modification overlay (OPC Guidance 6.9) — an instrument applies/modifies/excludes/disapplies/restricts a provision for a scope/window without editing its text ('modified', 'excluded (temp.)', 'restricted') — that an owned application-overlay claim (M5) can record as a typed non-replayable overlay finding.",  # FLAG(union-merge)
-    "uk_application_overlay_claim_validated":  # FLAG(union-merge)
-        "An application-overlay claim's owned determination is well-formed, bound to a real out-of-scope non-textual application/modification effect, and scope-consistent (predicate matches the recorded scope kind; window coherent), so it may emit a non-replayable recorded-overlay finding.",  # FLAG(union-merge)
-    "uk_application_overlay_claim_rejected_schema":  # FLAG(union-merge)
-        "An application-overlay claim is rejected because its kind/ids/target/overlay-kind/scope-kind/applying-instrument/scope-predicate schema is malformed.",  # FLAG(union-merge)
-    "uk_application_overlay_claim_rejected_source_mismatch":  # FLAG(union-merge)
-        "An application-overlay claim is rejected because its source snippet or bound effect is not a real non-textual application/modification effect (blocking free-form and textual-amendment overrides), or it claims an M6 deixis resolution for a non-deictic source.",  # FLAG(union-merge)
-    "uk_application_overlay_claim_rejected_scope_consistency":  # FLAG(union-merge)
-        "An application-overlay claim is rejected because its scope predicate does not match the recorded scope kind, an unconditional overlay wrongly carries a predicate, or its temporal window is not a coherent bounded window.",  # FLAG(union-merge)
-    "uk_application_overlay_recorded_overlay_finding":  # FLAG(union-merge)
-        "A validated application-overlay claim emits a non-replayable typed finding recording the scoped application/modification reading (target, overlay kind, scope predicate, temporal window, applying instrument), leaving the affected base text intact (the application dimension is an overlay relation, not a coordinate; the safe under-application default).",  # FLAG(union-merge)
-    "uk_application_overlay_finding_withheld_unvalidated":  # FLAG(union-merge)
-        "An unvalidated application-overlay claim withholds its recorded-overlay finding, so the application/modification effect stays on the manual frontier byte-unchanged.",  # FLAG(union-merge)
+    "uk_manual_frontier_non_textual_modification_overlay_candidate":
+        "A non-textual application/modification overlay (OPC Guidance 6.9) — an instrument applies/modifies/excludes/disapplies/restricts a provision for a scope/window without editing its text ('modified', 'excluded (temp.)', 'restricted') — that an owned application-overlay claim (M5) can record as a typed non-replayable overlay finding.",
+    "uk_application_overlay_claim_validated":
+        "An application-overlay claim's owned determination is well-formed, bound to a real out-of-scope non-textual application/modification effect, and scope-consistent (predicate matches the recorded scope kind; window coherent), so it may emit a non-replayable recorded-overlay finding.",
+    "uk_application_overlay_claim_rejected_schema":
+        "An application-overlay claim is rejected because its kind/ids/target/overlay-kind/scope-kind/applying-instrument/scope-predicate schema is malformed.",
+    "uk_application_overlay_claim_rejected_source_mismatch":
+        "An application-overlay claim is rejected because its source snippet or bound effect is not a real non-textual application/modification effect (blocking free-form and textual-amendment overrides), or it claims an M6 deixis resolution for a non-deictic source.",
+    "uk_application_overlay_claim_rejected_scope_consistency":
+        "An application-overlay claim is rejected because its scope predicate does not match the recorded scope kind, an unconditional overlay wrongly carries a predicate, or its temporal window is not a coherent bounded window.",
+    "uk_application_overlay_recorded_overlay_finding":
+        "A validated application-overlay claim emits a non-replayable typed finding recording the scoped application/modification reading (target, overlay kind, scope predicate, temporal window, applying instrument), leaving the affected base text intact (the application dimension is an overlay relation, not a coordinate; the safe under-application default).",
+    "uk_application_overlay_finding_withheld_unvalidated":
+        "An unvalidated application-overlay claim withholds its recorded-overlay finding, so the application/modification effect stays on the manual frontier byte-unchanged.",
 }

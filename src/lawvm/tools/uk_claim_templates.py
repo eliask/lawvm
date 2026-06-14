@@ -758,8 +758,8 @@ def _required_operation_family_proof_semantics(
         return ("definition_child_structural_insert_boundary_claim",)
     if action_family == "range_to_container_member_resolution":
         return ("range_to_container_member_resolution",)
-    if action_family == "non_textual_application_modification_overlay":  # FLAG(union-merge)
-        return ("non_textual_application_modification_overlay",)  # FLAG(union-merge)
+    if action_family == "non_textual_application_modification_overlay":
+        return ("non_textual_application_modification_overlay",)
     return ()
 
 
@@ -863,29 +863,29 @@ def manual_compile_suggested_claim_template(
                 "claim_emits_non_replayable_finding_without_base_text_mutation",
             ],
         )
-    if (  # FLAG(union-merge)
-        summary.manual_compile_rule_id  # FLAG(union-merge)
-        == "uk_manual_frontier_non_textual_modification_overlay_candidate"  # FLAG(union-merge)
-    ):  # FLAG(union-merge)
-        return _bounded_mutation_claim_template(  # FLAG(union-merge)
-            statute_id=statute_id,  # FLAG(union-merge)
-            row=row,  # FLAG(union-merge)
-            action_family="non_textual_application_modification_overlay",  # FLAG(union-merge)
-            placement_family="non_textual_application_modification_requires_scoped_overlay_record",  # FLAG(union-merge)
-            required_ownership=[  # FLAG(union-merge)
-                "source_named_non_textual_application_modification_effect",  # FLAG(union-merge)
-                "affected_target_overlay_kind_and_applying_instrument_identity",  # FLAG(union-merge)
-                "application_scope_predicate_and_optional_temporal_window",  # FLAG(union-merge)
-                "reused_m6_deixis_resolution_when_applying_provision_is_deictic",  # FLAG(union-merge)
-                "non_replayable_overlay_finding_leaving_base_text_intact",  # FLAG(union-merge)
-            ],  # FLAG(union-merge)
-            required_validator_checks=[  # FLAG(union-merge)
-                "claim_binds_source_snippet_to_real_non_textual_application_modification_effect",  # FLAG(union-merge)
-                "claim_names_overlay_kind_scope_predicate_and_applying_instrument",  # FLAG(union-merge)
-                "claim_scope_predicate_and_temporal_window_are_coherent_against_target",  # FLAG(union-merge)
-                "claim_emits_non_replayable_finding_without_base_text_mutation",  # FLAG(union-merge)
-            ],  # FLAG(union-merge)
-        )  # FLAG(union-merge)
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_non_textual_modification_overlay_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="non_textual_application_modification_overlay",
+            placement_family="non_textual_application_modification_requires_scoped_overlay_record",
+            required_ownership=[
+                "source_named_non_textual_application_modification_effect",
+                "affected_target_overlay_kind_and_applying_instrument_identity",
+                "application_scope_predicate_and_optional_temporal_window",
+                "reused_m6_deixis_resolution_when_applying_provision_is_deictic",
+                "non_replayable_overlay_finding_leaving_base_text_intact",
+            ],
+            required_validator_checks=[
+                "claim_binds_source_snippet_to_real_non_textual_application_modification_effect",
+                "claim_names_overlay_kind_scope_predicate_and_applying_instrument",
+                "claim_scope_predicate_and_temporal_window_are_coherent_against_target",
+                "claim_emits_non_replayable_finding_without_base_text_mutation",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         wrapper_parts = _heading_facet_wrapper_insert_parts(source_preview)
