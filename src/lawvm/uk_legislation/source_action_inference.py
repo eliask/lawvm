@@ -25,6 +25,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
 from lawvm.uk_legislation.source_text_reclassifications import (
     _empty_effect_type_as_if_words_omitted,
     _empty_effect_type_commencement_source,
+    _empty_effect_type_incorporation_of_enactments_source,
     _source_parent_application_modification_context,
 )
 from lawvm.uk_legislation.target_parser import _split_metadata_provisions
@@ -283,6 +284,31 @@ def infer_uk_effect_action_from_source(
             extracted_el=extracted_el,
             extracted_text=extracted_text,
             detail={"affected_provisions": effect.affected_provisions},
+        )
+        return UKActionInference(action=None, blocked=True)
+
+    if _empty_effect_type_incorporation_of_enactments_source(extracted_text or ""):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_incorporation_of_enactments_source_rejected",
+            family="applicability_scope",
+            reason_code="incorporation_of_enactments_out_of_scope",
+            reason=(
+                "UK effect has no explicit text/tree action and the source is "
+                "an Order's 'the following provisions ... shall be incorporated "
+                "in this Order' enactments-uptake article; structural replay "
+                "must not lower it as a mutation of the host provisions (the "
+                "Order incorporates them into its own scheme, it does not amend "
+                "them, and its 'from ... to the end' exception caveats otherwise "
+                "false-match the range-substitution heuristic)."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "affected_provisions": effect.affected_provisions,
+            },
         )
         return UKActionInference(action=None, blocked=True)
 

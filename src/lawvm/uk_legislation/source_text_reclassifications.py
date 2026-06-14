@@ -891,6 +891,32 @@ def _empty_effect_type_commencement_source(text: str) -> bool:
     return bool(re.search(r"\bshall\s+come\s+into\s+force\b|\bcomes?\s+into\s+force\b", normalized))
 
 
+# "Incorporation of enactments" articles in SI Orders (e.g. railway/transport
+# works orders) read "The following provisions of [the Act] shall be
+# incorporated in this Order:— section X (...); section Y (...), except for the
+# words from '...' to the end; ...". This is the Order pulling named host
+# provisions *into the Order's own scheme* (an application/incorporation of
+# enactments), not an amendment of the host Act. It must never be lowered to a
+# structural mutation of the host provisions. The leading "from '...' to the
+# end" caveats in such lists otherwise false-match the range-substitution
+# heuristic and overwrite host bodies with the Order's incorporation prose.
+_INCORPORATION_OF_ENACTMENTS_RE = re.compile(
+    r"\bshall\s+be\s+incorporated\s+(?:with|in|into)\b",
+    flags=re.I,
+)
+
+
+def _empty_effect_type_incorporation_of_enactments_source(text: str) -> bool:
+    """Return True for an Order's "shall be incorporated" enactments-uptake clause."""
+    normalized = " ".join((text or "").split()).strip()
+    if not normalized:
+        return False
+    # Fast substring guard before the bounded regex (§1.11).
+    if "incorporated" not in normalized.lower():
+        return False
+    return bool(_INCORPORATION_OF_ENACTMENTS_RE.search(normalized))
+
+
 _EXTERNAL_ACT_TARGET_RE = re.compile(
     r"\bto\s+the\s+(?P<title>[A-Z][^.;]*?\bAct\s+(?:1[0-9]{3}|20[0-9]{2}))\b",
     flags=re.I,
