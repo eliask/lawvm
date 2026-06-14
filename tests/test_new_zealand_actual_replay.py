@@ -366,12 +366,14 @@ def test_actual_replay_fails_closed_on_target_recovered_op() -> None:
 
 
 def test_actual_replay_rejects_non_promotable_family() -> None:
+    # repeal/text_replace/replace/insert are promotable; anything else is refused
+    # up front (e.g. a bare "omit" family that has no actual-replay kernel).
     with pytest.raises(ValueError, match="not promotable"):
         build_actual_replay(
             _archive(),
             work_id=_WORK_ID,
             preflight=_preflight((_repeal_row(),)),
-            families=("replace",),
+            families=("omit",),
         )
 
 

@@ -52,17 +52,28 @@ from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
     NZDryRunReport,
     NZMutationBoundaryProof,
+    NZStructuralMaterializationError,
     _leaf_source_kind,
     _oracle_partition,
+    _oracle_partition_insert,
+    _oracle_partition_replace,
     _oracle_partition_text,
     _parse_archived_version,
+    _reextract_structural_insertion_for_proof,
+    _reextract_structural_replacement_for_proof,
     _resolve_target_nodes,
     _substitute_node_text,
     _tombstone_node,
+    apply_structural_insert_to_nodes,
+    apply_structural_replace_to_nodes,
+    build_dry_run_insert,
+    build_dry_run_replace,
     build_dry_run_repeal,
 )
 from lawvm.core.comparison_normalization import normalized_inline_occurrence_count
@@ -75,18 +86,34 @@ from lawvm.new_zealand.version_diff import archived_xml_version_change_window
 
 
 # --- Family scope. ------------------------------------------------------------
-# The two safest families. Only these may be promoted to actual replay; any
-# other family is refused before it can materialize.
+# The promotable families. Only these may be promoted to actual replay; any other
+# family is refused before it can materialize. Repeal and single-occurrence text
+# substitution are the original two; structural whole-provision REPLACE and whole/
+# nested INSERT are promoted here because they extract strongly via dry-run (a
+# per-op mutation-boundary proof whose oracle match is "agrees" with neighbours
+# unchanged), so the dry-run-VERIFIED ones can be materialized into actual replay.
 NZ_ACTUAL_REPLAY_FAMILY_REPEAL = "repeal"
 NZ_ACTUAL_REPLAY_FAMILY_TEXT_REPLACE = "text_replace"
+NZ_ACTUAL_REPLAY_FAMILY_REPLACE = "replace"
+NZ_ACTUAL_REPLAY_FAMILY_INSERT = "insert"
 NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES = (
     NZ_ACTUAL_REPLAY_FAMILY_REPEAL,
     NZ_ACTUAL_REPLAY_FAMILY_TEXT_REPLACE,
+    NZ_ACTUAL_REPLAY_FAMILY_REPLACE,
+    NZ_ACTUAL_REPLAY_FAMILY_INSERT,
 )
 _FAMILY_TO_DRY_RUN_SCOPE = {
     NZ_ACTUAL_REPLAY_FAMILY_REPEAL: NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_ACTUAL_REPLAY_FAMILY_TEXT_REPLACE: NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+    NZ_ACTUAL_REPLAY_FAMILY_REPLACE: NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    NZ_ACTUAL_REPLAY_FAMILY_INSERT: NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
 }
+# The structural families are operation-surface driven (not preflight driven);
+# they need a built operation surface, and their dry-run is routed to its own
+# surface-consuming builder rather than build_dry_run_repeal.
+_SURFACE_DRIVEN_FAMILIES = frozenset(
+    {NZ_ACTUAL_REPLAY_FAMILY_REPLACE, NZ_ACTUAL_REPLAY_FAMILY_INSERT}
+)
 
 # --- Distinct named refusal diagnostics (fail-closed vocabulary). -------------
 # A transition is refused (nothing materialized) when any of these holds. Each
@@ -114,6 +141,12 @@ NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID = (
 )
 NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID = (
     "nz_actual_replay_refused_materialized_target_slice_diverges_from_oracle"
+)
+NZ_ACTUAL_REPLAY_REFUSED_STRUCTURAL_MATERIALIZATION_FAILED_RULE_ID = (
+    "nz_actual_replay_refused_structural_payload_not_re_materializable"
+)
+NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID = (
+    "nz_actual_replay_refused_operation_surface_missing_for_structural_family"
 )
 
 # Agreement / replay rule ids.
@@ -266,6 +299,11 @@ class NZActualReplayReport:
     transitions: tuple[NZActualReplayedTransition, ...]
     refusals: tuple[NZActualReplayRefusal, ...]
     dry_run_reports: tuple[NZDryRunReport, ...] = ()
+    # Families that were requested but could not even be ATTEMPTED (e.g. a
+    # structural family requested without an operation surface). These are NOT
+    # per-transition refusals — they declared nothing — so they are reported
+    # separately and never inflate the fail-closed-blocked transition count.
+    families_not_attempted: tuple[NZActualReplayRefusal, ...] = ()
     forbidden_shortcuts: tuple[str, ...] = _FORBIDDEN_SHORTCUTS
 
     def replayed_mutation_count(self) -> int:
@@ -290,6 +328,11 @@ class NZActualReplayReport:
             "target_slice_agreements": slice_agreements,
             "all_slices_agree": self.all_slices_agree(),
             "refusal_rule_counts": _counts(refusal.rule_id for refusal in self.refusals),
+            # Families requested but not attempted (e.g. structural family with no
+            # operation surface). Separate from the fail-closed transition count.
+            "families_not_attempted": _counts(
+                refusal.detail.get("family", "") for refusal in self.families_not_attempted
+            ),
             # This surface DOES claim actual replay — for the transitions it
             # materialized and verified against the archived oracle.
             "replay_claims": bool(self.transitions),
@@ -367,6 +410,9 @@ class NZActualReplayReport:
             return payload
         payload["transitions"] = [transition.to_jsonable() for transition in self.transitions]
         payload["refusals"] = [refusal.to_jsonable() for refusal in self.refusals]
+        payload["families_not_attempted"] = [
+            refusal.to_jsonable() for refusal in self.families_not_attempted
+        ]
         payload["agreement_surface"] = self.agreement_surface()
         return payload
 
@@ -382,11 +428,26 @@ def build_archived_work_actual_replay(
 ) -> NZActualReplayReport:
     """Build the strict actual-replay report for one archived NZ work."""
 
+    from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+
     preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
+    requested = _validated_families(families)
+    # The structural families (replace/insert) are operation-surface driven; build
+    # the surface once (the same surface their dry-run consumes) only when one of
+    # them is requested, so a repeal/text_replace-only run needs no surface.
+    surface = (
+        build_archived_work_operation_surface(db_path, work_id)
+        if any(family in _SURFACE_DRIVEN_FAMILIES for family in requested)
+        else None
+    )
     archive = open_farchive(db_path)
     try:
         return build_actual_replay(
-            archive, work_id=work_id, preflight=preflight, families=families
+            archive,
+            work_id=work_id,
+            preflight=preflight,
+            families=families,
+            surface=surface,
         )
     finally:
         archive.close()
@@ -398,6 +459,7 @@ def build_actual_replay(
     work_id: str,
     preflight: NZEffectCandidatePreflightReport,
     families: tuple[str, ...] = NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES,
+    surface: Any | None = None,
 ) -> NZActualReplayReport:
     """Promote dry-run-verified ops into actual materialized transitions.
 
@@ -405,6 +467,12 @@ def build_actual_replay(
     candidates here: we run the dry-run for each requested family, treat each
     agreeing, neighbour-preserving proof as ``dry_run_verified``, and refuse
     everything else with a distinct named diagnostic.
+
+    Repeal and text_replace are preflight-driven (``preflight``). The structural
+    REPLACE/INSERT families are operation-surface driven (``surface``): their
+    dry-run consumes the work's operation-surface witnesses + the cited amending
+    act XML. When a structural family is requested without a surface, that family
+    is refused with a distinct named diagnostic (never silently skipped).
     """
 
     requested = _validated_families(families)
@@ -413,16 +481,40 @@ def build_actual_replay(
     # ops, both keyed by amendment date (= change window = one transition).
     verified_by_date: dict[str, list[_VerifiedOp]] = {}
     blocked_by_date: dict[str, list[NZActualReplayRefusal]] = {}
+    surface_refusals: list[NZActualReplayRefusal] = []
 
     # The amendment date that defines a proof's change window is carried by the
-    # candidate row, not the proof. Index op_id -> amendment date straight from
-    # the preflight the dry-run consumed, so an agreeing proof is grouped into the
-    # exact transition the candidate declared (no proof-schema change needed).
+    # candidate row, not the proof. Index op_id -> amendment date from BOTH the
+    # preflight (repeal/text_replace) and the operation surface (replace/insert)
+    # the dry-run consumed, so an agreeing proof is grouped into the exact
+    # transition the candidate declared (no proof-schema change needed).
     amendment_date_by_op_id = _index_amendment_dates(preflight)
+    if surface is not None:
+        amendment_date_by_op_id.update(_index_structural_amendment_dates(surface, work_id))
 
     for family in requested:
-        scope = _FAMILY_TO_DRY_RUN_SCOPE[family]
-        report = build_dry_run_repeal(archive, work_id=work_id, preflight=preflight, scope=scope)
+        if family in _SURFACE_DRIVEN_FAMILIES:
+            if surface is None:
+                surface_refusals.append(
+                    NZActualReplayRefusal(
+                        rule_id=NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID,
+                        message=(
+                            "actual replay refused the structural family because no "
+                            f"operation surface was provided (family={family})"
+                        ),
+                        detail={"family": family},
+                    )
+                )
+                continue
+            if family == NZ_ACTUAL_REPLAY_FAMILY_REPLACE:
+                report = build_dry_run_replace(archive, work_id=work_id, surface=surface)
+            else:
+                report = build_dry_run_insert(archive, work_id=work_id, surface=surface)
+        else:
+            scope = _FAMILY_TO_DRY_RUN_SCOPE[family]
+            report = build_dry_run_repeal(
+                archive, work_id=work_id, preflight=preflight, scope=scope
+            )
         dry_run_reports.append(report)
         _partition_dry_run_outcomes(
             report, family, amendment_date_by_op_id, verified_by_date, blocked_by_date
@@ -431,6 +523,7 @@ def build_actual_replay(
     transitions: list[NZActualReplayedTransition] = []
     refusals: list[NZActualReplayRefusal] = []
     parsed_cache: dict[str, NZSourceDocument | None] = {}
+    amending_root_cache: dict[str, Any] = {}
 
     for amendment_date_iso in sorted(set(verified_by_date) | set(blocked_by_date)):
         window_refusals = blocked_by_date.get(amendment_date_iso, [])
@@ -468,6 +561,7 @@ def build_actual_replay(
             amendment_date_iso=amendment_date_iso,
             verified_ops=tuple(verified_ops),
             parsed_cache=parsed_cache,
+            amending_root_cache=amending_root_cache,
         )
         if isinstance(outcome, NZActualReplayRefusal):
             refusals.append(outcome)
@@ -480,6 +574,7 @@ def build_actual_replay(
         transitions=tuple(transitions),
         refusals=tuple(refusals),
         dry_run_reports=tuple(dry_run_reports),
+        families_not_attempted=tuple(surface_refusals),
     )
 
 
@@ -578,6 +673,7 @@ def _replay_one_transition(
     amendment_date_iso: str,
     verified_ops: tuple[_VerifiedOp, ...],
     parsed_cache: dict[str, NZSourceDocument | None],
+    amending_root_cache: dict[str, Any],
 ) -> NZActualReplayedTransition | NZActualReplayRefusal:
     op_ids = tuple(op.proof.op_id for op in verified_ops)
     change_window = archived_xml_version_change_window(
@@ -613,28 +709,45 @@ def _replay_one_transition(
         )
 
     # Materialize: apply each verified op's recorded mutation to the archived
-    # before document, by source path. Each mutation is the boring kernel the
-    # dry-run proof was produced by (tombstone for repeal, single-occurrence
-    # substitution for text_replace), re-applied from the proof's own recorded
-    # intent so the materialized op is exactly the verified one.
-    materialized_after, mutations = _materialize_verified_after_document(
-        before_doc, verified_ops
-    )
+    # before document. Each mutation is the boring kernel the dry-run proof was
+    # produced by (tombstone for repeal, single-occurrence substitution for
+    # text_replace, subtree swap for replace, sibling add for insert), re-applied
+    # from the proof's own recorded intent so the materialized op is exactly the
+    # verified one. A structural payload that is no longer re-extractable fails
+    # closed for the whole transition with a distinct named diagnostic.
+    try:
+        materialized_after, mutations = _materialize_verified_after_document(
+            before_doc, verified_ops, archive, amending_root_cache
+        )
+    except NZStructuralMaterializationError as exc:
+        return NZActualReplayRefusal(
+            rule_id=NZ_ACTUAL_REPLAY_REFUSED_STRUCTURAL_MATERIALIZATION_FAILED_RULE_ID,
+            message=(
+                "actual replay refused because a dry-run-verified structural op could "
+                f"not be re-materialized into an after-tree ({exc})"
+            ),
+            amendment_date_iso=amendment_date_iso,
+            op_ids=op_ids,
+        )
 
     # Re-confirm the materialized target slice against the archived oracle using
     # the SAME family-specific agreement notion the dry-run verified each op
     # under (repeal: tombstone direction, not byte text — NZ consolidations erase
     # the repealed body text, which the boring kernel deliberately does not;
-    # text_replace: the substitution reflected in the oracle node). This re-runs
-    # the check after compositing all ops in the transition; the slice is the
-    # mutated nodes only and every one must still agree.
+    # text_replace: the substitution reflected in the oracle node; replace: the
+    # normalized oracle subtree matches the replacement subtree; insert: the new
+    # node is present in the oracle with matching content at the derived position).
+    # This re-runs the check after compositing all ops in the transition; the slice
+    # is the mutated nodes only and every one must still agree.
     proof_by_path = {op.proof.selected_source_path: op for op in verified_ops}
     slice_agreements = 0
     diverging: list[tuple[str, ...]] = []
     diverging_match: dict[tuple[str, ...], str] = {}
     for mutation in mutations:
         op = proof_by_path[mutation.target_source_path]
-        match = _reconfirm_slice_agreement(materialized_after, oracle_doc, op.proof)
+        match = _reconfirm_slice_agreement(
+            materialized_after, oracle_doc, op.proof, archive, amending_root_cache
+        )
         if match == "agrees":
             slice_agreements += 1
         else:
@@ -679,52 +792,135 @@ def _replay_one_transition(
 def _materialize_verified_after_document(
     before_doc: NZSourceDocument,
     verified_ops: tuple[_VerifiedOp, ...],
+    archive: Any,
+    amending_root_cache: dict[str, Any],
 ) -> tuple[NZSourceDocument, tuple[NZActualReplayMutation, ...]]:
-    """Apply every verified op's mutation to the before document, by path.
+    """Apply every verified op's mutation to the before document.
 
-    The result is ``before_doc`` with each verified target node replaced by the
-    boring-kernel mutation the proof was produced by; every other node is the
-    same immutable object. Repeal semantics and text-substitution semantics are
-    NOT re-implemented here — they are delegated to ``_tombstone_node`` /
-    ``_substitute_node_text`` from the dry-run kernel, so the materialized
-    mutation is exactly the verified one.
+    The result is ``before_doc`` with each verified op's recorded mutation
+    applied. For the leaf-local families (repeal / text_replace) the target node
+    is swapped in place; for the structural families (replace / insert) the
+    kernel's own splice helpers swap the whole target subtree (replace) or add the
+    new node + its descendants next to the verified anchor (insert). None of the
+    apply semantics are re-implemented here — they are delegated to
+    ``_tombstone_node`` / ``_substitute_node_text`` and the additive
+    ``apply_structural_replace_to_nodes`` / ``apply_structural_insert_to_nodes``
+    helpers from the dry-run kernel module, so the materialized mutation is
+    exactly the verified one.
+
+    The ops in one transition are applied SEQUENTIALLY to an evolving document so
+    that any path shift an earlier structural op introduces is reflected before a
+    later op resolves its target/anchor. Each op's mutation record is keyed by the
+    proof's ``selected_source_path`` (the resolved live-body path for repeal /
+    text_replace / replace, the resolved new-node path for insert), which is the
+    key the slice re-confirmation looks the proof up under.
     """
 
-    by_path = {op.proof.selected_source_path: op for op in verified_ops}
+    current = before_doc
+    mutations: list[NZActualReplayMutation] = []
+    for op in verified_ops:
+        proof = op.proof
+        action = proof.action
+        if action in (str(StructuralAction.REPEAL), str(StructuralAction.TEXT_REPLACE)):
+            current, mutation = _apply_leaf_local_mutation(current, op)
+        elif action == str(StructuralAction.REPLACE):
+            after_nodes, after_root = apply_structural_replace_to_nodes(
+                current, proof, archive, amending_root_cache
+            )
+            before_target = _first_node_at_path(current, proof.selected_source_path)
+            current = _with_nodes(current, after_nodes)
+            mutation = NZActualReplayMutation(
+                op_id=proof.op_id,
+                action=action,
+                family=op.family,
+                target_address=proof.target_address,
+                target_source_path=proof.selected_source_path,
+                target_digest_before=_node_digest(before_target) if before_target else "",
+                target_digest_after=_node_digest(after_root),
+                dry_run_oracle_match_rule_id=proof.oracle_match_rule_id,
+            )
+        elif action == str(StructuralAction.INSERT):
+            after_nodes, after_new_node = apply_structural_insert_to_nodes(
+                current, proof, archive, amending_root_cache
+            )
+            current = _with_nodes(current, after_nodes)
+            mutation = NZActualReplayMutation(
+                op_id=proof.op_id,
+                action=action,
+                family=op.family,
+                target_address=proof.target_address,
+                target_source_path=proof.selected_source_path,
+                target_digest_before="",  # the new node did not exist before
+                target_digest_after=_node_digest(after_new_node),
+                dry_run_oracle_match_rule_id=proof.oracle_match_rule_id,
+            )
+        else:  # defence in depth: only promotable families reach here
+            raise NZStructuralMaterializationError(
+                f"actual replay has no materialization kernel for action {action!r}"
+            )
+        mutations.append(mutation)
+    return current, tuple(mutations)
+
+
+def _apply_leaf_local_mutation(
+    document: NZSourceDocument,
+    op: _VerifiedOp,
+) -> tuple[NZSourceDocument, NZActualReplayMutation]:
+    """Swap the verified op's target node in place (repeal / text_replace)."""
+
+    proof = op.proof
     new_nodes: list[NZSourceNode] = []
-    mutated: dict[tuple[str, ...], NZActualReplayMutation] = {}
-    for node in before_doc.nodes:
-        op = by_path.get(node.path)
-        if op is None:
-            new_nodes.append(node)
+    before_node: NZSourceNode | None = None
+    after_node: NZSourceNode | None = None
+    for node in document.nodes:
+        if node.path == proof.selected_source_path:
+            before_node = node
+            after_node = _apply_verified_mutation(node, proof)
+            new_nodes.append(after_node)
             continue
-        after_node = _apply_verified_mutation(node, op.proof)
-        new_nodes.append(after_node)
-        mutated[node.path] = NZActualReplayMutation(
-            op_id=op.proof.op_id,
-            action=op.proof.action,
-            family=op.family,
-            target_address=op.proof.target_address,
-            target_source_path=node.path,
-            target_digest_before=_node_digest(node),
-            target_digest_after=_node_digest(after_node),
-            dry_run_oracle_match_rule_id=op.proof.oracle_match_rule_id,
+        new_nodes.append(node)
+    if before_node is None or after_node is None:
+        raise NZStructuralMaterializationError(
+            "verified leaf-local target is no longer present in the before tree"
         )
-    after_doc = NZSourceDocument(
-        xml_locator=before_doc.xml_locator,
-        version_id=before_doc.version_id,
-        metadata=before_doc.metadata,
-        nodes=tuple(new_nodes),
-        document_history=before_doc.document_history,
+    mutation = NZActualReplayMutation(
+        op_id=proof.op_id,
+        action=proof.action,
+        family=op.family,
+        target_address=proof.target_address,
+        target_source_path=proof.selected_source_path,
+        target_digest_before=_node_digest(before_node),
+        target_digest_after=_node_digest(after_node),
+        dry_run_oracle_match_rule_id=proof.oracle_match_rule_id,
     )
-    ordered = tuple(mutated[op.proof.selected_source_path] for op in verified_ops)
-    return after_doc, ordered
+    return _with_nodes(document, tuple(new_nodes)), mutation
+
+
+def _first_node_at_path(
+    document: NZSourceDocument, path: tuple[str, ...]
+) -> NZSourceNode | None:
+    matches = _resolve_target_nodes(document, path)
+    return matches[0] if matches else None
+
+
+def _with_nodes(
+    document: NZSourceDocument, nodes: tuple[NZSourceNode, ...]
+) -> NZSourceDocument:
+    return NZSourceDocument(
+        xml_locator=document.xml_locator,
+        version_id=document.version_id,
+        metadata=document.metadata,
+        nodes=nodes,
+        document_history=document.document_history,
+    )
 
 
 def _reconfirm_slice_agreement(
     materialized_after: NZSourceDocument,
     oracle_doc: NZSourceDocument,
     proof: NZMutationBoundaryProof,
+    archive: Any,
+    amending_root_cache: dict[str, Any],
 ) -> str:
     """Re-run the verified family's oracle partition on the composited result.
 
@@ -755,9 +951,77 @@ def _reconfirm_slice_agreement(
             after_old_occurrences=after_old_occ,
         )
         return match
+    if proof.action == str(StructuralAction.REPLACE):
+        # Re-extract the SAME replacement subtree the proof was verified from and
+        # re-run the dry-run's own replace oracle partition at the resolved path.
+        after_target = _first_node_at_path(materialized_after, source_path)
+        target_kind = after_target.kind if after_target else _leaf_source_kind(source_path)
+        replacement = _reextract_structural_replacement_for_proof(
+            archive, proof, _kind_carrier(target_kind), amending_root_cache
+        )
+        match, _rule_id, _present, _occ, _digest = _oracle_partition_replace(
+            oracle_doc,
+            source_path,
+            candidate_root=replacement.root,
+            candidate_descendants=replacement.descendants,
+        )
+        return match
+    if proof.action == str(StructuralAction.INSERT):
+        # Re-extract the SAME new-node subtree and re-run the insert oracle
+        # partition at the new node's resolved path, with the derived anchor +
+        # direction the proof recorded (the position arbiter).
+        payload = _reextract_structural_insertion_for_proof(
+            archive, proof, amending_root_cache
+        )
+        anchor_label = _label_of_source_segment(proof.insert_anchor_source_path)
+        anchor_kind = _kind_of_source_segment(proof.insert_anchor_source_path)
+        match, _rule_id, _present, _occ, _digest = _oracle_partition_insert(
+            oracle_doc,
+            source_path,
+            candidate_root=payload.root,
+            candidate_descendants=payload.descendants,
+            derived_anchor_label=anchor_label,
+            derived_anchor_kind=anchor_kind,
+            derived_direction=proof.insert_direction,
+        )
+        return match
     raise ValueError(
         f"actual replay cannot re-confirm slice agreement for action {proof.action!r}"
     )
+
+
+def _kind_carrier(kind: str) -> NZSourceNode:
+    """A throwaway node carrying only ``kind`` for replace root-kind alignment.
+
+    ``_reextract_structural_replacement_for_proof`` aligns the extracted root kind
+    to the live-body target kind; it only reads ``.kind`` off the passed target.
+    """
+
+    return NZSourceNode(
+        kind=kind,
+        path=(),
+        xml_id="",
+        xml_path="",
+        source_zone="",
+        label="",
+        heading="",
+        deletion_status="",
+        text="",
+        history=(),
+    )
+
+
+def _label_of_source_segment(source_path: tuple[str, ...]) -> str:
+    if not source_path:
+        return ""
+    leaf = source_path[-1]
+    return leaf.split(":", 1)[1] if ":" in leaf else ""
+
+
+def _kind_of_source_segment(source_path: tuple[str, ...]) -> str:
+    if not source_path:
+        return ""
+    return source_path[-1].split(":", 1)[0]
 
 
 def _apply_verified_mutation(node: NZSourceNode, proof: NZMutationBoundaryProof) -> NZSourceNode:
@@ -805,6 +1069,30 @@ def _index_amendment_dates(preflight: NZEffectCandidatePreflightReport) -> dict[
         if not row.amendment_date_iso:
             continue
         index[operation.op_id] = row.amendment_date_iso
+    return index
+
+
+def _index_structural_amendment_dates(surface: Any, work_id: str) -> dict[str, str]:
+    """Map each structural (replace/insert) proof op_id to its ISO amendment date.
+
+    The structural dry-run kernels mint op ids as ``nz:{work_id}:{row_id}:replace``
+    and ``nz:{work_id}:{row_id}:insert`` from the operation-surface witness rows.
+    We reconstruct those op ids from the same surface rows so an agreeing
+    structural proof is grouped into the exact transition (= amendment date) the
+    witness declared, mirroring the preflight index for the leaf-local families.
+    Rows without an ISO date are skipped (they cannot be dry-run-verified).
+    """
+
+    index: dict[str, str] = {}
+    for row in getattr(surface, "rows", ()):  # NZOperationSurfaceReport rows
+        date = getattr(row, "amendment_date_iso", "")
+        if not date:
+            continue
+        row_id = getattr(row, "row_id", "")
+        if not row_id:
+            continue
+        index[f"nz:{work_id}:{row_id}:replace"] = date
+        index[f"nz:{work_id}:{row_id}:insert"] = date
     return index
 
 

@@ -2905,6 +2905,282 @@ def _insert_payload_text(payload: NZStructuralReplacement, row: Any, anchor_labe
     )
 
 
+# --- Structural materialization (actual-replay reuse). ------------------------
+#
+# The dry-run REPLACE/INSERT kernels prove a per-op mutation boundary but keep
+# only digests of the candidate after-subtree — they never assemble a full
+# after-``NZSourceDocument`` because the dry-run only ever oracle-partitions at a
+# path. The strict actual-replay surface needs that whole materialized after-tree
+# (the actual replay OUTPUT). These additive helpers assemble it WITHOUT a second
+# apply path: they re-extract the SAME payload the kernel extracted (keyed by the
+# proof's recorded amending work/href + the resolved target leaf), align/rebase it
+# the SAME way, and splice it into the before document's flat node tuple. The
+# extraction, kind alignment, and re-rooting are the kernel's own primitives, so
+# the materialized subtree is exactly the one the dry-run proof was produced from.
+
+
+class NZStructuralMaterializationError(Exception):
+    """A verified structural proof could not be re-materialized into an after-tree.
+
+    Raised (never swallowed) when re-extracting the proof's payload from the
+    amending act fails despite the op being dry-run-verified — e.g. the amending
+    XML became unreadable between the dry-run and the materialization, or the
+    resolved target/anchor is no longer present in the before tree. The caller
+    fails closed on this; it is never a silent skip.
+    """
+
+
+def _reextract_structural_replacement_for_proof(
+    archive: Any,
+    proof: NZMutationBoundaryProof,
+    before_target: NZSourceNode,
+    amending_root_cache: dict[str, Any],
+) -> NZStructuralReplacement:
+    """Re-extract + align the replacement subtree a verified REPLACE proof used."""
+
+    resolved_path = proof.selected_source_path
+    leaf_kind = _leaf_source_kind(resolved_path)
+    leaf_label = _leaf_source_label(resolved_path)
+    provision_label = _top_level_provision_label(resolved_path)
+    amending_root = _amending_act_root(archive, proof.replace_amending_work_id, amending_root_cache)
+    if amending_root is None:
+        raise NZStructuralMaterializationError(
+            "amending act XML unreadable while re-materializing a verified replace proof"
+        )
+    amending_node = _amending_node_by_href(amending_root, proof.replace_amending_provision_href)
+    if amending_node is None:
+        raise NZStructuralMaterializationError(
+            "amending-provision href not found while re-materializing a verified replace proof"
+        )
+    base_year, base_number = _base_work_year_number_from_proof(proof.op_id)
+    replacement = extract_structural_replacement(
+        amending_node,
+        target_leaf_kind=leaf_kind,
+        target_leaf_label=leaf_label,
+        target_provision_label=provision_label,
+        base_work_year=base_year,
+        base_work_number=base_number,
+    )
+    if isinstance(replacement, str):
+        raise NZStructuralMaterializationError(
+            f"replacement payload not re-extractable while materializing (reason={replacement})"
+        )
+    aligned_root = _align_replacement_root_kind(replacement.root, before_target.kind)
+    return NZStructuralReplacement(root=aligned_root, descendants=replacement.descendants)
+
+
+def _reextract_structural_insertion_for_proof(
+    archive: Any,
+    proof: NZMutationBoundaryProof,
+    amending_root_cache: dict[str, Any],
+) -> NZStructuralReplacement:
+    """Re-extract the new-node subtree a verified INSERT proof used."""
+
+    new_node_path = proof.insert_new_node_source_path or proof.selected_source_path
+    leaf_kind = _leaf_source_kind(new_node_path)
+    leaf_label = _leaf_source_label(new_node_path)
+    is_nested = len(new_node_path) > 1
+    provision_label = _top_level_provision_label(new_node_path[:-1]) if is_nested else None
+    amending_root = _amending_act_root(archive, proof.insert_amending_work_id, amending_root_cache)
+    if amending_root is None:
+        raise NZStructuralMaterializationError(
+            "amending act XML unreadable while re-materializing a verified insert proof"
+        )
+    amending_node = _amending_node_by_href(amending_root, proof.insert_amending_provision_href)
+    if amending_node is None:
+        raise NZStructuralMaterializationError(
+            "amending-provision href not found while re-materializing a verified insert proof"
+        )
+    base_year, base_number = _base_work_year_number_from_proof(proof.op_id)
+    payload = extract_structural_insertion(
+        amending_node,
+        inserted_leaf_kind=leaf_kind,
+        inserted_leaf_label=leaf_label,
+        target_provision_label=provision_label,
+        base_work_year=base_year,
+        base_work_number=base_number,
+    )
+    if isinstance(payload, str):
+        raise NZStructuralMaterializationError(
+            f"insert payload not re-extractable while materializing (reason={payload})"
+        )
+    return payload
+
+
+def apply_structural_replace_to_nodes(
+    before_doc: NZSourceDocument,
+    proof: NZMutationBoundaryProof,
+    archive: Any,
+    amending_root_cache: dict[str, Any],
+) -> tuple[tuple[NZSourceNode, ...], NZSourceNode]:
+    """Materialize one verified REPLACE: swap the target subtree for the payload.
+
+    Returns the after node tuple (target root + descendants replaced by the
+    re-rooted replacement subtree; every other node identical) and the new
+    after-root node. The kind alignment + re-rooting are the kernel's own
+    primitives; the splice is a flat-tuple swap of the target subtree. Raises
+    :class:`NZStructuralMaterializationError` if the payload is no longer
+    re-extractable (fail-closed in the caller), never a guess.
+    """
+
+    resolved_path = proof.selected_source_path
+    target_matches = _resolve_target_nodes(before_doc, resolved_path)
+    if len(target_matches) != 1:
+        raise NZStructuralMaterializationError(
+            "verified replace target is no longer uniquely present in the before tree"
+        )
+    before_target = target_matches[0]
+    replacement = _reextract_structural_replacement_for_proof(
+        archive, proof, before_target, amending_root_cache
+    )
+    after_root = _rebase_replacement_root(replacement.root, before_target.path)
+    after_descendants = _rebase_subtree_descendants(
+        replacement.root, replacement.descendants, before_target.path
+    )
+    old_subtree_paths = {before_target.path} | {
+        node.path for node in _descendant_nodes(before_doc, before_target.path)
+    }
+    new_nodes: list[NZSourceNode] = []
+    spliced = False
+    for node in before_doc.nodes:
+        if node.path == before_target.path:
+            new_nodes.append(after_root)
+            new_nodes.extend(after_descendants)
+            spliced = True
+            continue
+        if node.path in old_subtree_paths:
+            # A descendant of the replaced subtree: dropped (the replacement
+            # subtree carries its own descendants). It was emitted above.
+            continue
+        new_nodes.append(node)
+    if not spliced:  # defence in depth: target resolved above, must be present
+        raise NZStructuralMaterializationError(
+            "verified replace target vanished from the before tree during the splice"
+        )
+    return tuple(new_nodes), after_root
+
+
+def apply_structural_insert_to_nodes(
+    before_doc: NZSourceDocument,
+    proof: NZMutationBoundaryProof,
+    archive: Any,
+    amending_root_cache: dict[str, Any],
+) -> tuple[tuple[NZSourceNode, ...], NZSourceNode]:
+    """Materialize one verified INSERT: add the new node + descendants by anchor.
+
+    Returns the after node tuple (the new node + its descendants spliced next to
+    the verified anchor, in the proof's recorded direction; every pre-existing
+    node unchanged) and the new node. The new node lands among the anchor's
+    siblings on the anchor's path stem, addressed by its own label — exactly the
+    placement the dry-run proof was produced from. Raises
+    :class:`NZStructuralMaterializationError` if the anchor or payload is no
+    longer resolvable (fail-closed in the caller), never a guess.
+    """
+
+    anchor_matches = _nodes_at_path(before_doc, proof.insert_anchor_source_path)
+    if len(anchor_matches) != 1:
+        raise NZStructuralMaterializationError(
+            "verified insert anchor is no longer uniquely present in the before tree"
+        )
+    anchor_node = anchor_matches[0]
+    payload = _reextract_structural_insertion_for_proof(archive, proof, amending_root_cache)
+    new_node_path = proof.insert_new_node_source_path or proof.selected_source_path
+    if _resolve_target_nodes(before_doc, new_node_path):
+        raise NZStructuralMaterializationError(
+            "verified insert new node is already present in the before tree"
+        )
+    after_new_node = _rebase_replacement_root(payload.root, new_node_path)
+    after_descendants = _rebase_subtree_descendants(payload.root, payload.descendants, new_node_path)
+    inserted_block = (after_new_node, *after_descendants)
+
+    # Splice the inserted block immediately AFTER the anchor's whole subtree (for
+    # direction "after") or immediately BEFORE the anchor node (for "before"). The
+    # anchor's own descendants must stay attached to it, so for "after" we insert
+    # past the last node of the anchor's subtree.
+    anchor_subtree_paths = {anchor_node.path} | {
+        node.path for node in _descendant_nodes(before_doc, anchor_node.path)
+    }
+    new_nodes: list[NZSourceNode] = []
+    inserted = False
+    nodes = before_doc.nodes
+    if proof.insert_direction == "before":
+        for node in nodes:
+            if node.path == anchor_node.path and not inserted:
+                new_nodes.extend(inserted_block)
+                inserted = True
+            new_nodes.append(node)
+    else:
+        # "after": emit the anchor and its whole subtree, then the inserted block.
+        index = 0
+        while index < len(nodes):
+            node = nodes[index]
+            new_nodes.append(node)
+            if node.path == anchor_node.path and not inserted:
+                index += 1
+                # Carry the anchor's descendants across before the inserted block.
+                while index < len(nodes) and nodes[index].path in anchor_subtree_paths:
+                    new_nodes.append(nodes[index])
+                    index += 1
+                new_nodes.extend(inserted_block)
+                inserted = True
+                continue
+            index += 1
+    if not inserted:  # defence in depth: anchor resolved above, must be present
+        raise NZStructuralMaterializationError(
+            "verified insert anchor vanished from the before tree during the splice"
+        )
+    return tuple(new_nodes), after_new_node
+
+
+def _rebase_subtree_descendants(
+    payload_root: NZSourceNode,
+    descendants: tuple[NZSourceNode, ...],
+    resolved_root_path: tuple[str, ...],
+) -> tuple[NZSourceNode, ...]:
+    """Re-root each payload descendant onto the resolved root path.
+
+    The payload subtree carries placeholder ``amend/...`` paths; re-root every
+    descendant by replacing its ``payload_root.path`` prefix with the resolved
+    root path so the materialized subtree is addressable in place. Node content is
+    the new payload, never the old (mirrors :func:`_rebase_replacement_root`).
+    """
+
+    root_depth = len(payload_root.path)
+    rebased: list[NZSourceNode] = []
+    for node in descendants:
+        suffix = node.path[root_depth:]
+        new_path = (*resolved_root_path, *suffix)
+        rebased.append(
+            NZSourceNode(
+                kind=node.kind,
+                path=new_path,
+                xml_id=node.xml_id,
+                xml_path=node.xml_path,
+                source_zone=node.source_zone,
+                label=node.label,
+                heading=node.heading,
+                deletion_status=node.deletion_status,
+                text=node.text,
+                history=node.history,
+            )
+        )
+    return tuple(rebased)
+
+
+def _base_work_year_number_from_proof(op_id: str) -> tuple[str, str]:
+    """Parse the base work id out of a structural proof op id, then year/number.
+
+    Structural proof op ids are ``nz:{work_id}:{row_id}:{family}``; the work id is
+    the second colon-segment. Returns ``("", "")`` for any other shape (the
+    extractor then falls back to inline-amend matching, never a guess).
+    """
+
+    parts = op_id.split(":")
+    if len(parts) >= 2 and parts[0] == "nz":
+        return _base_work_year_number(parts[1])
+    return ("", "")
+
+
 def _source_path_for_tree_path(tree_path: tuple[tuple[str, str], ...]) -> tuple[str, ...] | None:
     """Map a target-address candidate TreePath to a source-tree path.
 
