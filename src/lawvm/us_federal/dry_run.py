@@ -63,8 +63,10 @@ from lawvm.us_federal.sources import (
     read_usc_annual,
 )
 from lawvm.us_federal.source_tree import (
+    UscSection,
     UscSourceDocument,
     parse_usc_title_document,
+    split_statutory_subsections,
 )
 from lawvm.us_federal.sunset import (
     DISPOSITION_SUNSET_REVERSION,
@@ -99,6 +101,13 @@ US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID = (
 # The op's match_text was not found in the before section text. We refuse rather
 # than fuzzy-match into a guess.
 US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID = "us_dry_run_residual_match_text_not_found_in_before_section"
+# A sub-section-scoped op named a node (paragraph/clause/...) the before-section
+# split does not expose, or whose text is no longer locatable in the running
+# composition (an earlier op mutated it). We surface this as a typed residual
+# rather than fall back to an unscoped whole-section string replace.
+US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID = (
+    "us_dry_run_residual_subsection_target_node_not_located_in_before_section"
+)
 
 # Typed refusals (no materialization attempted / not representable at section level).
 US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID = "us_dry_run_refused_target_outside_proof_title"
@@ -140,7 +149,13 @@ def _norm(text: str) -> str:
 # side, not lowering defects: when our composed text matches the oracle after this
 # editorial projection (but NOT before it), the residual is ``oracle_suspect``, the
 # generalized F1 class — we never repair our materialized text to the oracle.
-_EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»"
+# Both curly AND straight quote marks are folded: the enacted USLM amendment
+# wraps inserted matter and defined terms in curly quotes (``‘CARES forbearance
+# claim’``), while the OLRC consolidated Code re-renders them as straight quotes
+# (``"CARES forbearance claim"``) or drops them. Equating quote *shape* across the
+# two surfaces can never manufacture a false agreement between texts that differ in
+# any non-quote character; it only undoes the OLRC's quote re-rendering.
+_EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»\"'"
 # The OLRC re-spaces the boundary where a quoted block is spliced in: the enacted
 # text wraps the inserted matter in quotes (``if—“(1) ...``) and, with the quotes
 # stripped, the published Code inserts a courtesy space after the introductory
@@ -189,6 +204,45 @@ def _is_subsection_target(address: LegalAddress) -> bool:
         if seen_section and kind not in ("title",):
             return True
     return False
+
+
+def _subsection_segments(address: LegalAddress) -> tuple[tuple[str, str], ...]:
+    """The sub-section segments of an address (everything below ``section``)."""
+    out: list[tuple[str, str]] = []
+    seen_section = False
+    for kind, label in address.path:
+        if kind == "section":
+            seen_section = True
+            continue
+        if seen_section and kind != "title":
+            out.append((kind, label))
+    return tuple(out)
+
+
+def _locate_subsection_text(
+    section: UscSection | None, address: LegalAddress
+) -> str | None:
+    """Return the verbatim before-text of the sub-section node ``address`` names.
+
+    Uses :func:`split_statutory_subsections` (the pinned USC address convention) to
+    find the node whose address segments below the section match the op target.
+    Returns ``None`` when the section is unavailable, the split flags the node as
+    ambiguous (it is not emitted as a clean node), or no node matches — in which
+    case the caller surfaces a typed residual rather than guessing a span. The node
+    text is the leading enumerated paragraph plus its attached continuation lines,
+    so substituting it inside the section text is faithful, not a fragment.
+    """
+    if section is None:
+        return None
+    target_segments = _subsection_segments(address)
+    if not target_segments:
+        return None
+    nodes, _findings = split_statutory_subsections(section)
+    for node in nodes:
+        node_segments = _subsection_segments(node.address)
+        if node_segments == target_segments:
+            return node.text
+    return None
 
 
 def _section_key_from_address(address: LegalAddress) -> tuple[str, str] | None:
@@ -557,15 +611,26 @@ def _counts(values: Any) -> dict[str, int]:
 def _materialize_one(
     operation: LegalOperation,
     before_text: str,
+    *,
+    before_section: UscSection | None = None,
 ) -> tuple[str, str, str] | USDryRunRefusal:
     """Apply one op to a section's before-text -> (materialized, rule_id, disposition).
 
     Returns a typed refusal when the op cannot be faithfully represented at the
     section-text surface, or a residual row signal (via rule_id) when the
     match_text is not found. Never fuzzy-matches, never repairs to the oracle.
+
+    ``before_section`` is the parsed before-edition :class:`UscSection`. When an op
+    targets a sub-section node (paragraph/clause/...), it is used to materialize the
+    op at SUB-SECTION granularity: the targeted node's text is located by the pinned
+    USC address convention (:func:`split_statutory_subsections`) and the edit is
+    confined to that node's span inside the running section text, then recomposed.
+    This applies a sub-section payload to the right node instead of refusing it or
+    string-replacing in the wrong place.
     """
     action = operation.action
     op_id = operation.op_id
+    is_subsection = _is_subsection_target(operation.target)
 
     if action in (StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL):
         patch = operation.text_patch
@@ -577,14 +642,45 @@ def _materialize_one(
                 target_address=str(operation.target),
             )
         match_text = patch.selector.match_text
+        replacement = patch.replacement if patch.kind is TextPatchKindEnum.REPLACE else ""
+        # occurrence: -1 (each place) -> replace all; 0 or 1 -> first occurrence.
+        count = -1 if patch.selector.occurrence == -1 else 1
+
+        if is_subsection:
+            # Sub-section-scoped text patch: confine the match/replace to the
+            # targeted node's text. This prevents striking an occurrence of the
+            # anchor in the WRONG sub-section (a whole-section string replace would
+            # hit the first occurrence anywhere).
+            node_text = _locate_subsection_text(before_section, operation.target)
+            if node_text is not None and node_text in before_text:
+                if match_text not in node_text:
+                    return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+                new_node_text = node_text.replace(match_text, replacement or "", count)
+                # Substitute the patched node text back into the running section text
+                # (first occurrence — the node text is unique enough to anchor on).
+                materialized = before_text.replace(node_text, new_node_text, 1)
+                return (materialized, "", "")
+            # Sub-section node not locatable (the split did not expose it cleanly).
+            # Fall back to a section-level string replace when the anchor is
+            # UNAMBIGUOUS — each-place, or a single occurrence in the section: a
+            # precise match_text needs no node location. Only a multi-occurrence
+            # anchor we cannot place stays a typed residual (genuinely ambiguous).
+            if match_text in before_text and (count == -1 or before_text.count(match_text) == 1):
+                materialized = before_text.replace(match_text, replacement or "", count)
+                return (materialized, "", "")
+            if match_text not in before_text:
+                return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+            return (
+                "",
+                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                DISPOSITION_LAWVM_WRONG,
+            )
+
         if match_text not in before_text:
             # Honest gap: the strike anchor is not literally present. Never
             # fuzzy-match. This is a residual (our op vs this section), disposition
             # lawvm_wrong: the lowering produced a match_text the source doesn't carry.
             return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
-        replacement = patch.replacement if patch.kind is TextPatchKindEnum.REPLACE else ""
-        # occurrence: -1 (each place) -> replace all; 0 or 1 -> first occurrence.
-        count = -1 if patch.selector.occurrence == -1 else 1
         materialized = before_text.replace(match_text, replacement or "", count)
         return (materialized, "", "")
 
@@ -593,20 +689,37 @@ def _materialize_one(
         # section-text surface we can only faithfully represent these when the
         # payload is plain text appended/substituted; a structural redesign of the
         # section body is NOT section-text representable -> typed refusal.
-        if _is_subsection_target(operation.target):
-            # The payload is a SUB-section body (paragraph/clause/...): substituting
-            # or appending it to the whole-section text would be a wrong
-            # materialization (a fragment masquerading as the section). Refuse.
-            return USDryRunRefusal(
-                op_id=op_id,
-                rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
-                message=(
-                    f"{action.value} op targets a sub-section node "
-                    f"({str(operation.target)}); a sub-section payload is not "
-                    "representable at section-text granularity"
-                ),
-                target_address=str(operation.target),
-            )
+        if is_subsection:
+            payload_text = operation.payload.text if operation.payload is not None else ""
+            if not payload_text:
+                return USDryRunRefusal(
+                    op_id=op_id,
+                    rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+                    message=(
+                        f"{action.value} op targets sub-section node "
+                        f"({str(operation.target)}) with no plain-text payload"
+                    ),
+                    target_address=str(operation.target),
+                )
+            node_text = _locate_subsection_text(before_section, operation.target)
+            if node_text is None or node_text not in before_text:
+                # We could not locate the targeted node in the before section (the
+                # split did not expose it cleanly, or an earlier op moved it): a
+                # sub-section payload cannot be applied blindly. Typed residual.
+                return (
+                    "",
+                    US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                    DISPOSITION_LAWVM_WRONG,
+                )
+            if action is StructuralAction.REPLACE:
+                # amend-to-read of the sub-section node: the payload IS the node's
+                # new body. Substitute it for the located node text.
+                materialized = before_text.replace(node_text, payload_text, 1)
+            else:  # INSERT after a sub-section node -> append the payload to the node.
+                materialized = before_text.replace(
+                    node_text, f"{node_text} {payload_text}".strip(), 1
+                )
+            return (materialized, "", "")
         if operation.payload is None or not operation.payload.text:
             return USDryRunRefusal(
                 op_id=op_id,
@@ -689,6 +802,7 @@ def build_us_dry_run(
     for year, htm in (prior_edition_htms or {}).items():
         prior_docs[year] = parse_usc_title_document(htm, title=title, year=year)
     before_text_by_section = {s.section: s.statutory_text for s in before_doc.sections}
+    before_section_by_number = {s.section: s for s in before_doc.sections}
     after_text_by_section = {s.section: s.statutory_text for s in after_doc.sections}
 
     oracle_changed = _oracle_changed_section_keys(before_doc, after_doc)
@@ -745,6 +859,7 @@ def build_us_dry_run(
     for section, operations in section_ops.items():
         section_key = f"{title}:{section}"
         before_text = before_text_by_section[section]
+        before_section = before_section_by_number.get(section)
         oracle_text = after_text_by_section.get(section, "")
         oracle_changed_here = _norm(before_text) != _norm(oracle_text)
 
@@ -756,7 +871,9 @@ def build_us_dry_run(
         composed_refused = False
         residual_signal: tuple[str, str] | None = None
         for operation in operations:
-            outcome = _materialize_one(operation, running)
+            outcome = _materialize_one(
+                operation, running, before_section=before_section
+            )
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
                 composed_refused = True

@@ -15,7 +15,7 @@ import re
 import time
 from pathlib import Path
 import subprocess
-from typing import Any, Callable, Protocol, Optional, cast
+from typing import Any, Callable, Literal, Protocol, Optional, cast
 from urllib.parse import urlencode, urljoin
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
@@ -309,6 +309,52 @@ def _se_sfs_sort_key(sfs_id: str) -> tuple[int, int, str]:
     if match is None:
         return (0, 0, sfs_id)
     return (int(match.group(1)), int(match.group(2)), match.group(3))
+
+
+# The RK/sfst current-surface oracle carries an "Ändring införd: t.o.m. SFS
+# YYYY:N" consolidation stamp recording the LAST amendment folded into the
+# rendered text. The historical replay lane reconstructs the post-state of an
+# EARLIER amendment, so when this stamp names an SFS strictly later than the
+# amendment being replayed, an oracle disagreement is a dating artifact (correct
+# replay vs a later consolidation), not a content error.
+_SE_ANDRING_INFORD_SFS_RE = re.compile(r"SFS\s+(\d{4}:\d+[a-zA-Z]?)")
+
+
+def _se_parse_andring_inford_sfs(stamp: str | None) -> str | None:
+    """Extract the SFS id from an "Ändring införd: t.o.m. SFS YYYY:N" stamp.
+
+    Returns ``None`` when the stamp is missing or carries no parseable SFS id,
+    so callers can classify the row honestly as ``unknown`` rather than guess.
+    """
+    if not stamp:
+        return None
+    match = _SE_ANDRING_INFORD_SFS_RE.search(stamp)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _se_oracle_version_relation(
+    amending_sfs_id: str, oracle_stamp_sfs: str | None
+) -> Literal["later", "same_or_earlier", "unknown"]:
+    """Classify the current-surface oracle's consolidation stamp vs the replay.
+
+    - ``later``: the oracle folds an SFS strictly later than ``amending_sfs_id``
+      (a version-timing mismatch — correct replay against a later consolidation).
+    - ``same_or_earlier``: the oracle is contemporaneous with or older than the
+      replayed amendment, so a disagreement is a genuine surface drift.
+    - ``unknown``: the stamp is missing or unparseable, or ``amending_sfs_id`` is
+      not a well-formed SFS id, so the relation cannot be trusted.
+    """
+    if oracle_stamp_sfs is None:
+        return "unknown"
+    amending_key = _se_sfs_sort_key(amending_sfs_id)
+    oracle_key = _se_sfs_sort_key(oracle_stamp_sfs)
+    if amending_key == (0, 0, amending_sfs_id) or oracle_key == (0, 0, oracle_stamp_sfs):
+        return "unknown"
+    if oracle_key > amending_key:
+        return "later"
+    return "same_or_earlier"
 
 
 def se_amending_act_base_sfs_id(archive: _ArchiveLike, amending_sfs_id: str) -> str:
@@ -642,6 +688,46 @@ _SE_COMPARE_NORMALIZATION_RULES = (
         kind="regex",
         description="Ignore inline list numbering inserted after whitespace before lowercase text.",
         pattern=re.compile(r"(?<=\s)\d+\.\s+(?=[a-zåäö])"),
+    ),
+    # Mirror of the Förordning trailing-attribution rule for the Lag counterpart.
+    # A consolidated RK surface tags each amended provision with the amending
+    # act's own short citation, e.g. a paragraph ending in "... Lag (2018:221)."
+    # The historical replay payload renders the same provision without that
+    # editorial provenance tag. Anchored to the END of the comparison text so it
+    # can only fold a trailing tag, never alter substantive body text.
+    ComparisonNormalizationRule(
+        name="se_compare_editorial_lag_attribution_suffix",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Ignore trailing Lag attribution suffixes in comparison text.",
+        pattern=re.compile(r"\s*Lag\s+\(\d{4}:\d+\)\.\s*$"),
+    ),
+    # Trailing preparatory-work provenance citations ("Prop." / "Jfr prop."),
+    # e.g. "... skall tillämpas. Prop. 2001/02:1." or "Jfr prop. 1999/2000:23.".
+    # These are editorial cross-references to the bill that introduced the text,
+    # not part of the operative provision. Anchored to the END of the text and
+    # requiring the prop. citation shape, so substantive references to a
+    # proposition inside body text are left untouched.
+    ComparisonNormalizationRule(
+        name="se_compare_editorial_prop_provenance_suffix",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Ignore trailing 'Prop.'/'Jfr prop.' preparatory-work citations in comparison text.",
+        pattern=re.compile(r"\s*(?:Jfr\s+)?[Pp]rop\.\s*\d{4}(?:/\d{2,4})?:\d+\.?\s*$"),
+    ),
+    # List-enumerator presentation: a consolidated surface may render an
+    # alphabetic list item label with a different case or with/without a leading
+    # space, e.g. "a) ..." vs "A) ..." vs " a) ...". Fold the label to a single
+    # canonical lower-case form. Only the one- or two-letter enumerator token
+    # before ')' is touched (after whitespace or at string start), never the list
+    # item's body text, so genuinely different list content still differs.
+    ComparisonNormalizationRule(
+        name="se_compare_list_enumerator_case",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Normalize alphabetic list-enumerator label case/spacing (a)/A)) for comparison.",
+        pattern=re.compile(r"(?:(?<=\s)|^)([A-Za-z]{1,2})\)\s+"),
+        replacement=lambda m: f"{m.group(1).lower()}) ",
     ),
 )
 
@@ -2845,12 +2931,30 @@ def check_se_official_replay(
         if op.action is not StructuralAction.RENUMBER
     }
 
+    # Read the current-surface oracle's consolidation stamp once so the
+    # oracle-fallback rows can be split into honest dating-vs-content buckets.
+    current_doc = json.loads(current_json) if isinstance(current_json, (bytes, str)) else current_json
+    current_fulltext = current_doc.get("fulltext") if isinstance(current_doc, dict) else None
+    oracle_stamp = (
+        str(current_fulltext.get("andringInford") or "") or None
+        if isinstance(current_fulltext, dict)
+        else None
+    )
+    oracle_stamp_sfs = _se_parse_andring_inford_sfs(oracle_stamp)
+    oracle_version_relation = _se_oracle_version_relation(amending_sfs_id, oracle_stamp_sfs)
+
     def _official_oracle_classification(post_text: str) -> str:
-        return (
-            "official_oracle_match_missing_current_post"
-            if not post_text.strip()
-            else "official_oracle_match_current_surface_drift"
-        )
+        if not post_text.strip():
+            return "official_oracle_match_missing_current_post"
+        # The replay reproduced the amendment's own post-state and that state
+        # equals the official-act oracle, but it disagrees with the current
+        # surface. Distinguish a later-consolidation dating artifact (the current
+        # surface is simply a newer version) from a genuine surface drift.
+        if oracle_version_relation == "later":
+            return "official_oracle_version_mismatch"
+        if oracle_version_relation == "unknown":
+            return "official_oracle_match_version_unknown"
+        return "official_oracle_match_current_surface_drift"
 
     rows: list[dict[str, Any]] = []
     for op in ops:
@@ -2955,6 +3059,9 @@ def check_se_official_replay(
         "effective_date": effective_date,
         "pre_date": pre_date,
         "recovery_mode": recovery_mode,
+        "oracle_consolidation_stamp": oracle_stamp or "",
+        "oracle_consolidation_sfs_id": oracle_stamp_sfs or "",
+        "oracle_version_relation": oracle_version_relation,
         "target_count": len(rows),
         "match_count": sum(1 for row in rows if row["match"]),
         "invariant_violations": [
@@ -2992,10 +3099,71 @@ SE_EDITORIAL_MATCH_CLASSIFICATIONS = frozenset(
 # act text as an oracle (the current surface diverged or was missing).
 SE_OFFICIAL_ORACLE_MATCH_CLASSIFICATIONS = frozenset(
     {
+        "official_oracle_version_mismatch",
+        "official_oracle_match_version_unknown",
         "official_oracle_match_current_surface_drift",
         "official_oracle_match_missing_current_post",
     }
 )
+# The honest sub-split of the oracle-fallback bucket. ``oracle_version_mismatch``
+# rows are correct replays measured against a LATER consolidation: the replay
+# reproduced the amendment's own post-state, that state equals the official-act
+# oracle, and the current surface only disagrees because its consolidation stamp
+# ("Ändring införd: t.o.m. SFS YYYY:N") names a strictly later SFS. These are NOT
+# content failures and must not be conflated with genuine surface drift.
+SE_ORACLE_VERSION_MISMATCH_CLASSIFICATIONS = frozenset(
+    {"official_oracle_version_mismatch"}
+)
+# Oracle-fallback rows where the consolidation stamp is missing/unparseable, or
+# the current surface is absent — the version relation cannot be trusted, so they
+# are reported separately rather than counted as either honest match or mismatch.
+SE_ORACLE_VERSION_UNKNOWN_CLASSIFICATIONS = frozenset(
+    {
+        "official_oracle_match_version_unknown",
+        "official_oracle_match_missing_current_post",
+    }
+)
+# Oracle-fallback rows whose stamp is contemporaneous with or older than the
+# replayed amendment: a real current-surface drift, counted as genuine mismatch.
+SE_ORACLE_SURFACE_DRIFT_CLASSIFICATIONS = frozenset(
+    {"official_oracle_match_current_surface_drift"}
+)
+
+# The three honest headline buckets for the coverage report:
+#   genuine_match        — replay text equals the post-amendment current text,
+#                          modulo pure editorial/presentation projection.
+#   oracle_version_mismatch — correct replay measured against a LATER
+#                          consolidation (the current surface is a newer version).
+#   genuine_mismatch     — the replay text genuinely disagrees with the
+#                          contemporaneous oracle/current surface.
+#   unknown              — the version relation cannot be trusted (missing or
+#                          unparseable stamp, or no current surface to compare).
+SE_THREE_BUCKET_GENUINE_MATCH = "genuine_match"
+SE_THREE_BUCKET_ORACLE_VERSION_MISMATCH = "oracle_version_mismatch"
+SE_THREE_BUCKET_GENUINE_MISMATCH = "genuine_mismatch"
+SE_THREE_BUCKET_UNKNOWN = "unknown"
+
+
+def se_three_bucket_for_classification(classification: str, *, matched: bool) -> str:
+    """Map a per-row replay ``classification`` to its honest headline bucket.
+
+    ``matched`` is the row's ``match`` flag. Genuine content matches and
+    editorial-only matches both count as ``genuine_match`` (the latter differ
+    only in presentation). The oracle-fallback bucket splits by version relation:
+    a strictly-later consolidation stamp is ``oracle_version_mismatch``, a
+    contemporaneous/older stamp is a real drift (``genuine_mismatch``), and an
+    untrustworthy stamp is ``unknown``. Any non-matching row is ``genuine_mismatch``.
+    """
+    if matched and classification in SE_GENUINE_CONTENT_MATCH_CLASSIFICATIONS:
+        return SE_THREE_BUCKET_GENUINE_MATCH
+    if matched and classification in SE_EDITORIAL_MATCH_CLASSIFICATIONS:
+        return SE_THREE_BUCKET_GENUINE_MATCH
+    if classification in SE_ORACLE_VERSION_MISMATCH_CLASSIFICATIONS:
+        return SE_THREE_BUCKET_ORACLE_VERSION_MISMATCH
+    if classification in SE_ORACLE_VERSION_UNKNOWN_CLASSIFICATIONS:
+        return SE_THREE_BUCKET_UNKNOWN
+    # Same-or-earlier oracle drift and every genuine content disagreement.
+    return SE_THREE_BUCKET_GENUINE_MISMATCH
 
 
 def scan_se_official_replay_act(
@@ -3035,10 +3203,25 @@ def scan_se_official_replay_act(
     genuine_match = 0
     editorial_match = 0
     oracle_match = 0
+    # The honest three-bucket split (plus an explicit unknown bucket).
+    bucket_genuine_match = 0
+    bucket_oracle_version_mismatch = 0
+    bucket_genuine_mismatch = 0
+    bucket_unknown = 0
     for row in rows:
         classification = str(row.get("classification") or "")
+        matched = bool(row.get("match"))
         classification_counts[classification] = classification_counts.get(classification, 0) + 1
-        if not row.get("match"):
+        bucket = se_three_bucket_for_classification(classification, matched=matched)
+        if bucket == SE_THREE_BUCKET_GENUINE_MATCH:
+            bucket_genuine_match += 1
+        elif bucket == SE_THREE_BUCKET_ORACLE_VERSION_MISMATCH:
+            bucket_oracle_version_mismatch += 1
+        elif bucket == SE_THREE_BUCKET_UNKNOWN:
+            bucket_unknown += 1
+        else:
+            bucket_genuine_mismatch += 1
+        if not matched:
             continue
         if classification in SE_GENUINE_CONTENT_MATCH_CLASSIFICATIONS:
             genuine_match += 1
@@ -3051,11 +3234,17 @@ def scan_se_official_replay_act(
         "base_sfs_id": str(result.get("base_sfs_id") or ""),
         "outcome": "replay_ok",
         "recovery_mode": str(result.get("recovery_mode") or ""),
+        "oracle_version_relation": str(result.get("oracle_version_relation") or ""),
+        "oracle_consolidation_sfs_id": str(result.get("oracle_consolidation_sfs_id") or ""),
         "target_count": int(result.get("target_count") or 0),
         "match_count": int(result.get("match_count") or 0),
         "genuine_content_match_count": genuine_match,
         "editorial_match_count": editorial_match,
         "official_oracle_match_count": oracle_match,
+        "bucket_genuine_match_count": bucket_genuine_match,
+        "bucket_oracle_version_mismatch_count": bucket_oracle_version_mismatch,
+        "bucket_genuine_mismatch_count": bucket_genuine_mismatch,
+        "bucket_unknown_count": bucket_unknown,
         "classification_counts": classification_counts,
     }
 
@@ -3078,6 +3267,10 @@ def aggregate_se_official_coverage(
     genuine_matches = 0
     editorial_matches = 0
     oracle_matches = 0
+    bucket_genuine_match = 0
+    bucket_oracle_version_mismatch = 0
+    bucket_genuine_mismatch = 0
+    bucket_unknown = 0
     error_examples: dict[str, list[str]] = {}
     for summary in act_summaries:
         outcome = str(summary.get("outcome") or "error")
@@ -3088,6 +3281,10 @@ def aggregate_se_official_coverage(
             genuine_matches += int(summary.get("genuine_content_match_count") or 0)
             editorial_matches += int(summary.get("editorial_match_count") or 0)
             oracle_matches += int(summary.get("official_oracle_match_count") or 0)
+            bucket_genuine_match += int(summary.get("bucket_genuine_match_count") or 0)
+            bucket_oracle_version_mismatch += int(summary.get("bucket_oracle_version_mismatch_count") or 0)
+            bucket_genuine_mismatch += int(summary.get("bucket_genuine_mismatch_count") or 0)
+            bucket_unknown += int(summary.get("bucket_unknown_count") or 0)
             for name, count in (summary.get("classification_counts") or {}).items():
                 classification_counts[str(name)] = classification_counts.get(str(name), 0) + int(count)
         else:
@@ -3113,6 +3310,21 @@ def aggregate_se_official_coverage(
         "genuine_content_match_rate": _rate(genuine_matches, total_targets),
         "editorial_only_match_count": editorial_matches,
         "official_oracle_match_count": oracle_matches,
+        # The honest three-bucket reframe: genuine_match / oracle_version_mismatch
+        # (correct replay vs a later consolidation) / genuine_mismatch, plus an
+        # explicit unknown bucket for rows whose version relation is untrustworthy.
+        "three_bucket": {
+            "genuine_match": bucket_genuine_match,
+            "oracle_version_mismatch": bucket_oracle_version_mismatch,
+            "genuine_mismatch": bucket_genuine_mismatch,
+            "unknown": bucket_unknown,
+        },
+        "three_bucket_rate": {
+            "genuine_match": _rate(bucket_genuine_match, total_targets),
+            "oracle_version_mismatch": _rate(bucket_oracle_version_mismatch, total_targets),
+            "genuine_mismatch": _rate(bucket_genuine_mismatch, total_targets),
+            "unknown": _rate(bucket_unknown, total_targets),
+        },
         "classification_counts": dict(sorted(classification_counts.items())),
         "error_examples": {key: error_examples[key] for key in sorted(error_examples)},
     }

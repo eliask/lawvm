@@ -948,9 +948,17 @@ def _emit_section_snapshot(
 
         Mirrors the drop decision applied below so the snapshot-emission loop can
         skip exactly the sections that will be repealed (carrying them forward as
-        REPLACE snapshots would re-orphan them). Returns an empty set for sparse
-        chapter amendments — where missing siblings outnumber the replacement
-        payload — so those keep preserving their live sections unchanged.
+        REPLACE snapshots would re-orphan them).
+
+        A section present in the post-apply live tree but absent from the
+        authoritative/effective replacement set is a *merge-pollution orphan*: a
+        complete whole-chapter REPLACE that an earlier merge-style apply failed to
+        drop. Those are always retired here, even for chapter ranges or re-heading
+        combos whose authoritative set is much smaller than the polluted live
+        tree. The sparse guard only protects *prior-only* untouched siblings — old
+        sections that survive in prior history but were never merged into this
+        payload — so genuinely fragmentary chapter amendments keep their live
+        sections unchanged.
         """
         if action is not StructuralAction.REPLACE or target_unit_kind != "chapter":
             return set()
@@ -962,25 +970,20 @@ def _emit_section_snapshot(
         effective_labels = (
             authoritative_child_labels if authoritative_child_labels is not None else payload_labels
         )
-        prior_child_paths = _container_replace_prior_child_paths(
+        # Merge-pollution orphans: present in the freshly-applied live tree but
+        # absent from the authoritative replacement section set. These are never
+        # sparse-protected — an untouched sibling never appears in the payload.
+        if _whole_chapter_replace_is_sparse(
+            effective_labels=effective_labels,
+            payload=payload,
             container_path=container_path,
             base_container_payload=base_container_payload,
-            replay_history_ops=lo_ops_out,
-        )
-        missing = {norm for norm in prior_child_paths if norm not in effective_labels}
-        overlapping = {norm for norm in prior_child_paths if norm in effective_labels}
-        payload_has_heading = any(child.kind is IRNodeKind.HEADING for child in payload.children)
-        sparse = (
-            payload_has_heading
-            and bool(effective_labels)
-            and bool(overlapping)
-            and bool(missing)
-            and len(missing) > len(effective_labels)
-        )
-        if sparse:
+        ):
+            # Genuinely sparse/fragmentary chapter amendment: the payload merged
+            # into the live chapter, so live sections absent from the (often
+            # misclassified-small) authoritative set are legitimately-merged
+            # sections, not orphans. Retire nothing — preserve the live chapter.
             return set()
-        # Only retire post-apply children that are genuine orphans: present in the
-        # live tree but absent from the authoritative replacement section set.
         return {
             _norm_num_token(child.label)
             for child in payload.children
@@ -988,6 +991,52 @@ def _emit_section_snapshot(
             and child.label
             and _norm_num_token(child.label) not in effective_labels
         }
+
+    def _whole_chapter_replace_is_sparse(
+        *,
+        effective_labels: Optional[set[str]],
+        payload: IRNode,
+        container_path: Path,
+        base_container_payload: Optional[IRNode],
+    ) -> bool:
+        """Whether this chapter REPLACE is a sparse/fragmentary amendment.
+
+        Sparseness is measured against *prior-only* siblings — old sections that
+        live in prior history but were never merged into the post-apply payload.
+        Sections that the merge left in the live tree but the source omitted are
+        merge-pollution orphans, not sparse-protected siblings, so they are
+        excluded from the count. This keeps a complete whole-chapter REPLACE whose
+        authoritative section set is smaller than the merge-polluted live tree
+        (chapter ranges, re-heading combos) from being misread as sparse.
+        """
+        if not effective_labels:
+            return False
+        payload_has_heading = any(child.kind is IRNodeKind.HEADING for child in payload.children)
+        if not payload_has_heading:
+            return False
+        live_labels = {
+            _norm_num_token(child.label)
+            for child in payload.children
+            if child.kind is IRNodeKind.SECTION and child.label
+        }
+        prior_child_paths = _container_replace_prior_child_paths(
+            container_path=container_path,
+            base_container_payload=base_container_payload,
+            replay_history_ops=lo_ops_out,
+        )
+        overlapping = {norm for norm in prior_child_paths if norm in effective_labels}
+        # Untouched siblings: in prior history, absent from this payload, and not
+        # part of the authoritative replacement set.
+        prior_only_missing = {
+            norm
+            for norm in prior_child_paths
+            if norm not in effective_labels and norm not in live_labels
+        }
+        return (
+            bool(overlapping)
+            and bool(prior_only_missing)
+            and len(prior_only_missing) > len(effective_labels)
+        )
 
     def _subsection_child_by_label(section: IRNode, label: str) -> IRNode | None:
         label_norm = _norm_num_token(label)
@@ -2794,22 +2843,21 @@ def _emit_section_snapshot(
                 if authoritative_child_labels is not None
                 else payload_child_labels
             )
-            missing_child_labels = [
-                child_norm for child_norm in prior_child_paths if child_norm not in effective_child_labels
-            ]
-            overlapping_child_labels = [
-                child_norm for child_norm in prior_child_paths if child_norm in effective_child_labels
-            ]
-            payload_has_heading = any(child.kind is IRNodeKind.HEADING for child in payload.children)
-            sparse_fragmentary_container_replace = (
-                target_unit_kind == "chapter"
-                and payload_has_heading
-                and bool(effective_child_labels)
-                and bool(overlapping_child_labels)
-                and bool(missing_child_labels)
-                and len(missing_child_labels) > len(effective_child_labels)
+            sparse_fragmentary_container_replace = target_unit_kind == "chapter" and _whole_chapter_replace_is_sparse(
+                effective_labels=set(effective_child_labels) if effective_child_labels else set(),
+                payload=payload,
+                container_path=container_path,
+                base_container_payload=base_container_payload,
             )
             if sparse_fragmentary_container_replace:
+                # Genuinely sparse/fragmentary chapter amendment: the payload merged
+                # into the live chapter, so prior sections absent from the (often
+                # misclassified-small) authoritative set are preserved, not retired.
+                # Sparseness is now measured against prior-only siblings, so a
+                # complete whole-chapter REPLACE whose authoritative section set is
+                # smaller than a merge-polluted live tree (chapter ranges,
+                # re-heading combos) is NOT treated as sparse and reaches the repeal
+                # loop below instead.
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
                         build_destructive_shape_loss_risk_pathology(

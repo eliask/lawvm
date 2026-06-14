@@ -1886,6 +1886,18 @@ def _cmd_coverage_scan(args: "argparse.Namespace") -> None:
           f" ({aggregate['genuine_content_match_rate']:.2%})")
     print(f"  editorial-only matches:       {aggregate['editorial_only_match_count']}")
     print(f"  official-oracle fallback:     {aggregate['official_oracle_match_count']}")
+    three = aggregate.get("three_bucket") or {}
+    three_rate = aggregate.get("three_bucket_rate") or {}
+    print("--- honest three-bucket split ---")
+    print(f"  genuine_match:                {three.get('genuine_match', 0)}"
+          f" ({three_rate.get('genuine_match', 0.0):.2%})")
+    print(f"  oracle_version_mismatch:      {three.get('oracle_version_mismatch', 0)}"
+          f" ({three_rate.get('oracle_version_mismatch', 0.0):.2%})"
+          "  [correct replay vs later consolidation]")
+    print(f"  genuine_mismatch:             {three.get('genuine_mismatch', 0)}"
+          f" ({three_rate.get('genuine_mismatch', 0.0):.2%})")
+    print(f"  unknown (untrustworthy stamp):{three.get('unknown', 0)}"
+          f" ({three_rate.get('unknown', 0.0):.2%})")
     print("--- classification taxonomy ---")
     for name, count in aggregate["classification_counts"].items():
         print(f"  {name}: {count}")

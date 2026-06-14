@@ -2599,6 +2599,34 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                         return [
                             SurfaceInsertion(kind=TargetKind.SECTION, label=n + sf, chapter="") for n, sf in all_nums
                         ]
+        # Prefix-chapter section insert: "DOC:ILL N lukuun uusi M §".  The chapter
+        # named between the document and "uusi" is the destination scope for the
+        # new section, not a chapter insertion.  Without this branch the generic
+        # "DOC:ILL number_list LUKU" fallback below mis-reads "N lukuun" as a
+        # whole-chapter insert and drops the trailing "uusi M §".
+        saved_prefix_chapter = s.save()
+        prefix_chapter_nums = _number_list(s)
+        if prefix_chapter_nums and len(prefix_chapter_nums) == 1:
+            pc_tok = s.peek()
+            if pc_tok and pc_tok.cat == "LUKU" and pc_tok.case == "ILL":
+                pc_chapter = prefix_chapter_nums[0][0] + prefix_chapter_nums[0][1]
+                s.pos += 1  # consume LUKU:ILL
+                if (tc := s.peek()) and tc.cat == "COMMA":
+                    s.pos += 1
+                if _uusi(s):
+                    _skip_archaic_nain_kuuluva(s)
+                    pc_nums = _number_list(s)
+                    pc_pt = s.peek()
+                    if pc_nums and pc_pt and pc_pt.cat == "PYKALA" and pc_pt.case != "GEN":
+                        s.pos += 1
+                        return [
+                            SurfaceInsertion(
+                                kind=TargetKind.SECTION, label=n + sf, chapter=pc_chapter
+                            )
+                            for n, sf in pc_nums
+                        ]
+        s.restore(saved_prefix_chapter)
+
         # Fallback: DOC:ILL number_list § (no 'uusi', implied by lisätään verb)
         if verb == SourceVerb.LISATA:
             s.restore(saved)
@@ -3451,6 +3479,25 @@ def _skip_named_row_residue(s: Stream) -> bool:
 
 _PROV_ANAPHOR_WORDS = frozenset({"näistä", "niistä"})
 
+# Anaphoric backref determiners that point at the last-mentioned structural unit
+# for an *insert* target, e.g. "sanottuun pykälään uusi 5 momentti" / "mainittuun
+# momenttiin uusi 3 kohta" / "saman pykälän 2 momenttiin uusi 4 kohta" /
+# "sanottuun lakiin uusi 11 a §".  These lex as bare WORD tokens (no dedicated
+# BACKREF category) and immediately precede a structural noun.
+_ANAPHORIC_INSERT_DETERMINERS = frozenset(
+    {
+        "sanottuun",
+        "sanottu",
+        "sanottua",
+        "mainittuun",
+        "mainittua",
+        "samaan",
+        "saman",
+        "tähän",
+        "tuohon",
+    }
+)
+
 
 def _skip_provenance_anaphor_backref(s: Stream) -> bool:
     """Consume a ``näistä/niistä <ref> sellaisena kuin ...`` provenance back-ref.
@@ -3649,6 +3696,124 @@ def _lukuun_ottamatta_exception(
     return nodes
 
 
+def _parse_anaphoric_determiner_insert(
+    s: Stream,
+    verb: SourceVerb,
+    chapter: str,
+    part: str,
+    all_nodes: list[SurfaceNode],
+) -> Optional[list[SurfaceNode]]:
+    """Resolve an anaphoric-determiner insert arm against the last target.
+
+    Handles continuation arms whose target is named only by an anaphoric
+    determiner pointing at a previously mentioned structural unit::
+
+        ... lisätään 8 §:n 3 momenttiin uusi 10 kohta ja
+            *sanottuun pykälään* uusi 5 ja 6 momentti sekä lakiin uusi 11 a §
+        ... saman pykälän 2 momenttiin uusi 4 kohta
+        ... mainittuun momenttiin uusi 5 kohta
+        ... sanottuun lakiin uusi 3 §
+
+    The determiner (``sanottuun``/``mainittuun``/``saman``/``samaan``...) lexes
+    as a bare ``WORD`` immediately before the structural noun.  Without this
+    branch the continuation loop in :func:`_target_list` cannot advance past the
+    determiner, so it aborts and silently drops every downstream arm.
+
+    Returns the resolved insertion nodes on success (stream advanced past the
+    arm), or ``None`` with the stream restored.
+    """
+    if verb != SourceVerb.LISATA:
+        return None
+    t = s.peek()
+    if not (t and t.cat == "WORD" and t.text.lower() in _ANAPHORIC_INSERT_DETERMINERS):
+        return None
+    nxt = s.tokens[s.pos + 1] if s.pos + 1 < len(s.tokens) else None
+    if nxt is None or nxt.cat not in ("PYKALA", "MOMENTTI", "DOC", "LUKU", "OSA"):
+        return None
+
+    saved = s.save()
+    ctx = _extract_section_context_from_nodes(
+        all_nodes, VerbGroupContext(chapter=chapter), verb
+    )
+    prev_sec = ctx.last_section
+    prev_ch = ctx.last_section_chapter or chapter
+    prev_mom = ctx.last_momentti
+
+    s.pos += 1  # consume the determiner WORD
+
+    # "sanottuun/mainittuun/samaan lakiin uusi N §|liite|luku" — law-level (root)
+    # insert: hand the remaining stream to the normal DOC:ILL insertion parser by
+    # leaving the structural noun in place and dispatching through _insertion.
+    if nxt.cat in ("DOC", "OSA"):
+        ins = _insertion(s, verb, chapter, part=part)
+        if ins:
+            return ins
+        s.restore(saved)
+        return None
+
+    # "saman lain N lukuun uusi M §" — chapter-scoped: let _insertion handle the
+    # chapter context once the determiner is consumed.
+    if nxt.cat == "LUKU":
+        ins = _insertion(s, verb, chapter, part=part)
+        if ins:
+            return ins
+        s.restore(saved)
+        return None
+
+    if not prev_sec:
+        s.restore(saved)
+        return None
+
+    # "sanottuun/samaan pykälään uusi N momentti/kohta" — section anaphora.
+    if nxt.cat == "PYKALA" and nxt.case == "ILL":
+        s.pos += 1  # consume PYKALA:ILL
+        if (tc := s.peek()) and tc.cat == "COMMA":
+            s.pos += 1
+        s.skip_cats(_TILALLE_OR_REINST | frozenset({"PROVENANCE_SPAN"}))
+        if (tc := s.peek()) and tc.cat == "COMMA":
+            s.pos += 1
+        if _uusi(s):
+            nodes = _insertion_sub_target(s, verb, prev_sec, prev_ch, "", 0)
+            if nodes:
+                return nodes
+        s.restore(saved)
+        return None
+
+    # "saman pykälän M momenttiin uusi K kohta" — section genitive then momentti.
+    if nxt.cat == "PYKALA" and nxt.case == "GEN":
+        s.pos += 1  # consume PYKALA:GEN
+        mom_nums = _number_list(s)
+        if mom_nums and (tm := s.peek()) and tm.cat == "MOMENTTI" and tm.case == "ILL":
+            mom_num = int(mom_nums[0][0]) if mom_nums[0][0].isdigit() else 0
+            s.pos += 1  # consume MOMENTTI:ILL
+            if (tc := s.peek()) and tc.cat == "COMMA":
+                s.pos += 1
+            if _uusi(s):
+                nodes = _insertion_sub_target(s, verb, prev_sec, prev_ch, "", mom_num)
+                if nodes:
+                    return nodes
+        s.restore(saved)
+        return None
+
+    # "mainittuun/samaan momenttiin uusi K kohta" — momentti anaphora.
+    if nxt.cat == "MOMENTTI" and nxt.case == "ILL":
+        if not prev_mom:
+            s.restore(saved)
+            return None
+        s.pos += 1  # consume MOMENTTI:ILL
+        if (tc := s.peek()) and tc.cat == "COMMA":
+            s.pos += 1
+        if _uusi(s):
+            nodes = _insertion_sub_target(s, verb, prev_sec, prev_ch, "", prev_mom)
+            if nodes:
+                return nodes
+        s.restore(saved)
+        return None
+
+    s.restore(saved)
+    return None
+
+
 def _target_list(
     s: Stream,
     verb: SourceVerb,
@@ -3841,6 +4006,35 @@ def _target_list(
                 pass
             continue
         if not nodes:
+            # Anaphoric determiner insert arm: "sanottuun/mainittuun/samaan
+            # pykälään|momenttiin uusi ..." / "saman pykälän N momenttiin uusi
+            # ..." / "sanottuun lakiin uusi N §".  Resolved against the last
+            # mentioned section/momentti so the continuation loop does not abort
+            # and drop downstream arms.
+            det_nodes = _parse_anaphoric_determiner_insert(
+                s, verb, chapter, part, all_nodes
+            )
+            if det_nodes:
+                det_nodes = _normalize_intrabatch_explicit_part_scope(det_nodes, part)
+                _w_det = _make_witness("fi.anaphoric_determiner_insert", saved, s.pos)
+                for _di, _dn in enumerate(det_nodes):
+                    if isinstance(_dn, SurfaceInsertion) and _dn.witness is None:
+                        det_nodes[_di] = SurfaceInsertion(
+                            kind=_dn.kind,
+                            label=_dn.label,
+                            chapter=_dn.chapter,
+                            part=_dn.part,
+                            sub_target=_dn.sub_target,
+                            witness=_w_det,
+                        )
+                all_nodes.extend(det_nodes)
+                last_batch_nodes = list(det_nodes)
+                chapter = _extract_chapter_from_nodes(det_nodes, chapter, verb)
+                part = _extract_part_from_nodes(det_nodes, part)
+                while _skip_inline_move_clause_tail(s, all_nodes, last_batch_nodes):
+                    pass
+                continue
+
             # Anaphoric chapter-gen carry-forward: after a prior chapter-scoped
             # target, later arms can start with bare "luvun ..." instead of
             # repeating the chapter number. Consume the genitive marker and

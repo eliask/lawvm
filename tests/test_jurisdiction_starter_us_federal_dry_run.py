@@ -38,6 +38,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID,
     US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
+    US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
     USDryRunRefusal,
@@ -47,6 +48,7 @@ from lawvm.us_federal.dry_run import (
     _norm_editorial,
     build_us_dry_run,
 )
+from lawvm.us_federal.source_tree import UscSection, parse_usc_title_document
 
 FIXTURES = Path(__file__).parent / "fixtures" / "us_federal"
 BEFORE_HTM = (FIXTURES / "usc-dryrun-before.htm").read_bytes()
@@ -369,16 +371,22 @@ def test_real_title11_2018_2020_window_composes_multi_law_amendments() -> None:
     # 40 sections genuinely changed across the two editions (a fact of the source).
     assert summary["oracle_changed_section_count"] == 40
     # Sub-section structural redesignations (paragraph/clause REPLACE/INSERT, the
-    # SBRA subchapter-V form) are refused at section granularity, not wrong-
-    # materialized. At least the four §101/§502 paragraph redesignations refuse here.
-    refusals = summary["refusal_rule_counts"]
-    assert (
-        refusals.get(US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID, 0)
-        >= 4
-    )
+    # SBRA subchapter-V form) are now materialized at SUB-SECTION granularity: the
+    # edit is scoped to the targeted node located by the pinned address convention.
+    # When the targeted node is not locatable in the before edition (the SBRA
+    # subchapter-V nodes were introduced by un-lowered sibling ops), the section is
+    # a typed `subsection_target_node_not_located` residual — never a blanket refusal
+    # and never a whole-section string replace in the wrong place.
+    node_not_located = [
+        r
+        for r in report.residual_rows()
+        if r.rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    ]
+    assert node_not_located, "expected sub-section-scoped node-not-located residuals"
     # §101 is amended by FIVE window ops (116-51/52/92/136); they compose into ONE
     # row, not five. (PL 116-51's each-place debt-limit strike materializes; the
-    # paragraph redesignations refuse — so the section stays a residual, honestly.)
+    # paragraph redesignations target nodes the un-lowered SBRA siblings introduced,
+    # so the section stays a residual, honestly.)
     s101_rows = [r for r in report.rows if r.section_key == "11:101"]
     assert len(s101_rows) == 1
     # Every published residual is typed (no blank disposition) and the gate is shut.
@@ -388,6 +396,14 @@ def test_real_title11_2018_2020_window_composes_multi_law_amendments() -> None:
             DISPOSITION_ORACLE_SUSPECT,
         )
     assert report.replay_authorized is False
+    # The faithful sidenote/quote handling demotes §1329 (the OLRC dropped the
+    # "Time period." marginal note) and §330 (curly vs straight quotes) from
+    # lawvm_wrong to oracle_suspect — typed as oracle editorial pathology, never
+    # repaired to the oracle. So oracle_suspect is now multiple, not one.
+    disp = summary["residual_disposition_counts"]
+    assert disp.get(DISPOSITION_ORACLE_SUSPECT, 0) >= 3
+    s1329 = {r.section_key: r for r in report.rows}.get("11:1329")
+    assert s1329 is not None and s1329.disposition == DISPOSITION_ORACLE_SUSPECT
     # §547(b) (PL 116-54 §3(a)) is "inserting '<due-diligence clause>' after 'may'"
     # with NO striking — an insert-after, not a strike_insert. The lowering now
     # classifies it correctly and finds the anchor "may" in the 2018 edition, so it
@@ -531,11 +547,91 @@ def test_match_not_found_on_a_later_composed_op_fails_the_whole_section() -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_subsection_replace_op_is_refused_not_materialized_as_whole_section() -> None:
-    # A REPLACE whose target is deeper than the section (a paragraph redesignation,
-    # as PL 116-52/116-136 do to Title 11 §101) cannot be represented at section
-    # granularity: the payload is a fragment, not the section body. Refuse it rather
-    # than substitute the fragment for the whole section.
+def _synthetic_subsection_section_htm() -> bytes:
+    # A tiny USC title htm with one section (§77) whose body has subsection (a),
+    # subsection (b) with paragraphs (1)/(2). Exercises the sub-section split the
+    # sub-section-scoped materialization lever depends on.
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T11</title><!-- AUTHORITIES-USC-TITLE-ENUM:11 --></head><body><div>"
+        "<!-- expcite:TITLE 11!@!CHAPTER 1!@!Sec. 77 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;77. Subsection demo</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(a) The first subsection mentions a 15-year window.</p>'
+        '<p class="statutory-body">(b) The second subsection has paragraphs—</p>'
+        '<p class="statutory-body-1em">(1) the first paragraph mentions a 15-year window;</p>'
+        '<p class="statutory-body-1em">(2) the second paragraph stands alone.</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+
+
+def _section77_before() -> UscSection:
+    doc = parse_usc_title_document(_synthetic_subsection_section_htm(), title=11, year="2018")
+    section = doc.section_by_number("77")
+    assert section is not None
+    return section
+
+
+def test_subsection_text_replace_is_scoped_to_the_target_node() -> None:
+    # A TEXT_REPLACE targeting subsection (b) paragraph (1) must edit ONLY that
+    # node's "15-year" — not the identical phrase in subsection (a). A whole-section
+    # string replace would hit subsection (a)'s occurrence first (the wrong place).
+    section = _section77_before()
+    before_text = section.statutory_text
+    op = LegalOperation(
+        op_id="synthetic-subsection-text-replace",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=0),
+            replacement="17-year",
+        ),
+    )
+    outcome = _materialize_one(op, before_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # Subsection (a)'s "15-year" is untouched; paragraph (b)(1)'s is now "17-year".
+    assert "first subsection mentions a 15-year" in materialized
+    assert "the first paragraph mentions a 17-year window" in materialized
+    assert materialized.count("15-year") == 1
+
+
+def test_subsection_replace_op_materializes_at_the_target_node() -> None:
+    # A whole-node REPLACE (amend-to-read) targeting subsection (b) paragraph (2)
+    # substitutes the payload for THAT node only — no longer a blanket refusal.
+    section = _section77_before()
+    before_text = section.statutory_text
+    op = LegalOperation(
+        op_id="synthetic-subsection-replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "2"))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.PARAGRAPH, label="2", text="(2) the second paragraph was rewritten."
+        ),
+    )
+    outcome = _materialize_one(op, before_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert "the second paragraph was rewritten." in materialized
+    assert "the second paragraph stands alone." not in materialized
+    # The other nodes are preserved verbatim.
+    assert "first subsection mentions a 15-year" in materialized
+
+
+def test_subsection_op_without_locatable_node_is_typed_residual_not_wrong_materialization() -> None:
+    # When the targeted sub-section node cannot be located (no before_section, or an
+    # earlier op moved it), we surface a typed residual — never a whole-section
+    # string replace that would edit the wrong place, and never a wrong payload
+    # substitution.
     op = LegalOperation(
         op_id="synthetic-subsection-replace",
         sequence=1,
@@ -547,9 +643,12 @@ def test_subsection_replace_op_is_refused_not_materialized_as_whole_section() ->
             kind=IRNodeKind.PARAGRAPH, label="10A", text="(B)(i) includes any amount"
         ),
     )
-    refusal = _materialize_one(op, "the whole section 101 before text")
-    assert isinstance(refusal, USDryRunRefusal)
-    assert refusal.rule_id == US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID
+    outcome = _materialize_one(op, "the whole section 101 before text")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, disposition = outcome
+    assert materialized == ""
+    assert signal_rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
 
 
 def test_section_level_insert_with_plain_text_payload_still_materializes() -> None:
@@ -604,6 +703,24 @@ def test_norm_editorial_undoes_insert_after_anchor_courtesy_space() -> None:
     # (here an extra "(j)") is NOT masked into a false agreement.
     other = "subsections (c), (i), and (j) of this section"
     assert _norm_editorial(faithful) != _norm_editorial(other)
+
+
+def test_norm_editorial_folds_straight_and_curly_quote_shapes() -> None:
+    # The enacted USLM amendment wraps a defined term in curly quotes; the OLRC
+    # consolidated Code re-renders it with straight quotes. Folding quote SHAPE
+    # unifies them (the generalized F1 oracle_suspect class).
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    enacted = "the term ‘CARES forbearance claim’ means a supplemental claim"
+    published = 'the term "CARES forbearance claim" means a supplemental claim'
+    assert normalize_inline_comparison_text(enacted) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(enacted) == _norm_editorial(published)
+    # Folding quote shape can NEVER manufacture agreement between texts that differ
+    # in any non-quote character.
+    other = 'the term "CARES forbearance claim" means a SUPPLEMENTARY claim'
+    assert _norm_editorial(enacted) != _norm_editorial(other)
 
 
 def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(

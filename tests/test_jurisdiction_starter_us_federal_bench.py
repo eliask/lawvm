@@ -267,6 +267,12 @@ def test_real_corpus_runs_and_produces_a_witness_anchored_aggregate() -> None:
     # exceed the oracle-changed denominator (monotone north-star).
     assert 0.0 <= agg["coverage_fraction"] <= 1.0
     assert agg["agreements_total"] <= agg["oracle_changed_section_total"]
+    # Regression floor: a sub-section-targeted TEXT_REPLACE whose node the split
+    # cannot locate must fall back to an unambiguous section-level string replace,
+    # not emit empty materialization. Without the fallback the aggregate collapses
+    # (observed 23 -> 13). Floor guards that class; it can only rise as lowering
+    # coverage improves.
+    assert agg["agreements_total"] >= 20
     # "Covered" is strictly the agreement partition: the typed residual partitions
     # are reported separately and never folded into coverage.
     breakdown = agg["disposition_breakdown"]
