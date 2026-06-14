@@ -71,7 +71,7 @@ _AUTHORIZATION_ASSERTION_VALUES = frozenset({"1", "true", "yes", "authorized"})
 UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
     {
         "amendment_program_target_source_payload_and_boundary",
-        "application_by_reference_deixis_resolution",  # FLAG(union-merge)
+        "application_by_reference_deixis_resolution",
         "appropriate_place_anchor_or_ordering_claim",
         "contingent_commencement_resolution",
         "cross_container_renumber_source_destination_and_lineage",
@@ -107,6 +107,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "text_rewrite_source_preimage_and_live_target",
         "whole_act_listed_enactments_scope_and_exclusions",
         "whole_act_repeal_exception_set_and_boundary_claim",
+        "range_to_container_member_resolution",
     }
 )
 _FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS = (

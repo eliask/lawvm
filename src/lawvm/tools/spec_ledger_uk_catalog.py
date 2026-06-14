@@ -716,20 +716,34 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A repeal-table feed row whose source/target linkage has a gap, left to manual review.",
     "uk_manual_frontier_application_by_reference_out_of_scope":
         "An 'applies ... by reference' modification treated as out of current replay scope.",
-    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate":  # FLAG(union-merge)
+    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate":
         "An application-by-reference effect whose applying provision is identified deictically ('applied by SI ... (as inserted)') that an owned deixis-in-application claim can resolve by naming the concrete applying provision via the cited inserting program.",
-    "uk_deixis_in_application_claim_validated":  # FLAG(union-merge)
+    "uk_deixis_in_application_claim_validated":
         "A deixis-in-application claim's owned resolution is well-formed, bound to a real N4 application-by-reference-with-deixis effect, and reachable via the cited inserting program, so it may emit a non-replayable resolved-reference finding.",
-    "uk_deixis_in_application_claim_rejected_schema":  # FLAG(union-merge)
+    "uk_deixis_in_application_claim_rejected_schema":
         "A deixis-in-application claim is rejected because its kind/ids/applying-instrument/deictic-provision/resolved-provision/basis schema is malformed.",
-    "uk_deixis_in_application_claim_rejected_source_mismatch":  # FLAG(union-merge)
+    "uk_deixis_in_application_claim_rejected_source_mismatch":
         "A deixis-in-application claim is rejected because its source snippet or bound effect is not a real application-by-reference-with-deixis effect, blocking free-form or non-deictic overrides.",
-    "uk_deixis_in_application_claim_rejected_resolution":  # FLAG(union-merge)
+    "uk_deixis_in_application_claim_rejected_resolution":
         "A deixis-in-application claim is rejected because its claimed resolution is not reachable via the cited inserting program or is not label-consistent with the deictic provision the effect names.",
-    "uk_deixis_in_application_resolved_reference_finding":  # FLAG(union-merge)
+    "uk_deixis_in_application_resolved_reference_finding":
         "A validated deixis-in-application claim emits a non-replayable typed finding resolving the '(as inserted)' reference to a concrete applying provision, leaving the affected base text intact (the safe N4 under-application default).",
-    "uk_deixis_in_application_finding_withheld_unvalidated":  # FLAG(union-merge)
+    "uk_deixis_in_application_finding_withheld_unvalidated":
         "An unvalidated deixis-in-application claim withholds its resolved-reference finding, so the N4 effect stays on the manual frontier byte-unchanged.",
+    "uk_manual_frontier_range_to_container_resolution_candidate":
+        "A range-to-container substitution whose target is a range of sibling units ('sections 12 to 14') resolved against a container with an uncertain member set, that an owned range-to-container claim can resolve by naming the concrete ordered member eids the range denotes.",
+    "uk_range_to_container_claim_validated":
+        "A range-to-container claim's owned resolution is well-formed, bound to a real range-to-container effect, and (when a live container is supplied) the resolved set is the contiguous member span between the endpoints, so it may emit a non-replayable resolved-members finding.",
+    "uk_range_to_container_claim_rejected_schema":
+        "A range-to-container claim is rejected because its kind/ids/container/range-endpoint/resolved-member/basis schema is malformed.",
+    "uk_range_to_container_claim_rejected_source_mismatch":
+        "A range-to-container claim is rejected because its source snippet or bound effect is not a real range-to-container effect, blocking free-form or single-unit overrides.",
+    "uk_range_to_container_claim_rejected_member_consistency":
+        "A range-to-container claim is rejected because its resolved member set is not the contiguous container span between the endpoints (a gap, stray, misordering, or an endpoint absent from the container).",
+    "uk_range_to_container_resolved_members_finding":
+        "A validated range-to-container claim emits a non-replayable typed finding naming the concrete ordered member eids the range denotes, leaving the affected base text intact (the safe under-application default for an uncertain container boundary).",
+    "uk_range_to_container_finding_withheld_unvalidated":
+        "An unvalidated range-to-container claim withholds its resolved-members finding, so the effect stays on the manual frontier byte-unchanged.",
     "uk_manual_frontier_as_if_application_modification_out_of_scope":
         "An 'as if' application/modification effect treated as out of current replay scope.",
     "uk_manual_frontier_application_modification_payload_out_of_scope":
@@ -878,16 +892,16 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A text patch whose target/source chain has a gap, recorded rather than guessed through.",
     "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient":
         "An unquoted-preimage substitution whose source is insufficient to fix the preimage.",
-    "uk_savings_scoped_omission_claim_validated":  # FLAG(union-merge)
-        "A savings-scoped omission claim's owned scope is well-formed, bound to a real savings-qualified omission effect, and coherent against the target, so it may emit a non-replayable preserved-scope finding.",  # FLAG(union-merge)
-    "uk_savings_scoped_omission_claim_rejected_schema":  # FLAG(union-merge)
-        "A savings-scoped omission claim is rejected because its kind/ids/target/omitted-text/anchor/saving-basis/scope/snippet schema is malformed.",  # FLAG(union-merge)
-    "uk_savings_scoped_omission_claim_rejected_source_mismatch":  # FLAG(union-merge)
-        "A savings-scoped omission claim is rejected because its source snippet or bound effect is not a real savings-qualified text omission, blocking free-form or unconditional-omission overrides.",  # FLAG(union-merge)
-    "uk_savings_scoped_omission_claim_rejected_scope":  # FLAG(union-merge)
-        "A savings-scoped omission claim is rejected because its saving scope predicate is not anchored to the saving clause, not distinct from the omitted span, or (for the cross-reference basis) names no reference target.",  # FLAG(union-merge)
-    "uk_savings_scoped_omission_preserved_scope_finding":  # FLAG(union-merge)
-        "A validated savings-scoped omission claim emits a non-replayable typed finding recording the saving's preserved scope, leaving the affected base text intact (the safe under-application default; never a silent over-omission).",  # FLAG(union-merge)
-    "uk_savings_scoped_omission_finding_withheld_unvalidated":  # FLAG(union-merge)
-        "An unvalidated savings-scoped omission claim withholds its preserved-scope finding, so the omission stays on the manual frontier byte-unchanged.",  # FLAG(union-merge)
+    "uk_savings_scoped_omission_claim_validated":
+        "A savings-scoped omission claim's owned scope is well-formed, bound to a real savings-qualified omission effect, and coherent against the target, so it may emit a non-replayable preserved-scope finding.",
+    "uk_savings_scoped_omission_claim_rejected_schema":
+        "A savings-scoped omission claim is rejected because its kind/ids/target/omitted-text/anchor/saving-basis/scope/snippet schema is malformed.",
+    "uk_savings_scoped_omission_claim_rejected_source_mismatch":
+        "A savings-scoped omission claim is rejected because its source snippet or bound effect is not a real savings-qualified text omission, blocking free-form or unconditional-omission overrides.",
+    "uk_savings_scoped_omission_claim_rejected_scope":
+        "A savings-scoped omission claim is rejected because its saving scope predicate is not anchored to the saving clause, not distinct from the omitted span, or (for the cross-reference basis) names no reference target.",
+    "uk_savings_scoped_omission_preserved_scope_finding":
+        "A validated savings-scoped omission claim emits a non-replayable typed finding recording the saving's preserved scope, leaving the affected base text intact (the safe under-application default; never a silent over-omission).",
+    "uk_savings_scoped_omission_finding_withheld_unvalidated":
+        "An unvalidated savings-scoped omission claim withholds its preserved-scope finding, so the omission stays on the manual frontier byte-unchanged.",
 }

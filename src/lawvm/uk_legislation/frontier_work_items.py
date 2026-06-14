@@ -76,7 +76,7 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_preserves_affected_statute_text_state",
         ),
     },
-    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate": {  # FLAG(union-merge)
+    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate": {
         "candidate_operation_family": "application_by_reference_deixis_resolution",
         "required_validator_checks": (
             "claim_binds_source_snippet_to_real_application_by_reference_deixis_effect",
@@ -801,6 +801,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_emits_lineage_or_migration_events_for_displaced_units",
             "claim_preserves_crossheading_or_heading_facet_scope",
             "changed_paths_are_within_source_range_or_declared_migration_paths",
+        ),
+    },
+    "uk_manual_frontier_range_to_container_resolution_candidate": {
+        "candidate_operation_family": "range_to_container_member_resolution",
+        "required_validator_checks": (
+            "claim_binds_source_snippet_to_real_range_to_container_effect",
+            "claim_names_container_and_both_range_endpoints",
+            "claim_resolves_range_to_contiguous_container_member_span",
+            "claim_emits_non_replayable_finding_without_base_text_mutation",
         ),
     },
     "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions": {

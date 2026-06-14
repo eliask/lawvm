@@ -714,7 +714,7 @@ def _required_operation_family_proof_semantics(
         return ("contingent_commencement_resolution",)
     if action_family == "same_moment_cross_act_precedence_resolution":
         return ("same_moment_cross_act_precedence_resolution",)
-    if action_family == "application_by_reference_deixis_resolution":  # FLAG(union-merge)
+    if action_family == "application_by_reference_deixis_resolution":
         return ("application_by_reference_deixis_resolution",)
     if action_family == "sentence_scoped_repeated_insert":
         return ("sentence_scoped_text_insert_boundary_claim",)
@@ -756,6 +756,8 @@ def _required_operation_family_proof_semantics(
         return ("definition_child_structural_payload_boundary_claim",)
     if action_family == "definition_child_structural_insert":
         return ("definition_child_structural_insert_boundary_claim",)
+    if action_family == "range_to_container_member_resolution":
+        return ("range_to_container_member_resolution",)
     return ()
 
 
@@ -815,7 +817,7 @@ def manual_compile_suggested_claim_template(
         )
     if (
         summary.manual_compile_rule_id
-        == "uk_manual_frontier_application_by_reference_deixis_resolution_candidate"  # FLAG(union-merge)
+        == "uk_manual_frontier_application_by_reference_deixis_resolution_candidate"
     ):
         return _bounded_mutation_claim_template(
             statute_id=statute_id,
@@ -833,6 +835,29 @@ def manual_compile_suggested_claim_template(
                 "claim_binds_source_snippet_to_real_application_by_reference_deixis_effect",
                 "claim_names_applying_instrument_and_deictic_provision",
                 "claim_resolves_as_inserted_reference_via_cited_inserting_program",
+                "claim_emits_non_replayable_finding_without_base_text_mutation",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_range_to_container_resolution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="range_to_container_member_resolution",
+            placement_family="range_to_container_requires_container_member_span_resolution",
+            required_ownership=[
+                "source_named_range_to_container_substitution_effect",
+                "container_identity_and_both_range_endpoints",
+                "resolved_ordered_member_eid_span",
+                "recognized_resolution_basis_for_uncertain_member_set",
+                "non_replayable_finding_leaving_base_text_intact",
+            ],
+            required_validator_checks=[
+                "claim_binds_source_snippet_to_real_range_to_container_effect",
+                "claim_names_container_and_both_range_endpoints",
+                "claim_resolves_range_to_contiguous_container_member_span",
                 "claim_emits_non_replayable_finding_without_base_text_mutation",
             ],
         )
