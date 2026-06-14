@@ -458,8 +458,16 @@ def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
 
         divergences: List[DivergenceRow] = []
         for drow in uk_divergence_rows_for_statute(sid):
+            # Prefer the finer per-EID source-pathology label over the coarse §2.1
+            # bucket when it resolves to a known (more specific) disposition; the
+            # coarse bucket is the fallback. "unclassified"/"" never override.
             diagnosis = drow.diagnosis
             disposition = _UK_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown")
+            finer = drow.source_pathology_label
+            if finer and finer != "unclassified":
+                finer_disp = _UK_DIAGNOSIS_DISPOSITION.get(finer)
+                if finer_disp is not None:
+                    diagnosis, disposition = finer, finer_disp
             divergences.append(
                 DivergenceRow(
                     sid=sid,
