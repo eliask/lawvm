@@ -2924,6 +2924,17 @@ def _extract_chapter_from_nodes(nodes: list[SurfaceNode], current: str, verb: So
 
 def _extract_part_from_nodes(nodes: list[SurfaceNode], current: str) -> str:
     """Extract part context from surface nodes for propagation."""
+    # When the batch amends a part's own heading ("II osan ... otsikko"), the
+    # part label names a target, not a location scope, so it must not leak
+    # forward onto a following arm with a different chapter
+    # (cf. "II osan ja 5 luvun otsikko, 15 luvun 2 §").  Detect that case so the
+    # heading-chapter branch below knows not to treat its part prefix as scope.
+    batch_amends_part_heading = any(
+        isinstance(node, SurfaceTargetRef)
+        and node.kind == TargetKind.PART
+        and _is_heading_only_target(node)
+        for node in nodes
+    )
     for node in reversed(nodes):
         if isinstance(node, SurfaceScopeBlock):
             if node.scope_kind == ScopeKind.PART and node.scope_label:
@@ -2939,6 +2950,24 @@ def _extract_part_from_nodes(nodes: list[SurfaceNode], current: str) -> str:
             return node.base.part
         elif isinstance(node, SurfaceTargetRef):
             if _is_heading_only_target(node):
+                # A part's own heading ("II osan otsikko", kind=PART) is the
+                # target being amended, not a scope — it must not leak its label
+                # forward (cf. "II osan ja 5 luvun otsikko, 15 luvun 2 §" where
+                # the trailing chapter must stay part-less).  But a chapter
+                # heading carried under an explicit part prefix
+                # ("II osan 4 luvun otsikko") names chapter 4 *located in* part
+                # II; that part is a genuine location scope and propagates to a
+                # following bare section list ("sekä 38-40 §"), exactly as the
+                # chapter label does in _extract_chapter_from_nodes.  This only
+                # holds when the batch does not also amend a part heading: when
+                # both a part heading and a chapter heading are present the part
+                # label is a target, not a scope, so it must not leak forward.
+                if (
+                    node.kind != TargetKind.PART
+                    and node.part
+                    and not batch_amends_part_heading
+                ):
+                    return node.part
                 continue
             if node.kind == TargetKind.PART and node.label and not _is_heading_only_target(node):
                 return node.label
