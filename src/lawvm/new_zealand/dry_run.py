@@ -2054,10 +2054,22 @@ def build_dry_run_insert(
 
     parsed_cache: dict[str, NZSourceDocument | None] = {}
     amending_root_cache: dict[str, Any] = {}
+    # Block-insert co-members: the set of same-kind sibling labels this work
+    # inserts under the same parent. A whole new Part / a run of sequential new
+    # sections all anchor (by the before-tree convention) on the single existing
+    # predecessor, so in the oracle each member after the first is immediately
+    # preceded by ANOTHER block member rather than by the derived before-tree
+    # anchor. The position check uses this set to recognize a contiguous block
+    # landing as oracle-confirmed (a co-member predecessor) rather than a
+    # position residual — never to invent a payload (the oracle only informs
+    # POSITION; co-membership comes from this work's own insert witnesses).
+    block_member_labels = _insert_block_member_labels(insert_rows)
     proofs: list[NZMutationBoundaryProof] = []
     refusals: list[NZDryRunRefusal] = []
     for row in insert_rows:
-        outcome = _dry_run_one_insert(archive, work_id, row, parsed_cache, amending_root_cache)
+        outcome = _dry_run_one_insert(
+            archive, work_id, row, parsed_cache, amending_root_cache, block_member_labels
+        )
         if isinstance(outcome, NZDryRunRefusal):
             refusals.append(outcome)
         else:
@@ -2093,6 +2105,35 @@ def _insert_witness_rows(surface: Any) -> tuple[Any, ...]:
             continue
         rows.append(row)
     return tuple(rows)
+
+
+def _insert_block_member_labels(
+    insert_rows: tuple[Any, ...],
+) -> dict[tuple[tuple[str, ...], str], frozenset[str]]:
+    """Co-member labels of every same-kind sibling group this work inserts.
+
+    Keyed by ``(parent_source_path, leaf_kind)`` to the set of leaf labels the
+    work inserts under that parent at that kind. A whole new Part inserts a run
+    of sequential sections; each member's true predecessor (after the first) is
+    another member of this very set, not the single existing before-tree anchor
+    they all derive. The position check consults this set so a contiguous block
+    landing the oracle confirms is not flagged a position residual. The set comes
+    only from this work's own insert witnesses (candidate targets) — it never
+    sources a payload, only the identity of co-inserted siblings.
+    """
+
+    groups: dict[tuple[tuple[str, ...], str], set[str]] = {}
+    for row in insert_rows:
+        source_path = _source_path_for_tree_path(row.target_address_candidate.path)
+        if source_path is None:
+            continue
+        leaf_kind = _leaf_source_kind(source_path)
+        leaf_label = _leaf_source_label(source_path)
+        if not leaf_label:
+            continue
+        key = (source_path[:-1], leaf_kind)
+        groups.setdefault(key, set()).add(leaf_label)
+    return {key: frozenset(labels) for key, labels in groups.items()}
 
 
 def _selected_family_insert_scope_completeness(
@@ -2353,6 +2394,7 @@ def _dry_run_one_insert(
     row: Any,
     parsed_cache: dict[str, NZSourceDocument | None],
     amending_root_cache: dict[str, Any],
+    block_member_labels: Mapping[tuple[tuple[str, ...], str], frozenset[str]] | None = None,
 ) -> NZMutationBoundaryProof | NZDryRunRefusal:
     op_id = f"nz:{work_id}:{row.row_id}:insert"
     target_address = row.target_address_candidate.address or row.amended_provision
@@ -2655,6 +2697,19 @@ def _dry_run_one_insert(
     parent_digest_after = parent_digest_before
 
     candidate_subtree_digest = _subtree_digest(payload.root, payload.descendants)
+    # Co-inserted block siblings the oracle may legitimately place between the
+    # derived anchor and the new node: this work's other insert witnesses in the
+    # same (parent, kind) group that are NOT already present in the before tree.
+    # A before-tree label is the genuine anchor (already covered by the derived
+    # anchor / oracle adjacency); only the genuinely-new co-members extend the
+    # accepted-position set, and only because the oracle confirms the contiguous
+    # block landing. This never sources content — co-membership is identity-only.
+    group_block_labels: frozenset[str] = frozenset()
+    if block_member_labels is not None:
+        group_key = (parent_source_path, leaf_kind)
+        candidate_block = block_member_labels.get(group_key, frozenset())
+        before_group_labels = _resolved_group_labels(before_doc, anchor_node.path, leaf_kind)
+        group_block_labels = frozenset(candidate_block - before_group_labels)
     (
         oracle_match,
         oracle_rule_id,
@@ -2669,6 +2724,7 @@ def _dry_run_one_insert(
         derived_anchor_label=anchor_label,
         derived_anchor_kind=leaf_kind,
         derived_direction=direction,
+        co_inserted_block_labels=group_block_labels,
     )
 
     return NZMutationBoundaryProof(
@@ -2754,6 +2810,7 @@ def _oracle_partition_insert(
     derived_anchor_label: str,
     derived_anchor_kind: str,
     derived_direction: str,
+    co_inserted_block_labels: frozenset[str] = frozenset(),
 ) -> tuple[str, str, bool, str, str]:
     """Classify whether the on-or-after oracle carries the inserted node.
 
@@ -2763,21 +2820,28 @@ def _oracle_partition_insert(
       whose normalized signature matches the candidate new-node payload AND the
       new node's adjacent same-kind sibling in the oracle (preceding for an
       ``after`` anchor, following for a ``before`` anchor) is the anchor we
-      derived. Both content and position must hold.
+      derived OR another co-inserted block member (a sibling this work also
+      inserts, absent from the before tree). Both content and position must hold.
     - ``residual_insert_position_mismatch``: the new node is present with matching
-      content but its adjacent oracle sibling is NOT the derived anchor — the
-      derived position is wrong (e.g. a block insert where several new members
-      would all otherwise anchor on the same single predecessor). NEVER agreement.
+      content but its adjacent oracle sibling is NEITHER the derived anchor NOR a
+      co-inserted block member — the derived position is genuinely wrong (not a
+      contiguous block landing the oracle confirms). NEVER agreement.
     - ``residual_insert_content_mismatch``: the new node is present in the oracle
       but its content differs from the candidate payload. NEVER agreement.
     - ``residual_insert_not_present``: the new node is absent from the oracle.
 
     The position check is the arbiter of the derived anchor: a content-correct but
-    position-wrong derivation cannot masquerade as agreement. When the new node is
-    first/last among its kind in the oracle there is no adjacent sibling to check;
-    the position is then taken as consistent (content match alone decides), since
-    the derivation only ever claims an EXISTING-sibling anchor and an absent
-    adjacent sibling cannot refute it.
+    position-wrong derivation cannot masquerade as agreement. A block insert (a
+    whole new Part / a run of sequential new sections) has every member derive the
+    SAME single existing predecessor as its anchor, but in the oracle each member
+    after the first is immediately preceded by ANOTHER new block member. Such a
+    co-member predecessor is accepted as oracle-confirmed position (the oracle
+    only informs POSITION; the co-member identity comes from this work's own
+    insert witnesses, never from oracle content). When the new node is first/last
+    among its kind in the oracle there is no adjacent sibling to check; the
+    position is then taken as consistent (content match alone decides), since the
+    derivation only ever claims an EXISTING-sibling anchor and an absent adjacent
+    sibling cannot refute it.
     """
 
     oracle_matches = _resolve_target_nodes(oracle_doc, new_node_source_path)
@@ -2809,7 +2873,12 @@ def _oracle_partition_insert(
     oracle_adjacent = _oracle_adjacent_sibling_label(
         oracle_doc, oracle_root, derived_anchor_kind, derived_direction
     )
-    if oracle_adjacent is not None and oracle_adjacent != derived_anchor_label:
+    position_confirmed = (
+        oracle_adjacent is None
+        or oracle_adjacent == derived_anchor_label
+        or oracle_adjacent in co_inserted_block_labels
+    )
+    if not position_confirmed:
         return (
             "residual_insert_position_mismatch",
             NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
@@ -3212,6 +3281,25 @@ def _top_level_sibling_labels(document: NZSourceDocument, kind: str) -> tuple[st
         elif len(path) == 2 and path[0].split(":", 1)[0] == "part":
             labels.append(node.label)
     return tuple(labels)
+
+
+def _resolved_group_labels(
+    document: NZSourceDocument,
+    anchor_path: tuple[str, ...],
+    kind: str,
+) -> frozenset[str]:
+    """Same-kind sibling labels in the before tree under the anchor's parent.
+
+    The anchor node was resolved to a concrete before-tree path; its same-kind
+    siblings under the shared parent are the existing members of the group the
+    new node joins. Used to subtract genuinely-pre-existing labels from the
+    co-inserted-block set so only NEW co-members can extend the accepted-position
+    set in the oracle position check.
+    """
+
+    parent = anchor_path[:-1]
+    siblings = _child_nodes_of_kind(document, parent, kind)
+    return frozenset(node.label for node in siblings if node.label)
 
 
 def _occupancy(node: NZSourceNode) -> str:

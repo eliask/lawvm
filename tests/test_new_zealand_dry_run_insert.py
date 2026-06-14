@@ -36,6 +36,7 @@ from lawvm.new_zealand.dry_run import (
     _derive_insert_anchor,
     _derive_nested_insert_anchor,
     _derive_top_level_insert_anchor,
+    _insert_block_member_labels,
     _is_before_tree_dependent_insert_label,
     build_dry_run_insert,
     scope_from_arg,
@@ -1001,6 +1002,138 @@ def test_multi_letter_suffix_prefers_prior_in_sequence_predecessor() -> None:
     assert _derive_top_level_insert_anchor("14AC", ("14A", "15")) == ("14A", "after")
     # 14AA strips to 14A (no prior-in-sequence since the final letter is A).
     assert _derive_top_level_insert_anchor("14AA", ("14", "14A")) == ("14A", "after")
+
+
+# =============================================================================
+# Block-insert anchor positioning. A whole new Part / a run of sequential new
+# sections is inserted by ONE work: every member derives the SAME single
+# existing before-tree predecessor as its anchor, but in the oracle each member
+# after the first is immediately preceded by ANOTHER new block member. A
+# co-member predecessor is oracle-confirmed position (a contiguous block
+# landing), NOT a position residual; an intervening sibling this work does NOT
+# insert is still a genuine residual (the honesty boundary holds).
+# =============================================================================
+
+# Before: only section 6 present. A 2-member numeric block (7, 8) is inserted.
+_BLOCK_BEFORE_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# Oracle: 6, 7, 8 contiguous. Section 8's immediately-preceding sibling is 7 (a
+# co-inserted block member), NOT the single derived before-tree anchor 6.
+_BLOCK_AFTER_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMb6" deletion-status=""><label>6</label><heading>Section six</heading>
+      <prov.body><para><text>6 Section six The body of section 6.</text></para></prov.body></prov>
+    <prov id="DLMb7" deletion-status=""><label>7</label><heading>New section seven</heading>
+      <prov.body><para><text>7 New section seven The brand new body of section 7.</text></para></prov.body></prov>
+    <prov id="DLMb8" deletion-status=""><label>8</label><heading>New section eight</heading>
+      <prov.body><para><text>8 New section eight The brand new body of section 8.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# Amending act: separate amend subtrees inserting 7 and 8.
+_BLOCK_AMENDING_XML = b"""\
+<act>
+  <body>
+    <prov id="DLMins7"><label>3</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb7"><label>7</label><heading>New section seven</heading>
+            <prov.body><para><text>7 New section seven The brand new body of section 7.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+    <prov id="DLMins8"><label>4</label><heading>New section inserted</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text>The following section is inserted:</text>
+        <amend>
+          <prov id="newDLMb8"><label>8</label><heading>New section eight</heading>
+            <prov.body><para><text>8 New section eight The brand new body of section 8.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+
+
+def test_insert_block_member_labels_groups_by_parent_and_kind() -> None:
+    # Top-level prov siblings group under the empty parent; a nested subsection
+    # group keys on its own (parent, kind). The set is identity-only (labels),
+    # never payload.
+    rows = (
+        _FakeWitnessRow(row_id="r7", target_path=(("section", "7"),)),
+        _FakeWitnessRow(row_id="r8", target_path=(("section", "8"),)),
+        _FakeWitnessRow(
+            row_id="r-nested",
+            target_path=(("section", "20"), ("subsection", "2A")),
+        ),
+    )
+    groups = _insert_block_member_labels(rows)
+    assert groups[((), "prov")] == frozenset({"7", "8"})
+    assert groups[(("prov:20",), "subprov")] == frozenset({"2A"})
+
+
+def _run_block(rows: tuple[_FakeWitnessRow, ...], *, after_xml: bytes = _BLOCK_AFTER_XML):
+    base = _archive(after_xml, amending_xml=_BLOCK_AMENDING_XML)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _BLOCK_BEFORE_XML
+    return build_dry_run_insert(base, work_id=_WORK_ID, surface=_FakeSurface(rows))
+
+
+def test_block_insert_co_member_predecessor_agrees() -> None:
+    # Section 7 and 8 are a 2-member block inserted by this work; before-tree has
+    # only 6. Both derive anchor=6, but in the oracle 8 is preceded by 7 (a
+    # co-member). The co-member predecessor is oracle-confirmed position: BOTH
+    # members agree (7 anchors on the real 6; 8 lands after co-member 7).
+    row7 = _FakeWitnessRow(
+        row_id="nz-opw-7",
+        target_path=(("section", "7"),),
+        amended_provision="Section 7",
+        amending_provision_hrefs=("DLMins7",),
+    )
+    row8 = _FakeWitnessRow(
+        row_id="nz-opw-8",
+        target_path=(("section", "8"),),
+        amended_provision="Section 8",
+        amending_provision_hrefs=("DLMins8",),
+    )
+    report = _run_block((row7, row8))
+    assert report.summary()["operations_refused"] == 0
+    assert report.summary()["dry_run_oracle_agreements"] == 2
+    by_label = {p.insert_new_node_source_path[-1]: p for p in report.proofs}
+    assert by_label["prov:7"].oracle_match == "agrees"
+    assert by_label["prov:7"].insert_anchor_source_path[-1] == "prov:6"
+    # Section 8 derives the (single) before-tree anchor 6 but agrees because its
+    # oracle predecessor 7 is a co-inserted block member.
+    assert by_label["prov:8"].oracle_match == "agrees"
+    assert by_label["prov:8"].insert_anchor_source_path[-1] == "prov:6"
+
+
+def test_block_insert_non_co_member_intervening_sibling_stays_residual() -> None:
+    # Honesty boundary: this work inserts ONLY section 8. Section 7 in the oracle
+    # is NOT a co-inserted member (some other act added it), so 8's oracle
+    # predecessor 7 cannot confirm the position -> genuine position residual,
+    # never laundered into agreement by the block lane.
+    row8 = _FakeWitnessRow(
+        row_id="nz-opw-8",
+        target_path=(("section", "8"),),
+        amended_provision="Section 8",
+        amending_provision_hrefs=("DLMins8",),
+    )
+    report = _run_block((row8,))
+    assert report.summary()["dry_run_oracle_agreements"] == 0
+    assert len(report.proofs) == 1
+    proof = report.proofs[0]
+    assert proof.insert_anchor_source_path[-1] == "prov:6"
+    assert proof.oracle_match == "residual_insert_position_mismatch"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID
 
 
 # =============================================================================
