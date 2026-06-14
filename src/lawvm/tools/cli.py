@@ -11109,6 +11109,30 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="emit machine-readable JSON instead of human text",
     )
+
+    us_spec_ledger_p = sub.add_parser(
+        "us-spec-ledger",
+        help="build the U.S. federal witness-attribution spec-discovery ledger",
+        description=(
+            "Build the per-rule discovered-spec ledger for U.S. federal: rank every "
+            "us_* witness rule by how often the published USC after-edition oracle "
+            "corroborates vs contradicts its believed_spec, over the dry-run bench "
+            "corpus. Thin shim over lawvm.us_federal.spec_ledger_adapter; read-only, "
+            "never authorizes replay."
+        ),
+    )
+    us_spec_ledger_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default=None,
+        help="bench corpus CSV (default: us/bench/us_bench_corpus.csv)",
+    )
+    us_spec_ledger_p.add_argument(
+        "--json", action="store_true", help="emit the ledger JSON instead of the table"
+    )
+    us_spec_ledger_p.add_argument(
+        "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
+    )
     # --- END us_federal jurisdiction tooling ---
 
     # --- recipes ---
@@ -12641,6 +12665,40 @@ def _main_impl() -> None:
                     )
                 print("statutory_text:")
                 print(_sec.statutory_text)
+
+    elif args.command == "us-spec-ledger":
+        import json
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.bench import DEFAULT_CORPUS_PATH, load_corpus
+        from lawvm.us_federal.sources import open_us_federal_farchive
+        from lawvm.us_federal.spec_ledger_adapter import (
+            build_us_spec_ledger,
+            ledger_to_dict,
+            render_text,
+        )
+
+        _corpus = (
+            _Path(args.corpus) if getattr(args, "corpus", None) else DEFAULT_CORPUS_PATH
+        )
+        if not _corpus.exists():
+            print(f"error: bench corpus not found: {_corpus}", file=sys.stderr)
+            sys.exit(1)
+        _windows = load_corpus(_corpus)
+        _archive = open_us_federal_farchive(readonly=True)
+        try:
+            _ledger = build_us_spec_ledger(_archive, _windows)
+        finally:
+            _archive.close()
+        if getattr(args, "json", False):
+            print(json.dumps(ledger_to_dict(_ledger), ensure_ascii=False, indent=2))
+        else:
+            print(render_text(_ledger))
+        _json_out = getattr(args, "json_out", "")
+        if _json_out:
+            with open(_json_out, "w", encoding="utf-8") as _fh:
+                json.dump(ledger_to_dict(_ledger), _fh, ensure_ascii=False, indent=2)
+            print(f"wrote {_json_out}", file=sys.stderr)
     # --- END us_federal jurisdiction dispatch ---
 
     elif args.command is None:
