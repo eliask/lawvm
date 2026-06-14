@@ -281,13 +281,19 @@ def _inject_pure_kumotaan_repeal_ops(
             if sec_path is None:
                 continue
 
-            if chap is not None:
-                target_path: Tuple[Tuple[str, str], ...] = (
-                    ("chapter", chap),
-                    ("section", label),
-                )
-            else:
-                target_path = (("section", label),)
+            # Target the resolved section path verbatim.  ``sec_path`` already
+            # carries any enclosing part scope (e.g. ``part:4/chapter:15/
+            # section:26``); rebuilding a bare ``(chapter, section)`` address
+            # would lose that part scope, leaving the REPEAL unresolvable when
+            # the chapter is nested under a part — and ambiguous when several
+            # parts contain the same chapter number.  Drop the synthetic
+            # ``hcontainer`` document root so the address matches the structural
+            # addresses other ops carry.
+            target_path: Tuple[Tuple[str, str], ...] = tuple(
+                (str(step_kind), str(step_label))
+                for step_kind, step_label in sec_path
+                if str(step_kind) != "hcontainer"
+            )
 
             op_id = (
                 f"pure_repeal_ch{chap}_{label}_{amendment_id}"
