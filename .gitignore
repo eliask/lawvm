@@ -33,6 +33,7 @@ data/**
 !data/finland/known_missing_sources.txt
 !data/uk/
 !data/uk/bench_corpus.csv
+!data/uk/spec_authority_grounding.json
 !data/estonia/
 !data/estonia/bench_corpus.csv
 !data/estonia/bench_corpus_notes.md
