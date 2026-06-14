@@ -10342,13 +10342,19 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
-        help="corpus-wide grammar-coverage benchmark for the johtolause parser",
+        help="corpus-wide grammar-coverage benchmark (fi + ee free-text grammars)",
         description=(
-            "Parse-only grammar benchmark (the grammar counterpart to `bench`). "
-            "Iterates the FULL statute corpus (~59k, no replay/oracle needed) and "
-            "reports the fraction of amendment johtolauses the parser consumes "
-            "with no interior/trailing silent drop, plus the ranked inventory of "
-            "remaining uncovered-span shapes (the grammar worklist). Grammar-"
+            "Parse-only grammar benchmark (the grammar counterpart to `bench`); "
+            "dispatches on the global -j/--jurisdiction flag. "
+            "fi: iterates the FULL statute corpus (~59k, no replay/oracle needed) "
+            "and reports the fraction of amendment johtolauses the parser consumes "
+            "with no interior/trailing silent drop (token-witness coverage). "
+            "ee: scans the amendment corpus and reports the fraction of verb-bearing "
+            "op-items with no silently-dropped target LABEL (label coverage — the EE "
+            "analog of FI's unmatched_section tier). Both emit a ranked inventory of "
+            "uncovered shapes (the grammar worklist). Defined only for the free-text-"
+            "grammar jurisdictions (fi, ee); structured jurisdictions (uk/us/nz/no/se) "
+            "print a pointer to their own coverage report and exit 0. Grammar-"
             "sensitive where the replay bench is blind."
         ),
     )
