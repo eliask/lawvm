@@ -222,7 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j",
         "--jurisdiction",
         default=jurisdiction_default,
-        choices=["fi", "ee", "uk", "no", "nz"],
+        choices=["fi", "ee", "uk", "no", "nz", "us"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
     _j_subcommand_parent = argparse.ArgumentParser(add_help=False)
@@ -230,7 +230,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j",
         "--jurisdiction",
         default=argparse.SUPPRESS,
-        choices=["fi", "ee", "uk", "no", "nz"],
+        choices=["fi", "ee", "uk", "no", "nz", "us"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
 
@@ -643,8 +643,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "target-absent ops, unhandled/dropped ops, source pathologies, "
             "skipped amendments, coverage gaps, structural invariant violations, "
             "and governed ELAB findings.  Grouped by signal type then category. "
-            "Use -j uk / -j ee to route to the UK/EE harness, which harvest "
-            "replay adjudications + compile rejections instead."
+            "Use -j uk / -j ee to route to the UK/EE harness (replay "
+            "adjudications + compile rejections), or -j us for the U.S. federal "
+            "amendatory-lowering audit (oracle-independent)."
         ),
     )
     self_consistency_p.add_argument(
@@ -706,6 +707,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         dest="laws_only",
         action="store_true",
         help="[-j ee] restrict to Riigikogu laws (tyviseadus/muutmisseadus), excluding decrees",
+    )
+    # US-only option (-j us): the U.S. federal amendatory self-consistency audit
+    # sweeps the bench-window public-law delta from the committed corpus CSV.
+    self_consistency_p.add_argument(
+        "--us-corpus",
+        dest="us_corpus",
+        default="",
+        metavar="CSV",
+        help="[-j us] committed US bench corpus CSV (default: us/bench/us_bench_corpus.csv)",
     )
 
     # --- snapshot-debug ---
