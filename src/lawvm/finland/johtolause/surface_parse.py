@@ -3086,10 +3086,24 @@ def _normalize_intrabatch_explicit_part_scope(
             and node.kind in {TargetKind.CHAPTER, TargetKind.SECTION}
             and node.part == stale_part_after_explicit_switch
         ):
+            # A section's ``chapter`` is contextual scope inherited from before
+            # the part switch (e.g. the trailing chapter of a preceding
+            # "1-3 luvun" renumber list, or a chapter heading under the prior
+            # part).  That chapter belongs to the pre-switch part, so it cannot
+            # be carried onto the section once the section is moved to the new
+            # ``active_part`` — keeping it produces an internally contradictory
+            # address (part from one part, chapter from another).  A bare
+            # section is resolved by its number alone, so drop the stale
+            # chapter.  Chapter nodes are unaffected: their own ``chapter``
+            # field is empty (their ``label`` is the chapter), so switching
+            # their part is correct.
+            retarget_chapter = node.chapter
+            if node.kind == TargetKind.SECTION:
+                retarget_chapter = ""
             node = SurfaceTargetRef(
                 kind=node.kind,
                 label=node.label,
-                chapter=node.chapter,
+                chapter=retarget_chapter,
                 part=active_part,
                 sub_refs=node.sub_refs,
                 notes=node.notes,
