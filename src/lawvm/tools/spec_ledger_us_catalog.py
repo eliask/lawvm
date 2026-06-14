@@ -26,8 +26,9 @@ The US rule vocabulary splits into families:
   named contradiction with a side-of-the-gap disposition.
 * **sunset / temporal** (``us_sunset_*``): the F2 reclassification of an otherwise
   missing-source change as a temporary-provision reversion.
-* **source import / parse** (``us_plaw_import_*`` / ``us_usc_import_*`` /
-  ``us_usc_*``): import-time and source-tree-parse hygiene findings (these fire during
+* **source import / parse** (``us_plaw_import_*`` / ``us_statute_import_*`` /
+  ``us_usc_import_*`` / ``us_usc_*``): import-time and source-tree-parse hygiene findings
+  (these fire during
   ingestion / parsing, not during dry-run, but are cataloged so a fired id is never a
   silent blind spot).
 * **non-positive-law mapping** (``us_nonpositive_*``): the address-resolution
@@ -227,6 +228,36 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_plaw_import_existing_content_skipped": (
         "An imported PL member's content already exists in the archive — skipped as "
         "idempotent rather than re-written."
+    ),
+    # --- Statutes-at-Large import hygiene (older public laws) -------------------------
+    "us_statute_import_volume_unreachable": (
+        "A Statutes-at-Large volume USLM document could not be fetched from govinfo — "
+        "recorded as a typed gap rather than producing a silent missing-law hole."
+    ),
+    "us_statute_import_volume_unparsable": (
+        "A Statutes-at-Large volume USLM document did not parse as XML — refused loudly "
+        "rather than importing partial/garbled slices."
+    ),
+    "us_statute_import_unidentified_plaw": (
+        "A volume pLaw unit lacked a parseable congress/law-number identity — skipped "
+        "with a typed finding rather than mis-filed."
+    ),
+    "us_statute_import_private_law_filtered": (
+        "A private-law unit was filtered out of the public-law import (private laws are "
+        "not part of the public-law corpus)."
+    ),
+    "us_statute_import_duplicate_logical_locator": (
+        "Two pLaw units within one volume resolved to the same logical locator — the "
+        "duplicate is flagged rather than overwriting."
+    ),
+    "us_statute_import_existing_content_skipped": (
+        "A sliced public-law unit's content already exists in the archive — skipped as "
+        "idempotent rather than re-written."
+    ),
+    "us_statute_import_congress_meta_mismatch": (
+        "A pLaw unit's <congress> meta disagreed with its authoritative <citableAs> "
+        "Public-Law citation — the citation is used for the canonical locator and the "
+        "discarded meta value is recorded rather than silently mis-filing the law."
     ),
     # --- USC import hygiene -----------------------------------------------------------
     "us_usc_import_unrecognized_member": (
