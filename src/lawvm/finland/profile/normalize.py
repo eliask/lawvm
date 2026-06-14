@@ -126,6 +126,11 @@ _EMBEDDED_PLAIN_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\s+(.+)$")
 _EMBEDDED_SECTION_MARK_RE = re.compile(r"^\s*(\d+[a-zA-Z]?)\s*§\.?\s*$")
 _FLAT_DIGIT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\)\s")
 _DIGIT_ITEM_NUM_TOKEN_RE = re.compile(r"^(\d+[a-z]?)\)")
+# Split a digit-item label (``"2"`` or ``"2a"``) into its numeric base and
+# optional letter suffix.  Finnish statutes insert items as ``2a``/``2b`` after
+# ``2``; the renest series guard compares the numeric base while preserving the
+# full label on the produced paragraph.
+_DIGIT_ITEM_LABEL_RE = re.compile(r"^(\d+)([a-z]?)$")
 _FLAT_DOT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\.\s+(.+)$")
 _FLAT_DASH_ITEM_RE = re.compile(r"^[–—\-]\s")
 # Leading ``N)`` marker on an inline kohta item, where the body may be empty
@@ -136,6 +141,14 @@ _INLINE_KOHTA_MARKER_RE = re.compile(r"^\s*(\d+[a-z]?)\)\s*(.*)$", re.DOTALL)
 # ---------------------------------------------------------------------------
 # Shared structural helpers used by multiple rules
 # ---------------------------------------------------------------------------
+
+def _digit_item_num_base(label: str) -> int | None:
+    """Return the numeric base of a digit-item label (``"2a" -> 2``)."""
+    match = _DIGIT_ITEM_LABEL_RE.match(label.strip())
+    if match is None:
+        return None
+    return int(match.group(1))
+
 
 def _paragraph_has_introducer_signal(para: IRNode) -> bool:
     """Return True when a paragraph's content text carries a sublist-introducer signal.
@@ -724,23 +737,21 @@ def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List
     """
 
     def _digit_label_from_paragraph(para: IRNode) -> str | None:
+        # Returns the full item label, including an optional letter suffix
+        # (``"2"`` or ``"2a"``); ``None`` when the paragraph is not a digit item.
         for child in para.children:
             if child.kind == IRNodeKind.NUM and child.text:
                 match = _DIGIT_ITEM_NUM_TOKEN_RE.match(child.text.strip())
-                if match is not None:
-                    label = match.group(1)
-                    if label.isdigit():
-                        return label
+                if match is not None and _digit_item_num_base(match.group(1)) is not None:
+                    return match.group(1)
         if para.label:
             norm = _norm_num_token(para.label)
-            if norm.isdigit():
+            if _digit_item_num_base(norm) is not None:
                 return norm
         text = irnode_to_text(para).strip()
         match = _FLAT_DIGIT_ITEM_RE.match(text)
-        if match is not None:
-            label = match.group(1)
-            if label.isdigit():
-                return label
+        if match is not None and _digit_item_num_base(match.group(1)) is not None:
+            return match.group(1)
         return None
 
     def _paragraph_from_standalone_digit_item(sib: IRNode, *, allow_structured: bool) -> IRNode | None:
@@ -787,7 +798,10 @@ def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List
             label = _digit_label_from_paragraph(para)
             if label is None:
                 return []
-            labels.append(int(label))
+            base = _digit_item_num_base(label)
+            if base is None:
+                return []
+            labels.append(base)
         return labels
 
     rewritten: List[IRNode] = []
@@ -826,10 +840,22 @@ def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List
             item_label = _digit_label_from_paragraph(item_para)
             if item_label is None:
                 break
-            if expected_next_label is not None and int(item_label) != expected_next_label:
+            item_base = _digit_item_num_base(item_label)
+            if item_base is None:
                 break
+            if expected_next_label is not None:
+                # A plain item must equal the next number in the series.  A
+                # letter-suffixed item (``"2a"``) is an insertion: its base may
+                # also equal the previous number already consumed, so it groups
+                # under the same intro moment (``1`` -> ``2a``, ``2`` -> ``2a``).
+                is_lettered = item_base != int(item_label) if item_label.isdigit() else True
+                allowed = {expected_next_label}
+                if is_lettered:
+                    allowed.add(expected_next_label - 1)
+                if item_base not in allowed:
+                    break
             digit_items.append(item_para)
-            expected_next_label = int(item_label) + 1
+            expected_next_label = item_base + 1
             j += 1
         if not digit_items:
             rewritten.append(child)
