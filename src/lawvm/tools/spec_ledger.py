@@ -272,6 +272,16 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
 }
 
+# Fold in the FI catalog supplement (the firing parse-witness rules + the fallback-
+# extraction lane id) authored in a sibling module — keeps this seed literal small
+# while the anti-drift test (tests/test_spec_ledger_fi_catalog.py) guards full
+# coverage of the parse-witness surface.
+try:
+    from lawvm.tools.spec_ledger_fi_catalog_supplement import _FI_RULE_SPECS_SUPPLEMENT
+    _FI_RULE_SPECS.update(_FI_RULE_SPECS_SUPPLEMENT)
+except ImportError:
+    pass
+
 
 def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
     """Turn Finland's ClassifyResult surface into neutral ledger inputs.
