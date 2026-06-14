@@ -117,6 +117,19 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'redesignate <from> as <to>' instruction renumbers the target node from its "
         "source address to the destination address."
     ),
+    "us_amend_redesignate_range": (
+        "A 'redesignating <X> through <Y> as <X'> through <Y'>' instruction emits one "
+        "RENUMBER per member of the range, relabelling only each node's leading enumerator."
+    ),
+    "us_amend_strike_structural_unit": (
+        "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
+        "node from the section body; striking an absent node is a typed no-op refusal, "
+        "never an over-broad deletion."
+    ),
+    "us_amend_insert_node_after_unit": (
+        "An 'insert after <anchor> the following: <block>' instruction splices the quoted "
+        "payload node immediately after the anchor node in the section body."
+    ),
     # --- Amendatory findings: the coverage frontier (no materialization) --------------
     "us_amendatory_unlowered": (
         "A classified amendatory instruction whose shape the lowerer does not yet "
@@ -307,6 +320,9 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amend_repeal": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
