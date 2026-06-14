@@ -1,0 +1,166 @@
+"""Family guard: a devolved instrument cannot repeal the whole UK extent of a
+UK-wide Act.
+
+A "repealed" effect targeting the *whole* of a UK Public General Act under the
+authority of a Scottish/Welsh/Northern Ireland instrument repeals that Act only
+*as it extends to* the devolved territory. Lowering it as a UK-wide whole-Act
+repeal silently deletes the surviving (e.g. England-&-Wales) text the current
+consolidation retains — the forbidden over-application direction (§2.1). The
+guard rejects exactly that case while leaving genuinely-UK-wide whole-Act
+repeals (and devolved partial/section repeals) untouched.
+"""
+from __future__ import annotations
+
+from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import FacetKind
+from lawvm.uk_legislation.effect_target_prelude import (
+    reject_external_or_partial_whole_act_scope,
+)
+from lawvm.uk_legislation.effects import UKEffectRecord
+
+
+def _whole_act_repeal_effect(
+    *,
+    affecting_class: str,
+    affecting_uri: str = "",
+    affected_class: str = "UnitedKingdomPublicGeneralAct",
+    effect_type: str = "repealed",
+) -> UKEffectRecord:
+    return UKEffectRecord(
+        effect_id="key-test-whole-act-repeal",
+        effect_type=effect_type,
+        applied=True,
+        requires_applied=False,
+        modified="2013-07-30",
+        affected_uri="http://www.legislation.gov.uk/id/ukpga/1967/24",
+        affected_class=affected_class,
+        affected_year="1967",
+        affected_number="24",
+        affected_provisions="Act",
+        affecting_uri=affecting_uri,
+        affecting_class=affecting_class,
+        affecting_year="2012",
+        affecting_number="321",
+        affecting_provisions="Sch. 5 Pt. 1",
+        affecting_title="The Welfare of Animals at the Time of Killing (Scotland) Regulations 2012",
+        in_force_dates=[{"date": "2013-01-01", "prospective": "false"}],
+    )
+
+
+def _reject(effect: UKEffectRecord) -> tuple[bool, list[dict]]:
+    rejections: list[dict] = []
+    rejected = reject_external_or_partial_whole_act_scope(
+        effect=effect,
+        action="repeal",
+        effect_type=effect.effect_type,
+        t_str="Act",
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        extracted_el=None,
+        extracted_text=None,
+        lowering_rejections_out=rejections,
+    )
+    return rejected, rejections
+
+
+def test_scottish_si_whole_act_repeal_of_uk_act_is_rejected() -> None:
+    effect = _whole_act_repeal_effect(affecting_class="ScottishStatutoryInstrument")
+    assert effect.affecting_is_devolved is True
+    assert effect.affected_has_uk_wide_extent_class is True
+    rejected, rejections = _reject(effect)
+    assert rejected is True
+    assert any(
+        r.get("rule_id")
+        == "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+        for r in rejections
+    )
+
+
+def test_scottish_act_whole_act_repeal_of_uk_act_is_rejected() -> None:
+    effect = _whole_act_repeal_effect(affecting_class="ScottishAct")
+    rejected, rejections = _reject(effect)
+    assert rejected is True
+    assert rejections[0]["rule_id"] == (
+        "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+    )
+
+
+def test_devolved_recognized_from_uri_slug_when_class_blank() -> None:
+    effect = _whole_act_repeal_effect(
+        affecting_class="",
+        affecting_uri="http://www.legislation.gov.uk/id/ssi/2012/321",
+    )
+    assert effect.affecting_is_devolved is True
+    rejected, _ = _reject(effect)
+    assert rejected is True
+
+
+def test_uk_wide_si_whole_act_repeal_is_not_rejected() -> None:
+    # A UK Statutory Instrument has UK-wide competence; its whole-Act repeal is
+    # genuine and must lower normally.
+    effect = _whole_act_repeal_effect(
+        affecting_class="UnitedKingdomStatutoryInstrument"
+    )
+    assert effect.affecting_is_devolved is False
+    rejected, rejections = _reject(effect)
+    assert rejected is False
+    assert rejections == []
+
+
+def test_uk_pga_whole_act_repeal_is_not_rejected() -> None:
+    effect = _whole_act_repeal_effect(
+        affecting_class="UnitedKingdomPublicGeneralAct"
+    )
+    rejected, rejections = _reject(effect)
+    assert rejected is False
+    assert rejections == []
+
+
+def test_devolved_repeal_of_devolved_act_is_not_rejected() -> None:
+    # When the affected Act is itself a devolved-territory enactment, a devolved
+    # whole-Act repeal is within competence and must not be blocked.
+    effect = _whole_act_repeal_effect(
+        affecting_class="ScottishStatutoryInstrument",
+        affected_class="ScottishAct",
+    )
+    assert effect.affected_has_uk_wide_extent_class is False
+    rejected, rejections = _reject(effect)
+    assert rejected is False
+    assert rejections == []
+
+
+def test_devolved_section_repeal_is_not_rejected_by_this_guard() -> None:
+    # The guard only fires for whole-Act repeals; a devolved section-level repeal
+    # is not in scope here (it is handled by the ordinary target lowering path).
+    effect = _whole_act_repeal_effect(affecting_class="ScottishStatutoryInstrument")
+    rejections: list[dict] = []
+    rejected = reject_external_or_partial_whole_act_scope(
+        effect=effect,
+        action="repeal",
+        effect_type="repealed",
+        t_str="s. 3",
+        target=LegalAddress(path=(("section", "3"),)),
+        extracted_el=None,
+        extracted_text=None,
+        lowering_rejections_out=rejections,
+    )
+    assert rejected is False
+    assert rejections == []
+
+
+def test_devolved_partial_whole_act_repeal_not_caught_by_full_repeal_branch() -> None:
+    # "repealed in part" is handled by the existing partial-scope branch, not the
+    # new full-repeal devolved guard; the new branch keys on the exact
+    # "repealed" type so it does not double-classify partial repeals.
+    effect = _whole_act_repeal_effect(
+        affecting_class="ScottishStatutoryInstrument",
+        effect_type="repealed in part",
+    )
+    rejected, rejections = _reject(effect)
+    assert not any(
+        r.get("rule_id")
+        == "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+        for r in rejections
+    )
+    # The branch did not fire; whatever the partial-scope path decides, the new
+    # devolved-full-repeal rule must not appear.
+    del rejected

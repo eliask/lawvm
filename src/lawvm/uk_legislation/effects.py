@@ -74,6 +74,42 @@ _UK_AFFECTING_CLASS_SLUG_MAP = {
 
 _UK_AFFECTING_URI_SLUG_RE = re.compile(r"legislation\.gov\.uk/(?:id/)?([a-z]{1,16})/(\d{1,9})/(\d{1,9})\b")
 
+# Affecting-act classes authored by a devolved legislature/executive. A devolved
+# instrument has no legislative competence over the whole United Kingdom extent
+# of a UK-wide enactment, so a "repealed" effect it authors against the *whole*
+# of a UK Public General Act can only repeal that Act *as it extends to* the
+# devolved territory — never the Act's full UK extent. The corresponding slug
+# prefixes are used to recognize a devolved affecting act when only a URI/slug is
+# available.
+_UK_DEVOLVED_AFFECTING_CLASSES = frozenset(
+    {
+        "WelshParliamentAct",
+        "WelshStatutoryInstrument",
+        "NationalAssemblyForWalesMeasure",
+        "NationalAssemblyForWalesAct",
+        "ScottishAct",
+        "ScottishParliamentAct",
+        "ScottishStatutoryInstrument",
+        "NorthernIrelandAssemblyMeasure",
+        "NorthernIrelandParliamentAct",
+        "NorthernIrelandStatutoryRule",
+        "NorthernIrelandOrderInCouncil",
+    }
+)
+_UK_DEVOLVED_AFFECTING_SLUG_PREFIXES = frozenset(
+    {"asc", "wsi", "mwa", "anaw", "asp", "ssi", "mnia", "apni", "nisr", "nisi"}
+)
+# Affected-act classes whose enactments carry a UK-wide (at least England-&-Wales
+# or broader) extent that a single devolved legislature cannot wholly repeal.
+_UK_WIDE_AFFECTED_CLASSES = frozenset(
+    {
+        "UnitedKingdomPublicGeneralAct",
+        "UnitedKingdomLocalAct",
+        "GreatBritainAct",
+        "EnglandAndWalesAct",
+    }
+)
+
 
 def _uk_effect_feed_diagnostic(
     *,
@@ -263,6 +299,29 @@ class UKEffectRecord:
         if _UK_AFFECTING_URI_SLUG_RE.search(str(self.affecting_uri or "")):
             return True
         return str(self.affecting_class or "") in _UK_AFFECTING_CLASS_SLUG_MAP
+
+    @property
+    def affecting_is_devolved(self) -> bool:
+        """True when the affecting act is from a devolved legislature/executive.
+
+        Recognized from the affecting class name, or — when the class is missing
+        but a URI/slug is available — from the document-type slug prefix. A
+        devolved instrument lacks competence over the whole UK extent of a
+        UK-wide enactment.
+        """
+        if str(self.affecting_class or "") in _UK_DEVOLVED_AFFECTING_CLASSES:
+            return True
+        slug = self.affecting_act_id.split("/", 1)[0] if self.affecting_act_id else ""
+        return slug in _UK_DEVOLVED_AFFECTING_SLUG_PREFIXES
+
+    @property
+    def affected_has_uk_wide_extent_class(self) -> bool:
+        """True when the affected act's class carries an at-least-E&W extent.
+
+        Such an act cannot be wholly repealed by a single devolved legislature,
+        whose competence is confined to its own territory.
+        """
+        return str(self.affected_class or "") in _UK_WIDE_AFFECTED_CLASSES
 
     @property
     def effective_date(self) -> str:
