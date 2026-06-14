@@ -90,6 +90,9 @@ from lawvm.uk_legislation.contingent_commencement_claim import (
     gate_contingent_repeal_at_pit,
     validate_contingent_commencement_claim,
 )
+from lawvm.uk_legislation.same_moment_precedence_claim import (
+    SameMomentPrecedenceClaim,
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -270,6 +273,9 @@ class UKReplayPipeline:
         contingent_commencement_claims: Optional[
             "Sequence[ContingentCommencementClaim]"
         ] = None,
+        same_moment_precedence_claims: Optional[
+            "Sequence[SameMomentPrecedenceClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -416,6 +422,7 @@ class UKReplayPipeline:
             effective_date_overrides=effective_date_overrides,
             diagnostics_out=effect_diagnostics_out,
             lowering_observations_out=lowering_rejections_out,
+            same_moment_precedence_claims=same_moment_precedence_claims,
         )
         repeal_no_double_entry_groups = collect_repeal_no_double_entry_groups(replayable)
         _mark_compile_phase("compile_filter_order_effects")

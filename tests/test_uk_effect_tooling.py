@@ -129,6 +129,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",

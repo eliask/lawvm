@@ -40,6 +40,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
+        "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
         "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",

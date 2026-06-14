@@ -189,8 +189,19 @@ def _order_uk_effects_for_replay(
     effective_date_overrides: Optional[Mapping[str, str]] = None,
     diagnostics_out: Optional[list[dict[str, Any]]] = None,
     lowering_observations_out: Optional[list[dict[str, Any]]] = None,
+    same_moment_precedence_claims: Optional[Sequence[Any]] = None,
 ) -> list[UKEffectRecord]:
-    """Order UK effects by legal time and affecting-source citation order."""
+    """Order UK effects by legal time and affecting-source citation order.
+
+    ``same_moment_precedence_claims`` is opt-in (§1.7): a sequence of
+    ``SameMomentPrecedenceClaim`` carriers. Only VALIDATED claims — bound to a
+    real detected same-moment cross-act incompatible-payload conflict at their
+    ``(effective_date, target)`` with exactly those conflicting acts — change
+    ordering: for a resolved conflict the claimed winner's act is ordered ahead
+    of ``affecting_act_id`` lexical order, and the ambiguity finding records
+    ``resolved_by_claim`` instead of ``affecting_act_id_lexical_order_unproven``.
+    With no claim authored, ordering and the finding are byte-unchanged.
+    """
 
     original = list(effects)
     date_overrides = effective_date_overrides or {}
@@ -198,10 +209,36 @@ def _order_uk_effects_for_replay(
     def _effective_date(effect: UKEffectRecord) -> str:
         return date_overrides.get(effect.effect_id) or effect.effective_date
 
+    # §1.7 precedence resolution: index VALIDATED precedence claims by the
+    # (effective_date, affected_target) of the conflict they resolve, mapping to
+    # the winning affecting act. With no claims authored the index is empty and
+    # the precedence rank below is constant, so ordering is byte-unchanged.
+    precedence_winner_by_conflict = _validated_same_moment_precedence_winners(
+        original,
+        effective_date_of=_effective_date,
+        precedence_claims=same_moment_precedence_claims,
+    )
+
+    def _precedence_rank(e: UKEffectRecord) -> int:
+        if not precedence_winner_by_conflict:
+            return 0
+        conflict_key = _SameMomentTargetKey(
+            effective_date=_effective_date(e) or "",
+            affected_target=str(e.affected_provisions or "").strip(),
+        )
+        winner_act = precedence_winner_by_conflict.get(conflict_key)
+        if winner_act is None:
+            return 0
+        # Winner's act sorts ahead of every other conflicting act; ties among the
+        # winner's own effects, and among the losers, fall through to the existing
+        # source-provision/effect-id key, so the change is minimal and stable.
+        return 0 if e.affecting_act_id == winner_act else 1
+
     def _sort_key(e: UKEffectRecord) -> tuple[Any, ...]:
         return (
             _effective_date(e) or "9999-99-99",
             str(e.modified or ""),
+            _precedence_rank(e),
             e.affecting_act_id,
             _uk_source_provision_order_key(e.affecting_provisions),
             e.effect_id,
@@ -257,35 +294,24 @@ def _order_uk_effects_for_replay(
         effective_date_of=_effective_date,
         diagnostics_out=diagnostics_out,
         lowering_observations_out=lowering_observations_out,
+        precedence_winner_by_conflict=precedence_winner_by_conflict,
     )
     return ordered
 
 
-def _emit_uk_same_moment_cross_act_conflict_findings(
+def _detect_same_moment_conflict_groups(
     original: Sequence[UKEffectRecord],
-    ordered: Sequence[UKEffectRecord],
     *,
     effective_date_of: Any,
-    diagnostics_out: Optional[list[dict[str, Any]]],
-    lowering_observations_out: Optional[list[dict[str, Any]]],
-) -> None:
-    """Emit a §1.7 ambiguity finding for same-moment cross-act incompatible payloads.
+) -> dict[_SameMomentTargetKey, list[tuple[UKEffectRecord, UKEffectRecord]]]:
+    """Return the same-moment cross-act incompatible-payload conflicts.
 
-    When two effects share the same effective date and affected target but come
-    from DIFFERENT affecting acts and carry incompatible whole-target payloads
-    (see ``_uk_same_moment_payloads_incompatible``), the materialized winner is
-    today decided only by ``affecting_act_id`` lexical order in ``_sort_key``.
-    That is "legal conflict resolved by Python accident" (§1.7): an ambiguity
-    until a precedence rule proves otherwise.
-
-    This finding is ADDITIVE: it does not reorder effects or change which op
-    wins. It records that the pick is order-based and unproven so the conflict is
-    visible (§1.8/§8) and rejectable under strict mode (§1.7/§14). A future
-    precedence claim resolves it.
+    Maps each ``(effective_date, affected_target)`` with a genuine cross-act
+    incompatible-payload collision (see ``_uk_same_moment_payloads_incompatible``)
+    to its list of conflicting effect pairs. Undated and single-act groups are
+    excluded — see the inline notes. This is the single detection surface reused
+    by both the ambiguity finding and same-moment precedence-claim binding.
     """
-    if diagnostics_out is None and lowering_observations_out is None:
-        return
-
     target_groups: dict[_SameMomentTargetKey, list[UKEffectRecord]] = {}
     for effect in original:
         target = str(effect.affected_provisions or "").strip()
@@ -305,6 +331,9 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
         )
         target_groups.setdefault(key, []).append(effect)
 
+    conflicts: dict[
+        _SameMomentTargetKey, list[tuple[UKEffectRecord, UKEffectRecord]]
+    ] = {}
     for key, group_effects in target_groups.items():
         distinct_acts = {effect.affecting_act_id for effect in group_effects}
         if len(distinct_acts) < 2:
@@ -318,29 +347,174 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
                     continue
                 if _uk_same_moment_payloads_incompatible(left, right):
                     conflicting_pairs.append((left, right))
-        if not conflicting_pairs:
+        if conflicting_pairs:
+            conflicts[key] = conflicting_pairs
+    return conflicts
+
+
+def conflicts_from_effects(
+    effects: Sequence[UKEffectRecord],
+    *,
+    effective_date_overrides: Optional[Mapping[str, str]] = None,
+) -> list[Any]:
+    """Return ``DetectedSameMomentConflict`` carriers for a set of UK effects.
+
+    This is the binding surface a ``SameMomentPrecedenceClaim`` validates
+    against: the same detection the ambiguity finding uses, exposed as typed
+    carriers (``effective_date``, ``affected_target``, the conflicting affecting
+    acts, and the conflicting effect ids). It never authors a winner.
+    """
+    # Imported lazily to avoid a module import cycle: the claim module imports
+    # only this function's output type, and ordering is imported by replay.
+    from lawvm.uk_legislation.same_moment_precedence_claim import (
+        DetectedSameMomentConflict,
+    )
+
+    date_overrides = effective_date_overrides or {}
+
+    def _effective_date(effect: UKEffectRecord) -> str:
+        return date_overrides.get(effect.effect_id) or effect.effective_date
+
+    conflict_groups = _detect_same_moment_conflict_groups(
+        list(effects), effective_date_of=_effective_date
+    )
+    detected: list[DetectedSameMomentConflict] = []
+    for key, conflicting_pairs in conflict_groups.items():
+        conflicting_effects = {
+            id(e): e for pair in conflicting_pairs for e in pair
+        }.values()
+        effect_ids_by_act: dict[str, list[str]] = {}
+        for effect in conflicting_effects:
+            effect_ids_by_act.setdefault(effect.affecting_act_id, []).append(
+                effect.effect_id
+            )
+        detected.append(
+            DetectedSameMomentConflict(
+                effective_date=key.effective_date,
+                affected_target=key.affected_target,
+                conflicting_affecting_acts=tuple(sorted(effect_ids_by_act)),
+                conflicting_effect_ids=tuple(
+                    sorted(e.effect_id for e in conflicting_effects)
+                ),
+                effect_ids_by_act={
+                    act: tuple(ids) for act, ids in effect_ids_by_act.items()
+                },
+            )
+        )
+    return detected
+
+
+def _validated_same_moment_precedence_winners(
+    original: Sequence[UKEffectRecord],
+    *,
+    effective_date_of: Any,
+    precedence_claims: Optional[Sequence[Any]],
+) -> dict[_SameMomentTargetKey, str]:
+    """Index validated precedence claims by conflict key → winning affecting act.
+
+    Each claim is validated against the REAL detected conflicts (reusing the
+    shared detection); only a claim that binds to an actual conflict with exactly
+    those acts and a recognized winner/basis contributes a winner. With no claims
+    the result is empty and ordering/findings are byte-unchanged.
+    """
+    if not precedence_claims:
+        return {}
+    # Lazy import to avoid an import cycle at module load.
+    from lawvm.uk_legislation.same_moment_precedence_claim import (
+        validate_same_moment_precedence_claim,
+    )
+
+    detected = conflicts_from_effects(
+        original,
+        effective_date_overrides={
+            e.effect_id: effective_date_of(e)
+            for e in original
+            if effective_date_of(e)
+        },
+    )
+    winners: dict[_SameMomentTargetKey, str] = {}
+    for claim in precedence_claims:
+        validation = validate_same_moment_precedence_claim(
+            claim, detected_conflicts=detected
+        )
+        if not validation.validated:
             continue
+        key = _SameMomentTargetKey(
+            effective_date=claim.effective_date,
+            affected_target=str(claim.affected_target or "").strip(),
+        )
+        winners[key] = claim.winner_affecting_act_id
+    return winners
+
+
+def _emit_uk_same_moment_cross_act_conflict_findings(
+    original: Sequence[UKEffectRecord],
+    ordered: Sequence[UKEffectRecord],
+    *,
+    effective_date_of: Any,
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    lowering_observations_out: Optional[list[dict[str, Any]]],
+    precedence_winner_by_conflict: Optional[dict[_SameMomentTargetKey, str]] = None,
+) -> None:
+    """Emit a §1.7 ambiguity finding for same-moment cross-act incompatible payloads.
+
+    When two effects share the same effective date and affected target but come
+    from DIFFERENT affecting acts and carry incompatible whole-target payloads
+    (see ``_uk_same_moment_payloads_incompatible``), the materialized winner is
+    today decided only by ``affecting_act_id`` lexical order in ``_sort_key``.
+    That is "legal conflict resolved by Python accident" (§1.7): an ambiguity
+    until a precedence rule proves otherwise.
+
+    The finding is ADDITIVE in the no-claim case: it records that the pick is
+    order-based and unproven so the conflict is visible (§1.8/§8) and rejectable
+    under strict mode (§1.7/§14). When a VALIDATED ``SameMomentPrecedenceClaim``
+    resolves the conflict (``precedence_winner_by_conflict``), the finding instead
+    records ``resolved_by_claim`` with the claimed winning act.
+    """
+    if diagnostics_out is None and lowering_observations_out is None:
+        return
+
+    winner_by_conflict = precedence_winner_by_conflict or {}
+    conflict_groups = _detect_same_moment_conflict_groups(
+        original, effective_date_of=effective_date_of
+    )
+    for key, conflicting_pairs in conflict_groups.items():
         conflicting_acts = sorted(
             {effect.affecting_act_id for pair in conflicting_pairs for effect in pair}
         )
-        # The op that wins under the current order-based pick: the conflicting
-        # effect that sorts first in the already-computed replay order.
+        # The op that wins under the current order: the conflicting effect that
+        # sorts first in the already-computed replay order. When a validated
+        # precedence claim resolved this conflict, ``ordered`` already places the
+        # claimed winner's act first, so this is the claimed winner.
         ordered_conflicting = [
             effect
             for effect in ordered
             if any(effect is pair_effect for pair in conflicting_pairs for pair_effect in pair)
         ]
         order_based_winner = ordered_conflicting[0] if ordered_conflicting else None
+        claimed_winner_act = winner_by_conflict.get(key)
+        if claimed_winner_act is not None:
+            resolution = "resolved_by_claim"
+        else:
+            resolution = "affecting_act_id_lexical_order_unproven"
         record = _uk_ordering_diagnostic(
             rule_id="uk_same_moment_cross_act_incompatible_payload_ambiguous",
             reason=(
                 "Two or more affecting acts change the same target at the same "
-                "effective date with incompatible whole-target payloads. The "
-                "materialized winner is currently chosen by affecting_act_id "
-                "lexical order with no precedence rule; this is a §1.7 ambiguity "
-                "until a precedence claim proves which act prevails."
+                "effective date with incompatible whole-target payloads. "
+                + (
+                    "A validated same-moment precedence claim proves which act "
+                    "prevails; the materialized winner follows the claim."
+                    if claimed_winner_act is not None
+                    else (
+                        "The materialized winner is currently chosen by "
+                        "affecting_act_id lexical order with no precedence rule; "
+                        "this is a §1.7 ambiguity until a precedence claim proves "
+                        "which act prevails."
+                    )
+                )
             ),
-            blocking=True,
+            blocking=claimed_winner_act is None,
             effective_date=key.effective_date,
             affected_target=key.affected_target,
             reason_code="same_moment_cross_act_incompatible_payload",
@@ -363,7 +537,12 @@ def _emit_uk_same_moment_cross_act_conflict_findings(
             order_based_winner_affecting_act_id=(
                 order_based_winner.affecting_act_id if order_based_winner is not None else ""
             ),
-            resolution="affecting_act_id_lexical_order_unproven",
+            resolution=resolution,
+            **(
+                {"resolved_by_claim_winner_affecting_act_id": claimed_winner_act}
+                if claimed_winner_act is not None
+                else {}
+            ),
         )
         if diagnostics_out is not None:
             diagnostics_out.append(record)

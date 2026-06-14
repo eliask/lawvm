@@ -186,6 +186,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_gates_repeal_to_pit_past_contingency_deadline",
         ),
     },
+    "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate": {
+        "candidate_operation_family": "same_moment_cross_act_precedence_resolution",
+        "required_validator_checks": (
+            "claim_binds_to_a_real_detected_same_moment_cross_act_conflict",
+            "claim_names_exactly_the_conflicting_affecting_acts",
+            "claim_winner_is_one_of_the_conflicting_acts",
+            "claim_basis_is_a_recognized_precedence_kind",
+        ),
+    },
     "uk_manual_frontier_empty_type_whole_act_action_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (

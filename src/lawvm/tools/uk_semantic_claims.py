@@ -88,6 +88,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "range_to_container_source_range_payload_and_lineage",
         "referent_qualified_occurrence_scope_claim",
         "relative_occurrence_scope_claim",
+        "same_moment_cross_act_precedence_resolution",
         "savings_qualified_omission_applicability_scope",
         "schedule_paragraph_range_to_part_source_destination_and_lineage",
         "schedule_list_entry_anchor_boundary_claim",

@@ -712,6 +712,8 @@ def _required_operation_family_proof_semantics(
         return ("savings_qualified_omission_applicability_scope",)
     if action_family == "contingent_commencement_resolution":
         return ("contingent_commencement_resolution",)
+    if action_family == "same_moment_cross_act_precedence_resolution":
+        return ("same_moment_cross_act_precedence_resolution",)
     if action_family == "sentence_scoped_repeated_insert":
         return ("sentence_scoped_text_insert_boundary_claim",)
     if action_family == "source_carried_multi_subunit_text_rewrite":
@@ -784,6 +786,29 @@ def manual_compile_suggested_claim_template(
                 "claim_owns_trigger_resolution_commenced_or_did_not_commence",
                 "claim_witnesses_commenced_resolution_with_si_and_date",
                 "claim_gates_repeal_to_pit_past_contingency_deadline",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="same_moment_cross_act_precedence_resolution",
+            placement_family="same_moment_precedence_requires_detected_conflict_binding",
+            required_ownership=[
+                "detected_same_moment_cross_act_incompatible_conflict",
+                "exact_effective_date_and_affected_target",
+                "full_set_of_conflicting_affecting_acts",
+                "owned_winning_affecting_act_among_the_conflict",
+                "recognized_precedence_basis",
+            ],
+            required_validator_checks=[
+                "claim_binds_to_a_real_detected_same_moment_cross_act_conflict",
+                "claim_names_exactly_the_conflicting_affecting_acts",
+                "claim_winner_is_one_of_the_conflicting_acts",
+                "claim_basis_is_a_recognized_precedence_kind",
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":

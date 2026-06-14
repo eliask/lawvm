@@ -726,6 +726,16 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated contingent-commencement claim withholds its conditional repeal because the PIT is before the contingency deadline.",
     "uk_contingent_commencement_repeal_withheld_trigger_not_fired":
         "A validated contingent-commencement claim withholds its conditional repeal because the owned resolution is not the trigger the repeal fires on, preventing over-repeal.",
+    "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate":
+        "A same-moment cross-act incompatible-payload conflict that an owned same-moment-precedence claim can resolve by naming which affecting act prevails on a recognized basis.",
+    "uk_same_moment_precedence_claim_validated":
+        "A same-moment-precedence claim is well-formed, bound to a real detected cross-act conflict with exactly those acts, and names a conflicting act as winner on a recognized basis, so it may resolve the ordering ambiguity.",
+    "uk_same_moment_precedence_claim_rejected_schema":
+        "A same-moment-precedence claim is rejected because its kind/date/target/acts/winner/basis schema is malformed.",
+    "uk_same_moment_precedence_claim_rejected_conflict_binding":
+        "A same-moment-precedence claim is rejected because it does not bind to a real detected same-moment cross-act conflict with exactly those acts (or names a winner effect outside it), blocking free-form overrides.",
+    "uk_same_moment_precedence_claim_rejected_basis":
+        "A same-moment-precedence claim is rejected because its winner is not one of the conflicting acts or its basis is not a recognized precedence kind.",
     "uk_manual_frontier_empty_type_whole_act_action_out_of_scope":
         "A whole-Act action with an empty effect type treated as out of scope.",
     "uk_manual_frontier_external_act_target_out_of_scope":
