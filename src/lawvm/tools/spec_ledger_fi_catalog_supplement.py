@@ -224,6 +224,13 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "A section ref inside a text-amend context scopes the word/phrase substitution to "
         "that section."
     ),
+    # --- voimaantulosäännös (transitional-provision) repeal extraction (vts.py) ---
+    "fi.repeal_vts_voimaantulo": (
+        "A repeal named in a voimaantulosäännös (transitional/entry-into-force "
+        "provision) fragment — 'N § (on) kumottu ...' / 'N luku kumotaan' — is "
+        "extracted as a whole-section or whole-chapter REPEAL op, even without a "
+        "normal operative johtolause."
+    ),
     # --- compile-time flat-body section-scope recovery (frontend_compile.py) ---
     "fi_flat_reinstated_section_scope_from_base_prior_address": (
         "A flat-body 'kumotun N §:n tilalle uusi N §' rebirth inherits the repealed "
