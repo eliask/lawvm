@@ -82,6 +82,7 @@ ORACLE_VERSIONS: dict[str, str] = {
     "2009/953": "20190274",
     "2010/128": "20230947",  # recycle-and-rename regression
     "2010/1207":"20260024",
+    "2010/76":  "20210674",  # whole-chapter replace drops omitted section
     "2010/182": "20251465",
     "2012/916": "20240443",
     "2013/393": "20250500",

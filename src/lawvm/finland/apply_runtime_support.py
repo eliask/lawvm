@@ -718,6 +718,45 @@ def _timeline_target_exists(
     return False
 
 
+def _container_replace_prior_child_paths(
+    *,
+    container_path: Path,
+    base_container_payload: Optional[IRNode],
+    replay_history_ops: List[_LegalOperation],
+) -> dict[str, Path]:
+    """Collect the live direct-section paths a container REPLACE may need to retire.
+
+    Combines the most recent non-repeal section snapshot under ``container_path``
+    from prior replay history with the base-statute container's direct sections.
+    Keyed by normalized section label, so a container REPLACE can decide which
+    prior sections survive its new payload.
+    """
+    prior_child_paths: dict[str, Path] = {}
+    for prev_lo in reversed(replay_history_ops):
+        if prev_lo.target.special is not None:
+            continue
+        prev_path = prev_lo.target.path
+        if prev_path[: len(container_path)] != container_path:
+            continue
+        if len(prev_path) != len(container_path) + 1 or prev_path[-1][0] != "section":
+            continue
+        child_norm = _norm_num_token(prev_path[-1][1])
+        if child_norm in prior_child_paths:
+            continue
+        if prev_lo.action is not StructuralAction.REPEAL:
+            prior_child_paths[child_norm] = prev_path
+    if base_container_payload is not None:
+        for child in base_container_payload.children:
+            if child.kind is not IRNodeKind.SECTION or not child.label:
+                continue
+            child_norm = _norm_num_token(child.label)
+            prior_child_paths.setdefault(
+                child_norm,
+                container_path + (("section", child.label),),
+            )
+    return prior_child_paths
+
+
 def _emit_section_snapshot(
     state: "ReplayState",
     target_unit_kind: TargetUnitKind,
@@ -854,6 +893,101 @@ def _emit_section_snapshot(
                 continue
             candidates.append(_stamp_exact_section_snapshot_payload(source_payload))
         return candidates[0] if len(candidates) == 1 else None
+
+    def _complete_whole_chapter_source_child_labels() -> Optional[set[str]]:
+        """Return the authoritative section-label set of a complete chapter replace.
+
+        A whole-chapter REPLACE whose source payload owns its full child surface
+        (``tail_policy == replace_if_target_scope_requires``) defines exactly which
+        sections the new chapter contains. Snapshot emission otherwise observes
+        the post-apply replay state, which may still carry sections an earlier
+        merge-style apply failed to drop. When this returns a label set, sections
+        absent from it are stale orphans and must be repealed, not snapshotted
+        forward. Returns ``None`` for partial/sparse chapter amendments and for
+        anything that is not a single complete whole-chapter replacement, so those
+        keep preserving live sections unchanged.
+        """
+        if target_unit_kind != "chapter" or _whole_target_repeal():
+            return None
+        chapter_replaces = [
+            rop
+            for rop in group_rops
+            if rop.is_replace_action and rop.targets_whole_unit("chapter")
+        ]
+        if len(chapter_replaces) != 1:
+            return None
+        rop = chapter_replaces[0]
+        source_payload = rop.muutos_ir
+        if source_payload is None or source_payload.kind is not IRNodeKind.CHAPTER:
+            return None
+        if source_payload.label and _norm_num_token(source_payload.label) != normalized_target_norm:
+            return None
+        completeness = rop.payload_completeness
+        if completeness is None:
+            return None
+        if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
+            return None
+        labels = {
+            _norm_num_token(child.label)
+            for child in source_payload.children
+            if child.kind is IRNodeKind.SECTION and child.label
+        }
+        if not labels:
+            return None
+        return labels
+
+    def _whole_chapter_replace_orphan_child_labels(
+        *,
+        authoritative_child_labels: Optional[set[str]],
+        payload: IRNode,
+        container_path: Path,
+        base_container_payload: Optional[IRNode],
+        action: StructuralAction,
+    ) -> set[str]:
+        """Return the post-apply child sections this container REPLACE retires.
+
+        Mirrors the drop decision applied below so the snapshot-emission loop can
+        skip exactly the sections that will be repealed (carrying them forward as
+        REPLACE snapshots would re-orphan them). Returns an empty set for sparse
+        chapter amendments — where missing siblings outnumber the replacement
+        payload — so those keep preserving their live sections unchanged.
+        """
+        if action is not StructuralAction.REPLACE or target_unit_kind != "chapter":
+            return set()
+        payload_labels = {
+            _norm_num_token(child.label)
+            for child in payload.children
+            if child.kind is IRNodeKind.SECTION and child.label
+        }
+        effective_labels = (
+            authoritative_child_labels if authoritative_child_labels is not None else payload_labels
+        )
+        prior_child_paths = _container_replace_prior_child_paths(
+            container_path=container_path,
+            base_container_payload=base_container_payload,
+            replay_history_ops=lo_ops_out,
+        )
+        missing = {norm for norm in prior_child_paths if norm not in effective_labels}
+        overlapping = {norm for norm in prior_child_paths if norm in effective_labels}
+        payload_has_heading = any(child.kind is IRNodeKind.HEADING for child in payload.children)
+        sparse = (
+            payload_has_heading
+            and bool(effective_labels)
+            and bool(overlapping)
+            and bool(missing)
+            and len(missing) > len(effective_labels)
+        )
+        if sparse:
+            return set()
+        # Only retire post-apply children that are genuine orphans: present in the
+        # live tree but absent from the authoritative replacement section set.
+        return {
+            _norm_num_token(child.label)
+            for child in payload.children
+            if child.kind is IRNodeKind.SECTION
+            and child.label
+            and _norm_num_token(child.label) not in effective_labels
+        }
 
     def _subsection_child_by_label(section: IRNode, label: str) -> IRNode | None:
         label_norm = _norm_num_token(label)
@@ -2572,8 +2706,28 @@ def _emit_section_snapshot(
             for child in payload.children
             if child.kind is IRNodeKind.SECTION and child.label
         }
+        # A whole-chapter REPLACE whose source payload owns its full child surface
+        # (tail_policy == replace_if_target_scope_requires) makes the replacement
+        # chapter's section set authoritative: sections present in the post-apply
+        # live tree but absent from the source payload are stale orphans that an
+        # earlier merge-style apply failed to drop, and must NOT be snapshotted
+        # forward. Without this, a chapter REPLACE that omits a previously-present
+        # section leaves that section orphaned on the timeline.
+        authoritative_child_labels = _complete_whole_chapter_source_child_labels()
+        # Decide up-front which post-apply child sections are stale orphans the
+        # whole-chapter REPLACE retires, so the snapshot-emission loop below skips
+        # exactly those (they must not be carried forward as REPLACE snapshots).
+        orphan_child_labels_to_drop = _whole_chapter_replace_orphan_child_labels(
+            authoritative_child_labels=authoritative_child_labels,
+            payload=payload,
+            container_path=tuple(resolved_path),
+            base_container_payload=base_container_payload,
+            action=action,
+        )
         for child in payload.children:
             if child.kind is IRNodeKind.SECTION and child.label:
+                if _norm_num_token(child.label) in orphan_child_labels_to_drop:
+                    continue
                 container_has_child_here = any(
                     candidate.kind is IRNodeKind.SECTION
                     and candidate.label
@@ -2626,43 +2780,34 @@ def _emit_section_snapshot(
                     )
                 )
         if action is StructuralAction.REPLACE:
-            prior_child_paths: dict[str, Path] = {}
-            for prev_lo in reversed(lo_ops_out):
-                if prev_lo.target.special is not None:
-                    continue
-                prev_path = prev_lo.target.path
-                if prev_path[: len(container_path)] != container_path:
-                    continue
-                if len(prev_path) != len(container_path) + 1 or prev_path[-1][0] != "section":
-                    continue
-                child_norm = _norm_num_token(prev_path[-1][1])
-                if child_norm in prior_child_paths:
-                    continue
-                if prev_lo.action is not StructuralAction.REPEAL:
-                    prior_child_paths[child_norm] = prev_path
-            if base_container_payload is not None:
-                for child in base_container_payload.children:
-                    if child.kind is not IRNodeKind.SECTION or not child.label:
-                        continue
-                    child_norm = _norm_num_token(child.label)
-                    prior_child_paths.setdefault(
-                        child_norm,
-                        container_path + (("section", child.label),),
-                    )
+            prior_child_paths = _container_replace_prior_child_paths(
+                container_path=container_path,
+                base_container_payload=base_container_payload,
+                replay_history_ops=lo_ops_out,
+            )
+            # When the source payload is a complete whole-chapter replacement, its
+            # section labels — not the (possibly merge-polluted) post-apply live
+            # tree — define which sections the new chapter contains. Drop logic
+            # below must repeal prior sections absent from that authoritative set.
+            effective_child_labels = (
+                authoritative_child_labels
+                if authoritative_child_labels is not None
+                else payload_child_labels
+            )
             missing_child_labels = [
-                child_norm for child_norm in prior_child_paths if child_norm not in payload_child_labels
+                child_norm for child_norm in prior_child_paths if child_norm not in effective_child_labels
             ]
             overlapping_child_labels = [
-                child_norm for child_norm in prior_child_paths if child_norm in payload_child_labels
+                child_norm for child_norm in prior_child_paths if child_norm in effective_child_labels
             ]
             payload_has_heading = any(child.kind is IRNodeKind.HEADING for child in payload.children)
             sparse_fragmentary_container_replace = (
                 target_unit_kind == "chapter"
                 and payload_has_heading
-                and bool(payload_child_labels)
+                and bool(effective_child_labels)
                 and bool(overlapping_child_labels)
                 and bool(missing_child_labels)
-                and len(missing_child_labels) > len(payload_child_labels)
+                and len(missing_child_labels) > len(effective_child_labels)
             )
             if sparse_fragmentary_container_replace:
                 if source_pathologies_out is not None:
@@ -2673,12 +2818,12 @@ def _emit_section_snapshot(
                             target_label=target_norm,
                             recovery_kind="container_snapshot_sparse_missing_child_repeal_skip",
                             live_sibling_count=len(prior_child_paths),
-                            payload_sibling_count=len(payload_child_labels),
+                            payload_sibling_count=len(effective_child_labels),
                         )
                     )
                 return
             for child_norm, child_path in prior_child_paths.items():
-                if child_norm in payload_child_labels:
+                if child_norm in effective_child_labels:
                     continue
                 lo_ops_out.append(
                     _LegalOperation(
