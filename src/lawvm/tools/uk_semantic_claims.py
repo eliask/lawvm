@@ -72,6 +72,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
     {
         "amendment_program_target_source_payload_and_boundary",
         "appropriate_place_anchor_or_ordering_claim",
+        "contingent_commencement_resolution",
         "cross_container_renumber_source_destination_and_lineage",
         "definition_child_structural_insert_boundary_claim",
         "definition_child_structural_payload_boundary_claim",

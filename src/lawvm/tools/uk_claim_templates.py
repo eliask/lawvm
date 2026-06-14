@@ -710,6 +710,8 @@ def _required_operation_family_proof_semantics(
         return ("whole_act_repeal_exception_set_and_boundary_claim",)
     if action_family == "savings_qualified_text_omission":
         return ("savings_qualified_omission_applicability_scope",)
+    if action_family == "contingent_commencement_resolution":
+        return ("contingent_commencement_resolution",)
     if action_family == "sentence_scoped_repeated_insert":
         return ("sentence_scoped_text_insert_boundary_claim",)
     if action_family == "source_carried_multi_subunit_text_rewrite":
@@ -761,6 +763,29 @@ def manual_compile_suggested_claim_template(
     """Return a non-executable semantic-claim template for known manual families."""
     summary = row.summary
     effect = row.effect
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_conditional_temporal_repeal_resolution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="contingent_commencement_resolution",
+            placement_family="contingent_commencement_resolution_requires_trigger_witness",
+            required_ownership=[
+                "source_named_conditional_temporal_repeal",
+                "out_of_band_commencement_trigger_identity",
+                "owned_trigger_resolution_commenced_or_did_not_commence",
+                "commenced_resolution_commencement_si_and_date_witness",
+                "contingency_deadline_pit_gate",
+            ],
+            required_validator_checks=[
+                "claim_binds_source_snippet_to_real_conditional_temporal_repeal",
+                "claim_owns_trigger_resolution_commenced_or_did_not_commence",
+                "claim_witnesses_commenced_resolution_with_si_and_date",
+                "claim_gates_repeal_to_pit_past_contingency_deadline",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         wrapper_parts = _heading_facet_wrapper_insert_parts(source_preview)

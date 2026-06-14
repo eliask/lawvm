@@ -708,6 +708,22 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A commencement effect treated as out of current text-replay scope (handled in the temporal lane).",
     "uk_manual_frontier_conditional_temporal_repeal_out_of_scope":
         "A conditional/temporal repeal treated as out of current text-replay scope.",
+    "uk_manual_frontier_conditional_temporal_repeal_resolution_candidate":
+        "A conditional/temporal repeal that an owned contingent-commencement claim can resolve by witnessing the trigger's (non-)commencement.",
+    "uk_contingent_commencement_claim_validated":
+        "A contingent-commencement claim's owned trigger resolution is well-formed, bound to a real conditional-temporal-repeal source, and witnessed, so it may gate replay.",
+    "uk_contingent_commencement_claim_rejected_schema":
+        "A contingent-commencement claim is rejected because its kind/resolution/deadline/trigger schema is malformed.",
+    "uk_contingent_commencement_claim_rejected_source_mismatch":
+        "A contingent-commencement claim is rejected because its source snippet or bound effect is not a real conditional-temporal-repeal shape, blocking free-form overrides.",
+    "uk_contingent_commencement_claim_rejected_witness":
+        "A contingent-commencement claim is rejected because its commenced/did-not-commence resolution lacks (or wrongly carries) the SI/date witness within the contingency window.",
+    "uk_contingent_commencement_repeal_applied_at_pit":
+        "A validated contingent-commencement claim applies its conditional repeal at a PIT past the deadline because the owned resolution is the trigger the repeal fires on.",
+    "uk_contingent_commencement_repeal_withheld_pre_deadline":
+        "A validated contingent-commencement claim withholds its conditional repeal because the PIT is before the contingency deadline.",
+    "uk_contingent_commencement_repeal_withheld_trigger_not_fired":
+        "A validated contingent-commencement claim withholds its conditional repeal because the owned resolution is not the trigger the repeal fires on, preventing over-repeal.",
     "uk_manual_frontier_empty_type_whole_act_action_out_of_scope":
         "A whole-Act action with an empty effect type treated as out of scope.",
     "uk_manual_frontier_external_act_target_out_of_scope":
