@@ -1182,7 +1182,19 @@ def _assign_highest_insert_slot_op(
                 )
             )
             return
-        state.subsec_map.assign(highest, slot_inputs.amend_subs[-1])
+        # Positional fallback to the trailing payload slot. Only bind when that
+        # slot has not already been consumed by an earlier op (e.g. a REPLACE
+        # that claimed the lone sparse paragraph). Reusing a consumed slot
+        # fabricates duplicate content: a `muutetaan N momentti, lisätään uusi
+        # M momentti` group whose published body carries a single paragraph
+        # would otherwise emit that paragraph twice (once for the replace, once
+        # for the insert). Leave the insert unbound so it surfaces as
+        # missing-payload residue instead.
+        last_idx = len(slot_inputs.amend_subs) - 1
+        if last_idx in state.used_subs:
+            return
+        state.subsec_map.assign(highest, slot_inputs.amend_subs[last_idx])
+        state.used_subs.add(last_idx)
 
 
 def _assign_intro_slot_ops(

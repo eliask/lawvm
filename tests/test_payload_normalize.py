@@ -2782,6 +2782,48 @@ def test_assign_subsection_slots_tracks_unassigned_payload_slots() -> None:
     assert got.unassigned_payload_slots == ("2:2", "3:(unlabeled)")
 
 
+def test_assign_subsection_slots_lone_paragraph_not_reused_by_trailing_insert() -> None:
+    """Regression: a trailing INSERT must not reuse a slot a REPLACE consumed.
+
+    Mirrors 1990/1341 §14 (amendment 2016/777): the johtolause is
+    ``muutetaan 14 §:n otsikko ja 2 momentti, lisätään 14 §:ään uusi 3
+    momentti`` but the published body carries a single paragraph. The
+    REPLACE 2 mom claims that lone slot; the INSERT 3 mom then has no
+    payload of its own. The positional fallback used to bind the INSERT to
+    the already-consumed last slot, emitting the same sentence twice
+    (REPLAY_EXTRA double-insert against the oracle). It must instead leave
+    the INSERT unbound so its missing payload surfaces as residue.
+    """
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="14",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="uusi 2 mom"),),
+            ),
+        ),
+    )
+    op_replace = AmendmentOp(
+        op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=2
+    )
+    op_insert = AmendmentOp(
+        op_type="INSERT", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=3
+    )
+
+    got = _build_subsection_slot_assignment(muutos_ir, [op_replace, op_insert])
+
+    # The replace consumes the lone payload slot.
+    assert got.subsec_map[id(op_replace)].label == "2"
+    # The insert must NOT reuse it; leaving it unbound prevents the duplicate.
+    assert got.for_op(op_insert) is None
+    # Only one binding emitted (the replace); no slot is double-bound.
+    assert len(got.sparse_slot_bindings) == 1
+    assert got.sparse_slot_bindings[0].op_type == "REPLACE"
+    assert got.used_subs == (0,)
+
+
 def test_assign_subsection_slots_reserves_johd_slot_for_intro_op() -> None:
     """Regression: INSERT op must not steal the slot reserved for a johd REPLACE.
 
