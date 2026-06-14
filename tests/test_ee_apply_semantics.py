@@ -2963,8 +2963,8 @@ def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> Non
 
     # Only the targeted subdivision's sections become kehtetu stubs; the other
     # subdivisions' sections are untouched.
-    def _section_states(div: IRNode) -> list[tuple[str, str | None, object]]:
-        states: list[tuple[str, str | None, object]] = []
+    def _section_states(div: IRNode) -> list[tuple[str | None, str | None, object]]:
+        states: list[tuple[str | None, str | None, object]] = []
         for subdivision in div.children:
             for section in subdivision.children:
                 states.append((section.label, section.attrs.get("kehtetu"), section.children))
