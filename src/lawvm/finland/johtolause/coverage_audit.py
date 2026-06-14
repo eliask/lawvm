@@ -259,9 +259,20 @@ def classify_uncovered_spans(text: str) -> list[ClassifiedSpan]:
         else:
             position = "interior"
 
-        labels = tuple(
-            re.sub(r"\s+", "", m.group(1)).lower() for m in label_re.finditer(span.source_text)
-        )
+        # Extract section labels named in the span.  Guard against a NUMBER-TAIL
+        # false positive: when a produced op's witness covers only the leading
+        # digit(s) of a section number, the trailing digit(s) leak into this
+        # uncovered span ("36 §" head-covered -> a phantom "6 §" remains at the
+        # span start), which the regex would read as a missing target.  Token
+        # char offsets are raw-text relative, so a label whose first digit is
+        # immediately preceded by another digit in the raw source is a tail.
+        labels_list: list[str] = []
+        for m in label_re.finditer(span.source_text):
+            abs_start = (span.char_start + m.start()) if span.char_start >= 0 else -1
+            if 0 < abs_start <= len(text) and text[abs_start - 1].isdigit():
+                continue  # number-tail of a partially-covered section
+            labels_list.append(re.sub(r"\s+", "", m.group(1)).lower())
+        labels = tuple(labels_list)
         unmatched = tuple(lb for lb in labels if lb and lb not in op_labels)
         has_verb = "VERB" in span.token_cats
 
