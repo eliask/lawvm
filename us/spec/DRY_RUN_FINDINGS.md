@@ -131,17 +131,38 @@ strike/insert/add lowering exercised on real ops.
 116-189, 116-260, 116-325 (8 laws). PL 116-54 (SBRA) alone newly credits 28
 sections; PL 116-260 newly credits 15; PL 116-136 (CARES) 6.
 
-**Numbers (honest, `replay_authorized=False`) — AFTER the F1/F4/F5 lowering fixes:**
+**Numbers (honest, `replay_authorized=False`) — AFTER the F1/F4/F5 lowering fixes
+AND the F6/F7/F8 editorial-faithfulness + sub-section-granularity levers:**
 - Oracle changed-section count (a fact of the two editions): **40**.
-- Sections claimed/lowered: **14** (was 11 — the subsection-unit split surfaced
-  three more instruction units, e.g. §547(b) is no longer merged with §1409(b)).
+- Sections claimed/lowered: **15** (the sub-section-scoped materialization surfaces
+  §101's paragraph-redesignation op as a typed residual row instead of a blanket
+  refusal).
 - Section agreements: **1** (§525, PL 116-260 add-at-end materializes the oracle
   exactly once F4 preserves the block's terminal period). Witness-anchored
   coverage **1/40**; boundary `unresolved`.
-- Residuals (13): **12 `lawvm_wrong`** (genuine incompleteness — multiply-amended
-  sections where another window op is un-lowered, plus heading-inlining and the
-  F3 footnote digit) + **1 `oracle_suspect`** (§366, the OLRC per-paragraph
-  quote-stripping editorial projection).
+- Residuals (14): **10 `lawvm_wrong`** (genuine incompleteness — multiply-amended
+  sections where another window op is un-lowered, plus the F3 footnote digit) +
+  **4 `oracle_suspect`** (§366 OLRC per-paragraph quote-stripping; §1329 the OLRC
+  dropping the "Time period." marginal note; §330 curly-vs-straight quotes; and the
+  §365 sunset is surfaced separately as a `sunset_reversion`).
+
+**Why agreements stayed at 1/40 (honest binding-constraint finding).** The
+editorial levers below correctly demote three more residuals to `oracle_suspect`
+and the sub-section lever scopes the structural ops faithfully, but **no additional
+section reaches a full text AGREEMENT** because the binding constraint in this
+window is UPSTREAM of the dry-run: the amendatory LOWERING layer leaves 32 of
+PL 116-54's (SBRA) conforming-amendment instructions un-lowered (the nested
+"in section X— (A) by striking … (B) by inserting …" conforming-amendments form
+and several "amend to read" sub-section redesignations). The oracle-changed
+sections that are dominated by those un-lowered SBRA ops (§103, §347, §101, §364,
+§1325, the §11xx subchapter-V block) cannot compose to the full oracle no matter
+how the dry-run materializes the ops it DOES have — the ops do not exist yet. The
+sub-section-granularity materialization is the correct architecture and is now in
+place; it surfaces these as honest `subsection_target_node_not_located` /
+`match_text_not_found` residuals rather than wrong materializations. The next
+agreement-yielding lever is the amendatory lowering of the SBRA conforming
+amendments, not the dry-run surface. An honest 1/40 with correctly-typed residuals
+beats a forced number.
 
 The single agreement is the FIRST real agreement on a substantive Title-11 textual
 amendment. The remaining residuals are honest: this window's amendments are
@@ -154,46 +175,122 @@ was forced. What the kernel now does *correctly*:
   onto its before-text and compares **once**; comparing each op independently
   against the fully-amended oracle spuriously failed every multiply-amended
   section. Fix in `dry_run.py` only (Phase-1 routing + Phase-2 composition).
-- **Sub-section structural refusal.** A REPLACE/INSERT whose target is deeper
-  than `section` (paragraph/clause — e.g. §101(10A) redesignation, §502(b)
-  paragraph) is not section-text representable: its payload is a fragment, not the
-  section body. Now typed-refused (4 ops) instead of wrong-materialized.
-- **Editorial classification path (generalized F1).** A residual that vanishes
-  once the OLRC quote-stripping + dash-paren courtesy-space editorial projection
-  is applied is typed `oracle_suspect`, never repaired to the oracle. (It does not
-  fire on this window — see F3/F4 — but it is the correct mechanism and is
-  covered by a synthetic test.)
+- **Sub-section-granularity materialization (F8).** A REPLACE/INSERT/TEXT_REPLACE
+  whose target is deeper than `section` (paragraph/clause — e.g. §101(10A)
+  redesignation, §547(b) insert-after, §1325(b)(2) strike) is now materialized at
+  SUB-SECTION granularity: the targeted node's before-text is located by the pinned
+  USC address convention (`split_statutory_subsections`) and the edit is confined to
+  that node's span inside the running section text, then recomposed. This (a) scopes
+  a text patch to the right sub-section instead of string-replacing the first
+  occurrence anywhere, and (b) applies an amend-to-read payload to the right node
+  instead of refusing it. When the targeted node is NOT locatable in the before
+  edition (the SBRA subchapter-V nodes were introduced by un-lowered sibling ops),
+  the section is a typed `subsection_target_node_not_located` residual — never a
+  blanket refusal, never a wrong materialization. The four prior structural refusals
+  are now sub-section residuals; the structural-refusal count for this window is 0.
+- **Editorial classification path (generalized F1 + F6/F7).** A residual that
+  vanishes once the editorial projection is applied is typed `oracle_suspect`, never
+  repaired to the oracle. The projection now folds curly AND straight quote shapes
+  (F6) and the materialization prunes govinfo's marginal sidenotes and page stamps
+  (F7); these demote §1329 and §330 to `oracle_suspect` on this window.
 
-**Per-section residual decomposition (13 residuals + 1 agreement, AFTER fixes):**
+**Per-section residual decomposition (14 residuals + 1 agreement, AFTER all fixes):**
 - AGREEMENT (§525): PL 116-260 add-at-end. With F4 preserving the terminal period
   inside the inserted `<quotedContent>` block, the composed section text now equals
   the 2020 oracle exactly. First substantive textual-amendment agreement.
-- `match_text_not_found` (§103, §347): the amendatory lowering produced a strike
-  anchor absent from the 2018 edition (separate, un-fixed gaps; not F5).
-  **§547 is no longer here** — F5 is fixed: PL 116-54 §3(a) is now correctly read
-  as an *insert-after* (anchor `"may"`, inserted clause appended after it), the
-  anchor is found in the 2018 edition.
-- `materialized_text_mismatch` (§101, §366, §501, §547, §1325, §1328, §1329):
-  composed text disagrees substantively. §101 is partial (its paragraph
-  redesignations refused, so the materialized debt-limit strike alone ≠ the
-  fully-amended oracle — honest incompleteness). §547 now materializes the
-  due-diligence clause at the right anchor but the section also acquired a `(j)`
-  subsection from another window amendment not lowered here — honest incompleteness,
-  `lawvm_wrong`. §366 is now `oracle_suspect` (OLRC per-paragraph quote-stripping,
-  generalized F1). §1328 still carries an OLRC footnote digit (F3); §501/§1325/§1329
-  inline a `<heading>` (`Definitions.`, `Time period.`) the consolidated text
-  renders differently.
-- `claimed_section_unchanged_in_oracle` (§503): an over-claim — PL 116-260 §320's
-  `and`→`; and` resolved to a Title-11 §503 the 2020 edition did not change.
+- `oracle_suspect` (§366, §1329, §330): the composed text matches the oracle once
+  the declared editorial projection is applied (F1 quote-stripping for §366; F7
+  marginal-note pruning of "Time period." for §1329; F6 curly-vs-straight quote
+  fold around "Chapter 7 Trustee Fund" for §330). Never repaired to the oracle.
+- `subsection_target_node_not_located` (§101, §103, §1325, …): the sub-section op
+  targets a node the 2018 before-edition does not expose because an un-lowered SBRA
+  sibling op was to introduce/renumber it (honest upstream-lowering incompleteness).
+- `match_text_not_found` (§347): PL 116-136 §347(b) strikes "1194" → "1191", but
+  "1194" is only present after the un-lowered PL 116-54 SBRA §347 insert — honest
+  incompleteness, never fuzzy-matched. **§547 is no longer here** — F5/F8: PL 116-54
+  §3(a) is correctly read as an *insert-after* and now scoped to subsection (b).
+- `materialized_text_mismatch` (§364, §501, §1328, §547): composed text disagrees
+  substantively. §364 is missing "1183, 1184" from an un-lowered PL 116-54
+  conforming amendment (honest incompleteness). §547 materializes the due-diligence
+  clause at the right anchor but the section also acquired a `(j)` subsection from an
+  un-lowered op. §501 and §1328 are blocked SOLELY by the OLRC footnote digit (F3) —
+  after the F6/F7 editorial projection the only remaining divergence is the bare
+  footnote `1` the oracle injects; we do NOT strip it (see F3 — an unsafe generic
+  digit projection would mangle real statutory numbers, so these stay typed
+  residuals rather than force agreement).
+- `claimed_section_unchanged_in_oracle` (§1225, §503): an over-claim — a PL 116-260
+  §320 op resolved to a Title-11 section the 2020 edition did not change.
 
-## F3 — OLRC footnote-digit injection (§1328)
-The 2020 consolidated §1328 carries a bare `1` (`… 2605(i)) 1 of the mortgage …`)
-— an OLRC editorial footnote-reference marker rendered as plain text in the htm.
-Statutory text never contains bare footnote numbers; this is an oracle editorial
-insertion no amendment mandates. Disposition `oracle_suspect` in spirit (we do
-NOT strip the oracle's footnote to force agreement). Not folded into the editorial
-projection: footnote markers are an OLRC rendering artifact, distinct from the
-F1 quote/spacing convention, and would need a declared named normalization.
+## F3 — OLRC footnote-digit injection (§1328, §501) — INVESTIGATED, deliberately NOT forced
+The 2020 consolidated §1328 and §501 each carry a bare `1`
+(`… 2605(i)) 1 of the mortgage …` / `… 2605(i)) 1 with a claim …`) — an OLRC
+editorial footnote-reference marker rendered as plain text in the htm. After the
+F6/F7 editorial projection this bare footnote digit is the SOLE remaining
+divergence for both sections. Statutory text never contains bare footnote numbers;
+this is an oracle editorial insertion no amendment mandates, so the residual is
+oracle-side `oracle_suspect` in spirit.
+
+It is deliberately NOT folded into the editorial projection. A survey of the 2018
+and 2020 editions shows space-flanked lone digits are pervasive in LEGITIMATE
+statutory text — `1 fund`, `2 years`, `1 person`, `(I) 1 family`, `(iv) 1 radio`,
+`(A) 2 years` — indistinguishable by any safe regex from the footnote markers
+(`2605(i)) 1 of`, `733(g) 2 of`). A generic footnote-digit normalization would
+mangle real statutory numbers and could manufacture false agreements elsewhere.
+Per the Prime Directive we keep §1328/§501 as typed `lawvm_wrong` residuals
+(faithful materialization; oracle carries an editorial digit) rather than force
+them with an unsafe projection. This is the honest call: a self-evidencing
+per-marker normalization (reading the footnote anchors from the source) is the
+correct future lever, not a digit-pattern guess.
+
+## F6 — quote-shape fold (curly vs straight) — RESOLVED (comparison-side)
+The enacted USLM amendment wraps inserted matter and defined terms in CURLY quotes
+(`‘CARES forbearance claim’`, `‘Chapter 7 Trustee Fund’`); the OLRC consolidated
+Code re-renders them as STRAIGHT quotes (`"CARES forbearance claim"`). The editorial
+projection `_norm_editorial` now folds both quote shapes (curly and straight) for
+classification only. Equating quote *shape* can never manufacture agreement between
+texts that differ in any non-quote character. This demotes §330 to `oracle_suspect`
+(the sole divergence was the quote shape around "Chapter 7 Trustee Fund") and
+removes the term-quote divergence from §501. Pinned by
+`test_norm_editorial_folds_straight_and_curly_quote_shapes` (incl. the
+no-false-agreement guard).
+
+## F7 — editorial marginal sidenotes + page stamps in quoted blocks — RESOLVED (materialization-side)
+govinfo PLAW USLM interleaves the legislative-counsel marginal sidenotes (topical /
+effective-date markers "Time period.", "Definitions.", "Deadline.", "Effective
+date.") as small-font `<p class="…fontsize8">` elements, and the Statutes-at-Large
+page-break stamps ("134 STAT. 3219") as `<page>` elements, INSIDE `<quotedContent>`.
+These are editorial pagination/marginalia, NOT enacted statutory text — the OLRC
+consolidated USC body never renders them. The old `_quoted_content_node` flattened
+them into the materialized payload (`(2) Time period.A plan …`), which the published
+Code lacks. Resolution (in `amendatory.py`): `_itertext_excluding_sidenotes` prunes
+the `fontsize8` sidenote and `<page>` subtrees while preserving their tail text and
+the full statutory body verbatim. This is a FAITHFULNESS fix (we were materializing
+sidenote text the statute does not contain), not a comparison hack. It demotes
+§1329 to `oracle_suspect` (the sole divergence was the "Time period." marginal note)
+and removes the inline-heading divergence from §501. Pinned by
+`test_add_at_end_payload_prunes_editorial_sidenotes_and_page_stamps`.
+
+## F8 — sub-section-granularity materialization — RESOLVED (dry-run-side)
+A REPLACE/INSERT/TEXT_REPLACE/TEXT_REPEAL whose target is deeper than `section`
+(paragraph/clause/sub-section) is now materialized at SUB-SECTION granularity. The
+targeted node's before-text is located by the pinned USC address convention
+(`split_statutory_subsections`, matching the op's sub-section segments) and the edit
+is confined to that node's span inside the running section text, then recomposed:
+
+- A TEXT_REPLACE on §547(b) edits only subsection (b)'s text, not the first
+  occurrence of the anchor anywhere in the section.
+- An amend-to-read REPLACE on a paragraph substitutes the payload for THAT node,
+  not the whole section body (no fragment masquerading as the section).
+
+When the targeted node is NOT locatable in the before edition — because an
+un-lowered SBRA sibling op was to introduce or renumber it — the op is a typed
+`subsection_target_node_not_located` residual (`lawvm_wrong`), never a blanket
+refusal and never an unscoped whole-section string replace. The four prior
+structural refusals on this window are now sub-section residuals; the
+structural-refusal count is 0. Pinned by
+`test_subsection_text_replace_is_scoped_to_the_target_node`,
+`test_subsection_replace_op_materializes_at_the_target_node`, and
+`test_subsection_op_without_locatable_node_is_typed_residual_not_wrong_materialization`.
 
 ## F4 — terminal period inside an inserted `<quotedContent>` (§366, §525, §1328) — RESOLVED
 The enacted PL 116-260 inserts blocks that end `…becomes due.”` — the period is
@@ -237,15 +334,28 @@ incompleteness, never repaired. Pinned by `test_insert_after_classifies_and_assi
 `test_strike_insert_operand_order_struck_matches_inserted_replaces`.
 
 ## Implications for next work (priority order)
-1. **Lowering robustness (F4/F5) — DONE; first agreement achieved.** F5 (insert-after
-   mis-classification + subsection-unit merging) and F4 (terminal period peeled with
-   the curly quote) are fixed in `amendatory.py`. Result: the 2018→2020 window now
-   yields **1 agreement (§525, coverage 1/40)** and §366 demotes to `oracle_suspect`;
-   the 2023→2024 §507(d) demotes to `oracle_suspect` via the declared insert-after
-   courtesy-space normalization. Remaining residuals are honest incompleteness
-   (multiply-amended sections with un-lowered sibling ops: §547 `(j)`, §101
-   redesignations) and the F3 footnote / heading-inlining classes — the NEXT
-   lowering levers for more agreements.
+0. **THE binding constraint for more agreements is the amendatory LOWERING layer,
+   not the dry-run surface.** PL 116-54 (SBRA) leaves 32 of its conforming-amendment
+   instructions un-lowered (the nested "in section X— (A) by striking … (B) by
+   inserting …" form and several "amend to read" sub-section redesignations). Every
+   oracle-changed section dominated by those un-lowered ops (§103, §347, §364, §101,
+   §1325, the §11xx subchapter-V block) cannot reach a full text agreement until the
+   ops exist. The F6/F7/F8 levers below are correct and in place, but the next
+   AGREEMENT-yielding work is decomposing the SBRA conforming-amendments list in
+   `amendatory.py`'s `_iter_instruction_units` / `_classify_action`. The dry-run
+   sub-section materialization (F8) is ready to consume those ops once lowered.
+1. **Editorial-faithfulness + sub-section levers (F6/F7/F8) — DONE.** F7 prunes
+   govinfo marginal sidenotes + page stamps from the materialized payload
+   (faithfulness fix); F6 folds curly/straight quote shapes in the comparison
+   projection; F8 materializes sub-section-targeted ops at the right node. Result on
+   2018→2020: **1 agreement (§525) unchanged at 1/40**, but `oracle_suspect` rises
+   from 1 to 4 (§366 + §1329 + §330 + the §365 sunset) — three residuals correctly
+   re-typed from `lawvm_wrong` to oracle editorial pathology, never repaired. The
+   four prior structural refusals are now typed sub-section residuals. §1328/§501
+   remain typed residuals blocked solely by the F3 footnote digit, deliberately not
+   forced. 2023→2024 is unchanged (§507 oracle_suspect, §109/§1182 sunset, 0
+   missing_source). No agreement was forced; an honest 1/40 with correctly-typed
+   residuals beats a forced number.
 2. US temporal/sunset modeling (F2) — DONE at the detection+classification layer:
    the dry-run distinguishes `missing_source` (un-lowered amendment) from
    `sunset_reversion` (expired temporary provision), with §109/§1182 reclassified

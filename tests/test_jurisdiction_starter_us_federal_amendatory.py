@@ -265,6 +265,37 @@ def test_add_at_end_payload_preserves_terminal_period_inside_quoted_block():
     assert "“" not in payload.text and "”" not in payload.text
 
 
+def test_add_at_end_payload_prunes_editorial_sidenotes_and_page_stamps():
+    # govinfo interleaves the legislative-counsel marginal sidenotes ("Time
+    # period.", "Definitions.") as small-font <p class="...fontsize8"> elements and
+    # the Statutes-at-Large page stamps as <page> elements INSIDE the quotedContent.
+    # These are editorial, never enacted statutory text — the materialized payload
+    # must NOT contain them (the OLRC consolidated Code does not render them).
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s1329">Section 1329 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="add">adding</amendingAction> at the end the '
+        'following:<quotedContent><subsection><num value="d">“(d) </num>'
+        '<paragraph><num value="2">(2) </num>'
+        '<p class="leftAlign firstIndent0 fontsize8">Time period.</p>'
+        '<content>A plan modified under paragraph (1)'
+        '<page identifier="/us/stat/134/3219">134 STAT. 3219</page>'
+        ' may not provide for payments.</content></paragraph>'
+        '</subsection></quotedContent>.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.operation is not None
+    payload = instr.operation.payload
+    assert payload is not None
+    # The marginal sidenote and the page stamp are pruned; the statutory body
+    # survives verbatim (including the paragraph enumerator and its content).
+    assert "Time period." not in payload.text
+    assert "134 STAT." not in payload.text
+    assert "(2) A plan modified under paragraph (1) may not provide for payments." in payload.text
+
+
 # ---------------------------------------------------------------------------
 # Typed finding for an unsupported / unresolvable instruction (no silent skip)
 # ---------------------------------------------------------------------------

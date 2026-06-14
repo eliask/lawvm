@@ -341,6 +341,58 @@ def _amending_actions(elem: ET.Element) -> list[str]:
     return out
 
 
+# govinfo PLAW USLM interleaves the legislative-counsel marginal sidenotes
+# (the topical/effective-date markers "Time period.", "Definitions.", "Deadline.",
+# "Effective date.", page-break "134 STAT. ..." stamps) as small-font ``<p>``
+# elements inside ``<quotedContent>``. These are EDITORIAL marginalia, not enacted
+# statutory text — the OLRC consolidated USC body never renders them. They are
+# distinguished by their ``fontsize8`` paragraph class (the small marginal-note
+# font; real enacted body is ``fontsize10``/``fontsize12``). Excluding them from
+# the materialized payload is a faithfulness fix, not a comparison hack: a quoted
+# block that pulls "(2) Time period.A plan ..." into the body is materializing
+# sidenote text the statute does not contain.
+_EDITORIAL_SIDENOTE_CLASS = "fontsize8"
+# USLM ``<page>`` elements are the Statutes-at-Large page-break stamps
+# ("134 STAT. 3219") govinfo injects between body runs. Like the sidenotes they
+# are editorial pagination, never enacted statutory text, and are pruned.
+_EDITORIAL_PRUNE_TAGS = frozenset({"page"})
+
+
+def _is_editorial_sidenote(elem: ET.Element) -> bool:
+    if _localname(elem.tag) in _EDITORIAL_PRUNE_TAGS:
+        return True
+    cls = elem.get("class", "")
+    return _EDITORIAL_SIDENOTE_CLASS in cls.split()
+
+
+def _itertext_excluding_sidenotes(elem: ET.Element) -> str:
+    """Concatenated descendant text of ``elem`` with editorial sidenotes pruned.
+
+    Mirrors :meth:`Element.itertext` but skips the subtree of any element that is a
+    legislative-counsel marginal sidenote (``fontsize8`` ``<p>``), and skips that
+    element's *text* while keeping its *tail* (the tail belongs to the parent's
+    text flow, not the sidenote). The statutory body text is preserved verbatim.
+    """
+    parts: list[str] = []
+
+    def _walk(node: ET.Element, *, emit_own_text: bool) -> None:
+        if emit_own_text and node.text:
+            parts.append(node.text)
+        for child in node:
+            if _is_editorial_sidenote(child):
+                # Drop the sidenote subtree entirely, but keep its tail text (which
+                # is the surrounding statutory flow that follows the marginal note).
+                if child.tail:
+                    parts.append(child.tail)
+                continue
+            _walk(child, emit_own_text=True)
+            if child.tail:
+                parts.append(child.tail)
+
+    _walk(elem, emit_own_text=True)
+    return "".join(parts)
+
+
 def _quoted_content_node(elem: ET.Element) -> IRNode | None:
     """Build an IRNode payload from the first ``<quotedContent>`` block, if any."""
     for q in elem.iter():
@@ -349,8 +401,10 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
             # serialization whitespace (newlines/indent around <quotedContent> are
             # NOT significant), then peel ONLY the enclosing curly-quote pair. The
             # terminal punctuation (period) lives INSIDE the quote and must survive
-            # (F4: "…becomes due." not "…becomes due").
-            collapsed = re.sub(r"\s+", " ", "".join(q.itertext())).strip()
+            # (F4: "…becomes due." not "…becomes due"). Editorial marginal sidenotes
+            # (fontsize8 ``<p>``: "Time period.", "Definitions.", page stamps) are
+            # pruned — they are not enacted statutory text.
+            collapsed = re.sub(r"\s+", " ", _itertext_excluding_sidenotes(q)).strip()
             text = _peel_enclosing_quotes(collapsed)
             # We carry the quoted block verbatim as a single content node; the
             # dry-run stage re-parses the USLM sub-tree into structured law.
