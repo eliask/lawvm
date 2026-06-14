@@ -26,7 +26,10 @@ from lawvm.sweden.fetch import (
     _ArchiveLike,
     _migrate_legacy_se_ir_blob,
     _normalize_compare_text,
+    _se_oracle_version_relation,
+    _se_parse_andring_inford_sfs,
     _reverse_patch_se_available_later_chain,
+    se_three_bucket_for_classification,
     analyze_se_official_replay_feasibility,
     attach_official_artifacts_to_bundle,
     archive_se_source_bundle,
@@ -120,6 +123,123 @@ def test_se_compare_text_normalization_uses_named_presentation_projection() -> N
     assert (
         _normalize_compare_text("1 Exempel – text 1. med nummer Förordning (2026:280).")
         == "Exempel - text med nummer"
+    )
+
+
+def test_se_compare_text_normalization_folds_trailing_lag_attribution() -> None:
+    # The consolidated RK surface tags an amended provision with the amending
+    # act's own short citation; the replay payload renders it without that tag.
+    assert (
+        _normalize_compare_text("Avgiften ska betalas senast den 1 mars. Lag (2018:221).")
+        == _normalize_compare_text("Avgiften ska betalas senast den 1 mars.")
+        == "Avgiften ska betalas senast den 1 mars."
+    )
+
+
+def test_se_compare_text_normalization_keeps_inline_lag_reference() -> None:
+    # A "Lag (YYYY:N)" reference embedded INSIDE the operative body (not a
+    # trailing provenance tag) is substantive and must not be folded away.
+    assert (
+        _normalize_compare_text("Bestämmelserna i Lag (2018:221) ska tillämpas på avgiften.")
+        == "Bestämmelserna i Lag (2018:221) ska tillämpas på avgiften."
+    )
+
+
+def test_se_compare_text_normalization_folds_trailing_prop_provenance() -> None:
+    # Editorial preparatory-work citations ("Prop." / "Jfr prop.") trailing the
+    # operative text are provenance, not part of the provision.
+    canonical = "Beslutet ska fattas av regeringen."
+    assert _normalize_compare_text(f"{canonical} Prop. 2001/02:1.") == canonical
+    assert _normalize_compare_text(f"{canonical} Jfr prop. 1999/2000:23.") == canonical
+
+
+def test_se_compare_text_normalization_keeps_substantive_prop_reference() -> None:
+    # A reference to a proposition INSIDE body text is substantive and stays.
+    text = "Vad som sägs i prop. 2001/02:1 om detta ska beaktas vid tillämpningen."
+    assert _normalize_compare_text(text) == text
+
+
+def test_se_compare_text_normalization_folds_list_enumerator_case() -> None:
+    # A consolidated surface may render an alphabetic list-item label with a
+    # different case or with/without a leading space; fold the enumerator token.
+    assert (
+        _normalize_compare_text("A) första punkten")
+        == _normalize_compare_text("a) första punkten")
+        == "a) första punkten"
+    )
+
+
+def test_se_compare_text_normalization_list_enumerator_keeps_body_diff() -> None:
+    # Folding the enumerator label must NOT make genuinely different list-item
+    # bodies compare equal.
+    assert _normalize_compare_text("a) första punkten") != _normalize_compare_text(
+        "a) andra punkten"
+    )
+
+
+def test_se_parse_andring_inford_sfs_extracts_or_returns_none() -> None:
+    assert _se_parse_andring_inford_sfs("Ändring införd: t.o.m. SFS 2030:1") == "2030:1"
+    assert _se_parse_andring_inford_sfs("t.o.m. SFS 2018:221a") == "2018:221a"
+    # Missing/unparseable stamps must return None so callers classify as unknown.
+    assert _se_parse_andring_inford_sfs(None) is None
+    assert _se_parse_andring_inford_sfs("") is None
+    assert _se_parse_andring_inford_sfs("Grundförfattning") is None
+
+
+def test_se_oracle_version_relation_compares_stamp_against_replay() -> None:
+    # Strictly-later oracle stamp -> dating artifact (correct replay, later doc).
+    assert _se_oracle_version_relation("2026:286", "2030:1") == "later"
+    # Contemporaneous/older stamp -> genuine surface drift.
+    assert _se_oracle_version_relation("2026:286", "2026:286") == "same_or_earlier"
+    assert _se_oracle_version_relation("2026:286", "2020:5") == "same_or_earlier"
+    # Missing or malformed ids -> the relation cannot be trusted.
+    assert _se_oracle_version_relation("2026:286", None) == "unknown"
+    assert _se_oracle_version_relation("not-an-sfs", "2030:1") == "unknown"
+
+
+def test_se_three_bucket_later_oracle_stamp_is_version_mismatch() -> None:
+    # A strictly-later consolidation stamp moves an oracle-fallback row out of
+    # "drift" into the honest oracle_version_mismatch bucket.
+    assert (
+        se_three_bucket_for_classification(
+            "official_oracle_version_mismatch", matched=True
+        )
+        == "oracle_version_mismatch"
+    )
+
+
+def test_se_three_bucket_same_or_earlier_oracle_stamp_is_genuine_mismatch() -> None:
+    # A contemporaneous/older stamp is a real current-surface drift.
+    assert (
+        se_three_bucket_for_classification(
+            "official_oracle_match_current_surface_drift", matched=True
+        )
+        == "genuine_mismatch"
+    )
+
+
+def test_se_three_bucket_genuine_and_editorial_match_count_as_match() -> None:
+    # Genuine content equality and editorial-only presentation differences both
+    # count as genuine_match (the latter differ only in presentation).
+    assert se_three_bucket_for_classification("exact", matched=True) == "genuine_match"
+    assert (
+        se_three_bucket_for_classification("inline_numbering_only", matched=True)
+        == "genuine_match"
+    )
+
+
+def test_se_three_bucket_unknown_and_content_mismatch_classified_honestly() -> None:
+    # An untrustworthy stamp is "unknown"; a genuine content disagreement is
+    # genuine_mismatch.
+    assert (
+        se_three_bucket_for_classification(
+            "official_oracle_match_version_unknown", matched=True
+        )
+        == "unknown"
+    )
+    assert (
+        se_three_bucket_for_classification("content_mismatch", matched=False)
+        == "genuine_mismatch"
     )
 
 
@@ -3330,7 +3450,14 @@ def test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications()
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
-def test_check_se_official_replay_accepts_official_oracle_when_current_surface_drifts() -> None:
+def _build_se_oracle_drift_archive(andring_inford: str | None) -> _FakeArchive:
+    """Archive whose current surface diverges from the amending act's post-state.
+
+    The replay reproduces the amendment's own post-state (== the official-act
+    oracle), but the current surface carries a different "Senare driftad lydelse"
+    body. ``andring_inford`` sets the current surface's consolidation stamp so the
+    oracle-version relation can be exercised.
+    """
     base_payload = {
         "beteckning": "2026:777",
         "rubrik": "Förordning (2026:777) om test",
@@ -3339,12 +3466,15 @@ def test_check_se_official_replay_accepts_official_oracle_when_current_surface_d
         "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
         "forfattningstypNamn": "Förordning",
         "register": {"forarbeten": None},
-        "fulltext": (
-            "2 § /Upphör att gälla U:2026-04-15/\n"
-            "Gammal lydelse.\n\n"
-            "2 § /Träder i kraft I:2026-04-15/\n"
-            "Senare driftad lydelse.\n"
-        ),
+        "fulltext": {
+            "andringInford": andring_inford,
+            "forfattningstext": (
+                "2 § /Upphör att gälla U:2026-04-15/\n"
+                "Gammal lydelse.\n\n"
+                "2 § /Träder i kraft I:2026-04-15/\n"
+                "Senare driftad lydelse.\n"
+            ),
+        },
         "publiceradDateTime": "2026-01-01T00:00:00",
         "andringsforfattningar": [],
     }
@@ -3363,17 +3493,51 @@ def test_check_se_official_replay_accepts_official_oracle_when_current_surface_d
         "signatories": [],
         "footnotes": [],
     }
-    archive = _FakeArchive(
+    return _FakeArchive(
         stored={
             "se://sfs/2026:777/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
             "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
         }
     )
 
+
+def test_check_se_official_replay_later_stamp_is_oracle_version_mismatch() -> None:
+    # The current surface's consolidation stamp folds an SFS (2030:1) strictly
+    # later than the replayed amendment (2026:286): a correct replay measured
+    # against a later consolidation, not a content failure.
+    archive = _build_se_oracle_drift_archive("t.o.m. SFS 2030:1")
+
     result = check_se_official_replay(archive, "2026:286")
 
     assert result["match_count"] == 1
+    assert result["oracle_version_relation"] == "later"
+    assert result["oracle_consolidation_sfs_id"] == "2030:1"
+    assert result["rows"][0]["classification"] == "official_oracle_version_mismatch"
+
+
+def test_check_se_official_replay_earlier_stamp_is_surface_drift() -> None:
+    # The current surface's stamp is contemporaneous-or-older than the replayed
+    # amendment, so an oracle disagreement is a genuine surface drift.
+    archive = _build_se_oracle_drift_archive("t.o.m. SFS 2026:200")
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["match_count"] == 1
+    assert result["oracle_version_relation"] == "same_or_earlier"
     assert result["rows"][0]["classification"] == "official_oracle_match_current_surface_drift"
+
+
+def test_check_se_official_replay_missing_stamp_is_version_unknown() -> None:
+    # Without a parseable consolidation stamp the version relation cannot be
+    # trusted, so the row is classified honestly as version-unknown rather than
+    # guessed into either drift or version-mismatch.
+    archive = _build_se_oracle_drift_archive(None)
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["match_count"] == 1
+    assert result["oracle_version_relation"] == "unknown"
+    assert result["rows"][0]["classification"] == "official_oracle_match_version_unknown"
 
 
 def test_check_se_official_replay_recompiles_stale_ops_without_effective_date() -> None:
