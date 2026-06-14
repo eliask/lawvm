@@ -11240,6 +11240,65 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     us_spec_ledger_p.add_argument(
         "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
     )
+
+    us_evidence_pack_p = sub.add_parser(
+        "us-evidence-pack",
+        help="export U.S. federal dry-run residuals as auditable evidence-pack JSONL",
+        description=(
+            "Project the U.S. federal dry-run kernel's per-section residuals "
+            "(lawvm_wrong / oracle_suspect / missing_source / sunset_reversion), "
+            "agreements, and typed refusals into one report-query-compatible "
+            "evidence-row stream. Each residual becomes a sampleable row carrying "
+            "the offending text, disposition, rule_id, the pinned USC section "
+            "address, and the window. Read-only over the U.S. farchive; makes no "
+            "replay claim. Thin shim over lawvm.us_federal.evidence_pack."
+        ),
+    )
+    us_evidence_pack_p.add_argument(
+        "--bench",
+        action="store_true",
+        help="export the full bench corpus (every evaluated window) instead of one window",
+    )
+    us_evidence_pack_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default=None,
+        help="bench corpus CSV for --bench (default: us/bench/us_bench_corpus.csv)",
+    )
+    us_evidence_pack_p.add_argument(
+        "--title",
+        type=int,
+        default=None,
+        help="USC title number (single-window mode), or scope --bench to one title",
+    )
+    us_evidence_pack_p.add_argument(
+        "--before", type=int, default=None, dest="before_year",
+        help="before-edition year (YYYY) for single-window mode",
+    )
+    us_evidence_pack_p.add_argument(
+        "--after", type=int, default=None, dest="after_year",
+        help="after-edition year (YYYY) for single-window mode",
+    )
+    us_evidence_pack_p.add_argument(
+        "--row-kind", default="", help="filter rows by kind (operation|finding)"
+    )
+    us_evidence_pack_p.add_argument(
+        "--disposition",
+        default="",
+        help="filter rows by disposition (lawvm_wrong|oracle_suspect|missing_source|sunset_reversion|agreement)",
+    )
+    us_evidence_pack_p.add_argument(
+        "--rule-id", default="", help="filter rows by witness rule id"
+    )
+    us_evidence_pack_p.add_argument(
+        "--limit", type=int, default=40, metavar="N", help="rows to include in JSON output"
+    )
+    us_evidence_pack_p.add_argument(
+        "--output-jsonl", metavar="PATH", help="write the evidence rows as report-query JSONL"
+    )
+    us_evidence_pack_p.add_argument(
+        "--json", action="store_true", help="emit the evidence-pack report JSON instead of a summary line"
+    )
     # --- END us_federal jurisdiction tooling ---
 
     # --- recipes ---
@@ -12812,6 +12871,11 @@ def _main_impl() -> None:
             with open(_json_out, "w", encoding="utf-8") as _fh:
                 json.dump(ledger_to_dict(_ledger), _fh, ensure_ascii=False, indent=2)
             print(f"wrote {_json_out}", file=sys.stderr)
+
+    elif args.command == "us-evidence-pack":
+        from lawvm.us_federal.evidence_pack import main as us_evidence_pack_main
+
+        us_evidence_pack_main(args)
     # --- END us_federal jurisdiction dispatch ---
 
     elif args.command is None:
