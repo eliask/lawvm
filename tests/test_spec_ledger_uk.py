@@ -303,3 +303,66 @@ def test_uk_statute_end_to_end_non_empty_ledger():
     led = build_ledger(inputs, jurisdiction="uk", mode="official_consolidation", catalog={})
     assert led.statutes == 1
     assert led.rules, "expected non-empty per-rule ledger from compiled UK ops"
+
+
+def _gap_row(sid: str, i: int) -> DivergenceRow:
+    return DivergenceRow(
+        sid=sid,
+        section_key=f"part-{i}",
+        diagnosis="deterministic_gap",
+        disposition="lawvm_wrong",
+        rule_id=None,
+        blame_source="",
+    )
+
+
+def test_whole_statute_noncommensurable_wall_is_demoted():
+    """A statute that is overwhelmingly unattributed deterministic-gaps (one
+    EID-scheme mismatch, e.g. ukpga/1907/51) is demoted out of the falsifying
+    bucket so it cannot masquerade as thousands of real bugs."""
+    from lawvm.tools.spec_ledger import (
+        _NONCOMMENSURABLE_DIAGNOSIS,
+        _demote_whole_statute_noncommensurable,
+    )
+
+    rows = [_gap_row("ukpga/1907/51", i) for i in range(60)]
+    out = _demote_whole_statute_noncommensurable(rows)
+    assert all(r.diagnosis == _NONCOMMENSURABLE_DIAGNOSIS for r in out)
+    assert all(r.disposition == "unknown" for r in out)
+    # none counts as falsifying -> statute does not dominate the real-bug ranking
+    led = build_ledger(
+        [StatuteLedgerInput(sid="ukpga/1907/51", rule_firings={}, divergences=out)],
+        jurisdiction="uk",
+        mode="official_consolidation",
+        catalog={},
+    )
+    assert led.statute_real_bugs.get("ukpga/1907/51", 0) == 0
+
+
+def _attr_gap_row(sid: str, i: int) -> DivergenceRow:
+    return DivergenceRow(
+        sid=sid,
+        section_key=f"part-{i}",
+        diagnosis="deterministic_gap",
+        disposition="lawvm_wrong",
+        rule_id="uk_some_rule",
+        blame_source="",
+    )
+
+
+def test_noncommensurable_demotion_is_conservative():
+    """Small statutes and statutes below the wall fraction are never demoted."""
+    from lawvm.tools.spec_ledger import _demote_whole_statute_noncommensurable
+
+    # below the row floor -> untouched even if all are unattributed gaps
+    small = [_gap_row("x/1", i) for i in range(10)]
+    assert _demote_whole_statute_noncommensurable(small) == small
+
+    # 52 unattributed gaps + 8 attributed (wall = 52/60 = 0.87 < 0.9) -> unchanged
+    mixed = [_gap_row("x/2", i) for i in range(52)] + [
+        _attr_gap_row("x/2", 52 + j) for j in range(8)
+    ]
+    out = _demote_whole_statute_noncommensurable(mixed)
+    assert any(
+        r.rule_id is None and r.diagnosis == "deterministic_gap" for r in out
+    ), "wall fraction not met -> rows unchanged"
