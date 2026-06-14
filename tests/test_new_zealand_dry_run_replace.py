@@ -313,6 +313,60 @@ def test_replace_applies_subtree_and_agrees_with_oracle() -> None:
     assert proof.oracle_version_id == _AFTER_VERSION
 
 
+# Oracle body where section 41 carries the SAME logical content as the flat
+# amend payload, but cross-references are marked up with nested
+# ``<citation><intref>...`` — the modern consolidated shape. With the
+# document-order text walker the marked-up body extracts byte-identically to the
+# flat payload, so the dry-run agrees; a flat ``text``+``tail`` walker would
+# float the reference text to the end and report a false residual mismatch.
+_AFTER_XML_AGREES_INLINE_MARKUP = b"""\
+<act>
+  <body>
+    <prov id="DLMa41" deletion-status=""><label>41</label><heading>New heading</heading>
+      <prov.body><para><text>41 New heading An order made under <citation><intref>section 12</intref></citation> takes effect on the date fixed by <citation><intref>section 13</intref></citation> for commencement.</text></para></prov.body></prov>
+    <prov id="DLMa42" deletion-status=""><label>42</label><heading>Neighbour</heading>
+      <prov.body><para><text>42 Neighbour Neighbour body.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# Amending act whose flat ``<amend>`` payload carries the SAME content as
+# ``_AFTER_XML_AGREES_INLINE_MARKUP`` but as plain text (no citation markup).
+_AMENDING_XML_FLAT_REFS = b"""\
+<act>
+  <body>
+    <prov id="DLM9000010"><label>10</label><heading>Amendments to principal Act</heading>
+      <prov.body><subprov><label>1</label><para>
+        <text><citation jurisdiction="nz"><extref href="DLMa41">section 41</extref></citation> is repealed and the following section substituted:</text>
+        <amend>
+          <prov id="newDLMa41"><label>41</label><heading>New heading</heading>
+            <prov.body><para><text>41 New heading An order made under section 12 takes effect on the date fixed by section 13 for commencement.</text></para></prov.body></prov>
+        </amend>
+      </para></subprov></prov.body></prov>
+  </body>
+</act>
+"""
+
+
+def test_replace_agrees_when_oracle_marks_up_cross_references_inline() -> None:
+    # Regression for the inline-element text-ordering bug: identical logical
+    # content (flat in the amend payload, citation-marked in the oracle body)
+    # must compare EQUAL — the agreement rises because the text now extracts
+    # identically, not because comparison got loose.
+    report = _run(
+        _AFTER_XML_AGREES_INLINE_MARKUP,
+        (_FakeWitnessRow(),),
+        amending_xml=_AMENDING_XML_FLAT_REFS,
+    )
+
+    summary = report.summary()
+    assert summary["dry_run_oracle_agreements"] == 1
+    assert summary["dry_run_oracle_residuals"] == 0
+    proof = report.proofs[0]
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_REPLACE_AGREES_RULE_ID
+
+
 def test_replace_residual_when_oracle_subtree_differs() -> None:
     report = _run(_AFTER_XML_MISMATCH, (_FakeWitnessRow(),))
 

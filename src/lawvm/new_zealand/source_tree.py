@@ -427,20 +427,51 @@ def _history_note_defined_term(node: etree._Element) -> str:
 
 def _legal_text(node: etree._Element) -> str:
     texts: list[str] = []
-    for descendant in node.iter():
-        if descendant is node:
-            continue
-        if not isinstance(descendant.tag, str):
-            continue
-        if _localname(descendant) in _TEXT_EXCLUDE_TAGS:
-            continue
-        if any(_localname(parent) in _TEXT_EXCLUDE_TAGS for parent in descendant.iterancestors()):
-            continue
-        if descendant.text:
-            texts.append(descendant.text)
-        if descendant.tail:
-            texts.append(descendant.tail)
+    _collect_legal_text(node, texts, is_root=True)
     return _normalize_text(" ".join(texts))
+
+
+def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool) -> None:
+    """Append a node's flow text in true document order.
+
+    Emits ``node.text``, then each child's subtree text followed by that child's
+    ``tail`` — the document-order interleave of element text and the text that
+    trails inline elements. A flat ``iter()`` loop that appends ``text`` then
+    ``tail`` per element mis-orders inline markup: an inline ``<extref>``/
+    ``<intref>`` whose reference text sits inside a ``<citation>`` (the modern
+    consolidated body shape) has its parent citation's ``tail`` appended before
+    the inner reference text, so the cross-reference text floats to the end of
+    the run (e.g. "required by, the Secretary ... section 47" instead of
+    "required by section 47, the Secretary"). The same logical content arrives
+    flat in an amending act's ``<amend>`` payload, so the two sides extracted
+    different strings for identical text. Walking children in order, with each
+    inline element's ``tail`` emitted after its subtree, makes both sides exact.
+
+    ``_TEXT_EXCLUDE_TAGS`` subtrees (notes/history) contribute nothing — neither
+    their text nor their ``tail`` — preserving the prior exclusion behaviour.
+    """
+
+    if not isinstance(node.tag, str):
+        return
+    if _localname(node) in _TEXT_EXCLUDE_TAGS:
+        return
+    # The structural root contributes only its descendant flow text, not its own
+    # leading ``text`` (which for a structural element is empty/whitespace); this
+    # matches the historical extraction so non-inline nodes are unchanged.
+    if not is_root and node.text:
+        texts.append(node.text)
+    for child in node:
+        if not isinstance(child.tag, str):
+            # Comment/PI nodes contribute nothing (text or tail), matching the
+            # historical extractor's ``isinstance(tag, str)`` skip.
+            continue
+        if _localname(child) in _TEXT_EXCLUDE_TAGS:
+            # Excluded subtree: skip its text and the tail that trails it, to
+            # keep the historical "notes/history contribute nothing" behaviour.
+            continue
+        _collect_legal_text(child, texts, is_root=False)
+        if child.tail:
+            texts.append(child.tail)
 
 
 # Structural-replacement (whole-provision substitute) extraction. ------------

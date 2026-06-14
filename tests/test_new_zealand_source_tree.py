@@ -267,6 +267,88 @@ def test_amend_instructions_empty_when_no_amend_in() -> None:
     assert node.amend_instructions == ()
 
 
+def test_legal_text_keeps_inline_cross_reference_in_document_order() -> None:
+    # A consolidated body marks cross-references with nested
+    # ``<citation><intref>section N</intref></citation>`` whose reference text
+    # sits one level below the citation's own ``tail``. The flow text must come
+    # out in true document order ("required by section 47, the Secretary ...
+    # fixed by section 48 for the lodging"), not with the reference text floated
+    # to the end of the run. The same logical content arrives as flat text in an
+    # amending act's payload, so an out-of-order extraction here makes the two
+    # sides compare unequal even when the content is identical.
+    xml = b"""\
+<act>
+  <body>
+    <prov id="S51"><label>51</label><heading>Ballots</heading>
+      <prov.body><subprov id="S51-1"><label>1</label><para><text>If an election is required by <citation><intref>section 47</intref></citation>, the Secretary must, after the date fixed by <citation><intref>section 48</intref></citation> for the lodging of nominations, act.</text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    subprov = [n for n in document.nodes if n.kind == "subprov"][0]
+
+    # ``_legal_text`` keeps inline elements in document order. (The space before
+    # the comma is a join artifact removed by the comparison-side normalizer; the
+    # load-bearing property here is ORDER, not punctuation spacing.)
+    assert subprov.text == (
+        "1 If an election is required by section 47 , the Secretary must, "
+        "after the date fixed by section 48 for the lodging of nominations, act."
+    )
+    # The reference text must not float to the end of the run.
+    assert "required by section 47" in subprov.text
+    assert subprov.text.index("section 47") < subprov.text.index("the Secretary")
+    assert subprov.text.index("section 48") < subprov.text.index("for the lodging")
+
+
+def test_legal_text_inline_payload_and_marked_up_body_extract_identically() -> None:
+    # The dry-run structural-replace comparison relies on the amending act's
+    # flat-text ``<amend>`` payload and the consolidated body extracting the
+    # SAME string for the same logical content. Pin that equivalence directly:
+    # a flat ``<text>`` and a citation-marked ``<text>`` with identical reading
+    # order must yield byte-identical node text.
+    flat = b"""\
+<act><body>
+  <prov id="F"><label>9</label><heading>H</heading>
+    <prov.body><subprov id="F-1"><label>1</label><para><text>A jury list must not contain the name of a person under section 115 of the Electoral Act 1993 whose address is suppressed.</text></para></subprov></prov.body>
+  </prov>
+</body></act>
+"""
+    marked = b"""\
+<act><body>
+  <prov id="M"><label>9</label><heading>H</heading>
+    <prov.body><subprov id="M-1"><label>1</label><para><text>A jury list must not contain the name of a person under <citation><intref>section 115 of the Electoral Act 1993</intref></citation> whose address is suppressed.</text></para></subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    flat_text = [n for n in parse_nz_source_document(flat).nodes if n.kind == "subprov"][0].text
+    marked_text = [n for n in parse_nz_source_document(marked).nodes if n.kind == "subprov"][0].text
+
+    assert flat_text == marked_text
+    assert "under section 115 of the Electoral Act 1993 whose address" in flat_text
+
+
+def test_legal_text_excludes_notes_and_their_trailing_text() -> None:
+    # The document-order walker must still contribute nothing for a notes /
+    # history subtree — neither its text nor the tail that trails it — so a
+    # history note never leaks into a node's legal text.
+    xml = b"""\
+<act><body>
+  <prov id="N"><label>3</label><heading>H</heading>
+    <prov.body><subprov id="N-1"><label>1</label><para><text>Operative text.</text></para></subprov></prov.body>
+    <notes><history-note id="HN">Section 3: amended, on 1 January 2025.</history-note></notes>
+  </prov>
+</body></act>
+"""
+
+    prov = [n for n in parse_nz_source_document(xml).nodes if n.kind == "prov"][0]
+
+    assert "Operative text." in prov.text
+    assert "amended" not in prov.text
+
+
 def test_nz_source_summary_cli_parse_defaults() -> None:
     parser = _build_parser()
 
