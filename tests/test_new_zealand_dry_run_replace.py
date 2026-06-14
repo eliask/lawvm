@@ -420,6 +420,149 @@ def test_extractor_same_section_ambiguity_stays_blocked_with_provision() -> None
     assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
 
 
+# --- Target-leaf KIND-ALIAS matching (subprov <-> label-para). ----------------
+#
+# NZ encodes the same interchangeable lettered-paragraph leaf as ``subprov`` in
+# one place and ``label-para`` in another. The extractor matches across that
+# alias on an exact label so the payload (present, only the leaf KIND differs) is
+# no longer spuriously refused; the label still must match exactly, so a genuine
+# both-kinds-present collision stays a typed ambiguity (no false positive).
+
+# Amend payload carries the new leaf as a ``label-para`` while the target leaf is
+# addressed as a ``subprov`` (and vice versa for the reverse direction below).
+_AMENDING_XML_ALIAS_LABEL_PARA = b"""\
+<act><body><prov id="ALIASLP"><prov.body><para>
+  <text>Replace section 12(h) with:</text>
+  <amend>
+    <label-para><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></label-para>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+_AMENDING_XML_ALIAS_SUBPROV = b"""\
+<act><body><prov id="ALIASSP"><prov.body><para>
+  <text>Replace section 12(2) with:</text>
+  <amend>
+    <subprov><label>2</label><para><text>2 the brand new subsection body.</text></para></subprov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def test_extractor_matches_subprov_target_against_label_para_payload() -> None:
+    # subprov target leaf, label-para payload: the kind alias matches on label "h".
+    node = _amending_node(_AMENDING_XML_ALIAS_LABEL_PARA, "ALIASLP")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="h")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "h"
+    assert "brand new lettered paragraph" in result.root.text
+
+
+def test_extractor_matches_label_para_target_against_subprov_payload() -> None:
+    # Reverse direction: label-para target leaf, subprov payload, label "2".
+    node = _amending_node(_AMENDING_XML_ALIAS_SUBPROV, "ALIASSP")
+    result = extract_structural_replacement(node, target_leaf_kind="label-para", target_leaf_label="2")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "2"
+    assert "brand new subsection" in result.root.text
+
+
+def test_extractor_kind_alias_does_not_collapse_genuine_ambiguity() -> None:
+    # Both a subprov "a" AND a label-para "a" are present in the amend payload.
+    # With the alias relaxing the kind, both match the target leaf on label "a" —
+    # which is a genuine ambiguity that MUST stay blocked (no false positive).
+    xml = b"""\
+<act><body><prov id="ALIASAMB"><prov.body><para>
+  <text>Replace section 5(a) with:</text>
+  <amend>
+    <subprov><label>a</label><para><text>a first candidate.</text></para></subprov>
+    <label-para><label>a</label><para><text>a second candidate.</text></para></label-para>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "ALIASAMB")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="a")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_extractor_kind_alias_only_subprov_label_para_not_other_kinds() -> None:
+    # A coincidental numeric collision across structural levels (a schedule "3" in
+    # the payload, a subprov "3" target) is NOT a genuine alias and must not match.
+    xml = b"""\
+<act><body><prov id="NOTALIAS"><prov.body><para>
+  <text>Replace section 7(3) with:</text>
+  <amend>
+    <schedule><label>3</label><para><text>3 a schedule, not a subsection.</text></para></schedule>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "NOTALIAS")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="3")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
+
+
+# End-to-end: the live body encodes section 12(h) as a ``label-para`` and the
+# amend payload carries the replacement as a ``subprov`` (alias). The kernel must
+# normalize the extracted root's kind to the live-body target kind so the
+# candidate subtree AGREES with the oracle (same label/text), not a spurious
+# kind-only residual mismatch.
+_ALIAS_E2E_BEFORE = b"""\
+<act><body>
+  <prov id="DLMs12" deletion-status=""><label>12</label><heading>Section twelve</heading><prov.body>
+    <subprov id="DLMs12s1"><label>1</label><para><text>1 lead-in.</text>
+      <label-para id="DLMs12h" deletion-status=""><label>h</label><para><text>h the old lettered paragraph body.</text></para></label-para>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+_ALIAS_E2E_AFTER = b"""\
+<act><body>
+  <prov id="DLMs12" deletion-status=""><label>12</label><heading>Section twelve</heading><prov.body>
+    <subprov id="DLMs12s1"><label>1</label><para><text>1 lead-in.</text>
+      <label-para id="DLMs12h" deletion-status=""><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></label-para>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+_ALIAS_E2E_AMENDING = b"""\
+<act><body><prov id="DLM9000010"><label>10</label><heading>Amend</heading><prov.body><para>
+  <text>Replace section 12(1)(h) with:</text>
+  <amend>
+    <subprov><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></subprov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def _alias_archive() -> _FakeArchive:
+    # Like _archive but with the alias before-tree (label-para target in the body)
+    # and the alias amend payload (subprov), so the kernel must align the root kind.
+    base = _archive(_ALIAS_E2E_AFTER, amending_xml=_ALIAS_E2E_AMENDING)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _ALIAS_E2E_BEFORE
+    return base
+
+
+def test_replace_kind_alias_agrees_after_root_kind_alignment() -> None:
+    # Target addressed as paragraph (label-para) h under subsection 1 of section 12;
+    # amend payload encodes it as a subprov. Extractor matches via alias; kernel
+    # aligns the root kind to the live-body label-para so the oracle AGREES.
+    row = _FakeWitnessRow(
+        row_id="nz-opw-alias",
+        target_path=(("section", "12"), ("subsection", "1"), ("paragraph", "h")),
+        amended_provision="Section 12(1)(h)",
+    )
+    report = build_dry_run_replace(_alias_archive(), work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1, report.refusals
+    assert summary["dry_run_oracle_agreements"] == 1
+    proof = report.proofs[0]
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_REPLACE_AGREES_RULE_ID
+    assert proof.selected_source_path[-1] == "label-para:h"
+
+
 # --- Kernel apply + oracle classification tests. -----------------------------
 
 

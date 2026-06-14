@@ -692,10 +692,43 @@ def extract_structural_replacement(
     return NZStructuralReplacement(root=root, descendants=tuple(nodes[1:]))
 
 
+# Target-leaf kind aliases for amend-child matching. NZ XML encodes the SAME
+# logical lettered sub-item inconsistently across the body and the amend payload:
+# a sub-item addressed (via the history note) as a ``subprov`` may be carried in
+# the amending act's ``<amend>`` subtree as a ``label-para`` and vice versa (both
+# wrap their label in a ``<label>`` element and share the lettered-label space).
+# The target leaf's KIND can therefore be too strict while the LABEL is exact and
+# the payload is present. This explicit, symmetric alias set relaxes ONLY the kind
+# comparison for these two interchangeable lettered-paragraph kinds; the label
+# still must match exactly, so the >1-match ambiguity refusal (a ``subprov a`` AND
+# a ``label-para a`` both present) still holds — no false positives. Coincidental
+# numeric-label collisions across different structural levels (a ``schedule 3`` vs
+# a ``subprov 3``, a ``part 2`` vs a ``subprov 2``) are deliberately NOT aliased.
+_TARGET_LEAF_KIND_ALIASES: dict[str, frozenset[str]] = {
+    "subprov": frozenset({"label-para"}),
+    "label-para": frozenset({"subprov"}),
+}
+
+
+def _kind_matches_target_leaf(child_kind: str, target_leaf_kind: str) -> bool:
+    """Whether an amend child's kind matches the target leaf kind (with aliases).
+
+    Exact-kind match, or a kind in the target leaf's explicit alias set (the
+    interchangeable lettered-paragraph kinds ``subprov``/``label-para``).
+    """
+
+    if child_kind == target_leaf_kind:
+        return True
+    return child_kind in _TARGET_LEAF_KIND_ALIASES.get(target_leaf_kind, frozenset())
+
+
 def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, normalized_label: str) -> bool:
-    if _localname(child) != target_leaf_kind:
+    child_kind = _localname(child)
+    if not _kind_matches_target_leaf(child_kind, target_leaf_kind):
         return False
-    if target_leaf_kind == "def-para":
+    # Read the label by the CHILD's own kind, not the target's: a ``def-para``
+    # carries its label as a defined term, every other kind carries a ``<label>``.
+    if child_kind == "def-para":
         child_label = _first_def_term(child)
     else:
         child_label = _direct_child_text(child, "label")

@@ -1860,9 +1860,17 @@ def _dry_run_one_replace(
     before_target = before_matches[0]
     resolved_path = before_target.path
 
+    # The amend payload may encode an interchangeable lettered-paragraph leaf
+    # under the alias kind (``subprov`` vs ``label-para``) — a source-encoding
+    # artifact, not a semantic difference. Normalize the extracted root's kind to
+    # the resolved live-body target's kind so the candidate subtree compares
+    # against the oracle (which carries the body kind) without a spurious
+    # kind-only mismatch. The label, text, and structure are unchanged.
+    replacement_root = _align_replacement_root_kind(replacement.root, before_target.kind)
+
     # --- The boring apply kernel: re-root the extracted replacement subtree onto
     # the resolved target path and swap it in for the target's subtree.
-    after_target = _rebase_replacement_root(replacement.root, resolved_path)
+    after_target = _rebase_replacement_root(replacement_root, resolved_path)
     if _node_digest(after_target) == _node_digest(before_target) and after_target.text == before_target.text:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -1881,7 +1889,7 @@ def _dry_run_one_replace(
     parent_digest_before = _node_digest(parent_before_nodes[0]) if parent_before_nodes else ""
     parent_digest_after = parent_digest_before
 
-    candidate_subtree_digest = _subtree_digest(replacement.root, replacement.descendants)
+    candidate_subtree_digest = _subtree_digest(replacement_root, replacement.descendants)
     (
         oracle_match,
         oracle_rule_id,
@@ -1891,7 +1899,7 @@ def _dry_run_one_replace(
     ) = _oracle_partition_replace(
         oracle_doc,
         resolved_path,
-        candidate_root=replacement.root,
+        candidate_root=replacement_root,
         candidate_descendants=replacement.descendants,
     )
 
@@ -2892,6 +2900,34 @@ def _top_level_provision_label(source_path: tuple[str, ...]) -> str | None:
         if kind == "prov" and label:
             return label
     return None
+
+
+def _align_replacement_root_kind(replacement_root: NZSourceNode, target_kind: str) -> NZSourceNode:
+    """Normalize a kind-aliased replacement root to the live-body target kind.
+
+    The structural extractor matches an interchangeable lettered-paragraph leaf
+    (``subprov`` vs ``label-para``) across the alias, so the amend payload may
+    carry the node under the alias kind. That tag choice is a source-encoding
+    artifact: the node being replaced is the target's kind. When the extracted
+    root kind already equals the target kind this is a no-op; otherwise the kind
+    is rewritten to the target kind (label/text/everything else unchanged) so the
+    candidate subtree compares cleanly against the oracle's body-kind node.
+    """
+
+    if replacement_root.kind == target_kind:
+        return replacement_root
+    return NZSourceNode(
+        kind=target_kind,
+        path=replacement_root.path,
+        xml_id=replacement_root.xml_id,
+        xml_path=replacement_root.xml_path,
+        source_zone=replacement_root.source_zone,
+        label=replacement_root.label,
+        heading=replacement_root.heading,
+        deletion_status=replacement_root.deletion_status,
+        text=replacement_root.text,
+        history=replacement_root.history,
+    )
 
 
 def _rebase_replacement_root(replacement_root: NZSourceNode, resolved_path: tuple[str, ...]) -> NZSourceNode:

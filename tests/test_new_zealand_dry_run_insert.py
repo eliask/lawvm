@@ -352,6 +352,40 @@ def test_extractor_blocks_genuinely_ambiguous_duplicate_label() -> None:
     assert result == NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
 
 
+def test_insert_extractor_matches_subprov_target_against_label_para_payload() -> None:
+    # The inserted leaf is addressed as a subprov but the amend payload encodes it
+    # as a label-para (the interchangeable lettered-paragraph alias). The extractor
+    # matches on the exact label across the kind alias.
+    xml = b"""\
+<act><body><prov id="ALIASINS"><prov.body><para>
+  <text>In section 9, insert:</text>
+  <amend>
+    <label-para><label>fa</label><para><text>fa the newly inserted lettered paragraph.</text></para></label-para>
+  </amend></para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "ALIASINS")
+    result = extract_structural_insertion(node, inserted_leaf_kind="subprov", inserted_leaf_label="fa")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "fa"
+    assert "newly inserted lettered paragraph" in result.root.text
+
+
+def test_insert_extractor_kind_alias_does_not_collapse_genuine_ambiguity() -> None:
+    # Both a subprov "fa" AND a label-para "fa" are present; with the alias both
+    # match the target leaf on label "fa" -> genuine ambiguity, stays blocked.
+    xml = b"""\
+<act><body><prov id="ALIASINSAMB"><prov.body><para>
+  <text>In section 9, insert:</text>
+  <amend>
+    <subprov><label>fa</label><para><text>fa first.</text></para></subprov>
+    <label-para><label>fa</label><para><text>fa second.</text></para></label-para>
+  </amend></para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "ALIASINSAMB")
+    result = extract_structural_insertion(node, inserted_leaf_kind="subprov", inserted_leaf_label="fa")
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
+
+
 _INSERT_CROSS_SECTION_XML = b"""\
 <act><body><prov id="XSEC"><prov.body>
   <para><text>In <citation jurisdiction="nz"><extref href="s12">section 12</extref></citation>, insert:</text>
