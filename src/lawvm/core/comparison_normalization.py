@@ -154,6 +154,20 @@ INLINE_TEXT_COMPARISON_RULES: tuple[ComparisonNormalizationRule, ...] = (
         pattern=re.compile(r"([(])\s+"),
         replacement=r"\1",
     ),
+    ComparisonNormalizationRule(
+        name="inline_text_close_paren_spacing",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description=(
+            "Remove source-display spaces before closing parentheses/brackets for "
+            "inline text occurrence counting. Symmetric with the open-paren rule: a "
+            "consolidated body renders an inline cross-reference followed by a "
+            "closing paren as 'section 197 )' while the amending act's payload "
+            "renders the same content as 'section 197)'. Comparison-only spacing."
+        ),
+        pattern=re.compile(r"\s+([)\]])"),
+        replacement=r"\1",
+    ),
 )
 
 _INLINE_TEXT_COMPARISON_RULE_ISSUES = validate_comparison_normalization_rules(

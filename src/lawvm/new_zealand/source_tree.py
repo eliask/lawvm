@@ -636,6 +636,19 @@ NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD = "structural_insert_no_amend_chi
 NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH = "structural_insert_multiple_amend_children_match_inserted_leaf"
 NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD = "structural_insert_extracted_node_is_empty"
 NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE = "structural_insert_inserted_leaf_kind_or_label_unusable"
+NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION = "structural_insert_amending_provision_is_schedule_indirection"
+
+# Schedule-indirection amending provisions ("Amend the Acts set out in the
+# tables in Schedules 1 to 32 of this Act, in each case,—") deliver their
+# inserted content through schedule TABLES, not through the ``<amend>`` subtree
+# the history-note href points to. That href instead resolves to the amending
+# act's OWN illustrative provision body, whose structural nodes (subprov 1/2/3,
+# label-para a/b) share labels with the genuinely inserted node and would be
+# spuriously matched. The inserted content is not recoverable from this shape,
+# so the extractor refuses it as a typed blocker rather than emit a false node.
+_SCHEDULE_INDIRECTION_INSTRUCTION = re.compile(
+    r"\bamend the acts?\s+set out\b.*\bschedules?\b", re.IGNORECASE | re.DOTALL
+)
 
 
 def extract_structural_insertion(
@@ -663,6 +676,15 @@ def extract_structural_insertion(
         return NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE
     normalized_label = _normalize_text(inserted_leaf_label)
 
+    # A schedule-indirection amending provision does not carry the inserted node
+    # in its ``<amend>`` subtree (the content lives in schedule tables); its own
+    # body structural nodes would be spuriously matched by label. Refuse.
+    for text_node in amending_node.iter():
+        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+            continue
+        if _SCHEDULE_INDIRECTION_INSTRUCTION.search(_node_text(text_node)):
+            return NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION
+
     amend_subtrees = [
         element
         for element in amending_node.iter()
@@ -672,14 +694,31 @@ def extract_structural_insertion(
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE
 
     matches: list[etree._Element] = []
-    for amend in amend_subtrees:
-        for child in amend:
-            if not isinstance(child.tag, str):
-                continue
-            if _localname(child) not in _STRUCTURAL_TAGS:
-                continue
-            if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
-                matches.append(child)
+    if inserted_leaf_kind == "def-para":
+        # A new definition is frequently wrapped in an intermediate ``<para>``
+        # ("insert, in their appropriate alphabetical order, the following
+        # definitions:") inside ``<amend>`` rather than being a direct amend
+        # child. The defined term is globally unique within an interpretation
+        # provision, so a descendant search keyed on the term is safe: a single
+        # ``def-para`` whose first def-term matches is the inserted node; more
+        # than one match is genuinely ambiguous (refused below).
+        for amend in amend_subtrees:
+            for descendant in amend.iter():
+                if not isinstance(descendant.tag, str):
+                    continue
+                if _localname(descendant) != "def-para":
+                    continue
+                if _amend_child_matches_leaf(descendant, inserted_leaf_kind, normalized_label):
+                    matches.append(descendant)
+    else:
+        for amend in amend_subtrees:
+            for child in amend:
+                if not isinstance(child.tag, str):
+                    continue
+                if _localname(child) not in _STRUCTURAL_TAGS:
+                    continue
+                if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
+                    matches.append(child)
 
     if not matches:
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD

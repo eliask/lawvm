@@ -151,7 +151,6 @@ NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID = (
 
 # Structural-insert refusals (typed, no mutation performed).
 NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID = "nz_dry_run_refused_structural_insert_target_address_not_candidate"
-NZ_DRY_RUN_REFUSED_INSERT_NOT_WHOLE_PROVISION_RULE_ID = "nz_dry_run_refused_structural_insert_target_not_single_segment_whole_provision"
 NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_not_derivable_from_inserted_label"
 NZ_DRY_RUN_REFUSED_INSERT_NO_AMENDING_WORK_RULE_ID = "nz_dry_run_refused_structural_insert_amending_work_unresolved"
 NZ_DRY_RUN_REFUSED_INSERT_AMENDING_XML_UNREADABLE_RULE_ID = "nz_dry_run_refused_structural_insert_amending_act_xml_unreadable"
@@ -160,6 +159,13 @@ NZ_DRY_RUN_REFUSED_INSERT_PAYLOAD_NOT_EXTRACTABLE_RULE_ID = "nz_dry_run_refused_
 NZ_DRY_RUN_REFUSED_INSERT_TARGET_ALREADY_IN_BEFORE_RULE_ID = "nz_dry_run_refused_structural_insert_new_node_already_present_in_before_tree"
 NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_IN_BEFORE_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_not_present_in_before_tree"
 NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_AMBIGUOUS_RULE_ID = "nz_dry_run_refused_structural_insert_anchor_path_ambiguous_in_before_tree"
+# Nested insert (a new subsection/paragraph/definition WITHIN an existing
+# provision): the inserted node's address has more than one segment, so the
+# anchor + position are derived among the leaf's siblings under the resolved
+# parent rather than at the top level.
+NZ_DRY_RUN_REFUSED_INSERT_PARENT_NOT_IN_BEFORE_RULE_ID = "nz_dry_run_refused_structural_insert_nested_parent_not_present_in_before_tree"
+NZ_DRY_RUN_REFUSED_INSERT_PARENT_AMBIGUOUS_RULE_ID = "nz_dry_run_refused_structural_insert_nested_parent_path_ambiguous_in_before_tree"
+NZ_DRY_RUN_REFUSED_INSERT_NESTED_ANCHOR_NOT_DERIVABLE_RULE_ID = "nz_dry_run_refused_structural_insert_nested_anchor_not_derivable_from_sibling_group"
 
 # Typed not-in-scope reasons for the selected_family_insert scope.
 NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY = "not_in_scope_non_structural_insert_family"
@@ -2141,6 +2147,90 @@ def _derive_insert_anchor(leaf_kind: str, leaf_label: str) -> tuple[str, str] | 
     return None
 
 
+def _derive_nested_insert_anchor(
+    leaf_kind: str,
+    leaf_label: str,
+    sibling_labels: tuple[str, ...],
+) -> tuple[str, str] | None:
+    """Derive the anchor sibling label + direction for a NESTED inserted node.
+
+    A nested insert places a new subsection / paragraph / definition among the
+    leaf's siblings under an already-resolved parent. The position is derived
+    from the label convention applied at the nested level, validated against the
+    parent's existing sibling group:
+
+    - **Suffix-letter leaf** (``3A``, ``ba``): same convention as the top-level
+      anchor — ``3A`` after ``3``, ``ba`` after ``b``. The derived predecessor
+      must exist among the siblings; otherwise refuse (no guessed position).
+    - **Bare-numeric leaf** (``4``): inserted after its numeric predecessor
+      (``3``) when that predecessor exists among the siblings. A bare-numeric
+      leaf with no existing predecessor is a renumber/append we will not guess —
+      refuse.
+    - **Bare-alpha leaf** (``c``): inserted after its alpha predecessor (``b``)
+      when that predecessor exists among the siblings; otherwise refuse.
+    - **Definition** (``def-para``, alpha-ordered by term): inserted in
+      case-insensitive alphabetical order among the existing definition terms.
+      The anchor is the immediately-preceding term; if the new term sorts before
+      every sibling it is inserted ``before`` the alphabetically-first sibling.
+      An empty sibling group is not a derivable position — refuse.
+
+    Returns ``(anchor_sibling_label, direction)`` or ``None`` (typed refusal in
+    the caller). The returned anchor label is matched against the actual sibling
+    set, so an unresolvable or ambiguous position never produces a guess.
+    """
+
+    sibling_set = set(sibling_labels)
+
+    if leaf_kind == "def-para":
+        # Definitions are alpha-ordered by term (case-insensitive). The label IS
+        # the defined term. Find the alphabetically-immediately-preceding term.
+        if not leaf_label or not sibling_labels:
+            return None
+        key = leaf_label.casefold()
+        preceding = [s for s in sibling_labels if s.casefold() < key]
+        if not preceding:
+            # The new term sorts before every existing definition: insert before
+            # the alphabetically-first sibling.
+            first = min(sibling_labels, key=lambda s: s.casefold())
+            return (first, "before")
+        anchor = max(preceding, key=lambda s: s.casefold())
+        return (anchor, "after")
+
+    # Suffix-letter convention (3A after 3, ba after b) reuses the top-level
+    # derivation, then requires the derived predecessor to actually be a sibling.
+    suffix_anchor = _derive_insert_anchor(leaf_kind, leaf_label)
+    if suffix_anchor is not None:
+        anchor_label, direction = suffix_anchor
+        if anchor_label in sibling_set:
+            return (anchor_label, direction)
+        return None
+
+    # Bare-numeric leaf (4): after its numeric predecessor (3), if it exists.
+    if re.fullmatch(r"[0-9]+", leaf_label):
+        predecessor = str(int(leaf_label) - 1)
+        if predecessor in sibling_set:
+            return (predecessor, "after")
+        return None
+
+    # Bare-alpha leaf (c): after its single-letter alpha predecessor (b).
+    if re.fullmatch(r"[a-z]", leaf_label):
+        if leaf_label == "a":
+            return None
+        predecessor = chr(ord(leaf_label) - 1)
+        if predecessor in sibling_set:
+            return (predecessor, "after")
+        return None
+    if re.fullmatch(r"[A-Z]", leaf_label):
+        if leaf_label == "A":
+            return None
+        predecessor = chr(ord(leaf_label) - 1)
+        if predecessor in sibling_set:
+            return (predecessor, "after")
+        return None
+
+    return None
+
+
 def _dry_run_one_insert(
     archive: Any,
     work_id: str,
@@ -2162,10 +2252,13 @@ def _dry_run_one_insert(
             detail={"target_address_status": row.target_address_candidate.status},
         )
 
-    # The inserted node's own source path (where it will live). The insert kernel
-    # currently covers WHOLE provisions/parts/schedules — a single-segment source
-    # path — so the suffix-letter anchor convention applies cleanly. A nested
-    # insert (subsection/paragraph/definition) is a typed refusal for now.
+    # The inserted node's own source path (where it will live). A single-segment
+    # source path is a WHOLE provision/part/schedule — the suffix-letter anchor
+    # convention applies at the top level. A multi-segment path is a NESTED insert
+    # (a new subsection/paragraph/definition WITHIN an existing provision); its
+    # anchor + position are derived among the leaf's siblings under the resolved
+    # parent, which requires the before-tree, so nested anchor derivation is
+    # deferred until after the before-tree is parsed (below).
     new_node_source_path = _source_path_for_tree_path(row.target_address_candidate.path)
     if new_node_source_path is None:
         return NZDryRunRefusal(
@@ -2175,30 +2268,25 @@ def _dry_run_one_insert(
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
         )
-    if len(new_node_source_path) != 1:
-        return NZDryRunRefusal(
-            op_id=op_id,
-            rule_id=NZ_DRY_RUN_REFUSED_INSERT_NOT_WHOLE_PROVISION_RULE_ID,
-            message="dry-run structural-insert refused because the inserted target is not a single-segment whole provision",
-            target_address=target_address,
-            amendment_date_iso=amendment_date_iso,
-            detail={"new_node_source_path": list(new_node_source_path)},
-        )
     leaf_kind = _leaf_source_kind(new_node_source_path)
     leaf_label = _leaf_source_label(new_node_source_path)
+    is_nested = len(new_node_source_path) > 1
+    parent_source_path = new_node_source_path[:-1]
 
-    anchor = _derive_insert_anchor(leaf_kind, leaf_label)
-    if anchor is None:
-        return NZDryRunRefusal(
-            op_id=op_id,
-            rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID,
-            message="dry-run structural-insert refused because no anchor sibling is derivable from the inserted node's label",
-            target_address=target_address,
-            amendment_date_iso=amendment_date_iso,
-            detail={"inserted_leaf_kind": leaf_kind, "inserted_leaf_label": leaf_label},
-        )
-    anchor_label, direction = anchor
-    anchor_source_path = (f"{leaf_kind}:{anchor_label}",)
+    top_level_anchor: tuple[str, str] | None = None
+    if not is_nested:
+        # Whole-provision insert: derive the top-level anchor from the label
+        # convention up front (no before-tree dependency). Unchanged behavior.
+        top_level_anchor = _derive_insert_anchor(leaf_kind, leaf_label)
+        if top_level_anchor is None:
+            return NZDryRunRefusal(
+                op_id=op_id,
+                rule_id=NZ_DRY_RUN_REFUSED_INSERT_ANCHOR_NOT_DERIVABLE_RULE_ID,
+                message="dry-run structural-insert refused because no anchor sibling is derivable from the inserted node's label",
+                target_address=target_address,
+                amendment_date_iso=amendment_date_iso,
+                detail={"inserted_leaf_kind": leaf_kind, "inserted_leaf_label": leaf_label},
+            )
 
     if not row.amending_work_id or not row.amending_provision_hrefs:
         return NZDryRunRefusal(
@@ -2314,6 +2402,54 @@ def _dry_run_one_insert(
             amendment_date_iso=amendment_date_iso,
             detail={"new_node_source_path": list(new_node_source_path)},
         )
+    # Derive + resolve the anchor sibling. For a nested insert the anchor + the
+    # direction are derived from the leaf's actual sibling group under the parent
+    # (which must resolve to exactly one live-body node first); for a whole
+    # provision the top-level anchor was already derived from the label.
+    if is_nested:
+        parent_matches = _resolve_target_nodes(before_doc, parent_source_path)
+        if len(parent_matches) == 0:
+            return NZDryRunRefusal(
+                op_id=op_id,
+                rule_id=NZ_DRY_RUN_REFUSED_INSERT_PARENT_NOT_IN_BEFORE_RULE_ID,
+                message="dry-run structural-insert refused because the inserted node's parent is not present in the before tree",
+                target_address=target_address,
+                amendment_date_iso=amendment_date_iso,
+                detail={"parent_source_path": list(parent_source_path)},
+            )
+        if len(parent_matches) > 1:
+            return NZDryRunRefusal(
+                op_id=op_id,
+                rule_id=NZ_DRY_RUN_REFUSED_INSERT_PARENT_AMBIGUOUS_RULE_ID,
+                message="dry-run structural-insert refused because the inserted node's parent path is ambiguous in the before tree",
+                target_address=target_address,
+                amendment_date_iso=amendment_date_iso,
+                detail={"parent_source_path": list(parent_source_path), "match_count": len(parent_matches)},
+            )
+        resolved_parent_path = parent_matches[0].path
+        sibling_nodes = _child_nodes_of_kind(before_doc, resolved_parent_path, leaf_kind)
+        sibling_labels = tuple(node.label for node in sibling_nodes if node.label)
+        nested_anchor = _derive_nested_insert_anchor(leaf_kind, leaf_label, sibling_labels)
+        if nested_anchor is None:
+            return NZDryRunRefusal(
+                op_id=op_id,
+                rule_id=NZ_DRY_RUN_REFUSED_INSERT_NESTED_ANCHOR_NOT_DERIVABLE_RULE_ID,
+                message="dry-run structural-insert refused because no anchor sibling is derivable from the nested sibling group",
+                target_address=target_address,
+                amendment_date_iso=amendment_date_iso,
+                detail={
+                    "inserted_leaf_kind": leaf_kind,
+                    "inserted_leaf_label": leaf_label,
+                    "sibling_labels": list(sibling_labels),
+                },
+            )
+        anchor_label, direction = nested_anchor
+        anchor_source_path = (*resolved_parent_path, f"{leaf_kind}:{anchor_label}")
+    else:
+        assert top_level_anchor is not None  # derived above for the whole-provision path
+        anchor_label, direction = top_level_anchor
+        anchor_source_path = (f"{leaf_kind}:{anchor_label}",)
+
     # The derived anchor must resolve to exactly one live-body node.
     anchor_matches = _resolve_target_nodes(before_doc, anchor_source_path)
     if len(anchor_matches) == 0:
@@ -2740,6 +2876,23 @@ def _sibling_nodes(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[N
         node
         for node in document.nodes
         if node.path != path and node.path[:-1] == parent and len(node.path) == len(path)
+    )
+
+
+def _child_nodes_of_kind(
+    document: NZSourceDocument,
+    parent_path: tuple[str, ...],
+    kind: str,
+) -> tuple[NZSourceNode, ...]:
+    """Direct child nodes of ``parent_path`` whose ``kind`` matches, in document order."""
+
+    depth = len(parent_path)
+    return tuple(
+        node
+        for node in document.nodes
+        if len(node.path) == depth + 1
+        and node.path[:depth] == parent_path
+        and node.kind == kind
     )
 
 
