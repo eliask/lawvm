@@ -415,7 +415,19 @@ def _load_uk_rule_specs() -> Dict[str, str]:
         from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS
     except ImportError:
         return {}
-    return dict(_UK_RULE_SPECS)
+    specs = dict(_UK_RULE_SPECS)
+    # Fold in the effect/diagnostic-rule supplement (the ledger-firing ids that are
+    # string literals, not static *_RULE_ID constants — kept separate so the main
+    # catalog's no-dead-entry constant check stays pure). Merged only here, where the
+    # ledger consumes the combined catalog.
+    try:
+        from lawvm.tools.spec_ledger_uk_catalog_supplement import (
+            _UK_RULE_SPECS_SUPPLEMENT,
+        )
+        specs.update(_UK_RULE_SPECS_SUPPLEMENT)
+    except ImportError:
+        pass
+    return specs
 
 
 _UK_RULE_SPECS: Dict[str, str] = _load_uk_rule_specs()

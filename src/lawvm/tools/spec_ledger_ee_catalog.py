@@ -311,4 +311,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_case_inflected_aruanded_heading_agreement": "An 'aruanded' rewrite also enforces case/number agreement in the affected heading.",
     "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms": "The 'olemasolev tahkel kütusel põhinev kütteseade' phrase family is rewritten in all case forms.",
     "ee_case_inflected_riiklik_register_infosusteem_forms": "The 'riiklik … register' → 'sotsiaalkaitse infosüsteem' family rewrites the witnessed illative forms, not invented '-registerit' surfaces (living spec §59.1).",
+
+    # --- Replayability-frontier diagnostic (replayability_frontier.py) -----------------
+    "ee_replayability_frontier_classified": "Each (base, oracle) replay pair is classified into a typed replayability-frontier state (replayable / base- or oracle-source unavailable / source parse error / amendment-source unavailable / no amendments in window / other) off the EEPitResult, never silently treated as replayable.",
 }
