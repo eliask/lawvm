@@ -1129,6 +1129,36 @@ _NO_WHOLE_SECTION_LEAD_RE = re.compile(
 )
 
 
+# A chapter-scoped whole-section lead ("I kapittel III skal ny § 16-2 lyde:")
+# carries the same operative content as the canonical "Ny § 16-2 skal lyde:"
+# form, but the locative ``I kapittel <X>`` prefix and the ``skal ny § X lyde``
+# verb order defeat ``_NO_WHOLE_SECTION_LEAD_RE``. Norwegian § numbering is
+# act-global (the chapter is redundant for addressing), so we can safely drop
+# the chapter scope and rewrite the lead into the canonical form the existing
+# section lowering consumes.
+_NO_CHAPTER_SCOPED_SECTION_LEAD_RE = re.compile(
+    r"^I\s+kapit(?:tel|let|tlet)\s+\S+(?:\s+\S+?)?\s+skal\s+"
+    r"(?P<insert>ny(?:tt|e)?\s+)?§\s*(?P<label>[0-9]+(?:-[0-9]+)*(?:\s*[A-Za-z])?)"
+    r"\s+lyde:\s*(?P<inline>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _normalize_no_chapter_scoped_section_lead(lead: str) -> str:
+    """Rewrite a chapter-scoped whole-section lead into the canonical form.
+
+    "I kapittel III skal ny § 16-2 lyde: …" -> "Ny § 16-2 skal lyde: …" so the
+    existing ``_NO_WHOLE_SECTION_LEAD_RE`` section lowering recognizes it. Leaves
+    leads that do not match this exact shape untouched.
+    """
+    match = _NO_CHAPTER_SCOPED_SECTION_LEAD_RE.match(lead)
+    if match is None:
+        return lead
+    prefix = "Ny " if match.group("insert") else ""
+    inline = match.group("inline")
+    return f"{prefix}§ {match.group('label')} skal lyde: {inline}".rstrip()
+
+
 def _build_no_unstructured_section_payload(
     label: str,
     inline_text: str,
@@ -1539,7 +1569,8 @@ def _iter_unstructured_no_change_groups(
             idx = cursor
             continue
 
-        section_match = _NO_WHOLE_SECTION_LEAD_RE.match(lead)
+        section_lead = _normalize_no_chapter_scoped_section_lead(lead)
+        section_match = _NO_WHOLE_SECTION_LEAD_RE.match(section_lead)
         if section_match:
             target = LegalAddress(path=(("section", _normalize_no_section_label(section_match.group("label"))),))
             action = StructuralAction.INSERT if section_match.group("insert") else StructuralAction.REPLACE
@@ -1910,9 +1941,13 @@ def _promote_no_replace_with_following_renumber_insert(
 
 def _extract_no_embedded_multi_act_lead(lead: str) -> tuple[str, str] | None:
     lead = _repair_no_mojibake(lead)
+    # ``skal\s+(?:\S+\s+)*?`` tolerates intervening qualifier words between the
+    # ``skal`` verb and the ``§`` target ("skal ny § 12 a lyde", "skal nytt
+    # § 4 a lyde"). The capture begins at ``§`` so the rebuilt embedded lead
+    # stays a ``§ …`` form the section/subsection lowering families consume.
     patterns = (
-        r"^\d+\.\s+I lov\s+(\d{1,2})\.\s+([A-Za-zæøåÆØÅ]+)\s+(\d{4})\s+nr\.\s+(\d+)\s+.+?\s+skal\s+(§.+)$",
-        r"^I\s+(?:lov\s+)?(?:.+?\s+av\s+)?(\d{1,2})\.\s+([A-Za-zæøåÆØÅ]+)\s+(\d{4})\s+nr\.\s+(\d+)\s+.+?\s+skal\s+(§.+)$",
+        r"^\d+\.\s+I lov\s+(\d{1,2})\.\s+([A-Za-zæøåÆØÅ]+)\s+(\d{4})\s+nr\.\s+(\d+)\s+.+?\s+skal\s+(?:\S+\s+)*?(§.+)$",
+        r"^I\s+(?:lov\s+|midlertidig\s+lov\s+)?(?:.+?\s+av\s+)?(\d{1,2})\.\s+([A-Za-zæøåÆØÅ]+)\s+(\d{4})\s+nr\.\s+(\d+)\s+.+?\s+skal\s+(?:\S+\s+)*?(§.+)$",
     )
     match = None
     for pattern in patterns:
@@ -1925,11 +1960,20 @@ def _extract_no_embedded_multi_act_lead(lead: str) -> tuple[str, str] | None:
     month = _NORWEGIAN_MONTH_NUMBERS.get(match.group(2).lower())
     year = match.group(3)
     number = int(match.group(4))
+    if month is None:
+        return None
+    # An intervening ``ny``/``nytt``/``nye`` qualifier immediately before the
+    # ``§`` means the section is being inserted, not replaced; surface it as the
+    # ``Ny § …`` prefix that the ``_NO_WHOLE_SECTION_LEAD_RE`` insert branch
+    # recognizes.
+    insert_qualifier = bool(
+        re.search(r"\bskal\s+ny(?:tt|e)?\s+$", lead[: match.start(5)], re.IGNORECASE)
+    )
     embedded_lead = match.group(5).strip()
     if " skal " not in embedded_lead.lower():
         embedded_lead = re.sub(r"\s+lyd([ea]):?$", r" skal lyd\1:", embedded_lead, flags=re.IGNORECASE)
-    if month is None:
-        return None
+    if insert_qualifier and not re.match(r"^ny(?:tt|e)?\b", embedded_lead, re.IGNORECASE):
+        embedded_lead = f"Ny {embedded_lead}"
     return (f"no/lov/{year}-{month}-{day:02d}-{number}", embedded_lead)
 
 
@@ -2013,7 +2057,18 @@ def _extract_no_global_text_replace_pairs(lead: str) -> list[tuple[str, str]]:
 def _no_unstructured_lead_looks_operative(lead: str) -> bool:
     return bool(
         re.search(
-            r"(\bskal\s+lyde\b|\boppheves\b|\bblir\b|\bendres\b|\btilf[øo]yes\b|\bf[øo]yes\b|\bflyttes\b)",
+            # ``skal(?:\s+\S+){1,5}?\s+lyde`` admits the intervening-qualifier
+            # framing with one *or several* tokens between the ``skal`` verb and
+            # ``lyde`` ("skal ny § X lyde", "skal ny § 4 a lyde", "skal nytt ledd
+            # lyde"); the prior single-token bound silently dropped the multi-token
+            # chapter-scoped insert leads. The trailing alternatives add the
+            # nynorsk action verbs (gjer/vert gjort/gjerast/endrast/opphevast)
+            # alongside the bokmål forms so genuinely operative leads are honestly
+            # adjudicated rather than silently treated as inert prose.
+            r"(\bskal\s+lyde\b|\bskal(?:\s+\S+){1,5}?\s+lyde\b|\boppheves\b|\bopphevast\b"
+            r"|\bblir\b|\bendres\b|\bendrast\b|\btilf[øo]yes\b|\btilf[øo]yast\b"
+            r"|\bf[øo]yes\b|\bf[øo]yast\b|\bflyttes\b|\bflyttast\b"
+            r"|\bgjer\b|\bgjerast\b|\bvert\s+gjort\b)",
             lead,
             re.IGNORECASE,
         )

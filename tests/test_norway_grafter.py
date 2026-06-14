@@ -22,6 +22,8 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.norway.grafter import (
+    _normalize_no_chapter_scoped_section_lead,
+    _no_unstructured_lead_looks_operative,
     _split_no_sentences,
     apply_no_heading_groups,
     apply_no_ops,
@@ -937,6 +939,171 @@ def test_parse_no_amendment_ops_unstructured_supports_embedded_multi_act_lead() 
             "Medvirkning straffes ikke.",
         ),
     ]
+
+
+def test_no_unstructured_lead_looks_operative_tolerates_multiple_intervening_tokens() -> None:
+    # Single-token framing (already covered) and multi-token chapter-scoped
+    # framing must both register as operative so they are honestly adjudicated
+    # rather than silently treated as inert prose.
+    assert _no_unstructured_lead_looks_operative("§ 12 a skal lyde:")
+    assert _no_unstructured_lead_looks_operative("skal ny § 12 a lyde:")
+    assert _no_unstructured_lead_looks_operative("I kapittel I skal ny § 4 a lyde:")
+    assert _no_unstructured_lead_looks_operative("I kapittel III skal ny § 16-2 lyde:")
+    # Nynorsk action verbs are recognized.
+    assert _no_unstructured_lead_looks_operative("§ 5 vert gjort gjeldande.")
+    assert _no_unstructured_lead_looks_operative("§ 5 opphevast.")
+    # Inert prose stays inert.
+    assert not _no_unstructured_lead_looks_operative("Loven trer i kraft fra den tid Kongen bestemmer.")
+
+
+def test_normalize_no_chapter_scoped_section_lead_rewrites_to_canonical_form() -> None:
+    assert (
+        _normalize_no_chapter_scoped_section_lead("I kapittel I skal ny § 4 a lyde:")
+        == "Ny § 4 a skal lyde:"
+    )
+    assert (
+        _normalize_no_chapter_scoped_section_lead("I kapittel III skal ny § 16-2 lyde: Foo bar.")
+        == "Ny § 16-2 skal lyde: Foo bar."
+    )
+    # A bare (non-insert) chapter-scoped replace drops the chapter scope too.
+    assert (
+        _normalize_no_chapter_scoped_section_lead("I kapittel 5 skal § 25 lyde:")
+        == "§ 25 skal lyde:"
+    )
+    # Leads that are not chapter-scoped whole-section leads are untouched.
+    assert (
+        _normalize_no_chapter_scoped_section_lead("§ 3 bokstav b skal lyde:")
+        == "§ 3 bokstav b skal lyde:"
+    )
+
+
+def test_iter_no_document_change_ops_unstructured_supports_chapter_scoped_new_section_insert() -> None:
+    # "I kapittel <X> skal ny § <Y> lyde:" carries a whole-section insert whose
+    # chapter scope is redundant (Norwegian section numbering is act-global). The
+    # base resolves from the preceding "I lov ... gjøres følgende endring:"
+    # preamble; the chapter-scoped lead must lower to a section INSERT.
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="no">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/1991-11-08-76</li></ul></dd>
+    <main>
+      <section data-name="kapI">
+        <h2>I</h2>
+        <article class="defaultP">I lov 8. november 1991 nr. 76 om kommunale eldreråd gjøres følgende endringer:</article>
+        <article class="defaultP">I kapittel I skal ny § 4 a lyde:</article>
+        <article class="futureLegalArticle" data-name="§4a">
+          <span class="futureLegalArticleHeader">§ 4 a. Felles råd</span>
+          <article class="legalP">Kommunane kan vedta å opprette felles råd.</article>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    grouped = dict(iter_no_document_change_ops(amendment_xml, "no/lovtid/2005-06-17-58"))
+
+    assert "no/lov/1991-11-08-76" in grouped
+    ops = grouped["no/lov/1991-11-08-76"]
+    assert [(op.action, op.target.path, op.payload.kind if op.payload else None) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "4a"),), IRNodeKind.SECTION),
+    ]
+    assert ops[0].payload is not None
+    body_texts = [child.text for child in ops[0].payload.children if child.kind is IRNodeKind.SUBSECTION]
+    assert "Kommunane kan vedta å opprette felles råd." in body_texts
+
+
+def test_iter_no_document_change_ops_unstructured_lov_preamble_plus_section_lowers() -> None:
+    # "I lov ... gjøres følgende endring:" preamble resolves the base, and the
+    # following whole-section "§ X skal lyde:" lead is lowered as a REPLACE op.
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="no">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/1975-06-13-35</li></ul></dd>
+    <main>
+      <section data-name="kapI">
+        <h2>I</h2>
+        <article class="defaultP">I lov 13. juni 1975 nr. 35 om skattlegging gjøres følgende endring:</article>
+        <article class="defaultP">§ 3 skal lyde:</article>
+        <article class="futureLegalArticle" data-name="§3">
+          <span class="futureLegalArticleHeader">§ 3. Avskrivning</span>
+          <article class="legalP">Utgifter kan avskrivast.</article>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    grouped = dict(iter_no_document_change_ops(amendment_xml, "no/lovtid/2002-06-28-48"))
+
+    assert "no/lov/1975-06-13-35" in grouped
+    ops = grouped["no/lov/1975-06-13-35"]
+    assert [(op.action, op.target.path, op.payload.kind if op.payload else None) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "3"),), IRNodeKind.SECTION),
+    ]
+
+
+def test_iter_no_document_change_ops_unstructured_chapter_scoped_nynorsk_preamble() -> None:
+    # Nynorsk "gjer ... følgjande endringar:" preamble plus a nynorsk-spelled
+    # chapter-scoped section insert.
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nn">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/1991-11-08-76</li></ul></dd>
+    <main>
+      <section data-name="kapII">
+        <h2>II</h2>
+        <article class="defaultP">I lov 8. november 1991 nr. 76 om kommunale eldreråd vert det gjort følgjande endringar:</article>
+        <article class="defaultP">I kapittel II skal ny § 8 a lyde:</article>
+        <article class="futureLegalArticle" data-name="§8a">
+          <span class="futureLegalArticleHeader">§ 8 a. Felles råd</span>
+          <article class="legalP">Fylkeskommunane kan vedta å opprette felles råd.</article>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    grouped = dict(iter_no_document_change_ops(amendment_xml, "no/lovtid/2005-06-17-58"))
+
+    assert "no/lov/1991-11-08-76" in grouped
+    ops = grouped["no/lov/1991-11-08-76"]
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "8a"),)),
+    ]
+
+
+def test_iter_no_document_change_ops_unstructured_chapter_scoped_lead_without_base_still_drops() -> None:
+    # An operative chapter-scoped lead with no resolvable base act must not guess
+    # a target; it drops honestly as a typed adjudication.
+    # Two changed docs means there is no single default base, and the operative
+    # chapter-scoped lead carries no embedded citation of its own, so the base
+    # stays unresolved.
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="no">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/1991-11-08-76</li><li>lov/2005-06-17-62</li></ul></dd>
+    <main>
+      <section data-name="kapI">
+        <article class="defaultP">I kapittel I skal ny § 4 a lyde:</article>
+        <article class="legalP">Kommunane kan vedta å opprette felles råd.</article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(
+        amendment_xml,
+        "no/lovtid/2005-06-17-58",
+        adjudications_out=adjudications,
+    )
+
+    assert grouped == []
+    assert "no_parse_unstructured_lead_base_unresolved" in {item.kind for item in adjudications}
 
 
 def test_iter_no_document_change_ops_unstructured_supports_section_scoped_base_lead() -> None:
