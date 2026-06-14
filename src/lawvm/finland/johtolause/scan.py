@@ -663,13 +663,26 @@ def annotate_reinstatement(tokens: list[Token]) -> list[Annotation]:
             if found_end:
                 continue
 
-        # Pattern 2: NUM [LETTER] (PYKALA|LUKU):GEN TILALLE
+        # Pattern 2: NUM [LETTER] (ja/, NUM [LETTER])* (PYKALA|LUKU):GEN TILALLE
         # (section- or chapter-level reinstatement preamble, e.g.
-        #  "kumottavan 5 luvun tilalle uusi 5 luku").
+        #  "kumottavan 5 luvun tilalle uusi 5 luku", or the multi-section
+        #  "kumottujen 63 ja 65 §:n tilalle uusi 63 ja 65 §" where a number
+        #  list precedes the shared GEN section unit).
         if t.cat == "NUM":
             k = i + 1
             if k < n and tokens[k].cat == "LETTER":
                 k += 1
+            # Walk a coordinated number list "63 ja 65" / "63, 65" sharing one
+            # trailing "§:n tilalle" so the whole preamble is consumed and the
+            # parser resumes on a clean "uusi N (ja M) §".
+            while (
+                k + 1 < n
+                and tokens[k].cat in ("CONJ", "COMMA", "DASH")
+                and tokens[k + 1].cat == "NUM"
+            ):
+                k += 2
+                if k < n and tokens[k].cat == "LETTER":
+                    k += 1
             if (
                 k < n
                 and tokens[k].cat in ("PYKALA", "LUKU")
@@ -1193,8 +1206,30 @@ def annotate_jolloin(tokens: list[Token]) -> list[Annotation]:
             t = tokens[i + 1]
             i = i + 1
             t_text = (t.text or "").lower()
+        # Skip a leading provenance/citation span that introduces the next
+        # structural target, e.g. "..., ja mainitulla lailla 989/1992 kumotun
+        # 91 §:n tilalle uusi 91 §" where "mainitulla lailla 989/1992" has
+        # been collapsed into a CITATION_SPAN sentinel before the fresh target.
+        while t.cat in ("CITATION_SPAN", "PROVENANCE_SPAN", "STATUTE_NAME_SPAN") and i + 1 < n:
+            t = tokens[i + 1]
+            i = i + 1
+            t_text = (t.text or "").lower()
         if t.cat in ("DOC", "UUSI", "VERB", "PYKALA", "LIITE"):
             return True
+        # Replacement-insert continuation opened by a "to-be-repealed"
+        # participle, e.g. "... siirtyy 5 momentiksi, ja kumotun 91 §:n
+        # tilalle uusi 91 §".  The leading participial WORD ("kumotun",
+        # "kumottujen", ...) introduces a fresh structural insert target, so
+        # it must terminate the preceding jolloin renumber span rather than be
+        # swallowed by it.  Recognize it via a short lookahead to the TILALLE
+        # marker that anchors the idiom.
+        if t.cat == "WORD" and t_text.startswith(("kumot", "muutet")):
+            for k in range(i + 1, min(i + 6, n)):
+                if tokens[k].cat == "TILALLE":
+                    return True
+                if tokens[k].cat in ("NUM", "LETTER", "DASH", "COMMA", "CONJ", "PYKALA", "LUKU", "WORD"):
+                    continue
+                break
         if (t.cat == "LUKU" and t.case == "ILL") or t_text.startswith(("luku", "luvu")) and t_text.endswith("ksi"):
             return True
         if (t.cat == "MOMENTTI" and t.case == "ILL") or t_text.startswith("moment") and t_text.endswith("ksi"):
