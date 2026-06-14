@@ -8021,6 +8021,36 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_replay_chain_p = nz_corpus_sub.add_parser(
+        "replay-chain",
+        help="experimental amendment-chain replay (repeal-only) on one evolving tree vs the archived oracle",
+        description=(
+            "First NZ end-to-end replay. Enumerate a base work's authorized "
+            "repeal witnesses, group them by effective amendment date into "
+            "ordered transitions, start from the EARLIEST archived consolidated "
+            "version, and apply each transition's repeals to a SINGLE evolving "
+            "tree carried forward across the whole chain (unlike the per-window "
+            "dry-run, which resets to each window's archived before-tree). At "
+            "every archived version date, materialize the evolving tree and "
+            "compare it to the archived consolidated oracle with the core "
+            "section_similarity metric, producing a similarity CURVE plus typed "
+            "skip buckets (every non-applied op is a visible residual, never a "
+            "silent drop). This is an experimental dry-run chain replay with "
+            "partial coverage: it reports similarity, not pass/fail, never "
+            "authorizes actual replay, and never mutates the archive."
+        ),
+    )
+    nz_replay_chain_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_chain_p.add_argument("--work-id", required=True, metavar="ID", help="archived base work_id")
+    nz_replay_chain_p.add_argument(
+        "--summary-only", action="store_true", help="omit per-transition/per-skip detail from JSON"
+    )
+    nz_replay_chain_p.add_argument("--json", action="store_true", help="emit chain-replay report JSON")
     nz_build_corpus_p = nz_corpus_sub.add_parser(
         "build-corpus",
         help="generate curated NZ bench corpora (large + smoke) of works with >0 amendments",
@@ -11263,6 +11293,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "replay-chain":
+            from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
+
+            nz_corpus_replay_chain_main(args)
         elif args.nz_corpus_command == "build-corpus":
             from lawvm.new_zealand.bench_corpus import main as nz_corpus_build_corpus_main
 
