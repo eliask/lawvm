@@ -25,6 +25,7 @@ It is read-only and additive — no replay-path or grafter*.py changes.
 
 Run:  uv run python -m lawvm.tools.spec_ledger 1958/370 [more sids ...]
       uv run python -m lawvm.tools.spec_ledger -j fi --corpus-bench --json ledger.json
+      uv run python -m lawvm.tools.spec_ledger -j uk asp/2000/1 [more sids ...]
 """
 from __future__ import annotations
 
@@ -65,15 +66,26 @@ class DivergenceRow:
     disposition: WitnessDisposition
     rule_id: Optional[str]       # witness rule that produced the section, if attributable
     blame_source: str = ""       # amendment blamed by the frontend, if any
+    # Optional per-frontend attribution facets. Default "" keeps the FI adapter
+    # (which does not set them) byte-for-byte unaffected. The UK adapter uses
+    # phase_owner to bucket blind-spots by the owning compiler phase and
+    # authority_layer by source purity.
+    phase_owner: str = ""
+    authority_layer: str = ""
 
     def exemplar(self) -> Dict[str, str]:
-        return {
+        ex = {
             "statute": self.sid,
             "section": self.section_key,
             "diagnosis": self.diagnosis,
             "disposition": self.disposition,
             "blame_source": self.blame_source,
         }
+        if self.phase_owner:
+            ex["phase_owner"] = self.phase_owner
+        if self.authority_layer:
+            ex["authority_layer"] = self.authority_layer
+        return ex
 
 
 @dataclass(frozen=True)
@@ -324,18 +336,184 @@ def _load_bench_core_ids() -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# UK adapter
+# ---------------------------------------------------------------------------
+
+# UK diagnosis vocabulary -> witness disposition. Three vocabularies feed it:
+#  1. the §2.1 oracle-check bucket names emitted per-EID by
+#     ``uk_divergence_rows_for_statute`` (deterministic_gap / manual_frontier /
+#     oracle_suspect / text_diff);
+#  2. the source-pathology classes (UK_EFFECT_SOURCE_PATHOLOGY_CLASSES) and
+#     compare-shape classes (UK_EFFECT_COMPARE_SHAPE_CLASSES) from
+#     uk_legislation.source_adjudication, which may appear as a covering
+#     rejection's ``source_pathology``;
+#  3. the owning phase constants (UK_PHASE_*) from phase_discipline.
+#
+# Diagnoses absent here fall back to "unknown" (loud) — never silently a pass.
+# Discipline: a missing-source / out-of-scope pathology is "missing_source"
+# (the source did not deterministically specify it); a compare-shape class is
+# "oracle_suspect" (oracle exposes a different editorial shape, replay coherent);
+# deterministic_gap is "lawvm_wrong" (our compiler should have produced it).
+_UK_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
+    # --- §2.1 oracle-check bucket names (the primary per-EID diagnosis) ---
+    "deterministic_gap": "lawvm_wrong",
+    "manual_frontier": "missing_source",
+    "oracle_suspect": "oracle_suspect",
+    "text_diff": "unknown",  # both sides carry the EID; needs per-text analysis
+}
+
+
+def _seed_uk_pathology_dispositions() -> None:
+    """Extend the diagnosis map with the source-pathology / compare-shape /
+    phase vocabularies so a covering rejection's finer label also resolves."""
+    try:
+        from lawvm.uk_legislation.source_adjudication import (
+            UK_EFFECT_COMPARE_SHAPE_CLASSES,
+            UK_EFFECT_SOURCE_PATHOLOGY_CLASSES,
+        )
+        from lawvm.uk_legislation.phase_discipline import (
+            UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
+            UK_PHASE_CANONICAL_OP_COMPILATION,
+            UK_PHASE_COMPARE_ORACLE_CLASSIFICATION,
+            UK_PHASE_EFFECT_METADATA_FRONTEND,
+            UK_PHASE_REPLAY_INVARIANTS,
+            UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
+            UK_PHASE_TYPED_ELABORATION,
+        )
+    except ImportError:
+        return
+    # source pathology = the source text did not deterministically specify the
+    # result (unsupported shape / out of scope / missing payload): missing_source.
+    for cls in UK_EFFECT_SOURCE_PATHOLOGY_CLASSES:
+        _UK_DIAGNOSIS_DISPOSITION.setdefault(cls, "missing_source")
+    # compare-shape = oracle exposes a different editorial structure while replay
+    # stays source-faithful: oracle_suspect (a finding, not our bug).
+    for cls in UK_EFFECT_COMPARE_SHAPE_CLASSES:
+        _UK_DIAGNOSIS_DISPOSITION.setdefault(cls, "oracle_suspect")
+    # owning-phase constants, when a row's diagnosis is reported as its phase.
+    phase_dispositions: Dict[str, WitnessDisposition] = {
+        UK_PHASE_EFFECT_METADATA_FRONTEND: "missing_source",
+        UK_PHASE_AFFECTING_SOURCE_EXTRACTION: "missing_source",
+        UK_PHASE_TYPED_ELABORATION: "lawvm_wrong",
+        UK_PHASE_CANONICAL_OP_COMPILATION: "lawvm_wrong",
+        UK_PHASE_REPLAY_INVARIANTS: "lawvm_wrong",
+        UK_PHASE_COMPARE_ORACLE_CLASSIFICATION: "oracle_suspect",
+        UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER: "missing_source",
+    }
+    for phase, disp in phase_dispositions.items():
+        _UK_DIAGNOSIS_DISPOSITION.setdefault(phase, disp)
+
+
+_seed_uk_pathology_dispositions()
+
+
+# Believed-spec catalog: authored by a sibling agent in
+# ``lawvm.tools.spec_ledger_uk_catalog``. Import it if present, else fall back to
+# an empty dict so this adapter works whether or not that module exists yet.
+def _load_uk_rule_specs() -> Dict[str, str]:
+    try:
+        from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS  # type: ignore
+    except ImportError:
+        return {}
+    return dict(_UK_RULE_SPECS)
+
+
+_UK_RULE_SPECS: Dict[str, str] = _load_uk_rule_specs()
+
+
+def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
+    """Turn the UK oracle-check per-EID surface into neutral ledger inputs.
+
+    Firings come from compiled UK ops' ``witness_rule_id``; divergences come from
+    ``uk_divergence_rows_for_statute`` (one row per divergent EID, carrying the
+    §2.1 bucket diagnosis, plus the covering rejection's rule_id / owning phase /
+    authority layer when attributable).
+
+    ``mode`` is accepted for signature parity with the FI adapter; the UK
+    oracle-check path is point-in-time-less (full current-oracle comparison).
+    """
+    from lawvm.tools.uk_oracle_check import (
+        _compute_uk_divergence_state,
+        uk_divergence_rows_for_statute,
+    )
+
+    for sid in sids:
+        state = _compute_uk_divergence_state(sid)
+        if state.error:
+            continue  # caller counts errors separately
+        # Firings: each compile rejection/diagnostic row that names a witness
+        # rule_id is a fired hypothesis. UK compiled ops carry witness_rule_id;
+        # the per-EID rows surface the covering rule, so we tally rule_ids from
+        # the diagnostic rows (the rule-level firing proxy the surface exposes).
+        firings: Dict[str, int] = defaultdict(int)
+        for row in (
+            state.lowering_rejections
+            + state.effect_feed_parse_rejections
+            + state.authority_rejections
+            + state.effect_diagnostics
+        ):
+            rid = str(row.get("rule_id") or "")
+            if rid:
+                firings[rid] += 1
+
+        divergences: List[DivergenceRow] = []
+        for drow in uk_divergence_rows_for_statute(sid):
+            diagnosis = drow.diagnosis
+            disposition = _UK_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown")
+            divergences.append(
+                DivergenceRow(
+                    sid=sid,
+                    section_key=drow.eid,
+                    diagnosis=diagnosis,
+                    disposition=disposition,
+                    rule_id=drow.rule_id or None,
+                    blame_source=drow.blame_source,
+                    phase_owner=drow.phase_owner,
+                    authority_layer=drow.authority_layer,
+                )
+            )
+        yield StatuteLedgerInput(sid=sid, rule_firings=dict(firings), divergences=divergences)
+
+
+def _load_uk_bench_ids() -> List[str]:
+    """UK statute ids from data/uk/bench_corpus_smoke.csv (header + CSV rows;
+    first column ``statute_id`` like ``asc/2020/1``)."""
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[3] / "data" / "uk"
+    path = base / "bench_corpus_smoke.csv"
+    if not path.exists():
+        path = base / "bench_corpus.csv"
+    sids: List[str] = []
+    with path.open(encoding="utf-8") as fh:
+        for i, line in enumerate(fh):
+            if i == 0:
+                continue  # header
+            first = line.strip().split(",")[0]
+            if first.count("/") >= 2:
+                sids.append(first)
+    return sids
+
+
+# ---------------------------------------------------------------------------
 # Dispatch + CLI
 # ---------------------------------------------------------------------------
 
 def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
-    if jurisdiction != "fi":
+    if jurisdiction == "fi":
+        inputs = list(fi_ledger_inputs(sids, mode))
+        catalog = _FI_RULE_SPECS
+    elif jurisdiction == "uk":
+        inputs = list(uk_ledger_inputs(sids, mode))
+        catalog = _UK_RULE_SPECS
+    else:
         raise NotImplementedError(
             f"spec-ledger adapter for -j {jurisdiction} not implemented; "
-            "fi is the first adapter (provide classify surface + diagnosis map + catalog)"
+            "fi and uk are the implemented adapters (provide classify surface + "
+            "diagnosis map + catalog)"
         )
-    inputs = list(fi_ledger_inputs(sids, mode))
     ledger = build_ledger(
-        inputs, jurisdiction="fi", mode=mode, catalog=_FI_RULE_SPECS
+        inputs, jurisdiction=jurisdiction, mode=mode, catalog=catalog
     )
     # The adapter drops un-classifiable statutes from the stream; reflect them honestly.
     ledger.statute_errors = len(sids) - ledger.statutes
@@ -345,9 +523,10 @@ def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Witness-attribution spec-discovery ledger")
     ap.add_argument("sids", nargs="*", help="statute ids, e.g. 1958/370")
-    ap.add_argument("-j", "--jurisdiction", default="fi", help="frontend adapter (fi)")
+    ap.add_argument("-j", "--jurisdiction", default="fi", help="frontend adapter (fi/uk)")
     ap.add_argument("--corpus-bench", action="store_true",
-                    help="[-j fi] use data/finland/bench_core.csv")
+                    help="[-j fi] data/finland/bench_core.csv  "
+                         "[-j uk] data/uk/bench_corpus_smoke.csv")
     ap.add_argument("--mode", default="official_consolidation",
                     choices=["official_consolidation", "legal_pit"])
     ap.add_argument("--json", default="", help="write full ledger JSON to this path")
@@ -355,9 +534,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     sids = list(args.sids)
     if args.corpus_bench:
-        if args.jurisdiction != "fi":
-            ap.error("--corpus-bench is only wired for -j fi")
-        sids = _load_bench_core_ids()
+        if args.jurisdiction == "fi":
+            sids = _load_bench_core_ids()
+        elif args.jurisdiction == "uk":
+            sids = _load_uk_bench_ids()
+        else:
+            ap.error("--corpus-bench is only wired for -j fi and -j uk")
     if not sids:
         ap.error("provide statute ids or --corpus-bench")
 
