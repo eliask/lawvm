@@ -300,6 +300,62 @@ def test_execute_replay_plan_records_chapter_seed_source_pathology_findings() ->
     assert findings[0].detail["strict_disposition"] == "block"
 
 
+def test_execute_replay_plan_records_abridged_base_chapter_findings() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    findings: list[Finding] = []
+
+    def fake_seed_missing_chapters(ir, mids, corpus, diagnostics_out=None):
+        assert diagnostics_out is not None
+        diagnostics_out.append(
+            ChapterSeedDiagnostic(
+                rule_id="fi_chapter_seed_abridged_base_chapter_unreconstructable",
+                family="source_pathology",
+                phase="acquisition",
+                reason="Abridged base witness omits chapter 7 ...",
+                source_statute="",
+                chapter_label="7",
+                blocking=False,
+                strict_disposition="block",
+                quirks_disposition="record",
+            )
+        )
+        return ir, set()
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=lambda request, _sinks: PhaseResult(output=request.state),
+        seed_missing_chapters=fake_seed_missing_chapters,
+        pre_scan_repeal_targets=lambda request, sinks=None: [],
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        findings_out=findings,
+    )
+
+    assert [(finding.kind, finding.role, finding.blocking) for finding in findings] == [
+        ("SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE", "observation", False)
+    ]
+    assert findings[0].detail["chapter_label"] == "7"
+    assert findings[0].detail["family"] == "source_pathology"
+
+
 def test_execute_replay_plan_projects_vts_prescan_skipped_targets_as_findings() -> None:
     plan = ReplayPlan(
         parent_id="test/1",

@@ -270,6 +270,11 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "source_pathology", "strict_fail", "chapter_seed",
                 "chapter-seed pre-scan could not inspect a source artifact needed to prove completeness",
                 ("negative", "strictness"), role="obligation"),
+    FindingSpec("SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE", "execute_replay_plan",
+                "source_pathology", "warn", "chapter_seed",
+                "abridged base omits a whole chapter span no amendment body restates; "
+                "its delta-touched provisions diverge from the oracle by construction, not by replay fault",
+                ("negative", "comparative"), role="observation"),
     FindingSpec("ELAB.SEC1_PRE_ROUTING_FALLBACK", "process_muutoslaki",
                 "recovery", "strict_fail", "grafter",
                 "section 1 body text replaced the parsed preamble (fi: johtolause) before routing",

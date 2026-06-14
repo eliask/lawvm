@@ -348,22 +348,81 @@ def test_seed_missing_chapters_seeds_textual_gap_notice() -> None:
         ChapterSeedSkip(chapter_label="7", amendment_id="1993/700"),
         ChapterSeedSkip(chapter_label="8", amendment_id="1993/701"),
     }
-    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
-        "fi_chapter_seed_inserted_from_amendment_body",
-        "fi_chapter_seed_inserted_from_amendment_body",
+    seeded_diagnostics = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.rule_id == "fi_chapter_seed_inserted_from_amendment_body"
     ]
-    assert [(diagnostic.chapter_label, diagnostic.source_statute) for diagnostic in diagnostics] == [
+    assert [(diagnostic.chapter_label, diagnostic.source_statute) for diagnostic in seeded_diagnostics] == [
         ("7", "1993/700"),
         ("8", "1993/701"),
     ]
-    assert all(diagnostic.family == "ontology_normalization" for diagnostic in diagnostics)
-    assert all(diagnostic.phase == "payload_normalization" for diagnostic in diagnostics)
-    assert all(diagnostic.blocking is False for diagnostic in diagnostics)
-    assert all(diagnostic.strict_disposition == "block" for diagnostic in diagnostics)
-    assert all(diagnostic.quirks_disposition == "apply" for diagnostic in diagnostics)
+    assert all(diagnostic.family == "ontology_normalization" for diagnostic in seeded_diagnostics)
+    assert all(diagnostic.phase == "payload_normalization" for diagnostic in seeded_diagnostics)
+    assert all(diagnostic.blocking is False for diagnostic in seeded_diagnostics)
+    assert all(diagnostic.strict_disposition == "block" for diagnostic in seeded_diagnostics)
+    assert all(diagnostic.quirks_disposition == "apply" for diagnostic in seeded_diagnostics)
+    # The span 7-11 also declares chapters 9 and 10 that no amendment body
+    # carries; those are flagged unreconstructable rather than silently absent.
+    assert [
+        diagnostic.chapter_label
+        for diagnostic in diagnostics
+        if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable"
+    ] == ["9", "10"]
     section32 = next(child for child in chapters[0].children if child.kind == IRNodeKind.SECTION)
     assert len(section32.children) == 1
     assert "Puuttuu luvut" not in str(section32.children[0].text or "")
+
+
+def test_unmaterializable_span_chapters_excludes_seeded_and_non_integer() -> None:
+    from lawvm.finland.chapter_seed import _unmaterializable_span_chapters
+
+    # Declared span 7-11, present next chapter 11, only chapter 8 was seeded.
+    assert _unmaterializable_span_chapters(("7", "11"), "11", ["8"]) == ["7", "9", "10"]
+    # Nothing seedable → the entire span up to the present next chapter is absent.
+    assert _unmaterializable_span_chapters(("7", "11"), "11", []) == ["7", "8", "9", "10"]
+    # A non-integer endpoint yields no guesses rather than fabricating a range.
+    assert _unmaterializable_span_chapters(("7", "11"), "11a", ["8"]) == []
+
+
+def test_seed_missing_chapters_flags_unseedable_span_chapters() -> None:
+    tree = _body(
+        _chapter(
+            "6",
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="32",
+                children=(
+                    _subsection("1", _content("Existing section content.")),
+                    _subsection("4", _content("Puuttuu luvut 7-11")),
+                    _omission(),
+                ),
+            ),
+        ),
+        _chapter("11", _section("55")),
+    )
+    # Only chapter 8 is carried by an amendment body; 7, 9, 10 stay absent.
+    corpus = _FakeCorpus({"1993/701": _chapter_xml("8", "38")})
+    diagnostics: list[ChapterSeedDiagnostic] = []
+
+    _updated, seeded = seed_missing_chapters(
+        tree,
+        ["1993/701"],
+        cast(Any, corpus),
+        diagnostics_out=diagnostics,
+    )
+
+    assert seeded == {ChapterSeedSkip(chapter_label="8", amendment_id="1993/701")}
+    unreconstructable = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable"
+    ]
+    assert [diagnostic.chapter_label for diagnostic in unreconstructable] == ["7", "9", "10"]
+    assert all(diagnostic.family == "source_pathology" for diagnostic in unreconstructable)
+    assert all(diagnostic.phase == "acquisition" for diagnostic in unreconstructable)
+    assert all(diagnostic.blocking is False for diagnostic in unreconstructable)
+    assert all("Puuttuu luvut 7-11" in diagnostic.reason for diagnostic in unreconstructable)
 
 
 def test_seed_missing_chapters_records_source_scan_failures() -> None:

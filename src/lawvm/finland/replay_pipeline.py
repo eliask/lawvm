@@ -212,6 +212,20 @@ def build_tree_invariant_finding(
 def build_chapter_seed_finding(diagnostic: ChapterSeedDiagnostic) -> Finding:
     """Project chapter-seed diagnostics onto the governed finding ledger."""
     detail = diagnostic.as_detail()
+    if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable":
+        # An expected source-completeness limitation, not an acquisition fault:
+        # the abridged base omits a whole chapter span and no amendment body can
+        # restate it, so the oracle's provisions there diverge by construction.
+        # Record it as a non-blocking observation so the divergence is attributed
+        # to the source witness rather than masquerading as a replay fault.
+        return Finding(
+            kind="SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE",
+            role=OBSERVATION_ROLE,
+            stage="execute_replay_plan",
+            blocking=False,
+            source_statute=diagnostic.source_statute,
+            detail=detail,
+        )
     if diagnostic.family == "source_pathology":
         return Finding(
             kind="ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY",
