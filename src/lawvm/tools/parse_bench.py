@@ -214,42 +214,42 @@ def _ee_archive_path() -> str:
     return os.path.join(root, "data", "ee_riigiteataja.farchive")
 
 
-def _ee_corpus_path() -> str:
-    import os
+def _ee_all_akt_locators(limit: int) -> list[str]:
+    """Every akt-document locator in the EE farchive (full corpus, parse-only).
 
-    root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT", ".")
-    return os.path.join(root, "data", "estonia", "current_replayable_corpus.csv")
-
-
-def _ee_oracle_ids(limit: int) -> list[str]:
-    """Distinct amendment (oracle) ids from the EE replayable corpus CSV."""
-    import csv
-
-    out: list[str] = []
-    seen: set[str] = set()
-    with open(_ee_corpus_path(), encoding="utf-8", newline="") as fh:
-        for row in csv.DictReader(fh):
-            oid = (row.get("oracle_id") or "").strip()
-            if oid and oid not in seen:
-                seen.add(oid)
-                out.append(oid)
-    return out[:limit] if limit else out
-
-
-def _ee_scan_one(oid: str) -> _EeResult | None:
+    parse-bench scans the ENTIRE corpus cheaply (no replay), so it enumerates
+    every stored akt rather than the ~2k replayable-pair subset — the silent-drop
+    signal is most valuable on the non-replayable tail, where grammar gaps hide
+    and the replay bench can never reach.  Non-amendment akts contribute zero
+    verb-bearing op-items and drop out of the coverage metric.
+    """
     from farchive import Farchive
-    from lawvm.estonia.fetch import fetch_rt_xml
-    from lawvm.estonia.coverage_audit import audit_amendment_xml
 
     archive = Farchive(_ee_archive_path(), readonly=True)
+    locs = sorted(
+        loc
+        for loc in archive.locators("%/akt/%")
+        if "/akt/" in loc and loc.endswith(".xml")
+    )
+    return locs[:limit] if limit else locs
+
+
+def _ee_scan_one(locator: str) -> _EeResult | None:
+    from farchive import Farchive
+    from lawvm.estonia.coverage_audit import audit_amendment_xml
+
+    aid = locator.rsplit("/akt/", 1)[-1]
+    if aid.endswith(".xml"):
+        aid = aid[:-4]
+    archive = Farchive(_ee_archive_path(), readonly=True)
     try:
-        xb = fetch_rt_xml(oid, archive)
+        xb = archive.get(locator)
     except Exception:
         return None
     if not xb:
         return None
     try:
-        cov = audit_amendment_xml(xb, sid=oid)
+        cov = audit_amendment_xml(xb, sid=aid)
     except Exception:
         return None
 
@@ -257,7 +257,7 @@ def _ee_scan_one(oid: str) -> _EeResult | None:
         (d.tier, d.label, d.item_text[:200]) for d in cov.drops[:3]
     )
     return _EeResult(
-        oid=oid,
+        oid=aid,
         n_ops=cov.n_ops,
         n_verb_items=cov.n_verb_items,
         n_clean_items=cov.n_clean_items,
@@ -280,9 +280,9 @@ def run_ee(args) -> None:
     as_json = getattr(args, "json", False)
     top = getattr(args, "top", 20) or 20
 
-    ids = _ee_oracle_ids(limit)
+    ids = _ee_all_akt_locators(limit)
     print(
-        f"parse-bench: scanning {len(ids)} EE amendments (parse-only)...",
+        f"parse-bench: scanning {len(ids)} EE akt documents (parse-only, full corpus)...",
         file=sys.stderr,
     )
 
