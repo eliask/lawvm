@@ -311,4 +311,17 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_case_inflected_aruanded_heading_agreement": "An 'aruanded' rewrite also enforces case/number agreement in the affected heading.",
     "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms": "The 'olemasolev tahkel kütusel põhinev kütteseade' phrase family is rewritten in all case forms.",
     "ee_case_inflected_riiklik_register_infosusteem_forms": "The 'riiklik … register' → 'sotsiaalkaitse infosüsteem' family rewrites the witnessed illative forms, not invented '-registerit' surfaces (living spec §59.1).",
+
+    # --- Replayability-frontier diagnostic (replayability_frontier.py) -----------------
+    "ee_replayability_frontier_classified": "Each (base, oracle) replay pair is classified into a typed replayability-frontier state (replayable / base- or oracle-source unavailable / source parse error / amendment-source unavailable / no amendments in window / other) off the EEPitResult, never silently treated as replayable.",
+
+    # --- Generic structural-op families (peg.py back-fill of grafter-minted ops) -------
+    "ee_structural_replace_from_amending_act": "A target provision is replaced with the content the amending act supplies at that address.",
+    "ee_structural_insert_from_amending_act": "A new provision is inserted at the address the amending act specifies, with the content it supplies.",
+    "ee_structural_repeal_from_amending_act": "A target provision is repealed (declared kehtetuks) as directed by the amending act.",
+    "ee_structural_text_replace_from_amending_act": "An in-place text substitution (asendatakse) of an old phrase with a new one at the address the amending act specifies.",
+    "ee_structural_text_repeal_from_amending_act": "An in-place deletion of text from a provision as directed by the amending act.",
+    "ee_structural_heading_replace_from_amending_act": "A provision heading/title (pealkiri) is replaced or text-edited with the content the amending act supplies.",
+    "ee_generic_minister_title_substitution": "§107³ ministerial-title harmonisation: legacy minister titles are globally replaced with 'valdkonna eest vastutav minister' (with the plural collapse) across the statute.",
+    "ee_generic_ministry_reorganization": "§105¹⁹ ministry-reorganisation name substitution: a renamed/merged ministry's old name is globally replaced with its new name, honouring explicit per-statute exceptions.",
 }

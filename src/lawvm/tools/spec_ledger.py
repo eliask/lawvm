@@ -33,7 +33,7 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, Iterator, List, Literal, Mapping, Optional
 
 # ---------------------------------------------------------------------------
@@ -415,10 +415,63 @@ def _load_uk_rule_specs() -> Dict[str, str]:
         from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS
     except ImportError:
         return {}
-    return dict(_UK_RULE_SPECS)
+    specs = dict(_UK_RULE_SPECS)
+    # Fold in the effect/diagnostic-rule supplement (the ledger-firing ids that are
+    # string literals, not static *_RULE_ID constants — kept separate so the main
+    # catalog's no-dead-entry constant check stays pure). Merged only here, where the
+    # ledger consumes the combined catalog.
+    try:
+        from lawvm.tools.spec_ledger_uk_catalog_supplement import (
+            _UK_RULE_SPECS_SUPPLEMENT,
+        )
+        specs.update(_UK_RULE_SPECS_SUPPLEMENT)
+    except ImportError:
+        pass
+    return specs
 
 
 _UK_RULE_SPECS: Dict[str, str] = _load_uk_rule_specs()
+
+
+# A statute whose divergences are overwhelmingly UNATTRIBUTED structural
+# deterministic-gaps is not N rule-falsifications — it is one whole-statute
+# addressing / EID-scheme incommensurability (replay and oracle structure the
+# same content under different EIDs). Counting each gap as lawvm_wrong lets a
+# single mismatched statute dominate the real-bug ranking (e.g. ukpga/1907/51:
+# 4595 named-part deterministic-gaps, every one an unattributed blind spot).
+# Demote such a statute's unattributed deterministic-gap rows to a non-falsifying
+# "unknown", tagged so the pattern stays visible — not masquerading as bugs.
+_NONCOMMENSURABLE_MIN_ROWS = 50
+_NONCOMMENSURABLE_FRACTION = 0.9
+_NONCOMMENSURABLE_DIAGNOSIS = "noncommensurable_whole_statute_structural"
+
+
+def _demote_whole_statute_noncommensurable(
+    rows: List[DivergenceRow],
+) -> List[DivergenceRow]:
+    """Reclassify a whole-statute structural-incommensurability wall.
+
+    When a statute's divergences are dominated by unattributed ``deterministic_gap``
+    rows (no witness rule; structural EID present in the oracle but not replay), the
+    cause is one addressing-scheme mismatch, not many rule bugs. Demote those rows to
+    a non-falsifying ``unknown`` disposition under a
+    ``noncommensurable_whole_statute_structural`` diagnosis so a single mismatched
+    statute does not dominate the real-bug ranking. Attributed rows and non-gap
+    diagnoses are never touched.
+    """
+    if len(rows) < _NONCOMMENSURABLE_MIN_ROWS:
+        return rows
+    wall = sum(
+        1 for r in rows if r.rule_id is None and r.diagnosis == "deterministic_gap"
+    )
+    if wall / len(rows) < _NONCOMMENSURABLE_FRACTION:
+        return rows
+    return [
+        replace(r, diagnosis=_NONCOMMENSURABLE_DIAGNOSIS, disposition="unknown")
+        if (r.rule_id is None and r.diagnosis == "deterministic_gap")
+        else r
+        for r in rows
+    ]
 
 
 def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
@@ -458,8 +511,16 @@ def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
 
         divergences: List[DivergenceRow] = []
         for drow in uk_divergence_rows_for_statute(sid):
+            # Prefer the finer per-EID source-pathology label over the coarse §2.1
+            # bucket when it resolves to a known (more specific) disposition; the
+            # coarse bucket is the fallback. "unclassified"/"" never override.
             diagnosis = drow.diagnosis
             disposition = _UK_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown")
+            finer = drow.source_pathology_label
+            if finer and finer != "unclassified":
+                finer_disp = _UK_DIAGNOSIS_DISPOSITION.get(finer)
+                if finer_disp is not None:
+                    diagnosis, disposition = finer, finer_disp
             divergences.append(
                 DivergenceRow(
                     sid=sid,
@@ -472,6 +533,7 @@ def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
                     authority_layer=drow.authority_layer,
                 )
             )
+        divergences = _demote_whole_statute_noncommensurable(divergences)
         yield StatuteLedgerInput(sid=sid, rule_firings=dict(firings), divergences=divergences)
 
 

@@ -34,7 +34,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_clause_ast_ee_validation.py",
         "test_ee_act_identity_registry.py",
         "test_ee_bench.py",
+        "test_ee_authority_grounding.py",
         "test_ee_compare_normalization.py",
+        "test_ee_consolidation_error_candidates.py",
         "test_ee_fetch_diagnostics.py",
         "test_ee_fetch.py",
         "test_ee_frontier.py",
@@ -56,6 +58,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",
+        "test_ee_structural_op_witness_tagging.py",
         "test_ee_witness_attribution.py",
     ),
     "norway": (
@@ -400,6 +403,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger.py",
         "test_spec_ledger_uk.py",
         "test_spec_ledger_uk_catalog.py",
+        "test_spec_ledger_uk_catalog_supplement.py",
         "test_spec_ledger_report.py",
         "test_spec_ledger_ee_catalog.py",
         "test_spec_ledger_ee.py",
