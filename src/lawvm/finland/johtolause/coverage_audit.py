@@ -265,18 +265,28 @@ def classify_uncovered_spans(text: str) -> list[ClassifiedSpan]:
         unmatched = tuple(lb for lb in labels if lb and lb not in op_labels)
         has_verb = "VERB" in span.token_cats
 
+        # A span is a REAL drop only when it carries evidence the parser missed
+        # something: a section LABEL that no produced op targets (unmatched), or
+        # a structural VERB token that the span names but no op covers AND the
+        # span has no labels at all (a verbed clause that produced nothing).
+        # A span whose labels are ALL already produced is a witness-fidelity gap
+        # (the op exists, its witness span is just narrow) — NOT a drop.  Tiering
+        # those as drops caused a ~50% false-positive rate in the verb_no_op
+        # tier (e.g. 1978/588, 1977/1002: every flagged label was in ops).
         if position == "leading_preamble":
             tier = _TIER_PREAMBLE_ONLY
         elif position == "no_ops":
             tier = _TIER_OTHER
-        elif has_verb:
-            tier = _TIER_VERB_NO_OP
         elif unmatched:
-            tier = _TIER_UNMATCHED_SECTION
-        elif labels:
-            tier = _TIER_PREAMBLE_ONLY
+            # Genuine: a named section the parser produced no op for.
+            tier = _TIER_VERB_NO_OP if has_verb else _TIER_UNMATCHED_SECTION
+        elif has_verb and not labels:
+            # A verbed clause naming no section label and producing nothing —
+            # e.g. "korvataan taulukko" (a whole operation the parser dropped).
+            tier = _TIER_VERB_NO_OP
         else:
-            tier = _TIER_OTHER
+            # Labels all matched (witness-fidelity gap) or pure glue.
+            tier = _TIER_PREAMBLE_ONLY
         out.append(
             ClassifiedSpan(tier=tier, labels=labels, span=span, position=position)
         )

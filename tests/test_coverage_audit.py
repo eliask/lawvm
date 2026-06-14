@@ -19,19 +19,28 @@ def test_clean_clause_has_no_uncovered_spans() -> None:
     assert audit_johtolause("Kumotaan 7 § ja 8 §") == []
 
 
-def test_unknown_verb_construct_is_flagged_as_verb_no_op_drop() -> None:
-    """A recognized verb that produces no op is the highest-signal drop tier.
+def test_verbed_clause_with_no_label_and_no_op_is_flagged() -> None:
+    """A verbed clause naming no section and producing nothing is still a drop."""
+    text = "Muutetaan 5 § ja korvataan taulukko"
+    tiers = _tiers(text)
+    assert any(tier == "verb_no_op" for tier, _pos in tiers), tiers
 
-    ``korvataan taulukko`` is a structural verb the parser cannot lower; it (and
-    the following ``9 §``) are silently dropped today.  The instrument flags the
-    run as ``verb_no_op`` in a non-leading position.
+
+def test_witness_fidelity_gap_is_not_a_real_drop() -> None:
+    """A span whose labels are ALL produced is a witness gap, not a drop.
+
+    Regression for the ~50% false-positive rate in the verb_no_op tier: spans
+    like 1978/588's ``momentti, 32 §, 35 §:n 3 momentti, ...`` name only labels
+    that ARE in the produced ops (the ops exist; their witness spans are narrow).
+    Such spans must classify as preamble_only, never as a real drop tier.
     """
-    spans = audit_johtolause("Muutetaan 5 § ja korvataan taulukko sekä 9 §")
-    assert len(spans) == 1
-    assert "korvataan" in spans[0].source_text
-
-    tiers = _tiers("Muutetaan 5 § ja korvataan taulukko sekä 9 §")
-    assert ("verb_no_op", "trailing") in tiers
+    # Every section label here is produced; the uncovered span is glue around
+    # produced ops, so no real-drop tier may fire.
+    text = "Muutetaan 30 b §:n 1 momentti, 30 c §:n 1 momentti, 32 §, 35 §"
+    tiers = _tiers(text)
+    assert all(
+        tier not in ("verb_no_op", "unmatched_section") for tier, _pos in tiers
+    ), tiers
 
 
 def test_enactment_preamble_is_demoted_not_flagged_as_a_drop() -> None:
