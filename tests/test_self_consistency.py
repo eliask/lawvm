@@ -77,6 +77,18 @@ def test_self_consistency_main_routes_uk_without_fi_resolver(monkeypatch) -> Non
     assert called.get("uk") is True
 
 
+def test_self_consistency_main_fails_loudly_for_unsupported_jurisdiction(monkeypatch) -> None:
+    # nz/no have no self-consistency harness; main() must fail loudly rather than
+    # silently fall through to the Finland projector (which crashes on finlex.farchive).
+    def _fail_fi(_args):  # pragma: no cover - asserted not called
+        raise AssertionError("nz dispatch reached the FI self-consistency path")
+
+    monkeypatch.setattr(sc, "_main_fi", _fail_fi)
+    ns = _build_parser().parse_args(["-j", "nz", "self-consistency"])
+    with pytest.raises(SystemExit, match="not implemented for -j nz"):
+        sc.main(ns)
+
+
 # ---------------------------------------------------------------------------
 # _category normalization
 # ---------------------------------------------------------------------------

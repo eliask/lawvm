@@ -609,6 +609,15 @@ def main(args) -> None:
 
         ee_main(args)
         return
+    if jurisdiction != "fi":
+        # Fail loudly: jurisdictions without a self-consistency harness (nz, no)
+        # must not silently fall through to the Finland projector (which then
+        # crashes opening finlex.farchive).
+        raise SystemExit(
+            f"error: 'self-consistency' is not implemented for -j {jurisdiction} "
+            "(supported: fi, uk, ee). For New Zealand use the dry-run surfaces: "
+            "'lawvm nz-corpus dry-run-corpus' / 'nz-corpus dry-run-north-star'."
+        )
     _main_fi(args)
 
 
