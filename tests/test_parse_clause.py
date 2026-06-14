@@ -2018,3 +2018,70 @@ def test_parse_clause_doc_ill_prefix_chapter_keeps_section_insert() -> None:
     # Plain whole-chapter insert still routes to a chapter insertion.
     chapter_result = parse_clause("lisätään lakiin uusi 3 luku seuraavasti:")
     assert [op.code() for op in chapter_result.parsed_ops] == ["L L 3"]
+
+
+def test_parse_clause_provenance_then_ja_momentti_continuation_not_dropped() -> None:
+    """A provenance/citation span between a target and a following ``ja N
+    momentti`` continuation must not drop the continuation or the rest of the
+    list.
+
+    Regression for the live 1987/1176 ``muutetaan`` run::
+
+        16 §:n 4 momentti, sellaisena kuin se on ... (249/76), ja 6 momentti,
+        ..., 22 §:n ...
+
+    The ``sellaisena kuin se on ... (NNN/YY)`` phrase collapses to a citation
+    span tagged between the comma and the ``ja``.  The separator must skip that
+    span and resume the same-section sub-ref continuation; previously it landed
+    on the span, failed to parse the bare ``6 momentti``, and silently dropped
+    everything after ``16 §``.
+    """
+    result = parse_clause(
+        "muutetaan 16 §, sellaisena kuin se on annetussa asetuksessa (249/76), "
+        "ja 6 momentti, 34 § seuraavasti:"
+    )
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 16",
+        "M P 16 6",
+        "M P 34",
+    ]
+
+
+def test_parse_clause_provenance_then_bare_momentti_continuation_not_dropped() -> None:
+    """Same as above but the continuation omits the ``ja`` conjunction:
+    ``..., (249/76), 6 momentti, 34 §``.  The comma-led bare momentti must still
+    resume against the prior section and the trailing ``34 §`` must survive.
+    """
+    result = parse_clause(
+        "muutetaan 16 §, sellaisena kuin se on annetussa asetuksessa (249/76), "
+        "6 momentti, 34 § seuraavasti:"
+    )
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 16",
+        "M P 16 6",
+        "M P 34",
+    ]
+
+
+def test_parse_clause_comma_flanked_citation_span_keeps_following_section() -> None:
+    """A citation span flanked by commas (``N momentti, [CITE], M §``) is a single
+    logical separator: the second, trailing comma must be absorbed so the
+    following section is not dropped.
+
+    Regression for the live 1987/1176 ``kumotaan`` run, where the first
+    sub-target's provenance citation is written ``..., sellaisena kuin se on ...
+    (269/79), 37 §:n ...`` with commas on both sides of the collapsed span.
+    """
+    result = parse_clause(
+        "kumotaan 16 §:n 5 ja 7 momentti, sellaisena kuin se on annetussa "
+        "asetuksessa (269/79), 37 §:n 2 momentti, 45 § seuraavasti:"
+    )
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == [
+        "K P 16 5",
+        "K P 16 7",
+        "K P 37 2",
+        "K P 45",
+    ]
