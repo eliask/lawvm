@@ -1,0 +1,20 @@
+{
+  "claims": [
+    {
+      "claim_id": "uk-contingent-pit-experiment-1",
+      "claim_kind": "contingent_commencement",
+      "claimant": "stream-uk-contingent-pit-experiment",
+      "commenced_by_date": "",
+      "deadline_date": "2026-12-31",
+      "effect_id": "e-exp-77",
+      "repeal_fires_on": "did_not_commence",
+      "resolution": "did_not_commence",
+      "source_snippet": "Section 12 is repealed at the end of 2026 if it has not been brought into force before the end of 2026.",
+      "status": "proposed",
+      "statute_id": "ukpga/9999/1",
+      "trigger_id": "ukpga/9999/1/section/12",
+      "witness_si_id": ""
+    }
+  ],
+  "statute_id": "ukpga/9999/1"
+}

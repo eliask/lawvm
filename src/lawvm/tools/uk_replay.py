@@ -1034,6 +1034,32 @@ def main(args: "argparse.Namespace") -> None:
         else:
             pipeline_cls = uk_replay_module.UKReplayPipeline
             pipeline = pipeline_cls(_REPO_ROOT)
+            # §contingent_commencement PIT consumer seam: opt-in load of authored
+            # manual-compilation claims (flag LAWVM_UK_MANUAL_CLAIMS +
+            # data/uk/manual_claims/<statute_id>.json). With the flag off / no
+            # authored file the loader yields empty buckets ⇒ every opt-in
+            # compile kwarg stays None ⇒ this call is byte-identical to today.
+            # The contingent gate only fires when a real pit_date is supplied AND
+            # a validated contingent claim binds an effect (see
+            # gate_contingent_repeal_at_pit in compile_ops_for_statute).
+            from lawvm.uk_legislation.manual_claim_store import (
+                load_manual_claims_for_statute,
+            )
+
+            _manual_claims = load_manual_claims_for_statute(statute_id)
+            # Empty-by-default: only spread the opt-in claim kwargs when an
+            # authored claim actually loaded. With the flag off / no authored file
+            # the bucket-set is empty and NO extra kwargs are passed, so this call
+            # is argument-identical to the no-claims path (and existing
+            # CLI-contract fakes that pin the kwarg list keep working).
+            _manual_claim_kwargs = (
+                {} if _manual_claims.is_empty() else _manual_claims.compile_kwargs()
+            )
+            if _manual_claim_kwargs:
+                _out(
+                    f"Loaded {_manual_claims.total_claims()} authored manual claim(s) "
+                    f"for {statute_id} (LAWVM_UK_MANUAL_CLAIMS)"
+                )
             ops = pipeline.compile_ops_for_statute(
                 statute_id,
                 pit_date=pit_date,
@@ -1046,6 +1072,7 @@ def main(args: "argparse.Namespace") -> None:
                 effect_diagnostics_out=effect_diagnostics,
                 lowering_rejections_out=lowering_rejections,
                 authority_rejections_out=authority_rejections,
+                **_manual_claim_kwargs,
             )
             effect_source_pathology_observations = [
                 row
