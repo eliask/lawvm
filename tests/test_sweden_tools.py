@@ -2379,3 +2379,114 @@ def test_sweden_backfill_chunk_plan_prefers_chronological_next_range() -> None:
     assert chunk_plan["ranked_year_ranges"][0]["start_year"] == 2001
     assert chunk_plan["priority_year_range"] == chunk_plan["largest_remaining_year_range"]
     assert chunk_plan["priority_ranked_year_ranges"][0]["start_year"] == 2001
+
+
+_SE_SFST_TOOLS_REAL_PAGE = (
+    "<!DOCTYPE html><html><body>"
+    '<div class="result-inner-box bold">\r\n SFS-nummer \xc2\xb7 2015:284 \xc2\xb7</div>'
+    '<div class="result-inner-box">'
+    '<span class="bold">F\xf6rordning (2015:284) med instruktion f\xf6r Testmyndigheten</span>'
+    "</div>"
+    '<div class="result-inner-box"><span class="bold">Utf\xe4rdad:</span> 2015-05-21</div>'
+    '<div class="result-box-text body-text">'
+    "Uppgifter<br><br>1 \xa7 F\xf6rsta paragrafen.<br>"
+    "2 \xa7 Andra paragrafen.<br></div>"
+    "</body></html>"
+)
+
+
+def test_sweden_ingest_sfst_oracles_command_is_idempotent(tmp_path, capsys) -> None:
+    from farchive import Farchive
+
+    from lawvm.sweden.fetch import (
+        se_official_act_locator,
+        se_official_ops_locator,
+        se_rk_current_json_locator,
+        se_rk_current_url,
+    )
+
+    db_path = tmp_path / "sweden.db"
+    archive = Farchive(db_path)
+    # One compiled amending act targeting base 2015:284, which has a real sfst page.
+    archive.store(se_official_ops_locator("2018:111"), json.dumps({"ops": []}).encode("utf-8"), storage_class="json")
+    archive.store(
+        se_official_act_locator("2018:111"),
+        json.dumps({"sfs_id": "2018:111", "amended_act_sfs_id": "2015:284"}).encode("utf-8"),
+        storage_class="json",
+    )
+    archive.store(se_rk_current_url("2015:284"), _SE_SFST_TOOLS_REAL_PAGE.encode("utf-8"), storage_class="html")
+    archive.close()
+
+    sweden_main(SimpleNamespace(sweden_command="ingest-sfst-oracles", db=str(db_path), format="summary"))
+    out = capsys.readouterr().out
+    assert "Oracle bases added:       1" in out
+    assert "Failed:                   0" in out
+
+    # The oracle blob now exists; a re-run must add nothing (idempotent).
+    check = Farchive(db_path)
+    assert check.get(se_rk_current_json_locator("2015:284")) is not None
+    check.close()
+
+    sweden_main(SimpleNamespace(sweden_command="ingest-sfst-oracles", db=str(db_path), format="summary"))
+    rerun = capsys.readouterr().out
+    assert "Gain bases (sfst-backed): 0" in rerun
+    assert "Oracle bases added:       0" in rerun
+
+
+def test_sweden_coverage_scan_command_aggregates(tmp_path, capsys) -> None:
+    from farchive import Farchive
+
+    from lawvm.sweden.fetch import (
+        se_official_act_locator,
+        se_official_ops_locator,
+        se_rk_current_url,
+    )
+
+    db_path = tmp_path / "sweden.db"
+    archive = Farchive(db_path)
+    archive.store(se_official_ops_locator("2018:111"), json.dumps({"ops": []}).encode("utf-8"), storage_class="json")
+    archive.store(
+        se_official_act_locator("2018:111"),
+        json.dumps({"sfs_id": "2018:111", "amended_act_sfs_id": "2015:284"}).encode("utf-8"),
+        storage_class="json",
+    )
+    archive.store(se_rk_current_url("2015:284"), _SE_SFST_TOOLS_REAL_PAGE.encode("utf-8"), storage_class="html")
+    archive.close()
+
+    # Seed the oracle so the act becomes "covered".
+    sweden_main(SimpleNamespace(sweden_command="ingest-sfst-oracles", db=str(db_path), format="summary"))
+    capsys.readouterr()
+
+    # Serial worker path keeps the test deterministic (no subprocess archive handoff).
+    sweden_main(
+        SimpleNamespace(
+            sweden_command="coverage-scan",
+            db=str(db_path),
+            limit=0,
+            workers=1,
+            format="json",
+        )
+    )
+    out = capsys.readouterr().out
+    report = json.loads(out)
+
+    assert report["covered_acts_total"] == 1
+    assert report["scanned_acts"] == 1
+    assert report["sampled"] is False
+    # The covered act is scanned and produces a deterministic outcome bucket.
+    assert report["works_scanned"] == 1
+    assert (
+        report["replay_ok_count"]
+        + report["older_base_required_count"]
+        + report["error_count"]
+        == 1
+    )
+    # Arithmetic identity: every "match" is partitioned into exactly the three
+    # honest buckets, so a flattered total cannot hide editorial/oracle drift.
+    assert (
+        report["genuine_content_match_count"]
+        + report["editorial_only_match_count"]
+        + report["official_oracle_match_count"]
+        <= report["section_match_count"]
+    )
+    assert list(report["classification_counts"]) == sorted(report["classification_counts"])

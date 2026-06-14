@@ -6628,6 +6628,48 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="output format (default: summary)",
     )
 
+    sw_ingest_sfst_oracles_p = sweden_sub.add_parser(
+        "ingest-sfst-oracles",
+        help="seed the current-text oracle for every sfst-backed gain base (idempotent)",
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_coverage_scan_p = sweden_sub.add_parser(
+        "coverage-scan",
+        help="replay-check every amending act whose base has an oracle and aggregate agreement",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_coverage_scan_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="scan only the first N covered acts (default: all; sampling is reported)",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        metavar="N",
+        help="parallel worker processes for the per-act scan (default: 8)",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
     sw_diagnose_replay_p = sweden_sub.add_parser(
         "diagnose-replay",
         help="analyze whether one Sweden act can be replayed from the archived current base surface",

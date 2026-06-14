@@ -77,6 +77,10 @@ class _ArchiveLike(Protocol):
     def has(self, locator: str, *, max_age_hours: float = ...) -> bool: ...
 
 
+class _EnumerableArchiveLike(_ArchiveLike, Protocol):
+    def locators(self, pattern: str = ...) -> list[str]: ...
+
+
 @dataclass(frozen=True)
 class SEOfficialArtifacts:
     sfs_id: str
@@ -283,6 +287,163 @@ def ingest_se_rk_current_from_sfst_archive(
         return False
     archive_se_source_bundle(document, archive)
     return True
+
+
+_SE_OFFICIAL_OPS_LOCATOR_RE = re.compile(
+    r"^se://sfs/(?P<sfs_id>\d{4}:\d+[a-zA-Z]?)/official\.ops\.json$"
+)
+
+
+def se_amending_sfs_ids_with_compiled_ops(archive: _EnumerableArchiveLike) -> list[str]:
+    """Return the sorted SFS IDs of amending acts that carry compiled official ops."""
+    ids: set[str] = set()
+    for locator in archive.locators("se://sfs/%/official.ops.json"):
+        match = _SE_OFFICIAL_OPS_LOCATOR_RE.fullmatch(str(locator))
+        if match is not None:
+            ids.add(match.group("sfs_id"))
+    return sorted(ids, key=_se_sfs_sort_key)
+
+
+def _se_sfs_sort_key(sfs_id: str) -> tuple[int, int, str]:
+    match = re.fullmatch(r"(\d{4}):(\d+)([a-zA-Z]?)", sfs_id)
+    if match is None:
+        return (0, 0, sfs_id)
+    return (int(match.group(1)), int(match.group(2)), match.group(3))
+
+
+def se_amending_act_base_sfs_id(archive: _ArchiveLike, amending_sfs_id: str) -> str:
+    """Resolve the base statute an amending act targets, or ``""`` if unknown.
+
+    Reads the archived ``official.act.json`` recorded base, falling back to the
+    enacting-clause inference used by the replay lane.
+    """
+    official_act = load_se_official_act_from_archive(archive, amending_sfs_id)
+    if official_act is None:
+        return ""
+    base = str(official_act.get("amended_act_sfs_id") or "")
+    if base:
+        return base
+    return _infer_amended_act_sfs_id_from_clause(_coerce_official_act(official_act))
+
+
+def enumerate_se_sfst_oracle_gain_bases(
+    archive: _EnumerableArchiveLike,
+) -> dict[str, Any]:
+    """Enumerate the base statutes whose oracle can be seeded from a real sfst page.
+
+    A *gain base* is a base statute that is (a) targeted by at least one compiled
+    amending act, (b) backed by a REAL consolidated ``sfst?bet=`` page (not an
+    empty ``Totalt 0 träffar`` search response), and (c) does not already carry an
+    ``rk.current.json`` oracle blob. Running the sfst ingest over these bases is
+    Sweden's corpus-level replay-agreement unlock.
+
+    Returns a deterministic report: the sorted gain-base SFS IDs plus typed
+    counts for every base that did NOT qualify (already-oracle, empty sfst page,
+    no archived sfst page, undetermined base).
+    """
+    amending_ids = se_amending_sfs_ids_with_compiled_ops(archive)
+    base_to_amending: dict[str, list[str]] = {}
+    undetermined_base_amending: list[str] = []
+    for amending_id in amending_ids:
+        base = se_amending_act_base_sfs_id(archive, amending_id)
+        if not base:
+            undetermined_base_amending.append(amending_id)
+            continue
+        base_to_amending.setdefault(base, []).append(amending_id)
+
+    gain_bases: list[str] = []
+    already_oracle: list[str] = []
+    empty_sfst_page: list[str] = []
+    no_sfst_page: list[str] = []
+    for base in sorted(base_to_amending, key=_se_sfs_sort_key):
+        if archive.get(se_rk_current_json_locator(base)) is not None:
+            already_oracle.append(base)
+            continue
+        raw = archive.get(se_rk_current_url(base))
+        if raw is None:
+            no_sfst_page.append(base)
+            continue
+        if parse_se_sfst_html_to_rk_current(raw, base) is None:
+            empty_sfst_page.append(base)
+            continue
+        gain_bases.append(base)
+
+    return {
+        "amending_acts_with_ops": len(amending_ids),
+        "distinct_bases_targeted": len(base_to_amending),
+        "undetermined_base_amending_count": len(undetermined_base_amending),
+        "gain_bases": gain_bases,
+        "gain_base_count": len(gain_bases),
+        "already_oracle_bases": already_oracle,
+        "already_oracle_count": len(already_oracle),
+        "empty_sfst_page_bases": empty_sfst_page,
+        "empty_sfst_page_count": len(empty_sfst_page),
+        "no_sfst_page_bases": no_sfst_page,
+        "no_sfst_page_count": len(no_sfst_page),
+    }
+
+
+def scaled_ingest_se_sfst_oracles(
+    archive: _EnumerableArchiveLike,
+    *,
+    gain_bases: list[str] | None = None,
+    progress: Callable[[int, int, str], None] | None = None,
+) -> dict[str, Any]:
+    """Seed the current-text oracle for every sfst-backed gain base.
+
+    Idempotent and safe to re-run: bases that already carry an ``rk.current.json``
+    oracle are skipped (never overwritten — this protects the real RK-API blobs),
+    and bases whose archived sfst page is an empty ``0 träffar`` search response
+    are skipped without writing. Only bases whose archived sfst page contains real
+    consolidated fulltext have a bundle written, via the validated
+    :func:`ingest_se_rk_current_from_sfst_archive`.
+
+    When ``gain_bases`` is omitted the gain bases are enumerated from the archive.
+    Returns deterministic typed counts and any failures (with a typed reason).
+    """
+    if gain_bases is None:
+        gain_bases = enumerate_se_sfst_oracle_gain_bases(archive)["gain_bases"]
+    ordered = sorted(set(gain_bases), key=_se_sfs_sort_key)
+    total = len(ordered)
+
+    added: list[str] = []
+    skipped_existing_oracle: list[str] = []
+    skipped_empty_or_missing: list[str] = []
+    failed: list[dict[str, str]] = []
+    for index, base in enumerate(ordered, start=1):
+        if progress is not None:
+            progress(index, total, base)
+        # Never overwrite an existing oracle (protects the real RK-API blobs).
+        if archive.get(se_rk_current_json_locator(base)) is not None:
+            skipped_existing_oracle.append(base)
+            continue
+        try:
+            ingested = ingest_se_rk_current_from_sfst_archive(archive, base)
+        except (ValueError, KeyError, TypeError) as exc:
+            failed.append(
+                {
+                    "sfs_id": base,
+                    "reason": "ingest_parse_error",
+                    "exception_type": type(exc).__name__,
+                    "detail": str(exc),
+                }
+            )
+            continue
+        if ingested:
+            added.append(base)
+        else:
+            # Empty "0 träffar" page or no archived sfst page — never write.
+            skipped_empty_or_missing.append(base)
+
+    return {
+        "considered": total,
+        "added_count": len(added),
+        "added_bases": added,
+        "skipped_existing_oracle_count": len(skipped_existing_oracle),
+        "skipped_empty_or_missing_count": len(skipped_empty_or_missing),
+        "failed_count": len(failed),
+        "failed": failed,
+    }
 
 
 def se_legacy_sfspdf_index_url() -> str:
@@ -2811,6 +2972,149 @@ def check_se_official_replay(
             "finding_rows": [row.to_dict() for row in finding_rows],
         },
         "rows": rows,
+    }
+
+
+# Row classifications that represent a GENUINE section content match (replay text
+# equals the post-amendment current text). Everything else that "matches" only
+# does so through editorial/presentation projection or by falling back to the
+# official-act oracle — those are NOT genuine content matches and must be
+# reported in their own buckets so the agreement number is not flattered.
+SE_GENUINE_CONTENT_MATCH_CLASSIFICATIONS = frozenset(
+    {"exact", "table_rows_match"}
+)
+# Classifications that the replay marks as match=True but which are editorial /
+# presentation drift, not genuine content equality.
+SE_EDITORIAL_MATCH_CLASSIFICATIONS = frozenset(
+    {"editorial_attribution_only", "inline_numbering_only"}
+)
+# Classifications that match=True only because replay fell back to the official
+# act text as an oracle (the current surface diverged or was missing).
+SE_OFFICIAL_ORACLE_MATCH_CLASSIFICATIONS = frozenset(
+    {
+        "official_oracle_match_current_surface_drift",
+        "official_oracle_match_missing_current_post",
+    }
+)
+
+
+def scan_se_official_replay_act(
+    archive: _ArchiveLike, amending_sfs_id: str
+) -> dict[str, Any]:
+    """Run :func:`check_se_official_replay` for one act, classified for aggregation.
+
+    Returns a flat, picklable summary (no IR objects) so it can be produced inside
+    a worker process and aggregated in the parent. ``outcome`` is one of
+    ``replay_ok`` / ``older_base_required`` / ``error``.
+    """
+    try:
+        result = check_se_official_replay(archive, amending_sfs_id)
+    except NotImplementedError as exc:
+        message = str(exc)
+        outcome = (
+            "older_base_required"
+            if "older base" in message or "lacks required replay targets" in message
+            else "error"
+        )
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": outcome,
+            "error_type": "NotImplementedError",
+            "error_detail": message,
+        }
+    except (FileNotFoundError, ValueError, KeyError, AssertionError) as exc:
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": "error",
+            "error_type": type(exc).__name__,
+            "error_detail": str(exc),
+        }
+
+    rows = list(result.get("rows") or [])
+    classification_counts: dict[str, int] = {}
+    genuine_match = 0
+    editorial_match = 0
+    oracle_match = 0
+    for row in rows:
+        classification = str(row.get("classification") or "")
+        classification_counts[classification] = classification_counts.get(classification, 0) + 1
+        if not row.get("match"):
+            continue
+        if classification in SE_GENUINE_CONTENT_MATCH_CLASSIFICATIONS:
+            genuine_match += 1
+        elif classification in SE_EDITORIAL_MATCH_CLASSIFICATIONS:
+            editorial_match += 1
+        elif classification in SE_OFFICIAL_ORACLE_MATCH_CLASSIFICATIONS:
+            oracle_match += 1
+    return {
+        "amending_sfs_id": amending_sfs_id,
+        "base_sfs_id": str(result.get("base_sfs_id") or ""),
+        "outcome": "replay_ok",
+        "recovery_mode": str(result.get("recovery_mode") or ""),
+        "target_count": int(result.get("target_count") or 0),
+        "match_count": int(result.get("match_count") or 0),
+        "genuine_content_match_count": genuine_match,
+        "editorial_match_count": editorial_match,
+        "official_oracle_match_count": oracle_match,
+        "classification_counts": classification_counts,
+    }
+
+
+def aggregate_se_official_coverage(
+    act_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Deterministically aggregate per-act replay summaries into a corpus report.
+
+    No clock or randomness: sorting is by SFS id, dictionaries are emitted sorted
+    by key. Distinguishes the genuine section-content match rate from the
+    editorial-only and official-oracle fallback matches so a flattered
+    "agreement" cannot hide behind presentation drift.
+    """
+    works_scanned = len(act_summaries)
+    outcome_counts: dict[str, int] = {}
+    classification_counts: dict[str, int] = {}
+    total_targets = 0
+    total_matches = 0
+    genuine_matches = 0
+    editorial_matches = 0
+    oracle_matches = 0
+    error_examples: dict[str, list[str]] = {}
+    for summary in act_summaries:
+        outcome = str(summary.get("outcome") or "error")
+        outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+        if outcome == "replay_ok":
+            total_targets += int(summary.get("target_count") or 0)
+            total_matches += int(summary.get("match_count") or 0)
+            genuine_matches += int(summary.get("genuine_content_match_count") or 0)
+            editorial_matches += int(summary.get("editorial_match_count") or 0)
+            oracle_matches += int(summary.get("official_oracle_match_count") or 0)
+            for name, count in (summary.get("classification_counts") or {}).items():
+                classification_counts[str(name)] = classification_counts.get(str(name), 0) + int(count)
+        else:
+            key = str(summary.get("error_type") or outcome)
+            bucket = error_examples.setdefault(key, [])
+            if len(bucket) < 5:
+                bucket.append(str(summary.get("amending_sfs_id") or ""))
+
+    def _rate(numerator: int, denominator: int) -> float:
+        return round(numerator / denominator, 4) if denominator else 0.0
+
+    return {
+        "works_scanned": works_scanned,
+        "outcome_counts": dict(sorted(outcome_counts.items())),
+        "replay_ok_count": outcome_counts.get("replay_ok", 0),
+        "older_base_required_count": outcome_counts.get("older_base_required", 0),
+        "error_count": outcome_counts.get("error", 0),
+        "replay_ok_rate": _rate(outcome_counts.get("replay_ok", 0), works_scanned),
+        "section_target_count": total_targets,
+        "section_match_count": total_matches,
+        "section_match_rate": _rate(total_matches, total_targets),
+        "genuine_content_match_count": genuine_matches,
+        "genuine_content_match_rate": _rate(genuine_matches, total_targets),
+        "editorial_only_match_count": editorial_matches,
+        "official_oracle_match_count": oracle_matches,
+        "classification_counts": dict(sorted(classification_counts.items())),
+        "error_examples": {key: error_examples[key] for key in sorted(error_examples)},
     }
 
 
