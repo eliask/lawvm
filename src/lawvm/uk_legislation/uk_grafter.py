@@ -67,6 +67,81 @@ def _text_content(el: Optional[ET._Element]) -> str:
     return "".join(str(_t) for _t in el.itertext()).strip()
 
 
+# ---------------------------------------------------------------------------
+# Oracle presentation-cleanup: RetainText="true" repeal elision
+# ---------------------------------------------------------------------------
+#
+# legislation.gov.uk marks a repealed inline phrase (or whole provision) with
+# ``<Repeal RetainText="true">…retained wording…</Repeal>``.  This is the
+# editor keeping the repealed text *visible* because a 1-dimensional-time-axis
+# consolidation cannot represent partial / "for specified purposes"
+# commencement: the cleanest single-snapshot rendering is to leave the words on
+# the page and flag them as repealed.  It is the direct UK analogue of Finnish
+# Finlex's "Aiempi sanamuoto kuuluu:" ("the earlier wording read…") marker
+# (see ``lawvm.tools.editorial_hygiene`` /
+# ``fi_oracle_aiempi_sanamuoto_marker``): a 1-D consolidation artifact, NOT law,
+# orthogonal to LawVM's multi-dimensional state.
+#
+# LawVM's replay applies the repeal (the words are gone from materialized text),
+# so the retained wording would otherwise show up only-in-oracle — as a spurious
+# text_diff on the enclosing provision, or, for a whole-provision retained
+# repeal, as an only-in-oracle EID.  We therefore ELIDE the retained subtree
+# from the oracle comparison tree BEFORE comparison, exactly as Finland strips
+# its marker.  This is a comparison-only ``presentation_cleanup`` normalization
+# (AGENTS.md §7); it never touches LawVM's compiled ops or materialized text.
+# The genuine partial-commencement modeling is LawVM's own contingent-
+# commencement job, not the comparison's.
+_RETAIN_TEXT_ELISION_RULE_ID = "uk_oracle_retain_text_repeal_elided"
+_RETAIN_TEXT_ATTR = "RetainText"
+
+
+def _is_retained_repeal(el: ET._Element) -> bool:
+    """Return whether ``el`` is a ``<Repeal RetainText="true">`` retained node.
+
+    These hold the *repealed-but-kept-visible* wording legislation.gov.uk
+    renders for a 1-D consolidation snapshot; for comparison the repeal is
+    treated as applied, so the retained subtree is elided.
+    """
+    return _tag(el) == "Repeal" and (el.get(_RETAIN_TEXT_ATTR) or "").lower() == "true"
+
+
+def _oracle_text_eliding_retained_repeals(el: Optional[ET._Element]) -> tuple[str, bool]:
+    """Collect provision text with ``RetainText="true"`` repeal subtrees elided.
+
+    Mirrors ``_text_content`` (``itertext`` traversal, edge-stripped) but drops
+    the text of any ``<Repeal RetainText="true">`` descendant — keeping the
+    node's *tail* (text that follows it in source order, which is live wording,
+    not retained).  Returns ``(text, elided)`` where ``elided`` is True iff at
+    least one retained-repeal subtree was dropped, so the caller can emit the
+    auditable presentation-cleanup observation.
+    """
+    if el is None:
+        return "", False
+    parts: list[str] = []
+    elided = False
+
+    def _walk(node: ET._Element) -> None:
+        nonlocal elided
+        if _is_retained_repeal(node):
+            elided = True
+            # Drop the retained wording (node text + descendants) but keep the
+            # tail, which is live text following the repealed phrase.
+            if node.tail:
+                parts.append(node.tail)
+            return
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            _walk(child)
+            if child.tail and not _is_retained_repeal(child):
+                # A retained-repeal child's tail is appended inside its own
+                # branch above, so it is not double-counted here.
+                parts.append(child.tail)
+
+    _walk(el)
+    return "".join(parts).strip(), elided
+
+
 def _local_structural_text(el: ET._Element) -> str:
     """Collect local provision text without absorbing child provisions."""
     structural = {
@@ -1576,6 +1651,7 @@ def _visit_eid(
     physical_eid_aliases: dict[str, str],
     visible_number_eid_aliases: dict[str, str],
     oracle_identity_observations: list[dict[str, Any]],
+    retain_text_elided_text_map: dict[str, str],
 ):
     if _is_zombie(el, False, pit_date):
         return
@@ -1682,6 +1758,36 @@ def _visit_eid(
             h = _semantic_hash(text)
             if f"hash:{h}" not in eid_map:
                 eid_map[f"hash:{h}"] = eid
+            # presentation_cleanup: when the oracle keeps a repealed phrase
+            # visible via <Repeal RetainText="true"> (a 1-D consolidation
+            # artifact, NOT law — the direct analogue of Finlex's "Aiempi
+            # sanamuoto kuuluu:" marker), the provision text is AMBIGUOUS for
+            # comparison: it matches both LawVM's repeal-not-applied replay
+            # (retained wording present) AND a repeal-applied replay (wording
+            # gone).  We register the elided-form text as a parallel,
+            # comparison-only oracle variant so EITHER replay form scores as a
+            # match — the artifact never raises a spurious text_diff in either
+            # direction.  The primary ``text_map`` retained-included text is
+            # left untouched; this is oracle-side, comparison-only, and never
+            # changes LawVM's compiled ops or materialized text.  Auditable,
+            # never silent (AGENTS.md §0/§7).
+            elided_text, retained_repeal_elided = _oracle_text_eliding_retained_repeals(el)
+            if retained_repeal_elided:
+                elided_norm = _normalize_text_for_grounding(elided_text)
+                if elided_norm != norm:
+                    retain_text_elided_text_map[eid] = elided_norm
+                oracle_identity_observations.append(
+                    {
+                        "rule_id": _RETAIN_TEXT_ELISION_RULE_ID,
+                        "phase": "oracle_compare_normalization",
+                        "family": "presentation_cleanup",
+                        "original_eid": eid,
+                        "xml_tag": tag,
+                        "physical_path_key": this_node_path,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
         if clean_num:
             is_nested_schedule_descendant = False
             if context.startswith("schedule") and parent_path_key:
@@ -1736,6 +1842,7 @@ def _visit_eid(
             physical_eid_aliases,
             visible_number_eid_aliases,
             oracle_identity_observations,
+            retain_text_elided_text_map,
         )
 
 
@@ -1745,6 +1852,12 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     physical_eid_aliases: dict[str, str] = {}
     visible_number_eid_aliases: dict[str, str] = {}
     oracle_identity_observations: list[dict[str, Any]] = []
+    # presentation_cleanup: parallel, comparison-only variant of ``text_map`` —
+    # for any provision whose oracle text holds a <Repeal RetainText="true">
+    # retained phrase, the same text with that phrase elided.  Lets the
+    # comparison accept EITHER form (repeal applied / not applied) so the 1-D
+    # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
+    retain_text_elided_text_map: dict[str, str] = {}
     is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
     body = root.find(f".//{{{_LEG_NS}}}Body")
     if body is None:
@@ -1761,6 +1874,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
             physical_eid_aliases,
             visible_number_eid_aliases,
             oracle_identity_observations,
+            retain_text_elided_text_map,
         )
     schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
     if schedules is not None:
@@ -1775,10 +1889,12 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
             physical_eid_aliases,
             visible_number_eid_aliases,
             oracle_identity_observations,
+            retain_text_elided_text_map,
         )
     return {
         "eid_map": eid_map,
         "text_map": text_map,
+        "retain_text_elided_text_map": retain_text_elided_text_map,
         "physical_eid_aliases": physical_eid_aliases,
         "visible_number_eid_aliases": visible_number_eid_aliases,
         "oracle_identity_observations": oracle_identity_observations,

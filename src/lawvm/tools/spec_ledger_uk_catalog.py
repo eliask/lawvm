@@ -642,6 +642,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
     # -- Adapter / preservation / oracle alignment ------------------------------
     "uk_oracle_eid_alignment_adapter":
         "The oracle-comparison adapter aligns LawVM and oracle eIDs before scoring divergences.",
+    "uk_oracle_retain_text_repeal_elided":
+        "An oracle <Repeal RetainText=\"true\"> retained phrase (a 1-D-consolidation display artifact, not law — the analogue of Finlex's 'Aiempi sanamuoto kuuluu:' marker) is elided into a comparison-only oracle text variant so the comparison accepts either the repeal-applied or repeal-not-applied form, never raising a spurious text_diff; replay is untouched (presentation_cleanup).",
     "uk_non_schedule_list_entry_preserved":
         "A non-schedule list entry that LawVM cannot lower is preserved verbatim rather than dropped.",
     "uk_schedule_list_entry_preserved":
