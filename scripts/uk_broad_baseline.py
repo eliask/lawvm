@@ -227,14 +227,26 @@ def _normalized_compare_eids(
     oracle_physical_eid_aliases: dict[str, str],
     oracle_visible_number_eid_aliases: dict[str, str],
 ) -> tuple[set[str], set[str]]:
-    """Normalize broad-gate EID comparison through the same lens as uk-misses."""
-    from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+    """Normalize broad-gate EID comparison through the same lens as uk-misses.
 
-    return normalize_uk_replay_compare_eids(
+    Also canonicalizes the numbering scheme (Roman→Arabic) and strips cosmetic
+    trailing dots, the same comparison-layer normalization ``uk_bench`` applies, so
+    an old Act's ``section-II`` matches the oracle's ``section-2``. Identity on a
+    modern Arabic corpus (the current grounding set), so the broad gate is
+    unchanged; it future-proofs the score should the corpus include pre-1860 Acts.
+    """
+    from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+    from lawvm.uk_legislation.canonicalize import canonicalize_compare_eid
+
+    replay_norm, oracle_norm = normalize_uk_replay_compare_eids(
         replay_eids,
         oracle_eids,
         oracle_physical_eid_aliases=oracle_physical_eid_aliases,
         oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+    )
+    return (
+        {canonicalize_compare_eid(e) for e in replay_norm},
+        {canonicalize_compare_eid(e) for e in oracle_norm},
     )
 
 
