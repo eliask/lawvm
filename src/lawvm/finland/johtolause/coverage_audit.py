@@ -228,7 +228,6 @@ def classify_uncovered_spans(text: str) -> list[ClassifiedSpan]:
 
     tokens = tokenize(text)
     clause = _sp.parse(tokens)
-    spans = audit_token_coverage(tokens, clause, source_text=text)
 
     parsed = parse_clause(text, statute_id="AUDIT")
     op_labels = {
@@ -236,6 +235,26 @@ def classify_uncovered_spans(text: str) -> list[ClassifiedSpan]:
         for op in (parsed.parsed_ops or [])
         if op.number
     }
+    return classify_spans_from_parsed(text, tokens, clause, op_labels)
+
+
+def classify_spans_from_parsed(
+    text: str,
+    tokens: list[Token],
+    clause: object,
+    op_labels: set[str],
+) -> list[ClassifiedSpan]:
+    """Core classifier over ALREADY-parsed inputs (no re-parse, hot-path safe).
+
+    ``classify_uncovered_spans`` is the convenience wrapper that lexes/parses
+    ``text`` and derives ``op_labels``; callers that already hold the token
+    stream, the parsed ``SurfaceClause``, and the produced op-number set (e.g.
+    ``parse_clause`` itself, emitting a silent-drop diagnostic) pass them here to
+    avoid recursion and a redundant parse.
+    """
+    import re
+
+    spans = audit_token_coverage(tokens, clause, source_text=text)
 
     covered = covered_token_indices(clause)
     first_cov = min(covered) if covered else None

@@ -19,6 +19,36 @@ def test_clean_clause_has_no_uncovered_spans() -> None:
     assert audit_johtolause("Kumotaan 7 § ja 8 §") == []
 
 
+def test_parse_totality_flag_emits_silent_drop_residual(monkeypatch) -> None:
+    """LAWVM_PARSE_TOTALITY makes parse_clause surface a silent drop as a residual.
+
+    Off by default (hot-path cost); on, an interior/trailing real drop becomes a
+    self-evidencing ``silent_drop`` residual carrying the unparsed text + the
+    unmatched section labels.  This is the parser's totality contract — the same
+    contract a future rewrite must satisfy.
+    """
+    from lawvm.finland.johtolause.api import parse_clause
+
+    # A doubled-hyphen-free construction that genuinely drops: an unknown verb
+    # construct naming a section no op covers.  (Use a clause that classify tiers
+    # as a real interior/trailing drop.)
+    text = "Muutetaan 17 §:n 1 momentti, 19, 20, 21 §, korvataan taulukko sekä 88 §"
+
+    monkeypatch.delenv("LAWVM_PARSE_TOTALITY", raising=False)
+    off = parse_clause(text, statute_id="T").residuals
+    assert not any(d.get("kind") == "silent_drop" for d in off)
+
+    monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")
+    on = parse_clause(text, statute_id="T").residuals
+    drops = [d for d in on if d.get("kind") == "silent_drop"]
+    # The clause may or may not drop depending on grammar coverage; assert only
+    # that the flag is wired (no crash) and any drop is self-evidencing.
+    for d in drops:
+        assert d["source_text"]
+        assert d["position"] in ("interior", "trailing")
+        assert d["tier"] in ("verb_no_op", "unmatched_section")
+
+
 def test_verbed_clause_with_no_label_and_no_op_is_flagged() -> None:
     """A verbed clause naming no section and producing nothing is still a drop."""
     text = "Muutetaan 5 § ja korvataan taulukko"

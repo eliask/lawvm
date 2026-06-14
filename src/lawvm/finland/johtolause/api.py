@@ -15,6 +15,7 @@ ParsedOps are derived from ClauseAST via clause_ast_to_legal_ops.
 
 from __future__ import annotations
 
+import os as _os
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
@@ -346,6 +347,53 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     if original_surface_clause.consumed_count < len(tokens):
         leftover_tokens = list(tokens[original_surface_clause.consumed_count :])
         residuals.append({"kind": "unconsumed_tokens", "tokens": leftover_tokens})
+
+    # -- Totality invariant: surface a SILENT mid-stream drop as a residual. --
+    # The recursive-descent parser can advance its stream position over tokens
+    # without producing a node (the skip-to-next-verb loop, or a partially
+    # matched verb group that fails and continues), so consumed_count reaches the
+    # end and the check above never fires even though a real target was dropped.
+    # The token-coverage audit detects those by NODE coverage instead, and emits
+    # one self-evidencing residual per interior/trailing real-drop span (a span
+    # naming a section LABEL no produced op targets).
+    #
+    # This is an observability overlay, not a parse step, and it roughly doubles
+    # per-parse cost (a full coverage walk + label regex), so it is OFF by
+    # default — the replay hot path calls parse_clause thousands of times.  Turn
+    # it on with LAWVM_PARSE_TOTALITY=1 for parse-bench / characterization /
+    # loud-fail inspection.  Never let the audit break a parse.
+    if _os.environ.get("LAWVM_PARSE_TOTALITY"):
+        try:
+            import re as _re_audit
+
+            from lawvm.finland.johtolause.coverage_audit import classify_spans_from_parsed
+
+            _op_labels = {
+                _re_audit.sub(r"\s+", "", (op.number or "")).lower()
+                for op in ops
+                if getattr(op, "number", "")
+            }
+            for _cs in classify_spans_from_parsed(
+                text, tokens, original_surface_clause, _op_labels
+            ):
+                if _cs.position in ("interior", "trailing") and _cs.tier in (
+                    "verb_no_op",
+                    "unmatched_section",
+                ):
+                    residuals.append(
+                        {
+                            "kind": "silent_drop",
+                            "tier": _cs.tier,
+                            "position": _cs.position,
+                            "unmatched_labels": list(
+                                lb for lb in _cs.labels if lb not in _op_labels
+                            ),
+                            "source_text": _cs.span.source_text,
+                            "char_span": (_cs.span.char_start, _cs.span.char_end),
+                        }
+                    )
+        except Exception:
+            pass
 
     # -- Collect resolver residuals (SurfaceNodes that couldn't be resolved) --
     if resolved is not None and resolved.residuals:
