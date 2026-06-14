@@ -248,6 +248,25 @@ def test_parse_clause_doc_ill_provenance_keeps_subsection_insert_target():
     assert result.parsed_ops[0].witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_nain_kuuluva_after_provenance_keeps_subsection_insert():
+    """``N §:ään, <provenance>, näin kuuluva uusi M momentti`` keeps the insert.
+
+    Regression for 1960/391 (and similar archaic acts): a ``näin kuuluva``
+    lead-in sits between the §:ään target (and its skipped citation/provenance
+    span) and ``uusi``.  Without skipping it, Pattern A failed to reach ``uusi``
+    and the subsection insert was dropped, forcing the normalize.py regex
+    fallback to recover it.
+    """
+    text = (
+        "lisätään 7 §:ään, sellaisena kuin se on viimeksi muutettuna annetussa "
+        "asetuksessa (345/59), näin kuuluva uusi 3 momentti:"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == ["L P 7 3"]
+
+
 def test_parse_clause_kumotaan_chapter_then_reinsert_emits_repeal_and_insert():
     """`kumotaan N luku ... lisätään kumottavan N luvun tilalle uusi N luku`.
 
