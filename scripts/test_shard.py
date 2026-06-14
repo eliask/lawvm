@@ -157,6 +157,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_rules": (
         "test_corrigendum_*.py",
         "test_guard_liveness.py",
+        "test_post_process_repeal_consolidation.py",
+        "test_uncovered_dispose.py",
+        "test_uncovered_recovery_helpers.py",
+        "test_uncovered_target_resolve.py",
         "test_fi_editorial_adjudication.py",
         "test_fi_item_number_display.py",
         "test_fi_tail_prose_absorb.py",
@@ -371,6 +375,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "tools_cli_debug": (
         "test_check_consistency.py",
+        "test_proof_gate_summary.py",
+        "test_self_consistency.py",
+        "test_spec_ledger.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
