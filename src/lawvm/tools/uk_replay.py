@@ -635,6 +635,53 @@ def _uk_replay_adjudication_text_lines(
     return lines
 
 
+def _emit_witness_attribution_json(statute_id: str, *, db_path: Path) -> None:
+    """Emit the read-only per-compiled-op effect-feed witness attribution surface.
+
+    Compiles ops (and the manual-frontier diagnostics) for one statute and maps
+    each compiled op's ``witness_rule_id`` back to its source effect witness.
+    This is a pure observation surface: it never runs ``apply_ops`` and never
+    alters replay/lowering/target-resolution behavior. Output ordering is stable
+    (records sorted by sequence/op_id/target; all maps key-sorted).
+    """
+    from farchive import Farchive
+
+    from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
+    from lawvm.uk_legislation.effect_witness_attribution import (
+        build_uk_effect_witness_attribution,
+        uk_effect_witness_attribution_summary,
+    )
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
+
+    with Farchive(db_path) as archive:
+        effect_rows = load_effects_for_statute_from_archive(statute_id, archive)
+        pipeline = uk_replay_module.UKReplayPipeline(_REPO_ROOT)
+        effect_diagnostics: list[dict[str, Any]] = []
+        ops = pipeline.compile_ops_for_statute(
+            statute_id,
+            archive=archive,
+            effect_diagnostics_out=effect_diagnostics,
+        )
+
+    records = build_uk_effect_witness_attribution(
+        ops=ops,
+        effect_rows=effect_rows,
+        effect_diagnostics=effect_diagnostics,
+    )
+    payload = {
+        "statute_id": statute_id,
+        "surface": "uk_effect_witness_attribution",
+        "rule_id": "uk_effect_witness_attribution_surface",
+        "phase": "canonical_op_compilation",
+        "read_only": True,
+        "n_ops": len(ops),
+        "n_effect_rows": len(effect_rows),
+        "summary": uk_effect_witness_attribution_summary(records),
+        "records": [record.to_dict() for record in records],
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
 def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.uk_legislation.source_adjudication import (
@@ -676,6 +723,7 @@ def main(args: "argparse.Namespace") -> None:
         )
         sys.exit(2)
     as_json: bool = getattr(args, "json", False)
+    witness_attribution_json: bool = getattr(args, "witness_attribution_json", False)
     db_arg: Optional[str] = getattr(args, "db", None)
     use_timeline: bool = getattr(args, "timeline", False)
     score_commencement: bool = getattr(args, "commencement", False)
@@ -686,6 +734,10 @@ def main(args: "argparse.Namespace") -> None:
     if not db_path.exists():
         print(f"error: archive not found at {db_path}", file=sys.stderr)
         sys.exit(1)
+
+    if witness_attribution_json:
+        _emit_witness_attribution_json(statute_id, db_path=db_path)
+        return
 
     n_provisions = 0
     timelines = {}
