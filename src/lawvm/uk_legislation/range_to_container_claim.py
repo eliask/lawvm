@@ -220,15 +220,25 @@ def claim_from_dict(row: Any) -> RangeToContainerClaim:
     )
 
 
-def _effect_range_to_container_source_text(effect: Any) -> str:
+def _effect_range_to_container_source_text(
+    effect: Any, extracted_source_text: Optional[str] = None
+) -> str:
     """Best-effort source-text surface for an effect's range-to-container binding.
 
     The ``substituted for sections X-Y`` shape lives in the effect type/verb phrase
     or an attached source snippet; we concatenate the available surfaces so the
     binding check is robust to which surface carries it. The classifier is the
     arbiter of whether the shape is real.
+
+    On REAL feed effects the effect attributes are empty — the range prose lives in
+    the extracted affecting XML, which the replay pipeline passes in as
+    ``extracted_source_text`` (the same surface the manual-frontier classifier
+    binds). When supplied it is concatenated first; the effect attributes remain as
+    a fallback so synthetic unit-fixture effects keep binding.
     """
     parts: list[str] = []
+    if extracted_source_text:
+        parts.append(str(extracted_source_text))
     for attr in ("effect_type", "source_text", "raw_text", "comments"):
         value = getattr(effect, attr, "") or ""
         if value:
@@ -309,6 +319,7 @@ def validate_range_to_container_claim(
     *,
     effect: Optional[Any] = None,
     container_member_eids: Optional[Sequence[str]] = None,
+    extracted_source_text: Optional[str] = None,
 ) -> RangeToContainerClaimValidation:
     """Deterministically validate one range-to-container resolution claim.
 
@@ -375,7 +386,9 @@ def validate_range_to_container_claim(
                 detail={"bound_effect_id": effect_id},
                 **base,
             )
-        effect_source = _effect_range_to_container_source_text(effect)
+        effect_source = _effect_range_to_container_source_text(
+            effect, extracted_source_text
+        )
         if not _looks_like_range_to_container_source(effect_source):
             return RangeToContainerClaimValidation(
                 validated=False,

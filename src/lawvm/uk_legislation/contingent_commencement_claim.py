@@ -218,7 +218,9 @@ def claim_from_dict(row: Any) -> ContingentCommencementClaim:
     )
 
 
-def _effect_conditional_repeal_source_text(effect: Any) -> str:
+def _effect_conditional_repeal_source_text(
+    effect: Any, extracted_source_text: Optional[str] = None
+) -> str:
     """Best-effort source-text surface for an effect's conditional-repeal binding.
 
     The conditional-temporal-repeal shape can live in the effect type (the feed's
@@ -226,8 +228,17 @@ def _effect_conditional_repeal_source_text(effect: Any) -> str:
     source snippet. We concatenate the available surfaces so the binding check is
     robust to which surface carries the phrasing; the classifier itself is the
     arbiter of whether the shape is real.
+
+    On REAL feed effects the effect attributes (``source_text`` / ``raw_text`` /
+    ``comments``) are empty — the instruction prose lives in the extracted
+    affecting XML, which the replay pipeline passes in as ``extracted_source_text``
+    (the same surface the manual-frontier classifier binds). When supplied it is
+    concatenated first; the effect attributes remain as a fallback so synthetic
+    unit-fixture effects (which carry the prose in ``comments``) keep binding.
     """
     parts: list[str] = []
+    if extracted_source_text:
+        parts.append(str(extracted_source_text))
     for attr in ("source_text", "raw_text", "effect_type", "comments"):
         value = getattr(effect, attr, "") or ""
         if value:
@@ -239,6 +250,7 @@ def validate_contingent_commencement_claim(
     claim: ContingentCommencementClaim,
     *,
     effect: Optional[Any] = None,
+    extracted_source_text: Optional[str] = None,
 ) -> ContingentCommencementClaimValidation:
     """Deterministically validate one contingent-commencement claim.
 
@@ -302,7 +314,9 @@ def validate_contingent_commencement_claim(
                 detail={"bound_effect_id": effect_id},
                 **base,
             )
-        effect_source = _effect_conditional_repeal_source_text(effect)
+        effect_source = _effect_conditional_repeal_source_text(
+            effect, extracted_source_text
+        )
         if not _looks_like_conditional_temporal_repeal_source(effect_source):
             return ContingentCommencementClaimValidation(
                 validated=False,

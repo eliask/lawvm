@@ -60,6 +60,11 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     _looks_like_appropriate_place_insert_text,
 )
 from lawvm.uk_legislation.phase_discipline import UK_PHASE_EFFECT_METADATA_FRONTEND
+from lawvm.uk_legislation.source_adjudication import (
+    _looks_like_appropriate_place_definition_entry_insert_instruction,
+    _looks_like_appropriate_place_index_entry_insert_instruction,
+    _looks_like_appropriate_place_insert_instruction,
+)
 from lawvm.uk_legislation.source_definition_fragments import (
     _looks_like_appropriate_place_definition_entry_insert_text,
 )
@@ -146,6 +151,28 @@ def _looks_like_appropriate_place_source(text: str) -> bool:
     return _looks_like_appropriate_place_insert_text(
         text
     ) or _looks_like_appropriate_place_definition_entry_insert_text(text)
+
+
+def _looks_like_appropriate_place_classifier_family(text: str) -> bool:
+    """True when the manual-frontier CLASSIFIER would bind *text* to the family.
+
+    The frontier classifier (``source_adjudication``) recognizes the
+    "(at|in) the appropriate place insert—" family — including the ``in``-form and
+    the trimmed inner fragment the affecting-source extractor yields for a real
+    feed effect — via ``_looks_like_appropriate_place_insert_instruction`` (and its
+    definition-entry / index-entry variants). The EXTRACTED-source binding stage of
+    this claim reuses exactly those recognizers so the validator binds IFF the
+    classifier classified the effect into this family — never a second, divergent
+    pattern. The stricter ``_looks_like_appropriate_place_source`` recognizers above
+    remain the floor for the authored ``source_snippet``; this recognizer is the
+    classifier-faithful surface for the real extracted affecting source.
+    """
+    return (
+        _looks_like_appropriate_place_insert_instruction(text)
+        or _looks_like_appropriate_place_definition_entry_insert_instruction(text)
+        or _looks_like_appropriate_place_index_entry_insert_instruction(text)
+        or _looks_like_appropriate_place_source(text)
+    )
 
 
 def _source_names_an_anchor(text: str) -> bool:
@@ -277,15 +304,25 @@ def claim_from_dict(row: Any) -> AppropriatePlaceInsertClaim:
     )
 
 
-def _effect_appropriate_place_source_text(effect: Any) -> str:
+def _effect_appropriate_place_source_text(
+    effect: Any, extracted_source_text: Optional[str] = None
+) -> str:
     """Best-effort source-text surface for an effect's appropriate-place binding.
 
     The appropriate-place shape can live in the effect type/verb phrase or an
     attached source snippet; we concatenate available surfaces so the binding
     check is robust to which surface carries the phrasing. The classifier is the
     arbiter of whether the shape is real.
+
+    On REAL feed effects the effect attributes are empty — the "at the appropriate
+    place insert" prose lives in the extracted affecting XML, which the replay
+    pipeline passes in as ``extracted_source_text`` (the same surface the manual-
+    frontier classifier binds). When supplied it is concatenated first; the effect
+    attributes remain as a fallback so synthetic unit-fixture effects keep binding.
     """
     parts: list[str] = []
+    if extracted_source_text:
+        parts.append(str(extracted_source_text))
     for attr in ("source_text", "raw_text", "effect_type", "comments"):
         value = getattr(effect, attr, "") or ""
         if value:
@@ -298,6 +335,7 @@ def validate_appropriate_place_claim(
     *,
     effect: Optional[Any] = None,
     target_list: Optional[Sequence[str]] = None,
+    extracted_source_text: Optional[str] = None,
 ) -> AppropriatePlaceClaimValidation:
     """Deterministically validate one appropriate-place insert claim.
 
@@ -338,8 +376,11 @@ def validate_appropriate_place_claim(
             **base,
         )
 
-    # 2. Source binding.
-    if not _looks_like_appropriate_place_source(claim.source_snippet):
+    # 2. Source binding. The authored snippet binds via the SAME classifier-faithful
+    # recognizer the extracted-source stage uses, so a reviewer may quote the real
+    # affecting source (including the ``in the appropriate place insert—`` form the
+    # classifier classifies but the stricter lowering recognizer does not).
+    if not _looks_like_appropriate_place_classifier_family(claim.source_snippet):
         return AppropriatePlaceClaimValidation(
             validated=False,
             rule_id=CLAIM_REJECTED_SOURCE_MISMATCH_RULE_ID,
@@ -374,8 +415,10 @@ def validate_appropriate_place_claim(
                 detail={"bound_effect_id": effect_id},
                 **base,
             )
-        effect_source = _effect_appropriate_place_source_text(effect)
-        if not _looks_like_appropriate_place_source(effect_source):
+        effect_source = _effect_appropriate_place_source_text(
+            effect, extracted_source_text
+        )
+        if not _looks_like_appropriate_place_classifier_family(effect_source):
             return AppropriatePlaceClaimValidation(
                 validated=False,
                 rule_id=CLAIM_REJECTED_SOURCE_MISMATCH_RULE_ID,

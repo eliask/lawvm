@@ -1,0 +1,20 @@
+{
+  "claims": [
+    {
+      "claim_id": "n5-2018-12-s205-and",
+      "claim_kind": "source_feed_target_reconciliation",
+      "claimant": "stream-uk-bind-validators-to-source:reviewed-2026-06-14",
+      "effect_id": "key-f66d9a5b3f893f3e97a604ffb950b0a7",
+      "effect_type": "word omitted",
+      "feed_named_target": "s. 205(1)",
+      "rationale": "",
+      "reconciliation_basis": "genuinely_ambiguous_finding_only",
+      "resolved_target_eid": "s. 205(1)",
+      "source_named_target": "s. 205(1) para. (d)",
+      "source_snippet": "a omit  “and” at the end of paragraph (d);",
+      "status": "proposed",
+      "statute_id": "ukpga/2018/12"
+    }
+  ],
+  "statute_id": "ukpga/2018/12"
+}

@@ -264,15 +264,26 @@ def _effect_type_surface(claim: SourceFeedReconciliationClaim, effect: Any) -> s
     return str(getattr(effect, "effect_type", "") or "")
 
 
-def _bound_effect_source_text(effect: Any) -> str:
+def _bound_effect_source_text(
+    effect: Any, extracted_source_text: Optional[str] = None
+) -> str:
     """Best-effort source surface for an effect's N5 binding.
 
     The child-qualified omission instruction lives in the extracted source / source
     text / raw text; concatenate the available surfaces so the binding check is
     robust to which carries it. The recognizer is the arbiter of whether the shape
     is real.
+
+    On REAL feed effects the effect attributes (including ``extracted_text``) are
+    empty — the child-qualified omission prose lives in the extracted affecting XML,
+    which the replay pipeline passes in as ``extracted_source_text`` (the same
+    surface the manual-frontier classifier binds). When supplied it is concatenated
+    first; the effect attributes remain as a fallback so synthetic unit-fixture
+    effects keep binding.
     """
     parts: list[str] = []
+    if extracted_source_text:
+        parts.append(str(extracted_source_text))
     for attr in ("extracted_text", "source_text", "raw_text", "comments"):
         value = getattr(effect, attr, "") or ""
         if value:
@@ -336,6 +347,7 @@ def validate_source_feed_reconciliation_claim(
     *,
     effect: Optional[Any] = None,
     live_target_member_eids: Optional[Iterable[str]] = None,
+    extracted_source_text: Optional[str] = None,
 ) -> SourceFeedReconciliationClaimValidation:
     """Deterministically validate one source/feed reconciliation claim.
 
@@ -408,7 +420,7 @@ def validate_source_feed_reconciliation_claim(
                 detail={"bound_effect_id": effect_id},
                 **base,
             )
-        effect_source = _bound_effect_source_text(effect)
+        effect_source = _bound_effect_source_text(effect, extracted_source_text)
         if not source_claims_child_qualified_word_omission(
             effect_type=_effect_type_surface(claim, effect),
             extracted_text=effect_source,

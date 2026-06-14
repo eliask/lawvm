@@ -217,15 +217,25 @@ def claim_from_dict(row: Any) -> SavingsScopedOmissionClaim:
     )
 
 
-def _effect_savings_omission_source_text(effect: Any) -> str:
+def _effect_savings_omission_source_text(
+    effect: Any, extracted_source_text: Optional[str] = None
+) -> str:
     """Best-effort source-text surface for an effect's savings-omission binding.
 
     The ``omit ... except in the case of ...`` shape can live in the effect type
     (the feed's verb phrase) or an attached source snippet. We concatenate the
     available surfaces so the binding check is robust to which surface carries the
     phrasing; the classifier itself is the arbiter of whether the shape is real.
+
+    On REAL feed effects the effect attributes are empty — the savings-qualified
+    omission prose lives in the extracted affecting XML, which the replay pipeline
+    passes in as ``extracted_source_text`` (the same surface the manual-frontier
+    classifier binds). When supplied it is concatenated first; the effect
+    attributes remain as a fallback so synthetic unit-fixture effects keep binding.
     """
     parts: list[str] = []
+    if extracted_source_text:
+        parts.append(str(extracted_source_text))
     for attr in ("source_text", "raw_text", "effect_type", "comments"):
         value = getattr(effect, attr, "") or ""
         if value:
@@ -288,6 +298,7 @@ def validate_savings_scoped_omission_claim(
     claim: SavingsScopedOmissionClaim,
     *,
     effect: Optional[Any] = None,
+    extracted_source_text: Optional[str] = None,
 ) -> SavingsScopedOmissionClaimValidation:
     """Deterministically validate one savings-scoped omission claim.
 
@@ -357,7 +368,9 @@ def validate_savings_scoped_omission_claim(
                 detail={"bound_effect_id": effect_id},
                 **base,
             )
-        effect_source = _effect_savings_omission_source_text(effect)
+        effect_source = _effect_savings_omission_source_text(
+            effect, extracted_source_text
+        )
         if not _looks_like_savings_qualified_text_omission(effect_source):
             return SavingsScopedOmissionClaimValidation(
                 validated=False,

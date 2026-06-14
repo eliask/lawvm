@@ -1,0 +1,20 @@
+{
+  "claims": [
+    {
+      "affected_target": "Sch. 1 para. 1",
+      "claim_id": "sv-1981-20-sch1-mcp",
+      "claim_kind": "savings_scoped_omission",
+      "claimant": "stream-uk-bind-validators-to-source:reviewed-2026-06-14",
+      "effect_id": "key-9a180c89a3854e6607217be14136ae6e",
+      "omission_anchor": "Sch. 1 para. 1",
+      "omitted_text": "the reference to a Master of the Court of Protection",
+      "saving_basis": "temporal_window",
+      "saving_scope": "immediately before the commencement of this paragraph",
+      "saving_snippet": "except in the case of a person holding that office immediately before the commencement of this paragraph or who had previously retired from that office or died",
+      "source_snippet": "27 In Schedule 1 to the Judicial Pensions Act 1981 (c. 20) (pensions of Supreme Court officers, etc.), in paragraph 1, omit the reference to a Master of the Court of Protection except in the case of a person holding that office immediately before the commencement of this paragraph or who had previously retired from that office or died.",
+      "status": "proposed",
+      "statute_id": "ukpga/1981/20"
+    }
+  ],
+  "statute_id": "ukpga/1981/20"
+}

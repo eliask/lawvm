@@ -371,6 +371,47 @@ class UKReplayPipeline:
         if lowering_rejections_out is not None:
             lowering_rejections_out.extend(dict(row) for row in temporal_observations)
 
+        # §claim_source_binding: the affecting-source extraction caches are shared
+        # between the up-front claim-validation index build below and the main
+        # compile loop, so the EXTRACTED affecting text a claim's source-binding
+        # stage sees is the SAME surface the manual-frontier classifier and the
+        # lowering loop see (the prose lives in the affecting XML — real feed
+        # effects carry empty source_text/raw_text/comments). The extraction is
+        # cached per affecting act, so resolving it once during the index build and
+        # again in the main loop loads the XML only once.
+        extraction_cache: dict[str, UKAffectingSourceContext] = {}
+        enacted_extraction_cache: dict[str, UKAffectingSourceContext] = {}
+
+        def _extracted_source_text_for_claim_effect(
+            bound_effect: Optional[UKEffectRecord],
+        ) -> Optional[str]:
+            """Extract the affecting-source text for a claim-bound effect, or None.
+
+            Returns the same ``extracted_tag_and_text`` text the main compile loop
+            derives for the effect (the manual-frontier classifier's source
+            surface), so a claim's source-binding stage binds to what the classifier
+            binds. Diagnostics are suppressed here (``effect_diagnostics_out=None``):
+            the main loop re-runs selection for the effect and emits the canonical
+            diagnostics, keeping the default/no-claim diagnostics stream unchanged.
+            Returns None when no effect is bound or no source is extractable, so the
+            validator falls back to the effect attributes (synthetic fixtures).
+            """
+            if bound_effect is None:
+                return None
+            selection = _select_source_for_effect(
+                effect=bound_effect,
+                archive=archive,
+                applicability_mode=applicability_mode,
+                extraction_cache=extraction_cache,
+                enacted_extraction_cache=enacted_extraction_cache,
+                effect_diagnostics_out=None,
+                current_xml_loader=get_affecting_act_xml_from_archive,
+                enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
+                provision_extractor=extract_provision_element_from_bytes,
+            )
+            text = _extracted_tag_and_text(selection.extracted_el).text
+            return text or None
+
         # §contingent_commencement: build an index of VALIDATED claims by bound
         # effect_id. This is opt-in: with no claims authored the index is empty
         # and the PIT filter below is byte-unchanged. Each claim is validated
@@ -386,7 +427,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id.get(str(claim.effect_id))
                 validation = validate_contingent_commencement_claim(
-                    claim, effect=bound_effect
+                    claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(validation.to_dict())
@@ -412,7 +457,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_ap.get(str(ap_claim.effect_id))
                 ap_validation = validate_appropriate_place_claim(
-                    ap_claim, effect=bound_effect
+                    ap_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(ap_validation.to_dict())
@@ -439,7 +488,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_dx.get(str(dx_claim.effect_id))
                 dx_validation = validate_deixis_in_application_claim(
-                    dx_claim, effect=bound_effect
+                    dx_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(dx_validation.to_dict())
@@ -465,7 +518,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_sv.get(str(sv_claim.effect_id))
                 sv_validation = validate_savings_scoped_omission_claim(
-                    sv_claim, effect=bound_effect
+                    sv_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(sv_validation.to_dict())
@@ -488,7 +545,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_rng.get(str(rng_claim.effect_id))
                 rng_validation = validate_range_to_container_claim(
-                    rng_claim, effect=bound_effect
+                    rng_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(rng_validation.to_dict())
@@ -513,7 +574,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_ao.get(str(ao_claim.effect_id))
                 ao_validation = validate_application_overlay_claim(
-                    ao_claim, effect=bound_effect
+                    ao_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(ao_validation.to_dict())
@@ -541,7 +606,11 @@ class UKReplayPipeline:
                     continue
                 bound_effect = effect_by_id_sfr.get(str(sfr_claim.effect_id))
                 sfr_validation = validate_source_feed_reconciliation_claim(
-                    sfr_claim, effect=bound_effect
+                    sfr_claim,
+                    effect=bound_effect,
+                    extracted_source_text=_extracted_source_text_for_claim_effect(
+                        bound_effect
+                    ),
                 )
                 if effect_diagnostics_out is not None:
                     effect_diagnostics_out.append(sfr_validation.to_dict())
@@ -646,8 +715,9 @@ class UKReplayPipeline:
             _last_effect_idx[_e_j.affecting_act_id] = _j
 
         ops = []
-        extraction_cache: dict[str, UKAffectingSourceContext] = {}
-        enacted_extraction_cache: dict[str, UKAffectingSourceContext] = {}
+        # NB: ``extraction_cache`` / ``enacted_extraction_cache`` are initialized
+        # once above (before the claim-validation index build) and reused here, so
+        # the affecting XML is loaded only once per affecting act across both passes.
         for i, e in enumerate(replayable):
             try:
                 if bool(e.metadata_only) and not allow_metadata_only_effects:
