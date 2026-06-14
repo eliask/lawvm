@@ -1133,7 +1133,14 @@ def _explain_sync(
                                 explanation = (
                                     f"oracle retains superseded same-section sentence residue beyond {blame_source}"
                                 )
-        if diagnosis == "UNKNOWN":
+        # Source-pathology demotion gate must match oracle_check._classify_statute
+        # (the authoritative surface): a section whose blamed amendment already
+        # carries source-pathology rows + degraded/failed-op ownership is a
+        # SOURCE_PATHOLOGY regardless of whether the coarse length heuristic
+        # landed it on UNKNOWN or on REPLAY_MISSING/REPLAY_EXTRA/MISSING/EXTRA.
+        # Keeping this in lock-step with oracle_check prevents the two surfaces
+        # from reporting different diagnoses for the same section.
+        if diagnosis in ("UNKNOWN", "REPLAY_MISSING", "REPLAY_EXTRA", "MISSING", "EXTRA"):
             source_pathology_diagnosis = _source_pathology_diagnosis_for_blame(
                 master,
                 blame_op,
