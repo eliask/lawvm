@@ -1702,6 +1702,45 @@ def test_replay_xml_2009_617_moves_sections_39_to_41_into_inserted_chapter_4a() 
         assert sec_in_4 is None, f"§{label} must not remain in chapter 4 after move to 4a"
 
 
+def test_replay_xml_2002_1090_relocates_sections_into_sibling_chapters_5a_5b() -> None:
+    """Regression: 2009/226 splits chapter 5 into 5a/5b and moves §§41–50 in.
+
+    The amendment inserts new chapter headings before §41 and §47, relocating
+    §§41–46 under 5 a luku and §§47–50 under 5 b luku. Replay emits the move as
+    an explicit repeal-at-source + insert-at-destination pair, plus a ``move``
+    migration event for lineage. Before the fix, the migration event rekeyed the
+    old-address timeline (tombstone included) onto the destination, leaving the
+    old chapter slot untombstoned so the base content survived as orphan copies
+    of §§41–50 under chapter 5.
+
+    §44a additionally exercises the absent-from-base path: it was inserted into
+    chapter 5 by an earlier amendment (2006/362), so the move-source tombstone
+    must be synthesised at the live source chapter address, not the base tree.
+    """
+    replay = replay_xml_for_test("2002/1090", mode="official_consolidation", quiet=True)
+
+    relocations = {
+        "41": "5a",
+        "42": "5a",
+        "43": "5a",
+        "44": "5a",
+        "44a": "5a",
+        "45": "5a",
+        "46": "5a",
+        "47": "5b",
+        "48": "5b",
+        "49": "5b",
+        "50": "5b",
+    }
+    for label, new_chapter in relocations.items():
+        assert (
+            replay.materialized_state.find_section(label, new_chapter) is not None
+        ), f"§{label} must be relocated into chapter {new_chapter}"
+        assert (
+            replay.materialized_state.find_section(label, "5") is None
+        ), f"§{label} must not remain in chapter 5 after relocation (orphan)"
+
+
 def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections(
     replay_1977_603_finlex_oracle: ReplayResult,
 ) -> None:
