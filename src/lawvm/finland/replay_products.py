@@ -528,6 +528,59 @@ def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOper
     return normalized
 
 
+def _drop_explicitly_repealed_source_move_events(
+    timelines: dict["LegalAddress", ProvisionTimeline],
+    migration_events: tuple[MigrationEvent, ...],
+) -> tuple[MigrationEvent, ...]:
+    """Drop ``move`` events whose source slot is already repealed by the same act.
+
+    A section relocated into a newly created sibling chapter (for example
+    ``5 luku §41`` moved under a freshly inserted ``5 a luku`` by the same
+    amendment) is expressed by replay as two explicit lowered ops: a repeal of
+    the section at its old chapter address and an insert of the section at the
+    new chapter address. That repeal terminates the old-address timeline in a
+    tombstone, so materialization correctly drops the base content there.
+
+    The same amendment also records a ``move`` migration event for lineage. If
+    that move event is allowed to rekey timelines, it relocates the entire
+    old-address bucket — tombstone included — onto the destination address,
+    where it collides with the destination's own insert lineage and, fatally,
+    leaves the old chapter slot with no tombstone. The base content then
+    survives as an orphan copy in the old chapter.
+
+    When the old-address timeline already carries a tombstone authored by the
+    same source statute as the move, the relocation is fully expressed by the
+    explicit repeal/insert ops; keeping the move event for rekey is redundant
+    and destructive. Drop it (lineage consumers still see the event elsewhere).
+    Genuine cross-parent moves with no explicit source repeal keep their event.
+    """
+    if not migration_events:
+        return migration_events
+
+    def _source_repealed_by(event: MigrationEvent) -> bool:
+        if event.kind != "move":
+            return False
+        source_timeline = timelines.get(event.from_address)
+        if source_timeline is None:
+            return False
+        move_source_statute = (
+            event.source_statute if isinstance(event.source_statute, str) else ""
+        )
+        if not move_source_statute:
+            return False
+        return any(
+            version.content is None
+            and version.source is not None
+            and version.source.statute_id == move_source_statute
+            for version in source_timeline.versions
+        )
+
+    filtered = tuple(
+        event for event in migration_events if not _source_repealed_by(event)
+    )
+    return filtered if len(filtered) != len(migration_events) else migration_events
+
+
 def _rekey_timelines_with_migration_events(
     timelines: dict["LegalAddress", ProvisionTimeline],
     migration_events: tuple[MigrationEvent, ...],
@@ -544,6 +597,10 @@ def _rekey_timelines_with_migration_events(
     """
     from lawvm.core.timeline import _address_prefix_matches
     from lawvm.finland.migration_ledger import current_address_with_prefix_migrations_from_events
+
+    migration_events = _drop_explicitly_repealed_source_move_events(
+        timelines, migration_events
+    )
 
     return _core_rekey_timelines_with_migration_events(
         timelines,

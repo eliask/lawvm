@@ -277,18 +277,21 @@ def test_classify_statute_1901_15_001_raw_master_gap_wave_is_source_incomplete()
 
 
 def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplete() -> None:
-    # 1990/1295 ships an abridged base witness whose chapters 7-9 are replaced by
-    # a "Puuttuu luvut" notice and never restated by any amendment body, so replay
-    # emits SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE for those chapters.
-    # Sections the oracle places under them cannot be materialized from replay
-    # inputs — they are a source limit, so they must classify as SOURCE_INCOMPLETE
-    # rather than MISSING (which the ledger counts as a real-bug suspect).
+    # 1990/1295 ships an abridged base witness whose chapters 7-10 are replaced by
+    # a "Puuttuu luvut 7-11" notice (the span runs up to, but excludes, the present
+    # chapter 11) and never restated in full by any amendment body, so replay emits
+    # SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE for those chapters. Sections
+    # the oracle places under them cannot be materialized from replay inputs — they
+    # are a source limit, so they must classify as SOURCE_INCOMPLETE rather than
+    # MISSING / REPLAY_MISSING / REPLAY_EXTRA (which the ledger counts as real-bug
+    # suspects).
     result = _classify_statute("1990/1295", "official_consolidation")
 
     assert result is not None
 
     by_section = {item["section"]: item for item in result.section_results}
-    # Sections inside the abridged chapter span are reclassified off MISSING.
+    # Sections inside the abridged chapter span are reclassified off MISSING when
+    # replay never built them at all.
     for label in (
         "chapter:7/section:34",
         "chapter:8/section:36",
@@ -299,8 +302,27 @@ def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplet
     ):
         assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
 
-    # Chapter 11 is outside the abridged span (chapters 10 and 11 are present in
-    # the base), so its genuine drops stay MISSING — they are real-bug suspects.
+    # Chapter 10 is inside the span too. Amendment 1997/29 carries a "10 luku"
+    # body holding only a newly *added* section (54 a §); seeding it does not make
+    # the chapter reconstructable. Sections 49/50/52/54 are delta-touched by later
+    # amendments, so replay builds fragments whose text diverges from the oracle's
+    # full bodies — raw REPLAY_MISSING (49/52/54) and REPLAY_EXTRA (50). These are
+    # a source limit, not a replay fault, so they reclassify to SOURCE_INCOMPLETE.
+    for label in (
+        "chapter:10/section:49",
+        "chapter:10/section:50",
+        "chapter:10/section:51",
+        "chapter:10/section:52",
+        "chapter:10/section:53",
+        "chapter:10/section:54",
+    ):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE", (
+            label,
+            by_section[label]["diagnosis"],
+        )
+
+    # Chapter 11 is outside the abridged span (it is the present chapter that
+    # bounds the span), so its genuine drops stay MISSING — real-bug suspects.
     for label in (
         "chapter:11/section:56",
         "chapter:11/section:58",

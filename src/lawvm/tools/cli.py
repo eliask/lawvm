@@ -7420,6 +7420,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     nz_corpus_sub = nz_corpus_p.add_subparsers(dest="nz_corpus_command", metavar="<subcommand>")
     from lawvm.new_zealand.bench_corpus import DEFAULT_SMOKE_SIZE
+    from lawvm.new_zealand.chain_replay_corpus import (
+        DEFAULT_WORKERS as NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS,
+    )
     nz_sync_p = nz_corpus_sub.add_parser(
         "sync",
         help="sync NZ API v0 metadata/XML into farchive",
@@ -8105,6 +8108,100 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="omit per-transition/per-skip detail from JSON"
     )
     nz_replay_chain_p.add_argument("--json", action="store_true", help="emit chain-replay report JSON")
+    nz_replay_chain_corpus_p = nz_corpus_sub.add_parser(
+        "replay-chain-corpus",
+        help="run the all-families amendment-chain replay across a work population and report the honest corpus e2e similarity distribution + ranked extraction caps",
+        description=(
+            "Corpus-wide aggregator for the all-families chain replay. Run the "
+            "per-work evolving-tree replay (see replay-chain) across a work "
+            "POPULATION (a curated bench-corpus CSV via --corpus, or the benchmark "
+            "sampler) in a process pool, and aggregate the honest end-to-end "
+            "numbers: the per-work FINAL stable-combined similarity DISTRIBUTION "
+            "(count/mean/median/p25/p75 + a histogram) — the corpus e2e number; "
+            "per-family applied vs skipped vs oracle-agreement totals; and the "
+            "RANKED skip/extraction-cap census (which extraction gap dominates "
+            "corpus-wide, to order the next lane). Reports the raw distribution and "
+            "does not flatter; every non-applied op is a typed, visible skip. "
+            "Measurement only: never authorizes actual replay, never mutates the "
+            "archive."
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to the --corpus population or the sampler",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus_smoke.csv; overrides the sampler. An explicit "
+            "--work-id list still takes precedence."
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--max-works", type=int, default=None, metavar="N", help="maximum works (no silent truncation; the cap is stated)"
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--work-id-prefix",
+        default="",
+        metavar="PREFIX",
+        help=(
+            "restrict the archive-wide default population to work_ids starting with PREFIX "
+            "(e.g. 'act_public_'); ignored when --work-id or --corpus is given"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--min-version-year",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="restrict the default population to works whose latest archived version is from YEAR or later",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--sample-strategy",
+        choices=("head", "stride"),
+        default="head",
+        help=(
+            "how to subsample the filtered default population down to --max-works: 'head' keeps the "
+            "lexicographic head; 'stride' takes an evenly-spaced deterministic sample"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "operation families to fold into each chain: 'all' (default), a single family, or a "
+            "comma-separated subset (e.g. 'repeal,text_replace')"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--workers",
+        type=int,
+        default=NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            f"process-pool worker count (default: {NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS}); "
+            "1 runs serially in-process"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--summary-only", action="store_true", help="emit only the corpus summary (suppress per-work rows)"
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--json", action="store_true", help="emit the corpus chain-replay report JSON"
+    )
     nz_build_corpus_p = nz_corpus_sub.add_parser(
         "build-corpus",
         help="generate curated NZ bench corpora (large + smoke) of works with >0 amendments",
@@ -11109,6 +11206,30 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="emit machine-readable JSON instead of human text",
     )
+
+    us_spec_ledger_p = sub.add_parser(
+        "us-spec-ledger",
+        help="build the U.S. federal witness-attribution spec-discovery ledger",
+        description=(
+            "Build the per-rule discovered-spec ledger for U.S. federal: rank every "
+            "us_* witness rule by how often the published USC after-edition oracle "
+            "corroborates vs contradicts its believed_spec, over the dry-run bench "
+            "corpus. Thin shim over lawvm.us_federal.spec_ledger_adapter; read-only, "
+            "never authorizes replay."
+        ),
+    )
+    us_spec_ledger_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default=None,
+        help="bench corpus CSV (default: us/bench/us_bench_corpus.csv)",
+    )
+    us_spec_ledger_p.add_argument(
+        "--json", action="store_true", help="emit the ledger JSON instead of the table"
+    )
+    us_spec_ledger_p.add_argument(
+        "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
+    )
     # --- END us_federal jurisdiction tooling ---
 
     # --- recipes ---
@@ -11525,6 +11646,12 @@ def _main_impl() -> None:
             from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
 
             nz_corpus_replay_chain_main(args)
+        elif args.nz_corpus_command == "replay-chain-corpus":
+            from lawvm.new_zealand.chain_replay_corpus import (
+                main as nz_corpus_replay_chain_corpus_main,
+            )
+
+            nz_corpus_replay_chain_corpus_main(args)
         elif args.nz_corpus_command == "build-corpus":
             from lawvm.new_zealand.bench_corpus import main as nz_corpus_build_corpus_main
 
@@ -12641,6 +12768,40 @@ def _main_impl() -> None:
                     )
                 print("statutory_text:")
                 print(_sec.statutory_text)
+
+    elif args.command == "us-spec-ledger":
+        import json
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.bench import DEFAULT_CORPUS_PATH, load_corpus
+        from lawvm.us_federal.sources import open_us_federal_farchive
+        from lawvm.us_federal.spec_ledger_adapter import (
+            build_us_spec_ledger,
+            ledger_to_dict,
+            render_text,
+        )
+
+        _corpus = (
+            _Path(args.corpus) if getattr(args, "corpus", None) else DEFAULT_CORPUS_PATH
+        )
+        if not _corpus.exists():
+            print(f"error: bench corpus not found: {_corpus}", file=sys.stderr)
+            sys.exit(1)
+        _windows = load_corpus(_corpus)
+        _archive = open_us_federal_farchive(readonly=True)
+        try:
+            _ledger = build_us_spec_ledger(_archive, _windows)
+        finally:
+            _archive.close()
+        if getattr(args, "json", False):
+            print(json.dumps(ledger_to_dict(_ledger), ensure_ascii=False, indent=2))
+        else:
+            print(render_text(_ledger))
+        _json_out = getattr(args, "json_out", "")
+        if _json_out:
+            with open(_json_out, "w", encoding="utf-8") as _fh:
+                json.dump(ledger_to_dict(_ledger), _fh, ensure_ascii=False, indent=2)
+            print(f"wrote {_json_out}", file=sys.stderr)
     # --- END us_federal jurisdiction dispatch ---
 
     elif args.command is None:

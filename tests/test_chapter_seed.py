@@ -362,27 +362,30 @@ def test_seed_missing_chapters_seeds_textual_gap_notice() -> None:
     assert all(diagnostic.blocking is False for diagnostic in seeded_diagnostics)
     assert all(diagnostic.strict_disposition == "block" for diagnostic in seeded_diagnostics)
     assert all(diagnostic.quirks_disposition == "apply" for diagnostic in seeded_diagnostics)
-    # The span 7-11 also declares chapters 9 and 10 that no amendment body
-    # carries; those are flagged unreconstructable rather than silently absent.
+    # Every chapter in the declared span 7-11 is flagged unreconstructable: the
+    # partially-seeded 7 and 8 (an amendment restored some sections but not the
+    # original bodies the oracle carries) plus 9 and 10 that no amendment body
+    # carries at all.
     assert [
         diagnostic.chapter_label
         for diagnostic in diagnostics
         if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable"
-    ] == ["9", "10"]
+    ] == ["7", "8", "9", "10"]
     section32 = next(child for child in chapters[0].children if child.kind == IRNodeKind.SECTION)
     assert len(section32.children) == 1
     assert "Puuttuu luvut" not in str(section32.children[0].text or "")
 
 
-def test_unmaterializable_span_chapters_excludes_seeded_and_non_integer() -> None:
+def test_unmaterializable_span_chapters_covers_whole_span_and_skips_non_integer() -> None:
     from lawvm.finland.chapter_seed import _unmaterializable_span_chapters
 
-    # Declared span 7-11, present next chapter 11, only chapter 8 was seeded.
-    assert _unmaterializable_span_chapters(("7", "11"), "11", ["8"]) == ["7", "9", "10"]
-    # Nothing seedable → the entire span up to the present next chapter is absent.
-    assert _unmaterializable_span_chapters(("7", "11"), "11", []) == ["7", "8", "9", "10"]
+    # Declared span 7-11, present next chapter 11: every chapter in the span is
+    # unreconstructable, regardless of whether a partial seed was possible — a
+    # seed from an amendment body restores at most newly-added sections, never
+    # the original bodies the oracle carries.
+    assert _unmaterializable_span_chapters(("7", "11"), "11") == ["7", "8", "9", "10"]
     # A non-integer endpoint yields no guesses rather than fabricating a range.
-    assert _unmaterializable_span_chapters(("7", "11"), "11a", ["8"]) == []
+    assert _unmaterializable_span_chapters(("7", "11"), "11a") == []
 
 
 def test_seed_missing_chapters_flags_unseedable_span_chapters() -> None:
@@ -401,7 +404,7 @@ def test_seed_missing_chapters_flags_unseedable_span_chapters() -> None:
         ),
         _chapter("11", _section("55")),
     )
-    # Only chapter 8 is carried by an amendment body; 7, 9, 10 stay absent.
+    # Chapter 8 is carried by an amendment body; 7, 9, 10 stay absent.
     corpus = _FakeCorpus({"1993/701": _chapter_xml("8", "38")})
     diagnostics: list[ChapterSeedDiagnostic] = []
 
@@ -412,17 +415,25 @@ def test_seed_missing_chapters_flags_unseedable_span_chapters() -> None:
         diagnostics_out=diagnostics,
     )
 
+    # The partial seed is still applied (section 38 is restored)...
     assert seeded == {ChapterSeedSkip(chapter_label="8", amendment_id="1993/701")}
     unreconstructable = [
         diagnostic
         for diagnostic in diagnostics
         if diagnostic.rule_id == "fi_chapter_seed_abridged_base_chapter_unreconstructable"
     ]
-    assert [diagnostic.chapter_label for diagnostic in unreconstructable] == ["7", "9", "10"]
+    # ...but every chapter in the declared span — including the partially-seeded
+    # chapter 8 — is reported unreconstructable, because no amendment body
+    # restates the chapter's original section bodies.
+    assert [diagnostic.chapter_label for diagnostic in unreconstructable] == ["7", "8", "9", "10"]
     assert all(diagnostic.family == "source_pathology" for diagnostic in unreconstructable)
     assert all(diagnostic.phase == "acquisition" for diagnostic in unreconstructable)
     assert all(diagnostic.blocking is False for diagnostic in unreconstructable)
     assert all("Puuttuu luvut 7-11" in diagnostic.reason for diagnostic in unreconstructable)
+    # The partially-seeded chapter's reason names the subset-restatement limit.
+    by_label = {d.chapter_label: d for d in unreconstructable}
+    assert "newly added section" in by_label["8"].reason
+    assert "no amendment body carries it" in by_label["7"].reason
 
 
 def test_seed_missing_chapters_records_source_scan_failures() -> None:

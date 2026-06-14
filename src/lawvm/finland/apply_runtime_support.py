@@ -1110,12 +1110,34 @@ def _emit_section_snapshot(
             else:
                 repealed_dropped.add(target_norm_label)
         if not replacements and not repealed_overlay and not repealed_dropped:
+            # No subsection-level overlay warrants a rebase. A heading-only group
+            # is already handled in the replay fold (`_apply_whole_section_op`),
+            # so do not rebuild from the prior exact snapshot here — that would
+            # drop live subsections absent from the older parent payload.
             return None
+        # A same-group section-heading change ("N §:ään uusi otsikko") is owned
+        # by the current amendment, so the rebased parent must adopt the current
+        # heading rather than inherit the prior exact snapshot's heading.
+        heading_overlay: IRNode | None = None
+        if any(
+            rop.effective_target_special in {"otsikko", "otsikko_edella"}
+            for rop in group_rops
+        ):
+            heading_overlay = next(
+                (c for c in section_payload.children if c.kind is IRNodeKind.HEADING),
+                None,
+            )
 
         changed = False
+        heading_placed = False
         seen: set[str] = set()
         new_children: list[IRNode] = []
         for child in latest_payload.children:
+            if heading_overlay is not None and child.kind is IRNodeKind.HEADING:
+                new_children.append(heading_overlay)
+                heading_placed = True
+                changed = changed or heading_overlay != child
+                continue
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_norm = _norm_num_token(child.label)
                 replacement = replacements.get(child_norm)
@@ -1135,6 +1157,21 @@ def _emit_section_snapshot(
                     changed = True
                     continue
             new_children.append(child)
+        if heading_overlay is not None and not heading_placed:
+            # The prior exact snapshot carried no heading; splice the new one in
+            # directly behind the num so the order stays "N § Otsikko".
+            spliced: list[IRNode] = []
+            inserted = False
+            for child in new_children:
+                spliced.append(child)
+                if not inserted and child.kind is IRNodeKind.NUM:
+                    spliced.append(heading_overlay)
+                    inserted = True
+            if not inserted:
+                spliced.insert(0, heading_overlay)
+            new_children = spliced
+            heading_placed = True
+            changed = True
         if not changed:
             return None
 
@@ -2623,27 +2660,37 @@ def _emit_section_snapshot(
         and target_unit_kind == "section"
         and action is StructuralAction.INSERT
         and moved_from_chapter
-        and base_ir is not None
     ):
-        old_raw_path = _tops.find(
-            base_ir,
-            "section",
-            normalized_target_norm,
-            scope_kind="chapter",
-            scope_label=moved_from_chapter,
+        old_raw_path = (
+            _tops.find(
+                base_ir,
+                "section",
+                normalized_target_norm,
+                scope_kind="chapter",
+                scope_label=moved_from_chapter,
+            )
+            if base_ir is not None
+            else None
         )
         old_path = _timeline_path(_tops._as_path(old_raw_path)) if old_raw_path else None
-        if old_path is not None:
-            lo_ops_out.append(
-                _LegalOperation(
-                    op_id=f"snapshot_repeal_old_section_{normalized_target_norm}_from_{moved_from_chapter}",
-                    sequence=0,
-                    action=StructuralAction.REPEAL,
-                    target=LegalAddress(path=old_path),
-                    source=op_source,
-                    group_id=f"finland-johto:{amendment_id or 'unknown'}",
-                )
+        if old_path is None:
+            # The relocated section was introduced into the source chapter by an
+            # intermediate amendment, so it is absent from the original base
+            # tree. Its live history is still keyed at the source chapter
+            # address, which the explicit insert at the new chapter does not
+            # tombstone. Build the source-chapter address directly so the move
+            # still leaves a tombstone instead of an orphan copy.
+            old_path = (("chapter", moved_from_chapter), ("section", normalized_target_norm))
+        lo_ops_out.append(
+            _LegalOperation(
+                op_id=f"snapshot_repeal_old_section_{normalized_target_norm}_from_{moved_from_chapter}",
+                sequence=0,
+                action=StructuralAction.REPEAL,
+                target=LegalAddress(path=old_path),
+                source=op_source,
+                group_id=f"finland-johto:{amendment_id or 'unknown'}",
             )
+        )
 
     if (
         payload is not None

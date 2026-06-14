@@ -155,12 +155,64 @@ sections, and sections enacted after the 2023 edition. The resolver produces
   complete and to catch any silent drop. That remains an optional acquisition,
   not a blocker for replay of codified non-positive amendments.
 
-## 6. Scope, limits, and what this does NOT claim
+## 6. Integration into the lowering + dry-run path
 
-- This is a **target-resolution** surface only: it maps an amendment's
-  act-section target to a USC address. It does **not** lower the operation
-  payload (that is `amendatory.py`) or apply/verify it (that is the dry-run).
-- The per-title resolve-rate is a **reachability** measure over the PLAW
+The resolver is now **wired into `amendatory._resolve_target`** (it was a
+standalone feasibility surface before). When the unit's OWN absolute prose / href
+lands on a non-positive title, target resolution is routed through
+`resolve_nonpositive_target(target_phrase, target_href)`:
+
+- a codified target (paren+href agree / href / paren) returns the USC address with
+  a `nonpositive_<status>` resolution status, and the existing amendatory payload
+  lowering + section-level materialization apply unchanged (no forked kernel);
+- a **`note`-only / unmapped** non-positive target resolves to `unresolved` — the
+  uncodified Statutes-at-Large note is **held out at the lowering boundary**, never
+  guessed onto a codified section (Prime Directive). It becomes the honest
+  `missing_source` / target-unresolved residual, not a false claim;
+- the **IRC single-letter subsection** (`(l)`) is typed by nesting position
+  (`subsection`), not as a roman-numeral clause, fixing the sub-section address
+  the section-level surface threads.
+
+Two guardrails preserve the Prime Directive:
+
+- **No raw-text paren fallback.** Only the unit's own `target_phrase` and
+  `target_href` are consulted. The resolver's `raw_text` parenthetical fallback is
+  *not* used here, because a stray `(N U.S.C. M)` cross-citation in the
+  instruction BODY (e.g. an instruction about "Chapter 1 of title 23" that
+  mentions `(42 U.S.C. 4332)` in passing) would otherwise hijack the target onto
+  the wrong section. Measured: the raw-text fallback would "resolve" 30 extra T42
+  units in one window — all hijacks onto cross-referenced sections; the
+  phrase-only paren adds **zero** legitimate resolutions, so it is excluded.
+- **Inherited / relative-prose targets are untouched.** A leaf unit that carries
+  no own ref and inherits its parent instruction's already-resolved address keeps
+  the positive-law inheritance path; the non-positive route fires only on the
+  unit's own direct target.
+
+### 6a. Bench effect (witness-anchored dry-run, no regression)
+
+Measured over the committed corpus (`python -m lawvm.us_federal.bench`),
+before → after the integration:
+
+- aggregate agreements **432 → 433** (+1; a new exact, hand-verified non-positive
+  agreement at **§42:4016**, two composed `September 30, 2021→2022` / `2022→2023`
+  strike-and-inserts from PL 117-103 + PL 117-328);
+- `lawvm_wrong` **2623 → 2592** (−31): the note-only holdout demotes ~31 previously
+  mis-resolved non-positive claims off the false-claim partition;
+- `missing_source` **5814 → 5816** (+2): the held-out uncodified targets surface as
+  the honest source-footing gap instead of a wrong claim;
+- **every positive-law title window is byte-identical** in the agreement column
+  (T10/T18/T28/T31/T35/T38/T49 unchanged) — the route fires only on non-positive
+  titles, by construction.
+
+What still **stays an uncodified finding** (correctly, never forced): note-only
+targets (`/us/usc/tN/sM/note`), `(N U.S.C. M note)` / `et seq.` parentheticals,
+appropriations-act and other-Public-Law-by-Stat.-cite targets, and nested
+sub-instructions of such uncodified parents. These have no USC section for any
+table to map them to.
+
+## 7. Scope, limits, and what this does NOT claim
+
+- The per-title resolve-rate (§4) is a **reachability** measure over the PLAW
   amendment-instruction surface; it is not a replay-agreement claim. End-state
   replay still depends on a non-positive USC oracle edition and the same
   effective-date / compare-shape hazards the positive-law path faces.

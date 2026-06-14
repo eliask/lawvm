@@ -506,6 +506,25 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
     return None
 
 
+def _direct_target_title(target_phrase: str, target_href: str) -> str:
+    """The title the unit's OWN absolute prose / href would resolve to, or "".
+
+    Used to decide whether the unit's own direct target lands on a non-positive
+    title — in which case resolution is routed through the act-section→USC
+    non-positive resolver (which enforces the uncodified/note-only holdout and the
+    pinned IRC sub-segment typing). The inherited / relative-prose channels are NOT
+    consulted here: those thread a title a parent already resolved and are handled
+    by the direct positive-law path unchanged.
+    """
+    prose_addr = parse_usc_target_phrase(target_phrase) if target_phrase else None
+    if prose_addr is not None:
+        return _address_title(prose_addr)
+    href_addr = parse_usc_target_href(target_href) if target_href else None
+    if href_addr is not None:
+        return _address_title(href_addr)
+    return ""
+
+
 def _resolve_target(
     target_phrase: str,
     target_href: str,
@@ -516,11 +535,25 @@ def _resolve_target(
     """Resolve the instruction target; prose is canonical, href corroborates.
 
     Returns ``(address, resolution_status)`` where status is one of
-    ``prose``, ``href``, ``prose_href_agree``, ``relative_prose``, ``inherited``,
-    or ``unresolved``.
+    ``prose``, ``href``, ``prose_href_agree``, ``nonpositive_<status>``,
+    ``relative_prose``, ``inherited``, or ``unresolved``.
 
     Resolution order (each strictly more specific than the next):
 
+    0. NON-POSITIVE TITLE ROUTING. When the unit's own absolute prose / href lands
+       on one of the 24 non-positive-law USC titles (Title 7, 15, 20, 26, 42, …),
+       the enacted target names a free-standing Act ("Section 5 of the Securities
+       Act of 1933 (15 U.S.C. 77e)") and the codified address comes from the
+       govinfo USLM classification carried in the inline ``(N U.S.C. M)``
+       parenthetical and the structural ``<ref>`` href. We route through
+       :func:`lawvm.us_federal.nonpositive.resolve_nonpositive_target`, which
+       enforces the Prime Directive at the lowering boundary: a ``note``-only / et
+       seq. target (an UNCODIFIED Statutes-at-Large note) is held OUT (resolves to
+       ``unresolved``, never guessed onto a codified section), and the IRC
+       single-letter subsection (``(l)``) is typed by nesting position rather than
+       as a roman-numeral clause. Only the unit's OWN target_phrase / target_href
+       are consulted (NOT the raw_text), so a stray ``(N U.S.C. M)`` cross-citation
+       inside the instruction body can never hijack the target.
     1. The unit's own absolute prose / href ("Section X(...) of title N").
     2. The unit's own RELATIVE prose ("section X(...) of such title" / "in section
        X, by ...") combined with the title inherited from the enclosing
@@ -532,6 +565,30 @@ def _resolve_target(
     The relative/inherited steps NEVER invent a title; they only carry one that an
     enclosing instruction already resolved (no silent target hijack).
     """
+    # Local import: ``nonpositive`` imports lowering primitives from this module at
+    # its top level, so a module-level import here would be circular. The resolver
+    # is pure and cheap to reach lazily.
+    from lawvm.us_federal import nonpositive
+
+    # (0) Non-positive title: route the unit's own direct target through the
+    # act-section→USC resolver. Only fires when the unit's own prose/href lands on
+    # a non-positive title; inherited / relative-prose resolutions are left to the
+    # direct path below (a leaf with no own ref keeps inheriting its parent's
+    # already-resolved address). A non-positive unit whose only codified channel is
+    # a note cross-ref resolves to ``unresolved`` here (a typed holdout finding
+    # downstream), never a guessed codified section.
+    direct_title = _direct_target_title(target_phrase, target_href)
+    if direct_title and not nonpositive.is_positive_law_title(int(direct_title)):
+        witness = nonpositive.resolve_nonpositive_target(
+            target_phrase=target_phrase,
+            target_href=target_href,
+        )
+        if witness.address is not None:
+            return witness.address, f"nonpositive_{witness.status}"
+        # No codified channel for this non-positive target (note-only / unmapped):
+        # held out as the uncodified residual, never guessed onto a section.
+        return None, "unresolved"
+
     prose_addr = parse_usc_target_phrase(target_phrase) if target_phrase else None
     href_addr = parse_usc_target_href(target_href) if target_href else None
     if prose_addr is not None and href_addr is not None:

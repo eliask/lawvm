@@ -23,6 +23,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_UNIT,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
+    _resolve_target,
     lower_plaw_amendatory,
     parse_relative_usc_target,
     parse_usc_target_href,
@@ -82,6 +83,77 @@ def test_href_target_parsing_drops_note_facet():
     assert parse_usc_target_href("/us/usc/t11/s362/c/1") == LegalAddress(
         path=(("title", "11"), ("section", "362"), ("subsection", "c"), ("paragraph", "1"))
     )
+
+
+# ---------------------------------------------------------------------------
+# Non-positive-law title routing through the act-section→USC resolver
+# ---------------------------------------------------------------------------
+
+
+def test_nonpositive_target_resolves_via_act_section_resolver():
+    # A non-positive title (15 Commerce): the enacted target names a free-standing
+    # Act; the codified address comes from the (N U.S.C. M) paren + structural href.
+    # Routing through the non-positive resolver yields the USC address with a
+    # ``nonpositive_*`` resolution status (paren+href agree here).
+    address, status = _resolve_target(
+        "Section 5 of the Securities Act of 1933 (15 U.S.C. 77e)", "/us/usc/t15/s77e"
+    )
+    assert address == LegalAddress(path=(("title", "15"), ("section", "77e")))
+    assert status == "nonpositive_paren_href_agree"
+
+
+def test_nonpositive_note_only_target_is_held_out_never_guessed():
+    # A non-positive target whose only codified channel is a ``note`` cross-ref is
+    # an UNCODIFIED Statutes-at-Large note: it is held out (unresolved), never
+    # guessed onto the codified section t7/s2011. The Prime Directive at the
+    # lowering boundary.
+    address, status = _resolve_target(
+        "Section 702(a) of division N of the Consolidated Appropriations Act, 2021",
+        "/us/usc/t7/s2011/note",
+    )
+    assert address is None
+    assert status == "unresolved"
+
+
+def test_nonpositive_irc_single_letter_subsection_typed_by_position():
+    # IRC "(l)" is a SUBSECTION, not a roman-numeral clause "l": the non-positive
+    # resolver types it by nesting position. The positive-law href path would
+    # mis-type it as a clause.
+    address, _status = _resolve_target(
+        "Section 461(l)(1) of the Internal Revenue Code of 1986 (26 U.S.C. 461(l)(1))",
+        "/us/usc/t26/s461/l/1",
+    )
+    assert address == LegalAddress(
+        path=(
+            ("title", "26"),
+            ("section", "461"),
+            ("subsection", "l"),
+            ("paragraph", "1"),
+        )
+    )
+
+
+def test_nonpositive_routing_does_not_consult_raw_text_paren_cross_ref():
+    # A stray "(42 U.S.C. 4332)" cross-citation in the instruction BODY must never
+    # hijack the target: only the unit's OWN phrase / href are consulted. With no
+    # own codified channel the non-positive target stays unresolved.
+    address, status = _resolve_target(
+        "Chapter 1 of title 23, United States Code, is amended",
+        "",
+        raw_text="see section 102 (42 U.S.C. 4332) of this Act",
+    )
+    assert address is None
+    assert status == "unresolved"
+
+
+def test_positive_law_title_routing_is_unchanged():
+    # A positive-law title (11) is NOT routed through the non-positive resolver: the
+    # prose/href direct path resolves it with the existing status vocabulary.
+    address, status = _resolve_target(
+        "Section 362 of title 11, United States Code", "/us/usc/t11/s362"
+    )
+    assert address == LegalAddress(path=(("title", "11"), ("section", "362")))
+    assert status == "prose_href_agree"
 
 
 # ---------------------------------------------------------------------------

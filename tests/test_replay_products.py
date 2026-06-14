@@ -1702,6 +1702,45 @@ def test_replay_xml_2009_617_moves_sections_39_to_41_into_inserted_chapter_4a() 
         assert sec_in_4 is None, f"§{label} must not remain in chapter 4 after move to 4a"
 
 
+def test_replay_xml_2002_1090_relocates_sections_into_sibling_chapters_5a_5b() -> None:
+    """Regression: 2009/226 splits chapter 5 into 5a/5b and moves §§41–50 in.
+
+    The amendment inserts new chapter headings before §41 and §47, relocating
+    §§41–46 under 5 a luku and §§47–50 under 5 b luku. Replay emits the move as
+    an explicit repeal-at-source + insert-at-destination pair, plus a ``move``
+    migration event for lineage. Before the fix, the migration event rekeyed the
+    old-address timeline (tombstone included) onto the destination, leaving the
+    old chapter slot untombstoned so the base content survived as orphan copies
+    of §§41–50 under chapter 5.
+
+    §44a additionally exercises the absent-from-base path: it was inserted into
+    chapter 5 by an earlier amendment (2006/362), so the move-source tombstone
+    must be synthesised at the live source chapter address, not the base tree.
+    """
+    replay = replay_xml_for_test("2002/1090", mode="official_consolidation", quiet=True)
+
+    relocations = {
+        "41": "5a",
+        "42": "5a",
+        "43": "5a",
+        "44": "5a",
+        "44a": "5a",
+        "45": "5a",
+        "46": "5a",
+        "47": "5b",
+        "48": "5b",
+        "49": "5b",
+        "50": "5b",
+    }
+    for label, new_chapter in relocations.items():
+        assert (
+            replay.materialized_state.find_section(label, new_chapter) is not None
+        ), f"§{label} must be relocated into chapter {new_chapter}"
+        assert (
+            replay.materialized_state.find_section(label, "5") is None
+        ), f"§{label} must not remain in chapter 5 after relocation (orphan)"
+
+
 def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections(
     replay_1977_603_finlex_oracle: ReplayResult,
 ) -> None:
@@ -4333,3 +4372,36 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
 
     assert replay.find_section("4a") is not None, "2021/407 must insert section 4a"
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"
+
+
+def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> None:
+    """``N §:ään uusi otsikko`` inserts the section's own heading after the num.
+
+    2025/12 to 1999/1352 says ``lisätään 3 §:ään uusi otsikko, 4 §:ään ... uusi
+    otsikko ja 6 §:ään uusi otsikko``.  The new heading is the section's own
+    ``otsikko`` and must render as ``N § Otsikko`` (num then heading), not as a
+    preceding heading block ``Otsikko N §``.  Section 4 also receives a
+    same-amendment subsection replace (``4 §:n 2 momentti``); the section-snapshot
+    rebase onto the prior exact parent must carry the new heading forward rather
+    than inherit the headingless prior snapshot.
+    """
+    replay = pinned_replay("1999/1352", mode="official_consolidation", quiet=True)
+
+    expected_headings = {
+        "3": "Osakekannan omistus",
+        "4": "Hallinnolliset säännökset",
+        "6": "Voimaantulo",
+    }
+    for label, heading_text in expected_headings.items():
+        section = replay.materialized_state.find_section(label)
+        assert section is not None, f"section {label} must be present in replay"
+        kinds = [child.kind for child in section.children]
+        assert IRNodeKind.NUM in kinds, f"section {label} must keep its num"
+        assert IRNodeKind.HEADING in kinds, (
+            f"section {label} must carry the inserted heading {heading_text!r}"
+        )
+        assert kinds.index(IRNodeKind.NUM) < kinds.index(IRNodeKind.HEADING), (
+            f"section {label} heading must follow the num, not precede it"
+        )
+        heading = next(child for child in section.children if child.kind is IRNodeKind.HEADING)
+        assert irnode_to_text(heading).strip() == heading_text

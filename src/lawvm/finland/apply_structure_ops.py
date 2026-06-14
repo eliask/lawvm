@@ -1570,9 +1570,61 @@ def _apply_whole_section_op(
     if (
         _target_unit_kind != "section"
         or _target_paragraph
-        or (_target_special and _target_special != "otsikko_edella")
+        or (_target_special and _target_special not in {"otsikko", "otsikko_edella"})
     ):
         return None
+
+    if _target_special == "otsikko":
+        # Section heading insert/replace ("N §:ään uusi otsikko" / "N §:n
+        # otsikko").  The new heading belongs to the section's own ``heading``
+        # child, placed *after* the ``num``.  Replace an existing heading in
+        # place; otherwise splice the new heading directly behind the num so
+        # the rendered order is ``N § Otsikko`` (not ``Otsikko N §``).
+        #
+        # When the target section is not live (sec_path is None), decline so the
+        # caller's materialization path can seed the section — matching the prior
+        # behaviour for unresolved heading targets.
+        if sec_path is None or muutos_ir is None:
+            return None
+        live_sec = _tops.resolve(state.ir, sec_path)
+        if live_sec is None:
+            return None
+        amend_heading = next(
+            (c for c in muutos_ir.children if c.kind == IRNodeKind.HEADING), None
+        )
+        if amend_heading is None:
+            logger.debug(
+                "  %s → section otsikko %s (no heading in amendment body — no-op)",
+                ctx_label,
+                _op_type,
+            )
+            return state
+        new_children: list[IRNode] = []
+        heading_placed = False
+        for child in live_sec.children:
+            if child.kind == IRNodeKind.HEADING:
+                # Drop the existing heading; the new one is placed exactly once
+                # (here if no num preceded it, otherwise already spliced in after
+                # the num below).
+                if not heading_placed:
+                    new_children.append(amend_heading)
+                    heading_placed = True
+                continue
+            new_children.append(child)
+            if not heading_placed and child.kind == IRNodeKind.NUM:
+                new_children.append(amend_heading)
+                heading_placed = True
+        if not heading_placed:
+            new_children.insert(0, amend_heading)
+        new_sec = IRNode(
+            kind=live_sec.kind,
+            label=live_sec.label,
+            text=live_sec.text,
+            attrs=live_sec.attrs,
+            children=tuple(new_children),
+        )
+        logger.debug("  %s → section otsikko %s", ctx_label, _op_type)
+        return state.with_ir(_tops.replace_at(state.ir, sec_path, new_sec))
 
     if _target_special == "otsikko_edella":
         if _op_type == "INSERT" and sec_path is not None and muutos_ir is not None:
