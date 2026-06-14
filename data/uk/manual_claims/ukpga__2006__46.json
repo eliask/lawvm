@@ -1,0 +1,22 @@
+{
+  "claims": [
+    {
+      "affected_target": "s. 140(2)",
+      "basis": "devolution_territorial_extent_split",
+      "basis_note": "Same-moment omission by a Northern Ireland Act (nia/2015/5) and a GB act (ukpga/2014/19) on the Companies Act 2006; the two instruments apply to territorially distinct extents rather than a single overwrite. The GB-wide ukpga/2014/19 carries the operative omission for the Act's GB extent.",
+      "claim_id": "sm-2006-46-s140-2",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "nia/2015/5",
+        "ukpga/2014/19"
+      ],
+      "effective_date": "2016-04-06",
+      "status": "proposed",
+      "statute_id": "ukpga/2006/46",
+      "winner_affecting_act_id": "ukpga/2014/19",
+      "winner_effect_id": ""
+    }
+  ],
+  "statute_id": "ukpga/2006/46"
+}

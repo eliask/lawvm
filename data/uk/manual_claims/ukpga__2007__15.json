@@ -1,0 +1,22 @@
+{
+  "claims": [
+    {
+      "affected_target": "Sch. 10 para. 40",
+      "basis": "devolution_territorial_extent_split",
+      "basis_note": "Same-moment repeal by a Northern Ireland Act (nia/2010/4) and a UK SI (uksi/2010/22); territorially-split application. The UK-wide SI carries the operative repeal for the Tribunals, Courts and Enforcement Act 2007's GB/UK extent; both reach the repealed end-state.",
+      "claim_id": "sm-2007-15-sch10-40",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "nia/2010/4",
+        "uksi/2010/22"
+      ],
+      "effective_date": "2010-04-06",
+      "status": "proposed",
+      "statute_id": "ukpga/2007/15",
+      "winner_affecting_act_id": "uksi/2010/22",
+      "winner_effect_id": ""
+    }
+  ],
+  "statute_id": "ukpga/2007/15"
+}

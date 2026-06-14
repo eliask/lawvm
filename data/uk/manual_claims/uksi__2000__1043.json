@@ -1,0 +1,22 @@
+{
+  "claims": [
+    {
+      "affected_target": "reg. 11(3)",
+      "basis": "devolution_territorial_extent_split",
+      "basis_note": "Same-moment substitution of reg.11(3) by a UK/England SI (uksi/2005/894) and a Wales SI (wsi/2005/1806); the two apply to different territorial extents, not a single overwrite. Within the principal instrument's England extent the UK SI uksi/2005/894 controls.",
+      "claim_id": "sm-2000-1043-reg11-3",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "uksi/2005/894",
+        "wsi/2005/1806"
+      ],
+      "effective_date": "2005-07-16",
+      "status": "proposed",
+      "statute_id": "uksi/2000/1043",
+      "winner_affecting_act_id": "uksi/2005/894",
+      "winner_effect_id": ""
+    }
+  ],
+  "statute_id": "uksi/2000/1043"
+}

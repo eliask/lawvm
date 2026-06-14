@@ -625,6 +625,18 @@ def score_one(statute_id: str) -> dict[str, Any]:
         authority_rejections: list[dict[str, Any]] = []
         effect_diagnostics: list[dict[str, Any]] = []
         compile_phase_timings: dict[str, float] = {}
+        # §manual_claims: opt-in authored-claim loading. With the feature flag off
+        # (or no authored file for this statute) the loaded bucket-set is empty and
+        # ``compile_kwargs`` yields all-``None`` opt-in params ⇒ this call is
+        # byte-identical to the no-claims path. Each loaded claim is still gated by
+        # its ``validate_*`` inside ``compile_ops_for_statute``; loading only
+        # deserializes, it never validates or applies.
+        from lawvm.uk_legislation.manual_claim_store import (
+            load_manual_claims_for_statute,
+        )
+
+        manual_claims = load_manual_claims_for_statute(statute_id)
+        result["n_manual_claims_loaded"] = manual_claims.total_claims()
         compile_wall_t0 = time.perf_counter()
         ops = pipeline.compile_ops_for_statute(
             statute_id,
@@ -635,6 +647,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
             effect_diagnostics_out=effect_diagnostics,
             compile_phase_timings_out=compile_phase_timings,
             diagnostic_replay_filter_mode=UKDiagnosticReplayFilterMode.OBSERVE_ONLY,
+            **manual_claims.compile_kwargs(),
         )
         result["compile_wall_seconds"] = round(time.perf_counter() - compile_wall_t0, 6)
         result["compile_phase_timings"] = _rounded_phase_timings(

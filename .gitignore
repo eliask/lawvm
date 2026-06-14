@@ -34,6 +34,8 @@ data/**
 !data/uk/
 !data/uk/bench_corpus.csv
 !data/uk/spec_authority_grounding.json
+!data/uk/manual_claims/
+!data/uk/manual_claims/*.json
 !data/estonia/
 !data/estonia/bench_corpus.csv
 !data/estonia/bench_corpus_notes.md

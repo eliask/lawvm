@@ -1,0 +1,107 @@
+{
+  "claims": [
+    {
+      "affected_target": "s. 495",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s495",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 496",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s496",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 774A-774G",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s774A-774G",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 779-785",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s779-785",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 786",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s786",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 24",
+      "basis": "later_enactment",
+      "basis_note": "Same-moment repeal of the target by both 2010 tax-rewrite acts (2010 c.4 CTA 2010 and 2010 c.8 TIOPA 2010); the higher-numbered 2010 c.8 received Royal Assent later in the session and carries the operative repeal. Both reach the identical repealed end-state.",
+      "claim_id": "sm-1988-1-s24",
+      "claim_kind": "same_moment_precedence",
+      "claimant": "stream-uk-author-claims:reviewed-2026-06-14",
+      "conflicting_affecting_acts": [
+        "ukpga/2010/4",
+        "ukpga/2010/8"
+      ],
+      "effective_date": "2010-04-01",
+      "status": "proposed",
+      "statute_id": "ukpga/1988/1",
+      "winner_affecting_act_id": "ukpga/2010/8",
+      "winner_effect_id": ""
+    }
+  ],
+  "statute_id": "ukpga/1988/1"
+}
