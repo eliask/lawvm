@@ -1110,12 +1110,34 @@ def _emit_section_snapshot(
             else:
                 repealed_dropped.add(target_norm_label)
         if not replacements and not repealed_overlay and not repealed_dropped:
+            # No subsection-level overlay warrants a rebase. A heading-only group
+            # is already handled in the replay fold (`_apply_whole_section_op`),
+            # so do not rebuild from the prior exact snapshot here — that would
+            # drop live subsections absent from the older parent payload.
             return None
+        # A same-group section-heading change ("N §:ään uusi otsikko") is owned
+        # by the current amendment, so the rebased parent must adopt the current
+        # heading rather than inherit the prior exact snapshot's heading.
+        heading_overlay: IRNode | None = None
+        if any(
+            rop.effective_target_special in {"otsikko", "otsikko_edella"}
+            for rop in group_rops
+        ):
+            heading_overlay = next(
+                (c for c in section_payload.children if c.kind is IRNodeKind.HEADING),
+                None,
+            )
 
         changed = False
+        heading_placed = False
         seen: set[str] = set()
         new_children: list[IRNode] = []
         for child in latest_payload.children:
+            if heading_overlay is not None and child.kind is IRNodeKind.HEADING:
+                new_children.append(heading_overlay)
+                heading_placed = True
+                changed = changed or heading_overlay != child
+                continue
             if child.kind is IRNodeKind.SUBSECTION and child.label:
                 child_norm = _norm_num_token(child.label)
                 replacement = replacements.get(child_norm)
@@ -1135,6 +1157,21 @@ def _emit_section_snapshot(
                     changed = True
                     continue
             new_children.append(child)
+        if heading_overlay is not None and not heading_placed:
+            # The prior exact snapshot carried no heading; splice the new one in
+            # directly behind the num so the order stays "N § Otsikko".
+            spliced: list[IRNode] = []
+            inserted = False
+            for child in new_children:
+                spliced.append(child)
+                if not inserted and child.kind is IRNodeKind.NUM:
+                    spliced.append(heading_overlay)
+                    inserted = True
+            if not inserted:
+                spliced.insert(0, heading_overlay)
+            new_children = spliced
+            heading_placed = True
+            changed = True
         if not changed:
             return None
 

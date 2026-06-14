@@ -4372,3 +4372,36 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
 
     assert replay.find_section("4a") is not None, "2021/407 must insert section 4a"
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"
+
+
+def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> None:
+    """``N §:ään uusi otsikko`` inserts the section's own heading after the num.
+
+    2025/12 to 1999/1352 says ``lisätään 3 §:ään uusi otsikko, 4 §:ään ... uusi
+    otsikko ja 6 §:ään uusi otsikko``.  The new heading is the section's own
+    ``otsikko`` and must render as ``N § Otsikko`` (num then heading), not as a
+    preceding heading block ``Otsikko N §``.  Section 4 also receives a
+    same-amendment subsection replace (``4 §:n 2 momentti``); the section-snapshot
+    rebase onto the prior exact parent must carry the new heading forward rather
+    than inherit the headingless prior snapshot.
+    """
+    replay = pinned_replay("1999/1352", mode="official_consolidation", quiet=True)
+
+    expected_headings = {
+        "3": "Osakekannan omistus",
+        "4": "Hallinnolliset säännökset",
+        "6": "Voimaantulo",
+    }
+    for label, heading_text in expected_headings.items():
+        section = replay.materialized_state.find_section(label)
+        assert section is not None, f"section {label} must be present in replay"
+        kinds = [child.kind for child in section.children]
+        assert IRNodeKind.NUM in kinds, f"section {label} must keep its num"
+        assert IRNodeKind.HEADING in kinds, (
+            f"section {label} must carry the inserted heading {heading_text!r}"
+        )
+        assert kinds.index(IRNodeKind.NUM) < kinds.index(IRNodeKind.HEADING), (
+            f"section {label} heading must follow the num, not precede it"
+        )
+        heading = next(child for child in section.children if child.kind is IRNodeKind.HEADING)
+        assert irnode_to_text(heading).strip() == heading_text

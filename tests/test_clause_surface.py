@@ -367,6 +367,31 @@ class TestResolveMultiVerbGroup:
         assert moved.chapter == "9"
         assert moved.move_clause_target_unit_kind == "chapter"
 
+    def test_parse_surface_resolves_section_heading_insertion_to_otsikko(self):
+        """``lisätään N §:ään uusi otsikko`` is a section-heading insert.
+
+        The illative ``§:ään uusi otsikko`` adds the section's own heading, so it
+        must resolve to a heading-facet insert on each named section — not a
+        ``otsikko_edella`` heading-before-section placement.
+        """
+        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.scan import apply_annotations
+        from lawvm.finland.johtolause.clause_surface import parse_surface
+
+        text = (
+            "lisätään 3 §:ään uusi otsikko, 4 §:ään, sellaisena kuin se on "
+            "laissa 1305/2013, uusi otsikko ja 6 §:ään uusi otsikko"
+        )
+        clause = parse_surface(apply_annotations(tokenize(text)))
+        ops = resolve(clause)
+
+        heading_ops = [op for op in ops if op.facet == FacetKind.HEADING]
+        assert [op.number for op in heading_ops] == ["3", "4", "6"]
+        for op in heading_ops:
+            assert op.verb == "L"
+            assert op.kind == "P"
+            assert op.special == "otsikko"
+
     def test_parse_surface_keeps_mixed_batch_move_tail_for_2014_1429(self):
         """Mixed repeal batches must retag 29e into the destination chapter."""
         from lawvm.finland.johtolause.peg3 import tokenize
