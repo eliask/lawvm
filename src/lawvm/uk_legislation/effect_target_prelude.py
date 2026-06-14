@@ -468,6 +468,45 @@ def reject_external_or_partial_whole_act_scope(
         )
         return True
 
+    if (
+        str(target.special or "") == "whole_act"
+        and effect_type_norm == "repealed"
+        and effect.affecting_is_devolved
+        and effect.affected_has_uk_wide_extent_class
+    ):
+        # A devolved legislature/executive cannot repeal the whole UK extent of a
+        # UK-wide enactment; a "repealed" effect it authors against the *whole* of
+        # such an Act can only repeal it *as it extends to* the devolved territory.
+        # Lowering a UK-wide whole-Act REPEAL from that authority silently deletes
+        # the surviving (e.g. England-&-Wales) text the current consolidation
+        # retains (over-application, §2.1). Any genuinely complete repeal is
+        # carried by a separate UK-wide effect row, so blocking this devolved row
+        # never loses a truly-spent Act.
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_devolved_whole_act_repeal_extent_limited_rejected",
+            family="unsupported_target_scope",
+            reason_code="devolved_source_whole_act_repeal_extent_limited",
+            reason=(
+                "UK effect repeals the whole of a UK-wide Act under the authority "
+                "of a devolved instrument; that repeal is confined to the devolved "
+                "extent and cannot be lowered as a UK-wide whole-Act repeal"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "effect_type": effect_type,
+                "action": action,
+                "affecting_act_id": effect.affecting_act_id,
+                "affecting_class": effect.affecting_class,
+                "affected_class": effect.affected_class,
+            },
+        )
+        return True
+
     if str(target.special or "") == "whole_act" and effect_type_norm.startswith("word"):
         if simple_whole_act_all_occurrences_substitution(extracted_text):
             _append_uk_effect_lowering_observation(
