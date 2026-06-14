@@ -249,12 +249,21 @@ def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     statute: ``1993/1501`` gains one ``REPLAY_MISSING`` (4 -> 5) on the
     official_consolidation PIT path (the legal_pit/dump path is unaffected).
 
-    Removal criterion: close that single residual PEG3 insert gap in 1993/1501
-    (identify the section via the official_consolidation REPLAY_MISSING delta,
-    on vs off under ``LAWVM_DISABLE_INSERT_SECTION_FALLBACK``), then delete
-    this function and its call sites (``_extract_root_insert_ops_fallback``
-    and the insert family in ``parse_ops_fallback_heuristic``) plus the grafter
-    re-export, and confirm ``bench --compare`` shows 0 regressions.
+    The residual regression is NOT a PEG3 grammar gap: ``parse_clause`` on the
+    full 1993/1501 amendment johtolause produces the ``138 §`` insert op
+    natively (verified). It is an op-routing gap: the legal_pit/dump path
+    consumes the PEG op (unaffected), but the official_consolidation
+    LO-timeline materialization consumes this fallback's regex op for the
+    ``sekä``-coordinated ``kumotun N §:n tilalle uusi N §`` reinstatement
+    (section 138, part:2 / 13 luku), not the PEG op.
+
+    Removal criterion: route the PEG-parsed insert ops (including this
+    reinstatement) into the official_consolidation LO-timeline emission so the
+    PEG op is consumed, then delete this function and its call sites
+    (``_extract_root_insert_ops_fallback`` and the insert family in
+    ``parse_ops_fallback_heuristic``) plus the grafter re-export, and confirm
+    ``bench --compare`` shows 0 regressions. This is apply-side LO-emission
+    work, not a grammar change.
     """
     import os as _os
     if _os.environ.get("LAWVM_DISABLE_INSERT_SECTION_FALLBACK"):
