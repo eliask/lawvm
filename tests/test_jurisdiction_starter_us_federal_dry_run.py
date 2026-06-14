@@ -476,6 +476,118 @@ def test_unused_text_selector_import_is_exercised() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Non-positive-law title window (synthetic Title 15): act-section amendment
+# materializes through the act-section→USC route; a note-only target is held out.
+# ---------------------------------------------------------------------------
+
+
+def _nonpositive_title15_before() -> bytes:
+    # A tiny non-positive Title 15 edition: §77e (a codified act-section landing)
+    # and §636 (the holdout-target section, must NOT be claimed/changed).
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T15 before</title><!-- AUTHORITIES-USC-TITLE-ENUM:15 --></head><body><div>"
+        "<!-- expcite:TITLE 15!@!CHAPTER 2A!@!Sec. 77e -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;77e. Securities registration</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">The registration window under this section is the 15-day period.</p>'
+        "<!-- field-end:statute -->"
+        "<!-- expcite:TITLE 15!@!CHAPTER 14B!@!Sec. 636 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;636. Small business loans</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">This uncodified-note target section is not amended in the window.</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+
+
+def _nonpositive_title15_after() -> bytes:
+    # The oracle after edition: §77e's window is now "19-day"; §636 unchanged.
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T15 after</title><!-- AUTHORITIES-USC-TITLE-ENUM:15 --></head><body><div>"
+        "<!-- expcite:TITLE 15!@!CHAPTER 2A!@!Sec. 77e -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;77e. Securities registration</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">The registration window under this section is the 19-day period.</p>'
+        "<!-- field-end:statute -->"
+        "<!-- expcite:TITLE 15!@!CHAPTER 14B!@!Sec. 636 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;636. Small business loans</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">This uncodified-note target section is not amended in the window.</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+
+
+def _nonpositive_title15_plaw() -> bytes:
+    # Two amendatory sections: (1) an act-named §77e target carrying the codified
+    # (15 U.S.C. 77e) paren + structural href — resolves via the non-positive route
+    # and materializes the 15-day -> 19-day strike-insert; (2) an act-named target
+    # whose only USC ref is a §636 ``note`` cross-ref — an UNCODIFIED note, held out
+    # (never claimed onto §636).
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<uslm xmlns="http://schemas.gpo.gov/xml/uslm"><meta>'
+        "<congress>117</congress><docNumber>5</docNumber>"
+        "<approvedDate>2022-01-01</approvedDate></meta><main>"
+        "<section><num>1</num><content>"
+        'Section 5 of the Securities Act of 1933 (<ref href="/us/usc/t15/s77e">15 U.S.C. 77e</ref>), '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>15-day</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>19-day</quotedText>”.</content></section>"
+        "<section><num>2</num><content>"
+        'Section 7(b) of the Small Business Act (<ref href="/us/usc/t15/s636/note">15 U.S.C. 636 note</ref>) '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>old</quotedText>”.</content></section>"
+        "</main></uslm>"
+    ).encode("utf-8")
+
+
+def test_nonpositive_title15_act_section_amendment_materializes_in_agreement() -> None:
+    report = build_us_dry_run(
+        before_htm=_nonpositive_title15_before(),
+        after_htm=_nonpositive_title15_after(),
+        plaw_blobs={"PL 117-5": _nonpositive_title15_plaw()},
+        title=15,
+        before_year="2020",
+        after_year="2022",
+    )
+    # The oracle changed exactly §77e (15-day -> 19-day); §636 is unchanged.
+    assert report.oracle_changed_sections == ("15:77e",)
+    rows = {row.section_key: row for row in report.rows}
+    assert "15:77e" in rows
+    row = rows["15:77e"]
+    # The act-section target resolved through the non-positive route and the
+    # strike-insert materialized exactly the oracle after-text.
+    assert row.status == "agree"
+    assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
+    assert "19-day" in row.materialized_text
+    assert "15-day" not in row.materialized_text
+    # The note-only §636 target is UNCODIFIED: held out, never claimed (no §636 row
+    # and no §636 over-claim in the boundary).
+    assert "15:636" not in rows
+    assert "15:636" not in report.claimed_sections
+    assert report.replay_authorized is False
+
+
+def test_nonpositive_note_only_target_is_an_uncodified_holdout_not_a_claim() -> None:
+    # Defence on the lowering side: the §636 ``note`` target lowers to NO op (it is
+    # held out as unresolved), so the dry-run never materializes it. The §77e op is
+    # the only one that reaches the kernel.
+    report = lower_plaw_amendatory(
+        _nonpositive_title15_plaw(), statute_id="PL 117-5", enacted="2022-01-01"
+    )
+    targets = {
+        str(op.target.path[:2]) for op in report.operations() if op.target.path
+    }
+    assert "(('title', '15'), ('section', '77e'))" in targets
+    # No op was emitted onto the §636 codified section from the note-only target.
+    assert "(('title', '15'), ('section', '636'))" not in targets
+
+
+# ---------------------------------------------------------------------------
 # Multi-op composition per section (the 2018->2020 multi-law window class)
 # ---------------------------------------------------------------------------
 
