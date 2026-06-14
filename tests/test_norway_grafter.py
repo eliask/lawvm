@@ -519,6 +519,110 @@ def test_parse_no_amendment_ops_unstructured_supports_new_section_insert() -> No
     ]
 
 
+def test_parse_no_amendment_ops_unstructured_whole_section_replace_without_future_article() -> None:
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/2013-01-11-3</li></ul></dd>
+    <main>
+      <article class="legalArticle">
+        <article class="defaultP">§ 12 skal lyde:</article>
+        <article class="legalP">De straffer som anvendes etter denne lov er fengsel og bot.</article>
+        <article class="defaultP">§ 15 skal lyde:</article>
+        <article class="legalP">Arrest anvendes kun på militære personer.</article>
+      </article>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    ops = parse_no_amendment_ops(amendment_xml, "no/lovtid/2015-06-19-65")
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [(("section", "12"),), (("section", "15"),)]
+    first = ops[0]
+    assert first.payload is not None
+    assert first.payload.kind is IRNodeKind.SECTION
+    assert first.payload.label == "12"
+    assert [child.kind for child in first.payload.children] == [IRNodeKind.SUBSECTION]
+    assert first.payload.children[0].text == "De straffer som anvendes etter denne lov er fengsel og bot."
+
+
+def test_parse_no_amendment_ops_unstructured_whole_section_replace_with_inline_payload() -> None:
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/2013-01-11-3</li></ul></dd>
+    <main>
+      <article class="legalArticle">
+        <article class="defaultP">§ 7 skal lyde: De alminnelige reglene om foreldelse gjelder tilsvarende.</article>
+      </article>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    ops = parse_no_amendment_ops(amendment_xml, "no/lovtid/2015-06-19-65")
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "7"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SECTION
+    assert ops[0].payload.children[0].text == "De alminnelige reglene om foreldelse gjelder tilsvarende."
+
+
+def test_parse_no_amendment_ops_unstructured_new_section_insert_without_future_article() -> None:
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/2013-01-11-3</li></ul></dd>
+    <main>
+      <article class="legalArticle">
+        <article class="defaultP">Ny § 6 a skal lyde:</article>
+        <article class="legalP">Departementet kan gi forskrift om gjennomføringen.</article>
+        <article class="defaultP">§ 9 skal lyde:</article>
+        <article class="legalP">Loven trer i kraft straks.</article>
+      </article>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+
+    ops = parse_no_amendment_ops(amendment_xml, "no/lovtid/2015-06-19-65")
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [(("section", "6a"),), (("section", "9"),)]
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SECTION
+    assert ops[0].payload.children[0].text == "Departementet kan gi forskrift om gjennomføringen."
+
+
+def test_parse_no_amendment_ops_unstructured_unparseable_lead_still_drops() -> None:
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments"><ul><li>lov/2013-01-11-3</li></ul></dd>
+    <main>
+      <article class="legalArticle">
+        <article class="defaultP">Kapittel 4 endres slik at det nye kapitlet får anvendelse.</article>
+      </article>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_no_amendment_ops(
+        amendment_xml,
+        "no/lovtid/2015-06-19-65",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert "no_parse_unstructured_lead_unmatched" in {item.kind for item in adjudications}
+
+
 def test_parse_no_amendment_ops_unstructured_supports_item_target_lead() -> None:
     amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">

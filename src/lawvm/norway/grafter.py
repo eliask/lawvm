@@ -1123,6 +1123,67 @@ def _heading_only_unstructured_section_payload(
     )
 
 
+_NO_WHOLE_SECTION_LEAD_RE = re.compile(
+    r"^(?P<insert>Ny\s+)?§\s*(?P<label>[0-9]+(?:-[0-9]+)*(?:\s*[A-Za-z])?)\s+skal\s+lyde:\s*(?P<inline>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _build_no_unstructured_section_payload(
+    label: str,
+    inline_text: str,
+    payload_nodes: Sequence[etree._Element],
+) -> Optional[IRNode]:
+    """Build a whole-section payload from an unstructured ``§ X skal lyde:`` lead.
+
+    Reuses the structured ``_parse_future_section`` lowering by wrapping the lead's
+    inline tail text plus the following non-lead payload articles into a synthetic
+    ``futureLegalArticle`` element. Returns ``None`` when no payload content can be
+    recovered so the caller can honestly drop the lead.
+    """
+    synthetic = etree.Element("article")
+    synthetic.set("class", "futureLegalArticle")
+    synthetic.set("data-name", f"§{label}")
+
+    inline_text = _normalize_space(inline_text)
+    if inline_text:
+        # An inline tail frequently re-states the section header (``§ 2-2. Title``)
+        # before the body. Split it into a header span + body so the reused
+        # ``_parse_future_section`` lowering treats the title as a heading, not text.
+        header_match = re.match(
+            rf"^§\s*{re.escape(label)}\s*\.\s*(?P<title>[^.]*?\S)?\s+(?P<body>[A-ZÆØÅ].*)$",
+            inline_text,
+            re.DOTALL,
+        )
+        if header_match:
+            header_span = etree.SubElement(synthetic, "span")
+            header_span.set("class", "futureLegalArticleHeader")
+            header_span.text = f"§ {label}. {header_match.group('title') or ''}".strip()
+            body = _normalize_space(header_match.group("body"))
+            if body:
+                body_article = etree.SubElement(synthetic, "article")
+                body_article.set("class", "legalP")
+                body_article.text = body
+        else:
+            inline_article = etree.SubElement(synthetic, "article")
+            inline_article.set("class", "legalP")
+            inline_article.text = inline_text
+
+    for node in payload_nodes:
+        if _local_name(node) != "article":
+            continue
+        if not ({"legalP", "numberedLegalP", "listArticle"} & _classes(node)):
+            continue
+        synthetic.append(copy.deepcopy(node))
+
+    if len(synthetic) == 0:
+        return None
+    payload = _parse_future_section(synthetic)
+    if payload is None or (not payload.children and not _normalize_space(payload.text or "")):
+        return None
+    return payload
+
+
 def _expand_no_section_range_labels(start_label: str, end_label: str) -> list[str]:
     start = _normalize_no_section_label(start_label)
     end = _normalize_no_section_label(end_label)
@@ -1478,16 +1539,19 @@ def _iter_unstructured_no_change_groups(
             idx = cursor
             continue
 
-        section_match = re.match(
-            r"^(?:Ny\s+)?§\s*([0-9A-Za-z-]+(?:\s+[A-Za-z])?)\s+skal\s+lyde:?$",
-            lead,
-            re.IGNORECASE,
-        )
-        if section_match and future_articles:
-            target = LegalAddress(path=(("section", _normalize_no_section_label(section_match.group(1))),))
-            payload = _parse_future_section(future_articles[0])
+        section_match = _NO_WHOLE_SECTION_LEAD_RE.match(lead)
+        if section_match:
+            target = LegalAddress(path=(("section", _normalize_no_section_label(section_match.group("label"))),))
+            action = StructuralAction.INSERT if section_match.group("insert") else StructuralAction.REPLACE
+            if future_articles:
+                payload = _parse_future_section(future_articles[0])
+            else:
+                payload = _build_no_unstructured_section_payload(
+                    _normalize_no_section_label(section_match.group("label")),
+                    section_match.group("inline"),
+                    payload_nodes,
+                )
             if payload is not None:
-                action = StructuralAction.INSERT if lead.lower().startswith("ny §") else StructuralAction.REPLACE
                 doc_ops.append(
                     LegalOperation(
                         op_id=f"{source_id}:{sequence}",
