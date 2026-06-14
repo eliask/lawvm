@@ -16,6 +16,40 @@
       "statute_id": "ukpga/2007/15",
       "winner_affecting_act_id": "uksi/2010/22",
       "winner_effect_id": ""
+    },
+    {
+      "affected_target": "s. 11",
+      "applying_instrument_id": "ukpga/2025/28",
+      "applying_provision_ref": "Sch. 3 Pt. 1",
+      "claim_id": "ao-2007-15-s11-excl",
+      "claim_kind": "application_overlay",
+      "claimant": "stream-uk-author-findings-batch:reviewed-2026-06-15",
+      "deictic_applying_provision": "",
+      "effect_id": "key-9b3a04a568076598b11c4053a8870adf",
+      "overlay_kind": "excluded",
+      "scope_kind": "unconditional",
+      "scope_predicate": "",
+      "source_snippet": "excluded by 1992 c. 5, Sch. 3B para. 16(2) (as inserted)",
+      "status": "proposed",
+      "statute_id": "ukpga/2007/15",
+      "temporal_window": ""
+    },
+    {
+      "affected_target": "s. 13",
+      "applying_instrument_id": "ukpga/2025/28",
+      "applying_provision_ref": "Sch. 3 Pt. 1",
+      "claim_id": "ao-2007-15-s13-excl",
+      "claim_kind": "application_overlay",
+      "claimant": "stream-uk-author-findings-batch:reviewed-2026-06-15",
+      "deictic_applying_provision": "",
+      "effect_id": "key-1141789c553b4ccdb30993327a08e818",
+      "overlay_kind": "excluded",
+      "scope_kind": "unconditional",
+      "scope_predicate": "",
+      "source_snippet": "excluded by 1992 c. 5, Sch. 3B para. 16(2) (as inserted)",
+      "status": "proposed",
+      "statute_id": "ukpga/2007/15",
+      "temporal_window": ""
     }
   ],
   "statute_id": "ukpga/2007/15"

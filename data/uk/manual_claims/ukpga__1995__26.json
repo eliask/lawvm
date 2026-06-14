@@ -1,0 +1,20 @@
+{
+  "claims": [
+    {
+      "claim_id": "n5-1995-26-s92-ii",
+      "claim_kind": "source_feed_target_reconciliation",
+      "claimant": "stream-uk-author-findings-batch:reviewed-2026-06-14",
+      "effect_id": "key-5c1a6ed100de1965de77e43ea03fd463",
+      "effect_type": "word omitted",
+      "feed_named_target": "s. 92(4)(b)",
+      "rationale": "feed names paragraph s.92(4)(b); source scopes the omission to sub-paragraph (ii).",
+      "reconciliation_basis": "genuinely_ambiguous_finding_only",
+      "resolved_target_eid": "s. 92(4)(b)",
+      "source_named_target": "s. 92(4)(b) sub-para. (ii)",
+      "source_snippet": "a omit the “or” at the end of sub-paragraph (ii);",
+      "status": "proposed",
+      "statute_id": "ukpga/1995/26"
+    }
+  ],
+  "statute_id": "ukpga/1995/26"
+}
