@@ -322,6 +322,17 @@ def replay_section_has_future_effective_version(
     This is a narrow compare heuristic for statutes where replay materializes a
     later effective version than the oracle PIT.  In those cases the mismatch is
     source/version residue, not a replay topology bug.
+
+    The check covers both the section-level timeline AND its descendant
+    subsection/paragraph timelines.  A future-effective change can be scoped to
+    one momentti (subsection) via a split commencement — an amendment whose
+    section heading commences immediately but whose individual kohdat enter force
+    on a later date (``L:lla N muutettu K kohta tulee voimaan DATE``).  There the
+    section-level timeline tops out at the base commencement date while only the
+    descendant subsection timeline carries the future-effective version.  Replay
+    materializes the latest (future) wording, but the PIT oracle still holds the
+    prior wording in force — a future-version residue, not a topology bug.
+    Inspecting only the section-level timeline would miss this case.
     """
     if oracle_cutoff_date is None:
         return False
@@ -329,16 +340,17 @@ def replay_section_has_future_effective_version(
     if not timelines:
         return False
 
+    descendant_prefix = f"{section_key}/"
     target_versions: list[str] = []
     for address, timeline in getattr(timelines, "items", lambda: ())():
-        if str(address) != section_key:
+        address_str = str(address)
+        if address_str != section_key and not address_str.startswith(descendant_prefix):
             continue
         versions = getattr(timeline, "versions", None) or ()
         for version in versions:
             effective = str(getattr(version, "effective", "") or "")
             if effective:
                 target_versions.append(effective)
-        break
 
     if not target_versions:
         return False
