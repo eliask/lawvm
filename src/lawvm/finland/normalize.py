@@ -229,10 +229,25 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
 def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """Recover law-level whole-section inserts from complex johtolause text.
 
-    FALLBACK: Compensates for PEG3 undercounting section-range inserts with
-    inherited suffixes (e.g. ``uusi 14a, 14b, 14c §``).  Remove when PEG3
-    handles all ``lakiin uusi ... §`` patterns — verify with
-    ``lawvm bench --compare`` showing 0 regressions after disabling.
+    FALLBACK: Compensates for the residual PEG3 undercounting of law-level
+    section inserts that are buried in dense multi-member coordination lists.
+
+    Closed natively by PEG3 (no longer recovered here on net):
+      * comma-separated new-section lists, e.g. ``lakiin uusi 14 a, 14 b, 14 c §``
+      * a trailing ``ja lakiin uusi N §`` coordinated after sub-target inserts
+        such as ``N §:ään uusi M momentin K kohta ja P momentti`` — see
+        ``surface_parse._insertion_sub_target`` (genitive ``momentin`` qualifier
+        and the bare ``uusi``-sharing momentti continuation).
+
+    Still recovered here (genuine PEG3 gaps; do NOT remove the regexes until
+    these are grammar-covered): law-level section inserts trailing long
+    provenance preambles, em-dash section ranges (``134 a–134 r §``),
+    ``... kumotun N §:n tilalle uusi N §`` reinstatements, and decision-text
+    ``päätökseen uuden N §`` inserts (``_INSERT_SECTION_UUDEN_FALLBACK_RE``).
+
+    Removal criterion (unchanged): ``lawvm bench --compare`` must show 0
+    regressions after disabling — currently disabling still regresses one
+    arvonlisäverolaki replay via amendments that emit the shapes above.
     """
     ops: List[AmendmentOp] = []
     seen: Set[str] = set()

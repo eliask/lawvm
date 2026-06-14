@@ -1844,6 +1844,32 @@ def _insertion_sub_target(
         return None
 
     t = s.peek()
+    # "uusi N momentin M kohta" — genitive momentti is a container qualifier for
+    # a kohta insertion into the existing momentti N, not an insertion of momentti
+    # N itself.  Mirrors the REPLACE shape "N §:n M momentin K kohta".  Only the
+    # genitive ("momentin") carries this reading; illative ("momenttiin") and
+    # nominative ("momentti") still insert the momentti itself.
+    if t and t.cat == "MOMENTTI" and t.case == "GEN" and nums[0][0].isdigit():
+        saved_mom_kohta = s.save()
+        s.pos += 1
+        kohta_nums = _number_list(s)
+        if kohta_nums and (t2 := s.peek()) and t2.cat == "KOHTA":
+            s.pos += 1
+            mom = int(nums[0][0])
+            nodes: list[SurfaceNode] = []
+            for kn, ksf in kohta_nums:
+                for rk in _expand_range_single(kn):
+                    nodes.append(
+                        SurfaceInsertion(
+                            kind=TargetKind.SECTION,
+                            label=sec,
+                            chapter=chapter,
+                            part=part,
+                            sub_target=SurfaceSubRef(momentti=mom, item=rk + ksf),
+                        )
+                    )
+            return nodes
+        s.restore(saved_mom_kohta)
     if t and t.cat == "MOMENTTI":
         s.pos += 1
         nodes: list[SurfaceNode] = []
@@ -2239,19 +2265,56 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                     if sec != sec_nums[-1]:
                         s.restore(saved_sub)
                 if all_nodes:
-                    # Check for chained "sekä/ja uusi ..."
+                    # Check for chained "sekä/ja [uusi] <sub_target>".  The repeated
+                    # "uusi" is optional for anaphoric continuations that share the
+                    # same section and the same "uusi": e.g. "N §:ään uusi 1 momentin
+                    # 4 kohta ja 4 momentti" — the second "4 momentti" inserts into
+                    # the same section.  We require the continuation to be a bare
+                    # sub-target (N momentti / N kohta / b kohta) when "uusi" is
+                    # absent, so a following fresh target such as "ja lakiin uusi
+                    # 102 b §" (DOC:ILL) or "ja N §:ään uusi ..." is left for the
+                    # outer target-list loop.
                     while True:
                         saved_c = s.save()
-                        if _sep(s) is None or _uusi(s) is None:
+                        if _sep(s) is None:
                             s.restore(saved_c)
                             break
+                        had_uusi = _uusi(s) is not None
+                        if not had_uusi:
+                            # Only allow anaphoric continuation when the next token
+                            # directly begins a bare sub-target, not a new section
+                            # or law-level target (DOC/PYKALA/LUKU/OSA/section ref).
+                            nxt = s.peek()
+                            if nxt is None or nxt.cat not in ("NUM", "LETTER"):
+                                s.restore(saved_c)
+                                break
+                        batch: list[SurfaceNode] = []
                         for sec in sec_nums:
                             saved_sub = s.save()
                             more = _insertion_sub_target(s, verb, sec, effective_chapter, effective_part, 0)
                             if more:
-                                all_nodes.extend(more)
+                                batch.extend(more)
                             if sec != sec_nums[-1]:
                                 s.restore(saved_sub)
+                        # For the bare (no-"uusi") anaphoric form, the continuation
+                        # must be a genuine sub-target (momentti/kohta) of the same
+                        # section — not a fresh "N §" / "N luku" target that happens
+                        # to parse via the section/chapter arms of the sub-target
+                        # rule.  Otherwise "ja 102 §:ään ..." would be absorbed.
+                        if not had_uusi and not all(
+                            isinstance(n, SurfaceInsertion)
+                            and n.sub_target is not None
+                            and (n.sub_target.momentti or n.sub_target.item or n.sub_target.facet)
+                            for n in batch
+                        ):
+                            s.restore(saved_c)
+                            break
+                        if not batch:
+                            # Continuation did not parse as a sub-target; rewind so
+                            # the outer loop can treat it as a fresh target.
+                            s.restore(saved_c)
+                            break
+                        all_nodes.extend(batch)
                     return all_nodes
 
         # Pattern B2: number §:GEN number MOMENTTI:ILL [reinst] uusi sub_target
