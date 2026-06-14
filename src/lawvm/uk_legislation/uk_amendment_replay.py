@@ -34,6 +34,7 @@ from typing import Any, List, Optional
 from lawvm.core.ir import (
     IRStatute,
     LegalOperation,
+    OperationSource,
 )
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
@@ -89,6 +90,11 @@ from lawvm.uk_legislation.contingent_commencement_claim import (
     ContingentCommencementClaim,
     gate_contingent_repeal_at_pit,
     validate_contingent_commencement_claim,
+)
+from lawvm.uk_legislation.appropriate_place_claim import (
+    AppropriatePlaceInsertClaim,
+    gate_appropriate_place_insert,
+    validate_appropriate_place_claim,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
@@ -270,6 +276,9 @@ class UKReplayPipeline:
         contingent_commencement_claims: Optional[
             "Sequence[ContingentCommencementClaim]"
         ] = None,
+        appropriate_place_claims: Optional[
+            "Sequence[AppropriatePlaceInsertClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -337,6 +346,32 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(validation.to_dict())
                 if validation.validated:
                     validated_contingent_claims[str(claim.effect_id)] = claim
+
+        # §appropriate_place: build an index of VALIDATED appropriate-place insert
+        # claims by bound effect_id. Opt-in and symmetric with the contingent
+        # index above: with no claims authored the index is empty and the lowering
+        # loop below is byte-unchanged — the appropriate-place insert stays on the
+        # manual frontier exactly as today. Each claim is validated against the
+        # bound effect (source-snippet binding + anchor-free check) before it can
+        # emit; an unvalidated/mismatched claim never reaches the gate. The target
+        # list (and thus position-consistency against the live siblings) is checked
+        # at emission time inside the loop, where the source element is available.
+        validated_appropriate_place_claims: dict[str, AppropriatePlaceInsertClaim] = {}
+        if appropriate_place_claims:
+            effect_by_id_ap = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for ap_claim in appropriate_place_claims:
+                if ap_claim.statute_id and ap_claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id_ap.get(str(ap_claim.effect_id))
+                ap_validation = validate_appropriate_place_claim(
+                    ap_claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(ap_validation.to_dict())
+                if ap_validation.validated:
+                    validated_appropriate_place_claims[str(ap_claim.effect_id)] = ap_claim
 
         replayable = list(effects)
         if pit_date:
@@ -492,6 +527,27 @@ class UKReplayPipeline:
                     _mark_compile_phase("compile_lower_effect")
                 else:
                     phase_t0 = time.perf_counter()
+                # §appropriate_place: a validated, bound appropriate-place claim
+                # supplies the POSITION the source left to editorial judgement, so
+                # the insert lowering rejected can now be emitted at the claimed
+                # slot. Only fires for an effect that carries a validated claim;
+                # absent a claim the index is empty and ``compiled`` is unchanged.
+                ap_claim = validated_appropriate_place_claims.get(str(e.effect_id))
+                if ap_claim is not None:
+                    ap_gate = gate_appropriate_place_insert(
+                        ap_claim,
+                        sequence=i,
+                        validated=True,
+                        source=OperationSource(
+                            statute_id=e.affecting_act_id,
+                            title=e.affecting_title,
+                            effective=e.effective_date or "",
+                        ),
+                    )
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(ap_gate.to_dict())
+                    if ap_gate.emitted and ap_gate.operation is not None:
+                        compiled = [*compiled, ap_gate.operation]
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before

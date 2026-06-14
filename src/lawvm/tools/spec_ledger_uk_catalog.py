@@ -694,6 +694,20 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "An 'in the appropriate place' index-entry insert needing manual placement judgement.",
     "uk_manual_frontier_appropriate_place_candidate":
         "An 'in the appropriate place' insert whose ordering convention needs manual judgement.",
+    # FLAG(union-merge): appropriate-place claim validator/gate rule ids. A sibling
+    # claim agent edits this catalog concurrently; keep these as additive lines.
+    "uk_appropriate_place_claim_validated":
+        "An appropriate-place insert claim's owned position is well-formed, bound to a real anchor-free appropriate-place insert, and admissible in the target list, so it may emit the insert.",
+    "uk_appropriate_place_claim_rejected_schema":
+        "An appropriate-place insert claim is rejected because its kind/position/ids/entry schema is malformed.",
+    "uk_appropriate_place_claim_rejected_source_mismatch":
+        "An appropriate-place insert claim is rejected because its source snippet or bound effect is not a real anchor-free appropriate-place insert, blocking free-form overrides and source-anchored inserts.",
+    "uk_appropriate_place_claim_rejected_position":
+        "An appropriate-place insert claim is rejected because its claimed sibling/index is not a real, unoccupied slot in the target list.",
+    "uk_appropriate_place_insert_emitted_at_claimed_position":
+        "A validated appropriate-place insert claim emits the INSERT operation at the claimed preceding/following sibling or alphabetical-order slot.",
+    "uk_appropriate_place_insert_withheld_unvalidated":
+        "An appropriate-place insert claim is unvalidated, so the insert is withheld and the effect stays on the manual frontier.",
     "uk_manual_frontier_table_appropriate_place_candidate":
         "An 'in the appropriate place' insert into a table needing manual placement judgement.",
     "uk_manual_frontier_repeal_table_candidate":
