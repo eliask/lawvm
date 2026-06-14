@@ -36,6 +36,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID,
+    NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
     NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID,
     NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID,
     NZ_DRY_RUN_REPLACE_AGREES_RULE_ID,
@@ -200,6 +201,13 @@ _NZ_RULE_CATALOG: Tuple[NZRuleCatalogEntry, ...] = (
         "in the oracle but its content differs from the candidate payload.",
         _CERTAIN,
     ),
+    NZRuleCatalogEntry(
+        NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
+        "Contradiction of the structural-insert rule: the inserted node is present "
+        "with matching content but at a different position than the derived anchor "
+        "(the oracle's adjacent same-kind sibling differs from the derived predecessor).",
+        _CERTAIN,
+    ),
 )
 
 # rule_id -> believed_spec prose (the catalog the neutral core consumes).
@@ -238,9 +246,10 @@ _NZ_ORACLE_MATCH_DISPOSITION: Dict[str, WitnessDisposition] = {
     "residual_new_text_absent": "lawvm_wrong",
     # Structural replace: subtree differs = falsified.
     "residual_replacement_mismatch": "lawvm_wrong",
-    # Structural insert: absent / content differs.
+    # Structural insert: absent / content differs / landed at the wrong position.
     "residual_insert_not_present": "lawvm_wrong",
     "residual_insert_content_mismatch": "lawvm_wrong",
+    "residual_insert_position_mismatch": "lawvm_wrong",
 }
 
 # The four dry-run families this adapter sweeps. Each is a partial-scope dry-run
