@@ -1,0 +1,311 @@
+{
+  "_meta": {
+    "description": "Authority-grounding bridge mined from notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md. Maps a LawVM rule_id (a witness_rule_id constant) or a stable guidance-section family key to the official UK drafting-authority tier, the source reference, and the ledger's implementation status. This is the source-only authority layer (AGENTS.md 2.1), not the executable replay spec.",
+    "authority_tiers": {
+      "1": "official drafting guidance (OPC / TNA / Cabinet Office / Parliament)",
+      "2": "official explanatory or procedural manuals",
+      "3": "observed effect-feed / XML practice",
+      "4": "corpus-derived heuristics"
+    },
+    "status_legend": {
+      "HAVE": "implemented (verify), per ledger snapshot",
+      "GAP": "not handled / partial",
+      "SPEC": "diagnostic / spec-yield, no replay"
+    },
+    "key_kinds": {
+      "witness_rule_id": "rule_id is a real uk_legislation witness_rule_id constant",
+      "guidance_family": "rule_id is a stable family key for a guidance section with no single named LawVM constant"
+    },
+    "source_note": "ledger snapshot is allowed to lag executable code; status is faithful to the note, not re-verified here"
+  },
+  "groundings": [
+    {
+      "rule_id": "uk_effect_partial_whole_act_repeal_rejected",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.1.2 (whole-Act repeal operative form; partial whole-Act repeal with exceptions not a blanket repeal)",
+      "status": "HAVE",
+      "ledger_section": "6.1",
+      "note": "Whole-Act repeal lowering preserves the repealed action as one REPEAL of /whole_act; partial-with-exceptions blocks. Verified per ledger."
+    },
+    {
+      "rule_id": "uk_effect_repeal_no_double_entry_duplicate_rejected",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.1.3/6.1.5 (repeal appears in body OR a repeal Schedule, never both; Commissioner of Police v Simeon)",
+      "status": "HAVE",
+      "ledger_section": "6.1",
+      "note": "Drops exact duplicate structural REPEAL inside a body+Schedule suffix-pair group."
+    },
+    {
+      "rule_id": "uk_rule_repeal_of_amendments_only_when_superseded",
+      "key_kind": "guidance_family",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.1.6/6.1.7 (repeal of amendments only when completely superseded)",
+      "status": "SPEC",
+      "ledger_section": "6.1",
+      "note": "Diagnostic for body-repeals of amending provisions; no single named LawVM constant in the ledger."
+    },
+    {
+      "rule_id": "uk_rule_repeal_of_repeal_no_revive",
+      "key_kind": "guidance_family",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.1.13 (repeal of a repeal does not revive; Interpretation Act 1978 s.15 subj. s.16 savings)",
+      "status": "SPEC",
+      "ledger_section": "6.1",
+      "note": "WITNESS SEARCH EXISTS: phrase-bearing-affecting-Act candidate effect lane, but no selected source/target witness proved; no replay guard. Family key, not a witness_rule_id."
+    },
+    {
+      "rule_id": "uk_effect_all_occurrences_word_repeal_text_patch",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.1.14 (repealing a paragraph with a trailing conjunction; make the and/or explicit)",
+      "status": "HAVE",
+      "ledger_section": "6.1",
+      "note": "Bounded connector-word deletion lanes (occurrence=-1) and mixed structural+word repeal splits; deletes only the source-named connector text."
+    },
+    {
+      "rule_id": "uk_effect_substituted_for_label_changing_target_rebound",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.2.1, 6.2.6/6.2.7 (for x substitute y; substitute vs repeal+insert, form follows function)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified partial) for source-owned substituted-for sibling series; wider cross-container lineage and unproved repeal+insert identity remain frontier."
+    },
+    {
+      "rule_id": "uk_replay_source_label_changing_substitution_resolved",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.2.6/6.2.7 (replay side of label-changing substitution; preserves new payload label/eId)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "Replay records the resolution while preserving new identity."
+    },
+    {
+      "rule_id": "uk_effect_substituted_series_new_sibling_insert_lowered",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.2.6/6.2.7 (additional labelled siblings in a substituted-for series lower as inserts)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified partial); siblings must share parent and leaf kind."
+    },
+    {
+      "rule_id": "uk_effect_source_payload_sibling_range_expanded",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.2.6/6.2.7 (compressed 'for paragraphs (a) and (b) substitute' expands from direct payload children)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified partial); payload labels must match targets."
+    },
+    {
+      "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.5.5-6.5.8 (occurrence scope: in the first/second/third place, in both places, in each place)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified) for target-scoped quoted text-patch lanes; relative 'in each other place occurring' deliberately not an all-occurrences synonym."
+    },
+    {
+      "rule_id": "uk_effect_before_child_block_text_substitution_patch",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.5.2/6.5.3 (opening/closing words: words before/after paragraph (X))",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified partial) for bounded target-local selectors (TEXT_OPENING_WORDS, TEXT_BEFORE_CHILD_*, TEXT_AFTER_CHILD_TAIL_*); broad/deictic/table/heading cases stay frontier/blocked."
+    },
+    {
+      "rule_id": "uk_effect_mixed_body_heading_substitution_split_text_patch",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.5.10 ('(including the heading)' may reach the heading too)",
+      "status": "HAVE",
+      "ledger_section": "6.2/6.5",
+      "note": "HAVE (verified) for the narrow 'for X (including in the heading) substitute Y' form; emits separate body and heading-facet patches."
+    },
+    {
+      "rule_id": "uk_replay_schedule_list_entry_alphabetical_position_resolved",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.3.1/6.3.5/6.3.6/6.3.9 (insertion anchors; at the appropriate place in alphabetical order)",
+      "status": "HAVE",
+      "ledger_section": "6.3/6.4",
+      "note": "HAVE (verified partial): explicit schedule-list alphabetical placement only resolves after ordering the schedule entries."
+    },
+    {
+      "rule_id": "uk_effect_appropriate_place_definition_entry_insert_rejected",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.3.9 (at the appropriate place; non-alphabetical definition-entry placement is a manual frontier)",
+      "status": "GAP",
+      "ledger_section": "6.3/6.4",
+      "note": "Non-alphabetical appropriate-place definition-entry inserts are non-executable without an anchor/ordering claim; lowering emits a blocking rejection rather than guessing. GAP/partial per ledger."
+    },
+    {
+      "rule_id": "uk_effect_appropriate_place_insert_rejected",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.3.9 (at/in the appropriate place; index/list/table-entry placement without an ordering claim)",
+      "status": "GAP",
+      "ledger_section": "6.3/6.4",
+      "note": "Non-alphabetical appropriate-place inserts block; manual-frontier address. GAP per ledger."
+    },
+    {
+      "rule_id": "uk_rule_inserted_provision_eid",
+      "key_kind": "guidance_family",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.4.1-6.4.7 (deterministic numbering of inserted provisions: A1/B1, 1A/1B, 1ZA, after Z->Z1, do not reuse a repealed number)",
+      "status": "HAVE",
+      "ledger_section": "6.3/6.4",
+      "note": "DONE for the diagnosed 2026-05-30 direction-b gap (7c6accba); digit-led eId segments preserve canonical uppercase letter suffixes. Tested in tests/test_uk_inserted_provision_eid_case.py. Family key (no single string constant)."
+    },
+    {
+      "rule_id": "uk_rule_uncommenced_effect_owned_lane",
+      "key_kind": "guidance_family",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.8 (6.8.7, 6.8.10-6.8.16, 6.8.17/6.8.20; uncommenced material, prospective-only structural effects)",
+      "status": "GAP",
+      "ledger_section": "6.8",
+      "note": "Re-scoped from 'gate it off' to 'own the PIT-conditional lane'. Blanket gate verified WRONG empirically (sign flips, PIT/editorial dependent). Sensor done; resolver remains a temporal-model question. Family key."
+    },
+    {
+      "rule_id": "uk_prospective_effect_applied_to_current",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.8 (sensor for applied prospective-only structural effects)",
+      "status": "SPEC",
+      "ledger_section": "6.8",
+      "note": "DONE (sensor phase): non-blocking observation per applied prospective-only structural effect. Replay-neutral; the resolver phase remains GAP."
+    },
+    {
+      "rule_id": "uk_effect_pit_prospective_commencement_in_force",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.8 / 10.6 (PIT-only resolver hook: prospective-only structural effect consults affecting provision RestrictStartDate)",
+      "status": "GAP",
+      "ledger_section": "6.8",
+      "note": "PIT-only resolver hook exists when compile_ops_for_statute gets a pit_date; default current replay unchanged. Overall 6.8 lane is GAP (resolver incomplete)."
+    },
+    {
+      "rule_id": "uk_non_textual_modification_out_of_scope",
+      "key_kind": "witness_rule_id",
+      "authority_tier": 1,
+      "source_ref": "OPC_DRAFTING_GUIDANCE_2024 6.9.1, 6.9.4-6.9.6 (non-textual modification does not change printed text; subjunctive 'as if' tell)",
+      "status": "HAVE",
+      "ledger_section": "6.9",
+      "note": "DONE for the current structural replay lens (3bd8f524, 550c36f7): classified as out-of-scope, not text/tree mutation. Replay-neutral classification."
+    },
+    {
+      "rule_id": "si_commencement_default",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED 1.3.5, 3.12 (SI in force at moment of making if no later date; date-only at beginning of day)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "Diagnostic only: single-made-date default-commencement candidates recorded via scripts/uk_si_semantics_scan.py; not used as replay dates. Family key."
+    },
+    {
+      "rule_id": "si_vires_recital",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED 3.11 (preambles/enabling-power recitals are vires evidence)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "Diagnostic vires-recital inventory; SI source metadata, not replay. Family key."
+    },
+    {
+      "rule_id": "si_extent_application_distinct",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED 3.13 (extent vs application; England-only/Wales-only usually application, not extent)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "No silent extent/application widening; diagnostic extent/application classification. Family key."
+    },
+    {
+      "rule_id": "si_revocation_lapse_savings_aware",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED 3.14 (parent repeal may lapse subordinate instruments unless saved; spent SIs may remain unrevoked)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "Revocation/lapse classification and temporal evidence; diagnostic. Family key."
+    },
+    {
+      "rule_id": "si_correction_slip_not_amendment",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED 4.7 (substantive errors need amending legislation; correction slips/reprints for non-substantive corrections)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "Source-lane / adjudication boundary; diagnostic correction-slip markers. Family key."
+    },
+    {
+      "rule_id": "si_structure_vocabulary_type_specific",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED Table A (Orders use articles, Regulations use regulations, Rules use rules)",
+      "status": "SPEC",
+      "ledger_section": "SI",
+      "note": "Address grammar / source XML structural normalization; diagnostic structure-vocabulary rows. Family key."
+    },
+    {
+      "rule_id": "process_draft_bills_proposed_law",
+      "key_kind": "guidance_family",
+      "authority_tier": 2,
+      "source_ref": "GUIDE_TO_MAKING_LEGISLATION_2025 glossary/Chapter 3 (draft bills are proposed-law artifacts)",
+      "status": "GAP",
+      "ledger_section": "process",
+      "note": "PARTIAL: UK branch graph prototype + structured import (lawvm uk-branch-demo / uk-branch-import); real draft-bill source acquisition/parsing remains. Family key."
+    },
+    {
+      "rule_id": "process_commencement_shapes_varied",
+      "key_kind": "guidance_family",
+      "authority_tier": 2,
+      "source_ref": "GUIDE_TO_MAKING_LEGISLATION_2025 Chapters 3/9/38; OPC_DRAFTING_GUIDANCE_2024 10.6 (Royal Assent defaults, appointed-day, fixed dates, transitional/early/retrospective)",
+      "status": "SPEC",
+      "ledger_section": "process",
+      "note": "Distinct temporal facts; source lanes / branch metadata, not replay mutation. Family key."
+    },
+    {
+      "rule_id": "process_carry_over_bill_identity",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "OPC_CARRYING_OVER_BILLS_2024 (carried-over bills continue on specified terms, can lapse, do not survive dissolution in ordinary cases)",
+      "status": "GAP",
+      "ledger_section": "process",
+      "note": "Proposed/failed branch state and bill-version lineage; real source acquisition/parsing remains. Family key."
+    },
+    {
+      "rule_id": "process_alternative_enactment_routes",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "OPC_MONEY_BILLS_2024, OPC_PARLIAMENT_ACT_1911_S2_2019 (Speaker certification / Parliament Act conditions; Royal Assent without ordinary Lords consent)",
+      "status": "GAP",
+      "ledger_section": "process",
+      "note": "Enactment-path evidence, not text replay; source acquisition/parsing remains. Family key."
+    },
+    {
+      "rule_id": "process_financial_resolution_provisional_text",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "OPC_FINANCIAL_RESOLUTIONS_2023 (provisions needing Commons financial cover can be provisional and removed)",
+      "status": "GAP",
+      "ledger_section": "process",
+      "note": "Conditional proposed-law text, not enacted consolidation; source acquisition/parsing remains. Family key."
+    },
+    {
+      "rule_id": "process_crown_application_metadata",
+      "key_kind": "guidance_family",
+      "authority_tier": "1/2",
+      "source_ref": "OPC_CROWN_APPLICATION_2021 (UK Acts normally do not bind the Crown absent express words; Scottish/Welsh defaults differ)",
+      "status": "GAP",
+      "ledger_section": "process",
+      "note": "Applicability dimensions, not replay mutation; source acquisition/parsing remains. Family key."
+    }
+  ]
+}
