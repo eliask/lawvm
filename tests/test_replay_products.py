@@ -1561,6 +1561,60 @@ def test_replay_xml_2010_76_whole_chapter_replace_drops_omitted_section_3(
     assert section_3_ops[-1].action is StructuralAction.REPEAL
 
 
+def test_replay_xml_1940_378_chapter_range_replace_retires_omitted_sections() -> None:
+    """Regression: a chapter-RANGE REPLACE must drop sections its payloads omit.
+
+    1994/318 replaces ``4-7 luku`` (four whole-chapter REPLACE ops). The new
+    chapter 6 contains only sections 58-60 and the new chapter 7 only the
+    relocated voimaantulo section 61, but an earlier merge-style apply left the
+    old chapter 6 (56,57,62,63,63a-c) and chapter 7 (64,66-72) sections orphaned.
+    The complete whole-chapter replacement payloads are authoritative even though
+    each one's section set is much smaller than the merge-polluted live tree, so
+    the omitted old sections must be retired, not snapshotted forward.
+    """
+    replay = pinned_replay("1940/378", mode="official_consolidation", quiet=True)
+    state = replay.materialized_state
+
+    # New chapter 6 keeps exactly its authoritative section set.
+    for keep in ("58", "59", "60"):
+        assert state.find_node("section", keep, "chapter", "6") is not None, keep
+    # Old chapter 6 sections the replacement payload omits are retired.
+    for orphan in ("56", "57", "62", "63", "63a", "63b", "63c"):
+        assert state.find_node("section", orphan, "chapter", "6") is None, orphan
+
+    # The relocation 73 § -> 61 § must still place the voimaantulo section in
+    # chapter 7, and the merge-polluted old chapter 7 sections are retired.
+    assert state.find_node("section", "61", "chapter", "7") is not None
+    for orphan in ("64", "66", "67", "68", "69", "70", "71", "72"):
+        assert state.find_node("section", orphan, "chapter", "7") is None, orphan
+
+
+def test_replay_xml_1987_1250_chapter_9_replace_retires_orphans_keeps_chapter_2() -> None:
+    """Regression: a complete chapter-9 REPLACE retires its omitted sections.
+
+    2000/340 replaces the whole chapter 9 with a payload owning sections 1-7
+    (2 a § is added later). An earlier merge-style apply left the old sections
+    5a and 8-14 orphaned in chapter 9, where the authoritative payload set (7
+    sections) is smaller than the merge-polluted live tree (15 sections). Those
+    orphans must be retired. Chapter 2 — which legitimately carries its own
+    sections 8 and 9 — must be left untouched: the orphan drop only retires
+    sections present in the freshly-replaced chapter's live tree, never a sibling
+    chapter's untouched sections.
+    """
+    replay = pinned_replay("1987/1250", mode="official_consolidation", quiet=True)
+    state = replay.materialized_state
+
+    for keep in ("1", "2", "2a", "3", "4", "6", "7"):
+        assert state.find_node("section", keep, "chapter", "9") is not None, keep
+    for orphan in ("5a", "8", "9", "10", "11", "12", "13", "14"):
+        assert state.find_node("section", orphan, "chapter", "9") is None, orphan
+
+    # The sibling chapter 2 keeps its own sections 8 and 9 (not collateral
+    # damage from the chapter-9 orphan drop).
+    assert state.find_node("section", "8", "chapter", "2") is not None
+    assert state.find_node("section", "9", "chapter", "2") is not None
+
+
 def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11(
     replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
