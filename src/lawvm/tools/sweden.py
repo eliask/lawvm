@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lawvm.sweden.fetch import (
+    aggregate_se_official_coverage,
     analyze_se_official_replay_feasibility,
     archive_se_source_bundle,
     archive_se_backfill_official_history,
@@ -42,11 +43,16 @@ from lawvm.sweden.fetch import (
     build_se_source_bundle,
     check_se_official_replay,
     compile_se_official_ops_to_archive,
+    enumerate_se_sfst_oracle_gain_bases,
     fetch_se_official_artifacts,
     fetch_se_rk_current_json,
     has_valid_se_official_pdf,
     hydrate_se_bundle_live,
     ingest_se_scraped_doc_html_map,
+    scaled_ingest_se_sfst_oracles,
+    scan_se_official_replay_act,
+    se_amending_sfs_ids_with_compiled_ops,
+    se_amending_act_base_sfs_id,
     load_se_bundle_from_archive,
     load_se_current_ir_from_archive,
     load_se_backfill_official_checkpoint_from_archive,
@@ -1761,6 +1767,134 @@ def _cmd_materialize_current(args: "argparse.Namespace") -> None:
         print(line)
 
 
+def _cmd_ingest_sfst_oracles(args: "argparse.Namespace") -> None:
+    db_path = Path(args.db) if getattr(args, "db", None) else None
+    show_progress = getattr(args, "format", "summary") != "json"
+
+    def _progress(index: int, total: int, base: str) -> None:
+        if show_progress and (index == 1 or index == total or index % 100 == 0):
+            print(f"  ingest {index}/{total} {base}", file=sys.stderr)
+
+    with open_se_archive(db_path) as archive:
+        plan = enumerate_se_sfst_oracle_gain_bases(archive)
+        result = scaled_ingest_se_sfst_oracles(
+            archive,
+            gain_bases=plan["gain_bases"],
+            progress=_progress,
+        )
+    report = {
+        "amending_acts_with_ops": plan["amending_acts_with_ops"],
+        "distinct_bases_targeted": plan["distinct_bases_targeted"],
+        "gain_base_count": plan["gain_base_count"],
+        "already_oracle_count": plan["already_oracle_count"],
+        "empty_sfst_page_count": plan["empty_sfst_page_count"],
+        "no_sfst_page_count": plan["no_sfst_page_count"],
+        **result,
+    }
+    if getattr(args, "format", "summary") == "json":
+        _print_json(report)
+        return
+    print(f"Amending acts with ops:   {report['amending_acts_with_ops']}")
+    print(f"Distinct bases targeted:  {report['distinct_bases_targeted']}")
+    print(f"Gain bases (sfst-backed): {report['gain_base_count']}")
+    print(f"Already had oracle:       {report['already_oracle_count']}")
+    print(f"Empty sfst pages:         {report['empty_sfst_page_count']}")
+    print(f"No sfst page archived:    {report['no_sfst_page_count']}")
+    print("---")
+    print(f"Considered:               {report['considered']}")
+    print(f"Oracle bases added:       {report['added_count']}")
+    print(f"Skipped (existing oracle):{report['skipped_existing_oracle_count']}")
+    print(f"Skipped (empty/missing):  {report['skipped_empty_or_missing_count']}")
+    print(f"Failed:                   {report['failed_count']}")
+    for failure in report["failed"][:20]:
+        print(f"  FAIL {failure['sfs_id']} [{failure['reason']}] {failure.get('exception_type', '')}")
+
+
+def _se_coverage_scan_worker(payload: tuple[str | None, str]) -> dict[str, Any]:
+    """Run one act's classified replay scan in a worker process (read-only archive)."""
+    db, amending_sfs_id = payload
+    with open_se_archive(Path(db) if db else None) as archive:
+        return scan_se_official_replay_act(archive, amending_sfs_id)
+
+
+def _cmd_coverage_scan(args: "argparse.Namespace") -> None:
+    import concurrent.futures
+
+    db_path = Path(args.db) if getattr(args, "db", None) else None
+    db_arg = str(db_path) if db_path is not None else None
+    limit = int(getattr(args, "limit", 0) or 0)
+    workers = max(1, int(getattr(args, "workers", 8) or 8))
+    show_progress = getattr(args, "format", "summary") != "json"
+
+    with open_se_archive(db_path) as archive:
+        amending_ids = se_amending_sfs_ids_with_compiled_ops(archive)
+        # Only scan acts whose base now carries an oracle — otherwise the replay
+        # dies at acquisition with a FileNotFoundError that says nothing about
+        # agreement. This keeps the corpus number meaningful.
+        covered: list[str] = []
+        for amending_id in amending_ids:
+            base = se_amending_act_base_sfs_id(archive, amending_id)
+            if base and archive.get(se_rk_current_json_locator(base)) is not None:
+                covered.append(amending_id)
+
+    total_covered = len(covered)
+    if limit > 0:
+        scanned_ids = covered[:limit]
+    else:
+        scanned_ids = covered
+
+    summaries: list[dict[str, Any]] = []
+    completed = 0
+    if workers == 1:
+        for amending_id in scanned_ids:
+            summaries.append(_se_coverage_scan_worker((db_arg, amending_id)))
+            completed += 1
+            if show_progress and (completed == 1 or completed == len(scanned_ids) or completed % 50 == 0):
+                print(f"  scan {completed}/{len(scanned_ids)}", file=sys.stderr)
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
+            payloads = [(db_arg, amending_id) for amending_id in scanned_ids]
+            for summary in pool.map(_se_coverage_scan_worker, payloads):
+                summaries.append(summary)
+                completed += 1
+                if show_progress and (completed == 1 or completed == len(scanned_ids) or completed % 50 == 0):
+                    print(f"  scan {completed}/{len(scanned_ids)}", file=sys.stderr)
+
+    # Deterministic ordering before aggregation.
+    summaries.sort(key=lambda row: _se_sort_key(str(row.get("amending_sfs_id") or "")))
+    aggregate = aggregate_se_official_coverage(summaries)
+    aggregate["covered_acts_total"] = total_covered
+    aggregate["scanned_acts"] = len(scanned_ids)
+    aggregate["sampled"] = bool(limit > 0 and total_covered > len(scanned_ids))
+
+    if getattr(args, "format", "summary") == "json":
+        _print_json(aggregate)
+        return
+    print(f"Covered acts (base has oracle): {aggregate['covered_acts_total']}")
+    if aggregate["sampled"]:
+        print(f"Scanned (SAMPLE cap {limit}):   {aggregate['scanned_acts']} of {aggregate['covered_acts_total']}")
+    else:
+        print(f"Scanned acts:                   {aggregate['scanned_acts']}")
+    print(f"REPLAY_OK:                      {aggregate['replay_ok_count']} ({aggregate['replay_ok_rate']:.2%})")
+    print(f"older_base_required:            {aggregate['older_base_required_count']}")
+    print(f"error:                          {aggregate['error_count']}")
+    print("---")
+    print(f"Section targets:                {aggregate['section_target_count']}")
+    print(f"Section match rate (all):       {aggregate['section_match_count']}/{aggregate['section_target_count']}"
+          f" ({aggregate['section_match_rate']:.2%})")
+    print(f"  genuine content matches:      {aggregate['genuine_content_match_count']}"
+          f" ({aggregate['genuine_content_match_rate']:.2%})")
+    print(f"  editorial-only matches:       {aggregate['editorial_only_match_count']}")
+    print(f"  official-oracle fallback:     {aggregate['official_oracle_match_count']}")
+    print("--- classification taxonomy ---")
+    for name, count in aggregate["classification_counts"].items():
+        print(f"  {name}: {count}")
+    if aggregate["error_examples"]:
+        print("--- error/older-base examples ---")
+        for key, examples in aggregate["error_examples"].items():
+            print(f"  {key}: {', '.join(examples)}")
+
+
 def _cmd_replay_check(args: "argparse.Namespace") -> None:
     with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
         try:
@@ -2201,6 +2335,12 @@ def main(args: "argparse.Namespace") -> None:
     if command == "replay-check":
         _cmd_replay_check(args)
         return
+    if command == "ingest-sfst-oracles":
+        _cmd_ingest_sfst_oracles(args)
+        return
+    if command == "coverage-scan":
+        _cmd_coverage_scan(args)
+        return
     if command == "diagnose-replay":
         _cmd_diagnose_replay(args)
         return
@@ -2559,6 +2699,42 @@ def register_cli(sub: Any) -> None:
         help="effective date YYYY-MM-DD; defaults to the compiled op source effective date",
     )
     sw_replay_check_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_ingest_sfst_oracles_p = sweden_sub.add_parser(
+        "ingest-sfst-oracles",
+        help="seed the current-text oracle for every sfst-backed gain base (idempotent)",
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_coverage_scan_p = sweden_sub.add_parser(
+        "coverage-scan",
+        help="replay-check every amending act whose base has an oracle and aggregate agreement",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_coverage_scan_p.add_argument(
+        "--limit", type=int, default=0, metavar="N",
+        help="scan only the first N covered acts (default: all; sampling is reported)",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--workers", type=int, default=8, metavar="N",
+        help="parallel worker processes for the per-act scan (default: 8)",
+    )
+    sw_coverage_scan_p.add_argument(
         "--format",
         choices=["summary", "json"],
         default="summary",

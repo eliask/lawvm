@@ -6628,6 +6628,48 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="output format (default: summary)",
     )
 
+    sw_ingest_sfst_oracles_p = sweden_sub.add_parser(
+        "ingest-sfst-oracles",
+        help="seed the current-text oracle for every sfst-backed gain base (idempotent)",
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_ingest_sfst_oracles_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_coverage_scan_p = sweden_sub.add_parser(
+        "coverage-scan",
+        help="replay-check every amending act whose base has an oracle and aggregate agreement",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)"
+    )
+    sw_coverage_scan_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="scan only the first N covered acts (default: all; sampling is reported)",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        metavar="N",
+        help="parallel worker processes for the per-act scan (default: 8)",
+    )
+    sw_coverage_scan_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
     sw_diagnose_replay_p = sweden_sub.add_parser(
         "diagnose-replay",
         help="analyze whether one Sweden act can be replayed from the archived current base surface",
@@ -8021,6 +8063,48 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_replay_chain_p = nz_corpus_sub.add_parser(
+        "replay-chain",
+        help="experimental amendment-chain replay (all families) on one evolving tree vs the archived oracle",
+        description=(
+            "First NZ end-to-end replay. Enumerate a base work's authorized "
+            "amendment witnesses across all four operation families (repeal, "
+            "text_replace, replace, insert; restrict with --families), group them "
+            "by effective amendment date into ordered transitions, start from the "
+            "EARLIEST archived consolidated version, and apply each transition's "
+            "ops to a SINGLE evolving tree carried forward across the whole chain "
+            "(unlike the per-window dry-run, which resets to each window's "
+            "archived before-tree). At "
+            "every archived version date, materialize the evolving tree and "
+            "compare it to the archived consolidated oracle with the core "
+            "section_similarity metric, producing a similarity CURVE plus typed "
+            "skip buckets (every non-applied op is a visible residual, never a "
+            "silent drop). This is an experimental dry-run chain replay with "
+            "partial coverage: it reports similarity, not pass/fail, never "
+            "authorizes actual replay, and never mutates the archive."
+        ),
+    )
+    nz_replay_chain_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_chain_p.add_argument("--work-id", required=True, metavar="ID", help="archived base work_id")
+    nz_replay_chain_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "operation families to fold into the chain: 'all' (default; repeal + "
+            "text_replace + replace + insert), 'repeal' (repeal-only baseline), or "
+            "a comma-separated subset (e.g. 'repeal,text_replace')"
+        ),
+    )
+    nz_replay_chain_p.add_argument(
+        "--summary-only", action="store_true", help="omit per-transition/per-skip detail from JSON"
+    )
+    nz_replay_chain_p.add_argument("--json", action="store_true", help="emit chain-replay report JSON")
     nz_build_corpus_p = nz_corpus_sub.add_parser(
         "build-corpus",
         help="generate curated NZ bench corpora (large + smoke) of works with >0 amendments",
@@ -11263,6 +11347,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "replay-chain":
+            from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
+
+            nz_corpus_replay_chain_main(args)
         elif args.nz_corpus_command == "build-corpus":
             from lawvm.new_zealand.bench_corpus import main as nz_corpus_build_corpus_main
 

@@ -139,6 +139,29 @@ class UscSubsectionNode:
 
 
 @dataclass(frozen=True)
+class UscSectionNote:
+    """One editorial note block under a section: a ``note-head`` and its bodies.
+
+    The USC annual edition carries the temporal mechanics of a section (effective
+    dates, termination dates, applicability, sunset/reversion language) in the
+    editorial notes, NOT in the statutory text. Each note block is a ``note-head``
+    label (e.g. "Effective Date of 2022 Amendment", "Amendments", "Termination
+    Date") followed by one or more ``note-body`` paragraphs. This carrier exposes
+    those blocks for the sunset/temporal detector WITHOUT folding any note text
+    into :attr:`UscSection.statutory_text` — the statutory comparison surface is
+    unchanged.
+    """
+
+    head: str
+    bodies: tuple[str, ...]
+
+    @property
+    def text(self) -> str:
+        """Head + bodies joined, for substring witness scans."""
+        return _normalize_text(" ".join((self.head, *self.bodies)))
+
+
+@dataclass(frozen=True)
 class UscSection:
     """One USC section: address, heading, statutory text, raw source-credit."""
 
@@ -150,6 +173,10 @@ class UscSection:
     source_credit_raw: str
     repealed: bool
     paragraphs: tuple[UscStatutoryParagraph, ...]
+    # Editorial note blocks (note-head + note-body*) following the statutory text.
+    # NOT part of the statutory comparison surface; carried for the sunset/temporal
+    # detector (effective/termination/applicability/reversion language lives here).
+    notes: tuple[UscSectionNote, ...] = ()
     # Structural-trail context from the ``itempath``/``expcite`` comments
     # (chapter / subchapter); containers only, not part of the replay address.
     chapter: str = ""
@@ -361,6 +388,10 @@ def _walk_sections(container: etree._Element, *, title: int) -> list[UscSection]
             " ".join(p.text for p in paragraphs)
         )
         chapter, subchapter = _chapter_subchapter_from_expcite(current["expcite"])
+        notes = tuple(
+            UscSectionNote(head=head, bodies=tuple(bodies))
+            for head, bodies in current["notes"]
+        )
         sections.append(
             UscSection(
                 title=title,
@@ -371,6 +402,7 @@ def _walk_sections(container: etree._Element, *, title: int) -> list[UscSection]
                 source_credit_raw=current["source_credit"],
                 repealed=current["repealed"],
                 paragraphs=paragraphs,
+                notes=notes,
                 chapter=chapter,
                 subchapter=subchapter,
             )
@@ -407,6 +439,8 @@ def _walk_sections(container: etree._Element, *, title: int) -> list[UscSection]
                 "expcite": pending_expcite,
                 "paragraphs": [],
                 "source_credit": "",
+                # list[tuple[head, list[body]]] in document order.
+                "notes": [],
             }
             in_statute = False
             in_sourcecredit = False
@@ -429,6 +463,18 @@ def _walk_sections(container: etree._Element, *, title: int) -> list[UscSection]
         if in_sourcecredit and css == "source-credit":
             current["source_credit"] = _normalize_text(_element_text(el))
             continue
+
+        # Editorial note blocks: a ``note-head`` opens a block, ``note-body``
+        # paragraphs attach to the open block. These are NOT statutory text; they
+        # carry the section's temporal mechanics for the sunset detector. Gated to
+        # outside the statute/sourcecredit runs so it cannot capture statutory body.
+        if not in_statute and not in_sourcecredit:
+            if css == "note-head":
+                current["notes"].append((_normalize_text(_element_text(el)), []))
+                continue
+            if css == "note-body" and current["notes"]:
+                current["notes"][-1][1].append(_normalize_text(_element_text(el)))
+                continue
 
     _flush()
     return sections
@@ -555,6 +601,19 @@ def iter_section_oracle_rows(
     """
     for section in document.sections:
         yield section.address, section.statutory_text, section.source_credit_raw
+
+
+def iter_section_notes(
+    section: UscSection,
+) -> Iterable[UscSectionNote]:
+    """Yield the editorial note blocks (note-head + bodies) for one section.
+
+    Convenience iterator over :attr:`UscSection.notes`. The note blocks carry the
+    temporal mechanics (effective/termination/applicability/reversion language)
+    the sunset detector consults; they are never part of the statutory comparison
+    surface.
+    """
+    yield from section.notes
 
 
 def summarize_indent_classes(document: UscSourceDocument) -> dict[str, int]:

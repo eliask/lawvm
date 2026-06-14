@@ -1,0 +1,31 @@
+# US federal dry-run bench corpus.
+#
+# One row per adjacent-edition USC window to evaluate. ``include`` is ``true`` for
+# windows the harness runs (non-empty witness delta) and ``false`` for windows
+# recorded as empty (no Public Law's source-credit first appears in the after
+# edition, so there is nothing to lower) — kept here as an honest record, not run.
+#
+# The window laws are NOT listed here: they are DERIVED at run time from the
+# witness delta (public laws whose source-credit first appears in the after
+# edition), so the corpus cannot drift from the editions. ``window_law_count`` is
+# the witness-delta size at authoring time (a sanity anchor, re-verified by the
+# harness). ``prior_edition_years`` are earlier USC editions loaded as F2
+# sunset-reversion channel-(a) witnesses (space-separated, may be empty).
+#
+# Columns: title,before_year,after_year,include,window_law_count,prior_edition_years,note
+title,before_year,after_year,include,window_law_count,prior_edition_years,note
+11,2018,2020,true,8,,116th Congress: SBRA/CARES substantive Title 11 textual amendments
+11,2020,2022,true,4,2018,117th Congress: includes the SBRA debt-limit re-extension
+11,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+11,2023,2024,true,1,2018 2022,PL 118-42 omnibus; 109/1182 are SBRA sunset reversions
+18,2020,2022,true,20,,Title 18 crimes: large 117th-Congress window
+18,2022,2023,true,3,,118th Congress early crimes amendments
+18,2023,2024,true,9,,118th Congress crimes amendments
+35,2018,2020,true,1,,Title 35 patents: single 116th-Congress amendment
+35,2020,2022,true,3,,117th Congress patent amendments
+35,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+35,2023,2024,true,1,,PL 118-151 patent amendment
+28,2022,2023,true,1,,Title 28 judiciary: single 118th-Congress amendment
+28,2023,2024,true,4,,118th Congress judiciary amendments
+38,2022,2023,true,5,,Title 38 veterans: 118th-Congress amendments
+38,2023,2024,true,10,,118th Congress veterans amendments

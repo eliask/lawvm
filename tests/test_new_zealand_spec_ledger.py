@@ -21,6 +21,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID,
+    NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
     NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID,
     NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID,
     NZ_DRY_RUN_REPLACE_AGREES_RULE_ID,
@@ -68,6 +69,7 @@ _ALL_ORACLE_RULE_IDS = (
     NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_NOT_PRESENT_RULE_ID,
     NZ_DRY_RUN_INSERT_RESIDUAL_CONTENT_MISMATCH_RULE_ID,
+    NZ_DRY_RUN_INSERT_RESIDUAL_POSITION_MISMATCH_RULE_ID,
 )
 
 # The residual ``oracle_match`` family strings each kernel partition can return,
@@ -83,6 +85,7 @@ _RESIDUAL_MATCH_FAMILIES = {
     "residual_replacement_mismatch": "lawvm_wrong",
     "residual_insert_not_present": "lawvm_wrong",
     "residual_insert_content_mismatch": "lawvm_wrong",
+    "residual_insert_position_mismatch": "lawvm_wrong",
 }
 
 

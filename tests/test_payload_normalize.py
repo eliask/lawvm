@@ -5558,3 +5558,62 @@ def test_drop_redundant_case3_drops_insert_when_lettered_item_exists_in_live() -
     assert not any(
         (op.op_type, op.target_item) == ("INSERT", "3a") for op in got.group_ops
     ), "INSERT 3a should be dropped when item already exists in live state"
+
+
+def test_assign_subsection_slots_binds_item_ops_by_momentti_not_item_number() -> None:
+    """Item ops spanning two momentit bind to their own momentti payload slot.
+
+    Regression for 2019/906 26 § (amendment 2023/488): the amendment replaces
+    and inserts kohta items in both the 4th and 5th momentti. The sparse payload
+    carries one subsection per amended momentti, in source order, and both carry
+    a "3) ..." and "4) ..." item. Pure item-number matching scrambled the
+    bindings, applying stale momentti text. Each op must bind to the payload slot
+    for its own momentti.
+    """
+    amend_sub_4mom = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Viranomaisen laatimista asiakirjoista rekisteroidaan ainakin:"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="laatimisajankohta;"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4", text="asiakirjan lahettamisajankohta ja lahettamistapa."),
+        ),
+    )
+    amend_sub_5mom = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Asiarekisteriin rekisteroidaan lisaksi asiasta ainakin:"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="viranomaisen toimenpiteet kasittelyvaiheittain;"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4", text="viranomaisen tekeman ratkaisun ajankohta;"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="5", text="tarvittaessa tiedoksiantotapa."),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="26",
+        children=(IRNode(kind=IRNodeKind.NUM, text="26 §"), amend_sub_4mom, amend_sub_5mom),
+    )
+    group_ops = [
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="3"),
+        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="4"),
+        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="3"),
+        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="4"),
+        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="5"),
+    ]
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, group_ops)
+    assert slot_inputs is not None
+    assignment = _assign_subsection_slots(slot_inputs)
+
+    # Every momentti-4 op binds to the momentti-4 payload subsection; every
+    # momentti-5 op binds to the momentti-5 payload subsection.
+    for op in group_ops:
+        mapped = assignment.for_op(op)
+        assert mapped is not None
+        if op.target_paragraph == 4:
+            assert mapped is amend_sub_4mom, (op.op_type, op.target_item)
+        else:
+            assert mapped is amend_sub_5mom, (op.op_type, op.target_item)

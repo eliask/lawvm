@@ -2254,6 +2254,10 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                     s.restore(saved_kt)
             elif _let:
                 s.restore(saved_kt)
+            # Skip an archaic "näin kuuluva" lead-in that can sit between the
+            # §:ään target (and its skipped provenance/citation span) and "uusi",
+            # e.g. "7 §:ään, sellaisena kuin se on ..., näin kuuluva uusi 3 momentti".
+            _skip_archaic_nain_kuuluva(s)
             if _uusi(s):
                 sec_nums = [n + sf for n, sf in nums]
                 all_nodes: list[SurfaceNode] = []

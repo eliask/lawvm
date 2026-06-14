@@ -15,6 +15,8 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     NON_TITLE_TARGET_RULE_ID,
+    RULE_ADD_AT_END,
+    RULE_INSERT_AFTER,
     RULE_STRIKE_INSERT,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
@@ -22,6 +24,18 @@ from lawvm.us_federal.amendatory import (
     parse_usc_target_href,
     parse_usc_target_phrase,
 )
+
+_USLM_NS = "http://schemas.gpo.gov/xml/uslm"
+
+
+def _synthetic_plaw(section_body: str) -> bytes:
+    """Wrap one amendatory <section> body into a minimal lowerable USLM lawDoc."""
+    return (
+        f'<lawDoc xmlns="{_USLM_NS}">'
+        "<meta><congress>116</congress><docNumber>900</docNumber>"
+        "<approvedDate>2020-01-01</approvedDate></meta>"
+        f"<main>{section_body}</main></lawDoc>"
+    ).encode("utf-8")
 from lawvm.us_federal.effect_candidates import scan_title_effect_candidates
 from lawvm.us_federal.sources import open_us_federal_farchive, plaw_locator
 
@@ -122,6 +136,133 @@ def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     assert instr.target_address.path[0] == ("title", "18")
     assert instr.finding is not None
     assert instr.finding.rule_id == NON_TITLE_TARGET_RULE_ID
+
+
+# ---------------------------------------------------------------------------
+# Lowering robustness fixes (F5 action/operand, F1/F4 significant edge chars)
+# ---------------------------------------------------------------------------
+
+
+def test_insert_after_classifies_and_assigns_operands_at_the_anchor():
+    # "inserting 'X' after 'Y'" with NO striking is an insert-after, not a
+    # strike_insert: the anchor "Y" drives the match, X is appended after it.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>, based on reasonable due diligence,</quotedText>” '
+        'after “<quotedText>may</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "insert_after"
+    assert instr.witness_rule_id == RULE_INSERT_AFTER
+    op = instr.operation
+    assert op is not None and op.text_patch is not None
+    # anchor is the match; inserted clause is appended AFTER it (not inverted).
+    assert op.text_patch.selector.match_text == "may"
+    assert op.text_patch.replacement == "may, based on reasonable due diligence,"
+
+
+def _patch(instr):
+    op = instr.operation
+    assert op is not None and op.text_patch is not None
+    return op.text_patch
+
+
+def test_sibling_subsections_split_so_striking_does_not_bleed_into_insert_after():
+    # SEC. 3 carries TWO subsection instructions: (a) is an insert-after, (b) is a
+    # strike-and-insert. They must NOT be merged into one unit (else (b)'s
+    # "striking" mis-classifies (a) as strike_insert with inverted operands — F5).
+    body = (
+        '<section identifier="/us/pl/116/900/s3"><num value="3">SEC. 3. </num>'
+        '<subsection identifier="/us/pl/116/900/s3/a" role="instruction">'
+        '<num value="a">(a) </num><content>'
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>, due diligence,</quotedText>” after '
+        '“<quotedText>may</quotedText>”.</content></subsection>'
+        '<subsection identifier="/us/pl/116/900/s3/b" role="instruction">'
+        '<num value="b">(b) </num><content>'
+        '<ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>$10,000</quotedText>” and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>$25,000</quotedText>”.</content></subsection>'
+        '</section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    by_target = {i.target_phrase.split(" of ")[0]: i for i in report.instructions}
+    a = by_target["Section 547(b)"]
+    assert a.action == "insert_after"
+    assert _patch(a).selector.match_text == "may"
+    b = by_target["Section 101(18)"]
+    assert b.action == "strike_insert"
+    # strike_insert operand order: struck text matches, inserted text replaces.
+    assert _patch(b).selector.match_text == "$10,000"
+    assert _patch(b).replacement == "$25,000"
+
+
+def test_strike_insert_operand_order_struck_matches_inserted_replaces():
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>$3,237,000</quotedText>” and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>$10,000,000</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT
+    assert _patch(instr).selector.match_text == "$3,237,000"
+    assert _patch(instr).replacement == "$10,000,000"
+
+
+def test_quoted_text_preserves_significant_leading_space():
+    # A genuine leading space INSIDE the quotedText literal must survive lowering
+    # (F1 case i). Only internal formatting whitespace is collapsed.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s507/d">Section 507(d) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText> excluding subparagraph (F)</quotedText>” after '
+        '“<quotedText>(a)(8)</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    patch = _patch(report.instructions[0])
+    # match = anchor "(a)(8)"; replacement keeps the literal's leading space.
+    assert patch.selector.match_text == "(a)(8)"
+    assert patch.replacement == "(a)(8) excluding subparagraph (F)"
+
+
+def test_add_at_end_payload_preserves_terminal_period_inside_quoted_block():
+    # The terminal period lives INSIDE the quoted block; the enclosing curly quotes
+    # are peeled but the period survives (F4). Leading "(d)" is kept; no leading quote.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s366">Section 366 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="add">adding</amendingAction> at the end the '
+        'following:<quotedContent><subsection><num value="d">“(d) </num>'
+        '<content>a payment becomes due.”</content></subsection>'
+        '</quotedContent>.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "add_at_end"
+    assert instr.witness_rule_id == RULE_ADD_AT_END
+    assert instr.operation is not None
+    payload = instr.operation.payload
+    assert payload is not None
+    assert payload.text.startswith("(d) ")
+    assert payload.text.endswith("a payment becomes due.")
+    assert "“" not in payload.text and "”" not in payload.text
 
 
 # ---------------------------------------------------------------------------

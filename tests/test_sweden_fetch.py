@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
+from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.ir import (
     TextPatchKindEnum,
@@ -23,6 +24,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _migrate_legacy_se_ir_blob,
     _normalize_compare_text,
     _reverse_patch_se_available_later_chain,
     analyze_se_official_replay_feasibility,
@@ -38,11 +40,17 @@ from lawvm.sweden.fetch import (
     guess_se_official_pdf_url,
     has_valid_se_official_pdf,
     hydrate_se_bundle_live,
+    aggregate_se_official_coverage,
+    enumerate_se_sfst_oracle_gain_bases,
+    ingest_se_rk_current_from_sfst_archive,
     ingest_se_scraped_doc_html_map,
+    parse_se_sfst_html_to_rk_current,
+    scaled_ingest_se_sfst_oracles,
     load_se_bundle_from_archive,
     load_se_current_ir_from_archive,
     load_se_backfill_official_history_from_archive,
     load_se_official_act_from_archive,
+    load_se_official_base_ir_from_archive,
     load_se_official_ops_adjudications_from_archive,
     load_se_official_clause_surface_from_archive,
     load_se_official_elaboration_from_archive,
@@ -153,6 +161,93 @@ class _FakeArchive(_ArchiveLike):
 @pytest.fixture(autouse=True)
 def _disable_sweden_fetch_retry_sleep(monkeypatch) -> None:
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
+
+
+def _se_appendix_supplement_blob() -> dict[str, object]:
+    """A bare SE IR statute payload carrying one appendix supplement node."""
+    return {
+        "statute_id": "2015:284",
+        "title": "Testlag",
+        "body": {
+            "kind": "body",
+            "children": [{"kind": "section", "label": "1", "text": "Text."}],
+        },
+        "metadata": {},
+        "supplements": [
+            {
+                "kind": "appendix",
+                "label": "1",
+                "text": "Bilaga",
+                "attrs": {},
+                "children": [{"kind": "heading", "text": "Rubrik", "attrs": {}}],
+            }
+        ],
+    }
+
+
+def test_migrate_legacy_se_ir_blob_renames_schedules_to_supplements() -> None:
+    current = _se_appendix_supplement_blob()
+    legacy = dict(current)
+    legacy["schedules"] = legacy.pop("supplements")
+
+    migrated = _migrate_legacy_se_ir_blob(legacy)
+
+    assert "schedules" not in migrated
+    assert migrated["supplements"] == current["supplements"]
+    # Faithful rename: nothing else changed, no data dropped.
+    assert {k: v for k, v in migrated.items() if k != "supplements"} == {
+        k: v for k, v in current.items() if k != "supplements"
+    }
+    # The legacy supplement node survives deserialization into core.
+    statute = ir_statute_from_dict(migrated)
+    assert len(statute.supplements) == 1
+    assert statute.supplements[0].kind.value == "appendix"
+
+
+def test_migrate_legacy_se_ir_blob_passes_through_current_supplements() -> None:
+    current = _se_appendix_supplement_blob()
+
+    migrated = _migrate_legacy_se_ir_blob(current)
+
+    assert migrated is current
+    statute = ir_statute_from_dict(migrated)
+    assert len(statute.supplements) == 1
+
+
+def test_migrate_legacy_se_ir_blob_refuses_ambiguous_both_keys() -> None:
+    ambiguous = _se_appendix_supplement_blob()
+    ambiguous["schedules"] = []
+
+    with pytest.raises(ValueError, match="both legacy 'schedules'"):
+        _migrate_legacy_se_ir_blob(ambiguous)
+
+
+def test_load_se_official_base_ir_migrates_legacy_schedules_on_read() -> None:
+    legacy = _se_appendix_supplement_blob()
+    legacy["schedules"] = legacy.pop("supplements")
+    archive = _FakeArchive(
+        stored={se_official_base_ir_locator("2015:284"): json.dumps(legacy).encode("utf-8")}
+    )
+
+    blob = load_se_official_base_ir_from_archive(archive, "2015:284")
+    assert blob is not None
+    assert "schedules" not in blob
+    # The blob now feeds core's bare-statute deserializer without rejection.
+    statute = ir_statute_from_dict(blob)
+    assert len(statute.supplements) == 1
+    assert statute.supplements[0].label == "1"
+
+
+def test_load_se_current_ir_passes_through_modern_supplements_blob() -> None:
+    current = _se_appendix_supplement_blob()
+    archive = _FakeArchive(
+        stored={se_current_ir_locator("2015:284"): json.dumps(current).encode("utf-8")}
+    )
+
+    blob = load_se_current_ir_from_archive(archive, "2015:284")
+    assert blob is not None
+    assert "schedules" not in blob
+    assert blob["supplements"] == current["supplements"]
 
 
 def test_se_statute_invariant_violations_include_typed_records() -> None:
@@ -626,6 +721,252 @@ def test_sweden_text_locators_are_stable() -> None:
     assert se_official_pdf_locator("2026:286") == "se://sfs/2026:286/official.pdf"
     assert se_pdf_text_locator("2026:286") == "se://sfs/2026:286/official.pdf.txt"
     assert se_pdf_cleanup_locator("2026:286") == "se://sfs/2026:286/official.cleaned.txt"
+
+
+_SE_SFST_REAL_PAGE = (
+    "<!DOCTYPE html><html><body>"
+    '<div class="result-inner-box bold">\r\n SFS-nummer \xc2\xb7 2015:284 \xc2\xb7</div>'
+    '<div class="result-inner-box">'
+    '<span class="bold">F\xf6rordning (2015:284) med instruktion f\xf6r Testmyndigheten</span>'
+    "</div>"
+    '<div class="result-inner-box"><span class="bold">Utf\xe4rdad:</span> 2015-05-21</div>'
+    '<div class="result-inner-box">'
+    '<span class="bold">\xc4ndring inf\xf6rd:</span> t.o.m. SFS 2026:280</div>'
+    '<div class="result-box-text body-text">'
+    "Uppgifter<br><br>1 \xa7 F\xf6rsta paragrafen.<br>"
+    "Forts\xe4ttning. Lag (2023:404).<br><br>"
+    "2 \xa7 Andra paragrafen.<br></div>"
+    "</body></html>"
+)
+
+_SE_SFST_EMPTY_PAGE = (
+    "<!DOCTYPE html><html><body>"
+    '<div class="search-hits">Totalt 0 tr\xe4ffar</div>'
+    "<div>Inga tr\xe4ffar</div></body></html>"
+)
+
+
+def test_parse_se_sfst_html_lifts_real_consolidated_page_to_rk_document() -> None:
+    document = parse_se_sfst_html_to_rk_current(_SE_SFST_REAL_PAGE, "2015:284")
+
+    assert document is not None
+    assert document["beteckning"] == "2015:284"
+    assert document["rubrik"] == "Förordning (2015:284) med instruktion för Testmyndigheten"
+    assert document["publicerad"] is True
+    fulltext = document["fulltext"]
+    assert fulltext["utfardadDateTime"] == "2015-05-21T00:00:00"
+    assert fulltext["andringInford"] == "t.o.m. SFS 2026:280"
+    assert "1 § Första paragrafen." in fulltext["forfattningstext"]
+    assert "2 § Andra paragrafen." in fulltext["forfattningstext"]
+    assert "Lag (2023:404)." in fulltext["forfattningstext"]
+
+
+def test_parse_se_sfst_html_returns_none_for_empty_search_page() -> None:
+    assert parse_se_sfst_html_to_rk_current(_SE_SFST_EMPTY_PAGE, "2002:1896") is None
+
+
+def test_parse_se_sfst_html_round_trips_through_current_text_parser() -> None:
+    from lawvm.sweden.grafter import parse_se_statute, se_section_text_map
+
+    document = parse_se_sfst_html_to_rk_current(_SE_SFST_REAL_PAGE, "2015:284")
+    assert document is not None
+    statute = parse_se_statute(document, statute_id="2015:284")
+    section_text = se_section_text_map(statute)
+    assert section_text["1"].startswith("Första paragrafen.")
+    assert section_text["2"] == "Andra paragrafen."
+
+
+def test_ingest_se_rk_current_from_sfst_archive_seeds_oracle_bundle() -> None:
+    archive = _FakeArchive()
+    archive.stored[se_rk_current_url("2015:284")] = _SE_SFST_REAL_PAGE.encode("utf-8")
+
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2015:284") is True
+    assert archive.has(se_rk_current_json_locator("2015:284"))
+    assert archive.has(se_current_ir_locator("2015:284"))
+    assert archive.has(se_source_record_locator("2015:284"))
+    assert archive.has(se_bundle_manifest_locator("2015:284"))
+
+
+def test_ingest_se_rk_current_from_sfst_archive_skips_empty_or_missing_pages() -> None:
+    archive = _FakeArchive()
+    # No archived sfst page at all.
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2002:1896") is False
+    # An archived but empty (0-hit) search page.
+    archive.stored[se_rk_current_url("2002:1896")] = _SE_SFST_EMPTY_PAGE.encode("utf-8")
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2002:1896") is False
+    assert not archive.has(se_rk_current_json_locator("2002:1896"))
+
+
+class _GlobArchive(_FakeArchive):
+    """A fake archive whose ``locators`` honours SQL-LIKE ``%`` wildcards.
+
+    The base :class:`_FakeArchive` does a naive substring match which cannot
+    distinguish ``se://sfs/%/official.ops.json`` from other locators, so the
+    scaled-ingest enumeration (which globs the ops locators) needs a sharper
+    matcher to exercise the real gain-base selection.
+    """
+
+    @override
+    def locators(self, pattern: str = "%") -> list[str]:
+        import re as _re
+
+        regex = "^" + "".join(
+            ".*" if part == "%" else _re.escape(part)
+            for part in _re.split(r"(%)", pattern)
+        ) + "$"
+        compiled = _re.compile(regex)
+        return [k for k in self.stored if compiled.fullmatch(k)]
+
+
+def _seed_se_amending_act(
+    archive: _GlobArchive, amending_sfs_id: str, base_sfs_id: str
+) -> None:
+    """Seed a minimal compiled amending act that targets ``base_sfs_id``."""
+    archive.stored[se_official_ops_locator(amending_sfs_id)] = json.dumps(
+        {"ops": []}
+    ).encode("utf-8")
+    archive.stored[se_official_act_locator(amending_sfs_id)] = json.dumps(
+        {"sfs_id": amending_sfs_id, "amended_act_sfs_id": base_sfs_id}
+    ).encode("utf-8")
+
+
+def test_enumerate_se_sfst_oracle_gain_bases_classifies_each_base() -> None:
+    archive = _GlobArchive()
+    # base 2015:284 -> has a real sfst page, no oracle yet => GAIN
+    _seed_se_amending_act(archive, "2018:111", "2015:284")
+    archive.stored[se_rk_current_url("2015:284")] = _SE_SFST_REAL_PAGE.encode("utf-8")
+    # base 2002:1896 -> archived sfst page but EMPTY 0-träffar => skip
+    _seed_se_amending_act(archive, "2018:222", "2002:1896")
+    archive.stored[se_rk_current_url("2002:1896")] = _SE_SFST_EMPTY_PAGE.encode("utf-8")
+    # base 2010:900 -> already carries an oracle => protected, never a gain
+    _seed_se_amending_act(archive, "2018:333", "2010:900")
+    archive.stored[se_rk_current_json_locator("2010:900")] = b"{}"
+    # base 2011:111 -> no archived sfst page at all => skip
+    _seed_se_amending_act(archive, "2018:444", "2011:111")
+
+    plan = enumerate_se_sfst_oracle_gain_bases(archive)
+
+    assert plan["amending_acts_with_ops"] == 4
+    assert plan["distinct_bases_targeted"] == 4
+    assert plan["gain_bases"] == ["2015:284"]
+    assert plan["gain_base_count"] == 1
+    assert plan["already_oracle_bases"] == ["2010:900"]
+    assert plan["empty_sfst_page_bases"] == ["2002:1896"]
+    assert plan["no_sfst_page_bases"] == ["2011:111"]
+
+
+def test_scaled_ingest_se_sfst_oracles_adds_real_skips_empty_and_existing() -> None:
+    archive = _GlobArchive()
+    # real gain base
+    _seed_se_amending_act(archive, "2018:111", "2015:284")
+    archive.stored[se_rk_current_url("2015:284")] = _SE_SFST_REAL_PAGE.encode("utf-8")
+    # empty page base — must never be written
+    _seed_se_amending_act(archive, "2018:222", "2002:1896")
+    archive.stored[se_rk_current_url("2002:1896")] = _SE_SFST_EMPTY_PAGE.encode("utf-8")
+    # protected existing oracle (stands in for the real RK-API blobs)
+    _seed_se_amending_act(archive, "2018:333", "2010:900")
+    sentinel = b'{"_protected": true}'
+    archive.stored[se_rk_current_json_locator("2010:900")] = sentinel
+
+    result = scaled_ingest_se_sfst_oracles(archive)
+
+    assert result["added_bases"] == ["2015:284"]
+    assert result["added_count"] == 1
+    assert result["failed_count"] == 0
+    # The real RK blob is untouched.
+    assert archive.stored[se_rk_current_json_locator("2010:900")] == sentinel
+    # The empty page never produced an oracle.
+    assert not archive.has(se_rk_current_json_locator("2002:1896"))
+    # The gain base now carries a full bundle.
+    assert archive.has(se_rk_current_json_locator("2015:284"))
+    assert archive.has(se_current_ir_locator("2015:284"))
+
+
+def test_scaled_ingest_se_sfst_oracles_is_idempotent_on_rerun() -> None:
+    archive = _GlobArchive()
+    _seed_se_amending_act(archive, "2018:111", "2015:284")
+    archive.stored[se_rk_current_url("2015:284")] = _SE_SFST_REAL_PAGE.encode("utf-8")
+
+    first = scaled_ingest_se_sfst_oracles(archive)
+    assert first["added_count"] == 1
+    first_blob = archive.stored[se_rk_current_json_locator("2015:284")]
+
+    # A second default run re-enumerates the gain bases: the now-oracled base is
+    # excluded from the gain set entirely, so nothing is even considered.
+    second = scaled_ingest_se_sfst_oracles(archive)
+    assert second["added_count"] == 0
+    assert second["considered"] == 0
+    # Even if the base is forced back into the gain set explicitly, the loop's
+    # existing-oracle guard skips it without overwriting (protects real RK blobs).
+    forced = scaled_ingest_se_sfst_oracles(archive, gain_bases=["2015:284"])
+    assert forced["added_count"] == 0
+    assert forced["skipped_existing_oracle_count"] == 1
+    assert forced["considered"] == 1
+    # The previously written oracle is byte-identical across both reruns.
+    assert archive.stored[se_rk_current_json_locator("2015:284")] == first_blob
+
+
+def test_aggregate_se_official_coverage_arithmetic_and_determinism() -> None:
+    summaries = [
+        {
+            "amending_sfs_id": "2020:5",
+            "outcome": "replay_ok",
+            "target_count": 3,
+            "match_count": 3,
+            "genuine_content_match_count": 1,
+            "editorial_match_count": 1,
+            "official_oracle_match_count": 1,
+            "classification_counts": {
+                "exact": 1,
+                "editorial_attribution_only": 1,
+                "official_oracle_match_current_surface_drift": 1,
+            },
+        },
+        {
+            "amending_sfs_id": "2020:2",
+            "outcome": "replay_ok",
+            "target_count": 2,
+            "match_count": 1,
+            "genuine_content_match_count": 1,
+            "editorial_match_count": 0,
+            "official_oracle_match_count": 0,
+            "classification_counts": {"exact": 1, "content_mismatch": 1},
+        },
+        {
+            "amending_sfs_id": "2019:9",
+            "outcome": "older_base_required",
+            "error_type": "NotImplementedError",
+        },
+        {
+            "amending_sfs_id": "2019:1",
+            "outcome": "error",
+            "error_type": "ValueError",
+        },
+    ]
+
+    aggregate = aggregate_se_official_coverage(summaries)
+
+    assert aggregate["works_scanned"] == 4
+    assert aggregate["replay_ok_count"] == 2
+    assert aggregate["older_base_required_count"] == 1
+    assert aggregate["error_count"] == 1
+    assert aggregate["section_target_count"] == 5
+    assert aggregate["section_match_count"] == 4
+    # 4/5 sections "match" but only 2 are genuine content matches — the honest
+    # number must not be flattered by editorial/oracle-fallback buckets.
+    assert aggregate["genuine_content_match_count"] == 2
+    assert aggregate["editorial_only_match_count"] == 1
+    assert aggregate["official_oracle_match_count"] == 1
+    assert aggregate["section_match_rate"] == 0.8
+    assert aggregate["genuine_content_match_rate"] == 0.4
+    # Classification counts and error examples are emitted in sorted order.
+    assert list(aggregate["classification_counts"]) == sorted(
+        aggregate["classification_counts"]
+    )
+    assert aggregate["classification_counts"]["exact"] == 2
+    assert list(aggregate["error_examples"]) == ["NotImplementedError", "ValueError"]
+    # Pure aggregation: re-running yields the identical report.
+    assert aggregate_se_official_coverage(summaries) == aggregate
 
 
 def test_clean_se_pdf_text_drops_obvious_page_furniture() -> None:

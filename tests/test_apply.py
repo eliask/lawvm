@@ -93,6 +93,7 @@ from lawvm.finland.apply_subsection_ops import (
     _resolve_subsection_index_with_rebound_kind,
     _resolve_item_subsection_index,
     _resolve_subsection_index,
+    _strip_context_carried_omission_for_complete_numbered_replace,
 )
 from lawvm.finland.apply_policy import _resolve_section_path_with_fallbacks
 from lawvm.finland.apply_subsection_dispatch import (
@@ -6020,6 +6021,68 @@ class TestApplySubsectionReplace:
         assert len(pathologies) == 1
         assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
         assert pathologies[0].detail["recovery_kind"] == "omission_bracketed_single_subsection_rewrite"
+
+    def test_complete_momentti_replace_with_trailing_omission_drops_stale_item_tail(self) -> None:
+        # Regression for 2010/352 ch3/§11 (blame 2013/1205). The amendment
+        # "muutetaan 11 §:n 2 momentti seuraavasti" restates the whole moment
+        # with FEWER items (1-3) than prior law (1-6). The Finlex payload
+        # brackets the moment with editorial omissions:
+        #   [intro] [omission] 1) 2) 3) [omission]
+        # The leading + trailing omissions are section-scoping scaffolding, not
+        # a claim to preserve old items 4-6 — those must be dropped.
+        state = _make_state(
+            _body(
+                _sec(
+                    "11",
+                    _sub(
+                        "2",
+                        _intro("Kansaneläkelaitos antaa:"),
+                        _para("1", "todistus A"),
+                        _para("2", "todistus B"),
+                        _para("3", "todistus C"),
+                        _para("4", "eurooppalaisen sairaanhoitokortin"),
+                        _para("5", "rekisteröintitodistuksen"),
+                        _para("6", "entisen rajatyöntekijän todistuksen"),
+                    ),
+                )
+            )
+        )
+        sec_path = [("section", "11")]
+        sec = state.ir.children[0]
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        amend_sub = _sub(
+            "2",
+            _intro("Kansaneläkelaitos antaa:"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            _para("1", "todistus A uusi"),
+            _para("2", "todistus B uusi"),
+            _para("3", "todistus C uusi"),
+            IRNode(kind=IRNodeKind.OMISSION),
+        )
+        muutos_ir = _sec("11", amend_sub)
+        op = _op(op_type="REPLACE", target_section="11", target_paragraph=2)
+
+        result = _apply_subsection_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            _FINLEX_ORACLE,
+            "11 § 2 mom",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION)
+        item_labels = [c.label for c in new_sub.children if c.kind is IRNodeKind.PARAGRAPH]
+        assert item_labels == ["1", "2", "3"]
+        text = irnode_to_text(new_sub)
+        assert "uusi" in text
+        assert "sairaanhoitokortin" not in text
+        assert "rajatyöntekijän" not in text
 
     def test_not_applicable_for_item_op(self):
         state, sec_path, sec = self._make_sec_and_path()
@@ -15581,3 +15644,43 @@ def test_item_insert_compound_insert_reports_absent_target_when_letter_missing()
     assert [p.code for p in pathologies] == ["ITEM_TARGET_STRUCTURE_ABSENT"]
     assert pathologies[0].detail["live_has_paragraphs"] is True
     assert pathologies[0].detail["amend_has_paragraphs"] is True
+
+
+def test_strip_context_carried_omission_accepts_trailing_omission_closure() -> None:
+    # [intro] [omission] 1) 2) 3) [omission] — a complete moment restatement
+    # closed by a trailing editorial omission (no explicit wrap-up). The leading
+    # and trailing omissions are stripped, leaving intro + the explicit items.
+    payload = _sub(
+        "2",
+        _intro("Kansaneläkelaitos antaa:"),
+        IRNode(kind=IRNodeKind.OMISSION),
+        _para("1", "a"),
+        _para("2", "b"),
+        _para("3", "c"),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    rewritten = _strip_context_carried_omission_for_complete_numbered_replace(payload)
+    assert rewritten is not None
+    kinds = [c.kind for c in rewritten.children]
+    assert IRNodeKind.OMISSION not in kinds
+    assert [c.label for c in rewritten.children if c.kind is IRNodeKind.PARAGRAPH] == [
+        "1",
+        "2",
+        "3",
+    ]
+
+
+def test_strip_context_carried_omission_rejects_genuine_sparse_tail() -> None:
+    # A genuinely sparse replace targets a single high item ("29") behind a
+    # leading omission with NO trailing omission and NO wrap-up. The numbered
+    # payload does not start at 1, so it is not a complete restatement and must
+    # NOT be stripped (preserve_unstated_tail must keep the old item tail).
+    payload = _sub(
+        "1",
+        _intro("List intro"),
+        IRNode(kind=IRNodeKind.OMISSION),
+        _para("29", "new twenty-nine"),
+    )
+    assert (
+        _strip_context_carried_omission_for_complete_numbered_replace(payload) is None
+    )

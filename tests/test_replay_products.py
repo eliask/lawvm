@@ -114,6 +114,16 @@ def replay_2009_1672_finlex_oracle_with_lo_ops() -> tuple[ReplayResult, list[Leg
 
 
 @pytest.fixture(scope="module")
+def replay_2010_76_finlex_oracle_with_lo_ops() -> tuple[ReplayResult, list[LegalOperation]]:
+    lo_ops: list[LegalOperation] = []
+    replay = cast(
+        ReplayResult,
+        pinned_replay("2010/76", mode="official_consolidation", quiet=True, lo_ops_out=lo_ops),
+    )
+    return replay, lo_ops
+
+
+@pytest.fixture(scope="module")
 def replay_1997_1339_finlex_oracle_full_products() -> ReplayResult:
     return cast(
         ReplayResult,
@@ -1521,6 +1531,34 @@ def test_replay_xml_2009_1672_sparse_chapter_replace_does_not_drop_section_5(
     replay, _ = replay_2009_1672_finlex_oracle_with_lo_ops
     section = replay.materialized_state.find_section("5", "1")
     assert section is not None
+
+
+def test_replay_xml_2010_76_whole_chapter_replace_drops_omitted_section_3(
+    replay_2010_76_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
+    """Regression: a whole-chapter REPLACE must drop sections its payload omits.
+
+    Chapter 7 of 2010/76 originally had sections 1-3. 2017/411 and later 2021/674
+    each replace the whole chapter with a payload containing only sections 1 and 2.
+    An earlier merge-style apply left the base section 3 orphaned, so it surfaced
+    as an EXTRA chapter:7/section:3 against the Finlex oracle. The complete
+    whole-chapter replacement payload is authoritative: section 3 must be retired,
+    not snapshotted forward.
+    """
+    replay, lo_ops = replay_2010_76_finlex_oracle_with_lo_ops
+
+    # The materialized product (what the oracle is compared against) must retire the
+    # omitted section while keeping the sections the replacement payload contains.
+    assert replay.materialized_state.find_section("3", "7") is None
+    assert replay.materialized_state.find_section("1", "7") is not None
+    assert replay.materialized_state.find_section("2", "7") is not None
+
+    # The omitted section must be retired via a REPEAL on the timeline, not left as
+    # a stale REPLACE snapshot carrying the old base text forward.
+    section_3_path = (("chapter", "7"), ("section", "3"))
+    section_3_ops = [op for op in lo_ops if tuple(op.target.path) == section_3_path]
+    assert section_3_ops, "expected a timeline op for chapter:7/section:3"
+    assert section_3_ops[-1].action is StructuralAction.REPEAL
 
 
 def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11(

@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from typing import Any, cast
+
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
 
@@ -14,6 +17,8 @@ from lawvm.norway.sources import ingest_no_public_archives
 from lawvm.norway.verify import (
     NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED,
     _infer_no_source_signal,
+    _no_compare_child_path,
+    _no_kind_value,
     _normalize_no_compare_tree,
     _partition_primary_divergences,
     no_paths_related,
@@ -319,6 +324,25 @@ def test_infer_no_source_signal_leaves_real_two_amendment_case_unclassified() ->
     )
 
 
+def test_no_kind_value_coerces_enum_kind() -> None:
+    assert _no_kind_value(IRNodeKind.SENTENCE) == "sentence"
+
+
+def test_no_kind_value_coerces_plain_str_kind() -> None:
+    # Some parse paths that build the comparison tree assign a plain str kind
+    # rather than the IRNodeKind enum member; the compare/verify path must
+    # tolerate both (regression for the _no_kind_value str-vs-enum crash).
+    assert _no_kind_value(cast(Any, "sentence")) == "sentence"
+
+
+def test_no_kind_value_does_not_crash_in_child_path_with_str_kind() -> None:
+    # IRNode.kind is statically typed IRNodeKind, but the comparison tree can
+    # carry a plain str kind at runtime; exercise that shape end-to-end.
+    child = IRNode(kind=cast(Any, "sentence"), label="1", text="x")
+    path = _no_compare_child_path((), child)
+    assert path == (("sentence", "1"),)
+
+
 def test_no_paths_related_treats_last_item_anchor_as_touching_concrete_item() -> None:
     assert no_paths_related(
         (("section", "5"), ("subsection", "1"), ("item", "last")),
@@ -491,6 +515,39 @@ def test_normalize_no_compare_tree_flattens_sentence_only_subsection() -> None:
     assert normalized.label == "2"
     assert normalized.text == "Første punktum. Andre punktum."
     assert normalized.children == ()
+
+
+def test_normalize_no_compare_tree_takes_same_branch_for_str_kind() -> None:
+    # Parse paths can assign a plain str kind (e.g. "subsection"/"sentence")
+    # instead of the IRNodeKind enum. The compare-tree normalizer must take the
+    # same branch for the str case as for the equivalent enum case; otherwise
+    # `kind is IRNodeKind.X` silently evaluates False and the sentence-only
+    # collapse is skipped, mis-normalizing the compare tree.
+    enum_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.SENTENCE, label="1", text="Første punktum."),
+            IRNode(kind=IRNodeKind.SENTENCE, label="2", text="Andre punktum."),
+        ),
+    )
+    str_subsection = IRNode(
+        kind=cast(Any, "subsection"),
+        label="2",
+        children=(
+            IRNode(kind=cast(Any, "sentence"), label="1", text="Første punktum."),
+            IRNode(kind=cast(Any, "sentence"), label="2", text="Andre punktum."),
+        ),
+    )
+
+    enum_normalized = _normalize_no_compare_tree(enum_subsection)
+    str_normalized = _normalize_no_compare_tree(str_subsection)
+
+    # The str case must collapse its sentence children into parent text exactly
+    # like the enum case did, rather than leaving them as separate children.
+    assert _no_kind_value(str_normalized.kind) == _no_kind_value(enum_normalized.kind)
+    assert str_normalized.text == enum_normalized.text == "Første punktum. Andre punktum."
+    assert str_normalized.children == enum_normalized.children == ()
 
 
 def test_normalize_no_compare_tree_flattens_sentence_prefix_but_keeps_items() -> None:

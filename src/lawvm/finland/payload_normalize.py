@@ -813,11 +813,54 @@ def _assign_duplicate_target_slot_ops(
         state.used_subs.add(shifted_idx)
 
 
+def _assign_multi_paragraph_item_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind item-targeted ops that span several momentit to per-momentti slots.
+
+    When one amendment changes items in two or more distinct live momentit
+    (e.g. ``26 §:n 4 momentin 3 kohta ... 5 momenttiin uusi 4 ja 5 kohta``),
+    the sparse payload typically carries one subsection per amended momentti, in
+    source order. Pure item-number matching scrambles these bindings: two
+    momentit can each contain a ``3) ...`` / ``4) ...`` item, so an op for the
+    first momentti can consume the second momentti's slot (and vice versa).
+
+    Bind by source order instead: when the item-targeted ops cover exactly N
+    distinct momentit and there are exactly N still-unused payload subsections,
+    pair the momentit (ascending) with the subsections (source order) and route
+    every op for a momentti to its paired slot. This is only applied when N >= 2,
+    so single-momentti payloads keep their existing item-matched binding.
+    """
+    item_ops = [
+        op
+        for op in slot_inputs.payload_subsec_ops
+        if op.target_item and op.target_paragraph is not None and op not in state.subsec_map
+    ]
+    if not item_ops:
+        return
+    ordered_paragraphs = sorted({int(op.target_paragraph or 0) for op in item_ops})
+    if len(ordered_paragraphs) < 2:
+        return
+    free_slots = [(idx, sub) for idx, sub in enumerate(slot_inputs.amend_subs) if idx not in state.used_subs]
+    if len(free_slots) != len(ordered_paragraphs):
+        return
+    paragraph_to_slot = dict(zip(ordered_paragraphs, free_slots, strict=True))
+    for op in item_ops:
+        idx, sub = paragraph_to_slot[int(op.target_paragraph or 0)]
+        state.subsec_map.assign(op, sub)
+        state.used_subs.add(idx)
+
+
 def _assign_item_matched_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
 ) -> None:
     for op in slot_inputs.payload_subsec_ops:
+        if op in state.subsec_map:
+            # Already bound by an earlier, more specific pass (e.g. per-momentti
+            # source-order binding). Do not let item-number matching overwrite it.
+            continue
         target_tok = str(op.target_item or "")
         if not target_tok:
             continue
@@ -3138,6 +3181,7 @@ def _assign_subsection_slots(
     )
 
     _assign_duplicate_target_slot_ops(slot_inputs, state)
+    _assign_multi_paragraph_item_slot_ops(slot_inputs, state)
     _assign_item_matched_slot_ops(slot_inputs, state)
     _assign_shared_sparse_item_slot_ops(slot_inputs, state)
     _assign_dense_local_target_groups(slot_inputs, state)
