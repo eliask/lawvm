@@ -241,6 +241,54 @@ def test_extractor_returns_clean_one_to_one_replacement() -> None:
     assert "brand new body" in result.root.text
 
 
+# A schedule-indirection REPLACE ("Amend the enactments specified in Schedule 1
+# ... as set out in that schedule" delivering a whole-provision replace) resolves
+# its payload from the schedule amendment group keyed to the base act, the same
+# as the insert path.
+_SCHEDULE_REPLACE_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>9</label><heading>Consequential amendments</heading><prov.body>
+      <subprov><label></label><para>
+        <text>Amend the enactments specified in <citation jurisdiction="nz"><intref href="SCH1">Schedule 1</intref></citation> as set out in that schedule.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH1"><label>1</label><heading>Consequential amendments</heading>
+    <schedule.amendments>
+      <schedule.amendments.group2 id="G_A"><heading>Forests Act 1949 (1949 No 19)</heading>
+        <para><text>Replace <citation jurisdiction="nz"><extref href="x">section 67V</extref></citation> with:</text>
+          <amend><prov><label>67V</label><para><text>67V Replacement section about resource management.</text></para></prov></amend>
+        </para>
+      </schedule.amendments.group2>
+    </schedule.amendments>
+  </schedule>
+</act>
+"""
+
+
+def test_schedule_indirection_resolves_replacement_for_base_work() -> None:
+    node = _amending_node(_SCHEDULE_REPLACE_XML, "OP")
+    result = extract_structural_replacement(
+        node,
+        target_leaf_kind="prov",
+        target_leaf_label="67V",
+        base_work_year="1949",
+        base_work_number="19",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "67V"
+    assert "resource management" in result.root.text
+
+
+def test_schedule_indirection_replacement_without_base_work_blocks() -> None:
+    # No base-work identity: the payload cannot be keyed to a schedule group, and
+    # the operative section carries no inline amend subtree -> typed blocker.
+    node = _amending_node(_SCHEDULE_REPLACE_XML, "OP")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="67V")
+    assert isinstance(result, str)
+
+
 def test_extractor_selects_witness_child_from_one_to_many_expansion() -> None:
     # The amend carries subprov 2 AND subprov 2A. The per-witness target leaf
     # (subprov 2) selects exactly its own child; the sibling 2A belongs to its
@@ -370,6 +418,276 @@ def test_extractor_same_section_ambiguity_stays_blocked_with_provision() -> None
         node, target_leaf_kind="subprov", target_leaf_label="1", target_provision_label="16"
     )
     assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+# --- Nested-payload descendant matching. --------------------------------------
+#
+# The new/target leaf often lives INSIDE a newly-inserted Part or section in the
+# amend subtree (a new section nested in a new ``<part>``/``<subpart>``, or a new
+# subsection nested in a new section), not as a direct ``<amend>`` child. The
+# descendant lane finds it; the top-level path is consulted first so a clean
+# top-level extraction is unchanged. The >1-match ambiguity refusal still holds.
+
+# Amend payload wraps a new section 147A inside a new Part 9 (the spec example).
+_AMENDING_XML_NESTED_PART = b"""\
+<act><body><prov id="NESTPART"><prov.body><para>
+  <text>Replace the heading to Part 9 and the Part with:</text>
+  <amend>
+    <part><label>9</label><heading>New Part nine</heading>
+      <prov><label>147A</label><heading>Nested section</heading>
+        <prov.body><para><text>147A Nested section The nested body of new section 147A.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+# Amend payload wraps a new section nested inside a new SUBPART inside a new Part.
+_AMENDING_XML_NESTED_SUBPART = b"""\
+<act><body><prov id="NESTSUB"><prov.body><para>
+  <text>Replace Part 3 with:</text>
+  <amend>
+    <part><label>3</label><heading>New Part three</heading>
+      <subpart><label>1</label><heading>Subpart one</heading>
+        <prov><label>84</label><heading>Deep section</heading>
+          <prov.body><para><text>84 Deep section The deeply nested body of section 84.</text></para></prov.body></prov>
+      </subpart>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+# Amend payload wraps a new subsection nested inside a new section.
+_AMENDING_XML_NESTED_SUBPROV = b"""\
+<act><body><prov id="NESTSP"><prov.body><para>
+  <text>Replace section 20 with:</text>
+  <amend>
+    <prov><label>20</label><heading>Replacement section</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>1 first subsection.</text></para></subprov>
+        <subprov><label>2</label><para><text>2 the nested replacement subsection two.</text></para></subprov>
+      </prov.body></prov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def test_extractor_descends_into_new_part_for_nested_section() -> None:
+    # New section 147A lives inside the new Part 9 in the amend subtree, not as a
+    # direct amend child. The descendant lane pulls it out cleanly.
+    node = _amending_node(_AMENDING_XML_NESTED_PART, "NESTPART")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="147A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "prov"
+    assert result.root.label == "147A"
+    assert "nested body of new section 147A" in result.root.text
+
+
+def test_extractor_descends_through_subpart_for_nested_section() -> None:
+    # Two container levels deep (part -> subpart -> prov) still resolves.
+    node = _amending_node(_AMENDING_XML_NESTED_SUBPART, "NESTSUB")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="84")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "84"
+    assert "deeply nested body" in result.root.text
+
+
+def test_extractor_descends_into_new_section_for_nested_subsection() -> None:
+    # A new subsection nested inside a new section (prov -> subprov) resolves, and
+    # selecting the nested subprov 2 does not pull in subprov 1's text.
+    node = _amending_node(_AMENDING_XML_NESTED_SUBPROV, "NESTSP")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="2")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "2"
+    assert "nested replacement subsection two" in result.root.text
+    assert "first subsection" not in result.root.text
+
+
+def test_extractor_descent_refuses_ambiguous_nested_leaf() -> None:
+    # The SAME section label 147A appears nested under TWO different new Parts in
+    # the amend subtree. The descendant lane must treat this as a genuine ambiguity
+    # and refuse — never guess which Part's section is the target.
+    xml = b"""\
+<act><body><prov id="NESTAMB"><prov.body><para>
+  <text>Replace the Parts with:</text>
+  <amend>
+    <part><label>9</label><heading>Part nine</heading>
+      <prov><label>147A</label><heading>First</heading><prov.body><para><text>147A First nested.</text></para></prov.body></prov>
+    </part>
+    <part><label>10</label><heading>Part ten</heading>
+      <prov><label>147A</label><heading>Second</heading><prov.body><para><text>147A Second nested.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "NESTAMB")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="147A")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_extractor_prefers_top_level_over_nested_when_both_present() -> None:
+    # A top-level amend child labelled 5 AND a nested section 5 inside a new Part
+    # both exist. The top-level path is consulted first and owns the extraction, so
+    # the nested lane is not even reached — the top-level child is returned and the
+    # nested one is left to its own witness (no spurious ambiguity).
+    xml = b"""\
+<act><body><prov id="TOPVSNEST"><prov.body><para>
+  <text>Replace section 5 with, and add a Part:</text>
+  <amend>
+    <prov><label>5</label><heading>Top level</heading><prov.body><para><text>5 The top-level replacement body.</text></para></prov.body></prov>
+    <part><label>2</label><heading>Part two</heading>
+      <prov><label>5</label><heading>Nested decoy</heading><prov.body><para><text>5 A nested decoy.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "TOPVSNEST")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="5")
+    assert isinstance(result, NZStructuralReplacement)
+    assert "top-level replacement body" in result.root.text
+    assert "nested decoy" not in result.root.text
+
+
+# --- Target-leaf KIND-ALIAS matching (subprov <-> label-para). ----------------
+#
+# NZ encodes the same interchangeable lettered-paragraph leaf as ``subprov`` in
+# one place and ``label-para`` in another. The extractor matches across that
+# alias on an exact label so the payload (present, only the leaf KIND differs) is
+# no longer spuriously refused; the label still must match exactly, so a genuine
+# both-kinds-present collision stays a typed ambiguity (no false positive).
+
+# Amend payload carries the new leaf as a ``label-para`` while the target leaf is
+# addressed as a ``subprov`` (and vice versa for the reverse direction below).
+_AMENDING_XML_ALIAS_LABEL_PARA = b"""\
+<act><body><prov id="ALIASLP"><prov.body><para>
+  <text>Replace section 12(h) with:</text>
+  <amend>
+    <label-para><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></label-para>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+_AMENDING_XML_ALIAS_SUBPROV = b"""\
+<act><body><prov id="ALIASSP"><prov.body><para>
+  <text>Replace section 12(2) with:</text>
+  <amend>
+    <subprov><label>2</label><para><text>2 the brand new subsection body.</text></para></subprov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def test_extractor_matches_subprov_target_against_label_para_payload() -> None:
+    # subprov target leaf, label-para payload: the kind alias matches on label "h".
+    node = _amending_node(_AMENDING_XML_ALIAS_LABEL_PARA, "ALIASLP")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="h")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "h"
+    assert "brand new lettered paragraph" in result.root.text
+
+
+def test_extractor_matches_label_para_target_against_subprov_payload() -> None:
+    # Reverse direction: label-para target leaf, subprov payload, label "2".
+    node = _amending_node(_AMENDING_XML_ALIAS_SUBPROV, "ALIASSP")
+    result = extract_structural_replacement(node, target_leaf_kind="label-para", target_leaf_label="2")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "2"
+    assert "brand new subsection" in result.root.text
+
+
+def test_extractor_kind_alias_does_not_collapse_genuine_ambiguity() -> None:
+    # Both a subprov "a" AND a label-para "a" are present in the amend payload.
+    # With the alias relaxing the kind, both match the target leaf on label "a" —
+    # which is a genuine ambiguity that MUST stay blocked (no false positive).
+    xml = b"""\
+<act><body><prov id="ALIASAMB"><prov.body><para>
+  <text>Replace section 5(a) with:</text>
+  <amend>
+    <subprov><label>a</label><para><text>a first candidate.</text></para></subprov>
+    <label-para><label>a</label><para><text>a second candidate.</text></para></label-para>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "ALIASAMB")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="a")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_extractor_kind_alias_only_subprov_label_para_not_other_kinds() -> None:
+    # A coincidental numeric collision across structural levels (a schedule "3" in
+    # the payload, a subprov "3" target) is NOT a genuine alias and must not match.
+    xml = b"""\
+<act><body><prov id="NOTALIAS"><prov.body><para>
+  <text>Replace section 7(3) with:</text>
+  <amend>
+    <schedule><label>3</label><para><text>3 a schedule, not a subsection.</text></para></schedule>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "NOTALIAS")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="3")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
+
+
+# End-to-end: the live body encodes section 12(h) as a ``label-para`` and the
+# amend payload carries the replacement as a ``subprov`` (alias). The kernel must
+# normalize the extracted root's kind to the live-body target kind so the
+# candidate subtree AGREES with the oracle (same label/text), not a spurious
+# kind-only residual mismatch.
+_ALIAS_E2E_BEFORE = b"""\
+<act><body>
+  <prov id="DLMs12" deletion-status=""><label>12</label><heading>Section twelve</heading><prov.body>
+    <subprov id="DLMs12s1"><label>1</label><para><text>1 lead-in.</text>
+      <label-para id="DLMs12h" deletion-status=""><label>h</label><para><text>h the old lettered paragraph body.</text></para></label-para>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+_ALIAS_E2E_AFTER = b"""\
+<act><body>
+  <prov id="DLMs12" deletion-status=""><label>12</label><heading>Section twelve</heading><prov.body>
+    <subprov id="DLMs12s1"><label>1</label><para><text>1 lead-in.</text>
+      <label-para id="DLMs12h" deletion-status=""><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></label-para>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+_ALIAS_E2E_AMENDING = b"""\
+<act><body><prov id="DLM9000010"><label>10</label><heading>Amend</heading><prov.body><para>
+  <text>Replace section 12(1)(h) with:</text>
+  <amend>
+    <subprov><label>h</label><para><text>h the brand new lettered paragraph body.</text></para></subprov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def _alias_archive() -> _FakeArchive:
+    # Like _archive but with the alias before-tree (label-para target in the body)
+    # and the alias amend payload (subprov), so the kernel must align the root kind.
+    base = _archive(_ALIAS_E2E_AFTER, amending_xml=_ALIAS_E2E_AMENDING)
+    base.rows["https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"] = _ALIAS_E2E_BEFORE
+    return base
+
+
+def test_replace_kind_alias_agrees_after_root_kind_alignment() -> None:
+    # Target addressed as paragraph (label-para) h under subsection 1 of section 12;
+    # amend payload encodes it as a subprov. Extractor matches via alias; kernel
+    # aligns the root kind to the live-body label-para so the oracle AGREES.
+    row = _FakeWitnessRow(
+        row_id="nz-opw-alias",
+        target_path=(("section", "12"), ("subsection", "1"), ("paragraph", "h")),
+        amended_provision="Section 12(1)(h)",
+    )
+    report = build_dry_run_replace(_alias_archive(), work_id=_WORK_ID, surface=_FakeSurface((row,)))
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1, report.refusals
+    assert summary["dry_run_oracle_agreements"] == 1
+    proof = report.proofs[0]
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_REPLACE_AGREES_RULE_ID
+    assert proof.selected_source_path[-1] == "label-para:h"
 
 
 # --- Kernel apply + oracle classification tests. -----------------------------

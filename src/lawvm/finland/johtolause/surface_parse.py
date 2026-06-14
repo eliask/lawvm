@@ -518,6 +518,18 @@ def _sep(s: Stream) -> Optional[Token]:
         return None
     if t.cat == "COMMA":
         s.pos += 1
+        # A tag-not-delete span (provenance / citation, e.g. "sellaisena kuin
+        # se on ... (NNN/YY)") may be flanked by commas between two list items:
+        # "N momentti, [CITE], M momentti" / "N momentti, [CITE], ja M momentti".
+        # The span qualifies the preceding target and is transparent to list
+        # separation.  Absorb the whole "[sentinel] [,] [CONJ]" cluster as a
+        # single separator so the following continuation (and the rest of the
+        # list) is not dropped.  Guarded on actually having skipped a sentinel
+        # so the ordinary "COMMA CONJ" path is unchanged.
+        if (sp_t := s.peek()) and sp_t.cat in SENTINEL_CATEGORIES:
+            s.skip_sentinels()
+            if (t2 := s.peek()) and t2.cat == "COMMA":
+                s.pos += 1
         # Optional following conjunction(s). Qualifier stripping can leave
         # duplicated conjunction residue such as "ja sekä" after removing an
         # intermediate alakohta tail; treat that as one structural separator.
@@ -962,15 +974,40 @@ def _sub_ref(s: Stream) -> Optional[list[SubRef]]:
         s.pos += 1
         return [SubRef(facet=FacetKind.INTRO)]
 
-    # "edellä oleva (väli)otsikko"
-    if t and t.cat == "EDELLA":
+    # "edellä oleva (väli)otsikko" — heading-CHANGE reference (locative
+    # "edellä" + participle of "olla"), distinct from the heading-INSERT form
+    # "N §:n edelle uusi väliotsikko" (allative "edelle" + "uusi") guarded in
+    # _section_ref. The change form binds the preceding section number as a
+    # heading-amend target so the enclosing kumotaan/muutetaan list keeps going.
+    if t and t.cat == "EDELLA" and (t.text or "").lower() == "edellä":
         saved_e = s.save()
         s.pos += 1
         if (t := s.peek()) and t.lemma == "olla":
+            # "edellä oleva [luvun] otsikko" — optional LUKU genitive
+            # ("luvun otsikko" = the chapter heading preceding the section).
             s.pos += 1
+            if (t := s.peek()) and t.cat == "LUKU":
+                s.pos += 1
             if (t := s.peek()) and t.cat == "OTSIKKO":
                 s.pos += 1
                 return [SubRef(facet=FacetKind.HEADING)]
+        elif (t := s.peek()) and (t.text or "").lower() == "olevien":
+            # Plural participle: "edellä olevien lukujen otsikoiden numerointi"
+            # — a heading-renumbering reference distributed over the preceding
+            # section list. Consume the descriptive tail up to "numerointi".
+            tail_saved = s.save()
+            s.pos += 1
+            saw_otsikko = False
+            while (t := s.peek()) and t.cat in ("LUKU", "OTSIKKO", "WORD"):
+                if t.cat == "OTSIKKO" or (t.text or "").lower().startswith("otsiko"):
+                    saw_otsikko = True
+                consumed_numerointi = (t.text or "").lower().startswith("numeroin")
+                s.pos += 1
+                if consumed_numerointi:
+                    break
+            if saw_otsikko:
+                return [SubRef(facet=FacetKind.HEADING)]
+            s.restore(tail_saved)
         s.restore(saved_e)
 
     # Recursive descent coordination: handles momentti and kohta at all depths.
@@ -2051,6 +2088,65 @@ def _heading_placement_after_uusi(
     ]
 
 
+def _trailing_heading_placement_arm(
+    s: Stream,
+    *,
+    chapter: str = "",
+    part: str = "",
+) -> Optional[list[SurfaceNode]]:
+    """Parse a target-first ``<num_list> §:n edelle uusi väliotsikko`` arm.
+
+    Unlike ``_heading_placement_after_uusi`` (which parses the ``uusi``-first
+    order and only a single target), this consumes the order seen inside dense
+    coordinated insert enumerations, where the section target precedes
+    ``edelle uusi (väli)otsikko`` and may be a list or em-dash range:
+
+      ``69 b–69 e ja 69 g–69 i §:n edelle uusi väliotsikko``
+
+    One subheading is emitted per coordinated section target.  The caller is
+    responsible for having already consumed the separator (and any optional
+    ``uusi`` token) preceding this arm.  Returns ``None`` (restoring the
+    stream) when the arm does not match, so the caller can try other forms.
+    """
+    saved = s.save()
+
+    nums = _number_list(s)
+    if not nums:
+        s.restore(saved)
+        return None
+
+    t = s.peek()
+    if not (t and t.cat == "PYKALA" and t.case == "GEN"):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    t = s.peek()
+    if not (t and t.cat == "EDELLA"):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    # ``uusi`` is optional here — the caller may already have consumed it.
+    _uusi(s)
+
+    t = s.peek()
+    if not (t and t.cat == "OTSIKKO"):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    return [
+        SurfaceHeadingPlacement(
+            target_section=n + sf,
+            chapter=chapter,
+            part=part,
+            witness=_make_witness("fi.heading_edelle_otsikko_target_list", saved, s.pos),
+        )
+        for n, sf in nums
+    ]
+
+
 def _postfix_chapter_section_inserts(
     s: Stream, part: str = ""
 ) -> Optional[list[SurfaceNode]]:
@@ -2551,19 +2647,56 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                             SurfaceInsertion(kind=kind, label=n + sf, chapter="") for n, sf in all_nums
                         ]
                         # Continuation: a plain-§ insert group may be followed by
-                        # a "sekä/ja [uusi] <num> § lukuun <chap>" postfix-chapter
-                        # group ("uusi 21 a ja 21 b § sekä 35 c § 5 lukuun ...").
+                        # one or more trailing arms joined by sekä/ja:
+                        #   - "<num> § lukuun <chap>" postfix-chapter group
+                        #     ("uusi 21 a ja 21 b § sekä 35 c § 5 lukuun ...")
+                        #   - "<num_list> §:n edelle uusi väliotsikko" heading
+                        #     placement, where the target may be a list/range
+                        #     ("sekä 69 b–69 e ja 69 g–69 i §:n edelle uusi
+                        #     väliotsikko"); the multi-target form used to abort
+                        #     the whole enumeration silently (2009/886 over
+                        #     1501/1993 lost 69j/69k/69l/71 §/138 §).
+                        #   - a further "[uusi] <num_list> §" insert group after
+                        #     a heading arm ("..., lakiin uusi 69 j ja 69 k §").
                         if kind == TargetKind.SECTION and not malformed_chapter_insert:
-                            cont_saved = s.save()
-                            if _sep(s) is not None:
+                            while True:
+                                cont_saved = s.save()
+                                if _sep(s) is None:
+                                    s.restore(cont_saved)
+                                    break
+                                # Optional DOC:ILL re-anchor ("..., lakiin uusi ...").
+                                if (dt := s.peek()) and dt.cat == "DOC" and dt.case == "ILL":
+                                    s.pos += 1
                                 _uusi(s)
+                                heading_arm = _trailing_heading_placement_arm(s, part=part)
+                                if heading_arm:
+                                    insert_nodes.extend(heading_arm)
+                                    continue
                                 tail = _postfix_chapter_section_inserts(s, part=part)
                                 if tail:
                                     insert_nodes.extend(tail)
-                                else:
-                                    s.restore(cont_saved)
-                            else:
+                                    continue
+                                # A further bare "<num_list> §" insert group, but
+                                # ONLY a nominative whole-section target.  An
+                                # illative "§:ään" ("into section N, uusi M
+                                # momentti/kohta") or genitive "§:n" is a
+                                # sub-target insert and must be left for the
+                                # sub-target path, not grabbed as a section.
+                                more_nums = _number_list(s)
+                                if (
+                                    more_nums
+                                    and (pt2 := s.peek())
+                                    and pt2.cat == "PYKALA"
+                                    and pt2.case == "NOM"
+                                ):
+                                    s.pos += 1
+                                    insert_nodes.extend(
+                                        SurfaceInsertion(kind=TargetKind.SECTION, label=n + sf, chapter="")
+                                        for n, sf in more_nums
+                                    )
+                                    continue
                                 s.restore(cont_saved)
+                                break
                         return insert_nodes
                     # Extended: uusi N §:n M momentti/kohta (subsection insertion)
                     if pt is not None and pt.cat == "PYKALA" and pt.case == "GEN":

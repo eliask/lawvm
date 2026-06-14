@@ -93,6 +93,12 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "A catch-all heading insertion: a lisätään node whose sub-target is a HEADING "
         "facet stamps a generic otsikko placement."
     ),
+    "fi.heading_edelle_otsikko_target_list": (
+        "A target-first '<num_list> §:n edelle uusi väliotsikko' arm places a new "
+        "subheading before each coordinated section target, where the target list may "
+        "be an enumeration or em-dash range (e.g. '69 b-69 e ja 69 g-69 i §:n edelle "
+        "uusi väliotsikko'); one heading placement is emitted per target."
+    ),
     "fi.insertion_other": "A catch-all for a lisätään node whose insertion shape is unclassified.",
     "fi.insertion_section_ill": (
         "lisätään N §:ään uusi <sub> inserts the sub-target into section N (illative)."
@@ -223,6 +229,13 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi.text_amend_target": (
         "A section ref inside a text-amend context scopes the word/phrase substitution to "
         "that section."
+    ),
+    # --- voimaantulosäännös (transitional-provision) repeal extraction (vts.py) ---
+    "fi.repeal_vts_voimaantulo": (
+        "A repeal named in a voimaantulosäännös (transitional/entry-into-force "
+        "provision) fragment — 'N § (on) kumottu ...' / 'N luku kumotaan' — is "
+        "extracted as a whole-section or whole-chapter REPEAL op, even without a "
+        "normal operative johtolause."
     ),
     # --- compile-time flat-body section-scope recovery (frontend_compile.py) ---
     "fi_flat_reinstated_section_scope_from_base_prior_address": (

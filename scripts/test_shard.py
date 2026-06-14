@@ -74,6 +74,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_new_zealand_version_diff.py",
     ),
     "new_zealand_effects": (
+        "test_new_zealand_actual_replay.py",
+        "test_new_zealand_actual_replay_structural.py",
         "test_new_zealand_chain_replay.py",
         "test_new_zealand_chain_replay_corpus.py",
         "test_new_zealand_dry_run.py",
@@ -145,6 +147,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_clause_ast_curated.py",
         "test_clause_patterns.py",
         "test_clause_surface.py",
+        "test_coverage_audit.py",
         "test_fi_num_in_intro_recovery.py",
         "test_fi_profile_normalize.py",
         "test_fi_se_tools_regex_perf.py",
@@ -372,6 +375,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_materialization_invariants.py",
     ),
     "core_replay_timeline": (
+        "test_part_snapshot_section_retention.py",
         "test_replay_lints.py",
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
@@ -468,6 +472,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bench.py",
         "test_bench_comparable.py",
         "test_bench_curate.py",
+        "test_parse_bench.py",
         "test_corpus.py",
         "test_divergence_heuristics.py",
         "test_frontier.py",

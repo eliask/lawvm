@@ -36,6 +36,12 @@ VTS_SKIPPED_TARGET_RULE_ID = "PARSE.VTS_SKIPPED_TARGET_UNSUPPORTED"
 VTS_SOURCE_DIAGNOSTIC_RULE_ID = "PARSE.VTS_SOURCE_UNREADABLE_OR_EMPTY"
 VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID = "PARSE.VTS_PARAGRAPHIZED_REPEAL_FRAGMENT_UNPARSED"
 
+# Parse-witness provenance (diagnostic only — zero replay semantics) carried by every
+# repeal op minted from a voimaantulosäännös fragment, so the spec-discovery ledger can
+# attribute the divergence back to this transitional-provision repeal-extraction lane
+# instead of dropping it into the unattributed blind-spot bucket.
+FI_VTS_VOIMAANTULO_REPEAL_RULE_ID = "fi.repeal_vts_voimaantulo"
+
 
 @dataclass(frozen=True)
 class VtsSkippedTarget:
@@ -825,6 +831,7 @@ def extract_voimaantulo_repeals(
                     target_section=norm,
                     target_unit_kind="chapter",
                     voimaantulo_repeal=True,
+                    witness_rule_id=FI_VTS_VOIMAANTULO_REPEAL_RULE_ID,
                 )
             )
 
@@ -919,6 +926,7 @@ def extract_voimaantulo_repeals(
                         target_paragraph=addr.subsection,
                         target_item=addr.item,
                         voimaantulo_repeal=True,
+                        witness_rule_id=FI_VTS_VOIMAANTULO_REPEAL_RULE_ID,
                     )
                 )
 

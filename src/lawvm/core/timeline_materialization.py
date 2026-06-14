@@ -173,6 +173,30 @@ def _node_has_relative_address(
     return False
 
 
+def _ancestor_snapshot_carries_path(
+    parent: LegalAddress,
+    parent_depth: int,
+    active: dict[LegalAddress, Optional[IRNode]],
+) -> bool:
+    """Return whether a higher active ancestor snapshot already carries ``parent``.
+
+    ``parent_depth`` is the length of ``parent.path``. An ancestor at a strictly
+    shallower depth whose active content structurally contains ``parent``'s
+    relative path makes synthesizing an empty container at ``parent`` both
+    redundant and harmful: the empty container would override the ancestor's
+    real, fuller content during overlay. Returning True suppresses synthesis so
+    the ancestor's overlay materializes the full subtree.
+    """
+    for anc_depth in range(1, parent_depth):
+        ancestor = LegalAddress(path=parent.path[:anc_depth])
+        ancestor_content = active.get(ancestor)
+        if ancestor_content is None:
+            continue
+        if _node_has_relative_address(ancestor_content, parent.path[anc_depth:]):
+            return True
+    return False
+
+
 def _base_child_matches_active_descendant(
     child: IRNode,
     child_path: TreePath,
@@ -624,6 +648,17 @@ def materialize_body(
                 and (descendant_version.effective, descendant_version.enacted)
                 <= (parent_version.effective, parent_version.enacted)
             ):
+                continue
+            # Skip synthesis when a higher active ancestor snapshot already
+            # carries this container's full content. A part-level snapshot
+            # produced by a structural transform (e.g. a chapter-restructure
+            # amendment that re-emits the whole part) holds the intermediate
+            # chapter and all its sections; the chapter timeline entry is then
+            # superseded as redundant. Synthesizing an EMPTY chapter container
+            # here would shadow that snapshot's content and drop every section
+            # that lacks its own surviving section-level override. Let the
+            # ancestor's overlay materialize the full container instead.
+            if _ancestor_snapshot_carries_path(parent, depth, active):
                 continue
             active[parent] = IRNode(
                 kind=IRNodeKind(kind),

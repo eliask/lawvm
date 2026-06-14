@@ -849,12 +849,12 @@ def test_build_chain_replay_multi_family_transition(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         mod,
         "_extract_replacement_payload",
-        lambda _op, _arch, _cache: _struct_payload(("amend",), root_text="new body"),
+        lambda _op, _arch, _cache, **_kw: _struct_payload(("amend",), root_text="new body"),
     )
     monkeypatch.setattr(
         mod,
         "_extract_insertion_payload",
-        lambda _op, _k, _l, _arch, _cache: _struct_payload(("amend",), root_text="inserted body"),
+        lambda _op, _k, _l, _arch, _cache, **_kw: _struct_payload(("amend",), root_text="inserted body"),
     )
 
     transition = NZChainTransition(
@@ -913,7 +913,7 @@ def test_divergence_flagged_when_op_produces_wrong_content(monkeypatch: pytest.M
     monkeypatch.setattr(
         mod,
         "_extract_replacement_payload",
-        lambda _op, _arch, _cache: _struct_payload(("amend",), root_text="zzz totally wrong"),
+        lambda _op, _arch, _cache, **_kw: _struct_payload(("amend",), root_text="zzz totally wrong"),
     )
 
     transition = NZChainTransition(

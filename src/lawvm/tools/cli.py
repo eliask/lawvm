@@ -222,7 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j",
         "--jurisdiction",
         default=jurisdiction_default,
-        choices=["fi", "ee", "uk", "no", "nz"],
+        choices=["fi", "ee", "uk", "no", "nz", "us"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
     _j_subcommand_parent = argparse.ArgumentParser(add_help=False)
@@ -230,7 +230,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j",
         "--jurisdiction",
         default=argparse.SUPPRESS,
-        choices=["fi", "ee", "uk", "no", "nz"],
+        choices=["fi", "ee", "uk", "no", "nz", "us"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
 
@@ -643,8 +643,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "target-absent ops, unhandled/dropped ops, source pathologies, "
             "skipped amendments, coverage gaps, structural invariant violations, "
             "and governed ELAB findings.  Grouped by signal type then category. "
-            "Use -j uk / -j ee to route to the UK/EE harness, which harvest "
-            "replay adjudications + compile rejections instead."
+            "Use -j uk / -j ee to route to the UK/EE harness (replay "
+            "adjudications + compile rejections), or -j us for the U.S. federal "
+            "amendatory-lowering audit (oracle-independent)."
         ),
     )
     self_consistency_p.add_argument(
@@ -706,6 +707,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         dest="laws_only",
         action="store_true",
         help="[-j ee] restrict to Riigikogu laws (tyviseadus/muutmisseadus), excluding decrees",
+    )
+    # US-only option (-j us): the U.S. federal amendatory self-consistency audit
+    # sweeps the bench-window public-law delta from the committed corpus CSV.
+    self_consistency_p.add_argument(
+        "--us-corpus",
+        dest="us_corpus",
+        default="",
+        metavar="CSV",
+        help="[-j us] committed US bench corpus CSV (default: us/bench/us_bench_corpus.csv)",
     )
 
     # --- snapshot-debug ---
@@ -8117,6 +8127,50 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_replay_actual_p = nz_corpus_sub.add_parser(
+        "replay-actual",
+        help="strict actual (canonical) replay of dry-run-verified ops, fail-closed",
+        description=(
+            "Phase-4 actual replay. Consume ONLY operations the dry-run surface "
+            "already verified (a per-op mutation-boundary proof that agrees with "
+            "the archived on-or-after oracle AND preserved its neighbours), "
+            "materialize ONE transition at a time as (archived before version) + "
+            "(authorized ops) -> (candidate after version), and re-confirm the "
+            "materialized target slice against the archived on-or-after oracle. "
+            "It FAILS CLOSED: a declared transition is materialized only when "
+            "EVERY op in its change window is dry-run-verified; any unverified op "
+            "blocks the whole transition with a distinct named diagnostic and "
+            "nothing is materialized for it (never a silent skip). Only the two "
+            "safest families are promotable: direct repeal and direct "
+            "single-occurrence text substitution. The output is a separate "
+            "artifact from the official NZ XML, labeled candidate/replay/oracle; "
+            "the archived oracle is what the replay is checked against, never the "
+            "replay's payload authority. The actually-replayed transition count "
+            "is reported separately from the fail-closed-blocked candidate rows. "
+            "This is the only NZ surface where replay_claims is True."
+        ),
+    )
+    nz_replay_actual_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_actual_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_replay_actual_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "promotable families to actually replay: 'all' (default; repeal + "
+            "text_replace), or a comma-separated subset (e.g. 'repeal'). Only "
+            "repeal and text_replace are promotable; any other family is rejected."
+        ),
+    )
+    nz_replay_actual_p.add_argument(
+        "--summary-only", action="store_true", help="omit per-transition/per-refusal detail from JSON"
+    )
+    nz_replay_actual_p.add_argument("--json", action="store_true", help="emit actual-replay report JSON")
     nz_replay_chain_p = nz_corpus_sub.add_parser(
         "replay-chain",
         help="experimental amendment-chain replay (all families) on one evolving tree vs the archived oracle",
@@ -10285,6 +10339,43 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit JSON",
     )
 
+    # --- parse-bench ---
+    parse_bench_p = sub.add_parser(
+        "parse-bench",
+        help="corpus-wide grammar-coverage benchmark for the johtolause parser",
+        description=(
+            "Parse-only grammar benchmark (the grammar counterpart to `bench`). "
+            "Iterates the FULL statute corpus (~59k, no replay/oracle needed) and "
+            "reports the fraction of amendment johtolauses the parser consumes "
+            "with no interior/trailing silent drop, plus the ranked inventory of "
+            "remaining uncovered-span shapes (the grammar worklist). Grammar-"
+            "sensitive where the replay bench is blind."
+        ),
+    )
+    parse_bench_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N statutes (default: no cap = full corpus)",
+    )
+    parse_bench_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: 8)",
+    )
+    parse_bench_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="show the top N uncovered-span shapes and worst statutes (default: 20)",
+    )
+    parse_bench_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with coverage, tier counts, top shapes, and dropped statutes",
+    )
+
     # --- rebuild-indexes ---
     ri_p = sub.add_parser(
         "rebuild-indexes",
@@ -11281,6 +11372,65 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     us_spec_ledger_p.add_argument(
         "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
     )
+
+    us_evidence_pack_p = sub.add_parser(
+        "us-evidence-pack",
+        help="export U.S. federal dry-run residuals as auditable evidence-pack JSONL",
+        description=(
+            "Project the U.S. federal dry-run kernel's per-section residuals "
+            "(lawvm_wrong / oracle_suspect / missing_source / sunset_reversion), "
+            "agreements, and typed refusals into one report-query-compatible "
+            "evidence-row stream. Each residual becomes a sampleable row carrying "
+            "the offending text, disposition, rule_id, the pinned USC section "
+            "address, and the window. Read-only over the U.S. farchive; makes no "
+            "replay claim. Thin shim over lawvm.us_federal.evidence_pack."
+        ),
+    )
+    us_evidence_pack_p.add_argument(
+        "--bench",
+        action="store_true",
+        help="export the full bench corpus (every evaluated window) instead of one window",
+    )
+    us_evidence_pack_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default=None,
+        help="bench corpus CSV for --bench (default: us/bench/us_bench_corpus.csv)",
+    )
+    us_evidence_pack_p.add_argument(
+        "--title",
+        type=int,
+        default=None,
+        help="USC title number (single-window mode), or scope --bench to one title",
+    )
+    us_evidence_pack_p.add_argument(
+        "--before", type=int, default=None, dest="before_year",
+        help="before-edition year (YYYY) for single-window mode",
+    )
+    us_evidence_pack_p.add_argument(
+        "--after", type=int, default=None, dest="after_year",
+        help="after-edition year (YYYY) for single-window mode",
+    )
+    us_evidence_pack_p.add_argument(
+        "--row-kind", default="", help="filter rows by kind (operation|finding)"
+    )
+    us_evidence_pack_p.add_argument(
+        "--disposition",
+        default="",
+        help="filter rows by disposition (lawvm_wrong|oracle_suspect|missing_source|sunset_reversion|agreement)",
+    )
+    us_evidence_pack_p.add_argument(
+        "--rule-id", default="", help="filter rows by witness rule id"
+    )
+    us_evidence_pack_p.add_argument(
+        "--limit", type=int, default=40, metavar="N", help="rows to include in JSON output"
+    )
+    us_evidence_pack_p.add_argument(
+        "--output-jsonl", metavar="PATH", help="write the evidence rows as report-query JSONL"
+    )
+    us_evidence_pack_p.add_argument(
+        "--json", action="store_true", help="emit the evidence-pack report JSON instead of a summary line"
+    )
     # --- END us_federal jurisdiction tooling ---
 
     # --- recipes ---
@@ -11693,6 +11843,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "replay-actual":
+            from lawvm.new_zealand.actual_replay import main as nz_corpus_replay_actual_main
+
+            nz_corpus_replay_actual_main(args)
         elif args.nz_corpus_command == "replay-chain":
             from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
 
@@ -12541,6 +12695,11 @@ def _main_impl() -> None:
 
         parse_johto_main(args)
 
+    elif args.command == "parse-bench":
+        from lawvm.tools.parse_bench import main as parse_bench_main
+
+        parse_bench_main(args)
+
     elif args.command == "fi-source-label-audit":
         from lawvm.tools.fi_source_label_audit import main as fi_source_label_audit_main
 
@@ -12858,6 +13017,11 @@ def _main_impl() -> None:
             with open(_json_out, "w", encoding="utf-8") as _fh:
                 json.dump(ledger_to_dict(_ledger), _fh, ensure_ascii=False, indent=2)
             print(f"wrote {_json_out}", file=sys.stderr)
+
+    elif args.command == "us-evidence-pack":
+        from lawvm.us_federal.evidence_pack import main as us_evidence_pack_main
+
+        us_evidence_pack_main(args)
     # --- END us_federal jurisdiction dispatch ---
 
     elif args.command is None:

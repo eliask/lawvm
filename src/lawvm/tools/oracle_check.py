@@ -355,6 +355,58 @@ def _extract_attachment_info_ir(body: "IRNode") -> tuple[int, list[str]]:
     return len(titles), titles
 
 
+def _attachment_body_text_oracle(root: etree._Element) -> str:
+    """Return cleaned annex (liite) body text from an oracle AKN tree.
+
+    Prefers the outer ``attachments`` container — its text dump already covers
+    every nested ``attachment`` — and only falls back to individual
+    ``attachment`` hcontainers when no outer container exists.  Using both would
+    double-count the body, which is the source of the spurious ``lev≈0.667``
+    (text-vs-text-doubled) signal seen when each side is collected naively.
+    """
+    outer = cast(
+        list[etree._Element],
+        root.xpath('.//*[local-name()="hcontainer" and @name="attachments"]'),
+    )
+    if outer:
+        return _clean("".join(_el_text(el) for el in outer))
+    inner = cast(
+        list[etree._Element],
+        root.xpath('.//*[local-name()="hcontainer" and @name="attachment"]'),
+    )
+    return _clean("".join(_el_text(el) for el in inner))
+
+
+def _attachment_body_text_ir(body: "IRNode") -> str:
+    """Return cleaned annex (liite) body text from an IRNode tree.
+
+    Walks to the first ``attachments``/``attachment`` hcontainer on each branch
+    and returns its full descendant text without recursing further, so a nested
+    ``attachment`` inside an outer ``attachments`` container is counted once.
+    """
+
+    def _node_text(n: IRNode) -> str:
+        parts = [n.text] if n.text else []
+        for c in n.children:
+            parts.append(_node_text(c))
+        return "".join(parts)
+
+    fragments: list[str] = []
+
+    def _collect(node: IRNode) -> None:
+        if node.kind == IRNodeKind.HCONTAINER and node.attrs.get("name") in (
+            "attachments",
+            "attachment",
+        ):
+            fragments.append(_node_text(node))
+            return
+        for child in node.children:
+            _collect(child)
+
+    _collect(body)
+    return _clean("".join(fragments))
+
+
 def _ir_node_has_repeal_placeholder(node: Any) -> bool:
     """Return True if this IR node OR any descendant carries lawvm_repeal_placeholder=1.
 
@@ -1308,7 +1360,12 @@ def _classify_statute(
                     contingent_effective_sources=contingent_set,
                 )
 
-        # Attachment / liite comparison — just count; show indicator if mismatch
+        # Attachment / liite comparison. Count mismatch surfaces as LIITE_DIFF.
+        # When counts agree the annex BODY text is still compared, because a
+        # replay can carry the right number of annexes yet drop/truncate/mangle
+        # their bodies (typically liite tables and forms).  Annex bodies are
+        # stripped from every bench metric, so this body-level signal is only
+        # visible through the classifier — hence the explicit LIITE_BODY_DIFF.
         r_att_count, r_att_titles = _extract_attachment_info_ir(master.materialized_state.ir)
         o_att_count, o_att_titles = _extract_attachment_info(oracle_root)
         if r_att_count != o_att_count:
@@ -1323,6 +1380,29 @@ def _classify_statute(
                 "blame_title": "",
                 "oracle_version": "",
             })
+        elif o_att_count > 0:
+            r_body = _attachment_body_text_ir(master.materialized_state.ir)
+            o_body = _attachment_body_text_oracle(oracle_root)
+            if r_body != o_body:
+                lev = Levenshtein.ratio(r_body, o_body)
+                # Tolerate near-identical bodies (whitespace/punctuation residue
+                # the cleaner cannot fully equalise) — only surface material drift.
+                if lev < 0.97:
+                    delta = len(o_body) - len(r_body)
+                    r_desc = f"Liite-teksti {len(r_body)} merkkiä"
+                    o_desc = (
+                        f"Liite-teksti {len(o_body)} merkkiä "
+                        f"(ero {delta:+d}, samankaltaisuus {lev:.2f})"
+                    )
+                    section_results.append({
+                        "section": "liitteet",
+                        "diagnosis": "LIITE_BODY_DIFF",
+                        "replay_text": r_desc,
+                        "oracle_text": o_desc,
+                        "blame_source": "",
+                        "blame_title": "",
+                        "oracle_version": "",
+                    })
 
         return ClassifyResult(
             sid=sid,
