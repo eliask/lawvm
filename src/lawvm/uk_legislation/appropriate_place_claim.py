@@ -46,10 +46,24 @@ The owned position is one of two witnessed forms:
 - an explicit ALPHABETICAL-ORDER INDEX (``alphabetical_index``) into the target
   list — the slot the entry sorts into. The validator never infers either; it
   only accepts an owned one and checks it is real and not incompatibly occupied.
+
+The owned CONTAINER is one of two shapes (``container_kind``):
+
+- the default list/entry container — the entry is an ITEM child of the claimed
+  list; or
+- a ``table_row`` container — the affected provision is a ``SECTION → TABLE →
+  ROW*`` index/definition table (e.g. ``ukpga/2008/17`` s.276 "Index of defined
+  terms"). The gate then emits the SAME table-row INSERT op the production
+  table-row lowering lane produces (a ROW payload of cells targeting the
+  containing provision, carrying a ``table_row_insert_selector:`` ``column_entry``
+  note), so the existing table-row apply path materializes the row AFTER the owned
+  preceding-sibling cell — or BLOCKS if that anchor is absent/ambiguous, never
+  over-applying. The container kind is owned, not inferred from the live IR.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
@@ -119,6 +133,24 @@ POSITION_ALPHABETICAL_INDEX = "alphabetical_index"
 _POSITION_KINDS = frozenset(
     {POSITION_PRECEDING_SIBLING, POSITION_FOLLOWING_SIBLING, POSITION_ALPHABETICAL_INDEX}
 )
+
+# Container kinds. The default ("") is a list/entry container, where the entry is
+# inserted as a child ITEM under the claimed list at the resolved anchor. The
+# ``table_row`` container is the index/definition TABLE shape (SECTION → TABLE →
+# ROW*): the entry is a table ROW of cells inserted after the resolved preceding
+# ROW. The container kind is OWNED, not inferred — the reviewer who verified the
+# position also asserts the live container is a table. It is only honoured with a
+# named PRECEDING sibling (the apply-time table-row selector anchors on the cell
+# text of the row the new row follows), so the gate never has to derive the
+# preceding cell from a live sibling order it was not handed.
+CONTAINER_LIST_ENTRY = ""
+CONTAINER_TABLE_ROW = "table_row"
+_CONTAINER_KINDS = frozenset({CONTAINER_LIST_ENTRY, CONTAINER_TABLE_ROW})
+
+# Provenance-note prefix the apply path's table-row selector decoder reads. Kept
+# local (rather than importing the lowering module) so the gate has no dependency
+# on the table-lowering lane; the string is the shared on-op contract.
+_NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
 
 # A source-named anchor token. Its PRESENCE in the source snippet means the
 # insert is NOT actually anchor-free and lowering can already place it, so a
@@ -223,6 +255,8 @@ class AppropriatePlaceInsertClaim:
     preceding_sibling_eid: str = ""
     following_sibling_eid: str = ""
     alphabetical_index: int = -1
+    container_kind: str = CONTAINER_LIST_ENTRY
+    relating_column_index: int = 1
     claimant: str = ""
     status: str = "proposed"
 
@@ -240,6 +274,8 @@ class AppropriatePlaceInsertClaim:
             "preceding_sibling_eid": self.preceding_sibling_eid,
             "following_sibling_eid": self.following_sibling_eid,
             "alphabetical_index": self.alphabetical_index,
+            "container_kind": self.container_kind,
+            "relating_column_index": self.relating_column_index,
             "claimant": self.claimant,
             "status": self.status,
         }
@@ -286,6 +322,11 @@ def claim_from_dict(row: Any) -> AppropriatePlaceInsertClaim:
         alphabetical_index = int(raw_index) if raw_index is not None else -1
     except (TypeError, ValueError):
         alphabetical_index = -1
+    raw_column = get("relating_column_index")
+    try:
+        relating_column_index = int(raw_column) if raw_column is not None else 1
+    except (TypeError, ValueError):
+        relating_column_index = 1
     return AppropriatePlaceInsertClaim(
         claim_id=str(get("claim_id") or ""),
         claim_kind=str(get("claim_kind") or ""),
@@ -299,6 +340,8 @@ def claim_from_dict(row: Any) -> AppropriatePlaceInsertClaim:
         preceding_sibling_eid=str(get("preceding_sibling_eid") or ""),
         following_sibling_eid=str(get("following_sibling_eid") or ""),
         alphabetical_index=alphabetical_index,
+        container_kind=str(get("container_kind") or CONTAINER_LIST_ENTRY),
+        relating_column_index=relating_column_index,
         claimant=str(get("claimant") or ""),
         status=str(get("status") or "proposed"),
     )
@@ -478,6 +521,25 @@ def _schema_error(claim: AppropriatePlaceInsertClaim) -> str:
         return "missing source_snippet"
     if not (claim.entry_label or claim.entry_text):
         return "missing entry payload (entry_label/entry_text both empty)"
+    if claim.container_kind not in _CONTAINER_KINDS:
+        return f"unsupported container_kind {claim.container_kind!r}"
+    if claim.container_kind == CONTAINER_TABLE_ROW:
+        # A table ROW carries two cells; both must be owned so the payload is a
+        # real row, never a one-cell fragment the apply path would reject anyway.
+        if not (claim.entry_label and claim.entry_text):
+            return (
+                "table_row container requires both entry_label and entry_text "
+                "(the two row cells)"
+            )
+        # The apply-time table-row selector anchors on the cell text of the row
+        # the new row follows, so a table_row claim must own a PRECEDING sibling.
+        if claim.position_kind != POSITION_PRECEDING_SIBLING:
+            return (
+                "table_row container requires the preceding_sibling position "
+                "(the cell text of the row the new row follows)"
+            )
+        if claim.relating_column_index < 1:
+            return "table_row container requires a positive relating_column_index"
     if claim.position_kind == POSITION_PRECEDING_SIBLING:
         if not claim.preceding_sibling_eid:
             return "preceding_sibling position requires preceding_sibling_eid"
@@ -574,6 +636,92 @@ def _claim_entry_payload(claim: AppropriatePlaceInsertClaim) -> IRNode:
     )
 
 
+def _claim_table_row_payload(claim: AppropriatePlaceInsertClaim) -> IRNode:
+    """Build the ROW payload (two CELL cells) for a table-row appropriate-place insert.
+
+    The shape mirrors what the normal UK table-row lowering lane emits for a
+    single-row insert: a ``ROW`` of ``CELL`` cells, tagged with the
+    ``uk_table_entry_label_insert_payload`` source rule the apply path recognizes.
+    Cell texts are the OWNED entry label (column 1) and entry text (column 2).
+    """
+    return IRNode(
+        kind=IRNodeKind.ROW,
+        children=(
+            IRNode(kind=IRNodeKind.CELL, text=claim.entry_label),
+            IRNode(kind=IRNodeKind.CELL, text=claim.entry_text),
+        ),
+        attrs={"source_rule_id": "uk_table_entry_label_insert_payload"},
+    )
+
+
+def _table_row_insert_operation(
+    claim: AppropriatePlaceInsertClaim,
+    *,
+    sequence: int,
+    source: Optional[OperationSource],
+) -> LegalOperation:
+    """Emit a table-row INSERT op the existing apply path materializes.
+
+    The op targets the CONTAINING provision (``target_list_eid``) — not a
+    ``list/entry`` path — and carries a ``table_row_insert_selector:`` provenance
+    note. The selector reuses the production ``column_entry`` mode: insert AFTER
+    the unique row whose ``relating_column_index`` cell text is the owned
+    preceding sibling. ``apply_ops`` resolves the descendant table, finds the
+    anchor row, and splices the ROW payload — or BLOCKS (``entry_not_found`` /
+    ``table_not_unique``) if the anchor is absent or ambiguous, so a stale or
+    wrong anchor never over-applies.
+    """
+    container_kind, container_label = _table_container_path_part(claim)
+    target = LegalAddress(path=((container_kind, container_label),))
+    selector = {
+        "selector_mode": "column_entry",
+        "column_index": claim.relating_column_index,
+        "relating_text": claim.preceding_sibling_eid,
+        "direction": "after",
+        "source_payload_mode": "single_table_row",
+    }
+    note = f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector, ensure_ascii=False)}"
+    return LegalOperation(
+        op_id=f"{claim.effect_id}_appropriate_place_{claim.claim_id}",
+        sequence=sequence,
+        action=StructuralAction.INSERT,
+        target=target,
+        payload=_claim_table_row_payload(claim),
+        anchor=None,
+        source=source,
+        provenance_tags=(
+            "uk_manual_claim",
+            APPROPRIATE_PLACE_POSITION_PROOF_SEMANTIC,
+            f"position_kind:{claim.position_kind}",
+            f"container_kind:{CONTAINER_TABLE_ROW}",
+            note,
+        ),
+        witness_rule_id=APPROPRIATE_PLACE_INSERT_EMITTED_RULE_ID,
+    )
+
+
+def _table_container_path_part(claim: AppropriatePlaceInsertClaim) -> tuple[str, str]:
+    """Address (kind, label) for the table-row target path.
+
+    The apply-time table-row resolver finds the table by walking the named
+    containing provision's children, addressed by its structural kind and LABEL
+    (a section path component is the bare section number, e.g. ``section-276`` ⇒
+    ``("section", "276")``). We default to ``section``, which covers the
+    witnessed index/definition tables, and fall back to the raw eid as the label
+    when no recognised prefix is present.
+    """
+    eid = claim.target_list_eid
+    for prefix, kind in (
+        ("section-", "section"),
+        ("schedule-", "schedule"),
+        ("paragraph-", "paragraph"),
+        ("subsection-", "subsection"),
+    ):
+        if eid.startswith(prefix):
+            return kind, eid[len(prefix) :]
+    return "section", eid
+
+
 def _resolved_anchor_eid(
     claim: AppropriatePlaceInsertClaim,
     target_list: Optional[Sequence[str]],
@@ -629,6 +777,28 @@ def gate_appropriate_place_insert(
                 "appropriate-place claim is not validated; the insert is withheld "
                 "and the effect stays on the manual frontier"
             ),
+        )
+
+    # Table-row container: the affected provision is a SECTION → TABLE → ROW*
+    # shape (an index / definition table), so a list/entry op cannot materialize.
+    # Emit the table-row-shaped op the production table-row apply path consumes,
+    # anchored AFTER the owned preceding-sibling cell. The schema guarantees a
+    # named preceding sibling for this container, so the anchor is fully owned.
+    if claim.container_kind == CONTAINER_TABLE_ROW:
+        operation = _table_row_insert_operation(
+            claim, sequence=sequence, source=source
+        )
+        return AppropriatePlaceInsertGateResult(
+            claim_id=claim.claim_id,
+            effect_id=claim.effect_id,
+            emitted=True,
+            rule_id=APPROPRIATE_PLACE_INSERT_EMITTED_RULE_ID,
+            reason=(
+                "validated appropriate-place claim emits a table-row insert after "
+                "the claimed preceding-sibling row in the target table"
+            ),
+            anchor_eid=claim.preceding_sibling_eid,
+            operation=operation,
         )
 
     anchor_eid = _resolved_anchor_eid(claim, target_list)

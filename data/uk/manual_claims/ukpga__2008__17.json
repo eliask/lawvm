@@ -1,0 +1,22 @@
+{
+  "claims": [
+    {
+      "affected_target": "s. 276",
+      "claim_id": "ap-2008-17-s276-regsoc",
+      "claim_kind": "appropriate_place_index_entry",
+      "claimant": "stream-uk-appropriate-place-table-row:reviewed-2026-06-15",
+      "container_kind": "table_row",
+      "effect_id": "key-006071d4bbac345161c87a6c2756e2c6",
+      "entry_label": "Registered society",
+      "entry_text": "Section 275",
+      "position_kind": "preceding_sibling",
+      "preceding_sibling_eid": "Registered provider (of social housing)",
+      "relating_column_index": 1,
+      "source_snippet": "in the appropriate place insert— Registered society Section 275",
+      "status": "proposed",
+      "statute_id": "ukpga/2008/17",
+      "target_list_eid": "section-276"
+    }
+  ],
+  "statute_id": "ukpga/2008/17"
+}
