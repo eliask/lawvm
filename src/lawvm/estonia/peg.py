@@ -120,6 +120,80 @@ def _to_structural_action(action: str) -> StructuralAction:
     # Fallback for unknown actions - should not happen in normal operation
     return StructuralAction.META
 
+
+# ---------------------------------------------------------------------------
+# Generic structural-op witness families
+# ---------------------------------------------------------------------------
+# The EE grafter mints a large body of GENERIC structural ops directly from an
+# amending act's content (replace/insert/repeal/text_replace at the address the
+# act supplies).  These are not driven by a parser-recovery heuristic, so the
+# per-site construction code historically left `witness_rule_id=None`, making
+# them ledger blind-spots.  These family ids name the transformation FAMILY so
+# the spec-discovery ledger can attribute every op.  They are ADDITIVE METADATA
+# ONLY: applied solely where `witness_rule_id` is otherwise empty, never
+# overwriting a parser-rule id, and never changing op identity/payload/order.
+_EE_STRUCTURAL_REPLACE_FROM_AMENDING_ACT_RULE = "ee_structural_replace_from_amending_act"
+_EE_STRUCTURAL_INSERT_FROM_AMENDING_ACT_RULE = "ee_structural_insert_from_amending_act"
+_EE_STRUCTURAL_REPEAL_FROM_AMENDING_ACT_RULE = "ee_structural_repeal_from_amending_act"
+_EE_STRUCTURAL_TEXT_REPLACE_FROM_AMENDING_ACT_RULE = "ee_structural_text_replace_from_amending_act"
+_EE_STRUCTURAL_TEXT_REPEAL_FROM_AMENDING_ACT_RULE = "ee_structural_text_repeal_from_amending_act"
+_EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE = "ee_structural_heading_replace_from_amending_act"
+
+# Map each generic action family to its witness rule-id.  META and RENUMBER are
+# intentionally absent: META ops are non-body/out-of-band and RENUMBER ops are
+# already tagged at their (lineage-bearing) construction sites, so leaving them
+# untouched keeps this pass conservatively additive.
+_EE_STRUCTURAL_FAMILY_WITNESS: dict[StructuralAction, str] = {
+    StructuralAction.REPLACE: _EE_STRUCTURAL_REPLACE_FROM_AMENDING_ACT_RULE,
+    StructuralAction.INSERT: _EE_STRUCTURAL_INSERT_FROM_AMENDING_ACT_RULE,
+    StructuralAction.REPEAL: _EE_STRUCTURAL_REPEAL_FROM_AMENDING_ACT_RULE,
+    StructuralAction.TEXT_REPLACE: _EE_STRUCTURAL_TEXT_REPLACE_FROM_AMENDING_ACT_RULE,
+    StructuralAction.TEXT_REPEAL: _EE_STRUCTURAL_TEXT_REPEAL_FROM_AMENDING_ACT_RULE,
+    StructuralAction.HEADING_REPLACE: _EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE,
+}
+
+
+def _structural_family_witness_rule_id(op: LegalOperation) -> Optional[str]:
+    """Return the generic-family witness rule-id for `op`, or None.
+
+    Used to back-fill `witness_rule_id` on generic structural ops minted
+    directly from an amending act's content that lack a more specific
+    parser-rule id.  Heading-target replace/text_replace ops are attributed to
+    the heading family so title edits are not conflated with body edits.
+    """
+    if op.target is not None and op.target.special is FacetKind.HEADING and op.action in {
+        StructuralAction.REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    }:
+        return _EE_STRUCTURAL_HEADING_REPLACE_FROM_AMENDING_ACT_RULE
+    return _EE_STRUCTURAL_FAMILY_WITNESS.get(op.action)
+
+
+def _attribute_generic_structural_ops(ops: List[LegalOperation]) -> List[LegalOperation]:
+    """Back-fill family `witness_rule_id` on otherwise-unattributed generic ops.
+
+    ADDITIVE METADATA ONLY: an op already carrying a `witness_rule_id` (e.g. a
+    parser-rule op) is returned untouched; only ops with an empty id and a
+    recognised structural action family get one assigned.  Nothing else about
+    the op (id, action, target, payload, order) changes, so replay output is
+    byte-identical apart from the populated field.  Idempotent — safe to apply
+    on recursive/nested op streams.
+    """
+    changed = False
+    out: List[LegalOperation] = []
+    for op in ops:
+        if op.witness_rule_id:
+            out.append(op)
+            continue
+        family = _structural_family_witness_rule_id(op)
+        if family is None:
+            out.append(op)
+            continue
+        out.append(replace(op, witness_rule_id=family))
+        changed = True
+    return out if changed else ops
+
+
 # ---------------------------------------------------------------------------
 # Target reference extraction
 # ---------------------------------------------------------------------------
@@ -3934,6 +4008,12 @@ def extract_ee_ops(
     are targeted (e.g. "paragrahvi 12 täiendatakse lõigetega 4 ja 5").
 
     Callers iterate op texts and call this function per item.
+
+    Generic structural ops minted here may carry `witness_rule_id=None`; the
+    transformation-family back-fill (:func:`_attribute_generic_structural_ops`)
+    is applied at the END of the replay pipeline, AFTER the target-resolution
+    and grafter post-passes have had their chance to assign a more specific
+    parser-rule id, so it never shadows those.
     """
     ops: List[LegalOperation] = []
     seq = seq_start
