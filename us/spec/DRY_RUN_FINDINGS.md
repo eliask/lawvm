@@ -56,6 +56,67 @@ material temporary/sunset mechanics that require LawVM's temporal/expiry model
 lowering. The dry-run's `missing_source` was correct at the amendment layer and
 correctly refused to invent an amendment.
 
+## Sunset/temporal (F2 resolution)
+
+The temporal layer (`src/lawvm/us_federal/sunset.py`, wired into `dry_run.py`)
+now distinguishes a sunset reversion from a still-un-lowered amendment. For each
+oracle-changed section the kernel did NOT claim (an otherwise-`missing_source`
+gap), the detector consults the after-edition's editorial notes and the prior
+editions before settling on `missing_source`, and reclassifies the disposition
+to **`sunset_reversion`** (a new typed disposition) when there is evidence —
+never a guess, never a repair-to-oracle, `replay_authorized=False` throughout.
+
+**Mechanism.** The USC annual edition carries a section's temporal mechanics in
+its editorial notes (`note-head`/`note-body`), which the statutory comparison
+surface excludes. `source_tree.py` now also extracts those note blocks (new
+`UscSection.notes` + `iter_section_notes(...)`) **without** changing the
+statutory-text surface. The detector models the expiring provision with the
+shared core temporal types — a `ProvisionVersion(variant_kind="temporary",
+expires=<sunset date>)` reverting to a `ProvisionVersion(variant_kind=
+"permanent")` — not a bespoke model. A reversion is asserted only with evidence:
+
+- **(a) prior-edition text match** — the after-text equals an EARLIER permanent
+  edition's text (the permanent form the section reverts to); and/or
+- **(b) sunset note** — a temporal note ("Effective Date of YYYY Amendment",
+  "Termination Date", reversion language, or a "Prior to amendment, text read as
+  follows: …" quote matching the after-text) whose computed sunset date falls
+  inside the edition window. The SBRA re-extension form "effective on the date
+  that is N years after MONTH DD, YYYY" is parsed to its ISO sunset date.
+
+Channel (b) requires both an in-window sunset date AND a reversion anchor
+(reversion language or a substantial quoted-prior-text match) — a bare effective
+date with no reversion semantics is an ordinary amendment, not a sunset, and is
+emitted as a typed `us_sunset_temporal_note_present_but_reversion_unproven`
+finding (self-evidencing, carrying the offending note), never a reversion claim.
+
+**§109 / §1182 result (2023→2024 window, run from the canonical archive with the
+2018/2022 prior editions loaded):**
+- Oracle changed-section set: {§109, §507, §1182} (unchanged).
+- §109 → `sunset_reversion`. Witness: sunset date **2024-06-21** (PL 117-151
+  §2(i)(1)(A) is "effective on the date that is 2 years after June 21, 2022"),
+  AND the 2024 §109 text reverts **exactly** to the **2018** edition's permanent
+  text (channel a). The temporary version (`expires=2024-06-21`) and the prior
+  permanent version are both modelled.
+- §1182 → `sunset_reversion`. Witness: the same sunset date **2024-06-21**
+  (PL 117-151 §2(i)(1)(B)), AND the Amendments note's quoted prior text "The term
+  'debtor' means a small business debtor." matches the 2024 §1182 text
+  (channel b; §1182 was added by SBRA in 2019, so no earlier full-section
+  edition matches — the quoted-text channel carries it).
+- `missing_source` for this window is now **empty**; the two reversions are
+  surfaced under `sunset_reversion_sections` in the north-star and as
+  `temporal_mismatch`-family residuals in the agreement surface. §507 is
+  unaffected (it stays the F1 `oracle_suspect` claimed section).
+
+**Honest scope.** This is **detection + classification using the editions and
+their notes as witnesses**. The prior permanent edition IS the materialized
+reversion witness; the detector does not rebuild the reverted text from a
+temporary overlay's expiry. **Next step:** full temporal-replay materialization —
+seed the temporary `ProvisionVersion` from the SBRA amendment ops, drive its
+expiry through the core timeline at the sunset date, and materialize the reverted
+permanent version, so the reversion is *produced* by the temporal layer rather
+than *recognized* against the prior edition. The effective dates here are the
+editions' Jan-1 anchors; day-precision commencement is part of that next step.
+
 ## Richer window (2018→2020) — the multi-law textual-amendment test
 
 before = USC **2018** Title 11 (2018 Main Edition, current through Jan 14 2019);
@@ -185,9 +246,12 @@ incompleteness, never repaired. Pinned by `test_insert_after_classifies_and_assi
    (multiply-amended sections with un-lowered sibling ops: §547 `(j)`, §101
    redesignations) and the F3 footnote / heading-inlining classes — the NEXT
    lowering levers for more agreements.
-2. US temporal/sunset modeling (F2) — wire temporary-overlay + expiry so the
-   §109/§1182-class reversions are produced by the temporal layer, and the
-   dry-run can distinguish `missing_source` (un-lowered amendment) from
-   `sunset_reversion` (expired temporary provision).
+2. US temporal/sunset modeling (F2) — DONE at the detection+classification layer:
+   the dry-run distinguishes `missing_source` (un-lowered amendment) from
+   `sunset_reversion` (expired temporary provision), with §109/§1182 reclassified
+   on the 2023→2024 window using the prior editions + sunset notes as witnesses
+   (see the "Sunset/temporal (F2 resolution)" section). The remaining lever is
+   full temporal-replay materialization — produce the reverted text from a
+   temporary-overlay expiry rather than recognize it against the prior edition.
 3. Insert-after editorial spacing (F1) — decide whether to declare a named OLRC
    normalization or keep as `oracle_suspect`.

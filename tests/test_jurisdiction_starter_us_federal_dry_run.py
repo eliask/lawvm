@@ -308,11 +308,19 @@ def test_real_title11_pl118_42_window_507d_stays_oracle_suspect_courtesy_space()
     assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert "(a)(8)excluding subparagraph (F)" in row.materialized_text
     assert "(a)(8) excluding subparagraph (F)" in row.oracle_text
-    # Sections 109 and 1182 are honest missing-source gaps (not lowered here).
+    # Sections 109 and 1182 are NOT missing-source gaps: the F2 temporal layer
+    # reclassifies them as sunset reversions (the SBRA debt-limit increase
+    # sunset on June 21, 2024). The note-based channel (b) fires here even without
+    # prior editions being loaded, so missing_source is empty.
     ns = report.north_star()
     assert ns["oracle_changed_section_count"] == 3
     assert ns["sections_materialized_in_agreement"] == 0
-    assert set(ns["missing_source_sections"]) == {"11:109", "11:1182"}
+    assert set(ns["missing_source_sections"]) == set()
+    assert set(ns["sunset_reversion_sections"]) == {"11:109", "11:1182"}
+    rev_by_section = {c.section: c for c in report.sunset_reversions}
+    assert set(rev_by_section) == {"109", "1182"}
+    assert rev_by_section["109"].witness.sunset_date == "2024-06-21"
+    assert rev_by_section["1182"].witness.sunset_date == "2024-06-21"
     # The gate stays closed.
     assert report.replay_authorized is False
 

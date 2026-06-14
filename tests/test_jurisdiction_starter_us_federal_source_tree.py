@@ -12,6 +12,7 @@ import pytest
 
 from lawvm.core.ir import LegalAddress
 from lawvm.us_federal.source_tree import (
+    iter_section_notes,
     parse_usc_title_document,
     split_statutory_subsections,
     summarize_indent_classes,
@@ -162,3 +163,47 @@ def test_import_usc_skips_unrecognized_member(tmp_path: Path) -> None:
     assert report.total_imported == 0
     assert report.total_skipped == 1
     assert report.skipped_entries[0]["rule_id"] == "us_usc_import_unrecognized_member"
+
+
+_NOTES_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:99 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 99-SYNTHETIC!@!CHAPTER 1!@!Sec. 10 -->
+<h3 class="section-head">&sect;10. Section with temporal notes</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">The applicable debt limit is $250,000.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 99&ndash;1.)</p>
+<!-- field-end:sourcecredit -->
+<!-- field-start:notes -->
+<h3 class="note-head">Amendments</h3>
+<p class="note-body">2022 &mdash; Pub. L. 117&ndash;151 amended this section to read as it read on the day before June 21, 2022.</p>
+<h3 class="note-head">Effective Date of 2022 Amendment</h3>
+<p class="note-body">the amendment is effective on the date that is 2 years after June 21, 2022.</p>
+<!-- field-end:notes -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_section_notes_extracted_without_polluting_statutory_text() -> None:
+    doc = parse_usc_title_document(_NOTES_HTM, title=99, year="2024")
+    section = doc.section_by_number("10")
+    assert section is not None
+    # The statutory comparison surface is the statute body only; note text must
+    # NOT leak into it.
+    assert section.statutory_text == "The applicable debt limit is $250,000."
+    assert "June 21, 2022" not in section.statutory_text
+    # The note blocks are exposed as (head, bodies) pairs in document order.
+    notes = list(iter_section_notes(section))
+    heads = [n.head for n in notes]
+    assert heads == ["Amendments", "Effective Date of 2022 Amendment"]
+    assert "to read as it read on the day before" in notes[0].bodies[0]
+    assert "2 years after June 21, 2022" in notes[1].text

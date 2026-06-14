@@ -66,6 +66,13 @@ from lawvm.us_federal.source_tree import (
     UscSourceDocument,
     parse_usc_title_document,
 )
+from lawvm.us_federal.sunset import (
+    DISPOSITION_SUNSET_REVERSION,
+    US_SUNSET_REVERSION_RULE_ID,
+    SunsetClassification,
+    SunsetFinding,
+    classify_sunset_reversion,
+)
 
 # --- Stable rule-id vocabulary (agreement / residual / refusal). --------------
 
@@ -106,6 +113,10 @@ US_DRY_RUN_REFUSED_NO_TEXT_PATCH_RULE_ID = "us_dry_run_refused_text_op_missing_t
 DISPOSITION_LAWVM_WRONG = "lawvm_wrong"
 DISPOSITION_ORACLE_SUSPECT = "oracle_suspect"
 DISPOSITION_MISSING_SOURCE = "missing_source"
+# A changed section the amendment layer would call missing_source, but whose real
+# mechanism is the expiry of a temporary provision reverting to the prior
+# permanent form (F2). Carries a temporal witness; never repaired to the oracle.
+# (``DISPOSITION_SUNSET_REVERSION`` is imported from :mod:`sunset`.)
 
 # Mutation-boundary proof / agreement-surface identity constants.
 _BOUNDARY_SURFACE = "us_dry_run_section_changed_set"
@@ -286,7 +297,15 @@ class USDryRunReport:
     oracle_changed_sections: tuple[str, ...]
     claimed_sections: tuple[str, ...]
     boundary_proof: MutationBoundaryProof
+    # F2: temporal sunset reclassification of otherwise-missing_source sections.
+    # ``sunset_reversions`` maps a section_key ("11:109") to its temporal witness;
+    # ``sunset_findings`` carries ambiguous temporal residuals (no reversion claim).
+    sunset_reversions: tuple[SunsetClassification, ...] = ()
+    sunset_findings: tuple[SunsetFinding, ...] = ()
     replay_authorized: bool = False
+
+    def sunset_reversion_section_keys(self) -> frozenset[str]:
+        return frozenset(f"{self.title}:{c.section}" for c in self.sunset_reversions)
 
     # --- agreement / residual partitions -------------------------------------
 
@@ -310,7 +329,13 @@ class USDryRunReport:
         # toward coverage (an agreement on an unchanged section is not progress).
         changed = set(self.oracle_changed_sections)
         numer = len({s for s in self.agreeing_sections() if s in changed})
-        missing = tuple(sorted(changed - set(self.claimed_sections)))
+        # A sunset reversion (F2) is an EXPLAINED change (the temporal layer owns
+        # it), so it is not a source-footing gap — exclude it from missing_source.
+        sunset_keys = self.sunset_reversion_section_keys()
+        missing = tuple(
+            sorted((changed - set(self.claimed_sections)) - sunset_keys)
+        )
+        sunset = tuple(sorted(changed & sunset_keys))
         return {
             "oracle_changed_section_count": denom,
             "sections_materialized_in_agreement": numer,
@@ -318,6 +343,8 @@ class USDryRunReport:
             "claimed_section_count": len(self.claimed_sections),
             "missing_source_sections": list(missing),
             "missing_source_section_count": len(missing),
+            "sunset_reversion_sections": list(sunset),
+            "sunset_reversion_section_count": len(sunset),
         }
 
     def agreement_surface(self) -> dict[str, Any]:
@@ -370,10 +397,47 @@ class USDryRunReport:
                         },
                     )
                 )
-        # The honest lowering gap: oracle changed a section we never claimed.
+        # The honest lowering gap: oracle changed a section we never claimed —
+        # UNLESS the temporal layer reclassifies it as a sunset reversion (F2).
         claimed = set(self.claimed_sections)
+        sunset_keys = self.sunset_reversion_section_keys()
+        sunset_by_key = {
+            f"{self.title}:{c.section}": c for c in self.sunset_reversions
+        }
         for section_key in self.oracle_changed_sections:
             if section_key in claimed:
+                continue
+            if section_key in sunset_keys:
+                # F2: the change is the expiry of a temporary provision reverting
+                # to the prior permanent form, not a missing amendment. Carry the
+                # temporal witness; never repair to the oracle, replay stays off.
+                witness = sunset_by_key[section_key].witness
+                residuals.append(
+                    AgreementResidual(
+                        residual_id=f"us:{self.title}:{section_key}:sunset_reversion",
+                        jurisdiction="us",
+                        agreement_surface=_AGREEMENT_SURFACE,
+                        family="temporal_mismatch",
+                        status="residual",
+                        owner_phase=_OWNER_PHASE,
+                        rule_id=US_SUNSET_REVERSION_RULE_ID,
+                        source_artifact_id=f"{self.title}:{section_key}",
+                        replay_count=0,
+                        oracle_count=1,
+                        safe_default="classify_sunset_reversion_without_authorizing_temporal_replay",
+                        forbidden_shortcuts=(
+                            "sunset_reversion_as_replay_authorization",
+                            "oracle_after_text_as_source_truth",
+                        ),
+                        detail={
+                            "section_key": section_key,
+                            "disposition": DISPOSITION_SUNSET_REVERSION,
+                            "sunset_date": witness.sunset_date,
+                            "reverts_to_edition_year": witness.reverts_to_edition_year,
+                            "note_head": witness.note_head,
+                        },
+                    )
+                )
                 continue
             residuals.append(
                 AgreementResidual(
@@ -430,6 +494,11 @@ class USDryRunReport:
             "section_residuals": len(residual),
             "residual_disposition_counts": _counts(r.disposition for r in residual),
             "refusal_rule_counts": _counts(r.rule_id for r in self.refusals),
+            "sunset_reversion_count": len(self.sunset_reversions),
+            "sunset_reversion_sections": [
+                f"{self.title}:{c.section}" for c in self.sunset_reversions
+            ],
+            "sunset_finding_count": len(self.sunset_findings),
             "north_star": self.north_star(),
             "boundary_status": self.boundary_proof.status,
             # Dry-run gate: replay stays blocked here.
@@ -455,6 +524,8 @@ class USDryRunReport:
         payload["refusals"] = [refusal.to_jsonable() for refusal in self.refusals]
         payload["mutation_boundary_proof"] = self.boundary_proof.to_dict()
         payload["agreement_surface"] = self.agreement_surface()
+        payload["sunset_reversions"] = [c.to_jsonable() for c in self.sunset_reversions]
+        payload["sunset_findings"] = [f.to_jsonable() for f in self.sunset_findings]
         return payload
 
 
@@ -465,6 +536,8 @@ def _residual_family(disposition: str) -> AgreementResidualFamily:
         return "oracle_editorial_pathology"
     if disposition == DISPOSITION_MISSING_SOURCE:
         return "source_footing_gap"
+    if disposition == DISPOSITION_SUNSET_REVERSION:
+        return "temporal_mismatch"
     return "unknown"
 
 
@@ -593,15 +666,28 @@ def build_us_dry_run(
     before_year: str = "",
     after_year: str = "",
     enacted: str = "",
+    prior_edition_htms: Mapping[str, bytes] | None = None,
 ) -> USDryRunReport:
     """Build the section-level dry-run report for one (before, after, PL) window.
 
     ``plaw_blobs`` maps a statute id (e.g. ``"PL 118-42"``) to its USLM XML bytes.
     Only ops whose resolved target is under ``title`` are materialized; off-title
     ops are typed-refused (never materialized into the wrong corpus).
+
+    ``prior_edition_htms`` maps a year string to an EARLIER USC edition's title
+    htm (years at or before ``before_year``). These editions are the prior-
+    permanent reversion targets for the F2 sunset/temporal layer (channel a): a
+    changed section the amendment layer would call ``missing_source`` is consulted
+    against :mod:`lawvm.us_federal.sunset`, and reclassified ``sunset_reversion``
+    when the after-text matches an earlier edition and/or a sunset note dates the
+    expiry inside the window. No prior editions => channel (a) is unavailable, but
+    the note-based channel (b) still fires.
     """
     before_doc = parse_usc_title_document(before_htm, title=title, year=before_year)
     after_doc = parse_usc_title_document(after_htm, title=title, year=after_year)
+    prior_docs: dict[str, UscSourceDocument] = {}
+    for year, htm in (prior_edition_htms or {}).items():
+        prior_docs[year] = parse_usc_title_document(htm, title=title, year=year)
     before_text_by_section = {s.section: s.statutory_text for s in before_doc.sections}
     after_text_by_section = {s.section: s.statutory_text for s in after_doc.sections}
 
@@ -790,6 +876,23 @@ def build_us_dry_run(
             )
 
     claimed_tuple = tuple(sorted(claimed_sections, key=_section_sort_key))
+
+    # F2: for each oracle-changed section the kernel did NOT claim (it would be a
+    # missing_source gap), consult the temporal/sunset detector before settling on
+    # missing_source. A proven reversion reclassifies to sunset_reversion with a
+    # temporal witness; an ambiguous temporal note becomes a typed finding (still
+    # missing_source). The detector never repairs to the oracle.
+    sunset_reversions, sunset_findings = _detect_sunsets(
+        title=title,
+        before_year=before_year,
+        after_year=after_year,
+        before_doc=before_doc,
+        after_doc=after_doc,
+        prior_docs=prior_docs,
+        oracle_changed=oracle_changed,
+        claimed=set(claimed_tuple),
+    )
+
     boundary = _build_boundary_proof(
         title=title,
         oracle_changed=oracle_changed,
@@ -806,7 +909,56 @@ def build_us_dry_run(
         oracle_changed_sections=oracle_changed,
         claimed_sections=claimed_tuple,
         boundary_proof=boundary,
+        sunset_reversions=sunset_reversions,
+        sunset_findings=sunset_findings,
     )
+
+
+def _detect_sunsets(
+    *,
+    title: int,
+    before_year: str,
+    after_year: str,
+    before_doc: UscSourceDocument,
+    after_doc: UscSourceDocument,
+    prior_docs: Mapping[str, UscSourceDocument],
+    oracle_changed: tuple[str, ...],
+    claimed: set[str],
+) -> tuple[tuple[SunsetClassification, ...], tuple[SunsetFinding, ...]]:
+    """Run the sunset detector over the unclaimed oracle-changed sections."""
+    before_text_by_section = {s.section: s.statutory_text for s in before_doc.sections}
+    after_by_section = {s.section: s for s in after_doc.sections}
+
+    reversions: list[SunsetClassification] = []
+    findings: list[SunsetFinding] = []
+    for section_key in oracle_changed:
+        if section_key in claimed:
+            continue
+        _t, _, section = section_key.partition(":")
+        after_section = after_by_section.get(section)
+        if after_section is None:
+            # The section vanished from the after edition: not a text reversion.
+            continue
+        prior_texts: dict[str, str] = {}
+        for year, doc in prior_docs.items():
+            ps = doc.section_by_number(section)
+            if ps is not None:
+                prior_texts[year] = ps.statutory_text
+        result = classify_sunset_reversion(
+            title=title,
+            section=section,
+            before_year=before_year,
+            after_year=after_year,
+            before_text=before_text_by_section.get(section, ""),
+            after_text=after_section.statutory_text,
+            after_section=after_section,
+            prior_edition_texts=prior_texts,
+        )
+        if result.classification is not None:
+            reversions.append(result.classification)
+        elif result.finding is not None:
+            findings.append(result.finding)
+    return tuple(reversions), tuple(findings)
 
 
 def _build_boundary_proof(
@@ -897,6 +1049,7 @@ def build_us_dry_run_from_archive(
     after_year: int,
     plaw_locators: Mapping[str, str],
     enacted: str = "",
+    prior_edition_years: tuple[int, ...] = (),
 ) -> USDryRunReport:
     """Assemble and run the dry-run for one window directly from the archive.
 
@@ -904,6 +1057,13 @@ def build_us_dry_run_from_archive(
     ``us://plaw/...`` locator. Every requested source (both editions and each PL)
     must be present; a missing source raises :class:`USDryRunWindowError` rather
     than running a silently-partial window.
+
+    ``prior_edition_years`` are earlier USC edition years (at or before
+    ``before_year``) loaded as prior-permanent reversion targets for the F2 sunset
+    layer (channel a). Years not present in the archive are skipped silently — they
+    only strengthen channel (a); the note-based channel (b) does not depend on
+    them. Required window sources (the before/after editions and the PLs) still
+    raise loudly when absent.
     """
     before = read_usc_annual(archive, before_year, title)
     if before is None:
@@ -928,6 +1088,14 @@ def build_us_dry_run_from_archive(
             )
         plaw_blobs[statute_id] = blob
 
+    prior_edition_htms: dict[str, bytes] = {}
+    for year in prior_edition_years:
+        if year > before_year:
+            continue
+        prior = read_usc_annual(archive, year, title)
+        if prior is not None:
+            prior_edition_htms[str(year)] = prior
+
     return build_us_dry_run(
         before_htm=before,
         after_htm=after,
@@ -936,4 +1104,5 @@ def build_us_dry_run_from_archive(
         before_year=str(before_year),
         after_year=str(after_year),
         enacted=enacted,
+        prior_edition_htms=prior_edition_htms,
     )
