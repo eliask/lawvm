@@ -377,6 +377,16 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         frontier_status="source_chain_frontier",
         required_claim_kind="fi.v1.SOURCE_CHAIN_RESOLUTION",
     ),
+    "SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED": FinlandSourcePathologyProofRule(
+        code="SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED",
+        lane="source_pathology",
+        owner_phase="source_chain_elaboration",
+        strict_disposition="record",
+        quirks_disposition="record",
+        frontier_family="fi_same_effective_container_repeal_shadowed",
+        frontier_status="source_chain_frontier",
+        required_claim_kind="fi.v1.SOURCE_CHAIN_RESOLUTION",
+    ),
     "RECODIFICATION_SOURCE_CHAIN_GAP": FinlandSourcePathologyProofRule(
         code="RECODIFICATION_SOURCE_CHAIN_GAP",
         lane="source_pathology",
