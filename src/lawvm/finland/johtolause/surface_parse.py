@@ -518,6 +518,18 @@ def _sep(s: Stream) -> Optional[Token]:
         return None
     if t.cat == "COMMA":
         s.pos += 1
+        # A tag-not-delete span (provenance / citation, e.g. "sellaisena kuin
+        # se on ... (NNN/YY)") may be flanked by commas between two list items:
+        # "N momentti, [CITE], M momentti" / "N momentti, [CITE], ja M momentti".
+        # The span qualifies the preceding target and is transparent to list
+        # separation.  Absorb the whole "[sentinel] [,] [CONJ]" cluster as a
+        # single separator so the following continuation (and the rest of the
+        # list) is not dropped.  Guarded on actually having skipped a sentinel
+        # so the ordinary "COMMA CONJ" path is unchanged.
+        if (sp_t := s.peek()) and sp_t.cat in SENTINEL_CATEGORIES:
+            s.skip_sentinels()
+            if (t2 := s.peek()) and t2.cat == "COMMA":
+                s.pos += 1
         # Optional following conjunction(s). Qualifier stripping can leave
         # duplicated conjunction residue such as "ja sekä" after removing an
         # intermediate alakohta tail; treat that as one structural separator.
