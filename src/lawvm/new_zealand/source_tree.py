@@ -474,24 +474,85 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
             texts.append(child.tail)
 
 
+# Amend-subtree section disambiguation. --------------------------------------
+#
+# A single amending PROVISION (the history-note href resolves to one whole
+# section of the amending act) typically carries SEVERAL operative ``<amend>``
+# subtrees, one per instruction ("Replace section 81(1) with: …", "Replace
+# section 88(1) to (4) with: …", "Replace section 91(2) with: …"). Each amend
+# subtree lives in a ``<para>``/``<text>`` whose leading citation names the
+# target SECTION it operates on. When two instructions touch sub-provisions with
+# the SAME label in DIFFERENT sections (section 81(1) and section 84(1) both carry
+# a subprov ``1``), a leaf-only match across the whole amending node is ambiguous.
+# The witness, however, knows its target section (the top-level ``prov`` segment
+# of its address). Filtering the candidate amend subtrees to the one whose cited
+# section matches the witness's section is EXACT disambiguation — the citation
+# extref text is authoritative, not a guess. When no leading citation parses (or
+# the witness has no section context), the extractor falls back to the
+# section-agnostic leaf match, so behaviour is unchanged where disambiguation is
+# neither possible nor needed.
+
+# Leading instruction-citation prefixes that introduce a target label. Matched
+# case-insensitively against the cited target text ("section 88(1) to (4)").
+_AMEND_INSTRUCTION_SECTION_RE = re.compile(
+    r"^\s*(?:new\s+)?"
+    r"(?:sections?|ss?|clauses?|cls?|schedules?|sch|parts?|regulations?|regs?|rules?|articles?|arts?)\s+"
+    r"([0-9]+[A-Za-z]*)",
+    re.IGNORECASE,
+)
+
+
+def _amend_subtree_section_label(amend_element: etree._Element) -> str | None:
+    """Top-level target label of the instruction that introduces ``amend_element``.
+
+    Walks up from the ``<amend>`` to the nearest enclosing instruction context and
+    reads the leading ``<text>`` citation ("Replace section 88(1) to (4) with:")
+    that precedes the amend subtree, returning the cited top-level provision label
+    ("88"). Returns ``None`` when no preceding citation with a parseable section
+    label is found — the caller then falls back to leaf-only matching (no guess).
+    """
+
+    cursor: etree._Element | None = amend_element
+    while cursor is not None:
+        parent = cursor.getparent()
+        if parent is None:
+            break
+        for child in parent:
+            if child is cursor:
+                break
+            if not isinstance(child.tag, str) or _localname(child) != "text":
+                continue
+            cited = _amend_instruction_target(child)
+            if not cited:
+                continue
+            match = _AMEND_INSTRUCTION_SECTION_RE.match(cited)
+            if match:
+                return _normalize_text(match.group(1))
+        cursor = parent
+    return None
+
+
 # Structural-replacement (whole-provision substitute) extraction. ------------
 #
 # A structural ``replaced``/``substituted`` instruction in an amending act reads
 # "section N is repealed and the following ... substituted:" / "Replace section N
 # with:" followed by a typed ``<amend>`` subtree carrying the NEW provision body.
 # Unlike ``<amend.in>`` inline text, the new content is one (or more) structural
-# child nodes. This extractor reads the ``<amend>`` subtree whose SINGLE top-level
-# structural child matches the target leaf (kind, label) and parses it into an
-# ``NZSourceNode`` replacement subtree — the exact same node model the live body
-# uses — so the dry-run REPLACE kernel can substitute it for the resolved target.
+# child nodes. This extractor reads the ``<amend>`` structural child whose kind +
+# label match the target leaf and parses it into an ``NZSourceNode`` replacement
+# subtree — the exact same node model the live body uses — so the dry-run REPLACE
+# kernel can substitute it for the resolved target.
 #
-# It is deliberately conservative: it only returns a clean one-to-one
-# replacement (exactly one ``<amend>`` subtree in the amending node whose single
-# top child matches the target leaf). Zero matches, more than one match, an
-# ``<amend>`` with several top children (a one-to-many "substitute the following
-# subsections" expansion), or a label/kind mismatch are all typed blockers — the
-# extractor never guesses which child is the replacement or flattens a
-# multi-child expansion into one node.
+# A one-to-many "substitute the following subsections/sections" expansion is
+# accepted: the amend subtree carries several structural children (e.g. subprov
+# 2, 3, 4) but each affected child is its OWN upstream history-note witness with
+# its own ``amended-provision`` label, so the per-witness target leaf keys
+# exactly one of them. Selecting that single child is a clean per-witness
+# extraction, NOT a flatten — the sibling children are replaced/inserted by their
+# own witnesses. The extractor stays conservative: zero matching children, or
+# more than one child matching the SAME leaf (genuine ambiguity), or an empty
+# extraction, are all typed blockers. It never guesses which child is the
+# replacement.
 
 # Typed blocker reasons for structural-replacement extraction. Each is a fact
 # about why the amending payload is not a clean one-to-one replacement; none is a
@@ -499,7 +560,6 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE = "structural_replace_no_amend_subtree_in_amending_node"
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD = "structural_replace_no_amend_child_matches_target_leaf"
 NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH = "structural_replace_multiple_amend_children_match_target_leaf"
-NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION = "structural_replace_amend_subtree_is_one_to_many_expansion"
 NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT = "structural_replace_extracted_replacement_is_empty"
 NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE = "structural_replace_target_leaf_kind_or_label_unusable"
 
@@ -529,6 +589,7 @@ def extract_structural_replacement(
     *,
     target_leaf_kind: str,
     target_leaf_label: str,
+    target_provision_label: str | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -536,17 +597,25 @@ def extract_structural_replacement(
     history-note ``amending-provision`` href. ``target_leaf_kind`` /
     ``target_leaf_label`` describe the live-body node the instruction replaces
     (e.g. ``prov``/``41`` for "section 41", ``subprov``/``4`` for "section
-    28(4)").
+    28(4)"). ``target_provision_label`` is the witness's top-level section label
+    ("88" for "section 88(4)"); when given it disambiguates across the several
+    ``<amend>`` subtrees an amending section carries (one per instruction) by the
+    cited section, so a sub-provision label shared by two instructions in
+    different sections is no longer ambiguous.
 
-    Returns an :class:`NZStructuralReplacement` when EXACTLY ONE ``<amend>``
-    subtree in the amending node carries EXACTLY ONE top-level structural child
-    whose kind and label match the target leaf; otherwise returns a typed
-    blocker reason string (never a guess, never a flatten).
+    Returns an :class:`NZStructuralReplacement` when EXACTLY ONE structural child
+    across the (optionally section-filtered) ``<amend>`` subtree(s) matches the
+    target leaf's kind+label — whether the amend carries one child or a one-to-many
+    expansion whose other children belong to sibling witnesses. Otherwise returns
+    a typed blocker reason string (never a guess, never a flatten). More than one
+    child matching the SAME leaf, even after section disambiguation, is genuine
+    ambiguity and stays blocked.
     """
 
     if not target_leaf_kind or not target_leaf_label:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE
     normalized_label = _normalize_text(target_leaf_label)
+    normalized_provision = _normalize_text(target_provision_label) if target_provision_label else ""
 
     amend_subtrees = [
         element
@@ -556,32 +625,36 @@ def extract_structural_replacement(
     if not amend_subtrees:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE
 
-    matches: list[etree._Element] = []
-    saw_multi_child_with_matching_leaf = False
-    for amend in amend_subtrees:
-        top_children = [
-            child
-            for child in amend
-            if isinstance(child.tag, str) and _localname(child) in _STRUCTURAL_TAGS
+    # Select the single ``<amend>`` structural child whose kind+label match the
+    # witness's target leaf. A one-to-many expansion ("repealing section 81, and
+    # substituting the following sections: 81 81AA 81AB 81AC" / "substitute the
+    # following subsections: (2) (3) (4)") is already decomposed UPSTREAM into one
+    # history-note witness per affected child — each replaced child carries its own
+    # ``amended-provision`` reference with its own label. So a multi-child amend is
+    # NOT a flatten for this witness: the per-witness target leaf keys exactly one
+    # child, and the sibling children belong to OTHER witnesses (their own replace
+    # or, for newly-added labels, insert ops). We therefore match at the child
+    # level uniformly — exactly one matching child (in a single- OR multi-child
+    # amend) is a clean extraction; more than one child matching the SAME leaf is
+    # genuine ambiguity and stays blocked; no matching child stays blocked.
+    matches = _replacement_leaf_matches(amend_subtrees, target_leaf_kind, normalized_label)
+
+    if len(matches) > 1 and normalized_provision:
+        # The same sub-provision label is matched in more than one amend subtree
+        # (different sections amended by the same amending section). Restrict to
+        # the amend subtree(s) whose cited section equals the witness's section —
+        # exact disambiguation by the instruction citation, never a guess.
+        section_scoped = [
+            amend
+            for amend in amend_subtrees
+            if _amend_subtree_section_label(amend) == normalized_provision
         ]
-        if not top_children:
-            continue
-        leaf_matches = [
-            child for child in top_children if _amend_child_matches_leaf(child, target_leaf_kind, normalized_label)
-        ]
-        if not leaf_matches:
-            continue
-        if len(top_children) > 1:
-            # A one-to-many expansion ("substitute the following subsections:"):
-            # the target leaf maps to several new nodes. That is not a one-to-one
-            # replacement and is left blocked for a later expansion kernel.
-            saw_multi_child_with_matching_leaf = True
-            continue
-        matches.append(top_children[0])
+        if section_scoped:
+            scoped_matches = _replacement_leaf_matches(section_scoped, target_leaf_kind, normalized_label)
+            if scoped_matches:
+                matches = scoped_matches
 
     if not matches:
-        if saw_multi_child_with_matching_leaf:
-            return NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
@@ -610,6 +683,70 @@ def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, norm
     else:
         child_label = _direct_child_text(child, "label")
     return _normalize_text(child_label) == normalized_label
+
+
+def _replacement_leaf_matches(
+    amend_subtrees: list[etree._Element],
+    target_leaf_kind: str,
+    normalized_label: str,
+) -> list[etree._Element]:
+    """Top-level ``<amend>`` structural children matching the target leaf.
+
+    Scans the supplied amend subtrees and returns every top-level structural
+    child whose kind+label match the witness's target leaf. A single match across
+    all subtrees is a clean extraction; more than one is ambiguous; none is
+    blocked. The caller may pass a section-scoped subset of amend subtrees for
+    disambiguation.
+    """
+
+    matches: list[etree._Element] = []
+    for amend in amend_subtrees:
+        for child in amend:
+            if not isinstance(child.tag, str):
+                continue
+            if _localname(child) not in _STRUCTURAL_TAGS:
+                continue
+            if _amend_child_matches_leaf(child, target_leaf_kind, normalized_label):
+                matches.append(child)
+    return matches
+
+
+def _insertion_leaf_matches(
+    amend_subtrees: list[etree._Element],
+    inserted_leaf_kind: str,
+    normalized_label: str,
+) -> list[etree._Element]:
+    """``<amend>`` structural nodes matching the inserted leaf's kind+label.
+
+    For a ``def-para`` insert the new definition is frequently wrapped in an
+    intermediate ``<para>`` ("insert, in their appropriate alphabetical order,
+    the following definitions:") inside ``<amend>`` rather than being a direct
+    amend child; the defined term is globally unique within an interpretation
+    provision, so a descendant search keyed on the term is safe. Every other kind
+    is matched as a direct top-level structural child. The caller may pass a
+    section-scoped subset of amend subtrees for disambiguation.
+    """
+
+    matches: list[etree._Element] = []
+    if inserted_leaf_kind == "def-para":
+        for amend in amend_subtrees:
+            for descendant in amend.iter():
+                if not isinstance(descendant.tag, str):
+                    continue
+                if _localname(descendant) != "def-para":
+                    continue
+                if _amend_child_matches_leaf(descendant, inserted_leaf_kind, normalized_label):
+                    matches.append(descendant)
+        return matches
+    for amend in amend_subtrees:
+        for child in amend:
+            if not isinstance(child.tag, str):
+                continue
+            if _localname(child) not in _STRUCTURAL_TAGS:
+                continue
+            if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
+                matches.append(child)
+    return matches
 
 
 # Inserted-node (whole-provision INSERT) payload extraction. -------------------
@@ -656,6 +793,7 @@ def extract_structural_insertion(
     *,
     inserted_leaf_kind: str,
     inserted_leaf_label: str,
+    target_provision_label: str | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -663,18 +801,25 @@ def extract_structural_insertion(
     history-note ``amending-provision`` href. ``inserted_leaf_kind`` /
     ``inserted_leaf_label`` describe the NEW node the instruction inserts (e.g.
     ``prov``/``18A`` for "section 18A", ``part``/``5A`` for "Part 5A").
+    ``target_provision_label`` is the witness's enclosing section label for a
+    NESTED insert ("12" for a new "section 12(4A)"); when given it disambiguates
+    across the several ``<amend>`` subtrees an amending section carries by the
+    cited section, so a sub-provision label shared by two instructions in
+    different sections is no longer ambiguous.
 
     Returns an :class:`NZStructuralReplacement` (reused as the new-node subtree
     carrier — ``root`` is the new node, ``descendants`` its nested structural
-    nodes) when EXACTLY ONE ``<amend>`` child across the amending node matches the
-    inserted leaf's kind+label; otherwise a typed blocker reason string. A
-    multi-child ``<amend>`` subtree is allowed: the per-witness label selects the
-    single inserted node, so this is a clean one-node extraction, never a flatten.
+    nodes) when EXACTLY ONE ``<amend>`` child across the (optionally section-
+    filtered) amending node matches the inserted leaf's kind+label; otherwise a
+    typed blocker reason string. A multi-child ``<amend>`` subtree is allowed: the
+    per-witness label selects the single inserted node, so this is a clean
+    one-node extraction, never a flatten.
     """
 
     if not inserted_leaf_kind or not inserted_leaf_label:
         return NZ_STRUCTURAL_INSERT_BLOCKED_LEAF_UNUSABLE
     normalized_label = _normalize_text(inserted_leaf_label)
+    normalized_provision = _normalize_text(target_provision_label) if target_provision_label else ""
 
     # A schedule-indirection amending provision does not carry the inserted node
     # in its ``<amend>`` subtree (the content lives in schedule tables); its own
@@ -693,32 +838,22 @@ def extract_structural_insertion(
     if not amend_subtrees:
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE
 
-    matches: list[etree._Element] = []
-    if inserted_leaf_kind == "def-para":
-        # A new definition is frequently wrapped in an intermediate ``<para>``
-        # ("insert, in their appropriate alphabetical order, the following
-        # definitions:") inside ``<amend>`` rather than being a direct amend
-        # child. The defined term is globally unique within an interpretation
-        # provision, so a descendant search keyed on the term is safe: a single
-        # ``def-para`` whose first def-term matches is the inserted node; more
-        # than one match is genuinely ambiguous (refused below).
-        for amend in amend_subtrees:
-            for descendant in amend.iter():
-                if not isinstance(descendant.tag, str):
-                    continue
-                if _localname(descendant) != "def-para":
-                    continue
-                if _amend_child_matches_leaf(descendant, inserted_leaf_kind, normalized_label):
-                    matches.append(descendant)
-    else:
-        for amend in amend_subtrees:
-            for child in amend:
-                if not isinstance(child.tag, str):
-                    continue
-                if _localname(child) not in _STRUCTURAL_TAGS:
-                    continue
-                if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
-                    matches.append(child)
+    matches = _insertion_leaf_matches(amend_subtrees, inserted_leaf_kind, normalized_label)
+
+    if len(matches) > 1 and normalized_provision:
+        # The same inserted-node label is matched in more than one amend subtree
+        # (different sections amended by the same amending section). Restrict to
+        # the amend subtree(s) whose cited section equals the witness's enclosing
+        # section — exact disambiguation by the instruction citation.
+        section_scoped = [
+            amend
+            for amend in amend_subtrees
+            if _amend_subtree_section_label(amend) == normalized_provision
+        ]
+        if section_scoped:
+            scoped_matches = _insertion_leaf_matches(section_scoped, inserted_leaf_kind, normalized_label)
+            if scoped_matches:
+                matches = scoped_matches
 
     if not matches:
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
