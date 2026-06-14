@@ -229,6 +229,9 @@ _FI_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
     "UNKNOWN": "lawvm_wrong",
     "REPLAY_EXTRA": "lawvm_wrong",
     "REPLAY_MISSING": "lawvm_wrong",
+    # An oracle whole-section repeal stub whose repealing statute is reachable and
+    # in-window, yet replay kept the section — a genuine missed-repeal bug.
+    "REPLAY_UNREPEALED": "lawvm_wrong",
     "EMPTY_OPERATIVE_BODY": "lawvm_wrong",
     "ORACLE_STALE": "oracle_suspect",
     "CORRIGENDUM_APPLIED": "oracle_suspect",

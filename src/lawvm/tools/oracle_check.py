@@ -49,6 +49,7 @@ from lawvm.tools.divergence_heuristics import oracle_section_duplicates_adjacent
 from lawvm.tools.divergence_heuristics import oracle_text_has_removable_duplicate_sentence
 from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_replay_by_dropping_sentences
 from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_bare_section_stub
+from lawvm.tools.divergence_heuristics import parse_oracle_repeal_stub
 from lawvm.tools.divergence_heuristics import replay_section_matches_text_at_cutoff
 from lawvm.tools.divergence_heuristics import replay_section_has_future_effective_version
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
@@ -493,6 +494,39 @@ ORACLE_CATEGORIES = {
 # Minimum score threshold to consider pre-blame state a match for oracle
 PRE_BLAME_THRESHOLD = 0.95
 PRE_BLAME_IMPROVEMENT_EPS = 0.01
+
+
+def _diagnose_oracle_repeal_stub(
+    repeal_id: str,
+    *,
+    applicable_amendment_ids: set[str],
+    contingent_effective_sources: set[str],
+) -> str:
+    """Classify a REPLAY_EXTRA section whose oracle text is a repeal stub.
+
+    The oracle has repealed the section (leaving the ``<N> § on kumottu`` stub)
+    but replay retained the full section text.  Two genuinely different cases
+    hide under the raw ``REPLAY_EXTRA`` diagnosis:
+
+    * **source-limit** — replay COULD NOT apply the repeal: the repealing statute
+      ``repeal_id`` is not reachable in the corpus, or it falls outside the
+      replay's consolidation window, or its effective date is contingent /
+      decree-set (e.g. the EU-accession restructures whose entry into force could
+      not be pinned).  Replay legitimately kept the section.  Not a replay bug
+      (``SOURCE_INCOMPLETE``).
+    * **real missed-repeal bug** — the repealing statute is reachable AND inside
+      the window AND its effective date is resolvable, so replay should have
+      applied the repeal and dropped the section, but the section survived.  A
+      genuine replay bug (``REPLAY_UNREPEALED``), surfaced so it is not silently
+      bucketed under the source-limit family.
+    """
+    if repeal_id not in applicable_amendment_ids:
+        # Not selected for this consolidation: unreachable or out-of-window.
+        return "SOURCE_INCOMPLETE"
+    if repeal_id in contingent_effective_sources:
+        # Selected, but replay could not pin when (or whether) it took effect.
+        return "SOURCE_INCOMPLETE"
+    return "REPLAY_UNREPEALED"
 
 
 def _oracle_suspect_value(master: object) -> str:
@@ -1184,6 +1218,39 @@ def _classify_statute(
             if diagnosis is not None:
                 sec["diagnosis"] = diagnosis
 
+        # Oracle repeal-stub vs surviving replay section.  When the oracle shows a
+        # whole-section repeal stub ("<N> § on kumottu L:lla MMMM/NN") but replay
+        # retained the full section text, the raw diagnosis is REPLAY_EXTRA.  That
+        # conflates two cases: replay COULD NOT apply the repeal (the repealing
+        # statute is unreachable / out-of-window / contingent-effective →
+        # source-limit) vs replay should have applied it but the section survived
+        # (a real missed-repeal bug).  Parse the repealing statute id from the stub
+        # and resolve it against the consolidation window for this statute.  This
+        # runs after the oracle-staleness / source-pathology passes so a section
+        # those passes already explained (e.g. stale-at-cutoff ORACLE_STALE) is not
+        # re-stolen here — only sections still bare REPLAY_EXTRA are resolved.
+        repeal_stub_secs = [
+            sec
+            for sec in section_results
+            if sec["diagnosis"] == "REPLAY_EXTRA"
+            and parse_oracle_repeal_stub(str(sec.get("oracle_text") or ""))
+        ]
+        if repeal_stub_secs:
+            applicable_records, _, _ = _resolve_applicable_amendment_records(sid, mode)
+            applicable_amendment_ids = {
+                str(rec["statute_id"]) for rec in applicable_records
+            }
+            contingent_set = set(contingent_effective_sources)
+            for sec in repeal_stub_secs:
+                repeal_id = parse_oracle_repeal_stub(str(sec.get("oracle_text") or ""))
+                if not repeal_id:
+                    continue
+                sec["diagnosis"] = _diagnose_oracle_repeal_stub(
+                    repeal_id,
+                    applicable_amendment_ids=applicable_amendment_ids,
+                    contingent_effective_sources=contingent_set,
+                )
+
         # Attachment / liite comparison — just count; show indicator if mismatch
         r_att_count, r_att_titles = _extract_attachment_info_ir(master.materialized_state.ir)
         o_att_count, o_att_titles = _extract_attachment_info(oracle_root)
@@ -1314,17 +1381,25 @@ def _print_corpus_summary(results: list[ClassifyResult], save_path: str | None) 
     print(f"\nCorpus divergence classification ({total_statutes} statutes, "
           f"{len(errors)} errors):")
     print()
-    for diag in [
+    primary_diags = [
         "ORACLE_STALE",
         "CORRIGENDUM_APPLIED",
         "EDITORIAL_CONVENTION",
         "SOURCE_PATHOLOGY",
+        "SOURCE_INCOMPLETE",
         "REPLAY_EXTRA",
+        "REPLAY_UNREPEALED",
         "REPLAY_MISSING",
         "UNKNOWN",
         "MISSING",
         "EXTRA",
-    ]:
+    ]
+    for diag in primary_diags:
+        sids = all_section_diags.get(diag, [])
+        if sids:
+            unique_statutes = len(set(sids))
+            print(f"  {diag:<22}  {len(sids):4} sections  {unique_statutes:4} statutes")
+    for diag in sorted(set(all_section_diags) - set(primary_diags)):
         sids = all_section_diags.get(diag, [])
         if sids:
             unique_statutes = len(set(sids))

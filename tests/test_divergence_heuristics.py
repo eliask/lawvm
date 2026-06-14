@@ -3,6 +3,7 @@ from lawvm.tools.divergence_heuristics import (
     is_probable_repeal_stale_oracle,
     looks_like_bare_section_stub,
     oracle_text_reduces_to_bare_section_stub,
+    parse_oracle_repeal_stub,
 )
 
 
@@ -49,4 +50,45 @@ def test_blame_title_indicates_temporary_amendment_accepts_valiaikainen() -> Non
 def test_blame_title_indicates_temporary_amendment_rejects_normal_title() -> None:
     assert not blame_title_indicates_temporary_amendment(
         "Laki saatavien perinnästä annetun lain muuttamisesta"
+    )
+
+
+def test_parse_oracle_repeal_stub_extracts_repealing_statute_id() -> None:
+    # Duplicated num is how etree text-serializes <num>47 §</num> + body label.
+    assert (
+        parse_oracle_repeal_stub("47 § 47 § on kumottu L:lla 16.12.1994/1218.")
+        == "1994/1218"
+    )
+
+
+def test_parse_oracle_repeal_stub_handles_lettered_section_and_whitespace() -> None:
+    assert (
+        parse_oracle_repeal_stub("68 a §\n  68 a § on kumottu L:lla \n 13.11.2009/886.")
+        == "2009/886"
+    )
+
+
+def test_parse_oracle_repeal_stub_normalises_zero_padded_number() -> None:
+    assert (
+        parse_oracle_repeal_stub("46 § 46 § on kumottu L:lla 11.12.2002/0071.")
+        == "2002/71"
+    )
+
+
+def test_parse_oracle_repeal_stub_rejects_substantive_section() -> None:
+    assert (
+        parse_oracle_repeal_stub(
+            "151 § Palautushakemus on tehtävä Verohallinnon vahvistamalla lomakkeella."
+        )
+        is None
+    )
+
+
+def test_parse_oracle_repeal_stub_rejects_partial_momentti_repeal() -> None:
+    # Only one momentti repealed, section still carries other live text.
+    assert (
+        parse_oracle_repeal_stub(
+            "1 § Veroa suoritetaan. 3 momentti on kumottu L:lla 9.12.2016/1064. Lisää tekstiä."
+        )
+        is None
     )

@@ -40,6 +40,38 @@ def oracle_text_reduces_to_bare_section_stub(text: str) -> bool:
     return looks_like_bare_section_stub(strip_editorial_annotations(text))
 
 
+# Whole-section oracle repeal stub: "<N> § on kumottu L:lla DD.MM.YYYY/NNN."
+# The leading "<N> §" num is optional because etree text-serialization of
+# <num>47 §</num><content><p><i>47 § on kumottu ...</i></p></content> can repeat
+# the section label.  The trailing citation carries the repealing statute id.
+_ORACLE_REPEAL_STUB_RE = re.compile(
+    r"^(?:\d+\s*[a-zäöå]?\s*§\s*)?"
+    r"\d+\s*[a-zäöå]?\s*§\s+on\s+kumottu\s+"
+    r"[LAP](?::ll[äa])?\s+"
+    r"(?:(?P<dd>\d{1,2})\.(?P<mm>\d{1,2})\.)?(?P<year>\d{4})/(?P<num>\d+)\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_oracle_repeal_stub(oracle_text: str) -> str | None:
+    """Return the repealing statute id when the oracle section is a repeal stub.
+
+    A repeal stub is an oracle section whose entire body is the editorial notice
+    ``<N> § on kumottu L:lla DD.MM.YYYY/NNN.`` — the section has been repealed and
+    Finlex left only this tombstone in its place.  Returns the repealing statute
+    id normalised to ``YYYY/NNN`` (e.g. ``1994/1218``), or ``None`` when the oracle
+    text is not a whole-section repeal stub (e.g. it still carries substantive law,
+    or only one momentti is repealed).
+    """
+    squashed = re.sub(r"\s+", " ", oracle_text or "").strip()
+    if not squashed or "kumottu" not in squashed.lower():
+        return None
+    match = _ORACLE_REPEAL_STUB_RE.match(squashed)
+    if match is None:
+        return None
+    return f"{match.group('year')}/{int(match.group('num'))}"
+
+
 def blame_title_indicates_temporary_amendment(title: str) -> bool:
     lowered = (title or "").lower()
     return any(token in lowered for token in ("väliaikais", "tilapäis", "määräaikais"))

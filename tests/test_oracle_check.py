@@ -32,6 +32,7 @@ from lawvm.tools.oracle_check import (
     _classify_statute_sync,
     _corpus_selection_detail,
     _diagnose,
+    _diagnose_oracle_repeal_stub,
     _el_text,
     _extract_attachment_info_ir,
     _ir_node_has_repeal_placeholder,
@@ -142,6 +143,73 @@ def test_classify_statute_1974_258_repeal_stub_is_editorial_convention() -> None
     assert result is not None
     row = next(item for item in result.section_results if item["section"] == "section:15")
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_oracle_repeal_stub_source_limit_when_out_of_window() -> None:
+    # Repealing statute not in the applicable amendment set → unreachable or
+    # out-of-window → replay could not apply it → source-limit, not a bug.
+    assert (
+        _diagnose_oracle_repeal_stub(
+            "1994/1218",
+            applicable_amendment_ids={"2002/1071"},
+            contingent_effective_sources=set(),
+        )
+        == "SOURCE_INCOMPLETE"
+    )
+
+
+def test_diagnose_oracle_repeal_stub_source_limit_when_contingent_effective() -> None:
+    # In-window but its effective date is contingent/decree-set → replay could
+    # not pin when it took effect → source-limit.
+    assert (
+        _diagnose_oracle_repeal_stub(
+            "1994/1218",
+            applicable_amendment_ids={"1994/1218"},
+            contingent_effective_sources={"1994/1218"},
+        )
+        == "SOURCE_INCOMPLETE"
+    )
+
+
+def test_diagnose_oracle_repeal_stub_real_bug_when_available_and_in_window() -> None:
+    # Reachable, in-window, effective date resolvable, yet the section survived →
+    # a genuine missed-repeal bug, surfaced rather than hidden under source-limit.
+    assert (
+        _diagnose_oracle_repeal_stub(
+            "2002/1071",
+            applicable_amendment_ids={"2002/1071"},
+            contingent_effective_sources=set(),
+        )
+        == "REPLAY_UNREPEALED"
+    )
+
+
+def test_classify_statute_1993_1501_eu_accession_repeal_stubs_are_source_limit() -> None:
+    # 1993/1501 ch.4 §47-54 and ch.10 §107-109 are oracle repeal stubs from the
+    # contingent-effective EU-accession restructure 1994/1218 (entry into force
+    # could not be pinned), so replay legitimately kept them: source-limit, not a
+    # replay bug.  §46/§55/§68a are repealed by reachable, in-window, non-contingent
+    # statutes yet survived — genuine missed-repeal bugs.
+    result = _classify_statute_sync("1993/1501", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:1/chapter:4/section:47",
+        "part:1/chapter:4/section:48",
+        "part:1/chapter:4/section:54",
+        "part:1/chapter:10/section:107",
+        "part:1/chapter:10/section:109",
+    ):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
+
+    for label in (
+        "part:1/chapter:4/section:46",
+        "part:1/chapter:4/section:55",
+        "part:1/chapter:5/section:68a",
+    ):
+        assert by_section[label]["diagnosis"] == "REPLAY_UNREPEALED"
 
 
 def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomplete() -> None:
