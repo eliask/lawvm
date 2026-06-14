@@ -1244,15 +1244,32 @@ def _classify_statute(
         # UNRECONSTRUCTABLE for each absent chapter), the oracle still carries
         # sections under those chapters but replay cannot materialize them: the
         # amendments only ever carried deltas, never the original section bodies
-        # that lived in the omitted base.  A still-MISSING section under such a
+        # that lived in the omitted base.  A divergent section under such a
         # chapter is therefore a SOURCE limit, not a replay bug, so it belongs on
         # the ledger's missing_source disposition rather than as a real-bug
-        # suspect.  This runs after the oracle-staleness / source-pathology passes
-        # so only sections those passes left bare MISSING are re-attributed here;
-        # MISSING sections outside the abridged span (genuine drops) are untouched.
+        # suspect.
+        #
+        # Two shapes occur under such a chapter, both source-limited:
+        #   - bare MISSING: the oracle carries a section the replay never built at
+        #     all (no amendment touched it), and
+        #   - REPLAY_MISSING / REPLAY_EXTRA / UNKNOWN: a later amendment carried a
+        #     *delta* (replace a paragraph / add an item) that replay applied to an
+        #     empty seed, so the section exists but its text is a fragment of the
+        #     oracle's full body.  The length/similarity divergence is intrinsic to
+        #     the abridged source, not a replay fault, so reclassify it too.
+        # ORACLE_STALE / EDITORIAL_CONVENTION verdicts from the prior passes already
+        # explain those sections and are left untouched.  This runs after the
+        # oracle-staleness / source-pathology passes; divergences outside the
+        # abridged span (genuine drops) are untouched.
         if abridged_unreconstructable_chapters:
+            _abridged_reclassifiable = {
+                "MISSING",
+                "REPLAY_MISSING",
+                "REPLAY_EXTRA",
+                "UNKNOWN",
+            }
             for sec in section_results:
-                if sec["diagnosis"] != "MISSING":
+                if sec["diagnosis"] not in _abridged_reclassifiable:
                     continue
                 chapter_label = _section_key_segments(str(sec["section"])).get("chapter", "")
                 if chapter_label in abridged_unreconstructable_chapters:

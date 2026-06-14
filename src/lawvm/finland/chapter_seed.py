@@ -197,19 +197,25 @@ def _labels_in_missing_span(
 def _unmaterializable_span_chapters(
     notice_span: Tuple[str, str],
     next_label: str,
-    seeded_gap_labels: Sequence[str],
 ) -> List[str]:
-    """Numeric chapter labels in a missing span that no amendment can seed.
+    """Numeric chapter labels in a declared abridged span.
 
     A base like Maaseutuelinkeinolaki (1990/1295) ships an abridged witness
     whose chapters 7-11 are replaced by a literal ``Puuttuu luvut 7-11`` notice.
-    The seeder can only reinstate a gap chapter when some amendment body carries
-    a full ``<chapter>`` container for it. Chapters in the declared span for
-    which no such body exists stay structurally absent, and any provision the
-    oracle places under them is therefore unreconstructable from replay inputs:
-    amendments carry only deltas, never the original section bodies that lived
-    in the omitted base. Those numeric labels are returned so the caller can
-    record a self-evidencing source-completeness finding.
+    Every chapter in that span is unreconstructable from replay inputs:
+    amendments carry only deltas (and the occasional newly *added* section),
+    never the original section bodies that lived in the omitted base, so the
+    oracle's provisions there diverge by construction.
+
+    A partial seed does NOT make a span chapter reconstructable. Amendment
+    1997/29 carries a ``10 luku`` whose body holds a single *added* section
+    (``54 a §``); seeding that section restores genuinely-new content but leaves
+    the chapter's original bodies (``49``, ``50``, ``52``, ``54`` … delta-touched
+    by later amendments, ``51``/``53`` never restated at all) unrecoverable. So
+    seeded chapters in the span are reported here too: the caller emits the
+    source-completeness finding for the whole span, and the still-divergent
+    delta-touched sections under it are attributed to the source witness rather
+    than masquerading as replay faults.
 
     The span runs from its declared start up to (but excluding) the next chapter
     actually present in the base. ``end`` is informational only; the present
@@ -219,12 +225,7 @@ def _unmaterializable_span_chapters(
     start_raw, _end_raw = notice_span
     if not (start_raw.isdigit() and next_label.isdigit()):
         return []
-    seeded = {default_label_sort_key(label) for label in seeded_gap_labels}
-    return [
-        str(num)
-        for num in range(int(start_raw), int(next_label))
-        if default_label_sort_key(str(num)) not in seeded
-    ]
+    return [str(num) for num in range(int(start_raw), int(next_label))]
 
 
 def _strip_trailing_missing_span_notice(chapter: IRNode) -> IRNode:
@@ -489,15 +490,29 @@ def seed_missing_chapters(
                     )
                     container_changed = True
                 if next_label is not None and notice_span is not None:
+                    seeded_span_labels = {
+                        default_label_sort_key(label) for label in gap_seeds
+                    }
                     for absent_label in _unmaterializable_span_chapters(
-                        notice_span, next_label, gap_seeds
+                        notice_span, next_label
                     ):
-                        _record_chapter_seed_diagnostic(
-                            diagnostics_out,
-                            rule_id="fi_chapter_seed_abridged_base_chapter_unreconstructable",
-                            family="source_pathology",
-                            phase="acquisition",
-                            reason=(
+                        partially_seeded = (
+                            default_label_sort_key(absent_label)
+                            in seeded_span_labels
+                        )
+                        if partially_seeded:
+                            reason = (
+                                "Abridged base witness omits chapter "
+                                f"{absent_label} (declared missing by the "
+                                f"\"Puuttuu luvut {notice_span[0]}-{notice_span[1]}\" "
+                                "notice); an amendment body restated only a "
+                                "subset (a newly added section), so the chapter's "
+                                "original section bodies the oracle carries are "
+                                "delta-touched at most and cannot be fully "
+                                "reconstructed from replay inputs"
+                            )
+                        else:
+                            reason = (
                                 "Abridged base witness omits chapter "
                                 f"{absent_label} (declared missing by the "
                                 f"\"Puuttuu luvut {notice_span[0]}-{notice_span[1]}\" "
@@ -505,7 +520,13 @@ def seed_missing_chapters(
                                 "provisions the oracle places under this chapter "
                                 "are delta-touched at most and cannot be fully "
                                 "reconstructed from replay inputs"
-                            ),
+                            )
+                        _record_chapter_seed_diagnostic(
+                            diagnostics_out,
+                            rule_id="fi_chapter_seed_abridged_base_chapter_unreconstructable",
+                            family="source_pathology",
+                            phase="acquisition",
+                            reason=reason,
                             source_statute="",
                             chapter_label=absent_label,
                             blocking=False,
