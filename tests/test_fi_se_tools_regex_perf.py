@@ -493,3 +493,130 @@ def test_kumottu_stub_adversarial_large_whitespace_no_kumottu_is_fast() -> None:
         f"guarded normalize_kumottu_stubs took {elapsed_guard_ms:.1f} ms "
         f"(ceiling {_CEILING_MS} ms); 'kumottu' fast-guard regression suspected"
     )
+
+
+# ---------------------------------------------------------------------------
+# Site #17 — FI metadata._CROSS_LAW_DESC_PAT / _SCOPED_COMMENCEMENT_RE
+#
+# _CROSS_LAW_DESC_PAT: lazy ``.{0,400}?`` before a literal citation ``(`` —
+#   rewritten to a tempered-possessive fill that cannot backtrack across the
+#   bounded window.  Match semantics identical (load-bearing 400-char cap).
+# _SCOPED_COMMENCEMENT_RE: unbounded lazy gap ``(.+?)`` before a distant
+#   ``tule…kuitenkin voimaan`` anchor expanded to end-of-text from every
+#   subject word on non-matching input (~23 s on 112 KB).  Fix: bound the gap
+#   to 2000 chars (corpus max is 633) + literal ``kuitenkin``/``voimaan``
+#   pre-guard at the call sites.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+from lawvm.finland.metadata import (
+    _CROSS_LAW_DESC_PAT,
+    _SCOPED_COMMENCEMENT_RE,
+    _scoped_commencement_guard,
+)
+
+# Reference: the pre-hardening patterns, kept here so the hardened forms are
+# proven equivalent rather than merely asserted.
+_OLD_CROSS_LAW_DESC_PAT = _re.compile(
+    r'(?:§:[nä]|§:ss[aä]).{0,400}?\(\s*(\d{3,4}/\d{4})\s*\)',
+    _re.DOTALL,
+)
+_OLD_SCOPED_COMMENCEMENT_RE = _re.compile(
+    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+"
+    r"tule(?:vat|e)\s+kuitenkin\s+voimaan(?:\s+(?:jo|vasta))?\s+"
+    r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
+    _re.IGNORECASE,
+)
+
+
+def _assert_same_match(old: "_re.Pattern[str]", new: "_re.Pattern[str]", text: str) -> None:
+    mo = old.search(text)
+    mn = new.search(text)
+    assert (mo is None) == (mn is None), f"presence diverged on {text!r}"
+    if mo is not None and mn is not None:
+        assert mo.span() == mn.span() and mo.groups() == mn.groups(), (
+            f"span/groups diverged on {text!r}: {mo.span()},{mo.groups()} "
+            f"vs {mn.span()},{mn.groups()}"
+        )
+
+
+def test_cross_law_desc_pat_matches_reference_on_canonical_inputs() -> None:
+    for text in (
+        "muutetaan valmiuslain 106 §:n 1 momentissa ja 107 §:ssä säädettyjen "
+        "toimivaltuuksien käyttöönotosta annetun valtioneuvoston asetuksen "
+        "(186/2021) 2 ja 3 § seuraavasti:",
+        "§:n alusel (123/2020)",
+        "§:ssä säädetty (456/2019)",
+        "§:ssä (2021/999)",
+        "§ 3 ei ole",  # no colon-form → no match
+        "§:n " + "(" * 50 + " (999/2020)",  # many '(' before the citation
+        "§:n " + "x" * 500 + " (999/2020)",  # citation beyond the 400 window
+    ):
+        _assert_same_match(_OLD_CROSS_LAW_DESC_PAT, _CROSS_LAW_DESC_PAT, text)
+
+
+def test_cross_law_desc_pat_adversarial_paren_run_is_fast() -> None:
+    """Many '§:n' prefixes each with a 400-char window full of '(' but no
+    trailing citation.  The tempered-possessive fill must stay linear."""
+    text = ("§:n " + "(" * 400) * 4000
+    assert _CROSS_LAW_DESC_PAT.search(text) is None
+    t0 = time.perf_counter()
+    _CROSS_LAW_DESC_PAT.search(text)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    assert elapsed_ms < _CEILING_MS, (
+        f"cross-law-desc adversarial took {elapsed_ms:.1f} ms "
+        f"(ceiling {_CEILING_MS} ms); anti-backtracking regression suspected"
+    )
+
+
+def test_scoped_commencement_matches_reference_on_canonical_inputs() -> None:
+    for text in (
+        "Tämän lain 21 a ja 21 b § ja 21 c §:n 1–3 momentti tulevat kuitenkin "
+        "voimaan jo 1 päivänä tammikuuta 2022.",
+        "Sen 4 ja 5§ tulevat kuitenkin voimaan 1 päivänä tammikuuta 1988.",
+        "Lain 2 § tulee kuitenkin voimaan vasta 1 päivänä heinäkuuta 2020.",
+        "Tämä laki tulee voimaan heti.",  # no 'kuitenkin' → no match
+        # gap near (but under) the 2000-char bound stays identical:
+        "Lain " + "a " * 800 + "§ tulee kuitenkin voimaan 1 päivänä kesäkuuta 2021.",
+    ):
+        _assert_same_match(_OLD_SCOPED_COMMENCEMENT_RE, _SCOPED_COMMENCEMENT_RE, text)
+
+
+def test_scoped_commencement_guard_rejects_text_without_anchor_literals() -> None:
+    assert _scoped_commencement_guard("Lain 2 § tulee voimaan 1.1.2020.") is False
+    assert _scoped_commencement_guard("kuitenkin mutta ei astu käyttöön") is False
+    assert (
+        _scoped_commencement_guard("... tulee kuitenkin voimaan 1 päivänä ...") is True
+    )
+
+
+def test_scoped_commencement_corpus_gap_under_bound() -> None:
+    """The bound in _SCOPED_COMMENCEMENT_RE must stay above the real-corpus gap.
+
+    The largest observed gap (2025/1440) is 633 chars; the pattern bounds it to
+    2000.  If a future corpus needs a larger gap, this invariant flags the
+    silent-truncation risk before it changes replay output.
+    """
+    # Extract the {1,N} bound from the compiled pattern source.
+    m = _re.search(r"\.\{1,(\d+)\}\?", _SCOPED_COMMENCEMENT_RE.pattern)
+    assert m is not None, "expected a bounded lazy gap in _SCOPED_COMMENCEMENT_RE"
+    bound = int(m.group(1))
+    assert bound >= 1000, (
+        f"_SCOPED_COMMENCEMENT_RE gap bound {bound} is below the safety margin "
+        "for the observed 633-char real-corpus gap"
+    )
+
+
+def test_scoped_commencement_adversarial_no_anchor_is_fast() -> None:
+    """Many subject words ('Lain'), no anchor: the guard rejects in O(n)."""
+    text = ("Lain " * 64000) + ("a " * 64000)
+    assert _scoped_commencement_guard(text) is False
+    t0 = time.perf_counter()
+    if _scoped_commencement_guard(text):
+        _SCOPED_COMMENCEMENT_RE.search(text)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    assert elapsed_ms < _CEILING_MS, (
+        f"scoped-commencement no-anchor adversarial took {elapsed_ms:.1f} ms "
+        f"(ceiling {_CEILING_MS} ms); literal guard regression suspected"
+    )
