@@ -43,6 +43,11 @@ _HEADING_FACET_SUBSTITUTE_RE = re.compile(
     r"(?:heading|title|sidenote)"
     r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
     r"\s+[0-9A-Za-z]+)?"
+    # "for the heading to Part 1" / "for the heading to the Schedule 2" — the
+    # heading container is named after "to", not "of". One named container with
+    # an explicit label, so the facet target is unambiguous (OPC §6.5.10).
+    r"(?:\s+to\s+(?:the\s+)?"
+    r"(?:section|part|chapter|schedule|article|rule|regulation)\s+[0-9A-Za-z]+)?"
     r"(?:\s+to\s+(?:the|that)\s+section)?"
     r"\s+substitute\s*[—–-]?\s*(?P<replacement>.{0,2000})$",
     flags=re.I | re.S,
