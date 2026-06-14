@@ -291,6 +291,25 @@ def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplet
         assert by_section[label]["diagnosis"] == "MISSING"
 
 
+def test_classify_statute_1994_1466_repealed_sections_are_editorial_not_missing() -> None:
+    # 1994/1466 has many sections the oracle keeps only as a one-line repeal
+    # tombstone ("N § on kumottu L:lla MMMM/NN"); the replay correctly
+    # materializes them as fully repealed (no node).  These must classify as
+    # EDITORIAL_CONVENTION (the tombstone is editorial rendering of the same
+    # repealed state), not MISSING (which the ledger counts as a real-bug suspect).
+    result = _classify_statute("1994/1466", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    for label in ("section:21", "section:43a", "section:48"):
+        assert by_section[label]["diagnosis"] == "EDITORIAL_CONVENTION"
+    # No section should remain a MISSING real-bug suspect — they are all repeal
+    # tombstones the replay correctly repealed.
+    assert not [
+        item for item in result.section_results if item["diagnosis"] == "MISSING"
+    ]
+
+
 def test_extract_attachment_info_ir_counts_materialized_annex() -> None:
     """An operative Liite annex materialized into the replay IR must be counted.
 

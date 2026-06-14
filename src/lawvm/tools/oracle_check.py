@@ -853,6 +853,15 @@ def _classify_statute(
                     if o_el is not None:
                         if oracle_text_reduces_to_bare_section_stub(o_text):
                             diag = "EDITORIAL_CONVENTION"
+                        elif parse_oracle_repeal_stub(o_text) is not None:
+                            # Oracle keeps a one-line repeal tombstone
+                            # ("N § on kumottu L:lla MMMM/NN") for a section the
+                            # replay correctly materializes as fully repealed (no
+                            # node).  At the consolidation cutoff the oracle shows
+                            # the section repealed, so the empty replay state is
+                            # correct — the tombstone line is editorial rendering
+                            # of the same repealed state, not missing content.
+                            diag = "EDITORIAL_CONVENTION"
                         elif mode == "legal_pit" and blame_title_indicates_temporary_amendment(
                             str(blame_op.get("source_title", ""))
                         ):
