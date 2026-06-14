@@ -9,6 +9,7 @@ built from fixtures (no network).
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from lawvm.core.ir import LegalAddress
@@ -23,6 +24,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_UNIT,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
+    _first_usc_ref,
     _resolve_target,
     lower_plaw_amendatory,
     parse_relative_usc_target,
@@ -297,6 +299,148 @@ def test_strike_insert_operand_order_struck_matches_inserted_replaces():
     assert instr.witness_rule_id == RULE_STRIKE_INSERT
     assert _patch(instr).selector.match_text == "$3,237,000"
     assert _patch(instr).replacement == "$10,000,000"
+
+
+# ---------------------------------------------------------------------------
+# Target operand mis-extraction: a <ref> / prose target buried INSIDE a quoted
+# operand (the struck/inserted literal) must NOT hijack the amendment target.
+# ---------------------------------------------------------------------------
+
+
+def _ref_unit(xml_fragment: str) -> ET.Element:
+    """Parse a standalone USLM unit fragment (namespaced) for ref-scan unit tests."""
+    return ET.fromstring(f'<content xmlns="{_USLM_NS}">{xml_fragment}</content>')
+
+
+def test_first_usc_ref_skips_a_ref_inside_a_quoted_operand():
+    # The ONLY usc ref lives inside <quotedText> (it is the inserted literal's own
+    # cross-citation, not the amendment target). _first_usc_ref must return nothing.
+    unit = _ref_unit(
+        'by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>subparagraphs (A), (B), and (C) of '
+        '<ref href="/us/usc/t10/s2313/a/2">section 2313(a)(2) of title 10, '
+        'United States Code</ref>, and</quotedText>” before '
+        '“<quotedText>subsection (b) of section 2313</quotedText>”'
+    )
+    assert _first_usc_ref(unit) == ("", "")
+
+
+def test_first_usc_ref_prefers_the_unquoted_target_over_a_quoted_cross_ref():
+    # A genuine target ref (outside quotes) is still returned, even when a later
+    # quoted operand carries its own usc cross-ref.
+    unit = _ref_unit(
+        '<ref href="/us/usc/t11/s507/d">Section 507(d) of title 11, United States '
+        'Code</ref>, <amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText><ref href="/us/usc/t10/s7222">section 7222 of title 10, '
+        'United States Code</ref></quotedText>”.'
+    )
+    phrase, href = _first_usc_ref(unit)
+    assert href == "/us/usc/t11/s507/d"
+    assert phrase.startswith("Section 507(d)")
+
+
+def test_quoted_cross_ref_does_not_hijack_target_onto_operands_cited_section():
+    # PL 114-328 §896(2)(A) form: "inserting '...section 2313(a)(2) of title 10...'
+    # before '...'" amends a free-standing Act note; the title-10 ref is INSIDE the
+    # inserted literal. The old lowering hijacked the target onto title-10 §2313;
+    # the corrected lowering resolves NO target → typed residual (no false title-10
+    # op materialized against §2313). Prime Directive: a target we cannot extract
+    # stays a visible residual, never guessed.
+    body = (
+        '<section identifier="/us/pl/114/328/s896"><num value="896">SEC. 896. </num>'
+        '<subparagraph identifier="/us/pl/114/328/s896/2/A" role="instruction">'
+        '<num value="A">(A) </num><content>by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>subparagraphs (A), (B), and (C) of '
+        '<ref href="/us/usc/t10/s2313/a/2">section 2313(a)(2) of title 10, '
+        'United States Code</ref>, and</quotedText>” before '
+        '“<quotedText>subsection (b) of section 2313</quotedText>”; and'
+        '</content></subparagraph></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.target_address is None
+    assert instr.operation is None
+    assert instr.status == "unsupported"
+    assert instr.finding is not None
+    assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
+
+
+def test_quoted_strike_operand_cross_ref_does_not_hijack_off_a_named_act_parent():
+    # PL 115-232 §809(h)(2) form: parent amends "Section 2055(g) of the Internal
+    # Revenue Code of 1986"; the leaf strikes a quoted "section 7222 of title 10"
+    # literal. The title-10 ref is the STRUCK literal, not the target. The IRC
+    # parent prose carries no "of title N" form, so the corrected lowering leaves
+    # the unit unresolved (a typed residual), never a title-10 §7222 op.
+    body = (
+        '<section identifier="/us/pl/115/232/s809"><num value="809">SEC. 809. </num>'
+        '<paragraph identifier="/us/pl/115/232/s809/h/2" role="instruction">'
+        '<num value="2">(2) </num>'
+        '<chapeau>Section 2055(g) of the Internal Revenue Code of 1986 '
+        '<amendingAction type="amend">is amended</amendingAction>—</chapeau>'
+        '<subparagraph identifier="/us/pl/115/232/s809/h/2/A" role="instruction">'
+        '<num value="A">(A) </num><content>in paragraph (4), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText><ref href="/us/usc/t10/s7222">section 7222 of title 10, '
+        'United States Code</ref></quotedText>” and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText><ref href="/us/usc/t10/s8622">section 8622 of title 10, '
+        'United States Code</ref></quotedText>”;</content></subparagraph>'
+        '</paragraph></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    leaf = next(
+        i for i in report.instructions if i.instruction_id.endswith("/s809/h/2/A")
+    )
+    assert leaf.target_address is None
+    assert leaf.finding is not None
+    assert leaf.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
+
+
+def test_add_at_end_quoted_block_sidenote_ref_does_not_become_the_target():
+    # An add-at-end whose quoted new-section block carries a marginal <sidenote>
+    # pin-cite ("38 USC 7413") INSIDE the <quotedContent>: that ref is in the
+    # inserted payload, never the amendment target. The unit's own target is the
+    # chapeau "Subchapter I of chapter 74" (no pinnable USC section) → the ref must
+    # not hijack the target onto §7413; the unit stays a typed residual.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content>Subchapter I of chapter 74 '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="add">adding</amendingAction> at the end the '
+        'following new section:<quotedContent><section><num value="7413">'
+        '“§ 7413.</num><heading><sidenote><p class="fontsize8">'
+        '<ref href="/us/usc/t38/s7413">38 USC 7413</ref>.</p></sidenote> '
+        'Treatment of podiatrists</heading></section></quotedContent>'
+        '</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.target_address is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
+
+
+def test_genuinely_absent_operand_stays_a_typed_residual_not_guessed():
+    # A real, unquoted title-11 strike whose anchor is correctly extracted. The
+    # operand IS the genuine quoted literal; the dry-run (not lowering) decides
+    # presence. Lowering must produce the op with the EXACT quoted operand, never a
+    # substitute — proving the fix does not strip a legitimate quoted strike.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101/18">Section 101(18) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>a phrase that does not occur</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "strike"
+    assert instr.operation is not None
+    assert _patch(instr).selector.match_text == "a phrase that does not occur"
+    assert instr.target_address is not None
+    assert instr.target_address.path[0] == ("title", "11")
 
 
 def test_quoted_text_preserves_significant_leading_space():

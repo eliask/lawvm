@@ -377,6 +377,19 @@ def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+# USLM elements that carry an inline AMENDATORY OPERAND literal — the struck /
+# inserted / replacement string — not the instruction's own target locator. A
+# ``<ref>`` or "section X of title N" prose that lives INSIDE one of these is part
+# of the quoted operand (a cross-reference being struck or inserted as text), NOT
+# the amendment target. Resolving the target off such a buried ref silently
+# hijacks the unit onto the wrong section (the operand's cited section instead of
+# the section actually being amended): e.g. ``inserting "...section 2313(a)(2) of
+# title 10..." before "..."`` is an edit to a *free-standing Act* whose inserted
+# literal merely cites title-10 §2313 — lowering it as a title-10 §2313 edit is a
+# misextraction. Target scanning must skip these subtrees.
+_NON_TARGET_REF_CONTAINER_TAGS = frozenset({"quotedText", "quotedContent"})
+
+
 def _text_of(elem: ET.Element) -> str:
     return re.sub(r"\s+", " ", "".join(elem.itertext())).strip()
 
@@ -1084,9 +1097,16 @@ def _lower_instruction(
 
 
 def _first_usc_ref(content: ET.Element) -> tuple[str, str]:
-    """Return ``(prose_phrase, href)`` for the first USC structural ref in content."""
-    for ref in content.iter():
-        if _localname(ref.tag) != "ref":
+    """Return ``(prose_phrase, href)`` for the first USC structural ref in content.
+
+    Refs that live inside a ``<quotedText>`` / ``<quotedContent>`` operand subtree
+    are SKIPPED: such a ref is part of the struck/inserted literal (a cross-citation
+    being edited as text), never the instruction's own amendment target. Scanning
+    them would hijack the target onto the operand's cited section instead of the
+    section actually being amended (no silent target hijack, Prime Directive).
+    """
+    for ref, in_non_target in _iter_with_non_target_depth(content):
+        if in_non_target or _localname(ref.tag) != "ref":
             continue
         href = ref.get("href", "")
         if "/usc/" not in href:
@@ -1097,6 +1117,27 @@ def _first_usc_ref(content: ET.Element) -> tuple[str, str]:
             continue
         return phrase, href
     return "", ""
+
+
+def _iter_with_non_target_depth(
+    root: ET.Element,
+) -> Iterable[tuple[ET.Element, bool]]:
+    """Pre-order walk yielding ``(element, inside_non_target_container)`` per node.
+
+    ``inside_non_target_container`` is ``True`` once the walk has descended into (or
+    onto) a quoted-operand subtree (see ``_NON_TARGET_REF_CONTAINER_TAGS``) — the
+    region whose refs are struck/inserted operand literals, never the instruction's
+    own amendment target. ``root`` itself is yielded with its own state so a scan
+    rooted inside such a container is handled too.
+    """
+
+    def _walk(node: ET.Element, inside: bool) -> Iterable[tuple[ET.Element, bool]]:
+        here = inside or _localname(node.tag) in _NON_TARGET_REF_CONTAINER_TAGS
+        yield node, here
+        for child in node:
+            yield from _walk(child, here)
+
+    yield from _walk(root, False)
 
 
 def _unit_own_target(unit: ET.Element, *, exclude: ET.Element | None = None) -> LegalAddress | None:
@@ -1118,19 +1159,35 @@ def _unit_own_target(unit: ET.Element, *, exclude: ET.Element | None = None) -> 
 
 
 def _shallow_text(elem: ET.Element, *, exclude: ET.Element | None = None) -> str:
-    """Concatenated text of ``elem`` excluding the ``exclude`` sub-tree's text."""
+    """Concatenated text of ``elem`` excluding the ``exclude`` sub-tree's text.
+
+    Text inside a quoted-operand container (see ``_NON_TARGET_REF_CONTAINER_TAGS``)
+    is dropped (its *tail* — the surrounding instruction prose — is kept). This
+    keeps the prose head scan (``_unit_own_target``) from parsing a quoted operand
+    literal such as ``"section 7222 of title 10, United States Code"`` as the
+    unit's own amendment target: that string is the struck/inserted phrase, not
+    the section being amended. Mirrors the same no-hijack discipline as
+    :func:`_first_usc_ref`.
+    """
     parts: list[str] = []
 
+    def _is_dropped(node: ET.Element) -> bool:
+        # ``exclude`` drops the descendant leaf sub-unit; quoted operands drop the
+        # struck/inserted literal. In both cases the node's OWN text is suppressed
+        # but its TAIL (the surrounding instruction prose) is kept by the caller.
+        return (
+            node is exclude
+            or _localname(node.tag) in _NON_TARGET_REF_CONTAINER_TAGS
+        )
+
     def _walk(node: ET.Element) -> None:
-        if node is exclude:
-            if node.tail:
-                parts.append(node.tail)
+        if _is_dropped(node):
             return
         if node.text:
             parts.append(node.text)
         for child in node:
             _walk(child)
-            if child.tail and child is not exclude:
+            if child.tail:
                 parts.append(child.tail)
 
     if elem.text:
