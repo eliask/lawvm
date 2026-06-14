@@ -253,7 +253,17 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
         if _part_label_for_element(sec) != body_part:
             continue
 
+        # The section being retargeted already has a live home in body_chapter:
+        # the body chapter is its real chapter, not a stale duplicate-label
+        # scope. Amendment bodies routinely lump sections from several target
+        # chapters under one <chapter> element, so a divergent sibling in the
+        # same element must not pull a correctly-placed section out of its home.
+        target_live_path = master.find_section_path(str(target_num), body_chapter, body_part)
+        if target_live_path is not None:
+            return None
+
         close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
+        body_chapter_corroborated = False
         for sibling in parent.findall("./{*}section"):
             sibling_num = sibling.find("{*}num")
             if sibling_num is None or not sibling_num.text:
@@ -277,8 +287,19 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
             if not live_chapter:
                 continue
             if live_chapter == body_chapter and live_part == body_part:
+                # A close numeric sibling genuinely lives in body_chapter, so the
+                # body chapter is corroborated, not stale. Amendment bodies that
+                # lump sections from several target chapters under one <chapter>
+                # element (the section's real chapter coming from its own live
+                # home, not the XML nesting) must not drag a correctly-placed
+                # neighbour out of its chapter on the strength of divergent
+                # siblings that happen to be edited in the same body element.
+                body_chapter_corroborated = True
                 continue
             close_live_scopes[distance].add((live_part, live_chapter))
+
+        if body_chapter_corroborated:
+            return None
 
         if close_live_scopes:
             nearest_distance = min(close_live_scopes)

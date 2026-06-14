@@ -2284,6 +2284,102 @@ def test_retarget_duplicate_body_section_scope_from_close_live_siblings_handles_
     assert retargeted == (None, "4")
 
 
+def test_retarget_keeps_section_living_in_corroborated_body_chapter() -> None:
+    """A section with a live home in body_chapter is not dragged out of it.
+
+    Finlex amendment bodies routinely lump sections from several target chapters
+    under one ``<chapter>`` element (the section's real chapter comes from its own
+    live home, not the XML nesting). Section 14 genuinely lives in chapter 4 (the
+    body chapter), while a same-element sibling §16 is being edited in its own
+    chapter 5. The divergent sibling must not retarget §14 to chapter 5.
+    """
+
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _chapter("4", _section("14", "live 14"), _section("15", "live 15")),
+                _chapter("5", _section("16", "live 16"), _section("17", "live 17")),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>4 luku</num>
+            <section><num>14 §</num><content><p>payload 14</p></content></section>
+            <section><num>16 §</num><content><p>payload 16</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+
+    retargeted = _retarget_duplicate_body_section_scope_from_close_live_siblings(
+        muutos_tree=muutos_tree,
+        section_norm="14",
+        body_chapter="4",
+        body_part=None,
+        master=cast(Any, master),
+    )
+
+    assert retargeted is None
+
+
+def test_retarget_keeps_new_letter_suffix_section_when_numeric_neighbor_corroborates() -> None:
+    """A new letter-suffix section stays in body_chapter when a numeric neighbor lives there.
+
+    §§14 a/14 b are inserted under the ``4 luku`` element alongside an unrelated
+    §16 edited in chapter 5. The numeric base §14 lives in chapter 4, corroborating
+    the body chapter, so the new sub-sections must not be pulled into chapter 5.
+    """
+
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                _chapter("4", _section("14", "live 14"), _section("15", "live 15")),
+                _chapter("5", _section("16", "live 16"), _section("17", "live 17")),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>4 luku</num>
+            <section><num>14 §</num><content><p>payload 14</p></content></section>
+            <section><num>14 a §</num><content><p>payload 14a</p></content></section>
+            <section><num>14 b §</num><content><p>payload 14b</p></content></section>
+            <section><num>16 §</num><content><p>payload 16</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+
+    retargeted = _retarget_duplicate_body_section_scope_from_close_live_siblings(
+        muutos_tree=muutos_tree,
+        section_norm="14a",
+        body_chapter="4",
+        body_part=None,
+        master=cast(Any, master),
+    )
+
+    assert retargeted is None
+
+
 def test_compile_group_uses_unscoped_body_surface_for_carry_forward_section_scope() -> None:
     master = ReplayState(
         ir=IRNode(
