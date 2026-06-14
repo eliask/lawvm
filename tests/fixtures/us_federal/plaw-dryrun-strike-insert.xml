@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uslm xmlns="http://schemas.gpo.gov/xml/uslm">
+ <meta>
+  <congress>99</congress>
+  <docNumber>2</docNumber>
+  <approvedDate>2024-01-01</approvedDate>
+ </meta>
+ <main>
+  <section>
+   <num>1</num>
+   <content>
+    <ref href="/us/usc/t99/s10">Section 10 of title 99, United States Code</ref>,
+    <amendingAction type="amend">is amended</amendingAction> by
+    <amendingAction type="delete">striking</amendingAction> &#8220;<quotedText>15-year</quotedText>&#8221;
+    and <amendingAction type="insert">inserting</amendingAction> &#8220;<quotedText>19-year</quotedText>&#8221;.
+   </content>
+  </section>
+ </main>
+</uslm>
