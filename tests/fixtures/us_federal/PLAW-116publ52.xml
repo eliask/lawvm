@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><?xml-stylesheet type="text/css" href="uslm.css"?><pLaw xmlns="http://schemas.gpo.gov/xml/uslm" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xml:lang="en" xsi:schemaLocation="http://schemas.gpo.gov/xml/uslm https://www.govinfo.gov/schemas/xml/uslm/uslm-2.0.17.xsd">
+
+<?I97 133 STAT. ?>
+<?I98 133 STAT. ?>
+<?I99 133 STAT. ?>
+<?I50 PUBLIC LAW 116–52—AUG. 23, 2019?>
+<?I51 PUBLIC LAW 116–52—AUG. 23, 2019?>
+<?I52 PUBLIC LAW 116–52—AUG. 23, 2019?>
+
+
+<!--Disclaimer: Legislative measures that include compacts or other non-standard data structures will require additional modeling and may contain inconsistencies in the converted USLM XML.-->
+<meta><dc:title>Public Law 116–52: To exempt from the calculation of monthly income certain benefits paid by the Department of Veterans Affairs and the Department of Defense.</dc:title>
+<dc:type>Public Law</dc:type><docNumber>52</docNumber>
+<citableAs>Public Law 116–52</citableAs><citableAs>133 Stat. 1076</citableAs>
+<approvedDate>2019-08-23</approvedDate>
+<dc:date>2019-08-23</dc:date>
+<dc:publisher>United States Government Publishing Office</dc:publisher><dc:creator>National Archives and Records Administration</dc:creator><dc:creator>Office of the Federal Register</dc:creator><dc:format>text/xml</dc:format><dc:language>EN</dc:language><dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+<processedBy>GPO Locator to USLM Converter 4.15.31;Stage2.20250702</processedBy><processedDate>2026-01-02</processedDate>
+<congress>116</congress><publicPrivate>public</publicPrivate>
+</meta>
+<preface><centerRunningHead>PUBLIC LAW 116–52—AUG. 23, 2019</centerRunningHead>
+<page identifier="/us/stat/133/1076">133 STAT. 1076</page>
+<dc:type>Public Law</dc:type><docNumber>116–52</docNumber>
+<congress value="116">116th Congress</congress>
+</preface>
+<main>
+<longTitle>
+<docTitle class="centered fontsize12" style="-uslm-lc:I658005">An Act</docTitle>
+<officialTitle class="indentUp0 firstIndent1 fontsize8" style="-uslm-lc:I658011">To exempt from the calculation of monthly income certain benefits paid by the Department of Veterans Affairs and the Department of Defense.<sidenote><p class="centered fontsize8" id="xd0a9460e-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658076"><approvedDate date="2019-08-23">Aug. 23, 2019</approvedDate></p><p class="centered fontsize8" id="xd0a9460f-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658076">[<ref href="/us/bill/116/hr/2938">H.R. 2938</ref>]<?GPOvSpace 08?></p></sidenote></officialTitle>
+</longTitle>
+<enactingFormula style="-uslm-lc:I658120"><i>  Be it enacted by the Senate and House of Representa­tives of the United States of America in Congress assembled,</i></enactingFormula><sidenote><p class="leftAlign firstIndent0 fontsize8" id="xd0a94610-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658180">Honoring American Veterans in Extreme Need Act of 2019.</p><p class="leftAlign firstIndent0 fontsize8" id="xd0a94611-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658180"><ref href="/us/usc/t11/s101">11 USC 101 note</ref>.</p></sidenote>
+<section id="d94580e92" identifier="/us/pl/116/52/s1" style="-uslm-lc:I658146"><num class="bold" value="1">SECTION 1. </num><heading>SHORT TITLE.</heading><content style="-uslm-lc:I658120">  This Act may be cited as the “<shortTitle role="act">Honoring American Veterans in Extreme Need Act of 2019</shortTitle>” or the “<shortTitle role="act">HAVEN Act</shortTitle>”.</content></section>
+<section id="d94580e105" identifier="/us/pl/116/52/s2" role="instruction" style="-uslm-lc:I658141"><num class="fontsize12" value="2">SEC. 2. </num><heading>DEFINITION OF CURRENT MONTHLY INCOME.</heading><content class="firstIndent0 fontsize10" id="xd0a96d22-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658120">  <ref href="/us/usc/t11/s101/10A">Section 101(10A) of title 11, United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> by <amendingAction type="delete">striking</amendingAction> subparagraph (B) and <amendingAction type="insert">inserting</amendingAction> the following:<quotedContent><subparagraph class="indentUp2 fontsize10" id="yd0a9bb43-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658124"><num class="fontsize10" style="-uslm-lc:emspace2" value="B">“(B)</num><clause class="inline" id="yd0a9e254-e81f-11f0-a1e4-69761a48a15a"><num value="i">(i) </num><content>includes any amount paid by any entity other than the debtor (or in a joint case the debtor and the debtor’s spouse), on a regular basis for the household expenses of the debtor or the debtor’s dependents (and in a joint case the debtor’s spouse if not otherwise a dependent); and</content></clause>
+<clause class="indentUp0 fontsize10" id="yd0a9e255-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658124"><num class="fontsize10" style="-uslm-lc:emspace2" value="ii">“(ii) </num><chapeau>excludes—</chapeau><subclause class="fontsize10" id="yd0a9e256-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658126"><num class="fontsize10" style="-uslm-lc:emspace2" value="I">“(I) </num><content>benefits received under the Social Security Act (<ref href="/us/usc/t42/s301/etseq">42 U.S.C. 301 et seq.</ref>);</content></subclause>
+<subclause class="fontsize10" id="yd0a9e257-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658126"><num class="fontsize10" style="-uslm-lc:emspace2" value="II">“(II) </num><content>payments to victims of war crimes or crimes against humanity on account of their status as victims of such crimes;</content></subclause>
+<subclause class="fontsize10" id="yd0a9e258-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658126"><num class="fontsize10" style="-uslm-lc:emspace2" value="III">“(III) </num><content>payments to victims of international terrorism or domestic terrorism, as those terms are defined in section 2331 of title 18, on account of their status as victims of such terrorism; and</content></subclause>
+<subclause class="fontsize10" id="yd0a9e259-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658126"><num class="fontsize10" style="-uslm-lc:emspace2" value="IV">“(IV) </num><content>any monthly compensation, pension, pay, annuity, or allowance paid under title 10, 37, or 38 in connection with a disability, combat-related injury or disability, or death of a member of the uniformed services, except that any retired pay excluded under this subclause shall include retired pay paid under chapter 61 of title 10 only to the extent that such retired pay exceeds the amount of retired pay to which the debtor would otherwise be entitled if retired under any provision of title 10 other than chapter 61 of that title.”</content></subclause>
+</clause>
+</subparagraph>
+</quotedContent>.</content></section>
+<section id="d94580e165" identifier="/us/pl/116/52/s3" style="-uslm-lc:I658141"><num class="fontsize12" value="3">SEC. 3. </num><heading>DETERMINATION OF BUDGETARY EFFECTS.</heading><content style="-uslm-lc:I658120">  The budgetary effects of this Act, for the purpose of complying with the Statutory Pay-As-You-Go Act of 2010, shall be determined by reference to the latest statement titled “Budgetary Effects of <page identifier="/us/stat/133/1077">133 STAT. 1077</page>
+PAYGO Legislation” for this Act, submitted for printing in the Congressional Record by the Chairman of the House Budget Committee, provided that such statement has been submitted prior to the vote on passage.</content></section>
+<action>
+<actionDescription style="-uslm-lc:I658030">Approved</actionDescription> <date date="2019-08-23">August 23, 2019</date>.</action>
+</main>
+<legislativeHistory>
+<heading style="-uslm-lc:I658031"><inline class="underline">LEGISLATIVE HISTORY</inline>—<ref href="/us/bill/116/hr/2938">H.R. 2938</ref>:</heading>
+<note>
+<headingText style="-uslm-lc:I658032">HOUSE REPORTS:</headingText> ┐No. <ref href="/us/hrpt/116/169">116–169</ref> (<committee>Comm. on the Judiciary</committee>).
+</note>
+<note>
+<heading style="-uslm-lc:I658032">CONGRESSIONAL RECORD, Vol. 165 (2019):</heading>
+<p class="indentUp4 firstIndent-1" id="xd0aa096a-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658035">July 23, considered and passed House.</p><p class="indentUp4 firstIndent-1" id="xd0aa096b-e81f-11f0-a1e4-69761a48a15a" style="-uslm-lc:I658035">Aug. 1, considered and passed Senate.</p></note>
+</legislativeHistory>
+<endMarker>○</endMarker>
+</pLaw>

@@ -7,6 +7,42 @@ wrong surface for the wrong claim, this file should make that obvious.
 
 ---
 
+## 0. Acquisition reality (as built)
+
+From outside the U.S., **OLRC `uscode.house.gov` is geo-blocked**. Every source
+that depends on OLRC (USC release points, classification tables) is therefore
+unreachable from the build host. govinfo bulkdata works without a key.
+
+What is **acquired and archived today** (the unblocked half):
+
+- **Amendment source = govinfo bulkdata PLAW USLM XML.** One zip per Congress at
+  `https://www.govinfo.gov/bulkdata/PLAW/{congress}/public/PLAW-{congress}-public.zip`,
+  keyless, root element `<pLaw xmlns="http://schemas.gpo.gov/xml/uslm" ...>`.
+  Each member is one law (`PLAW-118publ5.xml`). Stored at canonical locator
+  **`us://plaw/{congress}/publ{N}.xml`** (private-law `pvtl` members are filtered;
+  the public bulkdata zips contain none). Ingest mirrors Finland's `import-zip`:
+  see `src/lawvm/us_federal/import_plaw.py` and `src/lawvm/us_federal/sources.py`,
+  archive `data/us_federal.farchive`. Inventory: `src/lawvm/us_federal/inventory.py`.
+
+What is **NOT built (blocked / deferred)**:
+
+- **USC verification oracle.** The govinfo USCODE collection (annual editions) is
+  reachable via `api.govinfo.gov`, but requires a **free `api.data.gov` key**
+  (not configured). Whether the USCODE oracle is served as USLM or only `.htm`,
+  and whether it is per-Public-Law or only per-annual-edition, is an **explicit
+  open decision** (see §7). The OLRC release-point endpoint in §3 is geo-blocked
+  and not the acquisition path from here.
+- **OLRC classification tables** (PL § → USC §) are geo-blocked and unreachable.
+  They were the intended witness-anchored coverage denominator. Until/unless
+  reachable, the coverage denominator must instead come from the **USLM
+  source-credit / history `<note>`s inside the USC oracle XML** (a substitute
+  denominator), recorded as such — not from the classification tables.
+
+The §1-§10 design below remains the target; this section records where the
+acquired reality currently diverges from it.
+
+---
+
 ## 1. Source roles
 
 | Claim | Source family | Why this source is allowed | Why other nearby sources are not sufficient |
@@ -66,8 +102,9 @@ For each source family:
     namespace, never overwriting the raw XML.
 
 - **Public Law (PLAW USLM XML)**
-  - real locator: `https://www.govinfo.gov/bulkdata/PLAW/{congress}/public/PLAW-{congress}publ{num}.xml`
-  - canonical logical locator: `us://plaw/{congress}/{plNum}.xml`
+  - real locator (per-law member): `https://www.govinfo.gov/bulkdata/PLAW/{congress}/public/PLAW-{congress}publ{num}.xml`
+  - real locator (per-Congress zip, the acquired form): `https://www.govinfo.gov/bulkdata/PLAW/{congress}/public/PLAW-{congress}-public.zip`
+  - canonical logical locator: `us://plaw/{congress}/publ{N}.xml` (as built)
   - local substrate: `archive` (farchive).
   - identity: SHA-256 of the PLAW XML.
   - storage class: `xml`.
@@ -75,7 +112,10 @@ For each source family:
   - refresh TTL: none.
   - derived separate? yes — parsed clause/operation rows are derived artifacts.
 
-- **OLRC classification tables**
+- **OLRC classification tables** — *unreachable from this host (geo-blocked).*
+  Designed denominator below; in practice the witness-anchored coverage
+  denominator must come from USC-oracle USLM source-credit/history notes instead
+  (see §0 and §9), until OLRC is reachable.
   - real locator: `https://uscode.house.gov/classification/tables.shtml` (index)
     and the per-Public-Law table pages linked from it.
   - canonical logical locator: `us://classification/{plNum}`
@@ -144,7 +184,7 @@ authority remains a frontend-local source-role claim.
   (illustrative prior release point for Title 11).
 - Base act promulgation locator: not applicable as a single act — the title is
   consolidated; the enacting acts are the PLAW locators below.
-- Amending act locator: `us://plaw/119/PL119-95.xml`
+- Amending act locator: `us://plaw/119/publ95.xml`
   (real: `https://www.govinfo.gov/bulkdata/PLAW/119/public/PLAW-119publ95.xml`).
 - Amendment-register locator: `us://classification/PL119-95`
   (parsed from the OLRC classification table for that Public Law).
@@ -211,6 +251,21 @@ does not disappear inside the compiler.
 | USC release point | release-point pin is a PL number, not a date; mis-straddling | source normalization (`us_release_point_misstraddle`) |
 | Classification table | OLRC mapping late or revised after the release point | adjudication (`oracle_suspect` on denominator) |
 | OLRC download endpoint | slow/timeout/truncated zip | acquisition (`us_acq_timeout` / `us_acq_truncated`) |
+| OLRC (uscode.house.gov) | **geo-blocked** from build host — USC release points + classification tables unreachable | acquisition (`us_usc_oracle_unavailable`) |
+| govinfo USCODE oracle | needs free `api.data.gov` key (not configured); USLM-vs-htm format + per-PL-vs-annual granularity **open decision** | acquisition / adjudication (open) |
+
+### Open decision (USC oracle)
+
+The USC verification oracle is **not built**. Two questions are explicitly open:
+
+1. **Format** — does the govinfo USCODE collection expose USLM XML per title, or
+   only `.htm`? (USLM is required to compare end-state shape against replay.)
+2. **Granularity** — is the oracle pinned per Public Law (a true point-in-time
+   straddle witness) or only per annual edition (coarser, may bundle several PLs)?
+
+Until resolved (and a key configured), the frontend has **no oracle** and every
+end-state claim stays a non-claim; the witness denominator falls back to USLM
+source-credit notes (see §0/§9), not OLRC classification tables.
 
 ---
 
@@ -234,7 +289,10 @@ affected rows stay non-claims.
 
 - Seed source family: a chosen Public Law (or a title + release-point window).
 - Dependency witness family: OLRC classification tables (PL § -> USC §) and the
-  USC `<note>` source-credit chain naming amending Public Laws.
+  USC `<note>` source-credit chain naming amending Public Laws. **Acquisition
+  reality:** OLRC classification tables are geo-blocked and unreachable, so the
+  USC-oracle source-credit/history `<note>`s are the available witness denominator
+  today; the classification-table denominator is deferred until OLRC is reachable.
 - Dependency edge types: "Public Law X amended USC title T section S";
   "section S has source-credit referencing PL Y".
 - Transitive dependency: to replay a window for a title, acquire every Public

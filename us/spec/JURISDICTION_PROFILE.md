@@ -42,9 +42,9 @@ just to make the profile look complete.
 
 | Source family | Exists? | Local substrate | Trust level | Covers current? | Covers history? | Replay semantics? | Verification oracle? | Notes |
 |---|---|---|---:|---:|---:|---:|---:|---|
-| Current consolidated text | yes | archive (`us://usc/release/{plNNN}/title{N}.xml`) | high (official OLRC) | yes | partial (release points + annual archives) | no (it is a target, not an instruction) | yes — this IS the oracle | USC in USLM XML at a Public-Law-pinned release point |
-| Official promulgation acts | yes | archive (`us://plaw/{congress}/{plNum}.xml`) | high (official GPO/govinfo) | n/a | yes (113th Congress, 2013+, in USLM) | yes — explicit amendment instructions | no | Public Laws in USLM XML; the amendment-instruction source |
-| Amendment register | yes (as classification tables) | archive (`us://classification/{plNum}`) | high (official OLRC) | yes | yes | partial — maps Act-§ to USC-§, not a payload | witness denominator, not oracle | OLRC classification tables; the ground-truth operation-witness count |
+| Current consolidated text | **blocked from here** (designed: yes) | archive (`us://usc/{year}/title{N}/...` or `us://usc/release/pl{c}-{n}/title{N}.xml`) | high (official OLRC) | yes | partial (release points + annual archives) | no (it is a target, not an instruction) | yes — this IS the oracle | **NOT acquired.** OLRC `uscode.house.gov` is geo-blocked; the govinfo USCODE alternative needs a free `api.data.gov` key (not configured). USLM-vs-htm + per-PL-vs-annual granularity is an open decision. |
+| Official promulgation acts | **yes — acquired** | archive (`us://plaw/{congress}/publ{N}.xml`) | high (official GPO/govinfo) | n/a | yes (113th Congress, 2013+, in USLM) | yes — explicit amendment instructions | no | Public Laws in USLM XML from govinfo bulkdata PLAW (keyless). Ingested via `src/lawvm/us_federal/import_plaw.py` into `data/us_federal.farchive`. The amendment-instruction source. |
+| Amendment register | designed (classification tables) — **unreachable from here** | archive (`us://classification/{plNum}`) | high (official OLRC) | yes | yes | partial — maps Act-§ to USC-§, not a payload | witness denominator, not oracle | OLRC classification tables are geo-blocked. Until reachable, the witness denominator falls back to the USC-oracle USLM source-credit/history `<note>`s. |
 | Structured amendment feed | no | blocked | n/a | n/a | n/a | n/a | n/a | There is no machine effects feed like UK's. Amendment semantics live in the PLAW prose, recoverable because they are drafted as explicit operations. |
 | Commencement / in-force source | partial | inline in PLAW text | medium | n/a | yes | n/a | no | Effective dates are scattered prose inside the Act ("applies to taxable years beginning after…", "90 days after enactment"). No separate commencement register. |
 | Parliamentary package / preparatory works | yes (committee reports, Congressional Record) | blocked (not acquired) | n/a | n/a | yes | n/a | no | Not needed for replay; deferred. |
@@ -213,6 +213,19 @@ Unresolved or conditional effective dates become **typed findings**
 ---
 
 ## 7. Oracle story
+
+> **Acquisition reality (as built):** the oracle is **NOT acquired**. OLRC
+> `uscode.house.gov` (release points + classification tables) is geo-blocked from
+> the build host. The alternative — the govinfo USCODE collection via
+> `api.govinfo.gov` — requires a free `api.data.gov` key that is not configured,
+> and it is an **open decision** whether USCODE is served as USLM XML (needed to
+> compare end-state shape) or only `.htm`, and whether it pins per Public Law or
+> only per annual edition. Until a key is configured and that decision is made,
+> the frontend has **no oracle**: every end-state claim stays a non-claim, and the
+> witness denominator falls back to USLM source-credit/history `<note>`s rather
+> than the (unreachable) OLRC classification tables. The acquired half today is
+> the amendment source only (govinfo bulkdata PLAW, `us://plaw/{c}/publ{N}.xml`).
+> The design below is the target oracle, not the current state.
 
 - Oracle family: **OLRC USC "release points"** — the full United States Code
   pinned to a specific Public Law number (e.g. "through PL 119-95"), published as
