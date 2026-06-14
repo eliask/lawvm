@@ -10288,6 +10288,43 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit JSON",
     )
 
+    # --- parse-bench ---
+    parse_bench_p = sub.add_parser(
+        "parse-bench",
+        help="corpus-wide grammar-coverage benchmark for the johtolause parser",
+        description=(
+            "Parse-only grammar benchmark (the grammar counterpart to `bench`). "
+            "Iterates the FULL statute corpus (~59k, no replay/oracle needed) and "
+            "reports the fraction of amendment johtolauses the parser consumes "
+            "with no interior/trailing silent drop, plus the ranked inventory of "
+            "remaining uncovered-span shapes (the grammar worklist). Grammar-"
+            "sensitive where the replay bench is blind."
+        ),
+    )
+    parse_bench_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N statutes (default: no cap = full corpus)",
+    )
+    parse_bench_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: 8)",
+    )
+    parse_bench_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="show the top N uncovered-span shapes and worst statutes (default: 20)",
+    )
+    parse_bench_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with coverage, tier counts, top shapes, and dropped statutes",
+    )
+
     # --- rebuild-indexes ---
     ri_p = sub.add_parser(
         "rebuild-indexes",
@@ -12601,6 +12638,11 @@ def _main_impl() -> None:
         from lawvm.tools.parse_johto import main as parse_johto_main
 
         parse_johto_main(args)
+
+    elif args.command == "parse-bench":
+        from lawvm.tools.parse_bench import main as parse_bench_main
+
+        parse_bench_main(args)
 
     elif args.command == "fi-source-label-audit":
         from lawvm.tools.fi_source_label_audit import main as fi_source_label_audit_main
