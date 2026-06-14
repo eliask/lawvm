@@ -4959,6 +4959,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit JSON",
     )
     uk_replay_p.add_argument(
+        "--witness-attribution-json",
+        dest="witness_attribution_json",
+        action="store_true",
+        help=(
+            "emit a read-only per-compiled-op effect-feed witness attribution "
+            "surface (op -> witness_rule_id, action family, owning phase, source "
+            "effect-row + affecting-act fragment locator, adjudication bucket) as "
+            "JSON and exit; does not change replay"
+        ),
+    )
+    uk_replay_p.add_argument(
         "--commencement",
         action="store_true",
         help=(
