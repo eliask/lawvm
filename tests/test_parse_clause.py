@@ -186,6 +186,73 @@ def test_parse_clause_chapter_backref_targets_continue_across_verb_groups() -> N
     ]
 
 
+def test_parse_clause_reinsert_target_survives_after_jolloin_renumber() -> None:
+    """A ``kumotun N §:n tilalle uusi N §`` reinsertion after a jolloin
+    renumber tail must NOT be swallowed by the renumber span.
+
+    Shape from 2002/1091: the ``jolloin nykyinen 4 momentti siirtyy 5
+    momentiksi`` consequence is followed by ``ja kumotun 91 §:n tilalle uusi
+    91 §``.  The renumber span must terminate at the reinsertion so the
+    trailing insert target is produced rather than dropped.
+    """
+    result = parse_clause(
+        "lisätään lain (1/81) 87 §:ään uusi 4 momentti, "
+        "jolloin nykyinen 4 momentti siirtyy 5 momentiksi, "
+        "ja kumotun 91 §:n tilalle uusi 91 § seuraavasti:"
+    )
+    codes = [op.code() for op in result.parsed_ops]
+    assert "L P 91" in codes
+
+
+def test_parse_clause_provenance_reinsert_survives_after_jolloin_renumber() -> None:
+    """Real 2002/1091 johtolause: the reinsertion is introduced by a
+    provenance phrase (collapsed into a citation span) before the ``kumotun``
+    participle — ``... siirtyy 6 ja 7 momentiksi, ja mainitulla lailla
+    989/1992 kumotun 91 §:n tilalle uusi 91 §``.  The trailing insert must
+    survive the renumber tail.
+    """
+    result = parse_clause(
+        "kumotaan 3 päivänä huhtikuuta 1981 annetun tieliikennelain "
+        "( 267/1981 ) 83, 83 a, 83 b ja 84 §, muutetaan 2 a §, "
+        "6 luvun otsikko, 85 §, 86 §:n 2 momentti, 87 §:n 3 momentti, "
+        "88 §:n 1 momentti, 89 §:n 1 momentti sekä 92, 96, 105, 107 ja 108 §, "
+        "lisätään 87 §:ään, sellaisena kuin se on mainitussa laissa 989/1992, "
+        "uusi 4 ja 5 momentti, jolloin nykyinen 4 ja 5 momentti siirtyy "
+        "6 ja 7 momentiksi, ja mainitulla lailla 989/1992 kumotun 91 §:n "
+        "tilalle uusi 91 § seuraavasti:"
+    )
+    codes = [op.code() for op in result.parsed_ops]
+    assert "L P 91" in codes
+
+
+def test_parse_clause_multi_section_reinsert_target_list() -> None:
+    """A coordinated reinsertion ``kumotun N, M ja P §:n tilalle uusi N, M ja
+    P §`` must yield one insert op per listed section, even when it opens the
+    verb group (shape from 2003/1337 / 2004/816).
+    """
+    result = parse_clause(
+        "lisätään lain (1/01) kumotun 11, 12 ja 12 a §:n tilalle "
+        "uusi 11, 12 ja 12 a § seuraavasti:"
+    )
+    assert [op.code() for op in result.parsed_ops] == ["L P 11", "L P 12", "L P 12a"]
+
+
+def test_parse_clause_multi_section_reinsert_mid_list_keeps_neighbours() -> None:
+    """A multi-section reinsertion wedged between two ordinary insert targets
+    must not drop either neighbour (shape from 2002/700):
+    ``... lakiin ... kumottujen 63 ja 65 §:n tilalle uusi 63 ja 65 §, lakiin
+    uusi 80 a §``.
+    """
+    result = parse_clause(
+        "lisätään lain (1/87) 61 §:ään uusi 4 momentti, "
+        "lakiin mainitulla lailla 895/1996 kumottujen 63 ja 65 §:n tilalle "
+        "uusi 63 ja 65 §, lakiin uusi 80 a § seuraavasti:"
+    )
+    codes = [op.code() for op in result.parsed_ops]
+    for expected in ("L P 63", "L P 65", "L P 80a"):
+        assert expected in codes, codes
+
+
 def test_parse_clause_surface_clause_populated():
     """surface_clause must be a non-None object (Phase 3 SurfaceClause)."""
     from lawvm.finland.johtolause.surface_model import SurfaceClause
