@@ -75,6 +75,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "new_zealand_effects": (
         "test_new_zealand_chain_replay.py",
+        "test_new_zealand_chain_replay_corpus.py",
         "test_new_zealand_dry_run.py",
         "test_new_zealand_dry_run_corpus.py",
         "test_new_zealand_dry_run_insert.py",

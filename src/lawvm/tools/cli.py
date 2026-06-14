@@ -7420,6 +7420,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     nz_corpus_sub = nz_corpus_p.add_subparsers(dest="nz_corpus_command", metavar="<subcommand>")
     from lawvm.new_zealand.bench_corpus import DEFAULT_SMOKE_SIZE
+    from lawvm.new_zealand.chain_replay_corpus import (
+        DEFAULT_WORKERS as NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS,
+    )
     nz_sync_p = nz_corpus_sub.add_parser(
         "sync",
         help="sync NZ API v0 metadata/XML into farchive",
@@ -8105,6 +8108,100 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="omit per-transition/per-skip detail from JSON"
     )
     nz_replay_chain_p.add_argument("--json", action="store_true", help="emit chain-replay report JSON")
+    nz_replay_chain_corpus_p = nz_corpus_sub.add_parser(
+        "replay-chain-corpus",
+        help="run the all-families amendment-chain replay across a work population and report the honest corpus e2e similarity distribution + ranked extraction caps",
+        description=(
+            "Corpus-wide aggregator for the all-families chain replay. Run the "
+            "per-work evolving-tree replay (see replay-chain) across a work "
+            "POPULATION (a curated bench-corpus CSV via --corpus, or the benchmark "
+            "sampler) in a process pool, and aggregate the honest end-to-end "
+            "numbers: the per-work FINAL stable-combined similarity DISTRIBUTION "
+            "(count/mean/median/p25/p75 + a histogram) — the corpus e2e number; "
+            "per-family applied vs skipped vs oracle-agreement totals; and the "
+            "RANKED skip/extraction-cap census (which extraction gap dominates "
+            "corpus-wide, to order the next lane). Reports the raw distribution and "
+            "does not flatter; every non-applied op is a typed, visible skip. "
+            "Measurement only: never authorizes actual replay, never mutates the "
+            "archive."
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to the --corpus population or the sampler",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus_smoke.csv; overrides the sampler. An explicit "
+            "--work-id list still takes precedence."
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--max-works", type=int, default=None, metavar="N", help="maximum works (no silent truncation; the cap is stated)"
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--work-id-prefix",
+        default="",
+        metavar="PREFIX",
+        help=(
+            "restrict the archive-wide default population to work_ids starting with PREFIX "
+            "(e.g. 'act_public_'); ignored when --work-id or --corpus is given"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--min-version-year",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="restrict the default population to works whose latest archived version is from YEAR or later",
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--sample-strategy",
+        choices=("head", "stride"),
+        default="head",
+        help=(
+            "how to subsample the filtered default population down to --max-works: 'head' keeps the "
+            "lexicographic head; 'stride' takes an evenly-spaced deterministic sample"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help=(
+            "operation families to fold into each chain: 'all' (default), a single family, or a "
+            "comma-separated subset (e.g. 'repeal,text_replace')"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--workers",
+        type=int,
+        default=NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            f"process-pool worker count (default: {NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS}); "
+            "1 runs serially in-process"
+        ),
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--summary-only", action="store_true", help="emit only the corpus summary (suppress per-work rows)"
+    )
+    nz_replay_chain_corpus_p.add_argument(
+        "--json", action="store_true", help="emit the corpus chain-replay report JSON"
+    )
     nz_build_corpus_p = nz_corpus_sub.add_parser(
         "build-corpus",
         help="generate curated NZ bench corpora (large + smoke) of works with >0 amendments",
@@ -11549,6 +11646,12 @@ def _main_impl() -> None:
             from lawvm.new_zealand.chain_replay import main as nz_corpus_replay_chain_main
 
             nz_corpus_replay_chain_main(args)
+        elif args.nz_corpus_command == "replay-chain-corpus":
+            from lawvm.new_zealand.chain_replay_corpus import (
+                main as nz_corpus_replay_chain_corpus_main,
+            )
+
+            nz_corpus_replay_chain_corpus_main(args)
         elif args.nz_corpus_command == "build-corpus":
             from lawvm.new_zealand.bench_corpus import main as nz_corpus_build_corpus_main
 
