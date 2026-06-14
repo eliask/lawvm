@@ -8,6 +8,7 @@ from typing import Any, Optional
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_actions import (
     is_uk_benign_application_overlay_effect_type,
+    is_uk_territorial_extent_with_modifications_effect_type,
 )
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -202,6 +203,35 @@ def infer_uk_effect_action_from_source(
     """
     if initial_action or extracted_el is None:
         return UKActionInference(action=initial_action)
+
+    if is_uk_territorial_extent_with_modifications_effect_type(effect_type):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_territorial_extent_with_modifications_rejected",
+            family="applicability_scope",
+            reason_code="territorial_extent_with_modifications_out_of_scope",
+            reason=(
+                "UK effect extends the affected provision to an external "
+                "territory (Isle of Man / Channel Islands / Jersey / Guernsey) "
+                "with modifications. This declares a territorially-scoped variant "
+                "text, not an amendment of the principal UK consolidation. The "
+                "modifying Schedule body carries drafting verbs (omit / insert / "
+                "substitute) that operate on the variant extent text, so lowering "
+                "must NOT sniff them into a structural repeal/replace of the "
+                "affected provision in the principal text. LawVM has no "
+                "extent-variant model, so the effect is blocked to the manual "
+                "compile frontier (M4 extent-variant axis)."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "affected_provisions": effect.affected_provisions,
+                "extent_variant_axis": "M4",
+            },
+        )
+        return UKActionInference(action=None, blocked=True)
 
     text_lower = (extracted_text or "").lower()
     if _empty_effect_type_commencement_source(extracted_text or ""):

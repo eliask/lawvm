@@ -121,6 +121,68 @@ def _strip_uk_overlay_qualifiers(effect_type: str) -> str:
     return text
 
 
+# ---------------------------------------------------------------------------
+# Territorial-extent-with-modifications detector (M4 extent-variant axis)
+# ---------------------------------------------------------------------------
+#
+# An ``extended (<external territory>) (with modifications)`` effect — e.g.
+# ``ukpga/2006/46`` Part 28 Ch. 1 ``extended (Isle of Man) (with modifications)``
+# by ``uksi/2008/3122`` — does NOT amend the principal (UK) consolidated text.
+# It declares that the affected provision *extends to* an external territory
+# (Isle of Man, the Channel Islands, Jersey, Guernsey) in a *modified* form,
+# i.e. it creates a territorially-scoped VARIANT text. LawVM has no extent-variant
+# model yet, so the only source-faithful outcome is to BLOCK the effect to the
+# manual-compilation frontier (the M4 extent-variant axis), NOT to lower it.
+#
+# The hazard this guards against: the modifying Schedule body carried by such an
+# effect contains drafting verbs ("omit subsections (4) and (5)", "insert", ...)
+# that the empty-effect-type source-action inference would otherwise sniff and
+# lower as a structural REPEAL/REPLACE of the affected Part in the principal text
+# (the forbidden §2.1 over-repeal direction). Those verbs operate on the *variant*
+# extent text, not the principal consolidation.
+#
+# Distinguished from a PLAIN extent extension ("extended (Isle of Man)" with no
+# "with modifications" qualifier): a plain extension carries no variant-creating
+# modification body and is left to ordinary lowering / observation. Distinguished
+# from GB-internal jurisdiction suffixes ("(s)", "(ni)", "(ew)") which are NOT
+# external-territory extents.
+
+# External territories whose extent produces a variant text outside the principal
+# UK consolidation. GB-internal jurisdiction suffixes (s/ni/ew/sc) are excluded.
+_UK_EXTERNAL_EXTENT_TERRITORIES = (
+    "isle of man",
+    "channel islands",
+    "jersey",
+    "guernsey",
+)
+
+
+def is_uk_territorial_extent_with_modifications_effect_type(effect_type: str) -> bool:
+    """Return True for an ``extended (<external territory>) (with modifications)``.
+
+    Recognises the territorial-extent-with-modifications variant-creating effect:
+    the leading overlay verb is ``extended`` (the extent family), the type names
+    an external territory (Isle of Man / Channel Islands / Jersey / Guernsey), and
+    a ``with modifications`` qualifier is present. Such an effect declares a
+    territorially-scoped VARIANT text; it must not lower as a mutation of the
+    principal consolidation. Plain extent extensions (no ``with modifications``)
+    return False so they are not blocked.
+    """
+    raw = " ".join(str(effect_type or "").strip().lower().split())
+    if not raw:
+        return False
+    if "with modifications" not in raw:
+        return False
+    if not any(territory in raw for territory in _UK_EXTERNAL_EXTENT_TERRITORIES):
+        return False
+    # Leading verb must be the ``extended`` extent family. ``_strip_uk_overlay_
+    # qualifiers`` reduces "extended (Isle of Man) (with modifications)" and
+    # "extended in part (...) (with modifications)" to "extended"; guard against
+    # the bare ``extended`` token still leading.
+    base = _strip_uk_overlay_qualifiers(effect_type)
+    return base == "extended" or raw.startswith("extended")
+
+
 def is_uk_benign_application_overlay_effect_type(effect_type: str) -> bool:
     """Return True for non-textual application/extent/overlay effect verbs.
 
