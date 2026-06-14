@@ -207,3 +207,146 @@ def test_section_notes_extracted_without_polluting_statutory_text() -> None:
     assert heads == ["Amendments", "Effective Date of 2022 Amendment"]
     assert "to read as it read on the day before" in notes[0].bodies[0]
     assert "2 years after June 21, 2022" in notes[1].text
+
+
+# A synthetic section reproducing the OLRC "run-in + flattened-depth" shape that
+# the CSS-indent-only splitter mis-addressed (the §1325(b) family): subsection (b)
+# opens RUN-IN with its first paragraph on one ``statutory-body`` line (``(b)(1)``),
+# and the FOLLOWING paragraphs (2)/(3) are flattened to the same ``statutory-body``
+# depth as a subsection — yet they are paragraphs UNDER (b), distinguished only by
+# the enumerator token TYPE (digit ⇒ paragraph, not a new lettered subsection).
+_RUNIN_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:11 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 11-BANKRUPTCY!@!CHAPTER 13!@!Sec. 1325 -->
+<h3 class="section-head">&sect;1325. Synthetic run-in confirmation</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">(a) The court shall confirm a plan if&mdash;</p>
+<p class="statutory-body-1em">(1) the plan complies with this chapter;</p>
+<p class="statutory-body-1em">(2) any required fee has been paid; and</p>
+<p class="statutory-body">(b)(1) If the trustee objects to confirmation, the court may not approve unless&mdash;</p>
+<p class="statutory-body-1em">(A) the value distributed is not less than the claim; or</p>
+<p class="statutory-body-1em">(B) the plan provides all projected disposable income.</p>
+<p class="statutory-body">(2) For purposes of this subsection, the term "disposable income" means current monthly income.</p>
+<p class="statutory-body-1em">(A)(i) for the support of the debtor; and</p>
+<p class="statutory-body-1em">(ii) for charitable contributions.</p>
+<p class="statutory-body">(3) Amounts reasonably necessary shall be determined.</p>
+<p class="statutory-body">(c) After confirmation, the court may order an entity to pay.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 95&ndash;598.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def _runin_section():
+    doc = parse_usc_title_document(_RUNIN_HTM, title=11, year="2018")
+    section = doc.section_by_number("1325")
+    assert section is not None
+    return section
+
+
+def test_split_runin_marker_addresses_paragraph_under_subsection() -> None:
+    """A run-in ``(b)(1)`` line opens BOTH subsection (b) and its paragraph (1);
+    the following flattened ``(2)``/``(3)`` are paragraphs under (b), not new
+    subsections. The CSS-indent-only splitter addressed them as subsection (2)."""
+    section = _runin_section()
+    nodes, _findings = split_statutory_subsections(section)
+    by_segs = {
+        n.address.path[2:]: n for n in nodes
+    }
+
+    # The run-in line is reachable as BOTH the container subsection (b) and the
+    # run-in paragraph (b)(1); both anchor on the same span.
+    assert (("subsection", "b"),) in by_segs
+    assert (("subsection", "b"), ("paragraph", "1")) in by_segs
+    runin = by_segs[(("subsection", "b"), ("paragraph", "1"))]
+    assert runin.text.startswith("(b)(1) If the trustee objects")
+
+    # The flattened depth-0 ``(2)`` is paragraph (b)(2), NOT subsection (2).
+    assert (("subsection", "b"), ("paragraph", "2")) in by_segs
+    assert (("subsection", "2"),) not in by_segs
+    para2 = by_segs[(("subsection", "b"), ("paragraph", "2"))]
+    assert para2.kind == "paragraph"
+    assert para2.text.startswith("(2) For purposes of this subsection")
+
+    # (b)(3) likewise a paragraph under (b); (c) reopens the subsection level.
+    assert (("subsection", "b"), ("paragraph", "3")) in by_segs
+    assert (("subsection", "c"),) in by_segs
+
+
+def test_split_runin_nested_subparagraph_clause_ladder() -> None:
+    """A run-in ``(A)(i)`` under (b)(2) nests subparagraph then clause; the
+    following ``(ii)`` is a clause sibling, not a new top-level letter."""
+    section = _runin_section()
+    nodes, _findings = split_statutory_subsections(section)
+    segs = {n.address.path[2:] for n in nodes}
+    assert (
+        ("subsection", "b"),
+        ("paragraph", "2"),
+        ("subparagraph", "A"),
+    ) in segs
+    assert (
+        ("subsection", "b"),
+        ("paragraph", "2"),
+        ("subparagraph", "A"),
+        ("clause", "i"),
+    ) in segs
+    assert (
+        ("subsection", "b"),
+        ("paragraph", "2"),
+        ("subparagraph", "A"),
+        ("clause", "ii"),
+    ) in segs
+
+
+def test_locate_subsection_text_finds_runin_paragraph() -> None:
+    """``_locate_subsection_text`` resolves the (b)(2) node the dry-run kernel
+    needs (the formerly node-not-located residual class)."""
+    from lawvm.us_federal.dry_run import _locate_subsection_text
+
+    section = _runin_section()
+    target = LegalAddress(
+        path=(
+            ("title", "11"),
+            ("section", "1325"),
+            ("subsection", "b"),
+            ("paragraph", "2"),
+        )
+    )
+    located = _locate_subsection_text(section, target)
+    assert located is not None
+    assert located.startswith("(2) For purposes of this subsection")
+    # And it is a faithful substring of the section body (anchorable for replay).
+    assert located in section.statutory_text
+
+
+def test_locate_subsection_text_absent_node_stays_unlocated() -> None:
+    """A genuinely-absent sub-section node returns None (the dry-run kernel keeps
+    a typed residual) — never a fuzzy match onto a present sibling."""
+    from lawvm.us_federal.dry_run import _locate_subsection_text
+
+    section = _runin_section()
+    # (b)(99) does not exist; the splitter must not hand back a sibling paragraph.
+    absent = LegalAddress(
+        path=(
+            ("title", "11"),
+            ("section", "1325"),
+            ("subsection", "b"),
+            ("paragraph", "99"),
+        )
+    )
+    assert _locate_subsection_text(section, absent) is None
+    # A subsection letter past the end of the ladder likewise stays unlocated.
+    absent_subsec = LegalAddress(
+        path=(("title", "11"), ("section", "1325"), ("subsection", "z"))
+    )
+    assert _locate_subsection_text(section, absent_subsec) is None

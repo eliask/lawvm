@@ -28,9 +28,11 @@ MVP granularity is SECTION-LEVEL: each section yields one address
 (``title``→``section``) and its full normalized statutory text — the oracle
 surface a dry-run compares against. A STRETCH subsection split is provided by
 :func:`split_statutory_subsections`, which maps leading ``(a)``/``(1)``/``(A)``/
-``(i)`` markers plus indent depth to the pinned USC address convention and emits
-a typed ``us_usc_subsection_parse_ambiguous`` finding where structure is unclear
-rather than guessing.
+``(i)`` markers to the pinned USC address convention by enumerator TOKEN TYPE
+(the OLRC's CSS indent depth is unreliable under run-in nesting), splits run-in
+heads (``(b)(1)``) into their levels, and emits a typed
+``us_usc_subsection_parse_ambiguous`` finding where structure is unclear rather
+than guessing.
 """
 
 from __future__ import annotations
@@ -55,15 +57,49 @@ _SECTION_HEAD_RE = re.compile(r"^\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*)\.")
 
 # Leading enumerator markers for subsection splitting (STRETCH). Each statutory
 # paragraph that opens a new structural unit starts with one of these in the
-# leading text, paired with an indent class that fixes the level.
+# leading text. A single paragraph may open MORE than one level at once — the
+# OLRC consolidated Code routinely renders the head of a nested unit "run-in" on
+# one line (``(b)(1) If the trustee ...`` is subsection (b) AND its paragraph (1)
+# on a single ``statutory-body`` line). So a paragraph's leading text can carry a
+# run of markers, each opening one level deeper than the last.
 _MARKER_RE = re.compile(r"^\((?P<token>[0-9A-Za-z]+)\)")
 
-# indent class suffix → structural kind (the pinned USC address convention).
-# statutory-body      = subsection level   (a) -> ("subsection", "a")
-# statutory-body-1em  = paragraph level    (1) -> ("paragraph", "1")
-# statutory-body-2em  = subparagraph level (A) -> ("subparagraph", "A")
-# statutory-body-3em  = clause level       (i) -> ("clause", "i")
-# statutory-body-4em+ = sub-clause and deeper (kept, but not in the pinned 6-tuple)
+# The pinned USC enumeration ladder. Level == index. The OLRC's CSS indent class
+# is NOT a reliable level signal (run-in nesting flattens children to depth 0, so
+# a paragraph (2) under a run-in (b)(1) renders at the same ``statutory-body``
+# depth as a subsection), so the level is derived from the enumerator TOKEN TYPE
+# against this fixed ladder:
+#   0 subsection   lowercase letter   (a)
+#   1 paragraph    arabic digit       (1)
+#   2 subparagraph uppercase letter   (A)
+#   3 clause       lowercase roman    (i)
+#   4 subclause    uppercase roman    (I)
+#   5 item         doubled lowercase  (aa)
+#   6 sub-item     doubled uppercase  (AA)
+# A bare lowercase single letter is ambiguous between subsection-letter and
+# lowercase-roman (``i``/``v``/``x``/...); an uppercase single letter likewise
+# between subparagraph-letter and uppercase-roman. The open-ancestor stack
+# disambiguates (a ``(i)`` opening a child of ``(A)`` is a clause; following
+# ``(h)`` it is the 9th subsection). When it cannot, the node is flagged
+# ``us_usc_subsection_parse_ambiguous`` and never guessed.
+_USC_LADDER = (
+    "subsection",
+    "paragraph",
+    "subparagraph",
+    "clause",
+    "subclause",
+    "item",
+    "sub-item",
+)
+_LEVEL_SUBSECTION = 0
+_LEVEL_PARAGRAPH = 1
+_LEVEL_SUBPARAGRAPH = 2
+_LEVEL_CLAUSE = 3
+_LEVEL_SUBCLAUSE = 4
+_LEVEL_ITEM = 5
+_LEVEL_SUBITEM = 6
+
+# Retained for the legacy CSS-indent → kind mapping (diagnostics / histograms).
 _INDENT_KIND = {
     0: "subsection",
     1: "paragraph",
@@ -74,6 +110,144 @@ _INDENT_KIND = {
 }
 
 _SUBSECTION_PARSE_AMBIGUOUS = "us_usc_subsection_parse_ambiguous"
+
+_ROMAN_VALUES = (
+    (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+    (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+    (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i"),
+)
+_ROMAN_RE = re.compile(r"^m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$")
+_LOWER_ALPHA_RE = re.compile(r"^[a-z]+$")
+_UPPER_ALPHA_RE = re.compile(r"^[A-Z]+$")
+
+
+def _int_to_roman(value: int) -> str:
+    out: list[str] = []
+    for amount, symbol in _ROMAN_VALUES:
+        while value >= amount:
+            out.append(symbol)
+            value -= amount
+    return "".join(out)
+
+
+def _roman_to_int(token: str) -> int | None:
+    """Strict roman→int. Returns None for non-canonical romans (``iiii``, ``vv``)."""
+    lowered = token.lower()
+    if not lowered or _ROMAN_RE.match(lowered) is None:
+        return None
+    values = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
+    total = 0
+    prev = 0
+    for ch in reversed(lowered):
+        v = values[ch]
+        if v < prev:
+            total -= v
+        else:
+            total += v
+            prev = v
+    # Round-trip guard: only accept the canonical spelling for that integer.
+    return total if _int_to_roman(total) == lowered else None
+
+
+def _homogeneous_letter_ordinal(token: str, *, upper: bool) -> int | None:
+    """Ordinal of a USC letter enumerator (``a``→1 ... ``z``→26, ``aa``→27 ...).
+
+    USC doubles a single letter for the deepest letter levels (``(aa)``, ``(bb)``).
+    Mixed-letter runs (``ab``) are not valid enumerators → None.
+    """
+    pattern = _UPPER_ALPHA_RE if upper else _LOWER_ALPHA_RE
+    if pattern.match(token) is None or len(set(token)) != 1:
+        return None
+    base_ord = ord("A") if upper else ord("a")
+    base = ord(token[0]) - base_ord + 1
+    return base + 26 * (len(token) - 1)
+
+
+def _marker_interpretations(token: str) -> tuple[tuple[int, int], ...]:
+    """All ``(level, ordinal)`` the enumerator token can denote on the USC ladder.
+
+    A digit is unambiguously a paragraph. A single lowercase letter is ambiguous
+    between a subsection-letter and a lowercase-roman clause; uppercase likewise
+    between subparagraph-letter and uppercase-roman subclause. Doubled letters
+    (``aa``/``AA``) denote the item / sub-item levels.
+    """
+    if token.isdigit():
+        return ((_LEVEL_PARAGRAPH, int(token)),)
+    out: list[tuple[int, int]] = []
+    if _LOWER_ALPHA_RE.match(token) is not None:
+        letter = _homogeneous_letter_ordinal(token, upper=False)
+        roman = _roman_to_int(token)
+        if len(token) == 1 and letter is not None:
+            out.append((_LEVEL_SUBSECTION, letter))
+        if roman is not None:
+            out.append((_LEVEL_CLAUSE, roman))
+        if len(token) == 2 and token[0] == token[1] and letter is not None:
+            out.append((_LEVEL_ITEM, letter))
+    elif _UPPER_ALPHA_RE.match(token) is not None:
+        letter = _homogeneous_letter_ordinal(token, upper=True)
+        roman = _roman_to_int(token)
+        if len(token) == 1 and letter is not None:
+            out.append((_LEVEL_SUBPARAGRAPH, letter))
+        if roman is not None:
+            out.append((_LEVEL_SUBCLAUSE, roman))
+        if len(token) == 2 and token[0] == token[1] and letter is not None:
+            out.append((_LEVEL_SUBITEM, letter))
+    return tuple(out)
+
+
+def _resolve_marker_level(
+    token: str,
+    stack: list[tuple[int, int]],
+    *,
+    run_in_child: bool,
+) -> tuple[int, int] | None:
+    """Resolve an enumerator token to one ``(level, ordinal)`` against the open stack.
+
+    ``stack`` is the list of ``(level, ordinal)`` open ancestors, shallow→deep.
+    ``run_in_child`` is True when this token follows another marker on the SAME
+    line (``(b)(1)``): it must open a child of the marker before it.
+
+    Returns the chosen ``(level, ordinal)``, or ``None`` when the token is not a
+    recognised enumerator OR is genuinely ambiguous between two levels that score
+    equally (the caller flags it and never guesses).
+    """
+    interps = _marker_interpretations(token)
+    if not interps:
+        return None
+    frontier = stack[-1][0] if stack else -1
+    # Score each candidate; lower score = better fit. Distinct levels tying at the
+    # best score == genuine ambiguity → refuse.
+    scored: list[tuple[int, int, int]] = []
+    for level, ordinal in interps:
+        if run_in_child:
+            if level == frontier + 1 and ordinal == 1:
+                score = 0
+            elif level > frontier:
+                score = 3
+            else:
+                continue
+        else:
+            is_sibling = any(sl == level and so == ordinal - 1 for sl, so in stack)
+            is_reopen = any(sl == level for sl, so in stack)
+            if is_sibling:
+                score = 0  # clean next-sibling continuation of an open level
+            elif level == frontier + 1 and ordinal == 1:
+                score = 1  # clean first child of the deepest open level
+            elif is_reopen:
+                score = 2  # sibling of an open level with a gap (renumbered/skipped)
+            elif level > frontier:
+                score = 4  # a deeper child jump (>1 level) — irregular but placeable
+            else:
+                score = 5  # a shallower reopen of a not-currently-open level
+        scored.append((score, level, ordinal))
+    if not scored:
+        return None
+    scored.sort()
+    best_score = scored[0][0]
+    best_levels = {lvl for sc, lvl, _o in scored if sc == best_score}
+    if len(best_levels) > 1:
+        return None  # ambiguous: two different levels fit equally well
+    return scored[0][1], scored[0][2]
 
 
 def _localname(el: Any) -> str:
@@ -524,70 +698,102 @@ def split_statutory_subsections(
     nodes: list[UscSubsectionNode] = []
     findings: list[dict[str, str]] = []
 
-    # Stack of (depth, kind, label) open ancestors; address is title/section +
-    # each open ancestor's (kind, label).
-    stack: list[tuple[int, str, str]] = []
+    # Stack of (level, ordinal) open ancestors, shallow→deep; the address is
+    # title/section + each open ancestor's (ladder-kind, label-token).
+    stack: list[tuple[int, int]] = []
+    # The label token for each open ancestor level, parallel to ``stack``.
+    label_stack: list[str] = []
     base_path = section.address.path
 
-    for para in section.paragraphs:
-        depth = para.indent_depth
-        marker = _MARKER_RE.match(para.text)
-
-        if depth < 0 or marker is None:
-            # Continuation / flush / block line, or a paragraph with no leading
-            # enumerator: attach to the currently-open node by appending text.
-            if nodes:
-                last = nodes[-1]
-                nodes[-1] = UscSubsectionNode(
-                    address=last.address,
-                    label=last.label,
-                    kind=last.kind,
-                    indent_depth=last.indent_depth,
-                    text=_normalize_text(f"{last.text} {para.text}"),
-                )
-            else:
-                # Statutory text before any enumerator (a flush lead-in): record a
-                # synthetic depth-0 body node so text is not dropped.
-                findings.append(
-                    {
-                        "rule_id": _SUBSECTION_PARSE_AMBIGUOUS,
-                        "section": section.section,
-                        "reason": "statutory text precedes the first enumerated marker",
-                        "text_preview": para.text[:80],
-                    }
-                )
-            continue
-
-        # Pop ancestors at or deeper than this depth.
-        while stack and stack[-1][0] >= depth:
-            stack.pop()
-
-        if stack and depth - stack[-1][0] > 1:
+    def _attach_continuation(text: str) -> None:
+        """Append a flush/continuation line's text to the currently-open node."""
+        if nodes:
+            last = nodes[-1]
+            nodes[-1] = UscSubsectionNode(
+                address=last.address,
+                label=last.label,
+                kind=last.kind,
+                indent_depth=last.indent_depth,
+                text=_normalize_text(f"{last.text} {text}"),
+            )
+        else:
             findings.append(
                 {
                     "rule_id": _SUBSECTION_PARSE_AMBIGUOUS,
                     "section": section.section,
-                    "reason": "indent depth jumps more than one level from open ancestor",
-                    "marker": marker.group("token"),
-                    "depth": str(depth),
-                    "open_depth": str(stack[-1][0]),
+                    "reason": "statutory text precedes the first enumerated marker",
+                    "text_preview": text[:80],
                 }
             )
 
-        kind = _INDENT_KIND.get(depth, f"level{depth}")
-        label = marker.group("token")
-        stack.append((depth, kind, label))
+    for para in section.paragraphs:
+        # A paragraph's leading text may carry a RUN of markers (``(b)(1) ...``),
+        # each opening one level deeper than the last. Peel the leading run.
+        run_tokens: list[str] = []
+        rest = para.text
+        m = _MARKER_RE.match(rest)
+        while m is not None:
+            run_tokens.append(m.group("token"))
+            rest = rest[m.end():]
+            # Only continue the run when the next marker DIRECTLY abuts the prior
+            # one (no intervening character): ``(b)(1)`` is a run-in head; ``(a) The
+            # court ...`` (prose after the marker) is a single enumerator. This
+            # abutment is exactly what distinguishes a run-in head from ordinary
+            # body text that merely contains parenthesised cross-references.
+            m = _MARKER_RE.match(rest)
 
-        path = base_path + tuple((k, lbl) for (_d, k, lbl) in stack)
-        nodes.append(
-            UscSubsectionNode(
-                address=LegalAddress(path=path),
-                label=label,
-                kind=kind,
-                indent_depth=depth,
-                text=_normalize_text(para.text),
+        if para.indent_depth < 0 or not run_tokens:
+            # Continuation / flush / block line, or a paragraph with no leading
+            # enumerator: attach text to the currently-open node.
+            _attach_continuation(para.text)
+            continue
+
+        opened_any = False
+        for index, token in enumerate(run_tokens):
+            resolved = _resolve_marker_level(
+                token, stack, run_in_child=(index > 0)
             )
-        )
+            if resolved is None:
+                findings.append(
+                    {
+                        "rule_id": _SUBSECTION_PARSE_AMBIGUOUS,
+                        "section": section.section,
+                        "reason": "enumerator marker is unrecognised or ambiguous between levels",
+                        "marker": token,
+                        "text_preview": para.text[:80],
+                    }
+                )
+                # Stop processing this line's run: the remaining tokens depend on a
+                # level we could not place. Whatever opened so far still carries the
+                # full line text via the node appended below.
+                break
+            level, ordinal = resolved
+            # Pop ancestors at or deeper than this level.
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+                label_stack.pop()
+            stack.append((level, ordinal))
+            label_stack.append(token)
+            kind = _USC_LADDER[level] if level < len(_USC_LADDER) else f"level{level}"
+            path = base_path + tuple(
+                (_USC_LADDER[lvl] if lvl < len(_USC_LADDER) else f"level{lvl}", lbl)
+                for (lvl, _o), lbl in zip(stack, label_stack, strict=True)
+            )
+            nodes.append(
+                UscSubsectionNode(
+                    address=LegalAddress(path=path),
+                    label=token,
+                    kind=kind,
+                    indent_depth=level,
+                    # Every marker on a run-in line shares the line's full text: the
+                    # container ``(b)`` and its run-in child ``(b)(1)`` both anchor on
+                    # the same ``(b)(1) ...`` span, which is faithful for locating.
+                    text=_normalize_text(para.text),
+                )
+            )
+            opened_any = True
+        if not opened_any:
+            _attach_continuation(para.text)
 
     return tuple(nodes), findings
 
