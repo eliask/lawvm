@@ -10,8 +10,84 @@ from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _action_name
-from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.effects import STRUCTURAL_EFFECT_TYPES, UKEffectRecord
 from lawvm.uk_legislation.uk_grafter import _clean_num
+
+# §1.7 same-moment cross-act conflict classification.
+#
+# At ordering time only the effect-feed record is available (not the lowered
+# payload), so "incompatible payload" is decided from the effect TYPE family,
+# conservatively. Two effects from DISTINCT affecting acts on the SAME
+# (effective_date, affected target) are incompatible when their whole-target
+# outcomes cannot both stand at the same instant:
+#
+#   * a whole-target DESTRUCTIVE effect (repeal/omit of the whole provision)
+#     against ANY other structural change to that provision — you cannot both
+#     delete the provision and amend it at the same moment, and the materialized
+#     result depends purely on which act the ordering happens to run last;
+#   * two whole-target REPLACEMENT effects (substitution of the whole provision)
+#     — each replaces the entire provision with different text, so only one can
+#     win and the winner is order-determined.
+#
+# Word/fragment-level changes (``word(s) inserted/substituted/omitted`` etc.) are
+# scoped to a fragment, not the whole provision, so two such effects from
+# different acts can legitimately coexist; they are intentionally NOT treated as
+# incompatible here to avoid false ambiguity findings.
+_UK_WHOLE_TARGET_DESTRUCTIVE_EFFECT_TYPES = frozenset(
+    {
+        "repealed",
+        "entry repealed",
+        "repealed in part",
+        "omitted",
+        "entry omitted",
+    }
+)
+_UK_WHOLE_TARGET_REPLACEMENT_EFFECT_TYPES = frozenset(
+    {
+        "substituted",
+        "entry substituted",
+    }
+)
+_UK_WHOLE_TARGET_STRUCTURAL_EFFECT_TYPES = (
+    _UK_WHOLE_TARGET_DESTRUCTIVE_EFFECT_TYPES | _UK_WHOLE_TARGET_REPLACEMENT_EFFECT_TYPES
+)
+
+
+def _uk_normalized_effect_type(effect: UKEffectRecord) -> str:
+    return " ".join(str(effect.effect_type or "").strip().lower().split())
+
+
+def _uk_same_moment_payloads_incompatible(
+    left: UKEffectRecord, right: UKEffectRecord
+) -> bool:
+    """Return True when two same-(date, target) cross-act effects cannot coexist.
+
+    Sound and conservative: only whole-target destructive/replacement families
+    are treated as incompatible (see the family comment above). Word/fragment
+    effects, and any non-structural effect (e.g. a ``coming into force``
+    commencement entry that changes no text), return False.
+    """
+    left_type = _uk_normalized_effect_type(left)
+    right_type = _uk_normalized_effect_type(right)
+    # Both effects must actually change the target's text for them to compete.
+    # A commencement/non-structural entry on the same target is not a payload.
+    if left_type not in STRUCTURAL_EFFECT_TYPES or right_type not in STRUCTURAL_EFFECT_TYPES:
+        return False
+    left_whole = left_type in _UK_WHOLE_TARGET_STRUCTURAL_EFFECT_TYPES
+    right_whole = right_type in _UK_WHOLE_TARGET_STRUCTURAL_EFFECT_TYPES
+    if not left_whole and not right_whole:
+        return False
+    left_destructive = left_type in _UK_WHOLE_TARGET_DESTRUCTIVE_EFFECT_TYPES
+    right_destructive = right_type in _UK_WHOLE_TARGET_DESTRUCTIVE_EFFECT_TYPES
+    # A whole-target repeal/omission against any other structural change to the
+    # same provision is incompatible: you cannot both delete the provision and
+    # amend it at the same instant.
+    if left_destructive or right_destructive:
+        return True
+    # Otherwise both are whole-target replacements: two distinct substitutions of
+    # the same provision each overwrite it, so only one can win.
+    return True
+
 
 _UK_SOURCE_PROVISION_ORDER_TOKEN_RE = re.compile(
     r"\b(?:regs?|regulations?|rules?|articles?|arts?|sections?|ss?|s|"
@@ -43,6 +119,13 @@ class _EffectOrderingGroupKey(NamedTuple):
     effective_date: str
     affected_target: str
     affecting_act_id: str
+
+
+class _SameMomentTargetKey(NamedTuple):
+    """Group key for cross-act same-moment conflict detection (no act in key)."""
+
+    effective_date: str
+    affected_target: str
 
 
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
@@ -167,7 +250,125 @@ def _order_uk_effects_for_replay(
             diagnostics_out.append(record)
         if lowering_observations_out is not None:
             lowering_observations_out.append(dict(record))
+
+    _emit_uk_same_moment_cross_act_conflict_findings(
+        original,
+        ordered,
+        effective_date_of=_effective_date,
+        diagnostics_out=diagnostics_out,
+        lowering_observations_out=lowering_observations_out,
+    )
     return ordered
+
+
+def _emit_uk_same_moment_cross_act_conflict_findings(
+    original: Sequence[UKEffectRecord],
+    ordered: Sequence[UKEffectRecord],
+    *,
+    effective_date_of: Any,
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    lowering_observations_out: Optional[list[dict[str, Any]]],
+) -> None:
+    """Emit a §1.7 ambiguity finding for same-moment cross-act incompatible payloads.
+
+    When two effects share the same effective date and affected target but come
+    from DIFFERENT affecting acts and carry incompatible whole-target payloads
+    (see ``_uk_same_moment_payloads_incompatible``), the materialized winner is
+    today decided only by ``affecting_act_id`` lexical order in ``_sort_key``.
+    That is "legal conflict resolved by Python accident" (§1.7): an ambiguity
+    until a precedence rule proves otherwise.
+
+    This finding is ADDITIVE: it does not reorder effects or change which op
+    wins. It records that the pick is order-based and unproven so the conflict is
+    visible (§1.8/§8) and rejectable under strict mode (§1.7/§14). A future
+    precedence claim resolves it.
+    """
+    if diagnostics_out is None and lowering_observations_out is None:
+        return
+
+    target_groups: dict[_SameMomentTargetKey, list[UKEffectRecord]] = {}
+    for effect in original:
+        target = str(effect.affected_provisions or "").strip()
+        if not target:
+            # No affected target to scope the conflict to; nothing to compare.
+            continue
+        effective_date = effective_date_of(effect) or ""
+        if not effective_date:
+            # Undated effects are not a same-EFFECTIVE-DATE conflict: bucketing
+            # them together would manufacture a false ambiguity from the absence
+            # of a date rather than a genuine same-moment collision. Their
+            # ordering is handled (and date-recovery flagged) by other lanes.
+            continue
+        key = _SameMomentTargetKey(
+            effective_date=effective_date,
+            affected_target=target,
+        )
+        target_groups.setdefault(key, []).append(effect)
+
+    for key, group_effects in target_groups.items():
+        distinct_acts = {effect.affecting_act_id for effect in group_effects}
+        if len(distinct_acts) < 2:
+            continue
+        conflicting_pairs: list[tuple[UKEffectRecord, UKEffectRecord]] = []
+        for left_idx in range(len(group_effects)):
+            for right_idx in range(left_idx + 1, len(group_effects)):
+                left = group_effects[left_idx]
+                right = group_effects[right_idx]
+                if left.affecting_act_id == right.affecting_act_id:
+                    continue
+                if _uk_same_moment_payloads_incompatible(left, right):
+                    conflicting_pairs.append((left, right))
+        if not conflicting_pairs:
+            continue
+        conflicting_acts = sorted(
+            {effect.affecting_act_id for pair in conflicting_pairs for effect in pair}
+        )
+        # The op that wins under the current order-based pick: the conflicting
+        # effect that sorts first in the already-computed replay order.
+        ordered_conflicting = [
+            effect
+            for effect in ordered
+            if any(effect is pair_effect for pair in conflicting_pairs for pair_effect in pair)
+        ]
+        order_based_winner = ordered_conflicting[0] if ordered_conflicting else None
+        record = _uk_ordering_diagnostic(
+            rule_id="uk_same_moment_cross_act_incompatible_payload_ambiguous",
+            reason=(
+                "Two or more affecting acts change the same target at the same "
+                "effective date with incompatible whole-target payloads. The "
+                "materialized winner is currently chosen by affecting_act_id "
+                "lexical order with no precedence rule; this is a §1.7 ambiguity "
+                "until a precedence claim proves which act prevails."
+            ),
+            blocking=True,
+            effective_date=key.effective_date,
+            affected_target=key.affected_target,
+            reason_code="same_moment_cross_act_incompatible_payload",
+            conflicting_affecting_acts=tuple(conflicting_acts),
+            conflicting_effects=tuple(
+                {
+                    "effect_id": effect.effect_id,
+                    "affecting_act_id": effect.affecting_act_id,
+                    "effect_type": _uk_normalized_effect_type(effect),
+                    "affecting_provisions": effect.affecting_provisions,
+                }
+                for effect in sorted(
+                    {id(e): e for pair in conflicting_pairs for e in pair}.values(),
+                    key=lambda e: (e.affecting_act_id, e.effect_id),
+                )
+            ),
+            order_based_winner_effect_id=(
+                order_based_winner.effect_id if order_based_winner is not None else ""
+            ),
+            order_based_winner_affecting_act_id=(
+                order_based_winner.affecting_act_id if order_based_winner is not None else ""
+            ),
+            resolution="affecting_act_id_lexical_order_unproven",
+        )
+        if diagnostics_out is not None:
+            diagnostics_out.append(record)
+        if lowering_observations_out is not None:
+            lowering_observations_out.append(dict(record))
 
 
 def _text_replace_preimage_chain_key(op: LegalOperation) -> Optional[tuple[str, str]]:
