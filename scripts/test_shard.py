@@ -374,6 +374,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_materialization_invariants.py",
     ),
     "core_replay_timeline": (
+        "test_part_snapshot_section_retention.py",
         "test_replay_lints.py",
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",

@@ -735,18 +735,93 @@ def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, norm
     return _normalize_text(child_label) == normalized_label
 
 
+# Descendant-matching (nested-payload) lane. ---------------------------------
+#
+# In a structural replace/insert the new/target leaf often lives INSIDE a newly-
+# inserted Part or section in the amend subtree (e.g. a new section ``147A``
+# nested in a new ``<part>``/``<subpart>``, or a new subsection nested in a new
+# section), not as a DIRECT structural child of the ``<amend>``. The top-level
+# matchers above only reach the amend's direct children, so these payloads are
+# fully present yet block as ``no_amend_child_matches_*``.
+#
+# The descendant lane recurses ONLY through the structural CONTAINER kinds a new
+# provision can be wrapped in (``part``/``subpart``/``prov``) to find the target
+# leaf nested below them. It is a strict FALLBACK: the caller tries the top-level
+# matchers first and only descends when they find nothing, so the existing
+# top-level path is byte-identical where it already fires. The >1-match ambiguity
+# refusal is preserved end-to-end — if the leaf label is matched under more than
+# one container the caller still refuses (never guesses which). Recursion is
+# bounded to the container kinds so a leaf is never double-counted: the target
+# leaf kind (``prov``/``subprov``/lettered-para) is distinct from the container
+# kinds we recurse through, and a matched leaf is not itself recursed into.
+
+# Structural kinds that can WRAP a newly-inserted provision in an amend subtree.
+# These are the only kinds the descendant lane recurses through; the target leaf
+# is found among their descendants.
+_AMEND_CONTAINER_KINDS = frozenset({"part", "subpart", "prov"})
+
+
+def _descend_container_leaf_matches(
+    amend_subtrees: list[etree._Element],
+    leaf_kind: str,
+    normalized_label: str,
+) -> list[etree._Element]:
+    """Leaf matches nested below a new part/subpart/section in the amend subtrees.
+
+    Recurses ONLY through the structural container kinds a new provision is
+    wrapped in (``part``/``subpart``/``prov``) and returns every structural node
+    nested below such a container whose kind+label match the target leaf. A node
+    that is itself the matched leaf is not recursed into, so a leaf is counted
+    once. Direct top-level amend children are NOT collected here (the top-level
+    matchers own them); only genuinely nested leaves are returned. The caller
+    treats >1 match as ambiguous and refuses — never a guess.
+    """
+
+    matches: list[etree._Element] = []
+
+    def _recurse(element: etree._Element, *, inside_container: bool) -> None:
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            child_kind = _localname(child)
+            if child_kind not in _STRUCTURAL_TAGS and child_kind not in _AMEND_CONTAINER_KINDS:
+                # Non-structural wrapper (``<para>``, ``<text>`` etc.): keep
+                # descending so a container nested under prose markup is reached,
+                # without treating the wrapper itself as a container.
+                _recurse(child, inside_container=inside_container)
+                continue
+            # A nested leaf match: only count it when it sits below a container
+            # (i.e. it is genuinely nested, not a direct top-level amend child).
+            if inside_container and _amend_child_matches_leaf(child, leaf_kind, normalized_label):
+                matches.append(child)
+                # Do not recurse into the matched leaf — its own sub-nodes are
+                # part of the payload, never a separate match for this leaf.
+                continue
+            if child_kind in _AMEND_CONTAINER_KINDS:
+                _recurse(child, inside_container=True)
+            else:
+                _recurse(child, inside_container=inside_container)
+
+    for amend in amend_subtrees:
+        _recurse(amend, inside_container=False)
+    return matches
+
+
 def _replacement_leaf_matches(
     amend_subtrees: list[etree._Element],
     target_leaf_kind: str,
     normalized_label: str,
 ) -> list[etree._Element]:
-    """Top-level ``<amend>`` structural children matching the target leaf.
+    """``<amend>`` structural children matching the target leaf (nested-aware).
 
-    Scans the supplied amend subtrees and returns every top-level structural
-    child whose kind+label match the witness's target leaf. A single match across
-    all subtrees is a clean extraction; more than one is ambiguous; none is
-    blocked. The caller may pass a section-scoped subset of amend subtrees for
-    disambiguation.
+    Tries the amend's DIRECT top-level structural children first; if none match,
+    falls back to the descendant lane, which finds the target leaf nested below a
+    newly-inserted ``part``/``subpart``/``section`` in the amend subtree. A single
+    match (top-level or nested) is a clean extraction; more than one is ambiguous;
+    none is blocked. The caller may pass a section-scoped subset of amend subtrees
+    for disambiguation. The top-level path is byte-identical to the historical
+    behaviour where it already fires — the nested lane is consulted only when the
+    top level is empty, so no previously-clean extraction changes.
     """
 
     matches: list[etree._Element] = []
@@ -758,7 +833,9 @@ def _replacement_leaf_matches(
                 continue
             if _amend_child_matches_leaf(child, target_leaf_kind, normalized_label):
                 matches.append(child)
-    return matches
+    if matches:
+        return matches
+    return _descend_container_leaf_matches(amend_subtrees, target_leaf_kind, normalized_label)
 
 
 def _insertion_leaf_matches(
@@ -773,8 +850,11 @@ def _insertion_leaf_matches(
     the following definitions:") inside ``<amend>`` rather than being a direct
     amend child; the defined term is globally unique within an interpretation
     provision, so a descendant search keyed on the term is safe. Every other kind
-    is matched as a direct top-level structural child. The caller may pass a
-    section-scoped subset of amend subtrees for disambiguation.
+    is matched as a direct top-level structural child first, then — only when no
+    direct child matches — via the nested-payload descendant lane (a new section
+    inside a new ``part``/``subpart``, a new subsection inside a new section). The
+    caller may pass a section-scoped subset of amend subtrees for disambiguation
+    and treats >1 match as ambiguous (refuses, never guesses).
     """
 
     matches: list[etree._Element] = []
@@ -796,7 +876,9 @@ def _insertion_leaf_matches(
                 continue
             if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
                 matches.append(child)
-    return matches
+    if matches:
+        return matches
+    return _descend_container_leaf_matches(amend_subtrees, inserted_leaf_kind, normalized_label)
 
 
 # Inserted-node (whole-provision INSERT) payload extraction. -------------------

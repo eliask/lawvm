@@ -338,6 +338,101 @@ def test_extractor_blocks_when_no_child_matches_inserted_leaf() -> None:
     assert result == NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
 
 
+# --- Nested-payload descendant matching. --------------------------------------
+#
+# A newly-inserted section frequently lives INSIDE a newly-inserted Part/subpart
+# in the amend subtree (the spec example: new section 147A inside new Part 9), not
+# as a direct amend child. The descendant lane finds it; the top-level path is
+# tried first so a clean top-level extraction is unchanged; >1-match still refuses.
+
+_NESTED_INSERT_PART = b"""\
+<act><body><prov id="INSNEST"><prov.body><para>
+  <text>After Part 8, insert:</text>
+  <amend>
+    <part><label>9</label><heading>New Part nine</heading>
+      <prov><label>147A</label><heading>New nested section</heading>
+        <prov.body><para><text>147A New nested section The brand new body of section 147A.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+_NESTED_INSERT_SUBPART = b"""\
+<act><body><prov id="INSSUB"><prov.body><para>
+  <text>After Part 2, insert:</text>
+  <amend>
+    <part><label>3</label><heading>New Part three</heading>
+      <subpart><label>1</label><heading>Subpart one</heading>
+        <prov><label>40A</label><heading>Deep new section</heading>
+          <prov.body><para><text>40A Deep new section The brand new deeply nested section 40A.</text></para></prov.body></prov>
+      </subpart>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def test_insert_extractor_descends_into_new_part_for_nested_section() -> None:
+    # New section 147A inside new Part 9 (spec example): the descendant lane pulls
+    # the nested provision out as the inserted node.
+    node = _amending_node(_NESTED_INSERT_PART, "INSNEST")
+    result = extract_structural_insertion(node, inserted_leaf_kind="prov", inserted_leaf_label="147A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "prov"
+    assert result.root.label == "147A"
+    assert "brand new body of section 147A" in result.root.text
+
+
+def test_insert_extractor_descends_through_subpart() -> None:
+    node = _amending_node(_NESTED_INSERT_SUBPART, "INSSUB")
+    result = extract_structural_insertion(node, inserted_leaf_kind="prov", inserted_leaf_label="40A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "40A"
+    assert "deeply nested section 40A" in result.root.text
+
+
+def test_insert_extractor_descent_refuses_ambiguous_nested_leaf() -> None:
+    # The same inserted-section label nested under two different new Parts is a
+    # genuine ambiguity the descendant lane must refuse (never guess).
+    xml = b"""\
+<act><body><prov id="INSNESTAMB"><prov.body><para>
+  <text>Insert the new Parts:</text>
+  <amend>
+    <part><label>9</label><heading>Part nine</heading>
+      <prov><label>147A</label><heading>First</heading><prov.body><para><text>147A First nested.</text></para></prov.body></prov>
+    </part>
+    <part><label>10</label><heading>Part ten</heading>
+      <prov><label>147A</label><heading>Second</heading><prov.body><para><text>147A Second nested.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "INSNESTAMB")
+    result = extract_structural_insertion(node, inserted_leaf_kind="prov", inserted_leaf_label="147A")
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_insert_extractor_prefers_top_level_over_nested() -> None:
+    # A top-level inserted section 18A AND a nested decoy 18A inside a new Part: the
+    # top-level path owns the extraction, so the nested decoy is never reached.
+    xml = b"""\
+<act><body><prov id="INSTOPVN"><prov.body><para>
+  <text>Insert section 18A and a new Part:</text>
+  <amend>
+    <prov><label>18A</label><heading>Top level</heading><prov.body><para><text>18A The top-level inserted body.</text></para></prov.body></prov>
+    <part><label>5</label><heading>Part five</heading>
+      <prov><label>18A</label><heading>Nested decoy</heading><prov.body><para><text>18A A nested decoy.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "INSTOPVN")
+    result = extract_structural_insertion(node, inserted_leaf_kind="prov", inserted_leaf_label="18A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert "top-level inserted body" in result.root.text
+    assert "nested decoy" not in result.root.text
+
+
 def test_extractor_blocks_genuinely_ambiguous_duplicate_label() -> None:
     xml = b"""\
 <act><body><prov id="AMB"><prov.body><subprov><label>1</label><para>

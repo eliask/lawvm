@@ -420,6 +420,133 @@ def test_extractor_same_section_ambiguity_stays_blocked_with_provision() -> None
     assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
 
 
+# --- Nested-payload descendant matching. --------------------------------------
+#
+# The new/target leaf often lives INSIDE a newly-inserted Part or section in the
+# amend subtree (a new section nested in a new ``<part>``/``<subpart>``, or a new
+# subsection nested in a new section), not as a direct ``<amend>`` child. The
+# descendant lane finds it; the top-level path is consulted first so a clean
+# top-level extraction is unchanged. The >1-match ambiguity refusal still holds.
+
+# Amend payload wraps a new section 147A inside a new Part 9 (the spec example).
+_AMENDING_XML_NESTED_PART = b"""\
+<act><body><prov id="NESTPART"><prov.body><para>
+  <text>Replace the heading to Part 9 and the Part with:</text>
+  <amend>
+    <part><label>9</label><heading>New Part nine</heading>
+      <prov><label>147A</label><heading>Nested section</heading>
+        <prov.body><para><text>147A Nested section The nested body of new section 147A.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+# Amend payload wraps a new section nested inside a new SUBPART inside a new Part.
+_AMENDING_XML_NESTED_SUBPART = b"""\
+<act><body><prov id="NESTSUB"><prov.body><para>
+  <text>Replace Part 3 with:</text>
+  <amend>
+    <part><label>3</label><heading>New Part three</heading>
+      <subpart><label>1</label><heading>Subpart one</heading>
+        <prov><label>84</label><heading>Deep section</heading>
+          <prov.body><para><text>84 Deep section The deeply nested body of section 84.</text></para></prov.body></prov>
+      </subpart>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+# Amend payload wraps a new subsection nested inside a new section.
+_AMENDING_XML_NESTED_SUBPROV = b"""\
+<act><body><prov id="NESTSP"><prov.body><para>
+  <text>Replace section 20 with:</text>
+  <amend>
+    <prov><label>20</label><heading>Replacement section</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>1 first subsection.</text></para></subprov>
+        <subprov><label>2</label><para><text>2 the nested replacement subsection two.</text></para></subprov>
+      </prov.body></prov>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+
+
+def test_extractor_descends_into_new_part_for_nested_section() -> None:
+    # New section 147A lives inside the new Part 9 in the amend subtree, not as a
+    # direct amend child. The descendant lane pulls it out cleanly.
+    node = _amending_node(_AMENDING_XML_NESTED_PART, "NESTPART")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="147A")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "prov"
+    assert result.root.label == "147A"
+    assert "nested body of new section 147A" in result.root.text
+
+
+def test_extractor_descends_through_subpart_for_nested_section() -> None:
+    # Two container levels deep (part -> subpart -> prov) still resolves.
+    node = _amending_node(_AMENDING_XML_NESTED_SUBPART, "NESTSUB")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="84")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "84"
+    assert "deeply nested body" in result.root.text
+
+
+def test_extractor_descends_into_new_section_for_nested_subsection() -> None:
+    # A new subsection nested inside a new section (prov -> subprov) resolves, and
+    # selecting the nested subprov 2 does not pull in subprov 1's text.
+    node = _amending_node(_AMENDING_XML_NESTED_SUBPROV, "NESTSP")
+    result = extract_structural_replacement(node, target_leaf_kind="subprov", target_leaf_label="2")
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.label == "2"
+    assert "nested replacement subsection two" in result.root.text
+    assert "first subsection" not in result.root.text
+
+
+def test_extractor_descent_refuses_ambiguous_nested_leaf() -> None:
+    # The SAME section label 147A appears nested under TWO different new Parts in
+    # the amend subtree. The descendant lane must treat this as a genuine ambiguity
+    # and refuse — never guess which Part's section is the target.
+    xml = b"""\
+<act><body><prov id="NESTAMB"><prov.body><para>
+  <text>Replace the Parts with:</text>
+  <amend>
+    <part><label>9</label><heading>Part nine</heading>
+      <prov><label>147A</label><heading>First</heading><prov.body><para><text>147A First nested.</text></para></prov.body></prov>
+    </part>
+    <part><label>10</label><heading>Part ten</heading>
+      <prov><label>147A</label><heading>Second</heading><prov.body><para><text>147A Second nested.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "NESTAMB")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="147A")
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+
+def test_extractor_prefers_top_level_over_nested_when_both_present() -> None:
+    # A top-level amend child labelled 5 AND a nested section 5 inside a new Part
+    # both exist. The top-level path is consulted first and owns the extraction, so
+    # the nested lane is not even reached — the top-level child is returned and the
+    # nested one is left to its own witness (no spurious ambiguity).
+    xml = b"""\
+<act><body><prov id="TOPVSNEST"><prov.body><para>
+  <text>Replace section 5 with, and add a Part:</text>
+  <amend>
+    <prov><label>5</label><heading>Top level</heading><prov.body><para><text>5 The top-level replacement body.</text></para></prov.body></prov>
+    <part><label>2</label><heading>Part two</heading>
+      <prov><label>5</label><heading>Nested decoy</heading><prov.body><para><text>5 A nested decoy.</text></para></prov.body></prov>
+    </part>
+  </amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "TOPVSNEST")
+    result = extract_structural_replacement(node, target_leaf_kind="prov", target_leaf_label="5")
+    assert isinstance(result, NZStructuralReplacement)
+    assert "top-level replacement body" in result.root.text
+    assert "nested decoy" not in result.root.text
+
+
 # --- Target-leaf KIND-ALIAS matching (subprov <-> label-para). ----------------
 #
 # NZ encodes the same interchangeable lettered-paragraph leaf as ``subprov`` in
