@@ -40,7 +40,9 @@ from lawvm.sweden.fetch import (
     guess_se_official_pdf_url,
     has_valid_se_official_pdf,
     hydrate_se_bundle_live,
+    ingest_se_rk_current_from_sfst_archive,
     ingest_se_scraped_doc_html_map,
+    parse_se_sfst_html_to_rk_current,
     load_se_bundle_from_archive,
     load_se_current_ir_from_archive,
     load_se_backfill_official_history_from_archive,
@@ -716,6 +718,80 @@ def test_sweden_text_locators_are_stable() -> None:
     assert se_official_pdf_locator("2026:286") == "se://sfs/2026:286/official.pdf"
     assert se_pdf_text_locator("2026:286") == "se://sfs/2026:286/official.pdf.txt"
     assert se_pdf_cleanup_locator("2026:286") == "se://sfs/2026:286/official.cleaned.txt"
+
+
+_SE_SFST_REAL_PAGE = (
+    "<!DOCTYPE html><html><body>"
+    '<div class="result-inner-box bold">\r\n SFS-nummer \xc2\xb7 2015:284 \xc2\xb7</div>'
+    '<div class="result-inner-box">'
+    '<span class="bold">F\xf6rordning (2015:284) med instruktion f\xf6r Testmyndigheten</span>'
+    "</div>"
+    '<div class="result-inner-box"><span class="bold">Utf\xe4rdad:</span> 2015-05-21</div>'
+    '<div class="result-inner-box">'
+    '<span class="bold">\xc4ndring inf\xf6rd:</span> t.o.m. SFS 2026:280</div>'
+    '<div class="result-box-text body-text">'
+    "Uppgifter<br><br>1 \xa7 F\xf6rsta paragrafen.<br>"
+    "Forts\xe4ttning. Lag (2023:404).<br><br>"
+    "2 \xa7 Andra paragrafen.<br></div>"
+    "</body></html>"
+)
+
+_SE_SFST_EMPTY_PAGE = (
+    "<!DOCTYPE html><html><body>"
+    '<div class="search-hits">Totalt 0 tr\xe4ffar</div>'
+    "<div>Inga tr\xe4ffar</div></body></html>"
+)
+
+
+def test_parse_se_sfst_html_lifts_real_consolidated_page_to_rk_document() -> None:
+    document = parse_se_sfst_html_to_rk_current(_SE_SFST_REAL_PAGE, "2015:284")
+
+    assert document is not None
+    assert document["beteckning"] == "2015:284"
+    assert document["rubrik"] == "Förordning (2015:284) med instruktion för Testmyndigheten"
+    assert document["publicerad"] is True
+    fulltext = document["fulltext"]
+    assert fulltext["utfardadDateTime"] == "2015-05-21T00:00:00"
+    assert fulltext["andringInford"] == "t.o.m. SFS 2026:280"
+    assert "1 § Första paragrafen." in fulltext["forfattningstext"]
+    assert "2 § Andra paragrafen." in fulltext["forfattningstext"]
+    assert "Lag (2023:404)." in fulltext["forfattningstext"]
+
+
+def test_parse_se_sfst_html_returns_none_for_empty_search_page() -> None:
+    assert parse_se_sfst_html_to_rk_current(_SE_SFST_EMPTY_PAGE, "2002:1896") is None
+
+
+def test_parse_se_sfst_html_round_trips_through_current_text_parser() -> None:
+    from lawvm.sweden.grafter import parse_se_statute, se_section_text_map
+
+    document = parse_se_sfst_html_to_rk_current(_SE_SFST_REAL_PAGE, "2015:284")
+    assert document is not None
+    statute = parse_se_statute(document, statute_id="2015:284")
+    section_text = se_section_text_map(statute)
+    assert section_text["1"].startswith("Första paragrafen.")
+    assert section_text["2"] == "Andra paragrafen."
+
+
+def test_ingest_se_rk_current_from_sfst_archive_seeds_oracle_bundle() -> None:
+    archive = _FakeArchive()
+    archive.stored[se_rk_current_url("2015:284")] = _SE_SFST_REAL_PAGE.encode("utf-8")
+
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2015:284") is True
+    assert archive.has(se_rk_current_json_locator("2015:284"))
+    assert archive.has(se_current_ir_locator("2015:284"))
+    assert archive.has(se_source_record_locator("2015:284"))
+    assert archive.has(se_bundle_manifest_locator("2015:284"))
+
+
+def test_ingest_se_rk_current_from_sfst_archive_skips_empty_or_missing_pages() -> None:
+    archive = _FakeArchive()
+    # No archived sfst page at all.
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2002:1896") is False
+    # An archived but empty (0-hit) search page.
+    archive.stored[se_rk_current_url("2002:1896")] = _SE_SFST_EMPTY_PAGE.encode("utf-8")
+    assert ingest_se_rk_current_from_sfst_archive(archive, "2002:1896") is False
+    assert not archive.has(se_rk_current_json_locator("2002:1896"))
 
 
 def test_clean_se_pdf_text_drops_obvious_page_furniture() -> None:

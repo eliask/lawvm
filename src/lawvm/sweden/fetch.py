@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
+import html as _html
 import json
 import re
 import time
@@ -188,6 +189,100 @@ def _retry_bytes_fetch(
 
 def se_rk_current_url(sfs_id: str) -> str:
     return f"https://rkrattsbaser.gov.se/sfst?bet={sfs_id}"
+
+
+_SE_SFST_BODY_RE = re.compile(
+    r'<div class="result-box-text body-text">(?P<body>.*?)</div>',
+    re.DOTALL,
+)
+_SE_SFST_UTFARDAD_RE = re.compile(r"Utf\xe4rdad\s*:?\s*(\d{4}-\d{2}-\d{2})")
+_SE_SFST_ANDRING_RE = re.compile(r"\xc4ndring inf\xf6rd\s*:?\s*(t\.o\.m\. SFS [\d:]+)")
+_SE_SFST_IKRAFT_RE = re.compile(r"Ikraft\s*:?\s*(\d{4}-\d{2}-\d{2})")
+_SE_SFST_UPPHAVD_RE = re.compile(r"Upph\xe4vd\s*:?\s*(\d{4}-\d{2}-\d{2})")
+_SE_SFST_UPPHAVD_GENOM_RE = re.compile(r"upph\xe4vts genom\s*:?\s*(SFS [\d:]+)")
+_SE_SFST_RUBRIK_RE = re.compile(
+    r'<span class="bold">\s*(?P<rubrik>[^<:]*?\(\d{4}:\d+\)[^<]*?)\s*</span>'
+)
+
+
+def parse_se_sfst_html_to_rk_current(
+    raw_html: bytes | str, sfs_id: str
+) -> Optional[JsonObject]:
+    """Build an RK-style ``rk.current.json`` document from an archived sfst page.
+
+    The Regeringskansliet *rättsbaser* SFST fulltext page
+    (``https://rkrattsbaser.gov.se/sfst?bet=...``) renders the same current
+    consolidated ``forfattningstext`` the ``beta`` ElasticSearch endpoint
+    returns as JSON. This deterministically lifts the rendered statute body and
+    its header metadata into the same RK document shape that
+    :func:`parse_se_statute` / :func:`archive_se_source_bundle` consume, so the
+    archived HTML pages can seed the replay-vs-current agreement oracle without
+    a fresh network fetch.
+
+    Returns ``None`` when the page carries no statute body — most archived sfst
+    pages are empty ``Totalt 0 träffar`` search responses (the bet= id is not in
+    the SFST fulltext DB), which this filters out by the absence of a populated
+    body container.
+    """
+    text = raw_html.decode("utf-8", "replace") if isinstance(raw_html, bytes) else raw_html
+    body_match = _SE_SFST_BODY_RE.search(text)
+    if body_match is None:
+        return None
+    body_html = re.sub(r"<br\s*/?>", "\n", body_match.group("body"), flags=re.IGNORECASE)
+    body_html = re.sub(r"<[^>]+>", " ", body_html)
+    forfattningstext = _html.unescape(body_html).strip()
+    if not forfattningstext:
+        return None
+
+    flat = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)))
+
+    fulltext: JsonObject = {"forfattningstext": forfattningstext}
+    utf = _SE_SFST_UTFARDAD_RE.search(flat)
+    if utf is not None:
+        fulltext["utfardadDateTime"] = f"{utf.group(1)}T00:00:00"
+    andring = _SE_SFST_ANDRING_RE.search(flat)
+    if andring is not None:
+        fulltext["andringInford"] = andring.group(1)
+    upphavd_genom = _SE_SFST_UPPHAVD_GENOM_RE.search(flat)
+    if upphavd_genom is not None:
+        fulltext["upphavdGenom"] = upphavd_genom.group(1)
+
+    document: JsonObject = {
+        "beteckning": sfs_id,
+        "publicerad": True,
+        "fulltext": fulltext,
+    }
+    rubrik_match = _SE_SFST_RUBRIK_RE.search(text)
+    if rubrik_match is not None:
+        rubrik = _html.unescape(rubrik_match.group("rubrik")).strip()
+        if rubrik:
+            document["rubrik"] = rubrik
+    ikraft = _SE_SFST_IKRAFT_RE.search(flat)
+    if ikraft is not None:
+        document["ikraftDateTime"] = f"{ikraft.group(1)}T00:00:00"
+    upphavd = _SE_SFST_UPPHAVD_RE.search(flat)
+    if upphavd is not None:
+        document["upphavdDateTime"] = f"{upphavd.group(1)}T00:00:00"
+    return document
+
+
+def ingest_se_rk_current_from_sfst_archive(
+    archive: _ArchiveLike, sfs_id: str
+) -> bool:
+    """Seed the current-text oracle for ``sfs_id`` from its archived sfst page.
+
+    Returns ``True`` when the archived ``sfst?bet=`` page contained real
+    consolidated fulltext and the RK-current bundle was stored; ``False`` when
+    no sfst page is archived or the page is an empty search response.
+    """
+    raw = archive.get(se_rk_current_url(sfs_id))
+    if raw is None:
+        return False
+    document = parse_se_sfst_html_to_rk_current(raw, sfs_id)
+    if document is None:
+        return False
+    archive_se_source_bundle(document, archive)
+    return True
 
 
 def se_legacy_sfspdf_index_url() -> str:
