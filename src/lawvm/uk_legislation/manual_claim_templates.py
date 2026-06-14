@@ -61,6 +61,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_table_entry_deictic_candidate",
         "uk_manual_frontier_table_entry_placement_insert",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
+        "uk_manual_frontier_range_to_container_resolution_candidate",  # FLAG(union-merge)
     }
 )
 

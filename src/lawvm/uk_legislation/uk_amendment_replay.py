@@ -104,6 +104,11 @@ from lawvm.uk_legislation.appropriate_place_claim import (
     gate_appropriate_place_insert,
     validate_appropriate_place_claim,
 )
+from lawvm.uk_legislation.range_to_container_claim import (  # FLAG(union-merge)
+    RangeToContainerClaim,  # FLAG(union-merge)
+    gate_range_to_container_claim,  # FLAG(union-merge)
+    validate_range_to_container_claim,  # FLAG(union-merge)
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -293,6 +298,9 @@ class UKReplayPipeline:
         deixis_application_claims: Optional[
             "Sequence[DeixisInApplicationClaim]"
         ] = None,
+        range_to_container_claims: Optional[  # FLAG(union-merge)
+            "Sequence[RangeToContainerClaim]"  # FLAG(union-merge)
+        ] = None,  # FLAG(union-merge)
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -413,6 +421,23 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(dx_validation.to_dict())
                 if dx_validation.validated:
                     validated_deixis_application_claims[str(dx_claim.effect_id)] = dx_claim
+
+        validated_range_to_container_claims: dict[str, RangeToContainerClaim] = {}
+        if range_to_container_claims:
+            effect_by_id_rng = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for rng_claim in range_to_container_claims:
+                if rng_claim.statute_id and rng_claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id_rng.get(str(rng_claim.effect_id))
+                rng_validation = validate_range_to_container_claim(
+                    rng_claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(rng_validation.to_dict())
+                if rng_validation.validated:
+                    validated_range_to_container_claims[str(rng_claim.effect_id)] = rng_claim
 
         replayable = list(effects)
         if pit_date:
@@ -604,6 +629,20 @@ class UKReplayPipeline:
                         effect_diagnostics_out.append(dx_gate.to_dict())
                         if dx_gate.emitted and dx_gate.finding is not None:
                             effect_diagnostics_out.append(dx_gate.finding.to_dict())
+                # §range_to_container: a validated, bound range-to-container claim
+                # resolves which concrete ordered container members the source
+                # range denotes and emits a NON-replayable typed finding to the
+                # diagnostics stream. It NEVER mutates ``compiled`` (no text op):
+                # the base text is left intact, the safe under-application default
+                # for an uncertain container boundary. Absent a claim the index is
+                # empty and nothing is emitted, so replay is byte-unchanged.
+                rng_claim = validated_range_to_container_claims.get(str(e.effect_id))
+                if rng_claim is not None:
+                    rng_gate = gate_range_to_container_claim(rng_claim, validated=True)
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(rng_gate.to_dict())
+                        if rng_gate.emitted and rng_gate.finding is not None:
+                            effect_diagnostics_out.append(rng_gate.finding.to_dict())
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before

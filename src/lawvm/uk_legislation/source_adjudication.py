@@ -1865,6 +1865,38 @@ def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
     )
 
 
+def _looks_like_range_to_container_source(text: str) -> bool:
+    """True when *text* substitutes a RANGE of sibling units into a container.
+
+    The range-to-container frontier shape: an amendment whose target is a range
+    of sibling provisions ("sections 3 to 7", "for sections 12 to 14 substitute",
+    "paragraphs (a) to (d)") whose endpoints must be resolved against a container
+    whose member set is itself uncertain. This is the surface the existing
+    ``source_adjudication`` classifications ``range_to_container_target_unsupported``
+    / ``range_to_container_target_absent`` recognize structurally (a
+    ``substituted for sections X-Y`` effect type over a part/chapter container);
+    this predicate is the narrow *source-snippet* recognizer the range-to-container
+    RESOLUTION claim binds against, kept consistent with that family. It does NOT
+    decide which concrete members the range denotes — that is the owned claim — it
+    only confirms the source genuinely names a sibling RANGE to be resolved against
+    a container, rejecting single-unit and free-form surfaces.
+    """
+    norm = " ".join((text or "").split()).strip().lower()
+    if not norm:
+        return False
+    # A "for <units> A to/- B" range over a recognized sibling unit kind, paired
+    # with a substitution/replacement verb. The endpoints may be numeric labels
+    # ("12 to 14"), bracketed labels ("(a) to (d)"), or suffixed ("3 to 7a").
+    range_re = re.compile(
+        r"\bfor\s+(?:sections?|subsections?|paragraphs?|sub-?paragraphs?|"
+        r"articles?|regulations?|rules?|chapters?)\s+"
+        r"\(?[0-9a-z]+\)?\s*(?:to|[-–—])\s*\(?[0-9a-z]+\)?\b"
+    )
+    if not range_re.search(norm):
+        return False
+    return bool(re.search(r"\bsubstitut|\breplace[ds]?\b", norm))
+
+
 def _looks_like_definition_child_and_tail_substitution(text: str) -> bool:
     norm = " ".join((text or "").split()).strip().lower()
     if not norm:

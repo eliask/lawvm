@@ -803,6 +803,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_source_range_or_declared_migration_paths",
         ),
     },
+    "uk_manual_frontier_range_to_container_resolution_candidate": {  # FLAG(union-merge)
+        "candidate_operation_family": "range_to_container_member_resolution",  # FLAG(union-merge)
+        "required_validator_checks": (  # FLAG(union-merge)
+            "claim_binds_source_snippet_to_real_range_to_container_effect",  # FLAG(union-merge)
+            "claim_names_container_and_both_range_endpoints",  # FLAG(union-merge)
+            "claim_resolves_range_to_contiguous_container_member_span",  # FLAG(union-merge)
+            "claim_emits_non_replayable_finding_without_base_text_mutation",  # FLAG(union-merge)
+        ),  # FLAG(union-merge)
+    },  # FLAG(union-merge)
     "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions": {
         "candidate_operation_family": "parser_or_extraction_gap",
         "required_validator_checks": (

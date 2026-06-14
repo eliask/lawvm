@@ -756,6 +756,8 @@ def _required_operation_family_proof_semantics(
         return ("definition_child_structural_payload_boundary_claim",)
     if action_family == "definition_child_structural_insert":
         return ("definition_child_structural_insert_boundary_claim",)
+    if action_family == "range_to_container_member_resolution":  # FLAG(union-merge)
+        return ("range_to_container_member_resolution",)  # FLAG(union-merge)
     return ()
 
 
@@ -836,6 +838,29 @@ def manual_compile_suggested_claim_template(
                 "claim_emits_non_replayable_finding_without_base_text_mutation",
             ],
         )
+    if (  # FLAG(union-merge)
+        summary.manual_compile_rule_id  # FLAG(union-merge)
+        == "uk_manual_frontier_range_to_container_resolution_candidate"  # FLAG(union-merge)
+    ):  # FLAG(union-merge)
+        return _bounded_mutation_claim_template(  # FLAG(union-merge)
+            statute_id=statute_id,  # FLAG(union-merge)
+            row=row,  # FLAG(union-merge)
+            action_family="range_to_container_member_resolution",  # FLAG(union-merge)
+            placement_family="range_to_container_requires_container_member_span_resolution",  # FLAG(union-merge)
+            required_ownership=[  # FLAG(union-merge)
+                "source_named_range_to_container_substitution_effect",  # FLAG(union-merge)
+                "container_identity_and_both_range_endpoints",  # FLAG(union-merge)
+                "resolved_ordered_member_eid_span",  # FLAG(union-merge)
+                "recognized_resolution_basis_for_uncertain_member_set",  # FLAG(union-merge)
+                "non_replayable_finding_leaving_base_text_intact",  # FLAG(union-merge)
+            ],  # FLAG(union-merge)
+            required_validator_checks=[  # FLAG(union-merge)
+                "claim_binds_source_snippet_to_real_range_to_container_effect",  # FLAG(union-merge)
+                "claim_names_container_and_both_range_endpoints",  # FLAG(union-merge)
+                "claim_resolves_range_to_contiguous_container_member_span",  # FLAG(union-merge)
+                "claim_emits_non_replayable_finding_without_base_text_mutation",  # FLAG(union-merge)
+            ],  # FLAG(union-merge)
+        )  # FLAG(union-merge)
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         wrapper_parts = _heading_facet_wrapper_insert_parts(source_preview)

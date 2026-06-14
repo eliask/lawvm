@@ -730,6 +730,20 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated deixis-in-application claim emits a non-replayable typed finding resolving the '(as inserted)' reference to a concrete applying provision, leaving the affected base text intact (the safe N4 under-application default).",
     "uk_deixis_in_application_finding_withheld_unvalidated":  # FLAG(union-merge)
         "An unvalidated deixis-in-application claim withholds its resolved-reference finding, so the N4 effect stays on the manual frontier byte-unchanged.",
+    "uk_manual_frontier_range_to_container_resolution_candidate":  # FLAG(union-merge)
+        "A range-to-container substitution whose target is a range of sibling units ('sections 12 to 14') resolved against a container with an uncertain member set, that an owned range-to-container claim can resolve by naming the concrete ordered member eids the range denotes.",  # FLAG(union-merge)
+    "uk_range_to_container_claim_validated":  # FLAG(union-merge)
+        "A range-to-container claim's owned resolution is well-formed, bound to a real range-to-container effect, and (when a live container is supplied) the resolved set is the contiguous member span between the endpoints, so it may emit a non-replayable resolved-members finding.",  # FLAG(union-merge)
+    "uk_range_to_container_claim_rejected_schema":  # FLAG(union-merge)
+        "A range-to-container claim is rejected because its kind/ids/container/range-endpoint/resolved-member/basis schema is malformed.",  # FLAG(union-merge)
+    "uk_range_to_container_claim_rejected_source_mismatch":  # FLAG(union-merge)
+        "A range-to-container claim is rejected because its source snippet or bound effect is not a real range-to-container effect, blocking free-form or single-unit overrides.",  # FLAG(union-merge)
+    "uk_range_to_container_claim_rejected_member_consistency":  # FLAG(union-merge)
+        "A range-to-container claim is rejected because its resolved member set is not the contiguous container span between the endpoints (a gap, stray, misordering, or an endpoint absent from the container).",  # FLAG(union-merge)
+    "uk_range_to_container_resolved_members_finding":  # FLAG(union-merge)
+        "A validated range-to-container claim emits a non-replayable typed finding naming the concrete ordered member eids the range denotes, leaving the affected base text intact (the safe under-application default for an uncertain container boundary).",  # FLAG(union-merge)
+    "uk_range_to_container_finding_withheld_unvalidated":  # FLAG(union-merge)
+        "An unvalidated range-to-container claim withholds its resolved-members finding, so the effect stays on the manual frontier byte-unchanged.",  # FLAG(union-merge)
     "uk_manual_frontier_as_if_application_modification_out_of_scope":
         "An 'as if' application/modification effect treated as out of current replay scope.",
     "uk_manual_frontier_application_modification_payload_out_of_scope":
