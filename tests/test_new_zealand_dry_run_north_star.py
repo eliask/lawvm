@@ -54,10 +54,10 @@ def test_denominator_is_history_witness_count_partitioned_into_pinned_buckets() 
 
     # Total denominator universe = sum of all history-note witnesses.
     assert summary["total_amendment_operation_witnesses"] == 55
-    # Supported = repealed + amended.
-    assert summary["supported_family_witnesses"] == 30
-    # Frontier = inserted + added + replaced + substituted.
-    assert summary["remaining_frontier_witnesses"] == 14
+    # Supported = repealed + amended + replaced + substituted.
+    assert summary["supported_family_witnesses"] == 36
+    # Frontier = inserted + added (replaced/substituted are now supported).
+    assert summary["remaining_frontier_witnesses"] == 8
     # Non-executable-by-design is a separate bucket, NOT a coverage miss.
     assert summary["non_executable_by_design_witnesses"] == 8
     # Unclassified is its own bucket too.
@@ -208,8 +208,10 @@ def test_remaining_frontier_breakdown_orders_next_family_to_build() -> None:
         selected_work_ids=("act_public_2010_1",),
     )
     counts = report.summary()["remaining_frontier_family_counts"]
-    # Sorted by key (deterministic); the largest witness count orders cycle 4.
-    assert counts == {"added": 60, "inserted": 1400, "replaced": 350, "substituted": 190}
+    # replaced/substituted are now the supported ``replace`` family, so the
+    # remaining frontier is insert/add; the largest count (inserted) orders the
+    # next cycle's kernel.
+    assert counts == {"added": 60, "inserted": 1400}
     assert max(counts, key=lambda family: counts[family]) == "inserted"
 
 

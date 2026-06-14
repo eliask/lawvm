@@ -33,6 +33,7 @@ from lawvm.core.agreement_residual import (
     agreement_surface_from_residuals,
 )
 from lawvm.core.comparison_normalization import (
+    normalize_inline_comparison_text,
     normalized_inline_contains,
     normalized_inline_occurrence_count,
 )
@@ -44,7 +45,13 @@ from lawvm.new_zealand.effect_candidates import (
     NZEffectCandidatePreflightReport,
     build_archived_work_effect_candidate_preflight,
 )
-from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode, parse_nz_source_document
+from lawvm.new_zealand.source_tree import (
+    NZSourceDocument,
+    NZSourceNode,
+    NZStructuralReplacement,
+    extract_structural_replacement,
+    parse_nz_source_document,
+)
 from lawvm.new_zealand.version_diff import (
     NZArchivedVersion,
     NZArchivedVersionChangeWindow,
@@ -98,6 +105,34 @@ NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID = (
 )
 NZ_DRY_RUN_REFUSED_TEXT_APPLY_NO_OP_RULE_ID = "nz_dry_run_refused_text_replace_apply_left_node_unchanged"
 
+# --- Structural whole-provision REPLACE apply/oracle vocabulary. --------------
+# Agreement: the on-or-after oracle node-subtree matches the candidate
+# replacement subtree (normalized text/structure).
+NZ_DRY_RUN_REPLACE_AGREES_RULE_ID = "nz_dry_run_structural_replace_subtree_matches_oracle"
+# Residual: the oracle target node-subtree exists but differs from the candidate
+# replacement (other window change / wrong content). Never counted as agreement.
+NZ_DRY_RUN_REPLACE_RESIDUAL_MISMATCH_RULE_ID = "nz_dry_run_structural_replace_residual_replacement_mismatch_in_oracle"
+# Residual: the exact target node is absent from the on-or-after oracle.
+NZ_DRY_RUN_REPLACE_RESIDUAL_TARGET_MISSING_RULE_ID = "nz_dry_run_structural_replace_residual_target_missing_in_oracle"
+
+# Structural-replace refusals (typed, no mutation performed).
+NZ_DRY_RUN_REFUSED_REPLACE_TARGET_NOT_CANDIDATE_RULE_ID = "nz_dry_run_refused_structural_replace_target_address_not_candidate"
+NZ_DRY_RUN_REFUSED_REPLACE_NO_AMENDING_WORK_RULE_ID = "nz_dry_run_refused_structural_replace_amending_work_unresolved"
+NZ_DRY_RUN_REFUSED_REPLACE_AMENDING_XML_UNREADABLE_RULE_ID = "nz_dry_run_refused_structural_replace_amending_act_xml_unreadable"
+NZ_DRY_RUN_REFUSED_REPLACE_AMENDING_HREF_NOT_FOUND_RULE_ID = "nz_dry_run_refused_structural_replace_amending_provision_href_not_found"
+NZ_DRY_RUN_REFUSED_REPLACE_PAYLOAD_NOT_EXTRACTABLE_RULE_ID = "nz_dry_run_refused_structural_replace_payload_not_cleanly_extractable"
+NZ_DRY_RUN_REFUSED_REPLACE_APPLY_NO_OP_RULE_ID = "nz_dry_run_refused_structural_replace_apply_left_subtree_unchanged"
+
+# Typed not-in-scope reasons for the selected_family_replace scope.
+NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY = "not_in_scope_non_structural_replace_family"
+NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE = "not_in_scope_structural_replace_target_not_candidate"
+NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_AMENDING_UNRESOLVED = "not_in_scope_structural_replace_amending_unresolved"
+NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_PAYLOAD_NOT_EXTRACTABLE = "not_in_scope_structural_replace_payload_not_extractable"
+
+# History-note operation families that drive the structural-replace kernel: a
+# whole-provision substitution is recorded as ``replaced`` or ``substituted``.
+_NZ_REPLACE_OPERATION_FAMILIES = frozenset({"replaced", "substituted"})
+
 # Dry-run scopes.
 #
 # ``complete_set`` is the original, strict behavior: refuse the whole work
@@ -117,27 +152,40 @@ NZ_DRY_RUN_REFUSED_TEXT_APPLY_NO_OP_RULE_ID = "nz_dry_run_refused_text_replace_a
 # and classifies whether the on-or-after oracle reflects the substitution. It
 # relaxes only the WHOLE-WORK readiness gate; per-operation exactness/occurrence
 # checks still refuse, typed.
+# ``selected_family_replace`` is the same partial-scope mechanism applied to the
+# WHOLE-PROVISION STRUCTURAL substitution family (history-note ``replaced`` /
+# ``substituted``). It extracts the new provision body from the amending act's
+# ``<amend>`` subtree (a typed structural payload, not inline text), replaces the
+# exact target node's subtree with that payload, and classifies whether the
+# on-or-after oracle node-subtree matches the candidate replacement (normalized).
+# It relaxes only the WHOLE-WORK readiness gate; per-operation exactness checks
+# (exact target, clean one-to-one payload extraction) still refuse, typed.
 NZ_DRY_RUN_SCOPE_COMPLETE_SET = "complete_set"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL = "selected_family_repeal"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE = "selected_family_text_replace"
+NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE = "selected_family_replace"
 _VALID_DRY_RUN_SCOPES = (
     NZ_DRY_RUN_SCOPE_COMPLETE_SET,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
 )
 # The selected-family scopes and the structural action they each select.
 _SELECTED_FAMILY_SCOPES = (
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
 )
 _SCOPE_SELECTED_ACTION = {
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: StructuralAction.REPEAL,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: StructuralAction.TEXT_REPLACE,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE: StructuralAction.REPLACE,
 }
 _SCOPE_OPERATION_FAMILY = {
     NZ_DRY_RUN_SCOPE_COMPLETE_SET: "repeal",
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: "repeal",
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: "text_replace",
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE: "replace",
 }
 
 # Typed not-in-scope reasons for the selected_family_repeal scope. Each operation
@@ -230,6 +278,16 @@ class NZMutationBoundaryProof:
     text_old_occurrences_after: int = 0
     text_oracle_old_occurrences: int = 0
     text_oracle_contains_new_text: bool = False
+    # Structural whole-provision replace evidence (empty for non-replace proofs).
+    # The amending source the replacement payload was read from, the descendant
+    # count of the extracted replacement subtree, and the digest of the candidate
+    # replacement subtree vs the oracle subtree — making the structural mutation
+    # boundary auditable.
+    replace_amending_work_id: str = ""
+    replace_amending_provision_href: str = ""
+    replace_replacement_descendant_count: int = 0
+    replace_candidate_subtree_digest: str = ""
+    replace_oracle_subtree_digest: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -261,6 +319,11 @@ class NZMutationBoundaryProof:
             "text_old_occurrences_after": self.text_old_occurrences_after,
             "text_oracle_old_occurrences": self.text_oracle_old_occurrences,
             "text_oracle_contains_new_text": self.text_oracle_contains_new_text,
+            "replace_amending_work_id": self.replace_amending_work_id,
+            "replace_amending_provision_href": self.replace_amending_provision_href,
+            "replace_replacement_descendant_count": self.replace_replacement_descendant_count,
+            "replace_candidate_subtree_digest": self.replace_candidate_subtree_digest,
+            "replace_oracle_subtree_digest": self.replace_oracle_subtree_digest,
         }
 
 
@@ -384,11 +447,12 @@ class NZDryRunReport:
         residuals are classified there; this never authorizes replay.
         """
 
-        surface_name = (
-            "nz_dry_run_text_replace"
-            if self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE
-            else "nz_dry_run_repeal"
-        )
+        if self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE:
+            surface_name = "nz_dry_run_text_replace"
+        elif self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE:
+            surface_name = "nz_dry_run_structural_replace"
+        else:
+            surface_name = "nz_dry_run_repeal"
         residuals: list[AgreementResidual] = []
         for proof in self.proofs:
             if proof.oracle_match == "agrees":
@@ -475,7 +539,16 @@ def build_archived_work_dry_run_repeal(
     *,
     scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET,
 ) -> NZDryRunReport:
-    """Build the dry-run repeal report for one archived NZ work."""
+    """Build the dry-run repeal report for one archived NZ work.
+
+    For the structural-replace scope the candidate source is the work's operation
+    surface (history-note witnesses) plus structural payload extraction from the
+    cited amending act, not the repeal/text-replace candidate preflight; that
+    scope is routed to its own builder so the preflight is not built for it.
+    """
+
+    if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE:
+        return build_archived_work_dry_run_replace(db_path, work_id)
 
     preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
     archive = open_farchive(db_path)
@@ -502,6 +575,15 @@ def build_dry_run_repeal(
 
     if scope not in _VALID_DRY_RUN_SCOPES:
         raise ValueError(f"unknown dry-run scope {scope!r}; expected one of {_VALID_DRY_RUN_SCOPES}")
+
+    if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE:
+        # The structural-replace scope consumes the operation surface + amending
+        # act XML, not the candidate preflight; it is built by its own archived
+        # entrypoint and must not be routed through this preflight-driven path.
+        raise ValueError(
+            "selected_family_replace is built by build_archived_work_dry_run_replace "
+            "(operation-surface driven), not build_dry_run_repeal (preflight driven)"
+        )
 
     if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE:
         return _build_dry_run_text_replace(archive, work_id=work_id, preflight=preflight, scope=scope)
@@ -1340,6 +1422,583 @@ def _text_replace_payload_text(operation: LegalOperation) -> str:
     return (
         f"action={operation.action} witness_rule_id={operation.witness_rule_id or ''} "
         f"payload=text_replace old_len={len(old_text)} new_len={len(new_text)}"
+    )
+
+
+# --- Structural whole-provision REPLACE kernel. -------------------------------
+#
+# Candidate source: the work's operation surface (history-note ``replaced`` /
+# ``substituted`` witnesses), each carrying a candidate target address, an ISO
+# amendment date, and the cited amending act + provision href. The replacement
+# payload is the amending act's ``<amend>`` subtree, extracted into an
+# NZSourceNode subtree by :func:`extract_structural_replacement`.
+
+
+def build_archived_work_dry_run_replace(db_path: Path, work_id: str) -> NZDryRunReport:
+    """Build the structural whole-provision replace dry-run report for one work.
+
+    Mirrors the repeal/text-replace selected-family discipline: it relaxes only
+    the whole-work readiness gate (there is no whole-work preflight gate here),
+    never any per-operation exactness check. Each ``replaced``/``substituted``
+    witness with a candidate target and a cleanly-extractable one-to-one
+    replacement payload is applied and oracle-checked; every other outcome is a
+    typed refusal or typed not-in-scope, never a guess.
+    """
+
+    from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+
+    surface = build_archived_work_operation_surface(db_path, work_id)
+    archive = open_farchive(db_path)
+    try:
+        return build_dry_run_replace(archive, work_id=work_id, surface=surface)
+    finally:
+        archive.close()
+
+
+def build_dry_run_replace(
+    archive: Any,
+    *,
+    work_id: str,
+    surface: Any,
+) -> NZDryRunReport:
+    """Build the structural-replace report from an operation surface + archive."""
+
+    replace_rows = _replace_witness_rows(surface)
+    scope_completeness = _selected_family_replace_scope_completeness(surface, replace_rows)
+    if not replace_rows:
+        return NZDryRunReport(
+            work_id=work_id,
+            operation_family="replace",
+            proofs=(),
+            refusals=(
+                NZDryRunRefusal(
+                    op_id=work_id or "new_zealand",
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    message="dry-run structural-replace refused because no candidate replaced/substituted witness was found",
+                ),
+            ),
+            preflight_status="operation_surface_witnesses",
+            scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+            scope_completeness=scope_completeness,
+        )
+
+    parsed_cache: dict[str, NZSourceDocument | None] = {}
+    amending_root_cache: dict[str, Any] = {}
+    proofs: list[NZMutationBoundaryProof] = []
+    refusals: list[NZDryRunRefusal] = []
+    for row in replace_rows:
+        outcome = _dry_run_one_replace(archive, work_id, row, parsed_cache, amending_root_cache)
+        if isinstance(outcome, NZDryRunRefusal):
+            refusals.append(outcome)
+        else:
+            proofs.append(outcome)
+
+    return NZDryRunReport(
+        work_id=work_id,
+        operation_family="replace",
+        proofs=tuple(proofs),
+        refusals=tuple(refusals),
+        preflight_status="operation_surface_witnesses",
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+        scope_completeness=scope_completeness,
+    )
+
+
+def _replace_witness_rows(surface: Any) -> tuple[Any, ...]:
+    """The candidate-target replaced/substituted witnesses eligible for replace.
+
+    Eligibility here is the structural precondition every replace witness must
+    meet to even attempt the kernel: a structural-substitution family and a
+    candidate (exact) target address. Payload extractability and target presence
+    in the before-tree are checked inside the kernel (typed refusal), never here,
+    so a witness that fails them is still counted as attempted, never hidden.
+    """
+
+    rows: list[Any] = []
+    for row in surface.rows:
+        if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
+            continue
+        if row.target_address_candidate.status != "candidate":
+            continue
+        rows.append(row)
+    return tuple(rows)
+
+
+def _selected_family_replace_scope_completeness(
+    surface: Any,
+    in_scope_rows: tuple[Any, ...],
+) -> NZDryRunScopeCompleteness:
+    """Type every operation witness in the work as in- or not-in-scope.
+
+    The selected family is the candidate-target structural-replace family. Every
+    other operation witness is carried under a typed not-in-scope reason so the
+    partial scope can never silently inflate coverage. The repeal-witness census
+    fields are reused as the family-witness census (their names are generic in
+    the corpus scoreboard), so the replace coverage denominator is every
+    structural-replace operation-witness (``replaced``/``substituted``),
+    eligible or not.
+    """
+
+    in_scope_row_ids = {row.row_id for row in in_scope_rows}
+    reason_counts: dict[str, int] = {}
+    family_reason_counts: dict[str, int] = {}
+    in_scope = 0
+    total = 0
+    total_family = 0
+    family_in_scope = 0
+    for row in surface.rows:
+        total += 1
+        is_family_witness = row.operation_family in _NZ_REPLACE_OPERATION_FAMILIES
+        if is_family_witness:
+            total_family += 1
+        if row.row_id in in_scope_row_ids:
+            in_scope += 1
+            if is_family_witness:
+                family_in_scope += 1
+            continue
+        reason = _replace_not_in_scope_reason(row)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if is_family_witness:
+            family_reason_counts[reason] = family_reason_counts.get(reason, 0) + 1
+    return NZDryRunScopeCompleteness(
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+        family="replace",
+        total_operation_witnesses=total,
+        in_scope_operation_witnesses=in_scope,
+        not_in_scope_operation_witnesses=total - in_scope,
+        not_in_scope_reason_counts=dict(sorted(reason_counts.items())),
+        total_repeal_operation_witnesses=total_family,
+        repeal_witnesses_in_scope=family_in_scope,
+        repeal_witnesses_not_in_scope_reason_counts=dict(sorted(family_reason_counts.items())),
+    )
+
+
+def _replace_not_in_scope_reason(row: Any) -> str:
+    if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
+        return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY
+    if row.target_address_candidate.status != "candidate":
+        return NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE
+    # A candidate-target structural-replace witness not in the in-scope set would
+    # contradict the in-scope filter. Name it distinctly so any future filter
+    # drift surfaces loudly rather than being absorbed.
+    return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY
+
+
+def _dry_run_one_replace(
+    archive: Any,
+    work_id: str,
+    row: Any,
+    parsed_cache: dict[str, NZSourceDocument | None],
+    amending_root_cache: dict[str, Any],
+) -> NZMutationBoundaryProof | NZDryRunRefusal:
+    op_id = f"nz:{work_id}:{row.row_id}:replace"
+    target_address = row.target_address_candidate.address or row.amended_provision
+    amendment_date_iso = row.amendment_date_iso
+
+    if row.target_address_candidate.status != "candidate":
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_TARGET_NOT_CANDIDATE_RULE_ID,
+            message="dry-run structural-replace refused because the target address is not an exact candidate",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"target_address_status": row.target_address_candidate.status},
+        )
+
+    if not row.amending_work_id or not row.amending_provision_hrefs:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_NO_AMENDING_WORK_RULE_ID,
+            message="dry-run structural-replace refused because the amending work/provision href is unresolved",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={
+                "amending_work_id": row.amending_work_id,
+                "amending_provision_hrefs": list(row.amending_provision_hrefs),
+            },
+        )
+
+    if not amendment_date_iso:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run structural-replace refused because the operation has no ISO amendment date for a version window",
+            target_address=target_address,
+        )
+
+    # Resolve the structural target leaf (kind, label) from the candidate address
+    # path so the payload extractor can match the amending act's <amend> child.
+    source_path = _source_path_for_tree_path(row.target_address_candidate.path)
+    if source_path is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_PATH_UNMAPPABLE_RULE_ID,
+            message="dry-run structural-replace refused because the target address path is not mappable to a source-tree path",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+        )
+    leaf_kind = _leaf_source_kind(source_path)
+    leaf_label = _leaf_source_label(source_path)
+
+    # Extract the replacement payload from the amending act <amend> subtree.
+    amending_root = _amending_act_root(archive, row.amending_work_id, amending_root_cache)
+    if amending_root is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_AMENDING_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-replace refused because the amending act XML is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"amending_work_id": row.amending_work_id},
+        )
+    href = row.amending_provision_hrefs[0]
+    amending_node = _amending_node_by_href(amending_root, href)
+    if amending_node is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_AMENDING_HREF_NOT_FOUND_RULE_ID,
+            message="dry-run structural-replace refused because the amending-provision href was not found in the amending act XML",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"amending_work_id": row.amending_work_id, "amending_provision_href": href},
+        )
+    replacement = extract_structural_replacement(
+        amending_node,
+        target_leaf_kind=leaf_kind,
+        target_leaf_label=leaf_label,
+    )
+    if isinstance(replacement, str):
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_PAYLOAD_NOT_EXTRACTABLE_RULE_ID,
+            message=(
+                "dry-run structural-replace refused because the amending payload is not a clean "
+                f"one-to-one replacement (reason={replacement})"
+            ),
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={
+                "extractor_blocker": replacement,
+                "target_leaf_kind": leaf_kind,
+                "target_leaf_label": leaf_label,
+                "amending_work_id": row.amending_work_id,
+                "amending_provision_href": href,
+            },
+        )
+
+    # Resolve the before/after archived XML version window.
+    change_window = archived_xml_version_change_window(
+        archive,
+        work_id=work_id,
+        version_date=amendment_date_iso,
+    )
+    if change_window.before is None or change_window.on_or_after is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run structural-replace refused because the before/after archived XML version window is missing",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail=_change_window_detail(change_window),
+        )
+    before_doc = _parse_archived_version(archive, change_window.before, parsed_cache)
+    if before_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-replace refused because the before XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"before_version_id": change_window.before.version_id},
+        )
+    oracle_doc = _parse_archived_version(archive, change_window.on_or_after, parsed_cache)
+    if oracle_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+            message="dry-run structural-replace refused because the on-or-after XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"on_or_after_version_id": change_window.on_or_after.version_id},
+        )
+
+    before_matches = _resolve_target_nodes(before_doc, source_path)
+    if len(before_matches) == 0:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_NOT_IN_BEFORE_RULE_ID,
+            message="dry-run structural-replace refused because the exact target is not present in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"selected_source_path": list(source_path)},
+        )
+    if len(before_matches) > 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_AMBIGUOUS_RULE_ID,
+            message="dry-run structural-replace refused because the target source path is ambiguous in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"selected_source_path": list(source_path), "match_count": len(before_matches)},
+        )
+
+    before_target = before_matches[0]
+    resolved_path = before_target.path
+
+    # --- The boring apply kernel: re-root the extracted replacement subtree onto
+    # the resolved target path and swap it in for the target's subtree.
+    after_target = _rebase_replacement_root(replacement.root, resolved_path)
+    if _node_digest(after_target) == _node_digest(before_target) and after_target.text == before_target.text:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_REPLACE_APPLY_NO_OP_RULE_ID,
+            message="dry-run structural-replace refused because the apply left the target subtree unchanged",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+        )
+
+    parent_path = resolved_path[:-1]
+    siblings_before = _sibling_nodes(before_doc, resolved_path)
+    neighbor_paths = tuple(node.path for node in siblings_before)
+    neighbor_before = tuple(_node_digest(node) for node in siblings_before)
+    neighbor_after = neighbor_before  # kernel only swapped the target subtree
+    parent_before_nodes = _nodes_at_path(before_doc, parent_path) if parent_path else ()
+    parent_digest_before = _node_digest(parent_before_nodes[0]) if parent_before_nodes else ""
+    parent_digest_after = parent_digest_before
+
+    candidate_subtree_digest = _subtree_digest(replacement.root, replacement.descendants)
+    (
+        oracle_match,
+        oracle_rule_id,
+        oracle_present,
+        oracle_occupancy,
+        oracle_subtree_digest,
+    ) = _oracle_partition_replace(
+        oracle_doc,
+        resolved_path,
+        candidate_root=replacement.root,
+        candidate_descendants=replacement.descendants,
+    )
+
+    return NZMutationBoundaryProof(
+        op_id=op_id,
+        action=str(StructuralAction.REPLACE),
+        target_address=target_address,
+        selected_source_path=resolved_path,
+        target_xml_id=before_target.xml_id,
+        target_digest_before=_node_digest(before_target),
+        target_digest_after=_node_digest(after_target),
+        operation_payload=_replace_payload_text(replacement, row),
+        occupancy_before=_occupancy(before_target),
+        occupancy_after=_occupancy(after_target),
+        parent_source_path=parent_path,
+        parent_digest_before=parent_digest_before,
+        parent_digest_after=parent_digest_after,
+        unaffected_neighbor_paths=neighbor_paths,
+        unaffected_neighbor_digests_before=neighbor_before,
+        unaffected_neighbor_digests_after=neighbor_after,
+        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        oracle_version_id=change_window.on_or_after.version_id,
+        oracle_target_present=oracle_present,
+        oracle_target_occupancy=oracle_occupancy,
+        oracle_match=oracle_match,
+        oracle_match_rule_id=oracle_rule_id,
+        replace_amending_work_id=row.amending_work_id,
+        replace_amending_provision_href=href,
+        replace_replacement_descendant_count=len(replacement.descendants),
+        replace_candidate_subtree_digest=candidate_subtree_digest,
+        replace_oracle_subtree_digest=oracle_subtree_digest,
+    )
+
+
+def _oracle_partition_replace(
+    oracle_doc: NZSourceDocument,
+    source_path: tuple[str, ...],
+    *,
+    candidate_root: NZSourceNode,
+    candidate_descendants: tuple[NZSourceNode, ...],
+) -> tuple[str, str, bool, str, str]:
+    """Classify whether the on-or-after oracle subtree matches the replacement.
+
+    The honest classification compares the candidate replacement node-subtree
+    (root + descendants) against the oracle node-subtree at the resolved target
+    path by NORMALIZED text/structure:
+
+    - ``agrees``: the oracle target node-subtree matches the candidate
+      replacement subtree (same normalized leaf labels/kinds and per-node text).
+    - ``residual_replacement_mismatch``: the oracle target node-subtree exists
+      but differs from the candidate replacement (another window change / wrong
+      content). A mismatch is NEVER counted as agreement.
+    - ``target_missing``: the exact target node is absent from the oracle.
+    """
+
+    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    if not oracle_matches:
+        return (
+            "target_missing",
+            NZ_DRY_RUN_REPLACE_RESIDUAL_TARGET_MISSING_RULE_ID,
+            False,
+            "absent",
+            "",
+        )
+    oracle_root = oracle_matches[0]
+    oracle_occupancy = _occupancy(oracle_root)
+    oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+    candidate_sig = _normalized_subtree_signature(candidate_root, candidate_descendants, root_path=candidate_root.path)
+    oracle_sig = _normalized_subtree_signature(oracle_root, oracle_descendants, root_path=oracle_root.path)
+    oracle_subtree_digest = _subtree_digest(oracle_root, oracle_descendants)
+    if candidate_sig == oracle_sig:
+        return (
+            "agrees",
+            NZ_DRY_RUN_REPLACE_AGREES_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_subtree_digest,
+        )
+    return (
+        "residual_replacement_mismatch",
+        NZ_DRY_RUN_REPLACE_RESIDUAL_MISMATCH_RULE_ID,
+        True,
+        oracle_occupancy,
+        oracle_subtree_digest,
+    )
+
+
+def _source_path_for_tree_path(tree_path: tuple[tuple[str, str], ...]) -> tuple[str, ...] | None:
+    """Map a target-address candidate TreePath to a source-tree path.
+
+    Mirrors :func:`_source_path_for_address` but consumes the operation-surface
+    candidate ``(address_kind, label)`` steps directly.
+    """
+
+    segments: list[str] = []
+    for step in tree_path:
+        kind = step[0]
+        label = step[1] if len(step) > 1 else ""
+        source_kind = _ADDRESS_KIND_TO_SOURCE_KIND.get(kind)
+        if source_kind is None or not label:
+            return None
+        segments.append(f"{source_kind}:{label}")
+    if not segments:
+        return None
+    return tuple(segments)
+
+
+def _leaf_source_label(source_path: tuple[str, ...]) -> str:
+    if not source_path:
+        return ""
+    leaf = source_path[-1]
+    for separator in (":", "@", "#"):
+        if separator in leaf:
+            return leaf.split(separator, 1)[1]
+    return ""
+
+
+def _rebase_replacement_root(replacement_root: NZSourceNode, resolved_path: tuple[str, ...]) -> NZSourceNode:
+    """Re-root the extracted replacement node onto the resolved target path.
+
+    The replacement payload carries a placeholder ``amend/...`` path; the apply
+    kernel re-roots its root onto the live-body target path so the candidate
+    after-node is addressable exactly where the target was. The node content
+    (kind/label/heading/text/deletion-status) is the new payload, never the old.
+    """
+
+    return NZSourceNode(
+        kind=replacement_root.kind,
+        path=resolved_path,
+        xml_id=replacement_root.xml_id,
+        xml_path=replacement_root.xml_path,
+        source_zone=replacement_root.source_zone,
+        label=replacement_root.label,
+        heading=replacement_root.heading,
+        deletion_status=replacement_root.deletion_status,
+        text=replacement_root.text,
+        history=replacement_root.history,
+    )
+
+
+def _descendant_nodes(document: NZSourceDocument, root_path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:
+    """Nodes strictly under ``root_path`` in document order."""
+
+    depth = len(root_path)
+    return tuple(
+        node
+        for node in document.nodes
+        if len(node.path) > depth and node.path[:depth] == root_path
+    )
+
+
+def _normalized_subtree_signature(
+    root: NZSourceNode,
+    descendants: tuple[NZSourceNode, ...],
+    *,
+    root_path: tuple[str, ...],
+) -> tuple[tuple[str, str, str], ...]:
+    """A path-relative, normalized signature of a node-subtree for comparison.
+
+    Each node contributes ``(relative_path, kind, normalized_text)``. Paths are
+    made relative to ``root_path`` so the candidate (rooted at its amend path)
+    and the oracle (rooted at the live-body path) compare structurally. Text is
+    comparison-normalized so incidental whitespace/markup differences do not
+    create false mismatches. Heading is folded into the leaf text by the source
+    parser's ``_legal_text`` already, so the per-node text captures it.
+    """
+
+    depth = len(root_path)
+
+    def relative(path: tuple[str, ...]) -> str:
+        rel = path[depth:]
+        # Drop the label off each step so a renumber-on-replace inside the
+        # subtree does not defeat structural comparison; kind is kept.
+        return "/".join(segment.split(":", 1)[0].split("@", 1)[0].split("#", 1)[0] for segment in rel)
+
+    entries: list[tuple[str, str, str]] = [("", root.kind, normalize_inline_comparison_text(root.text))]
+    for node in descendants:
+        entries.append((relative(node.path), node.kind, normalize_inline_comparison_text(node.text)))
+    return tuple(sorted(entries))
+
+
+def _subtree_digest(root: NZSourceNode, descendants: tuple[NZSourceNode, ...]) -> str:
+    payload = "".join(
+        _node_digest(node) for node in (root, *descendants)
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any]) -> Any:
+    if amending_work_id in cache:
+        return cache[amending_work_id]
+    from lxml import etree
+
+    from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
+
+    root: Any = None
+    try:
+        _version_id, locator = latest_xml_locator_for_work(archive, amending_work_id)
+        data = archive.get(locator) if locator else None
+        if data is not None:
+            root = etree.fromstring(data)
+    except Exception:
+        root = None
+    cache[amending_work_id] = root
+    return root
+
+
+def _amending_node_by_href(amending_root: Any, href: str) -> Any:
+    if not href:
+        return None
+    for element in amending_root.iter():
+        if isinstance(element.tag, str) and element.attrib.get("id") == href:
+            return element
+    return None
+
+
+def _replace_payload_text(replacement: NZStructuralReplacement, row: Any) -> str:
+    return (
+        f"action={StructuralAction.REPLACE} "
+        f"payload=structural_replace amending={row.amending_work_id} "
+        f"replacement_root={replacement.root.kind}:{replacement.root.label} "
+        f"descendants={len(replacement.descendants)}"
     )
 
 

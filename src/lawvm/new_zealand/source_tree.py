@@ -443,6 +443,144 @@ def _legal_text(node: etree._Element) -> str:
     return _normalize_text(" ".join(texts))
 
 
+# Structural-replacement (whole-provision substitute) extraction. ------------
+#
+# A structural ``replaced``/``substituted`` instruction in an amending act reads
+# "section N is repealed and the following ... substituted:" / "Replace section N
+# with:" followed by a typed ``<amend>`` subtree carrying the NEW provision body.
+# Unlike ``<amend.in>`` inline text, the new content is one (or more) structural
+# child nodes. This extractor reads the ``<amend>`` subtree whose SINGLE top-level
+# structural child matches the target leaf (kind, label) and parses it into an
+# ``NZSourceNode`` replacement subtree — the exact same node model the live body
+# uses — so the dry-run REPLACE kernel can substitute it for the resolved target.
+#
+# It is deliberately conservative: it only returns a clean one-to-one
+# replacement (exactly one ``<amend>`` subtree in the amending node whose single
+# top child matches the target leaf). Zero matches, more than one match, an
+# ``<amend>`` with several top children (a one-to-many "substitute the following
+# subsections" expansion), or a label/kind mismatch are all typed blockers — the
+# extractor never guesses which child is the replacement or flattens a
+# multi-child expansion into one node.
+
+# Typed blocker reasons for structural-replacement extraction. Each is a fact
+# about why the amending payload is not a clean one-to-one replacement; none is a
+# guess or a silent drop.
+NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE = "structural_replace_no_amend_subtree_in_amending_node"
+NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD = "structural_replace_no_amend_child_matches_target_leaf"
+NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH = "structural_replace_multiple_amend_children_match_target_leaf"
+NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION = "structural_replace_amend_subtree_is_one_to_many_expansion"
+NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT = "structural_replace_extracted_replacement_is_empty"
+NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE = "structural_replace_target_leaf_kind_or_label_unusable"
+
+
+@dataclass(frozen=True)
+class NZStructuralReplacement:
+    """A cleanly-extracted whole-provision structural replacement payload.
+
+    ``root`` is the new replacement node read from the amending act's ``<amend>``
+    subtree; ``descendants`` are its nested structural nodes (subprovs, label-
+    paras, def-paras) parsed with the same walker as the live body, so the
+    replacement subtree is byte-comparable to an on-or-after oracle subtree.
+    ``root`` and ``descendants`` carry placeholder ``amend/...`` paths; the
+    REPLACE kernel re-roots them onto the resolved target's live-body path.
+    """
+
+    root: NZSourceNode
+    descendants: tuple[NZSourceNode, ...]
+
+    @property
+    def nodes(self) -> tuple[NZSourceNode, ...]:
+        return (self.root, *self.descendants)
+
+
+def extract_structural_replacement(
+    amending_node: etree._Element,
+    *,
+    target_leaf_kind: str,
+    target_leaf_label: str,
+) -> "NZStructuralReplacement | str":
+    """Extract a clean one-to-one structural replacement from an amending node.
+
+    ``amending_node`` is the amending act provision element resolved from the
+    history-note ``amending-provision`` href. ``target_leaf_kind`` /
+    ``target_leaf_label`` describe the live-body node the instruction replaces
+    (e.g. ``prov``/``41`` for "section 41", ``subprov``/``4`` for "section
+    28(4)").
+
+    Returns an :class:`NZStructuralReplacement` when EXACTLY ONE ``<amend>``
+    subtree in the amending node carries EXACTLY ONE top-level structural child
+    whose kind and label match the target leaf; otherwise returns a typed
+    blocker reason string (never a guess, never a flatten).
+    """
+
+    if not target_leaf_kind or not target_leaf_label:
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE
+    normalized_label = _normalize_text(target_leaf_label)
+
+    amend_subtrees = [
+        element
+        for element in amending_node.iter()
+        if isinstance(element.tag, str) and _localname(element) == "amend"
+    ]
+    if not amend_subtrees:
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE
+
+    matches: list[etree._Element] = []
+    saw_multi_child_with_matching_leaf = False
+    for amend in amend_subtrees:
+        top_children = [
+            child
+            for child in amend
+            if isinstance(child.tag, str) and _localname(child) in _STRUCTURAL_TAGS
+        ]
+        if not top_children:
+            continue
+        leaf_matches = [
+            child for child in top_children if _amend_child_matches_leaf(child, target_leaf_kind, normalized_label)
+        ]
+        if not leaf_matches:
+            continue
+        if len(top_children) > 1:
+            # A one-to-many expansion ("substitute the following subsections:"):
+            # the target leaf maps to several new nodes. That is not a one-to-one
+            # replacement and is left blocked for a later expansion kernel.
+            saw_multi_child_with_matching_leaf = True
+            continue
+        matches.append(top_children[0])
+
+    if not matches:
+        if saw_multi_child_with_matching_leaf:
+            return NZ_STRUCTURAL_REPLACE_BLOCKED_MULTI_CHILD_EXPANSION
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
+    if len(matches) > 1:
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+    replacement_element = matches[0]
+    nodes: list[NZSourceNode] = []
+    _walk_source_nodes(
+        replacement_element,
+        path=("amend",),
+        nodes=nodes,
+        attached_history_note_keys=set(),
+    )
+    if not nodes:
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
+    root = nodes[0]
+    if not root.text.strip():
+        return NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
+    return NZStructuralReplacement(root=root, descendants=tuple(nodes[1:]))
+
+
+def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, normalized_label: str) -> bool:
+    if _localname(child) != target_leaf_kind:
+        return False
+    if target_leaf_kind == "def-para":
+        child_label = _first_def_term(child)
+    else:
+        child_label = _direct_child_text(child, "label")
+    return _normalize_text(child_label) == normalized_label
+
+
 def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
     """Read typed ``<amend.in>``/citation instructions from an amending node.
 

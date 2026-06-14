@@ -56,6 +56,7 @@ from lawvm.new_zealand.corpus_cache import active_corpus_run_cache, corpus_run_c
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
     build_archived_work_dry_run_repeal,
 )
@@ -74,25 +75,31 @@ NZ_NORTH_STAR_BUCKET_UNCLASSIFIED = "unclassified"
 # - repeal       <- "repealed"  history notes (whole-provision repeal)
 # - text_replace <- "amended"   history notes (in-provision text substitution;
 #                                NZ records text edits under "amended", not under
-#                                "replaced"/"substituted", which are whole-provision
-#                                replacements and remain a frontier family)
+#                                "replaced"/"substituted")
+# - replace      <- "replaced"/"substituted" history notes (whole-provision
+#                                structural substitution: the target node's
+#                                subtree is swapped for the amending act's
+#                                <amend> payload, oracle-checked by subtree match)
 NZ_NORTH_STAR_SUPPORTED_FAMILIES: dict[str, tuple[str, ...]] = {
     "repeal": ("repealed",),
     "text_replace": ("amended",),
+    "replace": ("replaced", "substituted"),
 }
 
 # The dry-run scope that drives each supported family's kernel.
 _SUPPORTED_FAMILY_SCOPE: dict[str, str] = {
     "repeal": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     "text_replace": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+    "replace": NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
 }
 
 # Executable amendment operations we do not yet support: the remaining frontier.
+# ``replaced``/``substituted`` moved to the supported ``replace`` family this
+# cycle (structural whole-provision replace kernel); the frontier is now the
+# insert/add families.
 NZ_NORTH_STAR_FRONTIER_FAMILIES: tuple[str, ...] = (
     "inserted",
     "added",
-    "replaced",
-    "substituted",
 )
 
 # Not replayable structural mutations by design — never a coverage miss.
