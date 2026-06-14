@@ -161,15 +161,20 @@ _EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»\"'"
 # stripped, the published Code inserts a courtesy space after the introductory
 # dash/colon (``if— (1) ...``). Collapse that boundary space for classification.
 _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
-# OLRC insert-after courtesy space (F1, §507(d)): the enacted instruction inserts
-# matter directly after a parenthesized anchor (``inserting "excluding …" after
-# "(a)(8)"`` -> the faithful text reads ``(a)(8)excluding``), but the published
-# Code inserts a courtesy space (``(a)(8) excluding``). Collapse a single space
-# the oracle adds between a closing ``)`` and a following word character. The
-# projection is applied to BOTH sides symmetrically and only erases the difference
-# when a ``)``-adjacent space is the SOLE divergence — it never invents agreement
-# between texts that differ in any other character.
-_EDITORIAL_INSERT_AFTER_PAREN_SPACE_RE = re.compile(r"\)\s+(?=\w)")
+# OLRC insert-after courtesy space (F1, §507(d) and the comma-anchor generalization):
+# the enacted instruction inserts matter directly after an anchor that ends in a
+# closing ``)`` (``inserting "excluding …" after "(a)(8)"`` -> faithful
+# ``(a)(8)excluding``) or a comma (``inserting "1182(1)," after "707(b),"`` ->
+# faithful ``707(b),1182(1),``; ``inserting "Mount Vernon," after "Tacoma,"`` ->
+# ``Tacoma,Mount Vernon,``), but the published Code adds a courtesy space after the
+# anchor (``(a)(8) excluding`` / ``707(b), 1182(1),`` / ``Tacoma, Mount Vernon,``).
+# The quotedText literal carries NO leading space (verified against the source
+# bytes), so the materialization is faithful and the space is oracle editorial.
+# Collapse a single space the oracle adds after a closing ``)`` or a ``,`` that is
+# followed by a word/quote character. Applied to BOTH sides symmetrically: it only
+# erases the difference when that anchor-adjacent space is the SOLE divergence — it
+# never invents agreement between texts that differ in any other character.
+_EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE = re.compile(r"([),])\s+(?=[\w“”‘’\"'])")
 
 
 def _norm_editorial(text: str) -> str:
@@ -177,15 +182,15 @@ def _norm_editorial(text: str) -> str:
 
     Drops the quote marks the USLM amendment wraps inserted statutory matter in,
     the courtesy space the OLRC inserts after the introductory dash/colon of an
-    inserted block, and the courtesy space it inserts after a parenthesized
-    insert-after anchor. Used only to CLASSIFY a residual (lawvm_wrong vs
+    inserted block, and the courtesy space it inserts after an insert-after anchor
+    ending in ``)`` or ``,``. Used only to CLASSIFY a residual (lawvm_wrong vs
     oracle_suspect); never to repair the materialized text. A residual that vanishes
     under this projection but not under :func:`_norm` is editorial on the oracle
     side — the generalized F1 class.
     """
     stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
     respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
-    respaced = _EDITORIAL_INSERT_AFTER_PAREN_SPACE_RE.sub(")", respaced)
+    respaced = _EDITORIAL_INSERT_AFTER_ANCHOR_SPACE_RE.sub(r"\1", respaced)
     return _norm(respaced)
 
 
@@ -684,6 +689,63 @@ def _materialize_one(
         materialized = before_text.replace(match_text, replacement or "", count)
         return (materialized, "", "")
 
+    if (
+        action is StructuralAction.INSERT
+        and operation.anchor is not None
+        and _is_subsection_target(operation.anchor)
+    ):
+        # "inserting after paragraph (N) the following: <block>" — splice the
+        # payload as a NEW node immediately after the anchor node's span. The
+        # anchor (not the target) names the node to insert after. Gated on the
+        # anchor being a SUB-SECTION node so an add-at-end op (anchored at the whole
+        # section) still takes the append-at-section-end path below.
+        payload_text = operation.payload.text if operation.payload is not None else ""
+        if not payload_text:
+            return USDryRunRefusal(
+                op_id=op_id,
+                rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+                message=f"insert-node-after op ({str(operation.anchor)}) has no payload",
+                target_address=str(operation.anchor),
+            )
+        anchor_text = _locate_subsection_text(before_section, operation.anchor)
+        if anchor_text is None or anchor_text not in before_text:
+            return (
+                "",
+                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                DISPOSITION_LAWVM_WRONG,
+            )
+        materialized = before_text.replace(
+            anchor_text, f"{anchor_text} {payload_text}".strip(), 1
+        )
+        return (materialized, "", "")
+
+    if action is StructuralAction.REPEAL and is_subsection:
+        # "by striking subsection (X)" — remove the node's span from the section
+        # text and recompose. Only at sub-section granularity; a whole-section
+        # repeal (handled below) is not a text edit.
+        node_text = _locate_subsection_text(before_section, operation.target)
+        if node_text is None or node_text not in before_text:
+            # The struck node is not in the before edition — it was introduced by an
+            # un-lowered sibling/future op (or the strike is a conditional/sunset
+            # repeal of a not-yet-present node). Striking a node that is not there is
+            # a NO-OP against the before text, not a wrong materialization: refuse the
+            # op (do not compose it, do not tank the section's other ops). The honest
+            # gap stays visible as a typed refusal.
+            return USDryRunRefusal(
+                op_id=op_id,
+                rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+                message=(
+                    f"strike-subsection target {str(operation.target)} not present in "
+                    "the before edition (introduced by an un-lowered sibling op or a "
+                    "conditional/sunset strike); not composed"
+                ),
+                target_address=str(operation.target),
+            )
+        materialized = before_text.replace(node_text, "", 1)
+        # Collapse the double space the removed span may leave between neighbours.
+        materialized = re.sub(r"\s{2,}", " ", materialized).strip()
+        return (materialized, "", "")
+
     if action in (StructuralAction.REPLACE, StructuralAction.INSERT):
         # Whole-node replace / add-at-end carry a structured payload node. At the
         # section-text surface we can only faithfully represent these when the
@@ -734,6 +796,34 @@ def _materialize_one(
             materialized = f"{before_text} {operation.payload.text}".strip()
         else:  # REPLACE whole node -> the payload IS the new section body.
             materialized = operation.payload.text
+        return (materialized, "", "")
+
+    if action is StructuralAction.RENUMBER and is_subsection and operation.destination is not None:
+        # "redesignating paragraph (N) as paragraph (M)" — relabel ONLY the node's
+        # leading enumerator inside its located span. The from-label appears in the
+        # node text as its leading "(N)"; we rewrite that single leading enumerator,
+        # never a cross-reference elsewhere in the section. When the node is not
+        # cleanly locatable, a typed residual (never an unscoped global relabel).
+        from_label = operation.target.leaf_label()
+        to_label = operation.destination.leaf_label()
+        node_text = _locate_subsection_text(before_section, operation.target)
+        if node_text is None or node_text not in before_text:
+            return (
+                "",
+                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                DISPOSITION_LAWVM_WRONG,
+            )
+        lead = f"({from_label})"
+        if not node_text.lstrip().startswith(lead):
+            # The located node does not begin with the expected enumerator: refuse
+            # to relabel rather than rewrite the wrong token.
+            return (
+                "",
+                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                DISPOSITION_LAWVM_WRONG,
+            )
+        new_node_text = node_text.replace(lead, f"({to_label})", 1)
+        materialized = before_text.replace(node_text, new_node_text, 1)
         return (materialized, "", "")
 
     # REPEAL / RENUMBER / HEADING_* are structural at the section level: a section

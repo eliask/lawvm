@@ -333,17 +333,73 @@ incompleteness, never repaired. Pinned by `test_insert_after_classifies_and_assi
 `test_sibling_subsections_split_so_striking_does_not_bleed_into_insert_after`, and
 `test_strike_insert_operand_order_struck_matches_inserted_replaces`.
 
+## F9 — target threading + structural lowering (coverage 23 -> 24)
+
+The binding-constraint diagnosis in §0 was confirmed AND refined by a fresh survey:
+of the ~144 `missing_source` sections, ~136 had **no lowered op targeting them at
+all** — the lowering layer never produced an instruction for them. Cause: a nested
+instruction leaf ("(1) in subsection (a), by inserting …" / "(B) in section
+3675(b)(3), by striking …") carries no `<ref>` and no "of title N" prose, and the
+old `_iter_instruction_units` only threaded the section-level ref. Three levers
+landed (all in `amendatory.py` / `dry_run.py`):
+
+- **F9a — relative-prose + nested-list target threading (THE coverage lever).**
+  `_iter_instruction_units` now threads the address resolved by the nearest
+  ENCLOSING instruction into each leaf (`inherited_address`).
+  `parse_relative_usc_target` resolves "section X(...) of such title" /
+  "in section X, by …" under the inherited title — never invents a title; a
+  cross-reference "section 116 of title 18" in inserted text is NOT matched (it
+  carries "of title N", handled only by the absolute parser).
+  `_refine_with_leading_subunit_anchor` appends a leading "in subsection (a)"
+  anchor so two sibling ops ("(1) in subsection (a), …"/"(2) in subsection (b), …")
+  do not collapse onto the same section address and double-apply at the section
+  surface (fixed §11:104 `1182(1),1182(1),`). This claimed §35:5 (two composed
+  strike-and-inserts) into the pass's one NEW agreement (exact, hand-verified).
+  `missing_source` fell 155 -> 106; `lawvm_wrong` rose 48 -> 94 because the newly-
+  claimed sections are mostly multiply-amended with a still-un-lowered sibling op —
+  honest typed residuals, never forced.
+
+- **F9b — structural-op lowering + sub-section materialization.** `strike
+  subsection (X)` -> sub-section REPEAL (dry-run removes the located node and
+  recomposes); a FUTURE-effective strike ("Effective on the date that is N years
+  after …, … striking subsection (d)") is left to the temporal layer (lowering it
+  would delete an in-force node — this caused a transient §11:525 regression, fixed
+  by the `_FUTURE_EFFECTIVE_RE` guard); a strike of a node absent from the before
+  edition is a typed REFUSAL no-op (never an over-broad deletion that tanks the
+  section's other ops — this preserved §11:1329's `oracle_suspect`). `redesignating
+  paragraphs (3) through (7) as (4) through (8)` -> one RENUMBER per member
+  (high-end first; relabels only each node's leading enumerator; non-numeric ranges
+  stay typed findings). `inserting after paragraph (N) the following: <block>` -> an
+  anchored INSERT (gated on the anchor being a SUB-SECTION so an add-at-end op,
+  anchored at the whole section, still appends — fixed a §11:525 mis-route).
+  On-title unlowered findings fell 96 -> 73.
+
+- **F9c — comma-anchor editorial projection (generalized F1).** The OLRC adds a
+  courtesy space after a `,` or `)` insert-after anchor the enacted quotedText does
+  not carry (faithful `Tacoma,Mount Vernon,` vs published `Tacoma, Mount Vernon,`;
+  verified against the source bytes). `_norm_editorial` folds that anchor-adjacent
+  space symmetrically — `oracle_suspect`, never repaired, never coverage. Pinned by
+  `test_norm_editorial_undoes_comma_anchor_courtesy_space` (incl. a no-false-
+  agreement guard).
+
+Net: **24/231 = 0.1039**, all 24 agreements exact materialized==oracle in the
+oracle changed set. The next AGREEMENT-yielding lever is the punctuation
+strike_insert form ("striking the period at the end and inserting '; and'", 16
+remaining) — its strike anchor is descriptive prose, not a quotedText.
+
 ## Implications for next work (priority order)
 0. **THE binding constraint for more agreements is the amendatory LOWERING layer,
-   not the dry-run surface.** PL 116-54 (SBRA) leaves 32 of its conforming-amendment
-   instructions un-lowered (the nested "in section X— (A) by striking … (B) by
-   inserting …" form and several "amend to read" sub-section redesignations). Every
-   oracle-changed section dominated by those un-lowered ops (§103, §347, §364, §101,
-   §1325, the §11xx subchapter-V block) cannot reach a full text agreement until the
-   ops exist. The F6/F7/F8 levers below are correct and in place, but the next
-   AGREEMENT-yielding work is decomposing the SBRA conforming-amendments list in
-   `amendatory.py`'s `_iter_instruction_units` / `_classify_action`. The dry-run
-   sub-section materialization (F8) is ready to consume those ops once lowered.
+   not the dry-run surface.** F9a closed the "no op at all" half of the gap; the
+   remaining gap is multiply-amended sections with a still-un-lowered SIBLING op.
+   PL 116-54 (SBRA) leaves 32 of its conforming-amendment instructions un-lowered
+   (the nested "in section X— (A) by striking … (B) by inserting …" form and several
+   "amend to read" sub-section redesignations). Every oracle-changed section
+   dominated by those un-lowered ops (§103, §347, §364, §101, §1325, the §11xx
+   subchapter-V block) cannot reach a full text agreement until the ops exist. The
+   F6/F7/F8/F9 levers are correct and in place; the next AGREEMENT-yielding work is
+   the punctuation strike_insert + non-quotedText strike forms in `amendatory.py`'s
+   `_classify_action` / strike branch. The dry-run sub-section materialization (F8/F9b)
+   is ready to consume those ops once lowered.
 1. **Editorial-faithfulness + sub-section levers (F6/F7/F8) — DONE.** F7 prunes
    govinfo marginal sidenotes + page stamps from the materialized payload
    (faithfulness fix); F6 folds curly/straight quote shapes in the comparison

@@ -270,9 +270,11 @@ def test_real_corpus_runs_and_produces_a_witness_anchored_aggregate() -> None:
     # Regression floor: a sub-section-targeted TEXT_REPLACE whose node the split
     # cannot locate must fall back to an unambiguous section-level string replace,
     # not emit empty materialization. Without the fallback the aggregate collapses
-    # (observed 23 -> 13). Floor guards that class; it can only rise as lowering
-    # coverage improves.
-    assert agg["agreements_total"] >= 20
+    # (observed 23 -> 13). The relative-prose / leading-subsection target threading
+    # (nested instruction lists, "of such title") then lifted coverage to 24 by
+    # claiming sections the lowering previously never targeted. Floor guards both
+    # classes; it can only rise as lowering coverage improves, never regress.
+    assert agg["agreements_total"] >= 24
     # "Covered" is strictly the agreement partition: the typed residual partitions
     # are reported separately and never folded into coverage.
     breakdown = agg["disposition_breakdown"]
