@@ -287,11 +287,49 @@ def _text_of(elem: ET.Element) -> str:
     return re.sub(r"\s+", " ", "".join(elem.itertext())).strip()
 
 
+# Curly/straight quote marks the USLM wraps around an inline literal in the
+# *prose* (siblings of <quotedText>, never inside it). Only an enclosing matched
+# pair is peeled — never edge punctuation that is part of the literal.
+_ENCLOSING_QUOTE_PAIRS = (("“", "”"), ('"', '"'))
+
+
+def _collapse_inner_ws(text: str) -> str:
+    """Collapse runs of insignificant formatting whitespace WITHOUT touching edges.
+
+    USLM serializes block payloads with newline/indentation whitespace between
+    child elements. We collapse internal runs to a single space so the materialized
+    literal reads as one line, but we never strip the literal's own leading/trailing
+    characters — those are whitespace- and punctuation-significant (F1/F4).
+    """
+    # Preserve a single leading / trailing whitespace char (a significant space),
+    # collapse everything internal. Edge whitespace beyond one char is XML
+    # serialization noise (e.g. trailing "\n\n" after a block) and is trimmed.
+    lead = " " if text[:1].isspace() else ""
+    trail = " " if text[-1:].isspace() and len(text) > 1 else ""
+    return lead + re.sub(r"\s+", " ", text.strip()) + trail
+
+
+def _peel_enclosing_quotes(text: str) -> str:
+    """Remove a single matched enclosing quote pair, preserving inner edge chars.
+
+    ``“(d) … becomes due.”`` -> ``(d) … becomes due.`` (the terminal period stays
+    INSIDE; only the wrapping curly quotes are peeled). A literal with no enclosing
+    pair is returned unchanged.
+    """
+    for open_q, close_q in _ENCLOSING_QUOTE_PAIRS:
+        if text.startswith(open_q) and text.endswith(close_q) and len(text) >= len(open_q) + len(close_q):
+            return text[len(open_q) : len(text) - len(close_q)]
+    return text
+
+
 def _quoted_texts(elem: ET.Element) -> list[str]:
     out: list[str] = []
     for q in elem.iter():
         if _localname(q.tag) == "quotedText":
-            out.append("".join(q.itertext()).strip())
+            # Significant leading/trailing whitespace and punctuation INSIDE the
+            # <quotedText> literal must survive (F1 leading space, F4 terminal
+            # period). Collapse only internal formatting whitespace.
+            out.append(_collapse_inner_ws("".join(q.itertext())))
     return out
 
 
@@ -307,7 +345,13 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
     """Build an IRNode payload from the first ``<quotedContent>`` block, if any."""
     for q in elem.iter():
         if _localname(q.tag) == "quotedContent":
-            text = re.sub(r"\s+", " ", "".join(q.itertext())).strip().strip("“”\".")
+            # Collapse internal formatting whitespace and trim the block's outer
+            # serialization whitespace (newlines/indent around <quotedContent> are
+            # NOT significant), then peel ONLY the enclosing curly-quote pair. The
+            # terminal punctuation (period) lives INSIDE the quote and must survive
+            # (F4: "…becomes due." not "…becomes due").
+            collapsed = re.sub(r"\s+", " ", "".join(q.itertext())).strip()
+            text = _peel_enclosing_quotes(collapsed)
             # We carry the quoted block verbatim as a single content node; the
             # dry-run stage re-parses the USLM sub-tree into structured law.
             return IRNode(kind=IRNodeKind.CONTENT, text=text)
@@ -347,15 +391,24 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
         return "redesignate"
     if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered:
         return "amend_to_read"
-    if ("delete" in has and ("insert" in has or "add" in has)) or (
-        "striking" in lowered and ("inserting" in lowered)
-    ):
+    has_strike = "delete" in has or "striking" in lowered
+    has_insert = "insert" in has or "inserting" in lowered
+    has_anchor = " after " in lowered or " before " in lowered
+    # "inserting 'X' after/before 'Y'" with NO striking is an anchored insert, not
+    # a strike-and-insert. Classify it as insert_after BEFORE the strike_insert and
+    # add_at_end branches so the anchor (not a struck phrase) drives the operand
+    # assignment (F5: PL 116-54 §547(b) was mis-read as strike_insert with inverted
+    # operands because a sibling subsection's "striking" bled into the raw text).
+    if has_insert and has_anchor and not has_strike:
+        return "insert_after"
+    # Genuine strike-and-insert: an explicit strike verb paired with an insert.
+    if has_strike and has_insert:
         return "strike_insert"
     if "add" in has and "at the end" in lowered:
         return "add_at_end"
-    if "delete" in has or "striking" in lowered:
+    if has_strike:
         return "strike"
-    if "insert" in has and " after " in lowered:
+    if has_insert and has_anchor:
         return "insert_after"
     if "add" in has or "insert" in has:
         return "add_at_end"
@@ -652,19 +705,20 @@ def _iter_instruction_units(
     ("(1) in subsection (b)— (A) by striking…"). We carry the enclosing section
     target into sub-units that lack their own ref.
     """
+    unit_tags = ("subsection", "paragraph", "subparagraph", "clause")
     nested = [
         elem
         for elem in section.iter()
-        if _localname(elem.tag) in ("paragraph", "subparagraph", "clause")
+        if _localname(elem.tag) in unit_tags
         and any(_localname(a.tag) == "amendingAction" for a in elem.iter())
         # only leaf-ish units: a unit whose own descendants do not themselves carry
-        # a deeper amendingAction-bearing paragraph
+        # a deeper amendingAction-bearing unit
     ]
     leaf_units = []
     for elem in nested:
         has_deeper = any(
             child is not elem
-            and _localname(child.tag) in ("paragraph", "subparagraph", "clause")
+            and _localname(child.tag) in unit_tags
             and any(_localname(a.tag) == "amendingAction" for a in child.iter())
             for child in elem.iter()
         )

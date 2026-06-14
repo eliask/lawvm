@@ -271,7 +271,7 @@ def _canonical_archive_available() -> bool:
     not _canonical_archive_available(),
     reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
-def test_real_title11_pl118_42_window_exposes_the_one_space_lowering_gap() -> None:
+def test_real_title11_pl118_42_window_507d_stays_oracle_suspect_courtesy_space() -> None:
     from lawvm.us_federal.sources import (
         open_us_federal_farchive,
         plaw_locator,
@@ -293,14 +293,19 @@ def test_real_title11_pl118_42_window_exposes_the_one_space_lowering_gap() -> No
 
     # The 2023->2024 Title 11 oracle changed exactly three sections.
     assert report.oracle_changed_sections == ("11:109", "11:507", "11:1182")
-    # We lower exactly one in-Title-11 op: the 507(d) strike-and-insert.
+    # We lower exactly one in-Title-11 op: the 507(d) insert-after-anchor.
     assert report.claimed_sections == ("11:507",)
-    # The materialization is a residual, NOT an agreement: PL 118-42's lowering
-    # dropped the space, producing "(a)(8)excluding" vs the oracle "(a)(8) excluding".
+    # The enacted instruction inserts "excluding subparagraph (F)" directly after
+    # the anchor "(a)(8)" — the faithful materialization carries NO space
+    # ("(a)(8)excluding"). The published Code adds an OLRC courtesy space
+    # ("(a)(8) excluding"). We do NOT invent the space: the residual is
+    # oracle_suspect (F1 case ii), demoted from lawvm_wrong by the editorial
+    # insert-after-anchor space projection. The materialized text is preserved
+    # faithfully (no repair-to-oracle).
     rows = {row.section_key: row for row in report.rows}
     row = rows["11:507"]
     assert row.status == "residual"
-    assert row.disposition == DISPOSITION_LAWVM_WRONG
+    assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert "(a)(8)excluding subparagraph (F)" in row.materialized_text
     assert "(a)(8) excluding subparagraph (F)" in row.oracle_text
     # Sections 109 and 1182 are honest missing-source gaps (not lowered here).
@@ -375,11 +380,27 @@ def test_real_title11_2018_2020_window_composes_multi_law_amendments() -> None:
             DISPOSITION_ORACLE_SUSPECT,
         )
     assert report.replay_authorized is False
-    # No materialization is silently repaired to the oracle: the §547 strike whose
-    # lowered anchor is absent from the 2018 edition stays a match-not-found residual.
+    # §547(b) (PL 116-54 §3(a)) is "inserting '<due-diligence clause>' after 'may'"
+    # with NO striking — an insert-after, not a strike_insert. The lowering now
+    # classifies it correctly and finds the anchor "may" in the 2018 edition, so it
+    # is no longer a match-not-found residual. It stays a residual only because the
+    # section also acquired a "(j)" subsection via another window amendment not
+    # lowered here — honest incompleteness, never repaired to the oracle.
     s547 = {r.section_key: r for r in report.rows}.get("11:547")
     assert s547 is not None
-    assert s547.rule_id == US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID
+    assert s547.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+    assert s547.disposition == DISPOSITION_LAWVM_WRONG
+    # The insert-after materialized the clause AT the "may" anchor (not inverted).
+    assert "may, based on reasonable due diligence" in s547.materialized_text
+    # The fixes turn the first real substantive textual amendment into an
+    # AGREEMENT: §525's add-at-end (PL 116-260) materializes exactly the oracle.
+    agreements = [
+        r.section_key
+        for r in report.rows
+        if r.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
+    ]
+    assert "11:525" in agreements
+    assert report.north_star()["sections_materialized_in_agreement"] >= 1
     assert s547.disposition == DISPOSITION_LAWVM_WRONG
 
 
@@ -557,6 +578,24 @@ def test_norm_editorial_undoes_olrc_quote_and_dash_paren_spacing() -> None:
         published
     )
     assert _norm_editorial(enacted) == _norm_editorial(published)
+
+
+def test_norm_editorial_undoes_insert_after_anchor_courtesy_space() -> None:
+    # F1 case ii: the enacted insert-after places matter directly after a
+    # parenthesized anchor (no space); the published Code adds a courtesy space.
+    from lawvm.core.comparison_normalization import normalize_inline_comparison_text
+
+    faithful = "claims under (a)(8)excluding subparagraph (F), or (a)(9) of"
+    published = "claims under (a)(8) excluding subparagraph (F), or (a)(9) of"
+    # Plain normalization keeps them apart; the editorial projection unifies.
+    assert normalize_inline_comparison_text(faithful) != normalize_inline_comparison_text(
+        published
+    )
+    assert _norm_editorial(faithful) == _norm_editorial(published)
+    # The projection only erases a ")"-adjacent space: a real content divergence
+    # (here an extra "(j)") is NOT masked into a false agreement.
+    other = "subsections (c), (i), and (j) of this section"
+    assert _norm_editorial(faithful) != _norm_editorial(other)
 
 
 def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(

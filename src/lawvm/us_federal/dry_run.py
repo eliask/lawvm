@@ -135,20 +135,31 @@ _EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»"
 # stripped, the published Code inserts a courtesy space after the introductory
 # dash/colon (``if— (1) ...``). Collapse that boundary space for classification.
 _EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
+# OLRC insert-after courtesy space (F1, §507(d)): the enacted instruction inserts
+# matter directly after a parenthesized anchor (``inserting "excluding …" after
+# "(a)(8)"`` -> the faithful text reads ``(a)(8)excluding``), but the published
+# Code inserts a courtesy space (``(a)(8) excluding``). Collapse a single space
+# the oracle adds between a closing ``)`` and a following word character. The
+# projection is applied to BOTH sides symmetrically and only erases the difference
+# when a ``)``-adjacent space is the SOLE divergence — it never invents agreement
+# between texts that differ in any other character.
+_EDITORIAL_INSERT_AFTER_PAREN_SPACE_RE = re.compile(r"\)\s+(?=\w)")
 
 
 def _norm_editorial(text: str) -> str:
     """Comparison projection that additionally undoes OLRC editorial splicing.
 
-    Drops the quote marks the USLM amendment wraps inserted statutory matter in and
+    Drops the quote marks the USLM amendment wraps inserted statutory matter in,
     the courtesy space the OLRC inserts after the introductory dash/colon of an
-    inserted block. Used only to CLASSIFY a residual (lawvm_wrong vs
+    inserted block, and the courtesy space it inserts after a parenthesized
+    insert-after anchor. Used only to CLASSIFY a residual (lawvm_wrong vs
     oracle_suspect); never to repair the materialized text. A residual that vanishes
     under this projection but not under :func:`_norm` is editorial on the oracle
     side — the generalized F1 class.
     """
     stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
     respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
+    respaced = _EDITORIAL_INSERT_AFTER_PAREN_SPACE_RE.sub(")", respaced)
     return _norm(respaced)
 
 
