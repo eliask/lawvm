@@ -155,6 +155,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_source_pathology_observations.py",
         "test_fi_xml_ir.py",
         "test_frontend_observations.py",
+        "test_grammar_*.py",
         "test_johtolause_api.py",
         "test_lower_*.py",
         "test_normalize_fi.py",
