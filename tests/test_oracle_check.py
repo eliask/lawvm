@@ -33,6 +33,8 @@ from lawvm.tools.oracle_check import (
     _corpus_selection_detail,
     _diagnose,
     _diagnose_oracle_repeal_stub,
+    _attachment_body_text_ir,
+    _attachment_body_text_oracle,
     _el_text,
     _extract_attachment_info_ir,
     _ir_node_has_repeal_placeholder,
@@ -430,6 +432,89 @@ def test_extract_attachment_info_ir_ignores_non_attachment_containers() -> None:
 
     assert count == 0
     assert titles == []
+
+
+def _ir_body_with_annex(annex_body_text: str) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "attachments"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.HCONTAINER,
+                        attrs={"name": "attachment"},
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text=annex_body_text),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def test_attachment_body_text_ir_counts_nested_attachment_once() -> None:
+    """An ``attachment`` nested in an outer ``attachments`` container is read once.
+
+    Counting both the outer container and the inner attachment would double the
+    annex body and manufacture a spurious divergence (the text-vs-text-doubled
+    ``lev≈0.667`` artifact).
+    """
+    body = _ir_body_with_annex("Liite Maksutaulukko 10 euroa")
+
+    assert _attachment_body_text_ir(body) == "liitemaksutaulukko10euroa"
+
+
+def test_attachment_body_text_oracle_prefers_outer_container() -> None:
+    """Oracle annex body is read from the outer ``attachments`` container once."""
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<body>"
+        '<hcontainer name="attachments">'
+        '<hcontainer name="attachment"><heading>Liite</heading>'
+        "<p>Maksutaulukko 10 euroa</p></hcontainer>"
+        "</hcontainer>"
+        "</body></akomaNtoso>"
+    )
+    root = etree.fromstring(xml.encode())
+
+    assert _attachment_body_text_oracle(root) == "liitemaksutaulukko10euroa"
+
+
+def test_attachment_body_text_matches_between_ir_and_oracle_when_equal() -> None:
+    """Identical annex bodies clean to the same string on both sides."""
+    body = _ir_body_with_annex("Liite: Maksutaulukko")
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        '<body><hcontainer name="attachments">'
+        '<hcontainer name="attachment"><p>Liite: Maksutaulukko</p></hcontainer>'
+        "</hcontainer></body></akomaNtoso>"
+    )
+    root = etree.fromstring(xml.encode())
+
+    assert _attachment_body_text_ir(body) == _attachment_body_text_oracle(root)
+
+
+def test_attachment_body_text_diverges_when_replay_drops_table() -> None:
+    """Replay carrying only the annex heading diverges from an oracle table body.
+
+    This is the structurally-invisible case the body-level LIITE comparison is
+    meant to surface: the annex count matches but replay dropped the table body.
+    """
+    replay = _ir_body_with_annex("Liite: Kalat")
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        '<body><hcontainer name="attachments">'
+        '<hcontainer name="attachment"><heading>Liite: Kalat</heading>'
+        "<p>1 silakka 2 hauki 3 ahven 4 made 5 kuha</p></hcontainer>"
+        "</hcontainer></body></akomaNtoso>"
+    )
+    root = etree.fromstring(xml.encode())
+
+    r_body = _attachment_body_text_ir(replay)
+    o_body = _attachment_body_text_oracle(root)
+    assert r_body != o_body
+    assert len(o_body) > len(r_body)
 
 
 def test_classify_statute_demotes_unknown_to_source_pathology_when_blame_is_already_owned(
