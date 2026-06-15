@@ -232,3 +232,102 @@ title,before_year,after_year,include,window_law_count,prior_edition_years,note
 39,2020,2022,true,2,,Title 39 postal service: 117th-Congress window
 39,2022,2023,true,1,,Title 39 postal service: early 118th-Congress amendments
 39,2023,2024,false,0,,no new source-credit public law in the 2024 edition
+#
+# ============================================================================
+# TIME-axis backfill: earlier annual editions (2006-2012) extending coverage
+# back toward the 108th-Congress amendingAction horizon (~2006). Editions
+# acquired from govinfo USCODE-{year}-title{N}. window_law_count is the
+# witness-delta size at authoring time, re-verified by the harness.
+# include=false marks an empty witness delta (no source-credit public law first
+# appears in the after edition); genuinely-missing editions are recorded as
+# include=false skips, not faked.
+# ============================================================================
+# Title 5 Government Organization & Employees (positive) - early ladder.
+5,2006,2008,true,20,,Title 5 government organization: 109th-110th Congress window
+5,2008,2010,true,24,,Title 5 government organization: 110th-111th Congress window
+5,2010,2012,true,14,,Title 5 government organization: 111th-112th Congress window
+5,2012,2014,true,11,,Title 5 government organization: 112th-113th Congress window
+# Title 10 Armed Forces (positive) - early ladder.
+10,2006,2008,true,7,,Title 10 armed forces: 109th-110th Congress window
+10,2008,2010,true,10,,Title 10 armed forces: 110th-111th Congress window
+10,2010,2012,true,8,,Title 10 armed forces: 111th-112th Congress window
+10,2012,2014,true,7,,Title 10 armed forces: 112th-113th Congress window
+# Title 11 Bankruptcy (positive) - early ladder.
+11,2006,2008,true,4,,Title 11 bankruptcy: 109th-110th Congress window
+11,2008,2010,true,4,,Title 11 bankruptcy: 110th-111th Congress window
+11,2010,2012,false,0,,no new source-credit public law in the 2012 edition
+11,2012,2014,true,1,,Title 11 bankruptcy: 112th-113th Congress amendment
+# Title 12 Banks & Banking (non-positive) - early ladder; govinfo has no 2010 edition.
+12,2006,2008,true,8,,Title 12 banks (non-positive): 109th-110th Congress window
+12,2008,2010,false,0,,govinfo publishes no USCODE-2010-title12 edition (302 to /error)
+12,2010,2012,false,0,,govinfo publishes no USCODE-2010-title12 edition (302 to /error)
+12,2012,2014,true,14,,Title 12 banks (non-positive): 112th-113th Congress window
+# Title 15 Commerce & Trade (non-positive) - early ladder.
+15,2006,2008,true,24,,Title 15 commerce (non-positive): 109th-110th Congress window
+15,2008,2010,true,23,,Title 15 commerce (non-positive): 110th-111th Congress window
+15,2010,2012,true,17,,Title 15 commerce (non-positive): 111th-112th Congress window
+15,2012,2014,true,16,,Title 15 commerce (non-positive): 112th-113th Congress window
+# Title 16 Conservation (non-positive) - early ladder.
+16,2006,2008,true,15,,Title 16 conservation (non-positive): 109th-110th Congress window
+16,2008,2010,true,16,,Title 16 conservation (non-positive): 110th-111th Congress window
+16,2010,2012,true,14,,Title 16 conservation (non-positive): 111th-112th Congress window
+16,2012,2014,true,14,,Title 16 conservation (non-positive): 112th-113th Congress window
+# Title 18 Crimes (positive) - early ladder.
+18,2006,2008,true,23,,Title 18 crimes: 109th-110th Congress window
+18,2008,2010,true,18,,Title 18 crimes: 110th-111th Congress window
+18,2010,2012,true,16,,Title 18 crimes: 111th-112th Congress window
+18,2012,2014,true,9,,Title 18 crimes: 112th-113th Congress window
+# Title 22 Foreign Relations (non-positive) - early ladder.
+22,2006,2008,true,20,,Title 22 foreign relations: 109th-110th Congress window
+22,2008,2010,true,20,,Title 22 foreign relations: 110th-111th Congress window
+22,2010,2012,true,13,,Title 22 foreign relations: 111th-112th Congress window
+22,2012,2014,true,21,,Title 22 foreign relations: 112th-113th Congress window
+# Title 28 Judiciary (positive) - early ladder.
+28,2006,2008,true,8,,Title 28 judiciary: 109th-110th Congress window
+28,2008,2010,true,13,,Title 28 judiciary: 110th-111th Congress window
+28,2010,2012,true,15,,Title 28 judiciary: 111th-112th Congress window
+28,2012,2014,true,5,,Title 28 judiciary: 112th-113th Congress window
+# Title 35 Patents (positive) - early ladder.
+35,2006,2008,true,1,,Title 35 patents: single 109th-110th Congress amendment
+35,2008,2010,true,4,,Title 35 patents: 110th-111th Congress window
+35,2010,2012,true,3,,Title 35 patents: 111th-112th Congress window (incl. AIA)
+35,2012,2014,false,0,,no new source-credit public law in the 2014 edition
+# Title 38 Veterans (positive) - early ladder.
+38,2006,2008,true,12,,Title 38 veterans: 109th-110th Congress window
+38,2008,2010,true,11,,Title 38 veterans: 110th-111th Congress window
+38,2010,2012,true,11,,Title 38 veterans: 111th-112th Congress window
+38,2012,2014,true,10,,Title 38 veterans: 112th-113th Congress window
+# Title 49 Transportation (positive) - early ladder.
+49,2006,2008,true,13,,Title 49 transportation: 109th-110th Congress window
+49,2008,2010,true,17,,Title 49 transportation: 110th-111th Congress window
+49,2010,2012,true,23,,Title 49 transportation: 111th-112th Congress window
+49,2012,2014,true,16,,Title 49 transportation: 112th-113th Congress window
+# Title 50 War & National Defense (non-positive) - early ladder.
+50,2006,2008,true,10,,Title 50 war and national defense: 109th-110th Congress window
+50,2008,2010,true,8,,Title 50 war and national defense: 110th-111th Congress window
+50,2010,2012,true,10,,Title 50 war and national defense: 111th-112th Congress window
+50,2012,2014,true,13,,Title 50 war and national defense: 112th-113th Congress window
+# Title 7 Agriculture (non-positive) - full early ladder connecting to the existing 2020 window.
+7,2006,2008,true,10,,Title 7 agriculture (non-positive): 109th-110th Congress window
+7,2008,2010,true,11,,Title 7 agriculture (non-positive): 110th-111th Congress window
+7,2010,2012,true,6,,Title 7 agriculture (non-positive): 111th-112th Congress window
+7,2012,2014,true,6,,Title 7 agriculture (non-positive): 112th-113th Congress window
+7,2014,2016,true,10,,Title 7 agriculture (non-positive): 114th-Congress window
+7,2016,2018,true,6,,Title 7 agriculture (non-positive): 115th-Congress window
+7,2018,2020,true,6,,Title 7 agriculture (non-positive): 116th-Congress window
+# Title 26 Internal Revenue (non-positive) - full early ladder connecting to the existing 2020 window.
+26,2006,2008,true,28,,Title 26 internal revenue (non-positive): 109th-110th Congress window
+26,2008,2010,true,37,,Title 26 internal revenue (non-positive): 110th-111th Congress window
+26,2010,2012,true,19,,Title 26 internal revenue (non-positive): 111th-112th Congress window
+26,2012,2014,true,12,,Title 26 internal revenue (non-positive): 112th-113th Congress window
+26,2014,2016,true,21,,Title 26 internal revenue (non-positive): 114th-Congress window
+26,2016,2018,true,10,,Title 26 internal revenue (non-positive): 115th-Congress window
+26,2018,2020,true,9,,Title 26 internal revenue (non-positive): 116th-Congress window
+# Title 42 Public Health (non-positive) - full early ladder connecting to the existing 2020 window.
+42,2006,2008,true,43,,Title 42 public health (non-positive): 109th-110th Congress window
+42,2008,2010,true,809,,Title 42 public health (non-positive): 110th-111th Congress window (incl. ACA PL 111-148)
+42,2010,2012,true,30,,Title 42 public health (non-positive): 111th-112th Congress window
+42,2012,2014,true,48,,Title 42 public health (non-positive): 112th-113th Congress window
+42,2014,2016,true,50,,Title 42 public health (non-positive): 114th-Congress window
+42,2016,2018,true,56,,Title 42 public health (non-positive): large 115th-Congress window
+42,2018,2020,true,45,,Title 42 public health (non-positive): 116th-Congress window
