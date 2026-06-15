@@ -587,3 +587,132 @@ def test_split_genuinely_ambiguous_marker_stays_flagged_never_guessed() -> None:
     assert any(
         f["rule_id"] == "us_usc_subsection_parse_ambiguous" for f in findings
     )
+
+
+# A synthetic title reproducing the OLRC dashed-suffix section family. The OLRC
+# renders the VISIBLE section head with an EN-DASH (``&ndash;``, U+2013) for an
+# insert section numbered between two parents (``§49c–1`` between ``§49c`` and
+# ``§49d``), while the structural ``itempath``/``expcite``/``href`` carry an ASCII
+# hyphen. The section KEY must be the bare dashed token (``49c–1``), preserving the
+# en-dash exactly as the head renders it — that is the form the USLM ``href`` the
+# amendatory side pins (``/us/usc/t.../s49c–1``), so the oracle key and the lowered
+# op address are byte-identical strings and the op can match. Before the fix the
+# whole ``§49c–1. <heading>`` string leaked in as the section number, polluting the
+# witness denominator and blocking the match.
+_DASHED_SUFFIX_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:29 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 29-LABOR!@!CHAPTER 4B!@!Sec. 49c -->
+<h3 class="section-head">&sect;49c. Acceptance by States</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">A State may accept the provisions of this chapter.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(June 6, 1933, ch. 49.)</p>
+<!-- field-end:sourcecredit -->
+<!-- expcite:TITLE 29-LABOR!@!CHAPTER 4B!@!Sec. 49c-1 -->
+<h3 class="section-head">&sect;49c&ndash;1. Transfer to States of property</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">Property used by the Employment Service may be transferred.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 97&ndash;300.)</p>
+<!-- field-end:sourcecredit -->
+<!-- expcite:TITLE 29-LABOR!@!CHAPTER 4B!@!Sec. 49c-2 -->
+<h3 class="section-head">&sect;49c&ndash;2. Omitted</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">This section concerned a separate program.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 97&ndash;301.)</p>
+<!-- field-end:sourcecredit -->
+<!-- expcite:TITLE 29-LABOR!@!CHAPTER 4B!@!Sec. 1715z-13a -->
+<h3 class="section-head">&sect;1715z&ndash;13a. Loan guarantees for Indian housing</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">The Secretary may guarantee loans under this section.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 102&ndash;550.)</p>
+<!-- field-end:sourcecredit -->
+<!-- expcite:TITLE 29-LABOR!@!CHAPTER 4B!@!Sec. 58a-2 -->
+<h3 class="section-head">&sect;58a-2. ASCII hyphen control</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">A section head rendered with a plain ASCII hyphen.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 99&ndash;1.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_endash_dashed_suffix_section_keys_to_bare_token() -> None:
+    # The dashed-suffix sections key to the BARE dashed token with the en-dash
+    # preserved verbatim — not the whole ``§<num>. <heading>`` string, and not a
+    # hyphen-normalized form. ``1715z–13a`` keeps both its letter suffix and its
+    # trailing letter after the dash.
+    doc = parse_usc_title_document(_DASHED_SUFFIX_HTM, title=29, year="2020")
+    numbers = [s.section for s in doc.sections]
+    assert numbers == ["49c", "49c–1", "49c–2", "1715z–13a", "58a-2"]
+    # No leaked heading text: a section number never contains a space or a § sign.
+    for n in numbers:
+        assert " " not in n and "§" not in n
+    # The dashed section's heading is parsed out of the number, as for plain heads.
+    s = doc.section_by_number("49c–1")
+    assert s is not None
+    assert s.heading == "Transfer to States of property"
+    assert s.address == usc_section_address(29, "49c–1")
+    # The address string the dry-run keys on carries the en-dash, not a hyphen.
+    assert str(s.address) == "title:29/section:49c–1"
+
+
+def test_ascii_hyphen_section_head_stays_correct() -> None:
+    # A head rendered with a plain ASCII hyphen (the form some OLRC heads and the
+    # structural identifiers use) keys to the hyphen token verbatim — the dash glyph
+    # is preserved, never substituted, so the key matches whichever dash the
+    # matching USLM href carries.
+    doc = parse_usc_title_document(_DASHED_SUFFIX_HTM, title=29, year="2020")
+    s = doc.section_by_number("58a-2")
+    assert s is not None
+    assert s.heading == "ASCII hyphen control"
+    assert s.address == usc_section_address(29, "58a-2")
+    # The en-dash and the hyphen forms are DISTINCT keys: no key collapses a
+    # hyphen into an en-dash or vice versa.
+    assert doc.section_by_number("58a–2") is None
+
+
+def test_dashed_suffix_sections_are_distinct_not_merged() -> None:
+    # ``49c``, ``49c–1`` and ``49c–2`` are three DISTINCT sections — the dashed
+    # suffix must not collapse them onto the bare parent ``49c`` nor onto each other.
+    doc = parse_usc_title_document(_DASHED_SUFFIX_HTM, title=29, year="2020")
+    keys = [s.section for s in doc.sections]
+    assert len(keys) == len(set(keys))  # no merge / duplicate
+    parent = doc.section_by_number("49c")
+    child1 = doc.section_by_number("49c–1")
+    child2 = doc.section_by_number("49c–2")
+    assert parent is not None and child1 is not None and child2 is not None
+    # Distinct addresses and distinct statutory bodies — proof they did not merge.
+    assert parent.address != child1.address != child2.address
+    assert parent.statutory_text != child1.statutory_text != child2.statutory_text
+    # No spurious duplicate-section-number finding from the dashed family.
+    assert doc.report.findings == []
+
+
+def test_replacement_catchline_strip_handles_endash_section() -> None:
+    # A whole-section "amend to read as follows" payload for a dashed-suffix section
+    # opens with that section's own ``§ <num>. <heading>`` catchline (en-dash and
+    # all). The strip keys on the SAME dashed token, so it removes this section's own
+    # catchline up to the quotedText body marker, exactly as for a plain section.
+    payload = "§ 1715z–13a. Loan guarantees for Indian housing “(a) The Secretary may guarantee."
+    stripped = strip_replacement_section_catchline(payload, "1715z–13a")
+    assert stripped == "“(a) The Secretary may guarantee."
+    # A mismatched (hyphen) number does NOT strip the en-dash catchline: the dash
+    # glyph is part of the key identity, never normalized away.
+    assert strip_replacement_section_catchline(payload, "1715z-13a") is None

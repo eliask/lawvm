@@ -52,8 +52,20 @@ _EDITORIAL_CLASSES = {"note-head", "note-body", "analysis", "subchapter-head", "
 
 # A section number from a ``section-head``: "§362. Automatic stay" → "362";
 # repealed stubs are bracketed: "[§304. Repealed. ...]" → "304". The number may
-# carry a letter suffix (e.g. "362A"); ranges ("§§") are not used in these titles.
-_SECTION_HEAD_RE = re.compile(r"^\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*)\.")
+# carry a letter suffix (e.g. "362A") and a dashed numeric tail (e.g. "49c–1",
+# "1715z–13a", "278g–3a"): a digit-rooted insert section numbered between two
+# parent sections. The OLRC renders the visible head with an EN-DASH (U+2013,
+# ``&ndash;``) while the structural ``itempath``/``expcite``/``href`` use an ASCII
+# hyphen — the dash glyph is captured VERBATIM (not normalized), because the
+# pinned address convention preserves whatever dash the source carries: the USLM
+# ``href`` the amendatory side parses (``/us/usc/t12/s1715z–13a``) overwhelmingly
+# renders this same en-dash, so the oracle key and the lowered-op address agree
+# only when both keep the en-dash unchanged. The dash class mirrors the
+# amendatory target parsers (``[-‐‑‒–]``: hyphen, U+2010, U+2011, U+2012, U+2013).
+# Ranges ("§§") are not used in these titles.
+_SECTION_HEAD_RE = re.compile(
+    r"^\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\."
+)
 
 # Leading enumerator markers for subsection splitting (STRETCH). Each statutory
 # paragraph that opens a new structural unit starts with one of these in the
@@ -750,7 +762,7 @@ def _section_heading(head_text: str) -> str:
 # as the target (``§ <num>.``) so it can only ever remove this section's own
 # catchline, never a leading reference that happens to start with ``§``.
 _SECTION_CATCHLINE_PREFIX_RE = re.compile(
-    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*)\.\s"
+    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\.\s"
 )
 
 
