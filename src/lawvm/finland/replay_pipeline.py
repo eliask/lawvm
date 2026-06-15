@@ -5,10 +5,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 from lawvm.corpus_store import CorpusStore
+from lawvm.core.compile_result import SourcePathology
+from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, PhaseResult
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
+from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 from lawvm.finland.grafter_uncovered import (
     PreScanRepealDiagnostic,
@@ -17,6 +21,7 @@ from lawvm.finland.grafter_uncovered import (
 )
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+from lawvm.finland.restructure_plan import StructuralTransformPlan
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
@@ -37,6 +42,124 @@ class ReplayPlan:
     cutoff_date: Any
     oracle_version_amendment_id: str
     oracle_suspect: str
+
+
+@dataclass(slots=True)
+class ReplaySignalBuffers:
+    """Mutable replay-run signals accumulated before final evidence projection.
+
+    These are not semantic inputs. They are the named evidence/artifact streams
+    produced while folding amendment acts over the statute state. Keeping them
+    behind a typed carrier prevents replay orchestration from growing another
+    anonymous list farm and makes new instrumentation channels visible at the
+    replay boundary.
+    """
+
+    findings: list[Finding]
+    source_pathologies: list[SourcePathology]
+    elaboration_observations: list[dict[str, object]]
+    sparse_slot_bindings: list[dict[str, object]]
+    sparse_leftovers: list[dict[str, object]]
+    regex_recognition_coverages: list[RegexRecognitionCoverage]
+    commencement_expiry_overrides: list[dict[str, object]]
+    mutation_events: list[ApplyMutationEvent]
+    write_audits: list[ObservedWriteAudit]
+    migration_events: list[MigrationEvent]
+    temporal_events: list[Any]
+    restructure_plans: list[StructuralTransformPlan]
+
+    @classmethod
+    def empty(cls) -> "ReplaySignalBuffers":
+        return cls(
+            findings=[],
+            source_pathologies=[],
+            elaboration_observations=[],
+            sparse_slot_bindings=[],
+            sparse_leftovers=[],
+            regex_recognition_coverages=[],
+            commencement_expiry_overrides=[],
+            mutation_events=[],
+            write_audits=[],
+            migration_events=[],
+            temporal_events=[],
+            restructure_plans=[],
+        )
+
+    @classmethod
+    def from_legacy_sinks(
+        cls,
+        *,
+        findings_out: Optional[List[Finding]] = None,
+        source_pathologies_out: Optional[List[Any]] = None,
+        elaboration_observations_out: Optional[List[Any]] = None,
+        sparse_slot_bindings_out: Optional[List[Any]] = None,
+        sparse_leftovers_out: Optional[List[Any]] = None,
+        regex_recognition_coverage_out: Optional[List[Any]] = None,
+        commencement_expiry_overrides_out: Optional[List[Any]] = None,
+        mutation_events_out: Optional[List[Any]] = None,
+        write_audits_out: Optional[List[Any]] = None,
+        migration_events_out: Optional[List[MigrationEvent]] = None,
+        temporal_events_out: Optional[List[Any]] = None,
+        restructure_plans_out: Optional[List[Any]] = None,
+    ) -> "ReplaySignalBuffers":
+        """Build buffers backed by legacy out-parameter lists where provided."""
+
+        return cls(
+            findings=findings_out if findings_out is not None else [],
+            source_pathologies=source_pathologies_out if source_pathologies_out is not None else [],
+            elaboration_observations=(
+                elaboration_observations_out
+                if elaboration_observations_out is not None
+                else []
+            ),
+            sparse_slot_bindings=(
+                sparse_slot_bindings_out if sparse_slot_bindings_out is not None else []
+            ),
+            sparse_leftovers=sparse_leftovers_out if sparse_leftovers_out is not None else [],
+            regex_recognition_coverages=(
+                regex_recognition_coverage_out
+                if regex_recognition_coverage_out is not None
+                else []
+            ),
+            commencement_expiry_overrides=(
+                commencement_expiry_overrides_out
+                if commencement_expiry_overrides_out is not None
+                else []
+            ),
+            mutation_events=mutation_events_out if mutation_events_out is not None else [],
+            write_audits=write_audits_out if write_audits_out is not None else [],
+            migration_events=(
+                migration_events_out if migration_events_out is not None else []
+            ),
+            temporal_events=temporal_events_out if temporal_events_out is not None else [],
+            restructure_plans=(
+                restructure_plans_out if restructure_plans_out is not None else []
+            ),
+        )
+
+    def process_sinks(
+        self,
+        *,
+        compiled_ops_out: Optional[List[dict[str, object]]],
+        lo_ops_out: Optional[List[Any]],
+        failed_ops_out: Optional[List[Any]],
+        migration_events_out: Optional[List[MigrationEvent]],
+    ) -> ProcessAmendmentSinks:
+        return ProcessAmendmentSinks(
+            compiled_ops_out=compiled_ops_out,
+            lo_ops_out=lo_ops_out,
+            failed_ops_out=failed_ops_out,
+            source_pathologies_out=self.source_pathologies,
+            elaboration_observations_out=self.elaboration_observations,
+            sparse_slot_bindings_out=self.sparse_slot_bindings,
+            sparse_leftovers_out=self.sparse_leftovers,
+            regex_recognition_coverage_out=self.regex_recognition_coverages,
+            commencement_expiry_overrides_out=self.commencement_expiry_overrides,
+            mutation_events_out=self.mutation_events,
+            write_audits_out=self.write_audits,
+            migration_events_out=migration_events_out,
+            restructure_plans_out=self.restructure_plans,
+        )
 
 
 def _normalize_stop_before(stop_before: str) -> str:
@@ -333,9 +456,24 @@ def execute_replay_plan(
     logger: Any = None,
     checkpoint_callback: Optional[ReplayCheckpointCallback] = None,
     restructure_plans_out: Optional[List[Any]] = None,
+    signal_buffers: Optional[ReplaySignalBuffers] = None,
 ) -> ReplayState:
     """Execute the replay fold for a prepared plan."""
     state = plan.initial_state
+    signals = signal_buffers or ReplaySignalBuffers.from_legacy_sinks(
+        findings_out=findings_out,
+        source_pathologies_out=source_pathologies_out,
+        elaboration_observations_out=elaboration_observations_out,
+        sparse_slot_bindings_out=sparse_slot_bindings_out,
+        sparse_leftovers_out=sparse_leftovers_out,
+        regex_recognition_coverage_out=regex_recognition_coverage_out,
+        commencement_expiry_overrides_out=commencement_expiry_overrides_out,
+        mutation_events_out=mutation_events_out,
+        write_audits_out=write_audits_out,
+        migration_events_out=migration_events_out,
+        temporal_events_out=temporal_events_out,
+        restructure_plans_out=restructure_plans_out,
+    )
 
     chapter_seed_diagnostics: list[ChapterSeedDiagnostic] = []
     seeded_ir, chapter_seed_skip = seed_missing_chapters(
@@ -346,11 +484,10 @@ def execute_replay_plan(
     )
     if seeded_ir is not state.ir:
         state = state.with_ir(seeded_ir)
-    if findings_out is not None:
-        findings_out.extend(
-            build_chapter_seed_finding(diagnostic)
-            for diagnostic in chapter_seed_diagnostics
-        )
+    signals.findings.extend(
+        build_chapter_seed_finding(diagnostic)
+        for diagnostic in chapter_seed_diagnostics
+    )
     append_chapter_seed_compiled_ops(compiled_ops_out, chapter_seed_diagnostics)
 
     vts_skipped_targets: list[VtsSkippedTarget] = []
@@ -370,16 +507,13 @@ def execute_replay_plan(
             prescan_diagnostics_out=prescan_diagnostics,
         ),
     )
-    if findings_out is not None:
-        findings_out.extend(
-            build_prescan_finding(record)
-            for record in (*vts_skipped_targets, *vts_source_diagnostics, *prescan_diagnostics)
-        )
+    signals.findings.extend(
+        build_prescan_finding(record)
+        for record in (*vts_skipped_targets, *vts_source_diagnostics, *prescan_diagnostics)
+    )
     repeal_suffix = future_repeals_for_index(repeal_schedule)
     processed_amendment_titles: dict[str, str] = {}
-    effective_migration_events_out: list[MigrationEvent] = (
-        migration_events_out if migration_events_out is not None else []
-    )
+    effective_migration_events_out = signals.migration_events
     record_titles = {
         str(record.get("statute_id") or ""): str(record.get("title") or "")
         for record in plan.amendment_records
@@ -400,20 +534,11 @@ def execute_replay_plan(
                 prior_migration_events=tuple(effective_migration_events_out),
                 processed_amendment_titles=processed_amendment_titles,
             ),
-            ProcessAmendmentSinks(
+            signals.process_sinks(
                 compiled_ops_out=compiled_ops_out,
                 lo_ops_out=lo_ops_out,
                 failed_ops_out=failed_ops_out,
-                source_pathologies_out=source_pathologies_out,
-                elaboration_observations_out=elaboration_observations_out,
-                sparse_slot_bindings_out=sparse_slot_bindings_out,
-                sparse_leftovers_out=sparse_leftovers_out,
-                regex_recognition_coverage_out=regex_recognition_coverage_out,
-                commencement_expiry_overrides_out=commencement_expiry_overrides_out,
-                mutation_events_out=mutation_events_out,
-                write_audits_out=write_audits_out,
                 migration_events_out=effective_migration_events_out,
-                restructure_plans_out=restructure_plans_out,
             ),
         )
         state = _pm_result.output
@@ -429,40 +554,37 @@ def execute_replay_plan(
                 serialize_text=lambda _s=_cp_state: _serialize_text(_s.ir),
                 ir_snapshot=lambda _s=_cp_state: _s.ir,
             ))
-        if temporal_events_out is not None:
-            temporal_events_out.extend(_pm_result.temporal_events)
-        if findings_out is not None:
-            findings_out.extend(phase_findings)
-            # Per-amendment invariant checks are expensive for heavily-amended
-            # statutes (O(amendments * nodes)).  Skip them when the final
-            # post-process check (below) is sufficient — i.e. when the caller
-            # did not request a checkpoint callback (diagnostic/explain mode).
-            if checkpoint_callback is not None:
-                sorted_ir = _resort_children(state.ir)
-                for violation in check_tree_invariants(sorted_ir):
-                    findings_out.append(
-                        build_tree_invariant_finding(
-                            violation=violation,
-                            source_statute=mid,
-                            phase="post_amendment",
-                            message="Replay tree invariant violated after amendment application.",
-                        )
+        signals.temporal_events.extend(_pm_result.temporal_events)
+        signals.findings.extend(phase_findings)
+        # Per-amendment invariant checks are expensive for heavily-amended
+        # statutes (O(amendments * nodes)).  Skip them when the final
+        # post-process check (below) is sufficient — i.e. when the caller
+        # did not request a checkpoint callback (diagnostic/explain mode).
+        if checkpoint_callback is not None:
+            sorted_ir = _resort_children(state.ir)
+            for violation in check_tree_invariants(sorted_ir):
+                signals.findings.append(
+                    build_tree_invariant_finding(
+                        violation=violation,
+                        source_statute=mid,
+                        phase="post_amendment",
+                        message="Replay tree invariant violated after amendment application.",
                     )
+                )
 
     state = state.with_ir(post_process_tree(state.ir, plan.replay_profile.normalize_replay_text))
-    if findings_out is not None:
-        # Sort before checking so transient sort_order violations from post-processing
-        # are not emitted as replay findings.
-        sorted_ir = _resort_children(state.ir)
-        for violation in check_tree_invariants(sorted_ir):
-            findings_out.append(
-                build_tree_invariant_finding(
-                    violation=violation,
-                    source_statute=plan.parent_id,
-                    phase="post_process",
-                    message="Replay tree invariant violated after replay post-processing.",
-                )
+    # Sort before checking so transient sort_order violations from post-processing
+    # are not emitted as replay findings.
+    sorted_ir = _resort_children(state.ir)
+    for violation in check_tree_invariants(sorted_ir):
+        signals.findings.append(
+            build_tree_invariant_finding(
+                violation=violation,
+                source_statute=plan.parent_id,
+                phase="post_process",
+                message="Replay tree invariant violated after replay post-processing.",
             )
+        )
 
     if logger is not None and logger.isEnabledFor(10):  # logging.DEBUG
         for violation in check_tree_invariants(state.ir):
@@ -473,6 +595,7 @@ def execute_replay_plan(
 
 __all__ = [
     "ReplayPlan",
+    "ReplaySignalBuffers",
     "append_chapter_seed_compiled_ops",
     "build_tree_invariant_finding",
     "prepare_replay_plan",

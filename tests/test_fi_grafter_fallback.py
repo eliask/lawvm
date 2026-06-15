@@ -1369,11 +1369,11 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
     def fake_prepare_replay_plan(*_args, **_kwargs):
         return plan
 
-    def fake_execute_replay_plan(*_args, mutation_events_out=None, **_kwargs):
+    def fake_execute_replay_plan(*_args, signal_buffers=None, **_kwargs):
         from lawvm.finland.apply_events import ApplyMutationEvent
 
-        assert mutation_events_out is not None
-        mutation_events_out.append(
+        assert signal_buffers is not None
+        signal_buffers.mutation_events.append(
             ApplyMutationEvent(
                 op_id="skipped_tree_touch",
                 source_statute="1996/1261",
@@ -1462,11 +1462,11 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
     def fake_prepare_replay_plan(*_args, **_kwargs):
         return plan
 
-    def fake_execute_replay_plan(*_args, mutation_events_out=None, **_kwargs):
+    def fake_execute_replay_plan(*_args, signal_buffers=None, **_kwargs):
         from lawvm.finland.apply_events import ApplyMutationEvent
 
-        assert mutation_events_out is not None
-        mutation_events_out.append(
+        assert signal_buffers is not None
+        signal_buffers.mutation_events.append(
             ApplyMutationEvent(
                 op_id="skipped_tree_touch",
                 source_statute="1996/1261",

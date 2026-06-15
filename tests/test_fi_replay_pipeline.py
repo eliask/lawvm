@@ -17,7 +17,12 @@ from lawvm.finland.grafter_uncovered import (
 )
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
-from lawvm.finland.replay_pipeline import ReplayPlan, execute_replay_plan, prepare_replay_plan
+from lawvm.finland.replay_pipeline import (
+    ReplayPlan,
+    ReplaySignalBuffers,
+    execute_replay_plan,
+    prepare_replay_plan,
+)
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.statute import ReplayState, StatuteContext
 from lawvm.finland.vts import (
@@ -672,6 +677,59 @@ def test_execute_replay_plan_passes_mutation_events_sink_to_process_muutoslaki()
 
     assert final_state.ir.kind == IRNodeKind.BODY
     assert mutation_events == [{"mid": "1991/1", "kind": "fake"}]
+
+
+def test_execute_replay_plan_uses_replay_signal_buffers_for_process_sinks() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    signals = ReplaySignalBuffers.empty()
+
+    def fake_process_muutoslaki(
+        request: ProcessAmendmentRequest,
+        sinks: ProcessAmendmentSinks,
+    ) -> PhaseResult[ReplayState]:
+        assert request.amendment_id == "1991/1"
+        assert sinks.source_pathologies_out is signals.source_pathologies
+        assert sinks.elaboration_observations_out is signals.elaboration_observations
+        assert sinks.sparse_slot_bindings_out is signals.sparse_slot_bindings
+        assert sinks.sparse_leftovers_out is signals.sparse_leftovers
+        assert sinks.regex_recognition_coverage_out is signals.regex_recognition_coverages
+        assert sinks.commencement_expiry_overrides_out is signals.commencement_expiry_overrides
+        assert sinks.mutation_events_out is signals.mutation_events
+        assert sinks.write_audits_out is signals.write_audits
+        assert sinks.migration_events_out is signals.migration_events
+        assert sinks.restructure_plans_out is signals.restructure_plans
+        return PhaseResult(output=request.state)
+
+    final_state = execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=fake_process_muutoslaki,
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=lambda request, sinks=None: [],
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        signal_buffers=signals,
+    )
+
+    assert final_state.ir.kind == IRNodeKind.BODY
+    assert signals.findings == []
 
 
 def test_execute_replay_plan_passes_sparse_leftovers_sink_to_process_muutoslaki() -> None:

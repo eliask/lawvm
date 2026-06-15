@@ -29,10 +29,8 @@ from lawvm.core.compile_result import (
     TemporalEvent,
 )
 from lawvm.core.elaboration_context import TargetUnitKind
-from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
-from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 
 
 from lawvm.core import tree_ops as _tops
@@ -925,6 +923,7 @@ from lawvm.finland.replay_products import (
     ReplayProducts,
 )
 from lawvm.finland.replay_pipeline import (
+    ReplaySignalBuffers,
     execute_replay_plan,
     populate_replay_meta,
     prepare_replay_plan,
@@ -3939,21 +3938,10 @@ def replay_xml(
         capture_compiled_ops_out = compiled_ops_out
         if capture_compiled_ops_out is None and build_full_products:
             capture_compiled_ops_out = []
-        source_pathologies: List[SourcePathology] = []
-        elaboration_observations: List[Dict[str, object]] = []
-        sparse_slot_bindings: List[Dict[str, object]] = []
-        sparse_leftovers: List[Dict[str, object]] = []
-        regex_recognition_coverages: List[RegexRecognitionCoverage] = []
-        commencement_expiry_overrides: List[Dict[str, object]] = []
-        replay_findings: List[Finding] = []
-        mutation_events: List[ApplyMutationEvent] = []
-        write_audits: List[ObservedWriteAudit] = []
-        migration_events: List["MigrationEvent"] = []
-        temporal_events: List[Any] = []
-        _restructure_plans: List[StructuralTransformPlan] = []
+        signals = ReplaySignalBuffers.empty()
         # Add base statute observations to the elaboration observations stream.
         for base_obs in (plan.ctx.base_observations or ()):
-            elaboration_observations.append({
+            signals.elaboration_observations.append({
                 "kind": str(base_obs.kind or ""),
                 "stage": str(base_obs.stage or ""),
                 "source_statute": parent_id,
@@ -3971,7 +3959,7 @@ def replay_xml(
             finding_kind = _source_normalization_fact_finding_kind(str(norm_fact.kind_value or ""))
             if finding_kind is None:
                 continue
-            elaboration_observations.append({
+            signals.elaboration_observations.append({
                 "kind": finding_kind,
                 "stage": "source_normalize",
                 "source_statute": parent_id,
@@ -4021,29 +4009,18 @@ def replay_xml(
             compiled_ops_out=capture_compiled_ops_out,
             lo_ops_out=capture_lo_ops_out,
             failed_ops_out=capture_failed_ops_out,
-            findings_out=replay_findings,
-            source_pathologies_out=source_pathologies,
-            elaboration_observations_out=elaboration_observations,
-            sparse_slot_bindings_out=sparse_slot_bindings,
-            sparse_leftovers_out=sparse_leftovers,
-            regex_recognition_coverage_out=regex_recognition_coverages,
-            commencement_expiry_overrides_out=commencement_expiry_overrides,
-            mutation_events_out=mutation_events,
-            write_audits_out=write_audits,
-            migration_events_out=migration_events,
-            temporal_events_out=temporal_events,
             strict_profile=strict_profile,
             logger=logger,
             checkpoint_callback=checkpoint_callback,
-            restructure_plans_out=_restructure_plans,
+            signal_buffers=signals,
         )
         if temporal_events_out is not None:
-            temporal_events_out.extend(temporal_events)
+            temporal_events_out.extend(signals.temporal_events)
         replay_fold_state = project_replay_fold(
             ReplayFoldProjectionRequest(
                 state=replay_fold_state,
                 parent_id=parent_id,
-                replay_findings=replay_findings,
+                replay_findings=signals.findings,
                 replay_meta_out=replay_meta_out,
                 replay_print=_replay_print,
             )
@@ -4051,16 +4028,16 @@ def replay_xml(
         project_replay_evidence(
             ReplayEvidenceProjectionRequest(
                 parent_id=parent_id,
-                replay_findings=replay_findings,
-                source_pathologies=source_pathologies,
-                elaboration_observations=elaboration_observations,
-                sparse_slot_bindings=sparse_slot_bindings,
-                sparse_leftovers=sparse_leftovers,
-                regex_recognition_coverages=regex_recognition_coverages,
-                commencement_expiry_overrides=commencement_expiry_overrides,
-                write_audits=write_audits,
-                mutation_events=mutation_events,
-                restructure_plans=_restructure_plans,
+                replay_findings=signals.findings,
+                source_pathologies=signals.source_pathologies,
+                elaboration_observations=signals.elaboration_observations,
+                sparse_slot_bindings=signals.sparse_slot_bindings,
+                sparse_leftovers=signals.sparse_leftovers,
+                regex_recognition_coverages=signals.regex_recognition_coverages,
+                commencement_expiry_overrides=signals.commencement_expiry_overrides,
+                write_audits=signals.write_audits,
+                mutation_events=signals.mutation_events,
+                restructure_plans=signals.restructure_plans,
                 source_pathologies_out=source_pathologies_out,
                 replay_meta_out=replay_meta_out,
                 strict_profile=strict_profile,
@@ -4107,9 +4084,9 @@ def replay_xml(
             synthesize_repeal_placeholders=profile.synthesize_repeal_placeholders,
             repeal_placeholder_normalizer=cast(Callable[[object], object], _consolidate_kumottu_range),
             build_full_products=build_full_products,
-            temporal_events=tuple(temporal_events),
+            temporal_events=tuple(signals.temporal_events),
             strict_johto_temporal=strict_johto_temporal,
-            migration_events=tuple(migration_events),
+            migration_events=tuple(signals.migration_events),
             expires_as_of=expires_as_of,
         )
         # Keep wrap-up normalization visible on the published replay products
@@ -4147,7 +4124,7 @@ def replay_xml(
                     ctx=plan.ctx,
                     products=products,
                     parent_id=parent_id,
-                    replay_findings=replay_findings,
+                    replay_findings=signals.findings,
                     replay_meta_out=replay_meta_out,
                     replay_print=_replay_print,
                     debug_enabled=logger.isEnabledFor(logging.DEBUG),
@@ -4177,7 +4154,7 @@ def replay_xml(
         return ReplayResult(
             ctx=plan.ctx,
             products=products,
-            findings=tuple(replay_findings),
+            findings=tuple(signals.findings),
             oracle_selector_info=_oracle_selector_info,
         )
     finally:
