@@ -24,6 +24,24 @@ class _Store:
         return b"<akomaNtoso/>"
 
 
+def test_get_statute_xml_accepts_canonical_viewer_id() -> None:
+    from lawvm.tools.export_fi_interlinks import _get_statute_xml
+
+    class _EngineOnlyStore:
+        def __init__(self) -> None:
+            self.reads: list[str] = []
+
+        def read_oracle(self, statute_id: str) -> bytes | None:
+            self.reads.append(statute_id)
+            if statute_id == "2004/301":
+                return b"<akomaNtoso/>"
+            return None
+
+    store = _EngineOnlyStore()
+    assert _get_statute_xml("301/2004", store) == b"<akomaNtoso/>"
+    assert store.reads == ["301/2004", "2004/301"]
+
+
 def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
     monkeypatch,
 ) -> None:

@@ -105,6 +105,22 @@ def test_reference_mention_adapter_preserves_role_status_and_locator() -> None:
     assert row["source_span_byte_offset"] == 10
 
 
+def test_reference_mention_adapter_uses_owned_surface_text() -> None:
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
+        target_provision_ref=ProvisionRef(statute_id="9/2023"),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+        surface_text="luonnonsuojelulain (9/2023)",
+    )
+    row = legal_interlink_to_row(interlink_from_reference_mention(mention, interlink_id="ref-surface"))
+    assert row["surface_text"] == "luonnonsuojelulain (9/2023)"
+
+
 def test_reference_mention_adapter_resolves_internal_target_contextually() -> None:
     mention = ReferenceMention(
         source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),

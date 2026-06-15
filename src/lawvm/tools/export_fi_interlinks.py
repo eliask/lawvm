@@ -31,7 +31,13 @@ def _load_corpus_store() -> Any:
 
 
 def _get_statute_xml(statute_id: str, store: Any) -> Optional[bytes]:
-    return store.read_oracle(statute_id)
+    xml = store.read_oracle(statute_id)
+    if xml is not None:
+        return xml
+    left, sep, right = statute_id.partition("/")
+    if sep and len(right) == 4:
+        return store.read_oracle(f"{right}/{left}")
+    return None
 
 
 def _stable_interlink_id(family: str, statute_id: str, index: int) -> str:

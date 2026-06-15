@@ -449,6 +449,7 @@ def _edge_to_mention(
         valid_at_interval=valid_at_interval,
         edge_subtype=edge.edge_type,
         target_stat_hash=edge.target_stat_hash if edge.target_stat_hash else None,
+        surface_text=edge.surface_text,
     )
 
 

@@ -365,13 +365,15 @@ def interlink_from_reference_mention(
     if status == InterlinkResolutionStatus.UNRESOLVED and target_work is None:
         confidence = InterlinkConfidence.LEGACY_UNKNOWN
 
+    owned_surface_text = str(getattr(mention, "surface_text", "") or "")
+
     return LegalInterlink(
         interlink_id=interlink_id,
         source_work=source_work,
         source_locator=_locator_from_reference_provision(src),
         source_span=_source_span_from_reference_span(getattr(mention, "source_span", None)),
         rendered_span=rendered_span,
-        surface_text=surface_text or phrase_lemma or edge_subtype or "reference",
+        surface_text=surface_text or owned_surface_text or phrase_lemma or edge_subtype or "reference",
         surface_kind=surface_kind,
         target=InterlinkTarget(work=target_work, locator=_locator_from_reference_provision(tgt) if tgt is not None else None),
         role=role,

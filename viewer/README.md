@@ -112,6 +112,9 @@ and a strings table — no structural changes.
 
 SQLite tables used: `meta` (incl. `certification_granularity`,
 `localization_status`, `jurisdiction`, `lang`), `content_blobs` (BLOB node
-JSON, UTF-8), `transitions`, `checkpoints`, `source_artifacts`, `active_at`.
-See `transition-graph.v1` in `src/lawvm/tools/export_transition_graph.py` for
-the authoritative definition.
+JSON, UTF-8), `transitions`, `checkpoints`, `source_artifacts`, `active_at`,
+`display_nodes`, `evidence_events`, and `lawvm_interlinks`. The viewer never
+parses legal prose for citations: `lawvm_interlinks` carries LawVM-computed
+semantic links, and inline painting is enabled only for rows that already carry
+rendered span coordinates. See `transition-graph.v1` in
+`src/lawvm/tools/export_transition_graph.py` for the authoritative definition.

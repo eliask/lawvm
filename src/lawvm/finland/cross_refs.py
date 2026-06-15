@@ -73,6 +73,7 @@ class CrossRefEdge:
     target_stat_hash: str = ""  # SHA256[:16] of target's consolidated XML at build time
                                 # empty if target not in consolidated corpus
                                 # enables stale-ref detection: rebuild and compare
+    surface_text: str = ""    # literal <ref> text when available; empty for metadata edges
 
 
 @dataclass(frozen=True)
@@ -275,7 +276,10 @@ def extract_cross_refs(
         body = root.find('.//body')
 
     # Phase 9.0: provision-level CITES — one edge per (src_sec, target_id, tgt_sec) triple.
-    cite_counts: dict[tuple[str, str, str], int] = {}  # (src_sec, target_id, prov_path) → count
+    # (src_sec, target_id, prov_path) -> (count, surface_text). If repeated
+    # refs for the same target use different text, the surface is ambiguous and
+    # left empty rather than pretending one spelling owns all occurrences.
+    cite_counts: dict[tuple[str, str, str], tuple[int, str]] = {}
     if body is not None:
         parent_map = {child: parent for parent in root.iter() for child in parent}
         for ref_elem in body.iter(f'{{{_AKN_NS}}}ref'):
@@ -286,7 +290,11 @@ def extract_cross_refs(
                 if target_id != statute_id:
                     src_sec = _find_section_ancestor(ref_elem, parent_map)
                     key = (src_sec, target_id, prov_path)
-                    cite_counts[key] = cite_counts.get(key, 0) + 1
+                    surface = " ".join("".join(ref_elem.itertext()).split())
+                    prev_count, prev_surface = cite_counts.get(key, (0, surface))
+                    if prev_surface != surface:
+                        prev_surface = ""
+                    cite_counts[key] = (prev_count + 1, prev_surface)
                 else:
                     _record_self_reference_skip(
                         diagnostics_out,
@@ -297,7 +305,7 @@ def extract_cross_refs(
                         target_section=prov_path,
                     )
 
-    for (src_sec, target_id, prov_path), count in cite_counts.items():
+    for (src_sec, target_id, prov_path), (count, surface_text) in cite_counts.items():
         edges.append(CrossRefEdge(
             source_statute_id=statute_id,
             target_statute_id=target_id,
@@ -305,6 +313,7 @@ def extract_cross_refs(
             source_section=src_sec,
             target_section=prov_path,
             count=count,
+            surface_text=surface_text,
         ))
 
     # ── REPEALS: this statute repeals target ─────────────────────────────────

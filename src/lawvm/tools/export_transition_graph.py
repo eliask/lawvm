@@ -36,6 +36,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import structural_subtree_hash as structural_subtree_hash
+from lawvm.tools.transition_graph_interlinks import (
+    LawvmInterlinkRow,
+    RenderedTextSegment,
+    place_lawvm_interlinks,
+    project_lawvm_interlinks,
+    rendered_text_segments,
+)
 
 SCHEMA_VERSION = "transition-graph.v1"
 
@@ -1049,12 +1056,48 @@ CREATE TABLE evidence_events (
     title          TEXT,
     detail_json    TEXT
 );
+CREATE TABLE lawvm_interlinks (
+    interlink_id             TEXT PRIMARY KEY,
+    source_jurisdiction      TEXT,
+    source_work_kind         TEXT,
+    source_local_id          TEXT,
+    source_work_id           TEXT,
+    source_locator           TEXT,
+    surface_text             TEXT,
+    surface_kind             TEXT,
+    role                     TEXT,
+    target_jurisdiction      TEXT,
+    target_work_kind         TEXT,
+    target_local_id          TEXT,
+    target_work_id           TEXT,
+    target_locator           TEXT,
+    target_url               TEXT,
+    candidate_work_ids       TEXT,
+    resolution_status        TEXT,
+    confidence               TEXT,
+    resolver_id              TEXT,
+    source_artifact_id       TEXT,
+    source_span_byte_offset  INTEGER,
+    source_span_byte_len     INTEGER,
+    rendered_statute_id      TEXT,
+    rendered_effective_date  TEXT,
+    rendered_address         TEXT,
+    rendered_segment_index   INTEGER,
+    rendered_char_start      INTEGER,
+    rendered_char_end        INTEGER,
+    valid_at_start           TEXT,
+    valid_at_end             TEXT,
+    detail_json              TEXT
+);
 CREATE INDEX idx_transitions_date ON transitions(effective_date);
 CREATE INDEX idx_transitions_addr ON transitions(target_address);
 CREATE INDEX idx_active_at_addr ON active_at(address);
 CREATE INDEX idx_display_nodes_addr ON display_nodes(address);
 CREATE INDEX idx_evidence_events_addr ON evidence_events(target_address);
 CREATE INDEX idx_evidence_events_source ON evidence_events(source_id);
+CREATE INDEX idx_lawvm_interlinks_rendered_addr ON lawvm_interlinks(rendered_address);
+CREATE INDEX idx_lawvm_interlinks_source_work ON lawvm_interlinks(source_work_id);
+CREATE INDEX idx_lawvm_interlinks_target_work ON lawvm_interlinks(target_work_id);
 """
 
 
@@ -1079,6 +1122,7 @@ class ExportStats:
     n_source_artifacts: int
     n_edges: int
     n_evidence_events: int
+    n_lawvm_interlinks: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -1111,6 +1155,8 @@ def export_transition_graph(
     an optional address-prefix filter (e.g. "chapter:11"); empty = whole act.
     ``granularity`` selects the covering-frontier depth ("subsection" default,
     "section", or legacy "chapter"); see :func:`covering_units`.
+    Neutral LawVM interlinks are always projected into ``lawvm_interlinks``;
+    legal-reference recognition must happen in LawVM, never in the viewer.
     """
     canonical_id = _canonical_statute_id(statute_id)
     engine_id = _engine_statute_id(canonical_id)
@@ -1170,10 +1216,12 @@ def export_transition_graph(
         active_rows: List[ActiveAtRow] = []
         display_rows: List[DisplayNodeRow] = []
         transition_rows: List[TransitionRow] = []
+        segments_by_date: dict[str, list[RenderedTextSegment]] = {}
         seq = 0
 
         for date in bundle.change_dates:
             tree = materialize_oracle_tree(bundle, date)
+            segments_by_date[date] = rendered_text_segments(date, tree, slice_prefix)
             units = covering_units(tree, slice_prefix, granularity)
             active_addresses = frozenset(addr for addr, _node in units)
             display_rows.extend(
@@ -1278,6 +1326,11 @@ def export_transition_graph(
         from lawvm.finland.corpus import _get_corpus_store
 
         corpus = _get_corpus_store()
+        interlink_rows = place_lawvm_interlinks(
+            project_lawvm_interlinks(canonical_id, corpus),
+            statute_id=canonical_id,
+            segments_by_date=segments_by_date,
+        )
 
         source_rows: List[SourceArtifactRow] = []
         he_by_amendment: Dict[str, str] = {}
@@ -1422,6 +1475,19 @@ def export_transition_graph(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [row.sql_values() for row in evidence_rows],
         )
+        conn.executemany(
+            "INSERT OR REPLACE INTO lawvm_interlinks"
+            "(interlink_id, source_jurisdiction, source_work_kind, source_local_id, "
+            " source_work_id, source_locator, surface_text, surface_kind, role, "
+            " target_jurisdiction, target_work_kind, target_local_id, target_work_id, "
+            " target_locator, target_url, candidate_work_ids, resolution_status, "
+            " confidence, resolver_id, source_artifact_id, source_span_byte_offset, "
+            " source_span_byte_len, rendered_statute_id, rendered_effective_date, "
+            " rendered_address, rendered_segment_index, rendered_char_start, "
+            " rendered_char_end, valid_at_start, valid_at_end, detail_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [row.sql_values() for row in interlink_rows],
+        )
 
         # --- meta ---
         meta_rows = {
@@ -1483,6 +1549,7 @@ def export_transition_graph(
         n_source_artifacts=len(source_rows),
         n_edges=len(edge_rows),
         n_evidence_events=len(evidence_rows),
+        n_lawvm_interlinks=len(interlink_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1524,4 +1591,5 @@ def main(args: Any) -> None:
     print(f"  source_artifacts: {stats.n_source_artifacts}", flush=True)
     print(f"  edges:            {stats.n_edges}", flush=True)
     print(f"  evidence_events:  {stats.n_evidence_events}", flush=True)
+    print(f"  lawvm_interlinks: {stats.n_lawvm_interlinks}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)

@@ -528,6 +528,17 @@ class TestStrictMode:
         assert len(result.mentions) >= 1
         assert result.mentions[0].cite_confidence == CiteConfidence.EXACT
 
+    def test_ref_element_surface_text_is_preserved_on_typed_mention(self) -> None:
+        """The literal <ref> text survives extraction for neutral interlink overlays."""
+        result = extract_reference_mentions(
+            EXACT_CROSS_STATUTE.xml_bytes,
+            EXACT_CROSS_STATUTE.source_statute_id,
+        )
+        assert result.mentions
+        assert result.mentions[0].phrase_lemma == "ref_element"
+        assert result.mentions[0].surface_text
+        assert result.mentions[0].surface_text != "ref_element"
+
 
 # ===========================================================================
 # Category 6: No-leak tests

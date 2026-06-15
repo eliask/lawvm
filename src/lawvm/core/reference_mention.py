@@ -208,6 +208,11 @@ class ReferenceMention:
     """SHA256[:16] of the target statute's consolidated XML at projection time.
     Populated by the projection layer; None during extraction."""
 
+    surface_text: str = ""
+    """Literal source text for the citation surface when the extractor owns it.
+    This is intentionally not part of the stable fi_refs row schema; neutral
+    interlink projections use it for viewer overlays."""
+
     def __post_init__(self) -> None:
         if self.cite_confidence not in (CiteConfidence.UNRESOLVED, CiteConfidence.BROKEN):
             if self.target_provision_ref is None:

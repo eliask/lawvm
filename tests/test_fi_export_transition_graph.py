@@ -229,6 +229,58 @@ def _make_bundle() -> etg.ReplayBundle:
     )
 
 
+def _sample_interlink_row() -> dict[str, object]:
+    return {
+        "interlink_id": "fi.inline_citations:100_2010:0",
+        "source_jurisdiction": "fi",
+        "source_work_kind": "normative_act",
+        "source_local_id": "100/2010",
+        "source_work_id": "fi:normative_act:100/2010",
+        "source_locator": "section:1",
+        "surface_text": "luonnonsuojelulain (9/2023)",
+        "surface_kind": "prose_ref",
+        "role": "cites",
+        "target_jurisdiction": "fi",
+        "target_work_kind": "normative_act",
+        "target_local_id": "9/2023",
+        "target_work_id": "fi:normative_act:9/2023",
+        "target_locator": "section:2",
+        "target_url": None,
+        "candidate_work_ids": None,
+        "resolution_status": "resolved",
+        "confidence": "exact",
+        "resolver_id": "fi.inline_citation",
+        "source_artifact_id": None,
+        "source_span_byte_offset": None,
+        "source_span_byte_len": None,
+        "rendered_statute_id": "100/2010",
+        "rendered_effective_date": "2010-01-01",
+        "rendered_address": "section:1",
+        "rendered_segment_index": 0,
+        "rendered_char_start": 0,
+        "rendered_char_end": 27,
+        "valid_at_start": "2010-01-01",
+        "valid_at_end": None,
+        "detail_json": "{}",
+    }
+
+
+def _placeable_interlink_row() -> dict[str, object]:
+    row = dict(_sample_interlink_row())
+    row.update({
+        "interlink_id": "fi.inline_citations:100_2010:placeable",
+        "source_locator": "section:1",
+        "surface_text": "alpha",
+        "rendered_statute_id": None,
+        "rendered_effective_date": None,
+        "rendered_address": None,
+        "rendered_segment_index": None,
+        "rendered_char_start": None,
+        "rendered_char_end": None,
+    })
+    return row
+
+
 @pytest.fixture()
 def patched_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     bundle = _make_bundle()
@@ -245,6 +297,7 @@ def patched_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(etg, "run_engine_replay", fake_run_engine_replay)
     monkeypatch.setattr(etg, "materialize_oracle_tree", fake_materialize)
+    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [])
     monkeypatch.setattr(
         "lawvm.finland.corpus._get_corpus_store", lambda: _FakeCorpus()
     )
@@ -319,6 +372,7 @@ def patched_deep_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(etg, "run_engine_replay", fake_run_engine_replay)
     monkeypatch.setattr(etg, "materialize_oracle_tree", fake_materialize)
+    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [])
     monkeypatch.setattr(
         "lawvm.finland.corpus._get_corpus_store", lambda: _FakeCorpus()
     )
@@ -423,6 +477,15 @@ def test_export_produces_required_tables(patched_engine: None, tmp_path: Path) -
         ).fetchall()
         assert ("100/2010",) in statutes
 
+        # --- semantic interlink table is always present, even when no link
+        # projector rows are available for this hermetic fixture.
+        interlink_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='lawvm_interlinks'"
+        ).fetchone()
+        assert interlink_table == ("lawvm_interlinks",)
+        assert stats.n_lawvm_interlinks == 0
+        assert conn.execute("SELECT COUNT(*) FROM lawvm_interlinks").fetchone()[0] == 0
+
         # --- internal LawVM evidence surfaces are visible, not folded into law ---
         evidence = conn.execute(
             "SELECT surface, kind, role, severity, source_id, effective_date, "
@@ -445,6 +508,64 @@ def test_export_produces_required_tables(patched_engine: None, tmp_path: Path) -
         assert by_surface["failed_op"][3] == "error"
         assert by_surface["failed_op"][6] == "section:3"
         assert json.loads(by_surface["failed_op"][9])["reason"] == "synthetic failure"
+    finally:
+        conn.close()
+
+
+def test_export_always_persists_lawvm_interlinks(
+    patched_engine: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    row = etg.LawvmInterlinkRow.from_mapping(_sample_interlink_row())
+    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [row])
+
+    out = tmp_path / "synth_links.db"
+    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+
+    assert stats.n_lawvm_interlinks == 1
+    conn = sqlite3.connect(str(out))
+    try:
+        stored = conn.execute(
+            "SELECT interlink_id, surface_text, target_work_id, rendered_address, "
+            "rendered_segment_index, rendered_char_start, rendered_char_end "
+            "FROM lawvm_interlinks"
+        ).fetchone()
+        assert stored == (
+            "fi.inline_citations:100_2010:0",
+            "luonnonsuojelulain (9/2023)",
+            "fi:normative_act:9/2023",
+            "section:1",
+            0,
+            0,
+            27,
+        )
+    finally:
+        conn.close()
+
+
+def test_export_places_unambiguous_lawvm_interlinks_in_rendered_text(
+    patched_engine: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    row = etg.LawvmInterlinkRow.from_mapping(_placeable_interlink_row())
+    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [row])
+
+    out = tmp_path / "synth_placed_links.db"
+    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+
+    assert stats.n_lawvm_interlinks == len(_CHANGE_DATES)
+    conn = sqlite3.connect(str(out))
+    try:
+        stored = conn.execute(
+            "SELECT rendered_effective_date, rendered_address, rendered_segment_index, "
+            "rendered_char_start, rendered_char_end, surface_text "
+            "FROM lawvm_interlinks AS l "
+            "JOIN checkpoints AS c ON l.rendered_effective_date = c.date "
+            "ORDER BY c.date"
+        ).fetchall()
+        assert stored == [
+            ("2010-01-01", "section:1", 0, 0, 5, "alpha"),
+            ("2015-01-01", "section:1", 0, 0, 5, "alpha"),
+            ("2020-01-01", "section:1", 0, 0, 5, "alpha"),
+        ]
     finally:
         conn.close()
 
