@@ -136,6 +136,7 @@ _v("kohdasta", "kohta", "KOHTA", "NOM")  # elative
 # Sub-paragraph (consumed but not represented in ops)
 _v("alakohta", "alakohta", "ALAKOHTA", "NOM")
 _v("alakohdan", "alakohta", "ALAKOHTA", "GEN")
+_v("alakohdassa", "alakohta", "ALAKOHTA", "NOM")  # inessive (body citation)
 
 # Heading
 _v("otsikko", "otsikko", "OTSIKKO", "NOM")
