@@ -31,11 +31,13 @@ Runnable without the global CLI::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from lawvm.us_federal.dry_run import (
     USDryRunReport,
@@ -346,6 +348,165 @@ def run_bench(
 
 
 # ---------------------------------------------------------------------------
+# Parallel bench (determinism contract: byte-identical aggregate to run_bench)
+# ---------------------------------------------------------------------------
+#
+# The bench over a 54-title × 1994-2024 ceiling is hundreds-to-thousands of
+# windows; ``run_bench`` evaluates them serially. ``run_bench_parallel`` shards
+# the windows across worker processes and reassembles in *corpus order* so the
+# aggregate is byte-identical to the serial runner regardless of worker count or
+# completion scheduling.
+#
+# DETERMINISM CONTRACT (non-negotiable)
+# -------------------------------------
+#   * ``evaluate_window(archive, window)`` is pure given the archive + window, so
+#     each window's :class:`WindowResult` is independent of every other.
+#   * The final report's ``results`` list is in the original corpus order (each
+#     window is tagged with its corpus index; results are reassembled ascending),
+#     never completion order. Skips for ``include=false`` windows are produced in
+#     the same place the serial runner produces them.
+#   * Each worker opens its OWN read-only farchive handle via the picklable
+#     :func:`_build_us_bench_store` factory — a SQLite connection is never shared
+#     across processes. The farchive opens ``readonly=True`` so parallel readers
+#     are safe.
+#
+# Worker results carry ``report=None``: the heavy :class:`USDryRunReport` object
+# is dropped at the process boundary (the aggregate, the table and
+# ``to_jsonable`` all read only the projected scalars, so the JSON and aggregate
+# stay byte-identical). This also bounds per-worker resident memory.
+
+# Hard pool-size ceiling. Each worker holds an open farchive handle and replays a
+# window at a time, so this bounds resident memory under the WSL2 ceiling
+# regardless of host core count or an over-large explicit ``--parallel``. Matches
+# the ``min(16, cpu-2)`` style cap used by the other parallel corpus paths.
+US_BENCH_MAX_WORKERS = 16
+
+
+def _build_us_bench_store() -> UsArchiveReader:
+    """Per-worker store factory: one read-only farchive handle per process.
+
+    Module-level (hence picklable) so the process pool can resolve it by
+    ``(module, qualname)`` reference. Mirrors the UK self-consistency
+    ``build_uk_store`` contract: one open handle per worker, used read-only.
+    """
+    return open_us_federal_farchive(readonly=True)
+
+
+_WORKER_STORE: UsArchiveReader | None = None
+
+
+def _worker_init() -> None:
+    """Process-pool initializer: open this worker's own read-only farchive once."""
+    global _WORKER_STORE
+    _WORKER_STORE = _build_us_bench_store()
+
+
+def _worker_run_shard(
+    task: tuple[int, Sequence[tuple[int, BenchWindow]]],
+) -> tuple[int, list[tuple[int, WindowResult]]]:
+    """Evaluate one shard of ``(corpus_index, window)`` items.
+
+    Returns ``(shard_index, [(corpus_index, WindowResult), ...])`` with the heavy
+    report object stripped from each result. ``include=false`` windows are turned
+    into the same typed skip the serial runner emits, so the parallel and serial
+    ``results`` lists are element-for-element identical.
+    """
+    shard_index, items = task
+    assert _WORKER_STORE is not None, "worker store not initialized"
+    out: list[tuple[int, WindowResult]] = []
+    for corpus_index, window in items:
+        if not window.include:
+            result = WindowResult(
+                window=window,
+                status="skipped",
+                skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
+            )
+        else:
+            result = evaluate_window(_WORKER_STORE, window)
+            if result.report is not None:
+                result = dataclasses.replace(result, report=None)
+        out.append((corpus_index, result))
+    return shard_index, out
+
+
+def _make_window_shards(
+    indexed: Sequence[tuple[int, BenchWindow]], workers: int
+) -> list[tuple[int, list[tuple[int, BenchWindow]]]]:
+    """Split indexed windows into contiguous, order-preserving shards.
+
+    Contiguous (not round-robin) shards keep each shard's windows in corpus order
+    and make the ascending-shard concatenation reproduce the serial order
+    exactly. Aim for several shards per worker so uneven per-window replay cost
+    still balances, while keeping shards large enough to amortize dispatch.
+    """
+    n = len(indexed)
+    if n == 0:
+        return []
+    target_shards = max(workers, min(n, workers * 4))
+    chunk = (n + target_shards - 1) // target_shards
+    shards: list[tuple[int, list[tuple[int, BenchWindow]]]] = []
+    idx = 0
+    start = 0
+    while start < n:
+        shards.append((idx, list(indexed[start:start + chunk])))
+        idx += 1
+        start += chunk
+    return shards
+
+
+def run_bench_parallel(
+    windows: Iterable[BenchWindow],
+    *,
+    workers: int,
+    corpus_path: str = "",
+) -> BenchReport:
+    """Parallel sibling of :func:`run_bench`, byte-identical in the aggregate.
+
+    Shards the corpus windows across ``workers`` processes (each with its own
+    read-only farchive handle) and reassembles the per-window results in corpus
+    order. ``workers <= 1`` (or a corpus of <= 1 window) falls back to the serial
+    :func:`run_bench` over a single shared handle, so the parallel path is always
+    a safe superset of the serial one.
+
+    Unlike :func:`run_bench`, this opens the archive itself (one handle per
+    worker) rather than taking a shared handle — a SQLite connection must never
+    cross a process boundary.
+    """
+    window_list = list(windows)
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+    workers = min(workers, US_BENCH_MAX_WORKERS)
+
+    # Serial fast path / fallback: identical to run_bench over one handle.
+    if workers <= 1 or len(window_list) <= 1:
+        archive = open_us_federal_farchive(readonly=True)
+        try:
+            return run_bench(archive, window_list, corpus_path=corpus_path)
+        finally:
+            archive.close()
+
+    from concurrent.futures import as_completed
+
+    from lawvm.tools._worker_pool import managed_executor
+
+    indexed = list(enumerate(window_list))
+    shards = _make_window_shards(indexed, workers)
+
+    # corpus_index -> WindowResult, for stable reassembly in corpus order.
+    collected: dict[int, WindowResult] = {}
+    with managed_executor(workers, initializer=_worker_init, initargs=()) as pool:
+        futures = {pool.submit(_worker_run_shard, task): task[0] for task in shards}
+        for future in as_completed(futures):
+            _shard_index, pairs = future.result()
+            for corpus_index, result in pairs:
+                collected[corpus_index] = result
+
+    report = BenchReport(corpus_path=corpus_path)
+    report.results = [collected[i] for i in range(len(window_list))]
+    return report
+
+
+# ---------------------------------------------------------------------------
 # CLI rendering
 # ---------------------------------------------------------------------------
 
@@ -387,6 +548,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit the machine-readable JSON report instead of the table.",
     )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Shard windows across N worker processes (each opens its own "
+            f"read-only farchive handle, capped at {US_BENCH_MAX_WORKERS}). The "
+            "aggregate is byte-identical to the serial runner. 0/1 (default) "
+            "runs serially."
+        ),
+    )
     return parser
 
 
@@ -399,11 +572,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     windows = load_corpus(corpus_path)
 
-    archive = open_us_federal_farchive(readonly=True)
-    try:
-        report = run_bench(archive, windows, corpus_path=str(corpus_path))
-    finally:
-        archive.close()
+    if args.parallel and args.parallel > 1:
+        # Parallel path opens one read-only handle per worker itself.
+        report = run_bench_parallel(
+            windows, workers=args.parallel, corpus_path=str(corpus_path)
+        )
+    else:
+        archive = open_us_federal_farchive(readonly=True)
+        try:
+            report = run_bench(archive, windows, corpus_path=str(corpus_path))
+        finally:
+            archive.close()
 
     if args.json:
         print(json.dumps(report.to_jsonable(), indent=2, sort_keys=True))

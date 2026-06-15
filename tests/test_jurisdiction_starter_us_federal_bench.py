@@ -16,6 +16,7 @@ No network. Two layers, mirroring the dry-run test's discipline:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from lawvm.us_federal.bench import (
     evaluate_window,
     load_corpus,
     run_bench,
+    run_bench_parallel,
 )
 from lawvm.us_federal.sources import plaw_locator
 
@@ -286,3 +288,60 @@ def test_real_corpus_runs_and_produces_a_witness_anchored_aggregate() -> None:
     for result in report.evaluated():
         assert result.report is not None
         assert result.report.replay_authorized is False
+
+
+@pytest.mark.skipif(
+    not _canonical_archive_available(),
+    reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_parallel_bench_aggregate_is_byte_identical_to_serial() -> None:
+    """The parallel runner reproduces the serial aggregate exactly.
+
+    Determinism contract: sharding windows across worker processes (each with its
+    own read-only farchive handle) and reassembling in corpus order yields a
+    report whose ``to_jsonable()`` view is byte-identical to the serial runner's
+    on the same corpus — same per-window results, same disposition breakdown,
+    same agreement count.
+
+    Runs on a small sub-corpus (the always-present Title 11 windows plus one
+    excluded window if available) so the test stays fast while still exercising
+    multi-shard reassembly and the include=false skip path.
+    """
+    from lawvm.us_federal.sources import open_us_federal_farchive
+
+    all_windows = load_corpus(REPO_ROOT / DEFAULT_CORPUS_PATH)
+    # Keep it small but multi-window so reassembly across shards is exercised.
+    title11 = [w for w in all_windows if w.title == 11][:4]
+    excluded = [w for w in all_windows if not w.include][:1]
+    sub_corpus = title11 + excluded
+    assert len(sub_corpus) >= 2, "need >=2 windows to exercise sharding"
+
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        serial = run_bench(archive, sub_corpus, corpus_path="sub")
+    finally:
+        archive.close()
+
+    parallel = run_bench_parallel(sub_corpus, workers=2, corpus_path="sub")
+
+    # Byte-identical aggregate: identical JSON serialization of the whole report
+    # (which excludes the heavy per-window report object on both paths).
+    serial_json = json.dumps(serial.to_jsonable(), sort_keys=True)
+    parallel_json = json.dumps(parallel.to_jsonable(), sort_keys=True)
+    assert parallel_json == serial_json
+
+    # And explicitly on the headline scalars the bench reports.
+    sagg = serial.aggregate()
+    pagg = parallel.aggregate()
+    assert pagg["agreements_total"] == sagg["agreements_total"]
+    assert pagg["disposition_breakdown"] == sagg["disposition_breakdown"]
+    assert pagg["windows_evaluated"] == sagg["windows_evaluated"]
+    assert pagg["windows_skipped"] == sagg["windows_skipped"]
+
+    # Per-window order + agreement counts are stable (corpus order, not completion).
+    assert [r.window.key for r in parallel.results] == [
+        r.window.key for r in serial.results
+    ]
+    assert [r.agreements for r in parallel.results] == [
+        r.agreements for r in serial.results
+    ]
