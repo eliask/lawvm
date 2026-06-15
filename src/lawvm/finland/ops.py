@@ -1099,26 +1099,15 @@ class ResolvedOp:
         )
 
     @property
-    def resolved_target_scope(self) -> tuple[str, str | None, str | None, int | None, str | None, str | None]:
+    def resolved_target_scope(self) -> "ResolvedTargetScopeView":
         """Return the effective late-waist target scope from resolved identity.
-
-        The tuple is:
-        ``(target_norm, target_chapter, target_part, target_paragraph, target_item, target_special)``.
 
         Resolved target address is primary. Transitional late-waist fields are
         only construction-time seed input; direct ``ResolvedOp(...)`` callers
         should bind a target address explicitly instead of relying on hidden
         seed-backed structural scope.
         """
-        scope = self.resolved_target_scope_view
-        return (
-            scope.target_norm,
-            scope.target_chapter,
-            scope.target_part,
-            scope.target_paragraph,
-            scope.target_item,
-            scope.target_special,
-        )
+        return self.resolved_target_scope_view
 
     @classmethod
     def from_amendment_op(

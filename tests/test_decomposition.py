@@ -1768,13 +1768,25 @@ class TestCompileAmendmentOps:
 
         assert rop.effective_target_paragraph is None
         assert rop.effective_target_item_label is None
-        assert rop.resolved_target_scope == ("3", None, None, None, None, None)
+        scope = rop.resolved_target_scope
+        assert scope.target_norm == "3"
+        assert scope.target_chapter is None
+        assert scope.target_part is None
+        assert scope.target_paragraph is None
+        assert scope.target_item is None
+        assert scope.target_special is None
         assert rop.resolved_target_address is None
         assert rop.description() == "REPLACE 3 §"
 
         rop.target_norm = "9"
 
-        assert rop.resolved_target_scope == ("9", None, None, None, None, None)
+        scope = rop.resolved_target_scope
+        assert scope.target_norm == "9"
+        assert scope.target_chapter is None
+        assert scope.target_part is None
+        assert scope.target_paragraph is None
+        assert scope.target_item is None
+        assert scope.target_special is None
         assert rop.resolved_target_address is None
         assert rop.description() == "REPLACE 9 §"
 
