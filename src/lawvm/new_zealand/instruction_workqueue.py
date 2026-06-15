@@ -204,6 +204,17 @@ class NZInstructionWorkQueueReport:
     ) -> tuple[CorpusOperationEvidenceRow, ...]:
         return tuple(_workqueue_evidence_row(self, row) for row in rows)
 
+    def frontier_work_items(self) -> tuple[Any, ...]:
+        """Project blocked/review rows into shared frontier work items.
+
+        Imported lazily to avoid a module import cycle (the frontier adapter
+        depends on this module's report/row types). Returns a tuple of
+        ``lawvm.core.frontier_work_item.FrontierWorkItem``.
+        """
+        from lawvm.new_zealand.frontier_work_items import frontier_work_items
+
+        return frontier_work_items(self)
+
 
 def _summarize_rows(work_id: str, rows: tuple[NZInstructionWorkQueueRow, ...]) -> dict[str, Any]:
     queue_status_counts = Counter(row.queue_status for row in rows)

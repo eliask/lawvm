@@ -7997,6 +7997,39 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="write shared instruction-workqueue evidence rows as JSONL",
     )
     nz_instruction_queue_p.add_argument("--json", action="store_true", help="emit instruction workqueue report JSON")
+    nz_frontier_p = nz_corpus_sub.add_parser(
+        "frontier",
+        help="emit NZ non-executable manual frontier work items",
+        description=(
+            "Project blocked/review instruction-workqueue rows into explicit, "
+            "reviewable frontier work items with source/target/payload "
+            "witnesses, probable adjudication options, official guidance "
+            "references, an adjudication prompt, and a next action. Frontier "
+            "rows are non-executable and emit no replay or agreement claim."
+        ),
+    )
+    nz_frontier_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_frontier_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_frontier_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print/include")
+    nz_frontier_p.add_argument("--summary-only", action="store_true", help="emit only frontier summary counts")
+    nz_frontier_p.add_argument(
+        "--frontier-status",
+        choices=("blocked", "review"),
+        default="",
+        help="filter rows by frontier status",
+    )
+    nz_frontier_p.add_argument("--frontier-family", default="", help="filter rows by frontier family")
+    nz_frontier_p.add_argument(
+        "--candidate-operation-family",
+        default="",
+        help="filter rows by candidate operation family",
+    )
+    nz_frontier_p.add_argument("--json", action="store_true", help="emit frontier work item report JSON")
     nz_effect_candidates_p = nz_corpus_sub.add_parser(
         "effect-candidates",
         help="emit NZ candidate canonical effects without replaying them",
@@ -11919,6 +11952,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.instruction_workqueue import main as nz_corpus_instruction_workqueue_main
 
             nz_corpus_instruction_workqueue_main(args)
+        elif args.nz_corpus_command == "frontier":
+            from lawvm.new_zealand.frontier_work_items import main as nz_corpus_frontier_main
+
+            nz_corpus_frontier_main(args)
         elif args.nz_corpus_command == "effect-candidates":
             from lawvm.new_zealand.effect_candidates import main as nz_corpus_effect_candidates_main
 
