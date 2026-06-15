@@ -61,6 +61,7 @@ the architecture, keep it explanatory.
 - [FINLAND_ELABORATION_RULES.md](FINLAND_ELABORATION_RULES.md)
 - [FINLAND_ELABORATED_GROUP_SPEC.md](FINLAND_ELABORATED_GROUP_SPEC.md)
 - [FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md](FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md)
+- [FI_AMENDMENT_DRAFTING_GRAMMAR.md](FI_AMENDMENT_DRAFTING_GRAMMAR.md) — best-practice johtolause drafting guide derived from the per-rule register tiers (32 canonical / 7 accepted / 22 discouraged / 5 archaic)
 
 ## Other Frontends
 
