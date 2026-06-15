@@ -66,8 +66,150 @@ TARGET_UNRESOLVED_FINDING_RULE_ID = "us_amendatory_target_unresolved"
 NON_TITLE_TARGET_RULE_ID = "us_amendatory_target_non_us_code"
 
 # USC nesting order (deepest-last). Used to type bare positional labels from a
-# ref href / prose chain into the pinned LegalAddress segment kinds.
-_USC_LEVELS = ("subsection", "paragraph", "subparagraph", "clause", "subclause", "item")
+# ref href / prose chain into the pinned LegalAddress segment kinds. This MUST stay
+# aligned with ``source_tree._USC_LADDER`` (the split convention a target path is
+# located against): subsection→paragraph→subparagraph→clause→subclause→item→sub-item.
+_USC_LEVELS = (
+    "subsection",
+    "paragraph",
+    "subparagraph",
+    "clause",
+    "subclause",
+    "item",
+    "sub-item",
+)
+_LEVEL_SUBSECTION = 0
+_LEVEL_PARAGRAPH = 1
+_LEVEL_SUBPARAGRAPH = 2
+_LEVEL_CLAUSE = 3
+_LEVEL_SUBCLAUSE = 4
+_LEVEL_ITEM = 5
+_LEVEL_SUBITEM = 6
+
+# Strict canonical roman numeral (lowercase), used to tell an ambiguous single
+# letter (``i``/``v``/``x``/``l``/``c``/``d``/``m`` are BOTH subsection letters and
+# roman clause numerals) apart by position rather than by isolated token form. The
+# round-trip canonicality (only ``i``/``ii``/``iv``... accepted, not ``iiii``) MUST
+# match ``source_tree._ROMAN_RE`` so a target path types a token by the SAME roman
+# convention the subsection split uses to type the node it locates against.
+_CANON_ROMAN_RE = re.compile(
+    r"^m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$"
+)
+_LOWER_ALPHA_RE = re.compile(r"^[a-z]+$")
+_UPPER_ALPHA_RE = re.compile(r"^[A-Z]+$")
+
+
+def _segment_level_candidates(label: str) -> tuple[int, ...]:
+    """All USC ladder levels a bare positional ``label`` token can denote.
+
+    Mirrors ``source_tree._marker_interpretations`` so a target-path segment is
+    typed by the SAME convention the subsection split uses to type the node it is
+    located against. A token is ambiguous when it can denote more than one level
+    (``i`` = subsection-letter OR lowercase-roman clause); the descent walk in
+    :func:`_type_usc_segment_chain` disambiguates by ladder position.
+    """
+    stripped = label.strip()
+    # Digit-led (incl. compound "10A"/"51D") is always paragraph-level in USC.
+    if stripped[:1].isdigit():
+        return (_LEVEL_PARAGRAPH,)
+    out: list[int] = []
+    if _LOWER_ALPHA_RE.match(stripped) is not None:
+        single = len(stripped) == 1
+        doubled = len(stripped) == 2 and stripped[0] == stripped[1]
+        is_roman = _CANON_ROMAN_RE.match(stripped) is not None
+        if single:
+            out.append(_LEVEL_SUBSECTION)
+        if is_roman:
+            out.append(_LEVEL_CLAUSE)
+        if doubled:
+            out.append(_LEVEL_ITEM)
+    elif _UPPER_ALPHA_RE.match(stripped) is not None:
+        single = len(stripped) == 1
+        doubled = len(stripped) == 2 and stripped[0] == stripped[1]
+        is_roman = _CANON_ROMAN_RE.match(stripped.lower()) is not None
+        if single:
+            out.append(_LEVEL_SUBPARAGRAPH)
+        if is_roman:
+            out.append(_LEVEL_SUBCLAUSE)
+        if doubled:
+            out.append(_LEVEL_SUBITEM)
+    return tuple(out)
+
+
+def _type_usc_segment_chain(
+    labels: list[str], *, start_frontier: int = -1
+) -> list[tuple[str, str]]:
+    """Type a run of bare positional ``labels`` as one strict USC ladder descent.
+
+    A target address (and the ``in subsection (X)(Y)…`` anchor chain) is a single
+    monotonic descent: each named sub-unit sits exactly one-or-more levels DEEPER
+    than the one before it. So the level of each token is resolved against the
+    running frontier (the deepest level placed so far), not by its isolated form —
+    this is what fixes (1) leading single-roman letters (``983/i`` is subsection
+    ``i``, NOT clause ``i``) and (2) out-of-ladder-order kinds (``i/2/D`` typed
+    ``clause/paragraph/subparagraph`` instead of ``subsection/paragraph/subparagraph``).
+
+    ``start_frontier`` is the deepest level already established by an inherited
+    address prefix (``-1`` = only the section is fixed, so the first token may be a
+    subsection). Tokens whose form does not name any known level are placed one
+    level below the frontier WITHOUT inventing a label that is not present — the
+    label text is preserved verbatim, only its (kind) is positional.
+    """
+    out: list[tuple[str, str]] = []
+    frontier = start_frontier
+    for label in labels:
+        candidates = _segment_level_candidates(label)
+        deeper = [lvl for lvl in candidates if lvl > frontier]
+        if deeper:
+            # Cleanest descent = the shallowest interpretation still below frontier.
+            level = min(deeper)
+        elif candidates:
+            # No interpretation is below the frontier (the chain descended past this
+            # token's natural level): keep descending by one rather than emit a path
+            # that re-ascends, which could never match a split node.
+            level = max(min(candidates), frontier + 1)
+        else:
+            # Unrecognised token form: one level deeper than the frontier.
+            level = frontier + 1
+        level = min(level, len(_USC_LEVELS) - 1)
+        out.append((_USC_LEVELS[level], label.strip()))
+        frontier = level
+    return out
+
+
+def _has_roman_ambiguous_subsection_head(address: LegalAddress) -> bool:
+    """True when the address's FIRST sub-section segment is a roman-form letter.
+
+    The source-tree subsection split flags a single roman-form subsection letter
+    (``(i)``/``(v)``/``(x)``/...) as ambiguous between a new subsection and a clause
+    and can mis-nest it, leaving a PHANTOM duplicate node at the same
+    ``subsection:<roman>/...`` address (e.g. ``10 U.S.C. 284`` carries two
+    ``subsection:i/...`` nodes after the split). Typing the target's leading ``(i)``
+    as a subsection is correct for the real law, but a sub-section-scoped locate
+    against the split would land on the phantom (first) node. This predicate lets a
+    *precise-text* strike fall back to its match-text anchor (the strike's real
+    locator) rather than risk that mislocation — it does NOT relax the path for
+    whole-node ops, which genuinely need the located node.
+    """
+    for kind, label in address.path:
+        if kind in ("title", "section"):
+            continue
+        # The first below-section segment decides the subsection identity.
+        return (
+            kind == "subsection"
+            and _CANON_ROMAN_RE.match(label.strip().lower()) is not None
+        )
+    return False
+
+
+def _section_scoped(address: LegalAddress) -> LegalAddress:
+    """Drop every below-section segment, leaving the bare ``title/section`` address."""
+    head: list[tuple[str, str]] = []
+    for kind, label in address.path:
+        head.append((kind, label))
+        if kind == "section":
+            break
+    return LegalAddress(path=tuple(head))
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +386,14 @@ _LEADING_SUBUNIT_ANCHOR_RE = re.compile(
     r"in\s+(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
     r"\((?P<label>[0-9A-Za-z]+)\)"
     r"(?P<more>(?:\s*\([0-9A-Za-z]+\))*)"
-    r"\s*,"
+    # The anchor is terminated by a comma ("(i) in clause (ii), by striking …") OR a
+    # list dash ("(A) in paragraph (1)(A)—(i) …" — an intermediate scope ancestor
+    # whose own anchor heads a nested sub-instruction list). Both forms scope the
+    # edit; the dash terminator is required so an intermediate ancestor's anchor is
+    # accumulated, not dropped. A trailing terminator (not just "of …") still
+    # prevents a mid-prose cross-reference ("in paragraph (1) of section 1322") from
+    # being mistaken for the edit's own scope.
+    r"\s*(?:,|[—–-])"
 )
 
 
@@ -263,40 +412,31 @@ def _refine_with_leading_subunit_anchor(
     match = _LEADING_SUBUNIT_ANCHOR_RE.match(raw_text)
     if match is None:
         return address
-    base_index = max(address.depth() - 1, 0)
-    segments: list[tuple[str, str]] = [(match.group("kind"), match.group("label"))]
-    for i, seg in enumerate(_SEGMENT_RE.findall(match.group("more") or "")):
-        segments.append((_label_level(seg, base_index + 1 + i), seg))
+    # The named sub-unit's USC kind comes from the prose verb ("subsection"/
+    # "paragraph"/...) — the enacted language is authoritative for the first level.
+    head_kind = match.group("kind")
+    segments: list[tuple[str, str]] = [(head_kind, match.group("label"))]
+    # Any further parenthesised tokens ("(a)(1)(A)") descend BELOW the prose verb's
+    # level: thread the frontier from the named kind so they type by position.
+    more = _SEGMENT_RE.findall(match.group("more") or "")
+    if more:
+        head_level = _USC_LEVELS.index(head_kind) if head_kind in _USC_LEVELS else 0
+        segments.extend(_type_usc_segment_chain(more, start_frontier=head_level))
     return LegalAddress(path=(*address.path, *segments))
 
 
 def _label_level(label: str, index: int) -> str:
-    """Infer the USC segment kind for a positional label.
+    """Infer the USC segment kind for a positional label at ladder position ``index``.
 
     USC labels are positional (subsection (a), paragraph (1), subparagraph (A),
-    clause (i), subclause (I)). The label *form* disambiguates the common cases;
-    we fall back to nesting depth when the form is unambiguous-by-position.
+    clause (i), subclause (I)). The label *form* alone is ambiguous — a single
+    letter ``i``/``l``/``v``/``x`` is both a subsection letter AND a roman clause
+    numeral — so the kind is resolved by ladder POSITION: a token at ``index`` sits
+    one level below ``index - 1`` (the frontier). This is the single-token entry
+    point onto the same descent typer the multi-segment parsers use, so a bare
+    redesignation/anchor label types identically to a full target chain.
     """
-    stripped = label.strip()
-    if stripped[:1].isdigit():
-        # Digit-led labels (incl. compound "10A") are paragraph-level in USC.
-        kind = "paragraph"
-    elif re.fullmatch(r"[ivxl]+", stripped):
-        kind = "clause"
-    elif re.fullmatch(r"[IVXL]+", stripped):
-        kind = "subclause"
-    elif stripped.islower():
-        kind = "subsection"
-    elif stripped.isupper():
-        kind = "subparagraph"
-    else:
-        kind = "subsection"
-    # Keep the inferred form but never let it collide with a coarser depth than
-    # its position permits: deeper index can only refine, not jump back.
-    floor = _USC_LEVELS[min(index, len(_USC_LEVELS) - 1)]
-    if _USC_LEVELS.index(kind) < _USC_LEVELS.index(floor):
-        return floor
-    return kind
+    return _type_usc_segment_chain([label], start_frontier=index - 1)[0][0]
 
 
 def parse_usc_target_phrase(phrase: str) -> LegalAddress | None:
@@ -310,8 +450,8 @@ def parse_usc_target_phrase(phrase: str) -> LegalAddress | None:
     title = match.group("title")
     section = match.group("section")
     path: list[tuple[str, str]] = [("title", title), ("section", section)]
-    for i, seg in enumerate(_SEGMENT_RE.findall(match.group("segments") or "")):
-        path.append((_label_level(seg, i), seg))
+    segments = _SEGMENT_RE.findall(match.group("segments") or "")
+    path.extend(_type_usc_segment_chain(segments))
     return LegalAddress(path=tuple(path))
 
 
@@ -331,8 +471,8 @@ def parse_relative_usc_target(phrase: str, *, inherited_title: str) -> LegalAddr
         return None
     section = match.group("section")
     path: list[tuple[str, str]] = [("title", inherited_title), ("section", section)]
-    for i, seg in enumerate(_SEGMENT_RE.findall(match.group("segments") or "")):
-        path.append((_label_level(seg, i), seg))
+    segments = _SEGMENT_RE.findall(match.group("segments") or "")
+    path.extend(_type_usc_segment_chain(segments))
     return LegalAddress(path=tuple(path))
 
 
@@ -359,12 +499,16 @@ def parse_usc_target_href(href: str) -> LegalAddress | None:
         ("section", match.group("section")),
     ]
     rest = match.group("rest") or ""
-    idx = 0
-    for seg in (s for s in rest.split("/") if s):
-        if seg in ("note", "etseq", "et_seq"):
-            continue
-        path.append((_label_level(seg, idx), seg))
-        idx += 1
+    segments = [
+        seg
+        for seg in (s for s in rest.split("/") if s)
+        if seg not in ("note", "etseq", "et_seq")
+    ]
+    # The href path order IS the USC ladder order: build the FULL chain (never drop
+    # an intervening level) and type each segment by its descent position, not by
+    # the isolated token form (so ``/s2261A/b/1/A/ii`` keeps every level and a
+    # leading ``/s983/i`` is subsection ``i``, not a roman clause).
+    path.extend(_type_usc_segment_chain(segments))
     return LegalAddress(path=tuple(path))
 
 
@@ -867,12 +1011,13 @@ def _lower_instruction(
         anchor: LegalAddress | None = None,
         destination: LegalAddress | None = None,
         text_patch: TextPatchSpec | None = None,
+        target: LegalAddress | None = None,
     ) -> LegalOperation:
         return LegalOperation(
             op_id=instruction_id,
             sequence=sequence,
             action=action,
-            target=address,
+            target=target if target is not None else address,
             payload=payload,
             anchor=anchor,
             destination=destination,
@@ -881,6 +1026,20 @@ def _lower_instruction(
             witness_rule_id=rule_id,
             provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
         )
+
+    # A PRECISE-text strike (a quoted match_text, not a whole-node operand) is
+    # located by its match_text, not by its sub-section node. When the target's
+    # leading sub-section letter is a roman-form letter the source-tree split flags
+    # as ambiguous (and may duplicate, e.g. ``10 U.S.C. 284(i)(3)``), scope the
+    # strike to the section so the dry-run anchors on the unique match_text instead
+    # of risking a locate onto the phantom duplicate node. Whole-node ops keep the
+    # full ladder path (they genuinely need the located node). This trades nothing:
+    # the precise quoted string is the strike's real, unambiguous anchor.
+    _text_strike_target = (
+        _section_scoped(address)
+        if _has_roman_ambiguous_subsection_head(address)
+        else None
+    )
 
     if family == "strike_insert":
         if len(quoted) >= 2:
@@ -896,6 +1055,7 @@ def _lower_instruction(
                     ),
                     replacement=new,
                 ),
+                target=_text_strike_target,
             )
             witness_rule_id = RULE_STRIKE_INSERT
         elif payload_node is not None and quoted:
@@ -928,6 +1088,7 @@ def _lower_instruction(
                         occurrence=-1 if "each place" in raw_text.lower() else 0,
                     ),
                 ),
+                target=_text_strike_target,
             )
             witness_rule_id = RULE_STRIKE
         else:
@@ -1260,8 +1421,16 @@ def _iter_instruction_units(
             inherited: LegalAddress | None = None
             ancestor = parent_of.get(elem)
             child_for_exclude = elem
+            # The ancestors BETWEEN the leaf and the section-resolving ancestor each
+            # carry a leading sub-unit anchor ("(A) in paragraph (1)(A)—") that scopes
+            # the edit one ladder rung deeper. Collect them leaf→up; they are applied
+            # top→down onto the inherited section so the leaf's own "(i) in clause
+            # (ii)" lands on the FULL ladder, not a truncated section/clause path.
+            intermediate_anchors: list[str] = []
             while ancestor is not None and inherited is None:
                 inherited = _unit_own_target(ancestor, exclude=child_for_exclude)
+                if inherited is None:
+                    intermediate_anchors.append(_text_of(ancestor))
                 child_for_exclude = ancestor
                 ancestor = parent_of.get(ancestor)
             if inherited is None:
@@ -1270,6 +1439,13 @@ def _iter_instruction_units(
                 if section_content is not None:
                     sp, sh = _first_usc_ref(section_content)
                     inherited, _ = _resolve_target(sp, sh)
+            if inherited is not None and intermediate_anchors:
+                # Apply outermost intermediate anchor first (it is the shallowest
+                # scope); each refinement descends from the prior frontier.
+                for anchor_text in reversed(intermediate_anchors):
+                    inherited = _refine_with_leading_subunit_anchor(
+                        inherited, anchor_text
+                    )
             yield uid, elem, inherited
         return
     # Flat instruction: the section's own content blocks.

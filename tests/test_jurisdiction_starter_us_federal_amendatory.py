@@ -87,6 +87,61 @@ def test_href_target_parsing_drops_note_facet():
     )
 
 
+def test_href_full_ladder_chain_is_not_truncated():
+    # 18:2261A repro: /s2261A/b/1/A/ii must keep EVERY rung of the descent — the
+    # leaf clause (ii) hangs under subparagraph (A) under paragraph (1) under
+    # subsection (b), never a bare ``clause:ii`` with the ancestors dropped.
+    assert parse_usc_target_href("/us/usc/t18/s2261A/b/1/A/ii") == LegalAddress(
+        path=(
+            ("title", "18"),
+            ("section", "2261A"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+            ("subparagraph", "A"),
+            ("clause", "ii"),
+        )
+    )
+
+
+def test_href_leading_roman_letter_is_a_subsection_not_a_clause():
+    # 18:983 repro: a leading single roman-ambiguous letter ``/s983/i`` is the
+    # SUBSECTION (i), and the chain stays in ladder order subsection→paragraph→
+    # subparagraph (NOT the out-of-order clause:i/paragraph:2/subparagraph:D the
+    # isolated-token typing produced).
+    assert parse_usc_target_href("/us/usc/t18/s983/i/2/D") == LegalAddress(
+        path=(
+            ("title", "18"),
+            ("section", "983"),
+            ("subsection", "i"),
+            ("paragraph", "2"),
+            ("subparagraph", "D"),
+        )
+    )
+
+
+def test_prose_leading_roman_letter_subsection_matches_href_typing():
+    # The prose channel must type the leading "(i)" identically to the href, so a
+    # path and the split node it locates against share one (kind,label) convention.
+    assert parse_usc_target_phrase("section 983(i)(2)(D) of title 18") == LegalAddress(
+        path=(
+            ("title", "18"),
+            ("section", "983"),
+            ("subsection", "i"),
+            ("paragraph", "2"),
+            ("subparagraph", "D"),
+        )
+    )
+
+
+def test_chain_typer_does_not_fabricate_a_level_not_present_in_the_href():
+    # The chain has exactly the rungs the href names — no invented intervening
+    # level. A two-segment href types to exactly two below-section segments.
+    addr = parse_usc_target_href("/us/usc/t18/s2261A/b/1")
+    assert addr is not None
+    below = [seg for seg in addr.path if seg[0] not in ("title", "section")]
+    assert below == [("subsection", "b"), ("paragraph", "1")]
+
+
 # ---------------------------------------------------------------------------
 # Non-positive-law title routing through the act-section→USC resolver
 # ---------------------------------------------------------------------------
@@ -199,6 +254,85 @@ def test_plaw_116_51_each_place_text_replace():
     # §101(18) -> title:11/section:101/paragraph:18 (pinned convention).
     assert op.target == LegalAddress(
         path=(("title", "11"), ("section", "101"), ("paragraph", "18"))
+    )
+
+
+def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_scoped():
+    # 10:284 regression defense: a precise (two-quoted) strike whose target's leading
+    # sub-section letter is a roman-form letter (the source-tree split flags it as
+    # ambiguous and may leave a PHANTOM duplicate ``subsection:i`` node) must lower
+    # with a SECTION-scoped op target, so the dry-run anchors on the unique
+    # match_text rather than risking a locate onto the phantom node. The strike's
+    # text patch is preserved verbatim; only the op target is relaxed to the section.
+    body = (
+        '<section identifier="/us/pl/116/900/s2" role="instruction">'
+        "<num>2.</num>"
+        "<content>"
+        '<ref href="/us/usc/t11/s284/i/3">Section 284(i)(3) of title 11, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>linguist and intelligence analysis</quotedText>” and "
+        "<amendingAction type=\"insert\">inserting</amendingAction> "
+        "“<quotedText>linguist, intelligence analysis, and planning</quotedText>”."
+        "</content>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    assert len(accepted) == 1
+    instr = accepted[0]
+    assert instr.action == "strike_insert"
+    # The resolved target_address still records the FULL ladder (subsection (i) ...).
+    assert instr.target_address == LegalAddress(
+        path=(
+            ("title", "11"),
+            ("section", "284"),
+            ("subsection", "i"),
+            ("paragraph", "3"),
+        )
+    )
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_REPLACE
+    # But the emitted OP target is section-scoped (drops the roman-ambiguous head),
+    # so the strike anchors on its unique match_text, not the phantom split node.
+    assert op.target == LegalAddress(path=(("title", "11"), ("section", "284")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "linguist and intelligence analysis"
+    assert op.text_patch.replacement == "linguist, intelligence analysis, and planning"
+
+
+def test_precise_text_strike_with_letter_subsection_head_keeps_full_path():
+    # Control: a NON-roman subsection head ((b), not (i)) is unambiguous, so the
+    # precise strike keeps its full ladder target — the section-scoping fallback
+    # fires ONLY for the roman-ambiguous head, never for an ordinary letter.
+    body = (
+        '<section identifier="/us/pl/116/900/s3" role="instruction">'
+        "<num>3.</num>"
+        "<content>"
+        '<ref href="/us/usc/t11/s284/b/9">Section 284(b)(9) of title 11, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>$750,000</quotedText>” and "
+        "<amendingAction type=\"insert\">inserting</amendingAction> "
+        "“<quotedText>$1,000,000</quotedText>”."
+        "</content>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    accepted = [i for i in report.instructions if i.status == "accepted"]
+    assert len(accepted) == 1
+    op = accepted[0].operation
+    assert op is not None
+    assert op.target == LegalAddress(
+        path=(
+            ("title", "11"),
+            ("section", "284"),
+            ("subsection", "b"),
+            ("paragraph", "9"),
+        )
     )
 
 
