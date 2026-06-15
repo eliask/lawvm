@@ -194,6 +194,10 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     No legacy bridge modules.  No hidden middle authority.
     """
     from lawvm.finland.johtolause.surface_parse import parse as surface_parse
+    from lawvm.finland.johtolause.grammar.parser import (
+        OutOfScope as _GrammarOutOfScope,
+        parse as _grammar_parse,
+    )
     from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
     from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast_with_diagnostics
     from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
@@ -221,7 +225,33 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # when the parser encounters a JOLLOIN_MOVE sentinel with renumber data,
     # it emits SurfaceTargetRef + SurfaceRenumberTail nodes directly in a
     # SIIRTAA verb group, prepended to the clause's verb groups.
-    _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_pairs if _jolloin_pairs else None)
+    # Swap-readiness wiring: the rewritten grammar parser can serve as the
+    # production PRIMARY when LAWVM_FI_NEW_PARSER is enabled. It returns the same
+    # SurfaceClause shape as the old surface_parse for the in-scope subset and
+    # raises OutOfScope for any clause outside its wired families; on OutOfScope
+    # we fall back to the old surface_parse so declined clauses stay
+    # byte-identical to today's behaviour.
+    #
+    # Default is OFF (old parser primary): the full FI replay bench shows the
+    # new-parser primary+fallback path is replay-preserving — net structural
+    # +0.011% (95.172% -> 95.183%) and Levenshtein -0.005% (99.016% -> 99.011%),
+    # both within noise / slight net improvement. BUT enabling it as primary
+    # breaks 13 curated unit tests (2 stale-mock artifacts that patch
+    # surface_parse.parse, which the new primary bypasses; 11 genuine surface
+    # deltas on complex multi-target / part-scope / move-destination clauses).
+    # Replay tolerates those deltas; the curated contract suite does not. Until
+    # those are reconciled, the committed default stays OFF so the tree is green
+    # and behaviour-preserving. Set LAWVM_FI_NEW_PARSER=1 to run the new parser
+    # as primary (the swap-readiness configuration proven against replay).
+    _new_parser_enabled = _os.environ.get("LAWVM_FI_NEW_PARSER", "0") not in ("0", "false", "off", "")
+    _jolloin_arg = _jolloin_pairs if _jolloin_pairs else None
+    if _new_parser_enabled:
+        try:
+            _parsed = _grammar_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
+        except _GrammarOutOfScope:
+            _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
+    else:
+        _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
     if _parsed.source_text != text:
         original_surface_clause = SurfaceClauseModel(
             verb_groups=_parsed.verb_groups,
