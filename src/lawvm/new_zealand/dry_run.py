@@ -41,6 +41,7 @@ from lawvm.core.comparison_normalization import (
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
+from lawvm.new_zealand.nz_oracle_normalization import classify_oracle_divergence
 from lawvm.new_zealand.effect_candidates import (
     NZCanonicalEffectCandidateRow,
     NZEffectCandidatePreflightReport,
@@ -302,12 +303,121 @@ _ADDRESS_KIND_TO_SOURCE_KIND = {
     "schedule": "schedule",
 }
 
+# --- Auto-classified consolidation-error-candidate residual surface. ----------
+#
+# When a structural/text residual surfaces (oracle_match != "agrees"), the
+# diverging candidate-vs-oracle node-text pairs are reconstructed and each pair
+# is typed by ``classify_oracle_divergence`` (lawvm.new_zealand.
+# nz_oracle_normalization). The per-node sub-families are folded into ONE
+# target-level ``divergence_class``:
+#
+# - ``structural_nodeset``: the candidate and oracle subtree node SETS differ
+#   (aligned by (relative_path, kind)); the divergence is topological, not a
+#   per-node text difference.
+# - ``editorial``: every diverging node is ``is_editorial`` (digit<->word, case,
+#   trailing punctuation, BOM/zero-width, punctuation/whitespace). The official
+#   consolidation's own normalization, not a content divergence.
+# - ``substantive``: at least one diverging node survives every editorial fold;
+#   a genuine content difference.
+#
+# This is an ADDITIONAL typed signal on residual proofs; it never changes
+# ``oracle_match`` and never folds an editorial residual into "agrees" (the
+# actual-replay path keeps refusing every non-"agrees" op).
+NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET = "structural_nodeset"
+NZ_DIVERGENCE_CLASS_EDITORIAL = "editorial"
+NZ_DIVERGENCE_CLASS_SUBSTANTIVE = "substantive"
+
+# A non-commensurable-whole-node residual: our single-amendment payload is being
+# compared against a structural CONTAINER the oracle has independently further
+# amended (a whole Part / subpart / crossheading, or a whole section the oracle
+# kept amending). Such a residual is substantive by text but NOT a candidate
+# oracle error — the comparison is between non-commensurable things (one op's
+# payload vs a fully-consolidated multi-amendment container). It is typed out of
+# the candidate set, conservatively (refuse-don't-guess): an uncertain container
+# is typed non-commensurable rather than emitted as a false error candidate.
+#
+# Predicate (see ``_is_non_commensurable_whole_node``): the resolved target leaf
+# kind is a structural container — ``part`` / ``subpart`` / ``crossheading`` /
+# ``prov`` (a whole section contains its subsections/paragraphs) — OR the oracle
+# subtree carries more than ``_NON_COMMENSURABLE_DESCENDANT_THRESHOLD``
+# descendants (a backstop for any other kind whose subtree is far larger than a
+# genuine single-amendment leaf).
+#
+# Threshold justification (from the credible-residual slice, NOT a magic number):
+# the genuine substantive leaf residuals — the temporal/structural artifacts that
+# SHOULD remain candidates — are deep sub-provision nodes with oracle descendant
+# counts {0, 0, 11} (a label-para 0, a label-para 0, a subprovision 11). The
+# non-commensurable container residuals have descendant counts
+# {6, 18, 30, 37, 38, 239, 291, 292, 521, 715}. The container-kind gate already
+# separates the two cleanly (every container is part/subpart/crossheading/prov;
+# every genuine leaf is subprov/label-para). The descendant-count backstop guards
+# only OTHER kinds, so it is set at 24 — strictly greater than 2x the observed
+# genuine-leaf descendant ceiling (11), mirroring the classifier's own 2x
+# structural ratio convention — so a non-container leaf must balloon well past any
+# genuine single-amendment leaf before it is typed non-commensurable.
+_NON_COMMENSURABLE_CONTAINER_KINDS = frozenset({"part", "subpart", "crossheading", "prov"})
+_NON_COMMENSURABLE_DESCENDANT_THRESHOLD = 24
+
 # Source-tree node kind whose repeal NZ effects by REMOVING the node from the
 # consolidated text rather than leaving a repealed-but-addressable tombstone.
 # When a definition (``def-para``) is repealed, the whole def-para disappears
 # from the on-or-after XML; the agreeing oracle outcome is therefore an absent
 # node, not a tombstone. (Ordinary provisions are tombstoned in place.)
 _REMOVAL_ON_REPEAL_SOURCE_KIND = "def-para"
+
+
+@dataclass(frozen=True)
+class NZNodeDivergence:
+    """One diverging candidate-vs-oracle node-text pair on a residual proof.
+
+    Retained ONLY for consolidation-error candidates (the auditability packet
+    exactly where a human needs it). ``relative_path`` is the node's path made
+    relative to the target subtree root (label-stripped, kind-only segments) so
+    it lines up with :func:`_normalized_subtree_signature`; ``kind`` is the
+    source-tree node kind; ``candidate_text`` / ``oracle_text`` are the
+    comparison-normalized texts that diverged; ``sub_family`` is the
+    :class:`NZDivergenceSubFamily` value the per-node classifier assigned;
+    ``is_editorial`` is its editorial flag.
+    """
+
+    relative_path: str
+    kind: str
+    candidate_text: str
+    oracle_text: str
+    sub_family: str
+    is_editorial: bool
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "relative_path": self.relative_path,
+            "kind": self.kind,
+            "candidate_text": self.candidate_text,
+            "oracle_text": self.oracle_text,
+            "sub_family": self.sub_family,
+            "is_editorial": self.is_editorial,
+        }
+
+
+@dataclass(frozen=True)
+class NZTargetDivergence:
+    """Target-level reconstruction + classification of one residual proof.
+
+    Produced by :func:`_classify_oracle_target_divergence` from the candidate
+    replacement/insert subtree and the resolved oracle subtree at the same path.
+    ``divergence_class`` is one of ``structural_nodeset`` / ``editorial`` /
+    ``substantive`` (or ``None`` when the oracle target is absent, so there is no
+    subtree pair to align). ``non_commensurable_whole_node`` types a substantive
+    container residual out of the candidate set. ``node_pairs`` carries the
+    diverging node-text pairs (the auditability packet) — populated for every
+    residual, but only RETAINED on the proof for candidates (see
+    :meth:`NZMutationBoundaryProof.is_consolidation_error_candidate`).
+    """
+
+    divergence_class: str | None
+    sub_families: tuple[str, ...]
+    non_commensurable_whole_node: bool
+    oracle_descendant_count: int
+    node_pairs: tuple[NZNodeDivergence, ...]
 
 
 @dataclass(frozen=True)
@@ -385,6 +495,45 @@ class NZMutationBoundaryProof:
     insert_anchor_digest_after: str = ""
     insert_candidate_subtree_digest: str = ""
     insert_oracle_subtree_digest: str = ""
+    # --- Auto-classified residual-divergence signal (residual proofs only). ----
+    # ``divergence_class`` is the target-level fold of the per-node oracle-
+    # divergence classifier: ``structural_nodeset`` / ``editorial`` /
+    # ``substantive`` (None for an agreeing proof, or a residual whose oracle
+    # target is absent so there is no subtree pair to align). It is an ADDITIONAL
+    # typed signal; it never changes ``oracle_match``.
+    divergence_class: str | None = None
+    # The per-node divergence sub-families (NZDivergenceSubFamily values) over the
+    # diverging nodes, sorted; empty when there was no aligned text divergence.
+    divergence_sub_families: tuple[str, ...] = ()
+    # True when this substantive residual compares a single-amendment payload
+    # against a structural container the oracle independently further amended (a
+    # whole Part/subpart/crossheading/section). Such residuals are non-
+    # commensurable, NOT candidate oracle errors — typed OUT of the candidate set.
+    non_commensurable_whole_node: bool = False
+    # Diverging candidate-vs-oracle node-text pairs, RETAINED only for
+    # consolidation-error candidates (the auditability packet). Empty for non-
+    # candidate residuals and agreements so every proof is not bloated.
+    divergence_node_pairs: tuple[NZNodeDivergence, ...] = ()
+
+    @property
+    def is_consolidation_error_candidate(self) -> bool:
+        """Whether this residual is a probable-oracle-error candidate.
+
+        A candidate is a residual (``oracle_match != "agrees"``) whose mutation
+        boundary held (``neighbors_unchanged``), whose divergence is genuinely
+        ``substantive`` (survives every editorial fold and is not a topological
+        node-set difference), and which is NOT a non-commensurable whole-node
+        comparison. Editorial / structural-nodeset / non-commensurable residuals
+        are all excluded — they are not candidate consolidation errors. This is
+        a typed signal for human adjudication, never a replay authorization.
+        """
+
+        return (
+            self.oracle_match != "agrees"
+            and self.neighbors_unchanged
+            and self.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+            and not self.non_commensurable_whole_node
+        )
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -432,6 +581,11 @@ class NZMutationBoundaryProof:
             "insert_anchor_digest_after": self.insert_anchor_digest_after,
             "insert_candidate_subtree_digest": self.insert_candidate_subtree_digest,
             "insert_oracle_subtree_digest": self.insert_oracle_subtree_digest,
+            "divergence_class": self.divergence_class,
+            "divergence_sub_families": list(self.divergence_sub_families),
+            "non_commensurable_whole_node": self.non_commensurable_whole_node,
+            "is_consolidation_error_candidate": self.is_consolidation_error_candidate,
+            "divergence_node_pairs": [pair.to_jsonable() for pair in self.divergence_node_pairs],
         }
 
 
@@ -525,6 +679,19 @@ class NZDryRunReport:
 
     def residual_proofs(self) -> tuple[NZMutationBoundaryProof, ...]:
         return tuple(proof for proof in self.proofs if proof.oracle_match != "agrees")
+
+    def consolidation_error_candidates(self) -> tuple[NZMutationBoundaryProof, ...]:
+        """Residual proofs that are probable-oracle-error candidates.
+
+        This is the corpus-wide entrypoint: a candidate is a residual whose
+        mutation boundary held, whose divergence is genuinely substantive, and
+        which is not a non-commensurable whole-node comparison
+        (:meth:`NZMutationBoundaryProof.is_consolidation_error_candidate`). Each
+        candidate retains its diverging candidate-vs-oracle node-text pairs for
+        human adjudication. A candidate is NEVER a replay authorization.
+        """
+
+        return tuple(proof for proof in self.proofs if proof.is_consolidation_error_candidate)
 
     def summary(self) -> dict[str, Any]:
         matched = self.matched_proofs()
@@ -1443,6 +1610,19 @@ def _dry_run_one_text_replace(
         new_text=new_text,
         after_old_occurrences=old_occ_after,
     )
+    text_neighbors_unchanged = (
+        neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
+    )
+    divergence_fields: dict[str, Any] = {}
+    if oracle_match != "agrees":
+        divergence = _classify_oracle_text_divergence(
+            oracle_doc,
+            resolved_path,
+            candidate_after_text=after_target.text,
+        )
+        divergence_fields = _divergence_proof_fields(
+            oracle_match, text_neighbors_unchanged, divergence
+        )
 
     return NZMutationBoundaryProof(
         op_id=op_id,
@@ -1461,7 +1641,7 @@ def _dry_run_one_text_replace(
         unaffected_neighbor_paths=neighbor_paths,
         unaffected_neighbor_digests_before=neighbor_before,
         unaffected_neighbor_digests_after=neighbor_after,
-        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        neighbors_unchanged=text_neighbors_unchanged,
         oracle_version_id=change_window.on_or_after.version_id,
         oracle_target_present=oracle_present,
         oracle_target_occupancy=oracle_occupancy,
@@ -1474,6 +1654,7 @@ def _dry_run_one_text_replace(
         text_oracle_old_occurrences=oracle_old_occ,
         text_oracle_contains_new_text=oracle_has_new,
         text_each_place=each_place,
+        **divergence_fields,
     )
 
 
@@ -1950,6 +2131,18 @@ def _dry_run_one_replace(
         candidate_root=replacement_root,
         candidate_descendants=replacement.descendants,
     )
+    neighbors_unchanged = (
+        neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
+    )
+    divergence_fields: dict[str, Any] = {}
+    if oracle_match != "agrees":
+        divergence = _classify_oracle_target_divergence(
+            oracle_doc,
+            resolved_path,
+            candidate_root=replacement_root,
+            candidate_descendants=replacement.descendants,
+        )
+        divergence_fields = _divergence_proof_fields(oracle_match, neighbors_unchanged, divergence)
 
     return NZMutationBoundaryProof(
         op_id=op_id,
@@ -1968,7 +2161,7 @@ def _dry_run_one_replace(
         unaffected_neighbor_paths=neighbor_paths,
         unaffected_neighbor_digests_before=neighbor_before,
         unaffected_neighbor_digests_after=neighbor_after,
-        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        neighbors_unchanged=neighbors_unchanged,
         oracle_version_id=change_window.on_or_after.version_id,
         oracle_target_present=oracle_present,
         oracle_target_occupancy=oracle_occupancy,
@@ -1979,6 +2172,7 @@ def _dry_run_one_replace(
         replace_replacement_descendant_count=len(replacement.descendants),
         replace_candidate_subtree_digest=candidate_subtree_digest,
         replace_oracle_subtree_digest=oracle_subtree_digest,
+        **divergence_fields,
     )
 
 
@@ -2774,6 +2968,20 @@ def _dry_run_one_insert(
         derived_direction=direction,
         co_inserted_block_labels=group_block_labels,
     )
+    insert_neighbors_unchanged = (
+        neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
+    )
+    divergence_fields: dict[str, Any] = {}
+    if oracle_match != "agrees":
+        divergence = _classify_oracle_target_divergence(
+            oracle_doc,
+            new_node_source_path,
+            candidate_root=payload.root,
+            candidate_descendants=payload.descendants,
+        )
+        divergence_fields = _divergence_proof_fields(
+            oracle_match, insert_neighbors_unchanged, divergence
+        )
 
     return NZMutationBoundaryProof(
         op_id=op_id,
@@ -2792,7 +3000,7 @@ def _dry_run_one_insert(
         unaffected_neighbor_paths=neighbor_paths,
         unaffected_neighbor_digests_before=neighbor_before,
         unaffected_neighbor_digests_after=neighbor_after,
-        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        neighbors_unchanged=insert_neighbors_unchanged,
         oracle_version_id=change_window.on_or_after.version_id,
         oracle_target_present=oracle_present,
         oracle_target_occupancy=oracle_occupancy,
@@ -2808,6 +3016,7 @@ def _dry_run_one_insert(
         insert_anchor_digest_after=anchor_digest,
         insert_candidate_subtree_digest=candidate_subtree_digest,
         insert_oracle_subtree_digest=oracle_subtree_digest,
+        **divergence_fields,
     )
 
 
@@ -3392,6 +3601,240 @@ def _subtree_digest(root: NZSourceNode, descendants: tuple[NZSourceNode, ...]) -
         _node_digest(node) for node in (root, *descendants)
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _divergence_proof_fields(
+    oracle_match: str,
+    neighbors_unchanged: bool,
+    divergence: NZTargetDivergence,
+) -> dict[str, Any]:
+    """Project an ``NZTargetDivergence`` into the proof's divergence fields.
+
+    Applies the candidate-only retention rule: the diverging node-text pairs (the
+    auditability packet) are retained ONLY when the proof is a consolidation-error
+    candidate (residual + boundary held + substantive + commensurable), so a
+    corpus-wide run does not bloat every editorial / non-commensurable residual
+    with retained texts. The class / sub-families / non-commensurable flag are
+    always carried (they are cheap typed signals).
+    """
+
+    is_candidate = (
+        oracle_match != "agrees"
+        and neighbors_unchanged
+        and divergence.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+        and not divergence.non_commensurable_whole_node
+    )
+    return {
+        "divergence_class": divergence.divergence_class,
+        "divergence_sub_families": divergence.sub_families,
+        "non_commensurable_whole_node": divergence.non_commensurable_whole_node,
+        "divergence_node_pairs": divergence.node_pairs if is_candidate else (),
+    }
+
+
+def _is_non_commensurable_whole_node(leaf_kind: str, oracle_descendant_count: int) -> bool:
+    """Whether a substantive residual is a non-commensurable whole-node compare.
+
+    True when the resolved target leaf is a structural CONTAINER kind (a whole
+    Part / subpart / crossheading / section) — our single-amendment payload is
+    then being compared against a container the oracle has independently further
+    amended — OR when the oracle subtree carries more descendants than the
+    backstop threshold (a non-container leaf whose subtree has ballooned far past
+    any genuine single-amendment leaf). See the module-level threshold note for
+    the data justification. Conservative by design: an uncertain container is
+    typed non-commensurable (kept OUT of the candidate set) rather than emitted
+    as a false oracle-error candidate.
+    """
+
+    if leaf_kind in _NON_COMMENSURABLE_CONTAINER_KINDS:
+        return True
+    return oracle_descendant_count > _NON_COMMENSURABLE_DESCENDANT_THRESHOLD
+
+
+def _classify_oracle_target_divergence(
+    oracle_doc: NZSourceDocument,
+    source_path: tuple[str, ...],
+    *,
+    candidate_root: NZSourceNode,
+    candidate_descendants: tuple[NZSourceNode, ...],
+) -> NZTargetDivergence:
+    """Reconstruct + classify the candidate-vs-oracle subtree divergence.
+
+    This is the wiring of ``classify_oracle_divergence`` into the structural
+    REPLACE / INSERT residual path: it resolves the oracle target node at the
+    same source path, builds the candidate and oracle normalized subtree
+    signatures, aligns the nodes by ``(relative_path, kind)``, and types each
+    diverging node-text pair. The per-node sub-families fold into one
+    target-level ``divergence_class``:
+
+    - oracle target ABSENT -> ``divergence_class = None`` (no subtree pair to
+      align; the residual is target-missing/not-present, already typed by the
+      partition function and never a content candidate);
+    - node SETS differ -> ``structural_nodeset``;
+    - all diverging nodes ``is_editorial`` -> ``editorial``;
+    - otherwise -> ``substantive``.
+
+    For a ``substantive`` divergence the non-commensurable-whole-node gate is
+    evaluated against the resolved oracle leaf kind + descendant count. The
+    diverging node-text pairs are returned in full (the caller retains them only
+    for candidates). Pure functional reconstruction: no mutation, no I/O.
+    """
+
+    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    if not oracle_matches:
+        # No oracle subtree to compare against — the residual is a target-absent
+        # outcome the partition function already typed. There is no node pair to
+        # classify; leave divergence_class unset (never a content candidate).
+        return NZTargetDivergence(
+            divergence_class=None,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=0,
+            node_pairs=(),
+        )
+    oracle_root = oracle_matches[0]
+    oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+    candidate_sig = _normalized_subtree_signature(
+        candidate_root, candidate_descendants, root_path=candidate_root.path
+    )
+    oracle_sig = _normalized_subtree_signature(
+        oracle_root, oracle_descendants, root_path=oracle_root.path
+    )
+    candidate_index = {(rel, kind): text for rel, kind, text in candidate_sig}
+    oracle_index = {(rel, kind): text for rel, kind, text in oracle_sig}
+
+    if set(candidate_index) != set(oracle_index):
+        # The node sets differ: the divergence is topological (oracle added /
+        # dropped / re-kinded nodes), not a per-node text difference.
+        return NZTargetDivergence(
+            divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=len(oracle_descendants),
+            node_pairs=(),
+        )
+
+    node_pairs: list[NZNodeDivergence] = []
+    sub_families: list[str] = []
+    all_editorial = True
+    for key in candidate_index:
+        candidate_text = candidate_index[key]
+        oracle_text = oracle_index[key]
+        if candidate_text == oracle_text:
+            continue
+        divergence = classify_oracle_divergence(candidate_text, oracle_text)
+        rel, kind = key
+        node_pairs.append(
+            NZNodeDivergence(
+                relative_path=rel,
+                kind=kind,
+                candidate_text=candidate_text,
+                oracle_text=oracle_text,
+                sub_family=divergence.sub_family.value,
+                is_editorial=divergence.is_editorial,
+            )
+        )
+        sub_families.append(divergence.sub_family.value)
+        if not divergence.is_editorial:
+            all_editorial = False
+
+    if not node_pairs:
+        # The signatures agree node-for-node after normalization even though the
+        # partition function reported a residual (e.g. the residual is keyed on a
+        # signal the signature folds out). Type it editorial (no surviving
+        # content divergence), never a substantive candidate.
+        return NZTargetDivergence(
+            divergence_class=NZ_DIVERGENCE_CLASS_EDITORIAL,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=len(oracle_descendants),
+            node_pairs=(),
+        )
+
+    if all_editorial:
+        return NZTargetDivergence(
+            divergence_class=NZ_DIVERGENCE_CLASS_EDITORIAL,
+            sub_families=tuple(sorted(sub_families)),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=len(oracle_descendants),
+            node_pairs=tuple(node_pairs),
+        )
+
+    non_commensurable = _is_non_commensurable_whole_node(
+        oracle_root.kind, len(oracle_descendants)
+    )
+    return NZTargetDivergence(
+        divergence_class=NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
+        sub_families=tuple(sorted(sub_families)),
+        non_commensurable_whole_node=non_commensurable,
+        oracle_descendant_count=len(oracle_descendants),
+        node_pairs=tuple(node_pairs),
+    )
+
+
+def _classify_oracle_text_divergence(
+    oracle_doc: NZSourceDocument,
+    source_path: tuple[str, ...],
+    *,
+    candidate_after_text: str,
+) -> NZTargetDivergence:
+    """Classify a TEXT_REPLACE residual's single-node candidate-vs-oracle text.
+
+    The text-substitution family mutates one node's text (no subtree), so the
+    divergence is a single candidate-after-node-text vs oracle-node-text pair
+    typed by ``classify_oracle_divergence``. A text node is always a commensurable
+    leaf (the substitution touched exactly one node), so the non-commensurable
+    gate never fires here. Oracle target absent -> ``divergence_class = None``.
+    """
+
+    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    if not oracle_matches:
+        return NZTargetDivergence(
+            divergence_class=None,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=0,
+            node_pairs=(),
+        )
+    oracle_node = oracle_matches[0]
+    candidate_text = normalize_inline_comparison_text(candidate_after_text)
+    oracle_text = normalize_inline_comparison_text(oracle_node.text)
+    if candidate_text == oracle_text:
+        # Normalized texts agree even though the substitution-parity partition
+        # reported a residual: no surviving content divergence.
+        return NZTargetDivergence(
+            divergence_class=NZ_DIVERGENCE_CLASS_EDITORIAL,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=0,
+            node_pairs=(),
+        )
+    divergence = classify_oracle_divergence(candidate_text, oracle_text)
+    sub_family = divergence.sub_family.value
+    node_pair = NZNodeDivergence(
+        relative_path="",
+        kind=oracle_node.kind,
+        candidate_text=candidate_text,
+        oracle_text=oracle_text,
+        sub_family=sub_family,
+        is_editorial=divergence.is_editorial,
+    )
+    divergence_class = (
+        NZ_DIVERGENCE_CLASS_EDITORIAL
+        if divergence.is_editorial
+        else (
+            NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+            if sub_family == "structural"
+            else NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+        )
+    )
+    return NZTargetDivergence(
+        divergence_class=divergence_class,
+        sub_families=(sub_family,),
+        non_commensurable_whole_node=False,
+        oracle_descendant_count=0,
+        node_pairs=(node_pair,),
+    )
 
 
 def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any]) -> Any:

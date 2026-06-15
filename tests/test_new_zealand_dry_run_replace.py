@@ -871,3 +871,27 @@ def test_replace_agreement_surface_is_structural_replace_named() -> None:
     report = _run(_AFTER_XML_AGREES, (_FakeWitnessRow(),))
     surface = report.agreement_surface()
     assert surface["agreement_surface"] == "nz_dry_run_structural_replace"
+
+
+def test_replace_agreement_carries_no_divergence_signal() -> None:
+    # An agreeing proof is never a candidate and carries no divergence class.
+    report = _run(_AFTER_XML_AGREES, (_FakeWitnessRow(),))
+    proof = report.proofs[0]
+    assert proof.divergence_class is None
+    assert proof.is_consolidation_error_candidate is False
+    assert report.consolidation_error_candidates() == ()
+
+
+def test_replace_substantive_whole_section_residual_is_non_commensurable() -> None:
+    # The mismatch fixture replaces a whole section (prov, a container kind) whose
+    # oracle body diverges substantively. The divergence is typed substantive but
+    # the whole-section comparison is non-commensurable -> NOT a candidate.
+    report = _run(_AFTER_XML_MISMATCH, (_FakeWitnessRow(),))
+    proof = report.proofs[0]
+    assert proof.oracle_match == "residual_replacement_mismatch"  # unchanged status
+    assert proof.divergence_class == "substantive"
+    assert proof.non_commensurable_whole_node is True
+    assert proof.is_consolidation_error_candidate is False
+    # Non-commensurable residuals retain no adjudication texts (kept out of set).
+    assert proof.divergence_node_pairs == ()
+    assert report.consolidation_error_candidates() == ()
