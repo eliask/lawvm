@@ -24,9 +24,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -358,6 +359,57 @@ NZ_DIVERGENCE_CLASS_SUBSTANTIVE = "substantive"
 _NON_COMMENSURABLE_CONTAINER_KINDS = frozenset({"part", "subpart", "crossheading", "prov"})
 _NON_COMMENSURABLE_DESCENDANT_THRESHOLD = 24
 
+# --- Temporal-window-fit proof. -----------------------------------------------
+#
+# The oracle is the earliest archived snapshot dated on-or-after the op's
+# amendment date (``change_window.on_or_after``). But a snapshot composes EVERY
+# amendment effective by its version date — so a substantive residual can be
+# another amendment's change masquerading as an oracle error, not a genuine one.
+# A consolidation-error candidate is only credible when we can prove the chosen
+# snapshot reflects EXACTLY this op's amendment, no earlier and no later
+# un-applied amendment intervening. When that cannot be proven the residual is
+# typed OUT of the candidate set (refuse-don't-guess); the reason is recorded.
+#
+# Window-fit is UNPROVABLE when any of the following holds:
+#
+# - ``shared_window``: more than one distinct amending work has an effect date in
+#   the op's version window ``(before.version_date, on_or_after.version_date]``.
+#   The snapshot then composes several amendments and the single-op payload is
+#   not the sole determinant of the snapshot's node — divergence is expected and
+#   not an oracle error. (The amendment-date census is this work's own operation
+#   witnesses; it is identity-only, never a content source.)
+#
+# - ``snapshot_predates_op``: the op mutated the before node (after != before),
+#   yet the oracle target node is byte-identical to the before node — the op's
+#   change is wholly absent from the chosen snapshot, so the snapshot predates
+#   this op's effect. The "residual" is a window artifact, not a content error.
+#
+# - ``structural_drift``: for a PURE inline text substitution (which cannot add
+#   or remove paragraphs), the oracle target subtree's structural node-set
+#   diverges from the before snapshot's. A text op can never restructure the
+#   node, so the extra/missing paragraphs were introduced by another amendment in
+#   the snapshot — again a window artifact, not an oracle error.
+#
+# - ``composed_amend_provision``: for a structural replace, the amending
+#   provision the payload was read from references the SAME target leaf in more
+#   than one of its instruction steps — a "replaced by the following: …" step
+#   followed by a further in-place substitution on the same definition/leaf. Our
+#   extractor reads the single structured replacement step, so the payload is the
+#   INTERMEDIATE state, not the provision's net effect; the oracle snapshot
+#   reflects the net effect. We cannot prove the snapshot reflects exactly our
+#   extracted step, so the residual is typed out. (Identity-only: the target's own
+#   leaf label is matched against the provision's instruction text; no content is
+#   sourced and the step semantics are never interpreted.)
+#
+# These reasons are mutually-non-exclusive; the first that holds (checked in the
+# above order) is recorded. None of them ever changes ``oracle_match``: the
+# actual-replay contract still refuses every non-"agrees" op. This is additive
+# typed gating on the consolidation-error-candidate predicate only.
+NZ_WINDOW_UNPROVABLE_SHARED_WINDOW = "shared_window"
+NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP = "snapshot_predates_op"
+NZ_WINDOW_UNPROVABLE_STRUCTURAL_DRIFT = "structural_drift"
+NZ_WINDOW_UNPROVABLE_COMPOSED_AMEND_PROVISION = "composed_amend_provision"
+
 # Source-tree node kind whose repeal NZ effects by REMOVING the node from the
 # consolidated text rather than leaving a repealed-but-addressable tombstone.
 # When a definition (``def-para``) is repealed, the whole def-para disappears
@@ -510,6 +562,15 @@ class NZMutationBoundaryProof:
     # whole Part/subpart/crossheading/section). Such residuals are non-
     # commensurable, NOT candidate oracle errors — typed OUT of the candidate set.
     non_commensurable_whole_node: bool = False
+    # True when we cannot prove the chosen oracle snapshot reflects EXACTLY this
+    # op's amendment and no other (see the module-level window-fit note). An
+    # unprovable window means a substantive residual may be another amendment's
+    # change masquerading as an oracle error, so it is typed OUT of the candidate
+    # set. ``temporal_window_unprovable_reason`` carries the proof reason
+    # (``shared_window`` / ``snapshot_predates_op`` / ``structural_drift``); it is
+    # non-empty exactly when ``temporal_window_unprovable`` is True.
+    temporal_window_unprovable: bool = False
+    temporal_window_unprovable_reason: str = ""
     # Diverging candidate-vs-oracle node-text pairs, RETAINED only for
     # consolidation-error candidates (the auditability packet). Empty for non-
     # candidate residuals and agreements so every proof is not bloated.
@@ -522,10 +583,15 @@ class NZMutationBoundaryProof:
         A candidate is a residual (``oracle_match != "agrees"``) whose mutation
         boundary held (``neighbors_unchanged``), whose divergence is genuinely
         ``substantive`` (survives every editorial fold and is not a topological
-        node-set difference), and which is NOT a non-commensurable whole-node
-        comparison. Editorial / structural-nodeset / non-commensurable residuals
-        are all excluded — they are not candidate consolidation errors. This is
-        a typed signal for human adjudication, never a replay authorization.
+        node-set difference), which is NOT a non-commensurable whole-node
+        comparison, and whose temporal window is PROVABLY contemporaneous with
+        this op's amendment (``not temporal_window_unprovable`` — the chosen
+        oracle snapshot reflects exactly this op's amendment, not a shared-window
+        neighbour, a pre-effect snapshot, or another amendment's restructuring).
+        Editorial / structural-nodeset / non-commensurable / window-unprovable
+        residuals are all excluded — they are not candidate consolidation errors.
+        This is a typed signal for human adjudication, never a replay
+        authorization.
         """
 
         return (
@@ -533,6 +599,7 @@ class NZMutationBoundaryProof:
             and self.neighbors_unchanged
             and self.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
             and not self.non_commensurable_whole_node
+            and not self.temporal_window_unprovable
         )
 
     def to_jsonable(self) -> dict[str, Any]:
@@ -584,6 +651,8 @@ class NZMutationBoundaryProof:
             "divergence_class": self.divergence_class,
             "divergence_sub_families": list(self.divergence_sub_families),
             "non_commensurable_whole_node": self.non_commensurable_whole_node,
+            "temporal_window_unprovable": self.temporal_window_unprovable,
+            "temporal_window_unprovable_reason": self.temporal_window_unprovable_reason,
             "is_consolidation_error_candidate": self.is_consolidation_error_candidate,
             "divergence_node_pairs": [pair.to_jsonable() for pair in self.divergence_node_pairs],
         }
@@ -984,12 +1053,15 @@ def _build_dry_run_text_replace(
         )
 
     parsed_cache: dict[str, NZSourceDocument | None] = {}
+    amendment_census = _amendment_date_census(preflight.candidate_report.rows)
     proofs: list[NZMutationBoundaryProof] = []
     refusals: list[NZDryRunRefusal] = []
     for row in text_rows:
         operation = row.operation
         assert operation is not None  # guaranteed by _replayable_text_replace_rows
-        outcome = _dry_run_one_text_replace(archive, work_id, row, operation, parsed_cache)
+        outcome = _dry_run_one_text_replace(
+            archive, work_id, row, operation, parsed_cache, amendment_census
+        )
         if isinstance(outcome, NZDryRunRefusal):
             refusals.append(outcome)
         else:
@@ -1408,6 +1480,7 @@ def _dry_run_one_text_replace(
     row: NZCanonicalEffectCandidateRow,
     operation: LegalOperation,
     parsed_cache: dict[str, NZSourceDocument | None],
+    amendment_census: frozenset[tuple[str, str]] = frozenset(),
 ) -> NZMutationBoundaryProof | NZDryRunRefusal:
     op_id = operation.op_id
     target_address = str(operation.target)
@@ -1614,6 +1687,8 @@ def _dry_run_one_text_replace(
         neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
     )
     divergence_fields: dict[str, Any] = {}
+    window_unprovable = False
+    window_reason = ""
     if oracle_match != "agrees":
         divergence = _classify_oracle_text_divergence(
             oracle_doc,
@@ -1622,6 +1697,38 @@ def _dry_run_one_text_replace(
         )
         divergence_fields = _divergence_proof_fields(
             oracle_match, text_neighbors_unchanged, divergence
+        )
+        # A pure inline text substitution touches only the target node's own text
+        # and never its descendant structure. Prove window-fit across all three
+        # modes: shared_window (census), snapshot_predates (oracle SUBTREE still
+        # byte-identical to the before SUBTREE, so the op never landed), and
+        # structural_drift (oracle subtree's node-set differs from the before
+        # subtree — paragraphs only another amendment could have added/removed).
+        before_descendants = _descendant_nodes(before_doc, resolved_path)
+        before_subtree_digest = _subtree_digest(before_target, before_descendants)
+        after_subtree_digest = _subtree_digest(after_target, before_descendants)
+        before_structural_set = _structural_node_set(
+            before_target, before_descendants, root_path=resolved_path
+        )
+        oracle_subtree_digest = ""
+        oracle_structural_set: Counter[str] | None = None
+        oracle_matches = _resolve_target_nodes(oracle_doc, resolved_path)
+        if oracle_matches:
+            oracle_root = oracle_matches[0]
+            oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+            oracle_subtree_digest = _subtree_digest(oracle_root, oracle_descendants)
+            oracle_structural_set = _structural_node_set(
+                oracle_root, oracle_descendants, root_path=oracle_root.path
+            )
+        window_unprovable, window_reason = _prove_temporal_window_fit(
+            amendment_census=amendment_census,
+            change_window=change_window,
+            oracle_present=oracle_present,
+            target_digest_before=before_subtree_digest,
+            target_digest_after=after_subtree_digest,
+            oracle_target_digest=oracle_subtree_digest,
+            before_structural_set=before_structural_set,
+            oracle_structural_set=oracle_structural_set,
         )
 
     return NZMutationBoundaryProof(
@@ -1654,6 +1761,8 @@ def _dry_run_one_text_replace(
         text_oracle_old_occurrences=oracle_old_occ,
         text_oracle_contains_new_text=oracle_has_new,
         text_each_place=each_place,
+        temporal_window_unprovable=window_unprovable,
+        temporal_window_unprovable_reason=window_reason,
         **divergence_fields,
     )
 
@@ -1823,10 +1932,13 @@ def build_dry_run_replace(
 
     parsed_cache: dict[str, NZSourceDocument | None] = {}
     amending_root_cache: dict[str, Any] = {}
+    amendment_census = _amendment_date_census(surface.rows)
     proofs: list[NZMutationBoundaryProof] = []
     refusals: list[NZDryRunRefusal] = []
     for row in replace_rows:
-        outcome = _dry_run_one_replace(archive, work_id, row, parsed_cache, amending_root_cache)
+        outcome = _dry_run_one_replace(
+            archive, work_id, row, parsed_cache, amending_root_cache, amendment_census
+        )
         if isinstance(outcome, NZDryRunRefusal):
             refusals.append(outcome)
         else:
@@ -1929,6 +2041,7 @@ def _dry_run_one_replace(
     row: Any,
     parsed_cache: dict[str, NZSourceDocument | None],
     amending_root_cache: dict[str, Any],
+    amendment_census: frozenset[tuple[str, str]],
 ) -> NZMutationBoundaryProof | NZDryRunRefusal:
     op_id = f"nz:{work_id}:{row.row_id}:replace"
     target_address = row.target_address_candidate.address or row.amended_provision
@@ -2135,6 +2248,8 @@ def _dry_run_one_replace(
         neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
     )
     divergence_fields: dict[str, Any] = {}
+    window_unprovable = False
+    window_reason = ""
     if oracle_match != "agrees":
         divergence = _classify_oracle_target_divergence(
             oracle_doc,
@@ -2143,6 +2258,31 @@ def _dry_run_one_replace(
             candidate_descendants=replacement.descendants,
         )
         divergence_fields = _divergence_proof_fields(oracle_match, neighbors_unchanged, divergence)
+        # Whole-node replace: the snapshot-predates proof compares the oracle
+        # SUBTREE against the before SUBTREE (a replace that has not landed leaves
+        # the oracle subtree byte-identical to the before subtree). Structural
+        # drift does not apply to a structural replace (the payload defines the
+        # node's structure), so only shared_window + snapshot_predates are checked.
+        before_subtree_digest = _subtree_digest(
+            before_target, _descendant_nodes(before_doc, resolved_path)
+        )
+        window_unprovable, window_reason = _prove_temporal_window_fit(
+            amendment_census=amendment_census,
+            change_window=change_window,
+            oracle_present=oracle_present,
+            target_digest_before=before_subtree_digest,
+            target_digest_after=candidate_subtree_digest,
+            oracle_target_digest=oracle_subtree_digest,
+        )
+        # The structured replace step we extracted is the provision's net effect
+        # only when no LATER step in the same amending provision re-touches the
+        # target. When it does, our payload is the intermediate state and the
+        # oracle reflects the composed net effect — typed out (refuse-don't-guess).
+        if not window_unprovable and oracle_present and _amend_provision_composes_target(
+            amending_node, leaf_label
+        ):
+            window_unprovable = True
+            window_reason = NZ_WINDOW_UNPROVABLE_COMPOSED_AMEND_PROVISION
 
     return NZMutationBoundaryProof(
         op_id=op_id,
@@ -2172,6 +2312,8 @@ def _dry_run_one_replace(
         replace_replacement_descendant_count=len(replacement.descendants),
         replace_candidate_subtree_digest=candidate_subtree_digest,
         replace_oracle_subtree_digest=oracle_subtree_digest,
+        temporal_window_unprovable=window_unprovable,
+        temporal_window_unprovable_reason=window_reason,
         **divergence_fields,
     )
 
@@ -2306,11 +2448,18 @@ def build_dry_run_insert(
     # position residual — never to invent a payload (the oracle only informs
     # POSITION; co-membership comes from this work's own insert witnesses).
     block_member_labels = _insert_block_member_labels(insert_rows)
+    amendment_census = _amendment_date_census(surface.rows)
     proofs: list[NZMutationBoundaryProof] = []
     refusals: list[NZDryRunRefusal] = []
     for row in insert_rows:
         outcome = _dry_run_one_insert(
-            archive, work_id, row, parsed_cache, amending_root_cache, block_member_labels
+            archive,
+            work_id,
+            row,
+            parsed_cache,
+            amending_root_cache,
+            block_member_labels,
+            amendment_census,
         )
         if isinstance(outcome, NZDryRunRefusal):
             refusals.append(outcome)
@@ -2637,6 +2786,7 @@ def _dry_run_one_insert(
     parsed_cache: dict[str, NZSourceDocument | None],
     amending_root_cache: dict[str, Any],
     block_member_labels: Mapping[tuple[tuple[str, ...], str], frozenset[str]] | None = None,
+    amendment_census: frozenset[tuple[str, str]] = frozenset(),
 ) -> NZMutationBoundaryProof | NZDryRunRefusal:
     op_id = f"nz:{work_id}:{row.row_id}:insert"
     target_address = row.target_address_candidate.address or row.amended_provision
@@ -2972,6 +3122,8 @@ def _dry_run_one_insert(
         neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
     )
     divergence_fields: dict[str, Any] = {}
+    window_unprovable = False
+    window_reason = ""
     if oracle_match != "agrees":
         divergence = _classify_oracle_target_divergence(
             oracle_doc,
@@ -2981,6 +3133,14 @@ def _dry_run_one_insert(
         )
         divergence_fields = _divergence_proof_fields(
             oracle_match, insert_neighbors_unchanged, divergence
+        )
+        # An inserted node has no before-state and no structural reference; only
+        # the shared-window proof applies (more than one amendment in the window
+        # means the snapshot composes several inserts, not just this one).
+        window_unprovable, window_reason = _prove_temporal_window_fit(
+            amendment_census=amendment_census,
+            change_window=change_window,
+            oracle_present=oracle_present,
         )
 
     return NZMutationBoundaryProof(
@@ -3016,6 +3176,8 @@ def _dry_run_one_insert(
         insert_anchor_digest_after=anchor_digest,
         insert_candidate_subtree_digest=candidate_subtree_digest,
         insert_oracle_subtree_digest=oracle_subtree_digest,
+        temporal_window_unprovable=window_unprovable,
+        temporal_window_unprovable_reason=window_reason,
         **divergence_fields,
     )
 
@@ -3865,6 +4027,56 @@ def _amending_node_by_href(amending_root: Any, href: str) -> Any:
     return None
 
 
+def _amend_provision_composes_target(amending_node: Any, target_leaf_label: str) -> bool:
+    """Whether the amending provision re-touches the target in a later step.
+
+    NZ amending sections decompose into numbered instruction steps (``subprov``).
+    The structural-replace extractor reads exactly ONE step — the structured
+    "<…> is replaced by the following:" step carrying the ``<amend>`` quote. When
+    a LATER step in the SAME provision performs a further substitution on the same
+    target leaf (e.g. "(3) In the definition of <leaf>,— … is replaced by …"), the
+    extracted step is the INTERMEDIATE state, not the provision's net effect, so a
+    residual against the (net-effect) oracle snapshot is a composition artifact,
+    not an oracle error.
+
+    Detection is identity-only and conservative: a step COMPOSES the target when
+    it (a) mentions the target leaf label and (b) is phrased as a replacement
+    ("replaced"/"substituted"). At least TWO such steps (the structured replace
+    plus a further substitution) must be present — a single step is the plain
+    whole-replacement and never composes. No content is sourced and the step
+    semantics are never interpreted; only the target's own label and a
+    replacement keyword are matched. Returns False when the label is empty or the
+    node is unreadable (fail-open to the existing classification, never a guess).
+    """
+
+    if not target_leaf_label:
+        return False
+    label = normalize_inline_comparison_text(target_leaf_label)
+    if not label:
+        return False
+
+    steps: list[str] = []
+    try:
+        for subprov in amending_node.iter():
+            tag = getattr(subprov, "tag", "")
+            if not isinstance(tag, str) or not tag.endswith("subprov"):
+                continue
+            text = normalize_inline_comparison_text(
+                " ".join(t for t in subprov.itertext() if t and t.strip())
+            )
+            steps.append(text)
+    except (AttributeError, TypeError):
+        return False
+
+    replace_keywords = ("replaced", "substituted")
+    composing = [
+        text
+        for text in steps
+        if label in text and any(kw in text for kw in replace_keywords)
+    ]
+    return len(composing) >= 2
+
+
 def _replace_payload_text(replacement: NZStructuralReplacement, row: Any) -> str:
     return (
         f"action={StructuralAction.REPLACE} "
@@ -4135,6 +4347,149 @@ def _change_window_detail(window: NZArchivedVersionChangeWindow) -> dict[str, An
         "before_version_id": window.before.version_id if window.before else "",
         "on_or_after_version_id": window.on_or_after.version_id if window.on_or_after else "",
     }
+
+
+def _amendment_date_census(rows: Iterable[Any]) -> frozenset[tuple[str, str]]:
+    """The work's ``(amendment_date_iso, amending_work_id)`` operation witnesses.
+
+    This is the set of distinct dated amendment instructions the work carries, as
+    declared by its own operation/effect-candidate witnesses. It is used only as
+    an identity census to count how many distinct amending works share an op's
+    version window; it never sources content. A witness without an ISO amendment
+    date contributes nothing (it has no place on the timeline). The amending work
+    id may be empty for some witnesses; an empty id is still a distinct census key
+    so an unattributed amendment in the window is counted conservatively (it
+    cannot prove sole authorship).
+    """
+
+    census: set[tuple[str, str]] = set()
+    for row in rows:
+        date = str(getattr(row, "amendment_date_iso", "") or "")
+        if not date:
+            continue
+        amender = str(getattr(row, "amending_work_id", "") or "")
+        census.add((date, amender))
+    return frozenset(census)
+
+
+def _distinct_amenders_in_window(
+    census: frozenset[tuple[str, str]],
+    *,
+    before_date: str,
+    on_or_after_date: str,
+) -> int:
+    """Count distinct amending works with an effect date in the op's window.
+
+    The window is the half-open interval ``(before_date, on_or_after_date]`` —
+    every amendment whose effect date is strictly after the before snapshot and
+    on-or-before the chosen oracle snapshot. The snapshot composes them all, so a
+    count greater than one means the snapshot is not the sole product of this op's
+    amendment. Dates are compared as ISO strings (lexical == chronological).
+    """
+
+    return len(
+        {
+            amender
+            for (date, amender) in census
+            if before_date < date <= on_or_after_date
+        }
+    )
+
+
+def _structural_node_set(
+    root: NZSourceNode,
+    descendants: tuple[NZSourceNode, ...],
+    *,
+    root_path: tuple[str, ...],
+) -> Counter[str]:
+    """A label-stripped, text-ignoring structural node-set of a subtree.
+
+    Each node contributes its kind-only relative path (labels, ``@`` selectors,
+    and auto-generated ``#`` ids dropped, mirroring
+    :func:`_normalized_subtree_signature`). The result is a multiset (Counter) so
+    a paragraph added or removed by another amendment changes the count. Text is
+    deliberately ignored — this captures STRUCTURE only, which a pure inline text
+    substitution can never change.
+    """
+
+    depth = len(root_path)
+
+    def relative(path: tuple[str, ...]) -> str:
+        rel = path[depth:]
+        return "/".join(
+            segment.split(":", 1)[0].split("@", 1)[0].split("#", 1)[0] for segment in rel
+        )
+
+    entries = [("", root.kind)]
+    entries.extend((relative(node.path), node.kind) for node in descendants)
+    return Counter(f"{rel}|{kind}" for rel, kind in entries)
+
+
+def _prove_temporal_window_fit(
+    *,
+    amendment_census: frozenset[tuple[str, str]],
+    change_window: NZArchivedVersionChangeWindow,
+    oracle_present: bool,
+    target_digest_before: str = "",
+    target_digest_after: str = "",
+    oracle_target_digest: str = "",
+    before_structural_set: Counter[str] | None = None,
+    oracle_structural_set: Counter[str] | None = None,
+) -> tuple[bool, str]:
+    """Prove (or refuse to prove) the snapshot reflects EXACTLY this op.
+
+    Returns ``(unprovable, reason)``. ``unprovable`` is True when the chosen
+    oracle snapshot cannot be proven contemporaneous with this op's amendment; the
+    reason is one of the module-level ``NZ_WINDOW_UNPROVABLE_*`` codes. See the
+    module window-fit note for the three failure modes. Conservative: any failure
+    to prove sole authorship types the residual out of the candidate set.
+
+    The proof is only meaningful for a residual whose oracle target is present
+    (an absent oracle target is already handled by the partition function and is
+    never a substantive content candidate). For an absent oracle target this
+    returns provable (False) so the existing absent-target typing is unchanged.
+    """
+
+    before = change_window.before
+    on_or_after = change_window.on_or_after
+    before_date = before.version_date if before else ""
+    on_or_after_date = on_or_after.version_date if on_or_after else ""
+
+    # shared_window: more than one distinct amending work in the op's window.
+    if before_date and on_or_after_date:
+        if (
+            _distinct_amenders_in_window(
+                amendment_census,
+                before_date=before_date,
+                on_or_after_date=on_or_after_date,
+            )
+            > 1
+        ):
+            return True, NZ_WINDOW_UNPROVABLE_SHARED_WINDOW
+
+    if not oracle_present:
+        return False, ""
+
+    # snapshot_predates_op: the op mutated the before node, yet the oracle node is
+    # byte-identical to the before node — the op's effect is wholly absent from
+    # the snapshot, so the snapshot predates this op's true effect date.
+    if (
+        target_digest_before
+        and target_digest_after
+        and target_digest_before != target_digest_after
+        and oracle_target_digest
+        and oracle_target_digest == target_digest_before
+    ):
+        return True, NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP
+
+    # structural_drift: a pure inline text substitution cannot add or remove
+    # paragraphs, so any structural node-set difference between the before
+    # snapshot and the oracle snapshot is another amendment's restructuring.
+    if before_structural_set is not None and oracle_structural_set is not None:
+        if before_structural_set != oracle_structural_set:
+            return True, NZ_WINDOW_UNPROVABLE_STRUCTURAL_DRIFT
+
+    return False, ""
 
 
 def _counts(values: Any) -> dict[str, int]:

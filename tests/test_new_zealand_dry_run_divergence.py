@@ -18,15 +18,27 @@ from lawvm.new_zealand.dry_run import (
     NZ_DIVERGENCE_CLASS_EDITORIAL,
     NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
     NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
+    NZ_WINDOW_UNPROVABLE_SHARED_WINDOW,
+    NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP,
+    NZ_WINDOW_UNPROVABLE_STRUCTURAL_DRIFT,
     _NON_COMMENSURABLE_DESCENDANT_THRESHOLD,
     NZMutationBoundaryProof,
     NZNodeDivergence,
+    _amend_provision_composes_target,
+    _amendment_date_census,
     _classify_oracle_target_divergence,
     _classify_oracle_text_divergence,
+    _distinct_amenders_in_window,
     _divergence_proof_fields,
     _is_non_commensurable_whole_node,
+    _prove_temporal_window_fit,
+    _structural_node_set,
 )
 from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode
+from lawvm.new_zealand.version_diff import (
+    NZArchivedVersion,
+    NZArchivedVersionChangeWindow,
+)
 
 
 def _node(
@@ -306,4 +318,209 @@ def test_proof_jsonable_carries_divergence_fields() -> None:
     assert payload["divergence_node_pairs"][0]["candidate_text"] == "our payload"
     assert payload["divergence_node_pairs"][0]["oracle_text"] == "the oracle text"
     # Round-trips through json without error.
+    json.dumps(payload)
+
+
+# --- temporal-window-fit proof. -----------------------------------------------
+
+
+class _CensusRow:
+    """Minimal duck-typed row carrying the census fields."""
+
+    def __init__(self, amendment_date_iso: str, amending_work_id: str) -> None:
+        self.amendment_date_iso = amendment_date_iso
+        self.amending_work_id = amending_work_id
+
+
+def _change_window(before_date: str, on_or_after_date: str) -> NZArchivedVersionChangeWindow:
+    return NZArchivedVersionChangeWindow(
+        work_id="w",
+        requested_version_date=on_or_after_date,
+        before=NZArchivedVersion(version_id=f"w_en_{before_date}", xml_locator="b", version_date=before_date),
+        on_or_after=NZArchivedVersion(
+            version_id=f"w_en_{on_or_after_date}", xml_locator="a", version_date=on_or_after_date
+        ),
+    )
+
+
+def test_amendment_census_skips_undated_and_keeps_distinct_amenders() -> None:
+    rows = [
+        _CensusRow("2019-04-01", "act_public_2018_5"),
+        _CensusRow("2019-04-01", "act_public_2019_5"),
+        _CensusRow("", "act_public_2099_1"),  # undated -> skipped
+        _CensusRow("2019-04-01", "act_public_2018_5"),  # duplicate -> folded
+    ]
+    census = _amendment_date_census(rows)
+    assert ("2019-04-01", "act_public_2018_5") in census
+    assert ("2019-04-01", "act_public_2019_5") in census
+    assert all(date for date, _ in census)
+    assert len(census) == 2
+
+
+def test_distinct_amenders_in_window_is_half_open_interval() -> None:
+    census = frozenset(
+        {
+            ("2019-03-18", "before_edge"),  # == before_date -> excluded
+            ("2019-04-01", "a"),
+            ("2019-04-01", "b"),
+            ("2019-05-01", "after_edge"),  # > on_or_after -> excluded
+        }
+    )
+    assert (
+        _distinct_amenders_in_window(census, before_date="2019-03-18", on_or_after_date="2019-04-01")
+        == 2
+    )
+
+
+def test_window_proof_shared_window_is_unprovable() -> None:
+    census = frozenset({("2019-04-01", "a"), ("2019-04-01", "b")})
+    unprovable, reason = _prove_temporal_window_fit(
+        amendment_census=census,
+        change_window=_change_window("2019-03-18", "2019-04-01"),
+        oracle_present=True,
+        target_digest_before="x",
+        target_digest_after="y",
+        oracle_target_digest="z",
+    )
+    assert unprovable is True
+    assert reason == NZ_WINDOW_UNPROVABLE_SHARED_WINDOW
+
+
+def test_window_proof_single_amender_substantive_remains_provable() -> None:
+    # A genuine, contemporaneous substantive divergence: one amender in the
+    # window, the op landed (after != before), and the oracle differs from both.
+    census = frozenset({("2012-11-02", "act_public_2012_88")})
+    unprovable, reason = _prove_temporal_window_fit(
+        amendment_census=census,
+        change_window=_change_window("2012-07-01", "2012-11-02"),
+        oracle_present=True,
+        target_digest_before="before",
+        target_digest_after="ourafter",
+        oracle_target_digest="oracle",
+    )
+    assert unprovable is False
+    assert reason == ""
+
+
+def test_window_proof_snapshot_predates_when_oracle_equals_before() -> None:
+    census = frozenset({("2025-03-29", "act_public_2025_9")})
+    unprovable, reason = _prove_temporal_window_fit(
+        amendment_census=census,
+        change_window=_change_window("2025-01-01", "2025-03-29"),
+        oracle_present=True,
+        target_digest_before="same",
+        target_digest_after="ourchange",  # op mutated the node
+        oracle_target_digest="same",  # but the oracle never reflected it
+    )
+    assert unprovable is True
+    assert reason == NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP
+
+
+def test_window_proof_structural_drift_for_text_substitution() -> None:
+    # A pure text substitution cannot add paragraphs; an extra oracle paragraph
+    # proves another amendment restructured the node within the window.
+    before_set = _structural_node_set(
+        _node("subprov", ("part:4", "prov:37", "subprov:1"), "intro"),
+        (_node("label-para", ("part:4", "prov:37", "subprov:1", "label-para:a"), "a"),),
+        root_path=("part:4", "prov:37", "subprov:1"),
+    )
+    oracle_set = _structural_node_set(
+        _node("subprov", ("part:4", "prov:37", "subprov:1"), "intro"),
+        (
+            _node("label-para", ("part:4", "prov:37", "subprov:1", "label-para:a"), "a"),
+            _node("label-para", ("part:4", "prov:37", "subprov:1", "label-para:ia"), "ia"),
+        ),
+        root_path=("part:4", "prov:37", "subprov:1"),
+    )
+    assert before_set != oracle_set
+    unprovable, reason = _prove_temporal_window_fit(
+        amendment_census=frozenset({("2008-03-14", "act_public_2008_3")}),
+        change_window=_change_window("2007-12-20", "2008-03-14"),
+        oracle_present=True,
+        target_digest_before="before",
+        target_digest_after="after",
+        oracle_target_digest="oracle",
+        before_structural_set=before_set,
+        oracle_structural_set=oracle_set,
+    )
+    assert unprovable is True
+    assert reason == NZ_WINDOW_UNPROVABLE_STRUCTURAL_DRIFT
+
+
+def test_window_proof_absent_oracle_target_is_provable() -> None:
+    # An absent oracle target is handled by the partition function; the window
+    # proof must not gate it (only shared_window applies, and here it does not).
+    unprovable, reason = _prove_temporal_window_fit(
+        amendment_census=frozenset({("2020-04-01", "a")}),
+        change_window=_change_window("2020-03-25", "2020-04-01"),
+        oracle_present=False,
+    )
+    assert unprovable is False
+    assert reason == ""
+
+
+def test_candidate_predicate_false_when_window_unprovable() -> None:
+    proof = _proof(
+        divergence_class=NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
+        non_commensurable_whole_node=False,
+        temporal_window_unprovable=True,
+        temporal_window_unprovable_reason=NZ_WINDOW_UNPROVABLE_SHARED_WINDOW,
+    )
+    assert proof.is_consolidation_error_candidate is False
+
+
+def test_candidate_predicate_true_for_window_proven_substantive_residual() -> None:
+    proof = _proof(
+        divergence_class=NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
+        non_commensurable_whole_node=False,
+        temporal_window_unprovable=False,
+    )
+    assert proof.is_consolidation_error_candidate is True
+
+
+def _amend_provision_xml(step_texts: tuple[str, ...]) -> object:
+    from lxml import etree
+
+    prov = etree.Element("prov")
+    body = etree.SubElement(prov, "prov.body")
+    for text in step_texts:
+        subprov = etree.SubElement(body, "subprov")
+        para = etree.SubElement(subprov, "para")
+        para.text = text
+    return prov
+
+
+def test_composed_amend_provision_detected_when_target_re_touched() -> None:
+    node = _amend_provision_xml(
+        (
+            "This section amends section 3.",
+            "The definition of petroleum permit is replaced by the following: …",
+            "In the definition of petroleum permit, OB 1 is replaced by YA 1.",
+        )
+    )
+    assert _amend_provision_composes_target(node, "petroleum permit") is True
+
+
+def test_single_replacement_step_does_not_compose() -> None:
+    node = _amend_provision_xml(
+        ("The definition of petroleum permit is replaced by the following: …",)
+    )
+    assert _amend_provision_composes_target(node, "petroleum permit") is False
+
+
+def test_composed_detection_false_for_empty_label() -> None:
+    node = _amend_provision_xml(("anything replaced by anything",))
+    assert _amend_provision_composes_target(node, "") is False
+
+
+def test_proof_jsonable_carries_window_fields() -> None:
+    proof = _proof(
+        divergence_class=NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
+        temporal_window_unprovable=True,
+        temporal_window_unprovable_reason=NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP,
+    )
+    payload = proof.to_jsonable()
+    assert payload["temporal_window_unprovable"] is True
+    assert payload["temporal_window_unprovable_reason"] == NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP
+    assert payload["is_consolidation_error_candidate"] is False
     json.dumps(payload)
