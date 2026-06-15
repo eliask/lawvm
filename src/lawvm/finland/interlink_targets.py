@@ -1,0 +1,322 @@
+"""Finland semantic-interlink target previews for viewer exports.
+
+This module is jurisdiction-owned enrichment for neutral ``lawvm_interlinks``.
+The shared viewer/export substrate owns row shape and deduplication; Finland
+owns Finlex URLs, Finnish locator labels, and local corpus preview extraction.
+"""
+from __future__ import annotations
+
+import json
+import re
+import xml.etree.ElementTree as ET
+
+from lawvm.finland.section_text_extractor import extract_sections_text
+from lawvm.finland.statute_id import engine_statute_id
+from lawvm.tools.transition_graph_interlinks import (
+    InterlinkTargetPreviewContext,
+    LawvmInterlinkExportProvider,
+    LawvmInterlinkRow,
+    LawvmInterlinkTargetRef,
+    LawvmInterlinkTargetRow,
+    default_interlink_target_row,
+)
+
+_AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+_CHAPTER_EID_RE = re.compile(r"chp_(\d{1,6})(?:__|$)", re.IGNORECASE)
+_SECTION_LOCATOR_RE = re.compile(r"(?:^|/)section:([^/]+)")
+_SUBSECTION_LOCATOR_RE = re.compile(r"(?:^|/)subsection:([^/]+)")
+
+
+def build_fi_interlink_target_row(
+    target_ref: LawvmInterlinkTargetRef,
+    *,
+    corpus: object,
+) -> LawvmInterlinkTargetRow:
+    """Build a Finnish preview row for one neutral interlink target."""
+    if target_ref.jurisdiction != "fi" or target_ref.work_kind != "normative_act":
+        return default_interlink_target_row(target_ref)
+
+    engine_id = engine_statute_id(target_ref.local_id)
+    if not _looks_like_engine_statute_id(engine_id):
+        return _unsupported_fi_target_row(target_ref, status="unsupported_fi_target_id")
+    target_url = _finlex_lainsaadanto_url(engine_id)
+    source_publication_url = _finlex_saadoskokoelma_url(engine_id)
+    preview = _target_preview_payload(target_ref, engine_id=engine_id, corpus=corpus)
+    links = _target_links(target_url=target_url, source_publication_url=source_publication_url)
+    preview["links"] = links
+    return LawvmInterlinkTargetRow(
+        target_key=target_ref.key,
+        target_jurisdiction=target_ref.jurisdiction,
+        target_work_kind=target_ref.work_kind,
+        target_local_id=target_ref.local_id,
+        target_work_id=target_ref.work_id,
+        target_locator=target_ref.locator,
+        target_url=target_url,
+        target_links_json=json.dumps(links, ensure_ascii=False, sort_keys=True),
+        preview_status=str(preview.get("status") or ""),
+        preview_source=str(preview.get("source") or ""),
+        title=str(preview.get("title") or ""),
+        locator_label=str(preview.get("locator_label") or ""),
+        hierarchy_json=json.dumps(preview.get("hierarchy") or [], ensure_ascii=False, sort_keys=True),
+        preview_text=str(preview.get("preview_text") or ""),
+        detail_json=json.dumps(preview, ensure_ascii=False, sort_keys=True),
+    )
+
+
+def project_fi_interlinks_for_transition_graph(
+    statute_id: str,
+    corpus: object,
+) -> list[LawvmInterlinkRow]:
+    """Project Finnish citation/interlink rows for transition-graph export."""
+    from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
+
+    rows, _diagnostics = _project_interlinks_for_statute(statute_id, corpus)
+    return [LawvmInterlinkRow.from_mapping(row) for row in rows]
+
+
+def resolve_fi_interlink_target_row(
+    target_ref: LawvmInterlinkTargetRef,
+    context: InterlinkTargetPreviewContext,
+) -> LawvmInterlinkTargetRow:
+    if context.corpus is None:
+        return _unsupported_fi_target_row(target_ref, status="missing_local_corpus")
+    return build_fi_interlink_target_row(target_ref, corpus=context.corpus)
+
+
+def fi_transition_graph_interlink_provider() -> LawvmInterlinkExportProvider:
+    return LawvmInterlinkExportProvider(
+        project_interlinks=project_fi_interlinks_for_transition_graph,
+        resolve_target=resolve_fi_interlink_target_row,
+    )
+
+
+def _looks_like_engine_statute_id(engine_id: str) -> bool:
+    year, sep, num = engine_id.partition("/")
+    return bool(sep and year.isdigit() and num)
+
+
+def _unsupported_fi_target_row(
+    target_ref: LawvmInterlinkTargetRef,
+    *,
+    status: str,
+) -> LawvmInterlinkTargetRow:
+    return LawvmInterlinkTargetRow(
+        target_key=target_ref.key,
+        target_jurisdiction=target_ref.jurisdiction,
+        target_work_kind=target_ref.work_kind,
+        target_local_id=target_ref.local_id,
+        target_work_id=target_ref.work_id,
+        target_locator=target_ref.locator,
+        target_url=None,
+        target_links_json="[]",
+        preview_status=status,
+        preview_source="",
+        title="",
+        locator_label=_locator_label(target_ref.locator),
+        hierarchy_json="[]",
+        preview_text="",
+        detail_json=json.dumps({"status": status}, ensure_ascii=False, sort_keys=True),
+    )
+
+
+def _finlex_lainsaadanto_url(engine_id: str) -> str | None:
+    year, sep, num = engine_id.partition("/")
+    if not sep or not year.isdigit() or not num:
+        return None
+    return f"https://www.finlex.fi/fi/lainsaadanto/{year}/{num}"
+
+
+def _finlex_saadoskokoelma_url(engine_id: str) -> str | None:
+    year, sep, num = engine_id.partition("/")
+    if not sep or not year.isdigit() or not num:
+        return None
+    return f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{num}"
+
+
+def _target_links(
+    *,
+    target_url: str | None,
+    source_publication_url: str | None,
+) -> list[dict[str, str]]:
+    links: list[dict[str, str]] = []
+    if target_url:
+        links.append({
+            "rel": "canonical",
+            "label": "Finlex",
+            "url": target_url,
+        })
+    if source_publication_url:
+        links.append({
+            "rel": "source_publication",
+            "label": "Säädöskokoelma",
+            "url": source_publication_url,
+        })
+    return links
+
+
+def _target_preview_payload(
+    target_ref: LawvmInterlinkTargetRef,
+    *,
+    engine_id: str,
+    corpus: object,
+) -> dict[str, object]:
+    locator_label = _locator_label(target_ref.locator)
+    base_payload: dict[str, object] = {
+        "status": "unsupported",
+        "source": "",
+        "title": "",
+        "locator_label": locator_label,
+        "hierarchy": [],
+        "preview_text": "",
+    }
+    xml_bytes = corpus.read_oracle(engine_id)
+    if xml_bytes is None:
+        source_xml = corpus.read_source(engine_id)
+        if source_xml is None:
+            return {**base_payload, "status": "missing_local_corpus"}
+        title = _doc_title(source_xml)
+        return {
+            **base_payload,
+            "status": "law_title_from_source_only",
+            "source": "fi.read_source",
+            "title": title,
+        }
+
+    title, chapter_titles = _title_and_chapter_titles(xml_bytes)
+    payload = {
+        **base_payload,
+        "status": "law_title_only",
+        "source": "fi.read_oracle.latest_consolidated",
+        "title": title,
+    }
+    matched_section = _matching_section_preview(engine_id, target_ref.locator, xml_bytes)
+    if matched_section is None:
+        return payload
+
+    hierarchy: list[dict[str, str]] = []
+    chapter_label = _chapter_label_from_section_key(matched_section.section_key)
+    if chapter_label:
+        hierarchy.append({
+            "kind": "chapter",
+            "label": chapter_label,
+            "title": chapter_titles.get(chapter_label, ""),
+        })
+    hierarchy.append({
+        "kind": "section",
+        "label": matched_section.section_label,
+        "title": matched_section.heading_text,
+    })
+    subsection_label = _subsection_label_from_locator(target_ref.locator)
+    if subsection_label:
+        hierarchy.append({"kind": "subsection", "label": subsection_label, "title": ""})
+    return {
+        **payload,
+        "status": "resolved_latest_local_oracle_preview",
+        "locator_label": locator_label or matched_section.section_label,
+        "hierarchy": hierarchy,
+        "preview_text": _short_preview(matched_section.body_text),
+    }
+
+
+def _doc_title(xml_bytes: bytes) -> str:
+    root = ET.fromstring(xml_bytes)
+    title_el = root.find(f".//{{{_AKN_NS}}}docTitle")
+    if title_el is None:
+        return ""
+    return " ".join("".join(title_el.itertext()).split())
+
+
+def _title_and_chapter_titles(xml_bytes: bytes) -> tuple[str, dict[str, str]]:
+    root = ET.fromstring(xml_bytes)
+    title_el = root.find(f".//{{{_AKN_NS}}}docTitle")
+    title = " ".join("".join(title_el.itertext()).split()) if title_el is not None else ""
+    chapter_titles: dict[str, str] = {}
+    for chapter_el in root.iter(f"{{{_AKN_NS}}}chapter"):
+        label = _chapter_label_from_eid(chapter_el.get("eId", ""))
+        if not label:
+            num_el = chapter_el.find(f"{{{_AKN_NS}}}num")
+            num_text = " ".join("".join(num_el.itertext()).split()) if num_el is not None else ""
+            label = re.sub(r"\s*luku\s*$", "", num_text, flags=re.IGNORECASE).strip()
+        heading_el = chapter_el.find(f"{{{_AKN_NS}}}heading")
+        heading = " ".join("".join(heading_el.itertext()).split()) if heading_el is not None else ""
+        if label:
+            chapter_titles[label] = heading
+    return title, chapter_titles
+
+
+def _chapter_label_from_eid(eid: str) -> str:
+    match = _CHAPTER_EID_RE.search(eid or "")
+    return match.group(1) if match else ""
+
+
+def _matching_section_preview(engine_id: str, locator: str | None, xml_bytes: bytes):
+    section_label = _section_label_from_locator(locator)
+    if not section_label:
+        return None
+    result = extract_sections_text(xml_bytes, engine_id)
+    matches = [
+        section
+        for section in result.sections
+        if _section_key_matches_locator(section.section_key, section_label, locator)
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _section_key_matches_locator(section_key: str, section_label: str, locator: str | None) -> bool:
+    normalized_locator = locator or ""
+    if normalized_locator.startswith("chapter:"):
+        chapter_section = "/".join(
+            part
+            for part in normalized_locator.split("/")
+            if part.startswith("chapter:") or part.startswith("section:")
+        )
+        if chapter_section:
+            return section_key == chapter_section
+    return section_key == f"section:{section_label}" or section_key.endswith(f"/section:{section_label}")
+
+
+def _section_label_from_locator(locator: str | None) -> str:
+    match = _SECTION_LOCATOR_RE.search(locator or "")
+    return match.group(1) if match else ""
+
+
+def _subsection_label_from_locator(locator: str | None) -> str:
+    match = _SUBSECTION_LOCATOR_RE.search(locator or "")
+    return match.group(1) if match else ""
+
+
+def _chapter_label_from_section_key(section_key: str) -> str:
+    for part in section_key.split("/"):
+        if part.startswith("chapter:"):
+            return part.removeprefix("chapter:")
+    return ""
+
+
+def _locator_label(locator: str | None) -> str:
+    if not locator:
+        return ""
+    labels: list[str] = []
+    for part in locator.split("/"):
+        if ":" not in part:
+            continue
+        kind, value = part.split(":", 1)
+        if kind == "chapter":
+            labels.append(f"{value} luku")
+        elif kind == "section":
+            labels.append(f"{value} §")
+        elif kind == "subsection":
+            labels.append(f"{value} mom.")
+        elif kind == "paragraph":
+            labels.append(f"{value} kohta")
+        elif kind == "subparagraph":
+            labels.append(f"{value} alakohta")
+    return " › ".join(labels)
+
+
+def _short_preview(text: str, limit: int = 420) -> str:
+    clean = " ".join((text or "").split())
+    if len(clean) <= limit:
+        return clean
+    return clean[:limit].rstrip() + "..."

@@ -7,7 +7,9 @@ already carry rendered address/segment/character coordinates.
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
+from collections.abc import Callable
 
 from lawvm.core.interlinks import INTERLINK_ROW_COLUMNS
 from lawvm.core.ir import IRNode
@@ -111,6 +113,74 @@ class LawvmInterlinkRow:
             rendered_char_end=char_end,
         )
 
+    def with_target_enrichment(
+        self,
+        *,
+        target_url: str | None,
+        detail_json: str,
+    ) -> "LawvmInterlinkRow":
+        return dataclasses.replace(
+            self,
+            target_url=target_url,
+            detail_json=detail_json,
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LawvmInterlinkTargetRow:
+    target_key: str
+    target_jurisdiction: str
+    target_work_kind: str
+    target_local_id: str
+    target_work_id: str | None
+    target_locator: str | None
+    target_url: str | None
+    target_links_json: str
+    preview_status: str
+    preview_source: str
+    title: str
+    locator_label: str
+    hierarchy_json: str
+    preview_text: str
+    detail_json: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return dataclasses.astuple(self)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LawvmInterlinkTargetRef:
+    key: str
+    jurisdiction: str
+    work_kind: str
+    local_id: str
+    work_id: str | None
+    locator: str | None
+
+
+InterlinkTargetResolver = Callable[[LawvmInterlinkTargetRef], LawvmInterlinkTargetRow]
+InterlinkProjector = Callable[[str, object | None], list[LawvmInterlinkRow]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class InterlinkTargetPreviewContext:
+    """Neutral context for jurisdiction-owned target preview resolution."""
+
+    source_statute_id: str
+    corpus: object | None
+
+
+InterlinkTargetResolverWithContext = Callable[
+    [LawvmInterlinkTargetRef, InterlinkTargetPreviewContext],
+    LawvmInterlinkTargetRow,
+]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LawvmInterlinkExportProvider:
+    project_interlinks: InterlinkProjector
+    resolve_target: InterlinkTargetResolverWithContext | None = None
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RenderedTextSegment:
@@ -137,28 +207,95 @@ def _optional_int(value: object) -> int | None:
     return int(value)
 
 
-def _lawvm_interlink_rows(rows: list[dict[str, object]] | None) -> list[LawvmInterlinkRow]:
-    if not rows:
-        return []
-    return [LawvmInterlinkRow.from_mapping(row) for row in rows]
+def enrich_lawvm_interlink_targets(
+    rows: list[LawvmInterlinkRow],
+    *,
+    target_resolver: InterlinkTargetResolver | None = None,
+) -> tuple[list[LawvmInterlinkRow], list[LawvmInterlinkTargetRow]]:
+    """Attach deduplicated target-preview metadata to interlink rows.
+
+    The viewer row remains lightweight: each mention carries a ``target_key`` in
+    ``detail_json`` and shared preview/URL material lives in
+    ``lawvm_interlink_targets``. Jurisdiction-specific URL and preview logic is
+    supplied by ``target_resolver``; this helper only owns neutral dedup wiring.
+    """
+    target_refs: dict[str, LawvmInterlinkTargetRef] = {}
+    for row in rows:
+        target_ref = _target_ref_for_row(row)
+        if target_ref is not None:
+            target_refs.setdefault(target_ref.key, target_ref)
+
+    target_rows_by_key = {
+        target_ref.key: (
+            target_resolver(target_ref)
+            if target_resolver is not None
+            else default_interlink_target_row(target_ref)
+        )
+        for target_ref in sorted(target_refs.values(), key=lambda ref: ref.key)
+    }
+
+    enriched_rows: list[LawvmInterlinkRow] = []
+    for row in rows:
+        target_ref = _target_ref_for_row(row)
+        if target_ref is None:
+            enriched_rows.append(row)
+            continue
+        detail = json.loads(row.detail_json or "{}")
+        detail["target_key"] = target_ref.key
+        target_row = target_rows_by_key[target_ref.key]
+        enriched_rows.append(
+            row.with_target_enrichment(
+                target_url=row.target_url or target_row.target_url,
+                detail_json=json.dumps(detail, ensure_ascii=False, sort_keys=True),
+            )
+        )
+    return enriched_rows, list(target_rows_by_key.values())
 
 
-def project_lawvm_interlinks(statute_id: str, corpus: object) -> list[LawvmInterlinkRow]:
-    """Project neutral LawVM interlinks for the viewer export."""
-    from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
+def default_interlink_target_row(target_ref: LawvmInterlinkTargetRef) -> LawvmInterlinkTargetRow:
+    return LawvmInterlinkTargetRow(
+        target_key=target_ref.key,
+        target_jurisdiction=target_ref.jurisdiction,
+        target_work_kind=target_ref.work_kind,
+        target_local_id=target_ref.local_id,
+        target_work_id=target_ref.work_id,
+        target_locator=target_ref.locator,
+        target_url=None,
+        target_links_json="[]",
+        preview_status="unsupported",
+        preview_source="",
+        title="",
+        locator_label=target_ref.locator or "",
+        hierarchy_json="[]",
+        preview_text="",
+        detail_json=json.dumps({"status": "unsupported"}, ensure_ascii=False, sort_keys=True),
+    )
 
-    rows, _diagnostics = _project_interlinks_for_statute(statute_id, corpus)
-    return _lawvm_interlink_rows(rows)
+
+def _target_ref_for_row(row: LawvmInterlinkRow) -> LawvmInterlinkTargetRef | None:
+    jurisdiction = row.target_jurisdiction or ""
+    work_kind = row.target_work_kind or ""
+    local_id = row.target_local_id or _local_id_from_work_id(row.target_work_id)
+    if not jurisdiction or not work_kind or not local_id:
+        return None
+    locator = _normalize_interlink_locator(row.target_locator)
+    key = "|".join((jurisdiction, work_kind, local_id, locator))
+    return LawvmInterlinkTargetRef(
+        key=key,
+        jurisdiction=jurisdiction,
+        work_kind=work_kind,
+        local_id=local_id,
+        work_id=row.target_work_id,
+        locator=locator or None,
+    )
 
 
-_INTERLINK_NON_SURFACE_TEXT = frozenset({
-    "",
-    "ref_element",
-    "eu_text_pattern",
-    "REPEALS",
-    "ISSUED_UNDER",
-    "ISSUES",
-})
+def _local_id_from_work_id(work_id: str | None) -> str:
+    if not work_id:
+        return ""
+    parts = work_id.split(":")
+    return parts[-1].strip() if parts else ""
+
 
 _ADDRESSABLE_KINDS = frozenset({
     "part",
@@ -188,7 +325,6 @@ def _addr_component_for_node(node: IRNode, ordinal: int) -> str:
     num = _child_text(node, "num")
     if num:
         cleaned = re.sub(r"[§).]", "", num)
-        cleaned = re.sub(r"luku", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s+", "", cleaned.strip())
         if cleaned:
             return cleaned
@@ -251,8 +387,6 @@ def _normalize_interlink_locator(locator: str | None) -> str:
     if not locator:
         return ""
     text = locator.strip()
-    if text.startswith("sec_"):
-        return "section:" + re.sub(r"\s+", "", text.removeprefix("sec_").replace("_", ""))
     parts: list[str] = []
     for raw_part in text.split("/"):
         if ":" not in raw_part:
@@ -264,6 +398,17 @@ def _normalize_interlink_locator(locator: str | None) -> str:
         normalized_value = re.sub(r"\s+", "", value.strip())
         parts.append(f"{kind}:{normalized_value}")
     return "/".join(parts)
+
+
+def _has_placeable_surface(row: LawvmInterlinkRow) -> bool:
+    """Whether a row's surface text is expected to occur in rendered prose.
+
+    Jurisdiction adapters own sentinel labels such as XML element names or
+    metadata edge names. The neutral placer only attempts string placement for
+    actual prose-reference surfaces; other rows remain valid semantic edges but
+    are not painted inline unless they already carry explicit rendered spans.
+    """
+    return row.surface_kind == "prose_ref" and bool(row.surface_text.strip())
 
 
 def _segment_matches_locator(segment_addr: str, locator: str) -> bool:
@@ -285,7 +430,7 @@ def _placement_candidates(
     segments_by_date: dict[str, list[RenderedTextSegment]],
 ) -> list[tuple[str, RenderedTextSegment, int]]:
     surface = row.surface_text
-    if surface in _INTERLINK_NON_SURFACE_TEXT:
+    if not _has_placeable_surface(row):
         return []
     locator = _normalize_interlink_locator(row.source_locator)
     by_date: list[tuple[str, RenderedTextSegment, int]] = []

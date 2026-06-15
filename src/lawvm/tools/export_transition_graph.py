@@ -1,4 +1,4 @@
-"""Export a certified transition graph for a Finnish statute (Design D).
+"""Export a certified transition graph for a replayed statute (Design D).
 
 LawVM's Python replay engine is the only authority for resolving legal targets
 and interpreting amendment language. This exporter runs that engine once for a
@@ -19,8 +19,8 @@ Three operation levels (see the module docstring chain in the design notes):
 
 The schema is documented in ``SCHEMA_VERSION`` and the ``CREATE TABLE``
 statements below. All cross-referenceable entities use canonical GLOBAL ids
-(statute ``"301/2004"``, amendment ``"YYYY/N"`` säädös ids, HE ids, address
-strings); content subtrees are de-duplicated by sha256.
+(statute ids, source ids, preparatory/source-reference ids, address strings);
+content subtrees are de-duplicated by sha256.
 """
 
 from __future__ import annotations
@@ -28,32 +28,29 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
-import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import structural_subtree_hash as structural_subtree_hash
 from lawvm.tools.transition_graph_interlinks import (
-    LawvmInterlinkRow,
+    InterlinkTargetPreviewContext,
+    LawvmInterlinkExportProvider,
+    LawvmInterlinkRow as LawvmInterlinkRow,
     RenderedTextSegment,
+    enrich_lawvm_interlink_targets,
     place_lawvm_interlinks,
-    project_lawvm_interlinks,
     rendered_text_segments,
 )
+from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 
 SCHEMA_VERSION = "transition-graph.v1"
 
 # Base-version sentinel effective date used by compile_timelines for the
 # original (unamended) provision content. It is not a real calendar change-date.
 _BASE_SENTINEL_DATE = "0000-00-00"
-
-# HE (hallituksen esitys) reference markup in amendment AKN XML:
-#   /akn/fi/doc/government-proposal/YEAR/NUMBER  ... >HE 46/2006</ref>
-_HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d{1,4}-\d{1,4}|\d{1,4})")
-_HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE)
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class TransitionRow:
@@ -70,10 +67,11 @@ class TransitionRow:
     legal_op_summary: str
     source_id: str
     he_ref: str
+    source_ref: str
     flags: str
 
-    def with_he_ref(self, he_ref: str) -> "TransitionRow":
-        return dataclasses.replace(self, he_ref=he_ref)
+    def with_source_ref(self, source_ref: str) -> "TransitionRow":
+        return dataclasses.replace(self, he_ref=source_ref, source_ref=source_ref)
 
     def sql_values(self) -> tuple[object, ...]:
         return (
@@ -90,6 +88,7 @@ class TransitionRow:
             self.legal_op_summary,
             self.source_id,
             self.he_ref,
+            self.source_ref,
             self.flags,
         )
 
@@ -417,7 +416,11 @@ def reproducible_tree_hash(units: List[Tuple[str, str]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def resolve_commencement_date(timelines: Dict[LegalAddress, Any]) -> str:
+def resolve_commencement_date(
+    timelines: Dict[LegalAddress, Any],
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> str:
     """Resolve the statute's real commencement (display axis), or ``""``.
 
     The engine seeds the original (unamended) provision content at the
@@ -426,21 +429,18 @@ def resolve_commencement_date(timelines: Dict[LegalAddress, Any]) -> str:
     axis we need the real commencement so the as-enacted version anchors at the
     date the law actually came into force instead of at its first amendment.
 
-    Source precedence (legally-correct first):
+    Source precedence:
 
-    1. The parsed chapter-15 voimaantulo date ("Tämä laki tulee voimaan
-       <date>"), via :func:`_scan_statute_commencements` — the legal "in force
-       from" date. When more than one distinct date is stated, do not guess.
+    1. The jurisdiction profile's commencement resolver. When the jurisdiction
+       has no unique legal commencement witness, it returns ``""``.
     2. The FRBR issue/signature date (``enacted``) carried on the base-version
-       provisions (effective == ``0000-00-00``), i.e. the *annettu* date — a
-       day or so earlier than the voimaantulo in practice.
+       provisions (effective == ``0000-00-00``).
     3. Otherwise ``""`` (caller keeps the sentinel-dropping behavior).
     """
-    from lawvm.finland.fixed_term_expiry import _scan_statute_commencements
-
-    commencements = _scan_statute_commencements(timelines)
-    if len(commencements) == 1:
-        return commencements[0]
+    export_profile = profile or _default_export_profile()
+    commencement = export_profile.commencement_date(timelines)
+    if commencement:
+        return commencement
 
     # FRBR fallback: the enacted date stamped on base-version provisions.
     enacted: set[str] = set()
@@ -453,7 +453,11 @@ def resolve_commencement_date(timelines: Dict[LegalAddress, Any]) -> str:
     return ""
 
 
-def compute_change_dates(timelines: Dict[LegalAddress, Any]) -> List[str]:
+def compute_change_dates(
+    timelines: Dict[LegalAddress, Any],
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> List[str]:
     """Return the sorted list of real calendar change-dates from timelines.
 
     The union of every version effective/expires date. The ``0000-00-00`` base
@@ -470,7 +474,7 @@ def compute_change_dates(timelines: Dict[LegalAddress, Any]) -> List[str]:
     (load-bearing for ``--query-type governing``).
     """
     dates: set[str] = set()
-    commencement = resolve_commencement_date(timelines)
+    commencement = resolve_commencement_date(timelines, profile=profile)
     if commencement:
         dates.add(commencement)
     for timeline in timelines.values():
@@ -583,50 +587,21 @@ class ReplayBundle:
     source_pathologies: List[Any] = dataclasses.field(default_factory=list)
 
 
-def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
-    """Run the Finland engine once and capture the L2 ops + timelines.
+def run_engine_replay(
+    statute_id_yearnum: str,
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> ReplayBundle:
+    """Compatibility wrapper for direct callers using the Finnish adapter.
 
-    ``statute_id_yearnum`` is the engine-facing "YYYY/N" id (e.g. "2004/301").
-    The replay is materialized at the latest change-date so the full op stream
-    and timeline graph are available for re-materialization at earlier dates.
+    New jurisdiction-aware callers should pass the adapter's ``replay_runner``
+    into :func:`export_transition_graph`; this shim exists so older synthetic
+    tests can still monkeypatch one name.
     """
-    from lawvm.finland.replay_entrypoint import replay_xml
-    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
+    from lawvm.finland.transition_graph_replay import run_fi_transition_graph_replay
 
-    lo_ops: List[Any] = []
-    replay_findings: List[Any] = []
-    failed_ops: List[Any] = []
-    source_pathologies: List[Any] = []
-    # Materialize far in the future first to collect the complete timeline set.
-    far_result = call_replay_xml(
-        replay_xml,
-        request=ReplayXmlRequest(
-            parent_id=statute_id_yearnum,
-            mode="legal_pit",
-            as_of="9999-12-31",
-            quiet=True,
-        ),
-        sinks=ReplayXmlSinks(
-            lo_ops_out=lo_ops,
-            findings_out=replay_findings,
-            failed_ops_out=failed_ops,
-            source_pathologies_out=source_pathologies,
-        ),
-    )
-    timelines = far_result.timelines or {}
-    change_dates = compute_change_dates(timelines)
-    return ReplayBundle(
-        statute_id=_canonical_statute_id(statute_id_yearnum),
-        engine_id=statute_id_yearnum,
-        title=far_result.title,
-        result=far_result,
-        lo_ops=lo_ops,
-        timelines=timelines,
-        change_dates=change_dates,
-        replay_findings=replay_findings,
-        failed_ops=failed_ops,
-        source_pathologies=source_pathologies,
-    )
+    export_profile = profile or _default_export_profile()
+    return run_fi_transition_graph_replay(statute_id_yearnum, profile=export_profile)
 
 
 def _op_variant_kind(op: Any) -> str:
@@ -637,7 +612,12 @@ def _op_variant_kind(op: Any) -> str:
     return "permanent"
 
 
-def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> Dict[str, Any]:
+def emit_l2_sidecar(
+    bundle: ReplayBundle,
+    checkpoints: List[CheckpointRow],
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> Dict[str, Any]:
     """Build the JSON sidecar for independent browser-side L2 replay (Exp-2).
 
     Carries the base body tree and the full resolved L2 operation stream with
@@ -647,6 +627,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> D
     JS folder can self-score WITHOUT consulting the certified transition graph.
     """
     result = bundle.result
+    export_profile = profile or _default_export_profile()
     base_body = result.ctx.base_ir  # IRNode body of the unamended statute
     ops_json: List[Dict[str, Any]] = []
     for op in bundle.lo_ops:
@@ -672,7 +653,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> D
                 "effective": (src.effective if src is not None else "") or "",
                 "expires": (src.expires if src is not None else "") or "",
                 "enacted": (src.enacted if src is not None else "") or "",
-                "source_statute": _canonical_statute_id(src.statute_id) if src is not None and src.statute_id else "",
+                "source_statute": export_profile.canonical_statute_id(src.statute_id) if src is not None and src.statute_id else "",
                 "variant_kind": _op_variant_kind(op),
                 "group_id": op.group_id or "",
                 "payload": op.payload.to_jsonable_dict() if op.payload is not None else None,
@@ -685,7 +666,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> D
             "from_address": str(me.from_address),
             "to_address": str(me.to_address),
             "effective": me.effective or "",
-            "source_statute": _canonical_statute_id(me.source_statute) if me.source_statute else "",
+            "source_statute": export_profile.canonical_statute_id(me.source_statute) if me.source_statute else "",
         }
         for me in bundle.result.products.migration_events
     ]
@@ -705,106 +686,47 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> D
 
 
 def materialize_oracle_tree(bundle: ReplayBundle, as_of: str) -> IRNode:
-    """Re-materialize the engine's authoritative PIT tree at ``as_of``.
+    """Compatibility wrapper for direct callers using the Finnish adapter.
 
-    Uses the engine's own ``build_replay_products`` with the legal_pit profile
-    settings (validated to match a full ``replay_xml(as_of=...)`` exactly,
-    including temporary-provision expiry/reversion). This is the ORACLE.
+    New jurisdiction-aware callers should pass the adapter's materializer into
+    :func:`export_transition_graph`; this shim exists so older synthetic tests
+    can still monkeypatch one name.
     """
-    from lawvm.finland.replay_products import build_replay_products
+    from lawvm.finland.transition_graph_replay import materialize_fi_transition_graph_tree
 
-    result = bundle.result
-    products = build_replay_products(
-        ctx=result.ctx,
-        statute_id=bundle.engine_id,
-        replay_fold_state=result.products.replay_fold_state,
-        lo_ops_out=bundle.lo_ops,
-        as_of=as_of,
-        expires_as_of=as_of,
-        synthesize_repeal_placeholders=True,
-        temporal_events=result.products.temporal_events,
-        migration_events=result.products.migration_events,
-    )
-    return products.materialized_state.ir
+    return materialize_fi_transition_graph_tree(bundle, as_of)
 
 
 # ---------------------------------------------------------------------------
-# Canonical id helpers
+# Export profile and compatibility id helpers
 # ---------------------------------------------------------------------------
 
 
-_MIN_PLAUSIBLE_YEAR = 1734
-_MAX_PLAUSIBLE_YEAR = 2200
+def _default_export_profile() -> TransitionGraphExportProfile:
+    """Return the compatibility profile for legacy direct Python callers.
 
-
-def _is_plausible_year(token: str) -> bool:
-    return len(token) == 4 and token.isdigit() and _MIN_PLAUSIBLE_YEAR <= int(token) <= _MAX_PLAUSIBLE_YEAR
-
-
-def _split_year_num(statute_id: str) -> Optional[Tuple[str, str]]:
-    """Return (year, num) for a 'year/num' or 'num/year' id, else None.
-
-    Disambiguates by which component is a plausible 4-digit year (1734..2200).
-    When both look like years (rare, pathological), prefers the engine ordering
-    where the year is first.
+    CLI callers must select through ``transition_graph_adapter_for_jurisdiction``;
+    this fallback preserves old tests and direct calls while keeping
+    viewer-facing metadata, URL, source-ref, and corpus conventions outside the
+    neutral interlink/cache helpers.
     """
-    parts = statute_id.strip().split("/")
-    if len(parts) != 2:
-        return None
-    a, b = parts[0], parts[1]
-    a_year = _is_plausible_year(a)
-    b_year = _is_plausible_year(b)
-    if a_year and not b_year:
-        return a, b  # 'year/num'
-    if b_year and not a_year:
-        return b, a  # 'num/year' -> swap to (year, num)
-    if a_year and b_year:
-        return a, b  # ambiguous: assume engine 'year/num'
-    return None
+    from lawvm.finland.transition_graph_profile import finland_transition_graph_export_profile
+
+    return finland_transition_graph_export_profile()
 
 
 def _canonical_statute_id(statute_id: str) -> str:
-    """Return the canonical GLOBAL statute id in 'num/year' form ('301/2004').
+    """Compatibility wrapper for existing Finland transition-graph callers."""
+    from lawvm.finland.statute_id import canonical_statute_id
 
-    The engine uses 'year/num' internally; the canonical cross-referenceable id
-    used in the export and the user-facing CLI uses 'num/year' (the säädös id).
-    """
-    yn = _split_year_num(statute_id)
-    if yn is None:
-        return statute_id.strip()
-    year, num = yn
-    return f"{num}/{year}"
+    return canonical_statute_id(statute_id)
 
 
 def _engine_statute_id(statute_id: str) -> str:
-    """Return the engine-facing 'year/num' form from a canonical 'num/year'."""
-    yn = _split_year_num(statute_id)
-    if yn is None:
-        return statute_id.strip()
-    year, num = yn
-    return f"{year}/{num}"
+    """Compatibility wrapper for existing Finland transition-graph callers."""
+    from lawvm.finland.statute_id import engine_statute_id
 
-
-# ---------------------------------------------------------------------------
-# HE reference extraction (best effort, from amendment AKN XML)
-# ---------------------------------------------------------------------------
-
-
-def _extract_he_ref(amendment_xml: Optional[bytes]) -> str:
-    """Return the first HE ref (e.g. "HE 46/2006 vp") in the amendment, or ""."""
-    if not amendment_xml:
-        return ""
-    try:
-        text = amendment_xml.decode("utf-8", "ignore")
-    except Exception:
-        return ""
-    m = _HE_HREF_RE.search(text)
-    if m:
-        return f"HE {m.group(2)}/{m.group(1)} vp"
-    m2 = _HE_TEXT_RE.search(text)
-    if m2:
-        return f"HE {m2.group(1)}/{m2.group(2)} vp"
-    return ""
+    return engine_statute_id(statute_id)
 
 
 def _json_safe(value: Any) -> Any:
@@ -824,19 +746,32 @@ def _detail_json(value: Any) -> str:
     return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True)
 
 
-def _canonical_source_id(value: object) -> str:
+def _canonical_source_id(
+    value: object,
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> str:
     source_id = str(value or "").strip()
     if not source_id:
         return ""
-    return _canonical_statute_id(source_id)
+    export_profile = profile or _default_export_profile()
+    return export_profile.canonical_statute_id(source_id)
 
 
-def _source_effective_dates(lo_ops: List[Any]) -> Dict[str, str]:
+def _source_effective_dates(
+    lo_ops: List[Any],
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> Dict[str, str]:
     """Return source_id -> effective date only when the mapping is unambiguous."""
+    export_profile = profile or _default_export_profile()
     by_source: Dict[str, set[str]] = {}
     for op in lo_ops:
         src = getattr(op, "source", None)
-        source_id = _canonical_source_id(getattr(src, "statute_id", "") if src is not None else "")
+        source_id = _canonical_source_id(
+            getattr(src, "statute_id", "") if src is not None else "",
+            profile=export_profile,
+        )
         effective_raw = getattr(src, "effective", "") if src is not None else ""
         effective = str(effective_raw or "")
         if source_id and effective:
@@ -878,9 +813,14 @@ def _target_address_from_detail(detail: Dict[str, Any]) -> str:
     )
 
 
-def build_evidence_event_rows(bundle: ReplayBundle) -> List[EvidenceEventRow]:
+def build_evidence_event_rows(
+    bundle: ReplayBundle,
+    *,
+    profile: TransitionGraphExportProfile | None = None,
+) -> List[EvidenceEventRow]:
     """Project internal LawVM uncertainty/evidence into viewer-safe rows."""
-    source_dates = _source_effective_dates(bundle.lo_ops)
+    export_profile = profile or _default_export_profile()
+    source_dates = _source_effective_dates(bundle.lo_ops, profile=export_profile)
     rows: List[EvidenceEventRow] = []
 
     def add(
@@ -916,7 +856,10 @@ def build_evidence_event_rows(bundle: ReplayBundle) -> List[EvidenceEventRow]:
 
     for finding in bundle.replay_findings:
         detail = dict(getattr(finding, "detail", {}) or {})
-        source_id = _canonical_source_id(getattr(finding, "source_statute", "") or detail.get("source_statute", ""))
+        source_id = _canonical_source_id(
+            getattr(finding, "source_statute", "") or detail.get("source_statute", ""),
+            profile=export_profile,
+        )
         role = str(getattr(finding, "role", "") or "")
         blocking = bool(getattr(finding, "blocking", False))
         severity = "error" if blocking or role == "violation" else "warning" if role == "obligation" else "info"
@@ -937,7 +880,10 @@ def build_evidence_event_rows(bundle: ReplayBundle) -> List[EvidenceEventRow]:
     for pathology in bundle.source_pathologies:
         detail = pathology.as_detail() if hasattr(pathology, "as_detail") else _json_safe(pathology)
         detail_dict = detail if isinstance(detail, dict) else {}
-        source_id = _canonical_source_id(getattr(pathology, "source_statute", "") or detail_dict.get("source_statute", ""))
+        source_id = _canonical_source_id(
+            getattr(pathology, "source_statute", "") or detail_dict.get("source_statute", ""),
+            profile=export_profile,
+        )
         kind = str(getattr(pathology, "code", "") or detail_dict.get("code", ""))
         add(
             surface="source_pathology",
@@ -955,7 +901,10 @@ def build_evidence_event_rows(bundle: ReplayBundle) -> List[EvidenceEventRow]:
     for failed in bundle.failed_ops:
         detail = failed.as_detail() if hasattr(failed, "as_detail") else _json_safe(failed)
         detail_dict = detail if isinstance(detail, dict) else {}
-        source_id = _canonical_source_id(getattr(failed, "amendment_id", "") or detail_dict.get("amendment_id", ""))
+        source_id = _canonical_source_id(
+            getattr(failed, "amendment_id", "") or detail_dict.get("amendment_id", ""),
+            profile=export_profile,
+        )
         reason_code = str(getattr(failed, "reason_code", "") or detail_dict.get("reason_code", ""))
         kind = reason_code or "failed_operation"
         add(
@@ -1010,7 +959,8 @@ CREATE TABLE transitions (
     legal_op_kind   TEXT,  -- L2 action(s) for display
     legal_op_summary TEXT, -- L2 summary for display
     source_id       TEXT,
-    he_ref          TEXT,
+    he_ref          TEXT,  -- legacy FI mirror of source_ref
+    source_ref      TEXT,  -- jurisdiction-owned source reference token
     flags           TEXT   -- JSON
 );
 CREATE TABLE edges (
@@ -1089,6 +1039,23 @@ CREATE TABLE lawvm_interlinks (
     valid_at_end             TEXT,
     detail_json              TEXT
 );
+CREATE TABLE lawvm_interlink_targets (
+    target_key          TEXT PRIMARY KEY,
+    target_jurisdiction TEXT,
+    target_work_kind    TEXT,
+    target_local_id     TEXT,
+    target_work_id      TEXT,
+    target_locator      TEXT,
+    target_url          TEXT,
+    target_links_json   TEXT,
+    preview_status      TEXT,
+    preview_source      TEXT,
+    title               TEXT,
+    locator_label       TEXT,
+    hierarchy_json      TEXT,
+    preview_text        TEXT,
+    detail_json         TEXT
+);
 CREATE INDEX idx_transitions_date ON transitions(effective_date);
 CREATE INDEX idx_transitions_addr ON transitions(target_address);
 CREATE INDEX idx_active_at_addr ON active_at(address);
@@ -1098,6 +1065,7 @@ CREATE INDEX idx_evidence_events_source ON evidence_events(source_id);
 CREATE INDEX idx_lawvm_interlinks_rendered_addr ON lawvm_interlinks(rendered_address);
 CREATE INDEX idx_lawvm_interlinks_source_work ON lawvm_interlinks(source_work_id);
 CREATE INDEX idx_lawvm_interlinks_target_work ON lawvm_interlinks(target_work_id);
+CREATE INDEX idx_lawvm_interlink_targets_work ON lawvm_interlink_targets(target_work_id);
 """
 
 
@@ -1123,6 +1091,7 @@ class ExportStats:
     n_edges: int
     n_evidence_events: int
     n_lawvm_interlinks: int
+    n_lawvm_interlink_targets: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -1147,6 +1116,10 @@ def export_transition_graph(
     *,
     granularity: str = DEFAULT_GRANULARITY,
     quiet: bool = False,
+    profile: TransitionGraphExportProfile | None = None,
+    interlink_provider: LawvmInterlinkExportProvider | None = None,
+    replay_runner: Any | None = None,
+    tree_materializer: Any | None = None,
 ) -> ExportStats:
     """Export the certified transition graph for ``statute_id`` to ``out_path``.
 
@@ -1158,8 +1131,9 @@ def export_transition_graph(
     Neutral LawVM interlinks are always projected into ``lawvm_interlinks``;
     legal-reference recognition must happen in LawVM, never in the viewer.
     """
-    canonical_id = _canonical_statute_id(statute_id)
-    engine_id = _engine_statute_id(canonical_id)
+    export_profile = profile or _default_export_profile()
+    canonical_id = export_profile.canonical_statute_id(statute_id)
+    engine_id = export_profile.engine_statute_id(canonical_id)
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1169,7 +1143,13 @@ def export_transition_graph(
     t0 = time.time()
     if not quiet:
         print(f"[export] replaying {engine_id} (engine authority)...", flush=True)
-    bundle = run_engine_replay(engine_id)
+    run_replay = replay_runner or run_engine_replay
+    materialize_tree = tree_materializer or materialize_oracle_tree
+    bundle = dataclasses.replace(
+        run_replay(engine_id, profile=export_profile),
+        statute_id=canonical_id,
+        engine_id=engine_id,
+    )
     replay_seconds = time.time() - t0
     if not quiet:
         print(
@@ -1220,7 +1200,7 @@ def export_transition_graph(
         seq = 0
 
         for date in bundle.change_dates:
-            tree = materialize_oracle_tree(bundle, date)
+            tree = materialize_tree(bundle, date)
             segments_by_date[date] = rendered_text_segments(date, tree, slice_prefix)
             units = covering_units(tree, slice_prefix, granularity)
             active_addresses = frozenset(addr for addr, _node in units)
@@ -1277,7 +1257,7 @@ def export_transition_graph(
                 kind_set = {str(o.action) for o in ops}
                 summaries = [_legal_op_summary(o) for o in ops[:3]]
                 src_ids = {
-                    _canonical_statute_id(o.source.statute_id)
+                    export_profile.canonical_statute_id(o.source.statute_id)
                     for o in ops
                     if o.source is not None and o.source.statute_id
                 }
@@ -1285,7 +1265,7 @@ def export_transition_graph(
                     kind_set.add("expiry")
                     summaries.extend(f"expiry of {_legal_op_summary(o)}" for o in expiring[:3])
                     src_ids.update(
-                        _canonical_statute_id(o.source.statute_id)
+                        export_profile.canonical_statute_id(o.source.statute_id)
                         for o in expiring
                         if o.source is not None and o.source.statute_id
                     )
@@ -1316,6 +1296,7 @@ def export_transition_graph(
                         legal_op_summary=legal_op_summary,
                         source_id=source_id,
                         he_ref="",
+                        source_ref="",
                         flags=json.dumps(flags, ensure_ascii=False),
                     )
                 )
@@ -1323,17 +1304,38 @@ def export_transition_graph(
             prev_state = cur_state
 
         # --- source_artifacts: statute + every amendment referenced by ops ---
-        from lawvm.finland.corpus import _get_corpus_store
-
-        corpus = _get_corpus_store()
+        corpus = export_profile.corpus()
+        projected_interlinks = (
+            interlink_provider.project_interlinks(canonical_id, corpus)
+            if interlink_provider is not None
+            else []
+        )
+        target_resolver = None
+        if (
+            interlink_provider is not None
+            and interlink_provider.resolve_target is not None
+        ):
+            preview_context = InterlinkTargetPreviewContext(
+                source_statute_id=canonical_id,
+                corpus=corpus,
+            )
+            def target_resolver(target_ref: Any) -> Any:
+                return interlink_provider.resolve_target(
+                    target_ref,
+                    preview_context,
+                )
+        interlink_rows, interlink_target_rows = enrich_lawvm_interlink_targets(
+            projected_interlinks,
+            target_resolver=target_resolver,
+        )
         interlink_rows = place_lawvm_interlinks(
-            project_lawvm_interlinks(canonical_id, corpus),
+            interlink_rows,
             statute_id=canonical_id,
             segments_by_date=segments_by_date,
         )
 
         source_rows: List[SourceArtifactRow] = []
-        he_by_amendment: Dict[str, str] = {}
+        source_ref_by_amendment: Dict[str, str] = {}
         # the base statute
         source_rows.append(
             SourceArtifactRow(
@@ -1341,7 +1343,7 @@ def export_transition_graph(
                 kind="statute",
                 canonical_id=canonical_id,
                 title=bundle.title,
-                url=f"https://www.finlex.fi/fi/laki/ajantasa/{engine_id.split('/')[0]}/{engine_id.split('/')[1]}",
+                url=export_profile.statute_url(canonical_id, engine_id),
                 content_hash="",
                 date="",
             )
@@ -1351,22 +1353,16 @@ def export_transition_graph(
             src = op.source
             if src is None or not src.statute_id:
                 continue
-            canon = _canonical_statute_id(src.statute_id)
+            canon = export_profile.canonical_statute_id(src.statute_id)
             if canon == canonical_id:
                 continue
             if canon not in amendment_meta:
                 amendment_meta[canon] = (src.title or "", src.enacted or src.effective or "")
         for canon, (title, date) in sorted(amendment_meta.items()):
-            engine_amd = _engine_statute_id(canon)
-            he_ref = ""
-            try:
-                amd_xml = corpus.read_amendment(engine_amd)
-                he_ref = _extract_he_ref(amd_xml)
-            except Exception:
-                he_ref = ""
-            he_by_amendment[canon] = he_ref
-            yr, num = engine_amd.split("/") if "/" in engine_amd else ("", "")
-            url = f"https://www.finlex.fi/fi/laki/alkup/{yr}/{engine_amd.replace('/', '')}" if yr else ""
+            engine_amd = export_profile.engine_statute_id(canon)
+            source_ref = export_profile.source_reference(corpus, engine_amd) if corpus is not None else ""
+            source_ref_by_amendment[canon] = source_ref
+            url = export_profile.amendment_url(canon, engine_amd)
             source_rows.append(
                 SourceArtifactRow(
                     source_id=canon,
@@ -1386,9 +1382,10 @@ def export_transition_graph(
             [row.sql_values() for row in source_rows],
         )
 
-        # backfill he_ref onto transition rows
+        # Backfill jurisdiction-owned source references onto transition rows.
+        # ``he_ref`` is kept as a legacy mirror for existing FI viewer data.
         transition_rows = [
-            row.with_he_ref(he_by_amendment.get(row.source_id, ""))
+            row.with_source_ref(source_ref_by_amendment.get(row.source_id, ""))
             for row in transition_rows
         ]
 
@@ -1396,8 +1393,8 @@ def export_transition_graph(
             "INSERT INTO transitions"
             "(transition_id, sequence, effective_date, expires_date, action, "
             " target_address, pre_hash, post_hash, payload_hash, legal_op_kind, "
-            " legal_op_summary, source_id, he_ref, flags) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " legal_op_summary, source_id, he_ref, source_ref, flags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [row.sql_values() for row in transition_rows],
         )
         conn.executemany(
@@ -1467,7 +1464,7 @@ def export_transition_graph(
             [row.sql_values() for row in edge_rows],
         )
 
-        evidence_rows = build_evidence_event_rows(bundle)
+        evidence_rows = build_evidence_event_rows(bundle, profile=export_profile)
         conn.executemany(
             "INSERT INTO evidence_events"
             "(event_id, surface, kind, role, severity, phase, source_id, "
@@ -1488,6 +1485,15 @@ def export_transition_graph(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [row.sql_values() for row in interlink_rows],
         )
+        conn.executemany(
+            "INSERT OR REPLACE INTO lawvm_interlink_targets"
+            "(target_key, target_jurisdiction, target_work_kind, target_local_id, "
+            " target_work_id, target_locator, target_url, target_links_json, "
+            " preview_status, preview_source, title, locator_label, hierarchy_json, "
+            " preview_text, detail_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [row.sql_values() for row in interlink_target_rows],
+        )
 
         # --- meta ---
         meta_rows = {
@@ -1506,8 +1512,8 @@ def export_transition_graph(
             # Node addresses come from engine-exported labels/nums, never from
             # positional counters in the consumer.
             "node_address_source": "exported",
-            "jurisdiction": "fi",
-            "lang": "fi",
+            "jurisdiction": export_profile.jurisdiction,
+            "lang": export_profile.lang,
             "schema_version": SCHEMA_VERSION,
             "change_dates": bundle.change_dates,
             "generated_note": (
@@ -1529,7 +1535,7 @@ def export_transition_graph(
         conn.close()
 
     # --- L2 sidecar for independent browser-side replay (Exp-2) ---
-    sidecar = emit_l2_sidecar(bundle, checkpoint_rows)
+    sidecar = emit_l2_sidecar(bundle, checkpoint_rows, profile=export_profile)
     sidecar_path = out_path.with_suffix(out_path.suffix + ".l2.json")
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
 
@@ -1550,6 +1556,7 @@ def export_transition_graph(
         n_edges=len(edge_rows),
         n_evidence_events=len(evidence_rows),
         n_lawvm_interlinks=len(interlink_rows),
+        n_lawvm_interlink_targets=len(interlink_target_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1563,14 +1570,34 @@ def export_transition_graph(
 
 
 def main(args: Any) -> None:
+    from lawvm.tools.transition_graph_jurisdictions import (
+        transition_graph_adapter_for_jurisdiction,
+    )
+
     statute = getattr(args, "statute", None)
     out = getattr(args, "out", None)
     slice_prefix = getattr(args, "slice", "") or ""
     granularity = getattr(args, "granularity", DEFAULT_GRANULARITY) or DEFAULT_GRANULARITY
+    jurisdiction = getattr(args, "jurisdiction", "fi") or "fi"
     if not statute or not out:
         print("error: --statute and --out are required", flush=True)
         raise SystemExit(2)
-    stats = export_transition_graph(statute, out, slice_prefix, granularity=granularity, quiet=False)
+    try:
+        adapter = transition_graph_adapter_for_jurisdiction(jurisdiction)
+    except ValueError as exc:
+        print(f"error: {exc}", flush=True)
+        raise SystemExit(2) from exc
+    stats = export_transition_graph(
+        statute,
+        out,
+        slice_prefix,
+        granularity=granularity,
+        quiet=False,
+        profile=adapter.profile,
+        interlink_provider=adapter.interlink_provider,
+        replay_runner=adapter.replay_runner,
+        tree_materializer=adapter.tree_materializer,
+    )
     print("", flush=True)
     print(f"  statute:          {stats.statute_id}  ({stats.title})", flush=True)
     print(f"  slice:            {stats.slice_prefix or '<whole act>'}", flush=True)
@@ -1592,4 +1619,5 @@ def main(args: Any) -> None:
     print(f"  edges:            {stats.n_edges}", flush=True)
     print(f"  evidence_events:  {stats.n_evidence_events}", flush=True)
     print(f"  lawvm_interlinks: {stats.n_lawvm_interlinks}", flush=True)
+    print(f"  interlink_targets: {stats.n_lawvm_interlink_targets}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)

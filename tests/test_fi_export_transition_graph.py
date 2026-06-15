@@ -25,8 +25,14 @@ from lawvm.core.ir import IRNode
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.interlink_targets import (
+    fi_transition_graph_interlink_provider,
+    resolve_fi_interlink_target_row,
+)
 from lawvm.finland.ops import FailedOp
 from lawvm.tools import export_transition_graph as etg
+from lawvm.tools.transition_graph_interlinks import LawvmInterlinkTargetRow
+from lawvm.tools.transition_graph_jurisdictions import transition_graph_adapter_for_jurisdiction
 
 
 # ---------------------------------------------------------------------------
@@ -281,11 +287,22 @@ def _placeable_interlink_row() -> dict[str, object]:
     return row
 
 
+def _interlink_provider_for_rows(rows: list[etg.LawvmInterlinkRow]) -> etg.LawvmInterlinkExportProvider:
+    return etg.LawvmInterlinkExportProvider(
+        project_interlinks=lambda _sid, _corpus: rows,
+        resolve_target=resolve_fi_interlink_target_row,
+    )
+
+
 @pytest.fixture()
 def patched_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     bundle = _make_bundle()
 
-    def fake_run_engine_replay(_statute_id: str) -> etg.ReplayBundle:
+    def fake_run_engine_replay(
+        _statute_id: str,
+        *,
+        profile: etg.TransitionGraphExportProfile | None = None,
+    ) -> etg.ReplayBundle:
         return bundle
 
     def fake_materialize(_bundle: etg.ReplayBundle, as_of: str) -> IRNode:
@@ -295,9 +312,14 @@ def patched_engine(monkeypatch: pytest.MonkeyPatch) -> None:
         def read_amendment(self, _engine_id: str) -> bytes:
             return b""
 
+        def read_oracle(self, _engine_id: str) -> bytes | None:
+            return None
+
+        def read_source(self, _engine_id: str) -> bytes | None:
+            return None
+
     monkeypatch.setattr(etg, "run_engine_replay", fake_run_engine_replay)
     monkeypatch.setattr(etg, "materialize_oracle_tree", fake_materialize)
-    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [])
     monkeypatch.setattr(
         "lawvm.finland.corpus._get_corpus_store", lambda: _FakeCorpus()
     )
@@ -360,7 +382,11 @@ def _make_deep_bundle() -> etg.ReplayBundle:
 def patched_deep_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     bundle = _make_deep_bundle()
 
-    def fake_run_engine_replay(_statute_id: str) -> etg.ReplayBundle:
+    def fake_run_engine_replay(
+        _statute_id: str,
+        *,
+        profile: etg.TransitionGraphExportProfile | None = None,
+    ) -> etg.ReplayBundle:
         return bundle
 
     def fake_materialize(_bundle: etg.ReplayBundle, as_of: str) -> IRNode:
@@ -372,7 +398,6 @@ def patched_deep_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(etg, "run_engine_replay", fake_run_engine_replay)
     monkeypatch.setattr(etg, "materialize_oracle_tree", fake_materialize)
-    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [])
     monkeypatch.setattr(
         "lawvm.finland.corpus._get_corpus_store", lambda: _FakeCorpus()
     )
@@ -483,8 +508,14 @@ def test_export_produces_required_tables(patched_engine: None, tmp_path: Path) -
             "SELECT name FROM sqlite_master WHERE type='table' AND name='lawvm_interlinks'"
         ).fetchone()
         assert interlink_table == ("lawvm_interlinks",)
+        target_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='lawvm_interlink_targets'"
+        ).fetchone()
+        assert target_table == ("lawvm_interlink_targets",)
         assert stats.n_lawvm_interlinks == 0
         assert conn.execute("SELECT COUNT(*) FROM lawvm_interlinks").fetchone()[0] == 0
+        assert stats.n_lawvm_interlink_targets == 0
+        assert conn.execute("SELECT COUNT(*) FROM lawvm_interlink_targets").fetchone()[0] == 0
 
         # --- internal LawVM evidence surfaces are visible, not folded into law ---
         evidence = conn.execute(
@@ -516,20 +547,25 @@ def test_export_always_persists_lawvm_interlinks(
     patched_engine: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     row = etg.LawvmInterlinkRow.from_mapping(_sample_interlink_row())
-    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [row])
 
     out = tmp_path / "synth_links.db"
-    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        interlink_provider=_interlink_provider_for_rows([row]),
+    )
 
     assert stats.n_lawvm_interlinks == 1
+    assert stats.n_lawvm_interlink_targets == 1
     conn = sqlite3.connect(str(out))
     try:
         stored = conn.execute(
             "SELECT interlink_id, surface_text, target_work_id, rendered_address, "
-            "rendered_segment_index, rendered_char_start, rendered_char_end "
+            "rendered_segment_index, rendered_char_start, rendered_char_end, detail_json "
             "FROM lawvm_interlinks"
         ).fetchone()
-        assert stored == (
+        assert stored[:7] == (
             "fi.inline_citations:100_2010:0",
             "luonnonsuojelulain (9/2023)",
             "fi:normative_act:9/2023",
@@ -538,6 +574,176 @@ def test_export_always_persists_lawvm_interlinks(
             0,
             27,
         )
+        assert json.loads(stored[7])["target_key"] == "fi|normative_act|9/2023|section:2"
+        target = conn.execute(
+            "SELECT target_key, target_url, target_links_json, preview_status "
+            "FROM lawvm_interlink_targets"
+        ).fetchone()
+        assert target[0] == "fi|normative_act|9/2023|section:2"
+        assert target[1] == "https://www.finlex.fi/fi/lainsaadanto/2023/9"
+        assert json.loads(target[2]) == [
+            {
+                "label": "Finlex",
+                "rel": "canonical",
+                "url": "https://www.finlex.fi/fi/lainsaadanto/2023/9",
+            },
+            {
+                "label": "Säädöskokoelma",
+                "rel": "source_publication",
+                "url": "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2023/9",
+            },
+        ]
+        assert target[3] == "missing_local_corpus"
+    finally:
+        conn.close()
+
+
+def test_export_accepts_non_fi_profile_and_runtime_hooks(
+    tmp_path: Path,
+) -> None:
+    profile = etg.TransitionGraphExportProfile(
+        jurisdiction="zz",
+        lang="en",
+        canonical_statute_id=lambda value: f"zz:{value}",
+        engine_statute_id=lambda value: value.removeprefix("zz:"),
+    )
+    bundle = _make_bundle()
+
+    def replay_runner(
+        _engine_id: str,
+        *,
+        profile: etg.TransitionGraphExportProfile | None = None,
+    ) -> etg.ReplayBundle:
+        return bundle
+
+    def tree_materializer(_bundle: etg.ReplayBundle, as_of: str) -> IRNode:
+        return _TREES_BY_DATE[as_of]
+
+    out = tmp_path / "non_fi_runtime.db"
+    stats = etg.export_transition_graph(
+        "act-1",
+        out,
+        quiet=True,
+        profile=profile,
+        replay_runner=replay_runner,
+        tree_materializer=tree_materializer,
+    )
+
+    assert stats.statute_id == "zz:act-1"
+    conn = sqlite3.connect(str(out))
+    try:
+        assert json.loads(
+            conn.execute("SELECT value FROM meta WHERE key='jurisdiction'").fetchone()[0]
+        ) == "zz"
+        assert conn.execute("SELECT COUNT(*) FROM lawvm_interlink_targets").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_export_non_fi_interlink_provider_does_not_require_corpus(
+    tmp_path: Path,
+) -> None:
+    profile = etg.TransitionGraphExportProfile(
+        jurisdiction="zz",
+        lang="en",
+        canonical_statute_id=lambda value: f"zz:{value}",
+        engine_statute_id=lambda value: value.removeprefix("zz:"),
+    )
+    bundle = _make_bundle()
+    raw = _sample_interlink_row()
+    raw.update({
+        "interlink_id": "zz.inline:act-1:0",
+        "source_jurisdiction": "zz",
+        "source_local_id": "act-1",
+        "source_work_id": "zz:normative_act:act-1",
+        "target_jurisdiction": "zz",
+        "target_local_id": "target-act",
+        "target_work_id": "zz:normative_act:target-act",
+        "target_locator": "section:A",
+        "rendered_statute_id": "zz:act-1",
+    })
+    row = etg.LawvmInterlinkRow.from_mapping(raw)
+
+    def replay_runner(
+        _engine_id: str,
+        *,
+        profile: etg.TransitionGraphExportProfile | None = None,
+    ) -> etg.ReplayBundle:
+        return bundle
+
+    def tree_materializer(_bundle: etg.ReplayBundle, as_of: str) -> IRNode:
+        return _TREES_BY_DATE[as_of]
+
+    def project_interlinks(statute_id: str, corpus: object | None) -> list[etg.LawvmInterlinkRow]:
+        assert statute_id == "zz:act-1"
+        assert corpus is None
+        return [row]
+
+    def resolve_target(target_ref: Any, context: Any) -> LawvmInterlinkTargetRow:
+        assert context.source_statute_id == "zz:act-1"
+        assert context.corpus is None
+        return LawvmInterlinkTargetRow(
+            target_key=target_ref.key,
+            target_jurisdiction=target_ref.jurisdiction,
+            target_work_kind=target_ref.work_kind,
+            target_local_id=target_ref.local_id,
+            target_work_id=target_ref.work_id,
+            target_locator=target_ref.locator,
+            target_url="https://example.test/target-act/section-a",
+            target_links_json=json.dumps([
+                {
+                    "rel": "canonical",
+                    "label": "Example",
+                    "url": "https://example.test/target-act/section-a",
+                }
+            ]),
+            preview_status="resolved_by_zz_adapter",
+            preview_source="zz.synthetic_preview",
+            title="Target Act",
+            locator_label="Section A",
+            hierarchy_json=json.dumps([
+                {"kind": "section", "label": "A", "title": "Synthetic section"}
+            ]),
+            preview_text="Adapter-owned target preview.",
+            detail_json="{}",
+        )
+
+    provider = etg.LawvmInterlinkExportProvider(
+        project_interlinks=project_interlinks,
+        resolve_target=resolve_target,
+    )
+    out = tmp_path / "non_fi_links_no_corpus.db"
+    stats = etg.export_transition_graph(
+        "act-1",
+        out,
+        quiet=True,
+        profile=profile,
+        interlink_provider=provider,
+        replay_runner=replay_runner,
+        tree_materializer=tree_materializer,
+    )
+
+    assert stats.n_lawvm_interlinks == 1
+    assert stats.n_lawvm_interlink_targets == 1
+    conn = sqlite3.connect(str(out))
+    try:
+        target = conn.execute(
+            "SELECT target_jurisdiction, target_url, preview_status, title, hierarchy_json "
+            "FROM lawvm_interlink_targets"
+        ).fetchone()
+        assert target[0:4] == (
+            "zz",
+            "https://example.test/target-act/section-a",
+            "resolved_by_zz_adapter",
+            "Target Act",
+        )
+        assert json.loads(target[4]) == [
+            {"kind": "section", "label": "A", "title": "Synthetic section"}
+        ]
+        detail = json.loads(
+            conn.execute("SELECT detail_json FROM lawvm_interlinks").fetchone()[0]
+        )
+        assert detail["target_key"] == "zz|normative_act|target-act|section:A"
     finally:
         conn.close()
 
@@ -546,12 +752,17 @@ def test_export_places_unambiguous_lawvm_interlinks_in_rendered_text(
     patched_engine: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     row = etg.LawvmInterlinkRow.from_mapping(_placeable_interlink_row())
-    monkeypatch.setattr(etg, "project_lawvm_interlinks", lambda _sid, _corpus: [row])
 
     out = tmp_path / "synth_placed_links.db"
-    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        interlink_provider=_interlink_provider_for_rows([row]),
+    )
 
     assert stats.n_lawvm_interlinks == len(_CHANGE_DATES)
+    assert stats.n_lawvm_interlink_targets == 1
     conn = sqlite3.connect(str(out))
     try:
         stored = conn.execute(
@@ -755,6 +966,11 @@ def test_canonical_id_roundtrip() -> None:
     assert etg._engine_statute_id("2004/301") == "2004/301"
 
 
+def test_transition_graph_jurisdiction_adapter_fails_loudly_for_unsupported() -> None:
+    with pytest.raises(ValueError, match="not implemented for jurisdiction 'zz'"):
+        transition_graph_adapter_for_jurisdiction("zz")
+
+
 def test_structural_hash_sensitive_to_text_and_structure() -> None:
     a = _section("1", "alpha")
     b = _section("1", "beta")
@@ -781,7 +997,12 @@ def _corpus_available() -> bool:
 def test_corpus_backed_export_small_statute(tmp_path: Path) -> None:
     # 2000/1005 (säädös 1005/2000) is a small asetus with a handful of ops.
     out = tmp_path / "1005-2000.db"
-    stats = etg.export_transition_graph("1005/2000", out, quiet=True)
+    stats = etg.export_transition_graph(
+        "1005/2000",
+        out,
+        quiet=True,
+        interlink_provider=fi_transition_graph_interlink_provider(),
+    )
     assert out.exists()
     assert stats.n_checkpoints >= 1
     assert stats.n_change_dates >= 1

@@ -11232,9 +11232,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     export_tg_p = sub.add_parser(
         "export-transition-graph",
         parents=_P,
-        help="export a certified transition graph (SQLite) for a FI statute",
+        help="export a certified transition graph (SQLite) for the selected jurisdiction",
         description=(
-            "Run the Finland replay engine once for a statute and emit a "
+            "Run the selected jurisdiction replay adapter once for a statute and emit a "
             "self-contained SQLite database of certified L3 tree transitions, "
             "per-change-date engine oracle checkpoints, and content blobs. The "
             "Python engine is the only authority; the export lets a browser "
