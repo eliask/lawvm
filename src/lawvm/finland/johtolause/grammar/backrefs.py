@@ -52,12 +52,15 @@ from typing import Optional
 
 from lawvm.finland.johtolause.grammar.combinators import Span, cat
 from lawvm.finland.johtolause.grammar.sections import (
+    ParsedSection,
     SubRef,
     _Scan,
     _read,
     _sep,
     _sub_ref,
     _to_surface_sub_refs,
+    emit_section_nodes,
+    recognize_section_ref,
 )
 from lawvm.finland.johtolause.surface_model import (
     BackRefArity,
@@ -71,6 +74,7 @@ from lawvm.finland.johtolause.surface_model import (
 # ---------------------------------------------------------------------------
 _BACKREF = cat("BACKREF")
 _PYKALA = cat("PYKALA")
+_LUKU = cat("LUKU")
 
 # The singular anaphoric determiners (faithful to the old driver's
 # ``t2.text.lower() in ("mainitun", "mainittu")`` arity test).  Every other
@@ -193,6 +197,80 @@ def _distribute_trailing_kohta_facet(subs: list[SubRef]) -> list[SubRef]:
 
 
 # ---------------------------------------------------------------------------
+# Chapter-backref resumption: "mainitun luvun <section_ref>".
+#
+# Unlike the section backref (which emits a SurfaceBackRef anaphor), the chapter
+# backref RESUMES a previously-named chapter and names section target(s) under
+# it: it consumes "BACKREF LUKU" and then a normal section reference, which is
+# emitted as ordinary section target(s) scoped to the resumed chapter — exactly
+# as the old parser's _parse_chapter_backref_target delegates to _section_ref
+# with the inherited chapter context.  The witness is therefore the section
+# family's own (fi.section_ref), not a backref id; the BACKREF + LUKU prefix is
+# consumed but never carries its own node.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedChapterBackref:
+    """A recognized ``mainitun luvun <section_ref>`` chapter resumption.
+
+    Carries the consumed prefix span (BACKREF + LUKU) and the inner
+    ``ParsedSection`` for the section reference that follows; the emitter scopes
+    that section to the resumed chapter (supplied by the driver from the
+    last-named chapter context) via the section family's own emitter.
+    """
+
+    prefix_span: Span
+    inner_section: ParsedSection
+
+
+def recognize_chapter_backref(scan: _Scan) -> Optional[ParsedChapterBackref]:
+    """Recognize ``BACKREF LUKU <section_ref>`` — a chapter-backref resumption.
+
+    Faithful to ``surface_parse._parse_chapter_backref_target``: consume the
+    anaphoric determiner (``mainitun``) and ``luvun``, then a section reference.
+    The recognized chapter is the inherited (last-named) chapter, which the
+    driver supplies at EMIT time (not stored here — the recognizer is pure over
+    the cursor).  Returns ``None`` (rewinding ``scan``) if the prefix or the
+    trailing section reference does not match.
+
+    NB: the driver must already hold a non-empty resumed chapter context for this
+    arm to be legal (the old parser declines ``mainitun luvun`` when no prior
+    chapter was named); that gating is the driver's, mirroring the old
+    ``if not chapter: return None`` guard.
+    """
+    start = scan.pos
+    if _read(scan, _BACKREF) is None:
+        return None
+    if _read(scan, _LUKU) is None:
+        scan.goto(start)
+        return None
+    prefix_end = scan.pos
+    inner = recognize_section_ref(scan)
+    if inner is None:
+        scan.goto(start)
+        return None
+    return ParsedChapterBackref(
+        prefix_span=Span(start, prefix_end),
+        inner_section=inner,
+    )
+
+
+def emit_chapter_backref_nodes(
+    parsed: ParsedChapterBackref, chapter: str = "", part: str = ""
+) -> list[SurfaceNode]:
+    """Emit the resumed section target(s) scoped to the named chapter.
+
+    ``chapter`` is the resumed (last-named) chapter the driver carries forward;
+    ``part`` the inherited part.  The section family's emitter applies them as
+    inherited context, so the nodes carry ``fi.section_ref`` witnesses scoped to
+    the resumed chapter — byte-identical to the old parser's delegation to
+    ``_section_ref(s, verb, chapter, part=part)``.
+    """
+    return emit_section_nodes(parsed.inner_section, chapter=chapter, part=part)
+
+
+# ---------------------------------------------------------------------------
 # Emitter — ParsedBackRef -> the frozen SurfaceBackRef node.
 # ---------------------------------------------------------------------------
 
@@ -221,7 +299,10 @@ def emit_backref_nodes(
 __all__ = [
     "BackRefForm",
     "ParsedBackRef",
+    "ParsedChapterBackref",
     "backref_rule_id",
     "emit_backref_nodes",
+    "emit_chapter_backref_nodes",
     "recognize_backref",
+    "recognize_chapter_backref",
 ]
