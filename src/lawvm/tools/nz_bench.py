@@ -430,6 +430,42 @@ def _aggregate(results: list[_WorkResult]) -> dict[str, Any]:
     }
 
 
+def _format_progress_line(
+    *, done: int, total: int, elapsed: float, result: _WorkResult
+) -> str:
+    """One informative progress line per work, matching the uk_bench house style.
+
+    ``  [done/total] work_id<padded>  <key result> (Ns) status=...``
+
+    The key-result fragment is the same multi-lane signal the final report keeps
+    separate: transitions replayed/refused, the slice agreement, and the dual
+    text/tree similarity over the actually-replayed transitions. Error/empty
+    works carry a typed status instead of a similarity number so they read
+    cleanly as they scroll.
+    """
+
+    if result.status != "OK":
+        result_fragment = "ERROR"
+    elif result.transitions_replayed == 0:
+        # No transition materialized — surface WHY via the coverage lanes rather
+        # than a misleading 0% similarity (nothing was scored).
+        result_fragment = (
+            f"repl=0 refused={result.transitions_refused} "
+            f"(no replay; would+={result.would_replay_if_refusals_ignored})"
+        )
+    else:
+        result_fragment = (
+            f"repl={result.transitions_replayed} "
+            f"refused={result.transitions_refused} "
+            f"slice={result.slice_agreements}/{result.slice_nodes} "
+            f"text={result.text_similarity:.0%} tree={result.tree_similarity:.0%}"
+        )
+    return (
+        f"  [{done}/{total}] {result.work_id:<30} "
+        f"{result_fragment} ({elapsed:.0f}s) status={result.status}"
+    )
+
+
 def _print_report(results: list[_WorkResult], agg: dict[str, Any], corpus: Path) -> None:
     print(f"\n=== NZ actual-replay bench: {corpus} ===")
     print(
@@ -516,15 +552,42 @@ def main(args: Any) -> None:
         print(f"NZ bench corpus {corpus} contained no work_ids", file=sys.stderr)
         raise SystemExit(2)
 
+    quiet = getattr(args, "json", False) and not getattr(args, "output_json", None)
+
+    corpus_label = "smoke" if corpus == _SMOKE_CORPUS else "full"
+    if max_works is not None and max_works > 0:
+        corpus_label += f"; capped at first {max_works}"
+    if not quiet:
+        print(
+            f"NZ actual-replay bench: scoring {len(work_ids)} works "
+            f"from {corpus} ({corpus_label})",
+            file=sys.stderr,
+            flush=True,
+        )
+        if corpus == _DEFAULT_CORPUS and max_works is None:
+            print(
+                "  (full corpus is slow; use --smoke or --max-works N for a quick run)",
+                file=sys.stderr,
+                flush=True,
+            )
+
     t0 = time.time()
     archive = open_farchive(db_path)
     results: list[_WorkResult] = []
+    total = len(work_ids)
     try:
         for i, work_id in enumerate(work_ids):
-            results.append(_score_one_work(archive, work_id, db_path))
-            if (i + 1) % 25 == 0:
+            result = _score_one_work(archive, work_id, db_path)
+            results.append(result)
+            if not quiet:
                 elapsed = time.time() - t0
-                print(f"  [{i + 1}/{len(work_ids)}] {elapsed:.0f}s", file=sys.stderr)
+                print(
+                    _format_progress_line(
+                        done=i + 1, total=total, elapsed=elapsed, result=result
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
     finally:
         archive.close()
 

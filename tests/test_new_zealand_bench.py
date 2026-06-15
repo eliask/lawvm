@@ -185,6 +185,71 @@ def test_aggregate_keeps_coverage_lanes_separate_from_similarity() -> None:
     }
 
 
+# --- progress-line + header formatting --------------------------------------
+
+
+def _ok_work(work_id: str = "w1") -> nz_bench._WorkResult:
+    return nz_bench._WorkResult(
+        work_id=work_id,
+        families=("repeal",),
+        status="OK",
+        transitions_replayed=3,
+        transitions_refused=2,
+        ops_replayed=4,
+        slice_nodes=5,
+        slice_agreements=5,
+        all_slices_agree=True,
+        refusals_verification_failed=1,
+        refusals_refusal_blocked=1,
+        families_not_attempted=0,
+        would_replay_if_refusals_ignored=1,
+        text_similarity=0.91,
+        tree_similarity=0.88,
+        tree_similarity_stable=0.95,
+        residual_family_counts={"agreement": 5},
+    )
+
+
+def test_progress_line_is_informative_for_replayed_work() -> None:
+    # The per-work progress line streams the work_id AND its key result (the
+    # multi-lane signal), in the uk_bench house style, not a bare counter.
+    line = nz_bench._format_progress_line(
+        done=7, total=33, elapsed=12.0, result=_ok_work("act_public_1992_122")
+    )
+    assert line.startswith("  [7/33] act_public_1992_122")
+    assert "repl=3" in line
+    assert "refused=2" in line
+    assert "slice=5/5" in line
+    assert "text=91%" in line
+    assert "tree=88%" in line
+    assert "(12s)" in line
+    assert "status=OK" in line
+
+
+def test_progress_line_no_replay_surfaces_coverage_not_zero_similarity() -> None:
+    # A work that materialized nothing shows WHY (coverage lanes), not a
+    # misleading 0% similarity over an empty replay set.
+    work = _ok_work()
+    work.transitions_replayed = 0
+    work.transitions_refused = 4
+    work.would_replay_if_refusals_ignored = 2
+    line = nz_bench._format_progress_line(done=1, total=10, elapsed=3.0, result=work)
+    assert "repl=0" in line
+    assert "refused=4" in line
+    assert "would+=2" in line
+    assert "text=" not in line  # no fabricated similarity number
+    assert "status=OK" in line
+
+
+def test_progress_line_typed_status_for_errors() -> None:
+    work = _ok_work()
+    work.status = "EXC:ValueError:boom"
+    work.transitions_replayed = 0
+    line = nz_bench._format_progress_line(done=2, total=10, elapsed=1.0, result=work)
+    assert "ERROR" in line
+    assert "status=EXC:ValueError:boom" in line
+
+
 # --- real-archive canary ----------------------------------------------------
 
 
@@ -211,6 +276,14 @@ def test_nz_bench_canary_scores_high_similarity_on_replayed_transitions(capsys, 
         output_json=str(out_json),
     )
     nz_bench.main(args)
+
+    # The run streams a header naming the corpus + work count, and an
+    # informative per-work progress line carrying the work_id and its key
+    # result — not a bare counter.
+    err = capsys.readouterr().err
+    assert "NZ actual-replay bench: scoring 1 works" in err
+    assert str(corpus) in err
+    assert f"[1/1] {_CANARY_WORK}" in err
 
     import json
 
