@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, List, Mapping, Optional
 
 from lxml import etree
@@ -43,11 +44,22 @@ FI_ROUTE_REJECTION_TITLE_OTHER_STATUTE_RULE_ID = "fi.route_rejection.title_targe
 FI_ROUTE_REJECTION_CITATION_MISMATCH_RULE_ID = "fi.route_rejection.citation_mismatch"
 
 
+class RouteRejectionBranch(str, Enum):
+    """Stable sub-branch for route rejections that share one finding kind."""
+
+    NUM_COLLISION = "num_collision"
+    PENDING_AMENDMENT_OF_PARENT = "pending_amendment_of_parent"
+    DELEGATED_AUTHORITY_NOJALLA = "delegated_authority_nojalla"
+    META_REPEAL = "meta_repeal"
+    TITLE_TARGETS_OTHER_STATUTE = "title_targets_other_statute"
+    CITATION_MISMATCH = "citation_mismatch"
+
+
 @dataclass(frozen=True, slots=True)
 class RouteRejectionDisposition:
     rule_id: str
     route_reason: str
-    branch: str
+    branch: RouteRejectionBranch
     family: str = "source_routing"
     phase: str = "process_muutoslaki.route_rejection"
     strict_disposition: str = "block"
@@ -59,13 +71,60 @@ class RouteRejectionDisposition:
             "rule_id": self.rule_id,
             "family": self.family,
             "phase": self.phase,
-            "branch": self.branch,
+            "branch": self.branch.value,
             "strict_disposition": self.strict_disposition,
             "quirks_disposition": self.quirks_disposition,
         }
         if extra:
             detail.update(extra)
         return detail
+
+
+def classify_route_rejection(
+    *,
+    route_reason: str,
+    johto: str,
+    source_title: str,
+    parent_title: str,
+) -> RouteRejectionDisposition:
+    """Classify a skipped amendment into a stable source-routing sub-branch."""
+
+    if route_reason == "num_collision_skip":
+        return RouteRejectionDisposition(
+            rule_id=FI_ROUTE_REJECTION_NUM_COLLISION_RULE_ID,
+            route_reason="num_collision_skip",
+            branch=RouteRejectionBranch.NUM_COLLISION,
+        )
+    if route_reason == "pending_amendment_of_parent_skip":
+        return RouteRejectionDisposition(
+            rule_id=FI_ROUTE_REJECTION_PENDING_AMENDMENT_RULE_ID,
+            route_reason="pending_amendment_of_parent_skip",
+            branch=RouteRejectionBranch.PENDING_AMENDMENT_OF_PARENT,
+        )
+    if route_reason == "delegated_authority_nojalla_skip":
+        return RouteRejectionDisposition(
+            rule_id=FI_ROUTE_REJECTION_DELEGATED_AUTHORITY_RULE_ID,
+            route_reason="delegated_authority_nojalla_skip",
+            branch=RouteRejectionBranch.DELEGATED_AUTHORITY_NOJALLA,
+        )
+    normalized_reason = str(route_reason or "citation_mismatch_skip")
+    if _looks_like_fi_meta_repeal(johto):
+        return RouteRejectionDisposition(
+            rule_id=FI_ROUTE_REJECTION_META_REPEAL_RULE_ID,
+            route_reason=normalized_reason,
+            branch=RouteRejectionBranch.META_REPEAL,
+        )
+    if _title_explicitly_targets_other_statute(source_title, parent_title):
+        return RouteRejectionDisposition(
+            rule_id=FI_ROUTE_REJECTION_TITLE_OTHER_STATUTE_RULE_ID,
+            route_reason=normalized_reason,
+            branch=RouteRejectionBranch.TITLE_TARGETS_OTHER_STATUTE,
+        )
+    return RouteRejectionDisposition(
+        rule_id=FI_ROUTE_REJECTION_CITATION_MISMATCH_RULE_ID,
+        route_reason=normalized_reason,
+        branch=RouteRejectionBranch.CITATION_MISMATCH,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,12 +206,14 @@ class ProcessRouteRejectionContext:
         )
 
     def _record_source_incomplete(self) -> None:
-        if self.route_reason == "num_collision_skip":
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_NUM_COLLISION_RULE_ID,
-                route_reason="num_collision_skip",
-                branch="num_collision",
-            )
+        disposition = classify_route_rejection(
+            route_reason=self.route_reason,
+            johto=self.johto,
+            source_title=self.source_title,
+            parent_title=self.parent_title,
+        )
+
+        if disposition.branch is RouteRejectionBranch.NUM_COLLISION:
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — NUM-collision false mapping: "
                 f"{self._cited_statute_phrase()} (not {self.parent_id})"
@@ -166,12 +227,7 @@ class ProcessRouteRejectionContext:
             )
             return
 
-        if self.route_reason == "pending_amendment_of_parent_skip":
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_PENDING_AMENDMENT_RULE_ID,
-                route_reason="pending_amendment_of_parent_skip",
-                branch="pending_amendment_of_parent",
-            )
+        if disposition.branch is RouteRejectionBranch.PENDING_AMENDMENT_OF_PARENT:
             target_suffix = f" via pending {self.route_target_amendment_id}" if self.route_target_amendment_id else ""
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — pending amendment of parent recognized "
@@ -186,12 +242,7 @@ class ProcessRouteRejectionContext:
             )
             return
 
-        if self.route_reason == "delegated_authority_nojalla_skip":
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_DELEGATED_AUTHORITY_RULE_ID,
-                route_reason="delegated_authority_nojalla_skip",
-                branch="delegated_authority_nojalla",
-            )
+        if disposition.branch is RouteRejectionBranch.DELEGATED_AUTHORITY_NOJALLA:
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — delegated-authority nojalla clause: "
                 f"{self._cited_statute_phrase()} is enabling authority (not replay target {self.parent_id})"
@@ -205,26 +256,11 @@ class ProcessRouteRejectionContext:
             )
             return
 
-        if _looks_like_fi_meta_repeal(self.johto):
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_META_REPEAL_RULE_ID,
-                route_reason=str(self.route_reason or "citation_mismatch_skip"),
-                branch="meta_repeal",
-            )
+        if disposition.branch is RouteRejectionBranch.META_REPEAL:
             logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", self.amendment_id, self.parent_id)
-        elif _title_explicitly_targets_other_statute(self.source_title, self.parent_title):
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_TITLE_OTHER_STATUTE_RULE_ID,
-                route_reason=str(self.route_reason or "citation_mismatch_skip"),
-                branch="title_targets_other_statute",
-            )
+        elif disposition.branch is RouteRejectionBranch.TITLE_TARGETS_OTHER_STATUTE:
             self.replay_print(f"  [{self.amendment_id}] SKIPPED — title targets different statute (not {self.parent_id})")
         else:
-            disposition = RouteRejectionDisposition(
-                rule_id=FI_ROUTE_REJECTION_CITATION_MISMATCH_RULE_ID,
-                route_reason=str(self.route_reason or "citation_mismatch_skip"),
-                branch="citation_mismatch",
-            )
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — citation mismatch: "
                 f"{self._cited_statute_phrase()} (not {self.parent_id})"

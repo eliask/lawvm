@@ -5,7 +5,11 @@ from typing import Any
 from lxml import etree
 
 from lawvm.core.phase_result import Finding
-from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+from lawvm.finland.process_route_rejection import (
+    RouteRejectionBranch,
+    ProcessRouteRejectionContext,
+    classify_route_rejection,
+)
 
 
 def _route_context(
@@ -104,3 +108,42 @@ def test_route_rejection_citation_mismatch_has_stable_rule_metadata() -> None:
     assert detail["branch"] == "citation_mismatch"
     assert detail["strict_disposition"] == "block"
     assert detail["quirks_disposition"] == "skip_with_finding"
+
+
+def test_route_rejection_meta_repeal_has_stable_rule_metadata() -> None:
+    detail = _recorded_detail(
+        "citation_mismatch_skip",
+        johto="kumotaan eräiden lakien muuttamisesta annetun lain ( 123/2010 ) 3 §",
+    )
+
+    assert detail["route_reason"] == "citation_mismatch_skip"
+    assert detail["rule_id"] == "fi.route_rejection.meta_repeal"
+    assert detail["branch"] == "meta_repeal"
+    assert detail["strict_disposition"] == "block"
+    assert detail["quirks_disposition"] == "skip_with_finding"
+
+
+def test_route_rejection_title_targets_other_statute_has_stable_rule_metadata() -> None:
+    detail = _recorded_detail(
+        "citation_mismatch_skip",
+        source_title="Asetus eroraha-asetuksen muuttamisesta annetun asetuksen muuttamisesta",
+        parent_title="Työttömyysturvalaki",
+    )
+
+    assert detail["route_reason"] == "citation_mismatch_skip"
+    assert detail["rule_id"] == "fi.route_rejection.title_targets_other_statute"
+    assert detail["branch"] == "title_targets_other_statute"
+    assert detail["strict_disposition"] == "block"
+    assert detail["quirks_disposition"] == "skip_with_finding"
+
+
+def test_classify_route_rejection_returns_typed_branch() -> None:
+    disposition = classify_route_rejection(
+        route_reason="citation_mismatch_skip",
+        johto="",
+        source_title="",
+        parent_title="",
+    )
+
+    assert disposition.branch is RouteRejectionBranch.CITATION_MISMATCH
+    assert disposition.as_detail()["branch"] == "citation_mismatch"
