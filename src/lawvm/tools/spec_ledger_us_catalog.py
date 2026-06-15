@@ -127,6 +127,11 @@ _US_RULE_SPECS: Dict[str, str] = {
         "node from the section body; striking an absent node is a typed no-op refusal, "
         "never an over-broad deletion."
     ),
+    "us_amend_strike_structural_unit_list": (
+        "A 'strike subsections (a), (c), and (g)' instruction emits one REPEAL per named "
+        "member node; each removes its own located span (order-independent), and a "
+        "future-effective/sunset strike is refused (owned by the temporal layer)."
+    ),
     "us_amend_insert_node_after_unit": (
         "An 'insert after <anchor> the following: <block>' instruction splices the quoted "
         "payload node immediately after the anchor node in the section body."
@@ -360,6 +365,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_redesignate": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,

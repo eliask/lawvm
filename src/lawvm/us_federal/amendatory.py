@@ -58,6 +58,7 @@ RULE_AMEND_TO_READ = "us_amend_to_read"
 RULE_REPEAL = "us_amend_repeal"
 RULE_REDESIGNATE = "us_amend_redesignate"
 RULE_STRIKE_UNIT = "us_amend_strike_structural_unit"
+RULE_STRIKE_UNIT_LIST = "us_amend_strike_structural_unit_list"
 RULE_REDESIGNATE_RANGE = "us_amend_redesignate_range"
 RULE_INSERT_NODE_AFTER = "us_amend_insert_node_after_unit"
 
@@ -914,6 +915,32 @@ _INSERT_NODE_AFTER_RE = re.compile(
     r"(?:\s*\([0-9A-Za-z]+\))*\s+(?:\(as\s+so\s+redesignated\)\s+)?the\s+following",
     re.IGNORECASE,
 )
+# A comma/"and"-separated list of parenthesised labels: "(a), (c), (f), and (g)" or
+# "(B) and (C)". One label is the single-unit form (handled by ``_STRIKE_UNIT_RE``);
+# the LIST form (>=2 members) is what these recognizers add.
+_LABEL_LIST = r"\((?:[0-9A-Za-z]+)\)(?:\s*(?:,\s*and\s+|,\s*|\s+and\s+)\([0-9A-Za-z]+\))+"
+# "by striking subsections (a), (c), (f), and (g)" — a multi-unit STRUCTURAL strike
+# (each named sub-unit is removed). The plural kind word ("subsections") + a 2+
+# member list distinguishes it from the single ``by striking subsection (X)`` form
+# and from a quoted-phrase strike (which carries a <quotedText>, never reaching the
+# structural branch). Each member lowers to one REPEAL of the named node.
+_STRIKE_UNIT_LIST_RE = re.compile(
+    rf"by\s+striking\s+(?P<kind>{_KIND_WORDS})s\s+(?P<labels>{_LABEL_LIST})\s*\.?\s*$",
+    re.IGNORECASE | re.UNICODE,
+)
+# "striking subparagraph (I) and inserting the following new subparagraphs (I) and
+# (J): <block>" — a structural NODE-RESTRUCTURE: a named sub-unit is struck and one
+# OR MORE new sub-units are spliced in its place. This is NOT a whole-node REPLACE of
+# the resolved address (which would substitute the WHOLE enclosing node with just the
+# new block, dropping its siblings) and NOT a flat phrase swap. We cannot faithfully
+# represent the node-level restructure as a single op, so we hold it out as a typed
+# residual (the same discipline as the ``inserting after … the following`` compound).
+_STRIKE_UNIT_INSERT_NODE_RE = re.compile(
+    rf"striking\s+(?P<kind>{_KIND_WORDS})\s+\([0-9A-Za-z]+\)"
+    r"(?:\s*\([0-9A-Za-z]+\))*\s+and\s+inserting\s+the\s+following"
+    rf"(?:\s+new)?\s+(?:{_KIND_WORDS})s?\b",
+    re.IGNORECASE,
+)
 
 
 def _strike_structural_unit(
@@ -977,6 +1004,36 @@ def _redesignate_range(
             )
         )
     return tuple(pairs)
+
+
+def _strike_structural_unit_list(
+    raw_text: str, target: LegalAddress
+) -> tuple[LegalAddress, ...] | None:
+    """Parse ``by striking subsections (a), (c), and (g)`` into struck nodes.
+
+    Returns one address per named member (each hangs one level below ``target``),
+    or ``None`` when the instruction is not a multi-unit structural strike (a single
+    unit is handled by :func:`_strike_structural_unit`; a quoted-phrase strike never
+    reaches the structural branch). Future-effective / sunset strikes are refused
+    (the temporal layer owns the deferred reversion), exactly as the single-unit
+    path does — an immediate REPEAL would delete a node still in force in the window.
+    """
+    if _FUTURE_EFFECTIVE_RE.search(raw_text):
+        return None
+    m = _STRIKE_UNIT_LIST_RE.search(raw_text)
+    if m is None:
+        return None
+    labels = _SEGMENT_RE.findall(m.group("labels"))
+    if len(labels) < 2:
+        return None
+    # The enacted prose names the members' level explicitly ("subsections (a), (c)")
+    # — use that kind for ALL members rather than typing each label positionally,
+    # which would mis-type a roman-ambiguous letter ("(d)" -> clause) among siblings
+    # that are all the same kind. The verb is authoritative for the first level.
+    kind = m.group("kind").lower()
+    return tuple(
+        LegalAddress(path=(*target.path, (kind, label))) for label in labels
+    )
 
 
 def _lower_instruction(
@@ -1100,6 +1157,17 @@ def _lower_instruction(
                 "structural node ('inserting after … the following'); not lowerable "
                 "to a single text_replace",
             )
+        elif _STRIKE_UNIT_INSERT_NODE_RE.search(raw_text) is not None:
+            # "striking subparagraph (I) and inserting the following new
+            # subparagraphs (I) and (J): <block>" — a node-level restructure. A
+            # whole-node REPLACE of the resolved address would drop the struck node's
+            # siblings (materializing only the new block); held out as a residual.
+            finding = _finding(
+                COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+                "strike-and-insert replaces a named structural sub-unit with new "
+                "sub-unit(s) ('striking <unit> and inserting the following … <unit>'); "
+                "a node-level restructure, not a whole-node text replace",
+            )
         elif len(quoted) >= 2:
             old, new = quoted[0], quoted[1]
             op = _make_op(
@@ -1154,6 +1222,10 @@ def _lower_instruction(
             # sub-section REPEAL), no quoted phrase. Lower to a REPEAL of the named
             # node so the dry-run can remove it at sub-section granularity.
             struck = _strike_structural_unit(raw_text, address)
+            struck_list = (
+                None if struck is not None
+                else _strike_structural_unit_list(raw_text, address)
+            )
             if struck is not None:
                 op = LegalOperation(
                     op_id=instruction_id,
@@ -1166,6 +1238,27 @@ def _lower_instruction(
                 )
                 address = struck
                 witness_rule_id = RULE_STRIKE_UNIT
+            elif struck_list is not None:
+                # "by striking subsections (a), (c), and (g)" — one REPEAL per named
+                # member. The struck spans are distinct sibling nodes, so the order
+                # is immaterial at the section-text surface (each removes its own
+                # located span); emit in source order.
+                for idx, struck_addr in enumerate(struck_list):
+                    node_op = LegalOperation(
+                        op_id=f"{instruction_id}#s{idx}",
+                        sequence=sequence,
+                        action=StructuralAction.REPEAL,
+                        target=struck_addr,
+                        source=source,
+                        witness_rule_id=RULE_STRIKE_UNIT_LIST,
+                        provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}"),
+                    )
+                    if op is None:
+                        op = node_op
+                    else:
+                        extra_ops.append(node_op)
+                address = struck_list[0]
+                witness_rule_id = RULE_STRIKE_UNIT_LIST
             else:
                 finding = _finding(
                     UNLOWERED_FINDING_RULE_ID,
@@ -1418,6 +1511,72 @@ def _shallow_text(elem: ET.Element, *, exclude: ET.Element | None = None) -> str
     return re.sub(r"\s+", " ", "".join(parts)).strip()
 
 
+# A unit head "Section X(...) is amended" / "Paragraph (N) of section X(...) is
+# amended" with NO "of title M" names its USC section in prose but inherits the
+# title from the enclosing Act's context. We thread that title ONLY from the
+# section's OWN govinfo classification refs (``<ref href="/us/usc/tM/sX">``, incl.
+# the editorial ``note`` sidenote refs the OLRC stamps), and ONLY when those refs
+# pin the SAME section number the head names to exactly ONE title. This is the
+# OLRC's authoritative classification of the very section being amended — not a
+# guess: if the head's section is unclassified, multi-classified, or the law spans
+# several titles for that number, the unit stays unresolved (no silent hijack).
+_USC_CLASSIFY_REF_RE = re.compile(r"^/us/usc/t(?P<title>\d+)/s(?P<section>\d+[A-Za-z]*)")
+# The section a unit head names, with no "of title": "Section 24(d) is amended",
+# "Paragraph (5) of section 48(a) is amended", "Subclause (II) of section
+# 48(a)(2)(A)(i) of the Internal Revenue Code of 1986 is amended". The section
+# token may be followed by its own "(...)" segments and then the amend verb
+# (optionally via an intervening "...,..." clause that carries no period).
+_RELATIVE_HEAD_SECTION_RE = re.compile(
+    r"[Ss]ection\s+(?P<section>\d+[A-Za-z]*)"
+    r"(?:\s*\([0-9A-Za-z]+\))*"
+    r"(?:,[^.]*?)?\s+is\s+amended\b",
+)
+
+
+def _section_classification_pairs(section: ET.Element) -> set[tuple[str, str]]:
+    """All ``(title, section)`` USC pairs the section's own refs classify it under.
+
+    Scans every ``<ref href="/us/usc/tM/sX...">`` in the section subtree (including
+    the editorial ``note`` sidenote refs), keeping only the leading ``title/section``
+    of each. This is the govinfo/OLRC structural classification of the provisions the
+    section amends — the authoritative signal for the title a relative head omits.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for e in section.iter():
+        if _localname(e.tag) != "ref":
+            continue
+        m = _USC_CLASSIFY_REF_RE.match((e.get("href") or "").strip())
+        if m is not None:
+            pairs.add((m.group("title"), m.group("section")))
+    return pairs
+
+
+def _inherited_title_from_section_classification(
+    section: ET.Element, raw_text: str
+) -> str:
+    """The title to thread onto a unit's relative ``Section X is amended`` head, or "".
+
+    Returns a title ONLY when (1) the head names a bare ``section X`` (no "of title
+    M"), and (2) the section's own classification refs pin THAT section number ``X``
+    to exactly one title. Otherwise "" (the head stays unresolved). This never
+    invents a title: it threads the OLRC's own classification of the named section.
+    """
+    if "of title" in raw_text.lower():
+        return ""
+    head = _RELATIVE_HEAD_SECTION_RE.search(raw_text)
+    if head is None:
+        return ""
+    named_section = head.group("section")
+    titles = {
+        title
+        for (title, sec) in _section_classification_pairs(section)
+        if sec == named_section
+    }
+    if len(titles) == 1:
+        return next(iter(titles))
+    return ""
+
+
 def _iter_instruction_units(
     section: ET.Element,
 ) -> Iterable[tuple[str, ET.Element, LegalAddress | None]]:
@@ -1497,6 +1656,23 @@ def _iter_instruction_units(
                 if section_content is not None:
                     sp, sh = _first_usc_ref(section_content)
                     inherited, _ = _resolve_target(sp, sh)
+            if inherited is None:
+                # Last resort: a parent head "Section X(...) is amended" with no "of
+                # title" whose section the OLRC classifies under exactly one title.
+                # Resolve the head FULLY here (title from classification, section +
+                # segments from the head prose) so a complete address is threaded —
+                # never a bare title that step-3 inheritance could mis-apply.
+                ancestor = parent_of.get(elem)
+                while ancestor is not None and inherited is None:
+                    head_text = _shallow_text(ancestor, exclude=elem)
+                    title = _inherited_title_from_section_classification(
+                        section, head_text
+                    )
+                    if title:
+                        inherited = parse_relative_usc_target(
+                            head_text, inherited_title=title
+                        )
+                    ancestor = parent_of.get(ancestor)
             if inherited is not None and intermediate_anchors:
                 # Apply outermost intermediate anchor first (it is the shallowest
                 # scope); each refinement descends from the prior frontier.
@@ -1506,8 +1682,18 @@ def _iter_instruction_units(
                     )
             yield uid, elem, inherited
         return
-    # Flat instruction: the section's own content blocks.
-    yield (section.get("identifier") or section.get("id") or ""), section, None
+    # Flat instruction: the section's own content blocks. A flat head "Section X(...)
+    # is amended" with no "of title" inherits the title from the section's own OLRC
+    # classification of X (resolved fully here so a complete address is threaded; the
+    # unit's own absolute prose/ref, when present, still takes precedence downstream).
+    flat_inherited: LegalAddress | None = None
+    flat_text = _shallow_text(section, exclude=None)
+    flat_title = _inherited_title_from_section_classification(section, flat_text)
+    if flat_title:
+        flat_inherited = parse_relative_usc_target(
+            flat_text, inherited_title=flat_title
+        )
+    yield (section.get("identifier") or section.get("id") or ""), section, flat_inherited
 
 
 def lower_plaw_amendatory(data: bytes, *, statute_id: str = "", enacted: str = "") -> USAmendatoryReport:

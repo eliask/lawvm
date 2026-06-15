@@ -23,6 +23,7 @@ from lawvm.us_federal.amendatory import (
     RULE_REDESIGNATE_RANGE,
     RULE_STRIKE_INSERT,
     RULE_STRIKE_UNIT,
+    RULE_STRIKE_UNIT_LIST,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
@@ -997,3 +998,121 @@ def test_scan_records_findings_for_unlowered_instructions(tmp_path):
     assert "PL 114-89" not in labels
     # The unlowered-finding family id is stable and present in the amendatory module.
     assert UNLOWERED_FINDING_RULE_ID == "us_amendatory_unlowered"
+
+
+# ---------------------------------------------------------------------------
+# Multi-unit structural strike + inherited-title threading from classification
+# ---------------------------------------------------------------------------
+
+
+def test_multi_unit_structural_strike_lowers_to_one_repeal_per_member():
+    # "by striking subsections (a), (c), and (g)" -> one REPEAL per named member,
+    # each typed by the prose verb ("subsection"), not positional label form (so a
+    # roman-ambiguous letter among siblings is not mis-typed as a clause).
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s364">Section 364 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> subsections '
+        '(a), (c), and (g).</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.witness_rule_id == RULE_STRIKE_UNIT_LIST
+    ops = report.operations()
+    assert len(ops) == 3
+    for o in ops:
+        assert o.action is StructuralAction.REPEAL
+    struck = sorted(o.target.leaf_label() for o in ops)
+    assert struck == ["a", "c", "g"]
+    # Every struck node is typed as a subsection (the prose verb), hanging off s364.
+    for o in ops:
+        assert o.target.path[:2] == (("title", "11"), ("section", "364"))
+        assert o.target.path[-1][0] == "subsection"
+
+
+def test_future_effective_multi_strike_is_not_an_immediate_repeal():
+    # A deferred/sunset multi-unit strike is owned by the temporal layer; lowering it
+    # to immediate REPEALs would delete nodes still in force in the window.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content>Effective on the date that is 1 year after the date of enactment '
+        'of this Act, <ref href="/us/usc/t11/s364">Section 364 of title 11, United '
+        'States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> subsections '
+        '(a) and (b).</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+
+
+def test_flat_relative_head_inherits_title_from_section_classification():
+    # "Section 4980I(f) ... is amended by striking ..." with NO "of title 26": the
+    # title is threaded from the section's OWN govinfo classification <ref>
+    # (/us/usc/t26/s4980I, even as a note sidenote) — the OLRC's authoritative
+    # classification of the very section named. Only fires because the head's
+    # section (4980I) is the one the classification ref pins, to exactly one title.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<sidenote><p><ref href="/us/usc/t26/s4980I">26 USC 4980I note</ref></p>'
+        '</sidenote>'
+        '<content>Paragraph (10) of section 4980I(f) '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>2018</quotedText>".</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.target_address is not None
+    # Title 26 threaded from the classification ref; section + segments from the head.
+    assert instr.target_address.path[0] == ("title", "26")
+    assert instr.target_address.path[1] == ("section", "4980I")
+    assert instr.finding is None or instr.finding.rule_id != TARGET_UNRESOLVED_FINDING_RULE_ID
+
+
+def test_relative_head_is_not_threaded_when_section_multi_classified():
+    # The head names "section 100", but the section's classification refs pin
+    # section 100 under TWO different titles (26 and 42). The title is ambiguous, so
+    # NOTHING is threaded — the target stays unresolved (no silent wrong-title guess).
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<sidenote><p>'
+        '<ref href="/us/usc/t26/s100">26 USC 100 note</ref>'
+        '<ref href="/us/usc/t42/s100">42 USC 100 note</ref>'
+        '</p></sidenote>'
+        '<content>Section 100 '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>old</quotedText>".</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.target_address is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
+
+
+def test_strike_unit_insert_new_units_is_held_out_not_a_whole_node_replace():
+    # "striking subparagraph (I) and inserting the following new subparagraphs (I)
+    # and (J): <block>" is a NODE-LEVEL RESTRUCTURE. A whole-node REPLACE of the
+    # resolved address would drop the struck node's siblings (materializing only the
+    # new block); it is held out as the compound residual rather than corrupted.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s101/10A">Section 101(10A) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction> '
+        'by <amendingAction type="delete">striking</amendingAction> subparagraph (I) '
+        'and <amendingAction type="insert">inserting</amendingAction> the following '
+        'new subparagraphs (I) and (J):<quotedContent><subparagraph>'
+        '<num value="I">“(I) </num><content>first.</content></subparagraph>'
+        '<subparagraph><num value="J">“(J) </num><content>second.”</content>'
+        '</subparagraph></quotedContent>.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == COMPOUND_STRIKE_INSERT_FINDING_RULE_ID
