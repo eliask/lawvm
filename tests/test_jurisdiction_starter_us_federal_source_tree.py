@@ -210,6 +210,43 @@ def test_section_notes_extracted_without_polluting_statutory_text() -> None:
     assert "2 years after June 21, 2022" in notes[1].text
 
 
+_FOOTNOTE_REF_HTM = b"""<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head><title>T99</title><!-- AUTHORITIES-USC-TITLE-ENUM:99 --></head>
+ <body>
+  <div>
+<!-- expcite:TITLE 99!@!CHAPTER 1!@!Sec. 10 -->
+<!-- field-start:head -->
+<h3 class="section-head">&sect;10. Footnote demo</h3>
+<!-- field-end:head -->
+<!-- field-start:statute -->
+<p class="statutory-body">The provisions shall not apply to number&#160;<sup><a href="#99_1_target" name="99_1">1</a></sup> of officers after that date.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 99&ndash;1.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_footnote_reference_superscript_is_stripped_from_statutory_text() -> None:
+    # The OLRC tags an editorial footnote reference (``So in original. Probably
+    # should be 'the number'``) as a ``<sup><a href="#X_target">N</a></sup>`` whose
+    # visible glyph is a bare digit. That digit is NOT statutory text — folding it in
+    # turns ``to number of`` into ``to number 1 of`` and manufactures a spurious
+    # before/after divergence. The parser must drop the digit but keep the tail.
+    doc = parse_usc_title_document(_FOOTNOTE_REF_HTM, title=99, year="2018")
+    section = doc.section_by_number("10")
+    assert section is not None
+    assert section.statutory_text == (
+        "The provisions shall not apply to number of officers after that date."
+    )
+    # The stray footnote digit never reaches the statutory comparison surface.
+    assert "number 1 of" not in section.statutory_text
+
+
 # A synthetic section reproducing the OLRC "run-in + flattened-depth" shape that
 # the CSS-indent-only splitter mis-addressed (the §1325(b) family): subsection (b)
 # opens RUN-IN with its first paragraph on one ``statutory-body`` line (``(b)(1)``),

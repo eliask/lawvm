@@ -454,6 +454,97 @@ def test_real_pl118_42_lowers_one_title11_text_replace_op() -> None:
     assert op.text_patch.kind is TextPatchKindEnum.REPLACE
 
 
+@pytest.mark.skipif(
+    not _usc_editions_present((2018, 2020), 10),
+    reason="USC 2018/2020 Title 10 editions not present in the canonical archive",
+)
+def test_real_title10_526_strike_is_node_scoped_and_section_stays_a_typed_residual() -> None:
+    # §526(b)(3)(A) "may not exceed 20" -> "may not exceed 19" (NDAA FY2021,
+    # PL 116-283 §501). The strike anchor "20" recurs all over the section
+    # (122004, 120 days, January 1, 2014, December 31, 2022, ...). A whole-section
+    # string replace would hit the wrong "20". The op is node-scoped to (b)(3)(A),
+    # so ONLY that clause's "20" becomes "19" and every other "20" is untouched.
+    #
+    # The section nonetheless stays a typed residual: the 2020 edition ALSO fixed
+    # a pre-existing typo in subsection (k) ("number of" -> "the number of"), an
+    # OLRC editorial correction that is NOT in our window's public law. We never
+    # fabricate that "the" to force agreement (Prime Directive).
+    from lawvm.us_federal.bench import derive_window_law_locators
+    from lawvm.us_federal.sources import open_us_federal_farchive
+    from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
+
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        locators = derive_window_law_locators(
+            archive, title=10, before_year=2018, after_year=2020
+        )
+        assert locators is not None
+        report = build_us_dry_run_from_archive(
+            archive,
+            title=10,
+            before_year=2018,
+            after_year=2020,
+            plaw_locators=locators,
+        )
+    finally:
+        archive.close()
+
+    rows = {row.section_key: row for row in report.rows}
+    assert "10:526" in rows, "section 526 must be claimed (the (b)(3)(A) op lowers)"
+    row = rows["10:526"]
+    # The (b)(3)(A) clause was node-scoped: exactly one "20" became "19".
+    assert "in the grade of general or admiral may not exceed 19;" in row.materialized_text
+    # The (b)(3)(B)/(C) limits keeping "68" and "144" prove no over-broad strike.
+    assert "may not exceed 68;" in row.materialized_text
+    assert "may not exceed 144." in row.materialized_text
+    # No false agreement: subsection (k) genuinely differs in the editions.
+    assert row.status == "residual"
+    assert row.disposition == DISPOSITION_LAWVM_WRONG
+    assert "shall not apply to number of" in row.materialized_text
+    assert "shall not apply to the number of" in row.oracle_text
+
+
+@pytest.mark.skipif(
+    not _usc_editions_present((2022, 2023), 7),
+    reason="USC 2022/2023 Title 7 editions not present in the canonical archive",
+)
+def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_match() -> None:
+    # §3222a is an OLRC "hanging-indent" section: its (a)/(b) subsection and (1)/(2)/(3)
+    # paragraph enumerators are NOT printed in the body (the structure is carried by
+    # indent depth alone). An op targeting (a)(3) therefore cannot locate a clean node
+    # — and we must NOT fuzzy-match onto a sibling paragraph. The section stays a typed
+    # ``subsection_target_node_not_located`` residual with no (wrong) materialization,
+    # exactly the Prime-Directive-safe refusal.
+    from lawvm.us_federal.bench import derive_window_law_locators
+    from lawvm.us_federal.sources import open_us_federal_farchive
+    from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
+
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        locators = derive_window_law_locators(
+            archive, title=7, before_year=2022, after_year=2023
+        )
+        assert locators is not None
+        report = build_us_dry_run_from_archive(
+            archive,
+            title=7,
+            before_year=2022,
+            after_year=2023,
+            plaw_locators=locators,
+        )
+    finally:
+        archive.close()
+
+    rows = {row.section_key: row for row in report.rows}
+    assert "7:3222a" in rows
+    row = rows["7:3222a"]
+    assert row.status == "residual"
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert row.disposition == DISPOSITION_LAWVM_WRONG
+    # No wrong materialization: we did not splice "4" onto a guessed sibling node.
+    assert row.materialized_text == ""
+
+
 def test_committed_synthetic_fixtures_round_trip_through_source_tree() -> None:
     # Defence: the committed before/after htm parse to the expected section sets.
     from lawvm.us_federal.source_tree import parse_usc_title_document
@@ -761,6 +852,86 @@ def test_subsection_op_without_locatable_node_is_typed_residual_not_wrong_materi
     assert materialized == ""
     assert signal_rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
     assert disposition == DISPOSITION_LAWVM_WRONG
+
+
+def _section78_repeated_anchor_htm() -> bytes:
+    # §78: BOTH subsection (a) and paragraph (b)(1) carry the anchor phrase
+    # "the number". A node-scoped single-occurrence patch on (b)(1) must edit only
+    # inside that node's span and leave (a) untouched — exactly the §526 ('20')
+    # pathology where a short anchor could otherwise strike the wrong sub-section.
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T11</title><!-- AUTHORITIES-USC-TITLE-ENUM:11 --></head><body><div>"
+        "<!-- expcite:TITLE 11!@!CHAPTER 1!@!Sec. 78 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;78. Repeated anchor demo</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(a) The number of seats is fixed.</p>'
+        '<p class="statutory-body">(b) The board provides—</p>'
+        '<p class="statutory-body-1em">(1) the number of members shall not exceed the number set by rule;</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+
+
+def test_node_scoped_single_occurrence_patch_edits_only_inside_the_target_node() -> None:
+    # A single-occurrence TEXT_REPLACE targeting (b)(1) confines the edit to that
+    # node: the FIRST "the number" inside (b)(1) is replaced (faithful amendatory
+    # first-occurrence semantics), while subsection (a)'s identical "The number of
+    # seats" — in a DIFFERENT node — is never touched (the §526 wrong-occurrence
+    # guard). A whole-section string replace would have hit (a)'s occurrence first.
+    doc = parse_usc_title_document(_section78_repeated_anchor_htm(), title=11, year="2018")
+    section = doc.section_by_number("78")
+    assert section is not None
+    op = LegalOperation(
+        op_id="repeated-anchor-replace",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "78"), ("subsection", "b"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="the number", occurrence=0),
+            replacement="the count",
+        ),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # Subsection (a) is in a different node: its "The number of seats" is untouched.
+    assert "(a) The number of seats is fixed." in materialized
+    # Inside (b)(1) the first occurrence is replaced; the second stays (a multi-
+    # occurrence edit would be lowered as a separate op per occurrence).
+    assert "(1) the count of members shall not exceed the number set by rule;" in materialized
+
+
+def test_node_scoped_each_place_patch_with_repeated_anchor_replaces_every_node_occurrence() -> None:
+    # An each-place patch (occurrence == -1) is unambiguous by construction: it
+    # replaces EVERY occurrence of the anchor inside the located node, and only that
+    # node (subsection (a)'s "the number" is untouched).
+    doc = parse_usc_title_document(_section78_repeated_anchor_htm(), title=11, year="2018")
+    section = doc.section_by_number("78")
+    assert section is not None
+    op = LegalOperation(
+        op_id="repeated-anchor-each-place",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "78"), ("subsection", "b"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="the number", occurrence=-1),
+            replacement="the count",
+        ),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # (a)'s "The number of seats" is untouched; (b)(1)'s two anchors both relabelled.
+    assert "The number of seats is fixed." in materialized
+    assert "the count of members shall not exceed the count set by rule;" in materialized
 
 
 def test_section_level_insert_with_plain_text_payload_still_materializes() -> None:

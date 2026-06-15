@@ -257,9 +257,50 @@ def _localname(el: Any) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _is_footnote_ref_sup(el: Any) -> bool:
+    """True for an OLRC footnote-reference superscript ``<sup><a href="#X_target">N</a></sup>``.
+
+    The OLRC annual edition tags an editorial footnote reference (``So in original.
+    Probably should be ...``) as a ``<sup>`` wrapping an ``<a>`` whose ``href``
+    points at the footnote target anchor (``#..._target``). The visible glyph is a
+    bare digit that is NOT part of the statutory text — folding it in turns
+    ``the number`` into ``number 1`` and manufactures a spurious before/after
+    divergence. Every ``<sup><a>`` in these editions is such a reference (verified
+    across titles 7/10/42); the ``_target`` href is the precise, conservative test.
+    """
+    if _localname(el) != "sup":
+        return False
+    for child in el:
+        if _localname(child) == "a" and (child.get("href", "") or "").endswith("_target"):
+            return True
+    return False
+
+
 def _element_text(el: etree._Element) -> str:
-    """Concatenated descendant text of an element (entities already decoded)."""
-    return "".join(t for t in el.itertext() if isinstance(t, str))
+    """Concatenated descendant text of an element (entities already decoded).
+
+    The text inside an OLRC footnote-reference superscript (:func:`_is_footnote_ref_sup`)
+    is dropped — it is an editorial reference marker, never statutory text — while
+    the superscript's TAIL (text following it in the parent) is preserved. Comments
+    and processing-instructions (the OLRC sprinkles ``<!-- PDFPage:NNN -->`` page-break
+    markers mid-paragraph) contribute only their tail, exactly as ``itertext()`` does.
+    """
+    parts: list[str] = []
+    if isinstance(el.text, str):
+        parts.append(el.text)
+    for child in el:
+        if not isinstance(child.tag, str):
+            if isinstance(child.tail, str):
+                parts.append(child.tail)
+            continue
+        if _is_footnote_ref_sup(child):
+            if isinstance(child.tail, str):
+                parts.append(child.tail)
+            continue
+        parts.append(_element_text(child))
+        if isinstance(child.tail, str):
+            parts.append(child.tail)
+    return "".join(parts)
 
 
 def _normalize_text(text: str) -> str:
