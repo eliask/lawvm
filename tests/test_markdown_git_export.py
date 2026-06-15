@@ -125,26 +125,26 @@ def test_fast_import_stream_imports_into_bare_repo(tmp_path) -> None:
     )
 
     latest = subprocess.check_output(
-        ["git", "--git-dir", str(repo), "show", "main:acts/2020/100.md"],
+        ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/100.md"],
         text=True,
     )
     log_subjects = subprocess.check_output(
-        ["git", "--git-dir", str(repo), "log", "--format=%s", "main"],
+        ["git", "--git-dir", str(repo), "log", "--format=%s", "in-force"],
         text=True,
     )
     tag_target = subprocess.check_output(
         ["git", "--git-dir", str(repo), "rev-parse", "current"],
         text=True,
     ).strip()
-    main_target = subprocess.check_output(
-        ["git", "--git-dir", str(repo), "rev-parse", "main"],
+    in_force_target = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "rev-parse", "in-force"],
         text=True,
     ).strip()
 
     assert "beta" in latest
     assert "As of 2021-01-01" in log_subjects
     assert "As of 2020-01-01" in log_subjects
-    assert tag_target == main_target
+    assert tag_target == in_force_target
 
 
 def test_write_fast_import_stream_can_create_bare_repo(tmp_path) -> None:
@@ -164,13 +164,18 @@ def test_write_fast_import_stream_can_create_bare_repo(tmp_path) -> None:
         force=False,
     )
     readme = subprocess.check_output(
-        ["git", "--git-dir", str(repo), "show", "main:README.md"],
+        ["git", "--git-dir", str(repo), "show", "in-force:README.md"],
+        text=True,
+    )
+    head_ref = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "symbolic-ref", "HEAD"],
         text=True,
     )
 
     assert stats.destination == str(repo)
     assert stats.byte_count > 0
     assert "# Direct" in readme
+    assert head_ref.strip() == "refs/heads/in-force"
 
 
 def test_build_commits_keeps_unchanged_statute_file_bytes_stable() -> None:

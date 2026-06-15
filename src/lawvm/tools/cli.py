@@ -11283,7 +11283,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "GitHub-compatible Markdown, and emit a git fast-import stream with "
             "one commit per effective date. By default the stream is written to "
             "stdout for an external consumer such as 'git --git-dir out.git "
-            "fast-import --date-format=raw'."
+            "fast-import --date-format=raw'. The stream writes refs/heads/in-force."
         ),
     )
     export_md_git_p.add_argument(

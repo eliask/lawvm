@@ -48,6 +48,7 @@ _SKIP_INLINE_CHILD_KINDS = _ADDRESSABLE_KINDS | {"num", "heading"}
 _MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*_{}\[\]()#+.!|<>-])")
 _ANCHOR_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
 _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
+_DEFAULT_BRANCH = "in-force"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -261,7 +262,7 @@ def iter_fast_import_stream(commits: Iterable[FastImportCommit]) -> Iterator[byt
             yield _data_record(content)
         commit_mark += 1
         latest_commit_mark = commit_mark
-        yield b"commit refs/heads/main\n"
+        yield f"commit refs/heads/{_DEFAULT_BRANCH}\n".encode("ascii")
         yield f"mark :{commit_mark}\n".encode("ascii")
         ident_date = f"{commit.timestamp} +0000"
         yield f"author LawVM <lawvm@example.invalid> {ident_date}\n".encode("ascii")
@@ -670,6 +671,10 @@ def _import_into_bare_repo(
         shutil.rmtree(repo_path)
     repo_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "--bare", str(repo_path)], check=True)
+    subprocess.run(
+        ["git", "--git-dir", str(repo_path), "symbolic-ref", "HEAD", f"refs/heads/{_DEFAULT_BRANCH}"],
+        check=True,
+    )
     proc = subprocess.Popen(
         ["git", "--git-dir", str(repo_path), "fast-import", "--date-format=raw"],
         stdin=subprocess.PIPE,
