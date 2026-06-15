@@ -672,6 +672,55 @@ def _section_heading(head_text: str) -> str:
     return head_text[m.end():].strip().rstrip("]").strip()
 
 
+# An "amend ... to read as follows" payload supplies the WHOLE replacement
+# section as a USLM quotedText — and that quotedText opens with the section's own
+# catchline (``§ 2196. Manufacturing engineering education program``) before the
+# first statutory body unit, which is wrapped in nested curly quotes (``“(a) …``).
+# The OLRC consolidated comparison surface
+# (:attr:`UscSection.statutory_text`) carries NEITHER the catchline (it is parsed
+# into :attr:`UscSection.heading`, not the body) NOR the nested quotes. Projecting
+# a whole-section replacement payload onto that body-only surface therefore means
+# dropping the leading catchline, exactly as the oracle parse does on its side.
+#
+# The body opens at the first curly OPEN double-quote (``“``): USC headings never
+# contain a ``“``, so that character unambiguously marks the catchline/body
+# boundary. The strip is gated on the catchline carrying the SAME section number
+# as the target (``§ <num>.``) so it can only ever remove this section's own
+# catchline, never a leading reference that happens to start with ``§``.
+_SECTION_CATCHLINE_PREFIX_RE = re.compile(
+    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*)\.\s"
+)
+
+
+def strip_replacement_section_catchline(payload: str, section_number: str) -> str | None:
+    """Strip a leading ``§ <num>. <heading>`` catchline from a replacement payload.
+
+    Returns the payload with the catchline removed when ALL of the following hold,
+    else ``None`` (the caller keeps the payload verbatim — never guesses a cut):
+
+    * the payload opens with a ``§ <num>.`` catchline whose number equals
+      ``section_number`` (this section's own catchline, not a cross-reference), and
+    * a curly open double-quote (``“``) — the nested quotedText body marker — occurs
+      after that catchline.
+
+    The removed span is exactly ``§ <num>. <heading>`` up to (not including) the
+    first ``“``. This mirrors the oracle-side parse, which puts the catchline in
+    :attr:`UscSection.heading` and never in :attr:`UscSection.statutory_text`; it is
+    a comparison-surface projection of a faithful materialization, not a repair of
+    the text to the oracle. When the catchline cannot be delimited this way (no
+    body-marker quote, or the number does not match) the payload is returned
+    untouched via ``None`` rather than risk cutting into a heading that itself
+    contains periods (``§ 810. Art. 10. Restraint …``).
+    """
+    m = _SECTION_CATCHLINE_PREFIX_RE.match(payload)
+    if m is None or m.group("num") != section_number:
+        return None
+    body_marker = payload.find("“", m.end())
+    if body_marker == -1:
+        return None
+    return payload[body_marker:]
+
+
 # ---------------------------------------------------------------------------
 # STRETCH: subsection-level split
 # ---------------------------------------------------------------------------

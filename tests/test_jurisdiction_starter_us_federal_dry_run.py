@@ -1002,3 +1002,61 @@ def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     # The materialized text keeps the enacted quotes (never repaired to the oracle).
     assert "“(1) first" in row.materialized_text
+
+
+# ---------------------------------------------------------------------------
+# Amend-to-read whole-section payload: project off the leaked catchline
+# ---------------------------------------------------------------------------
+
+
+def test_whole_section_replace_projects_off_its_own_catchline() -> None:
+    # "Section 2196 is amended to read as follows: §2196. <heading> “(a) ..." — the
+    # payload opens with the section's own catchline before the quoted body. The
+    # body-only oracle surface carries the catchline in the heading, not the
+    # statutory text, so the materialized body must NOT include the catchline.
+    op = LegalOperation(
+        op_id="amend-to-read-2196",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("title", "10"), ("section", "2196"))),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="2196",
+            text=(
+                "§ 2196. Manufacturing engineering education program"
+                "“(a) Establishment.—(1) The Secretary shall establish a program."
+            ),
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # The catchline is projected off; the quoted body is retained verbatim (the
+    # quotes are oracle editorial, undone only at comparison, never here).
+    assert materialized.startswith("“(a) Establishment.—")
+    assert "§ 2196." not in materialized
+    assert "Manufacturing engineering education program" not in materialized
+
+
+def test_whole_section_replace_keeps_payload_when_catchline_not_delimitable() -> None:
+    # A renamed-heading payload with NO quoted-body marker cannot be delimited
+    # safely (the heading may carry internal periods), so the payload is kept
+    # verbatim — the residual stays visible, never a guessed cut.
+    op = LegalOperation(
+        op_id="amend-to-read-no-quote",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("title", "10"), ("section", "3084"))),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3084",
+            text="§ 3084. Chief of Veterinary Corps",
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    # Kept verbatim (no curly-quote body marker to delimit the catchline at).
+    assert materialized == "§ 3084. Chief of Veterinary Corps"

@@ -15,6 +15,7 @@ from lawvm.us_federal.source_tree import (
     iter_section_notes,
     parse_usc_title_document,
     split_statutory_subsections,
+    strip_replacement_section_catchline,
     summarize_indent_classes,
     usc_section_address,
 )
@@ -350,3 +351,50 @@ def test_locate_subsection_text_absent_node_stays_unlocated() -> None:
         path=(("title", "11"), ("section", "1325"), ("subsection", "z"))
     )
     assert _locate_subsection_text(section, absent_subsec) is None
+
+
+# ---------------------------------------------------------------------------
+# Replacement-payload catchline projection (amend-to-read whole-section)
+# ---------------------------------------------------------------------------
+
+
+def test_strip_replacement_section_catchline_drops_own_catchline_to_body() -> None:
+    """An amend-to-read payload opens with the section's own ``§ <num>. <heading>``
+    catchline before the first quoted body unit; the body-only oracle surface
+    carries the catchline in the heading, so projecting the payload onto that
+    surface drops the catchline. The cut ends exactly at the first body quote —
+    even when the heading itself contains internal periods (``Art. 10. ...``)."""
+    payload = (
+        "§ 2196. Manufacturing engineering education program"
+        "“(a) Establishment.—(1) The Secretary shall establish a program."
+    )
+    body = strip_replacement_section_catchline(payload, "2196")
+    assert body == "“(a) Establishment.—(1) The Secretary shall establish a program."
+
+    # A UCMJ-style heading with internal periods is cut at the body quote, not the
+    # first period (which would mangle ``Art. 10.``).
+    ucmj = "§ 810. Art. 10. Restraint of persons charged“(a) In General.—Subject to x."
+    assert (
+        strip_replacement_section_catchline(ucmj, "810")
+        == "“(a) In General.—Subject to x."
+    )
+
+
+def test_strip_replacement_section_catchline_refuses_when_unsafe() -> None:
+    """The stripper returns None (caller keeps the payload verbatim) when it cannot
+    delimit the catchline safely: a mismatched section number (a leading reference,
+    not this section's own catchline) or no curly-quote body marker to cut at."""
+    # Number mismatch: a leading cross-reference that starts with §, NOT our
+    # section's catchline — must never be stripped (it would delete real text).
+    assert (
+        strip_replacement_section_catchline("§ 999. Other heading“(a) x.", "2196")
+        is None
+    )
+    # No body-marker quote: a bare renamed-heading payload cannot be delimited
+    # without risking a cut into a period-bearing heading — keep it verbatim.
+    assert (
+        strip_replacement_section_catchline("§ 3084. Chief of Veterinary Corps", "3084")
+        is None
+    )
+    # Plain body (no catchline at all) is left untouched.
+    assert strip_replacement_section_catchline("(a) The program shall.", "100") is None

@@ -67,6 +67,7 @@ from lawvm.us_federal.source_tree import (
     UscSourceDocument,
     parse_usc_title_document,
     split_statutory_subsections,
+    strip_replacement_section_catchline,
 )
 from lawvm.us_federal.sunset import (
     DISPOSITION_SUNSET_REVERSION,
@@ -266,6 +267,12 @@ def _section_key_from_address(address: LegalAddress) -> tuple[str, str] | None:
     if not title or not section:
         return None
     return title, section
+
+
+def _section_target_number(address: LegalAddress) -> str | None:
+    """Return the ``section`` label of a pinned USC address (``"2196"``), or None."""
+    key = _section_key_from_address(address)
+    return key[1] if key is not None else None
 
 
 def _section_tree_path(title: str, section: str) -> TreePath:
@@ -795,7 +802,20 @@ def _materialize_one(
         if action is StructuralAction.INSERT:
             materialized = f"{before_text} {operation.payload.text}".strip()
         else:  # REPLACE whole node -> the payload IS the new section body.
-            materialized = operation.payload.text
+            # An "amend ... to read as follows" payload opens with the section's
+            # own ``§ <num>. <heading>`` catchline before the first quoted body
+            # unit. The body-only oracle surface carries the catchline in the
+            # heading, not the statutory text, so project it off the materialized
+            # body to compare like-with-like (a surface projection, not a repair).
+            payload_text = operation.payload.text
+            section_number = _section_target_number(operation.target)
+            if section_number is not None:
+                stripped = strip_replacement_section_catchline(
+                    payload_text, section_number
+                )
+                if stripped is not None:
+                    payload_text = stripped
+            materialized = payload_text
         return (materialized, "", "")
 
     if action is StructuralAction.RENUMBER and is_subsection and operation.destination is not None:
