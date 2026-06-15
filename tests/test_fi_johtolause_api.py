@@ -650,6 +650,38 @@ def test_extract_legal_ops_distributes_trailing_otsikko_to_part_and_chapter() ->
     ]
 
 
+def test_extract_legal_ops_context_prefix_part_scope_carries_to_sections() -> None:
+    """``II osan M luvun otsikko`` (no ``ja``) is a genuine part scope.
+
+    Control for the coordinated-heading no-leak fix: the non-coordinated
+    context-prefix shape carries its part (and chapter) forward to the following
+    independent section targets, unlike the ``N osan ja M luvun otsikko``
+    coordination whose part is local to the two sibling heading targets.
+    """
+    from lawvm.core.semantic_types import FacetKind, StructuralAction
+    from lawvm.finland.johtolause import extract_legal_ops
+
+    ops = extract_legal_ops("muutetaan II osan 1 luvun otsikko, 5 ja 6 §")
+
+    assert [(op.action, op.target.path, op.target.special) for op in ops] == [
+        (
+            StructuralAction.HEADING_REPLACE,
+            (("part", "II"), ("chapter", "1")),
+            FacetKind.HEADING,
+        ),
+        (
+            StructuralAction.REPLACE,
+            (("part", "II"), ("chapter", "1"), ("section", "5")),
+            None,
+        ),
+        (
+            StructuralAction.REPLACE,
+            (("part", "II"), ("chapter", "1"), ("section", "6")),
+            None,
+        ),
+    ]
+
+
 def test_extract_legal_ops_move_rider_flows_into_amendment_op() -> None:
     """AmendmentOp.from_lo reads the Finland-local move-rider carrier."""
     from lawvm.finland.johtolause import extract_legal_ops

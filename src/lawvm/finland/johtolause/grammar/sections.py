@@ -1119,6 +1119,8 @@ def extract_chapter(nodes: list[SurfaceNode], current: str) -> str:
 
 def extract_part(nodes: list[SurfaceNode], current: str) -> str:
     """The part scope carried forward from a section-family target batch."""
+    if _is_coordinated_part_heading_batch(nodes):
+        return current
     for node in reversed(nodes):
         if isinstance(node, SurfaceScopeBlock):
             if node.scope_kind == ScopeKind.PART and node.scope_label:
@@ -1130,3 +1132,23 @@ def extract_part(nodes: list[SurfaceNode], current: str) -> str:
             if node.part:
                 return node.part
     return current
+
+
+def _is_coordinated_part_heading_batch(nodes: list[SurfaceNode]) -> bool:
+    """Whether a batch is the coordinated ``N osan ja M luvun otsikko`` shape.
+
+    That shape emits a leading PART heading target with witness
+    ``fi.coordinated_part_chapter_heading_ref`` followed by a CHAPTER heading
+    target that carries the same part label only to express *part N's M-th
+    chapter heading*. The two are sibling heading targets joined by ``ja``; the
+    part scope is local to the coordination and must NOT leak onto a following
+    independent target batch. The non-coordinated context-prefix shape
+    (``N osan M luvun otsikko``, no ``ja``) carries no such witness and its part
+    DOES scope forward, so it is left to carry normally.
+    """
+    return any(
+        isinstance(n, SurfaceTargetRef)
+        and n.witness is not None
+        and n.witness.rule_id == "fi.coordinated_part_chapter_heading_ref"
+        for n in nodes
+    )
