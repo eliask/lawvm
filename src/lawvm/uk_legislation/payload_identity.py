@@ -17,6 +17,28 @@ UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = (
     "uk_whole_schedule_payload_descendant_eid_synthesis"
 )
 UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = "uk_payload_descendant_eid_synthesis"
+UK_PAYLOAD_FOREIGN_SOURCE_ID_RETARGETED_RULE_ID = (
+    "uk_payload_foreign_source_id_retargeted"
+)
+
+# legislation.gov.uk physical source ids are ``pNNNN`` (and descendant variants
+# like ``pNNNN-1``). When an inserted provision payload is carried from the
+# AFFECTING act, its root node retains that act's physical ``id`` rather than an
+# eId in the affected act's numbering scheme. That foreign id is meaningless in
+# the affected act and must NOT seed descendant identity synthesis.
+_UK_FOREIGN_PHYSICAL_SOURCE_ID_RE = re.compile(r"^p\d{3,}(?:-.*)?$")
+
+
+def _is_foreign_physical_source_id(identity: str) -> bool:
+    """Return True when *identity* is a legislation.gov.uk physical source id.
+
+    A real eId in the affected act's numbering scheme (``section-138A``,
+    ``schedule-1-paragraph-3``) is authoritative and preserved. A bare physical
+    id (``p02828``) carried from the affecting act's source XML is foreign and
+    cannot anchor descendant eIds in the affected act.
+    """
+
+    return bool(_UK_FOREIGN_PHYSICAL_SOURCE_ID_RE.match(identity))
 
 
 def _payload_identity_diagnostic(
@@ -197,11 +219,48 @@ def _synthesize_payload_descendant_eids(
     """Own local descendant IDs for non-schedule source-backed payload trees."""
     if str(payload_node.kind).lower() == "schedule":
         return payload_node
-    root_eid = str(payload_node.attrs.get("eId") or payload_node.attrs.get("id") or "")
+    explicit_eid = str(payload_node.attrs.get("eId") or "")
+    foreign_id = str(payload_node.attrs.get("id") or "")
+    root_eid = explicit_eid or foreign_id
+    retargeted_from: Optional[str] = None
+    # An inserted provision whose only identity is a foreign physical source id
+    # (carried from the affecting act, e.g. ``p02828``) must be re-anchored to
+    # the affected act's target-derived eId; otherwise the whole inserted
+    # provision and all its descendants land under a foreign id namespace
+    # (``p02828-1`` …) that can never match the affected act's eId scheme.
+    if not explicit_eid and foreign_id and _is_foreign_physical_source_id(foreign_id):
+        derived = _fallback_target_eid(target)
+        if derived:
+            retargeted_from = foreign_id
+            root_eid = derived
+            payload_node.attrs["eId"] = derived
+            # Drop the foreign physical id so it cannot shadow the derived eId
+            # downstream (eId-collection prefers eId, but other passes read id).
+            payload_node.attrs.pop("id", None)
     if not root_eid:
         root_eid = _fallback_target_eid(target)
         if root_eid:
             payload_node.attrs["eId"] = root_eid
+    if retargeted_from and lowering_records_out is not None:
+        lowering_records_out.append(
+            _payload_identity_diagnostic(
+                rule_id=UK_PAYLOAD_FOREIGN_SOURCE_ID_RETARGETED_RULE_ID,
+                reason=(
+                    "Inserted provision payload root carried a foreign physical "
+                    "source id from the affecting act; lowering re-anchored it to "
+                    "the affected act's target-derived eId."
+                ),
+                blocking=False,
+                effect_id=effect.effect_id,
+                affecting_act_id=effect.affecting_act_id,
+                affected_provisions=effect.affected_provisions,
+                affecting_provisions=effect.affecting_provisions,
+                effect_type=effect.effect_type,
+                target=str(target),
+                foreign_source_id=retargeted_from,
+                root_eid=root_eid,
+            )
+        )
     if not root_eid or not payload_node.children:
         return payload_node
 
