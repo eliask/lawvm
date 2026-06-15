@@ -149,7 +149,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_clause_patterns.py",
         "test_clause_surface.py",
         "test_coverage_audit.py",
-        "test_grammar_*.py",
         "test_fi_num_in_intro_recovery.py",
         "test_fi_profile_normalize.py",
         "test_fi_se_tools_regex_perf.py",
