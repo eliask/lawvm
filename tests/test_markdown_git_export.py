@@ -75,6 +75,55 @@ def _body_with_link_text(text: str) -> IRNode:
     )
 
 
+def _structured_body() -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 chapter"),
+                    IRNode(kind=IRNodeKind.HEADING, text="General"),
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1 sec"),
+                            IRNode(kind=IRNodeKind.HEADING, text="Scope"),
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(
+                                    IRNode(kind=IRNodeKind.CONTENT, text="Intro text."),
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="1",
+                                        children=(IRNode(kind=IRNodeKind.CONTENT, text="Item text."),),
+                                    ),
+                                    IRNode(
+                                        kind=IRNodeKind.SUBPARAGRAPH,
+                                        label="a",
+                                        children=(IRNode(kind=IRNodeKind.CONTENT, text="Subitem text."),),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="2 chapter"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Later"),
+                ),
+            ),
+        ),
+    )
+
+
 def test_markdown_render_adds_github_anchors_and_inline_links() -> None:
     text = "Reference to 9/2023 remains readable."
     start = text.index("9/2023")
@@ -96,6 +145,37 @@ def test_markdown_render_adds_github_anchors_and_inline_links() -> None:
         "[9/2023](<https://www.finlex.fi/fi/lainsaadanto/2023/9#chp_1__sec_2>)"
         in rendered
     )
+
+
+def test_markdown_render_links_statute_source_and_preserves_stable_toc_anchors() -> None:
+    rendered = render_act_markdown(
+        statute_id="100/2020",
+        title="Test Act",
+        version_date="2020-01-01",
+        root=_structured_body(),
+        tree_hash="abc123",
+        source_url="https://example.test/statute/100-2020",
+    )
+
+    assert "- Statute: [`100/2020`](<https://example.test/statute/100-2020>)" in rendered
+    assert "LawVM Markdown projection. Not an authoritative publication." not in rendered
+    assert "- [1 chapter General](#chapter-1)" in rendered
+    assert "- [1 sec Scope](#chapter-1-section-1)" in rendered
+    assert "\n- [2 chapter Later](#chapter-2)" in rendered
+
+
+def test_markdown_render_distinguishes_subsection_and_item_depth() -> None:
+    rendered = render_act_markdown(
+        statute_id="100/2020",
+        title="Test Act",
+        version_date="2020-01-01",
+        root=_structured_body(),
+        tree_hash="abc123",
+    )
+
+    assert '<a id="chapter-1-section-1-subsection-1"></a>\n#### \\(1\\)' in rendered
+    assert '<a id="chapter-1-section-1-subsection-1-paragraph-1"></a>\n- **1.** Item text\\.' in rendered
+    assert '<a id="chapter-1-section-1-subsection-1-subparagraph-a"></a>\n  - **a.** Subitem text\\.' in rendered
 
 
 def test_fast_import_stream_imports_into_bare_repo(tmp_path) -> None:
@@ -204,7 +284,7 @@ def test_build_commits_keeps_unchanged_statute_file_bytes_stable() -> None:
     commits = build_markdown_git_commits((prepared,), jurisdiction="fi")
 
     assert len(commits) == 1
-    assert b"Rendered statute version: `2020-01-01`" in commits[0].files["acts/2020/100.md"]
+    assert b"Version: `2020-01-01`" in commits[0].files["acts/2020/100.md"]
 
 
 def test_build_commits_uses_jurisdiction_fallback_for_non_num_year_ids() -> None:

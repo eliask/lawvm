@@ -66,6 +66,7 @@ class PreparedStatute:
     snapshots: tuple[MaterializedSnapshot, ...]
     interlink_rows: tuple[LawvmInterlinkRow, ...]
     interlink_targets: tuple[LawvmInterlinkTargetRow, ...]
+    source_url: str = ""
 
     @property
     def dates(self) -> tuple[str, ...]:
@@ -159,6 +160,7 @@ def prepare_markdown_git_export(
                 statute_id=canonical_id,
                 engine_id=engine_id,
                 title=str(bundle.title or canonical_id),
+                source_url=profile.statute_url(canonical_id, engine_id),
                 snapshots=tuple(snapshots),
                 interlink_rows=tuple(rows),
                 interlink_targets=tuple(targets),
@@ -222,6 +224,7 @@ def build_markdown_git_commits(
                 version_date=snapshot.effective_date,
                 root=snapshot.root,
                 tree_hash=snapshot.tree_hash,
+                source_url=statute.source_url,
                 interlink_rows=statute.interlink_rows,
                 interlink_targets=statute.interlink_targets,
             )
@@ -315,6 +318,7 @@ def render_act_markdown(
     version_date: str,
     root: IRNode,
     tree_hash: str,
+    source_url: str = "",
     interlink_rows: Iterable[LawvmInterlinkRow] = (),
     interlink_targets: Iterable[LawvmInterlinkTargetRow] = (),
 ) -> str:
@@ -323,17 +327,17 @@ def render_act_markdown(
     lines: list[str] = [
         f"# {_escape_markdown(title or statute_id)}",
         "",
-        "> LawVM Markdown projection. Not an authoritative publication.",
-        ">",
-        f"> Statute: `{statute_id}`",
-        f"> Rendered statute version: `{version_date}`",
-        f"> LawVM tree hash: `{tree_hash}`",
+        f"- Statute: {_statute_label(statute_id, source_url)}",
+        f"- Version: `{version_date}`",
+        f"- LawVM tree hash: `{tree_hash}`",
         "",
     ]
     contents = _contents(root)
     if contents:
         lines.extend(["## Contents", ""])
         for item in contents:
+            if item.starts_group and len(lines) > 2 and lines[-1]:
+                lines.append("")
             lines.append(f"- [{_escape_markdown(item.title)}](#{item.anchor})")
         lines.append("")
     _render_node(
@@ -350,6 +354,7 @@ def render_act_markdown(
 class _ContentsItem:
     anchor: str
     title: str
+    starts_group: bool = False
 
 
 def _contents(root: IRNode) -> list[_ContentsItem]:
@@ -367,6 +372,7 @@ def _contents(root: IRNode) -> list[_ContentsItem]:
                         _ContentsItem(
                             anchor=_anchor_for_address(_node_address_string(path)),
                             title=_node_heading(child, fallback_label=child.label or ""),
+                            starts_group=kind in {"part", "chapter"},
                         )
                     )
                 visit(child, path)
@@ -431,20 +437,30 @@ def _render_addressable_node(
         lines.append(f"{'#' * heading_level} {_escape_markdown(_node_heading(node, fallback_label=node.label or ''))}")
         lines.append("")
     segments = _inline_segments_for_node(node)
+    if kind == "subsection":
+        lines.append(f'<a id="{anchor}"></a>')
+        lines.append(f"#### {_escape_markdown(_subsection_heading(node.label or ''))}")
+        lines.append("")
+    rendered_segments: list[str] = []
     for segment_index, text in enumerate(segments):
         rendered = _render_segment(
             text,
             links_by_segment.get((address, segment_index), []),
             target_by_key=target_by_key,
         )
-        if kind in _LOWER_ADDRESSABLE_KINDS:
-            lower_anchor = _anchor_for_address(address)
-            prefix = _lower_node_prefix(kind, node.label or "")
-            lines.append(f'<a id="{lower_anchor}"></a>')
-            lines.append(f"{prefix}{rendered}" if prefix else rendered)
-        else:
-            lines.append(rendered)
+        rendered_segments.append(rendered)
+        if kind in {"paragraph", "subparagraph"}:
+            if segment_index == 0:
+                lines.append(f'<a id="{anchor}"></a>')
+            lines.append(_list_item_line(kind, node.label or "", rendered))
+            lines.append("")
+    if kind == "subsection" and rendered_segments:
+        lines.extend(rendered_segments)
         lines.append("")
+    elif kind not in _LOWER_ADDRESSABLE_KINDS:
+        for rendered in rendered_segments:
+            lines.append(rendered)
+            lines.append("")
     _render_node(
         node,
         path,
@@ -553,12 +569,22 @@ def _node_heading(node: IRNode, *, fallback_label: str) -> str:
     return fallback_label
 
 
-def _lower_node_prefix(kind: str, label: str) -> str:
-    if not label:
-        return ""
-    if kind == "subsection":
-        return f"**({_escape_markdown(label)})** "
-    return f"**{_escape_markdown(label)}.** "
+def _subsection_heading(label: str) -> str:
+    return f"({label})" if label else "Subsection"
+
+
+def _list_item_line(kind: str, label: str, rendered: str) -> str:
+    prefix = f"**{_escape_markdown(label)}.** " if label else ""
+    if kind == "subparagraph":
+        return f"  - {prefix}{rendered}"
+    return f"- {prefix}{rendered}"
+
+
+def _statute_label(statute_id: str, source_url: str) -> str:
+    label = f"`{statute_id}`"
+    if not source_url:
+        return label
+    return f"[{label}](<{source_url}>)"
 
 
 def _addr_component_for_node(node: IRNode, ordinal: int) -> str:
@@ -611,8 +637,6 @@ def _render_readme(
 ) -> str:
     lines = [
         f"# {jurisdiction.upper()} LawVM Markdown Projection",
-        "",
-        "> Generated LawVM projection. Not an authoritative publication.",
         "",
         f"- Repository snapshot date: `{effective_date}`",
         f"- Active sample statutes: `{active_count}`",
