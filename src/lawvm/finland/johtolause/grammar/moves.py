@@ -226,6 +226,85 @@ def recognize_leading_move_destination_part(scan: _Scan) -> Optional[ParsedMove]
     )
 
 
+def recognize_leading_move_destination_chapter(scan: _Scan) -> str:
+    """Consume a leading ``[DOC:ILL] uusi N luku, johon samalla siirretään``
+    destination-chapter prefix on a move verb group (old sp:3516).
+
+    A same-clause move construction can be preceded by the just-inserted
+    destination chapter (``lakiin uusi 3 a luku, johon samalla siirretään
+    muutettu 11 §``). The driver's main loop skips leading non-verb tokens, so
+    this is probed on a throwaway scan before the real parse advances. Returns
+    the destination chapter label (e.g. ``"3a"``) or ``""`` (rewinding).
+    """
+    saved = scan.pos
+    if (t := scan.peek()) and t.cat == "DOC" and t.case == "ILL":
+        scan.advance()
+    t = scan.peek()
+    if not (t and t.cat == "UUSI"):
+        scan.goto(saved)
+        return ""
+    scan.advance()  # consume uusi
+    nums = _number_list(scan)
+    if not nums or len(nums) != 1:
+        scan.goto(saved)
+        return ""
+    t = scan.peek()
+    if not (t and t.cat == "LUKU" and t.case != "ILL"):
+        scan.goto(saved)
+        return ""
+    scan.advance()  # consume LUKU
+    if (t := scan.peek()) and t.cat == "COMMA":
+        scan.advance()
+    saw_johon = False
+    saw_samalla = False
+    while (t := scan.peek()) and t.cat == "WORD":
+        txt = (t.text or "").lower()
+        if txt == "johon":
+            saw_johon = True
+        elif txt == "samalla":
+            saw_samalla = True
+        scan.advance()
+    t = scan.peek()
+    if not (saw_johon and saw_samalla and t and t.cat == "VERB" and _is_siirtaa(t)):
+        scan.goto(saved)
+        return ""
+    scan.advance()  # consume siirretään
+    return nums[0][0] + nums[0][1]
+
+
+def apply_leading_move_destination_chapter(
+    nodes: list[SurfaceNode], dest_chapter: str
+) -> list[SurfaceNode]:
+    """Patch every SECTION ref in a leading-destination SIIRTAA group with the
+    destination chapter (old sp:5109-5131): ``chapter`` (when bare),
+    ``move_clause_target_unit_kind='chapter'`` and ``renumber_dest_chapter``.
+    """
+    if not dest_chapter:
+        return nodes
+    out: list[SurfaceNode] = []
+    for node in nodes:
+        if isinstance(node, SurfaceTargetRef) and node.kind == TargetKind.SECTION:
+            out.append(
+                SurfaceTargetRef(
+                    kind=node.kind,
+                    label=node.label,
+                    chapter=node.chapter or dest_chapter,
+                    part=node.part,
+                    sub_refs=node.sub_refs,
+                    notes=node.notes,
+                    move_clause_target_unit_kind="chapter",
+                    is_exception=node.is_exception,
+                    renumber_dest=node.renumber_dest,
+                    renumber_dest_chapter=dest_chapter,
+                    renumber_dest_part=node.renumber_dest_part,
+                    witness=node.witness,
+                )
+            )
+        else:
+            out.append(node)
+    return out
+
+
 def recognize_inline_move_tail(scan: _Scan) -> Optional[ParsedMove]:
     """Recognize ``[,] [conj] jotka samalla siirretään [spans] N lukuun / N osaan``.
 

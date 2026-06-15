@@ -425,9 +425,19 @@ def test_residuals_contains_unconsumed_tokens_entry() -> None:
         consumed_count=len(real_tokens) - 1,  # leave the last token unconsumed
     )
 
-    with patch(
-        "lawvm.finland.johtolause.surface_parse.parse",
-        return_value=truncated,
+    # Patch BOTH parser entry points so the simulated truncation is returned
+    # regardless of which parser ``parse_clause`` selects (the new grammar
+    # parser is primary under LAWVM_FI_NEW_PARSER=1; the old surface parser is
+    # the default and the OutOfScope fallback).
+    with (
+        patch(
+            "lawvm.finland.johtolause.surface_parse.parse",
+            return_value=truncated,
+        ),
+        patch(
+            "lawvm.finland.johtolause.grammar.parser.parse",
+            return_value=truncated,
+        ),
     ):
         result = parse_clause(text)
 
@@ -475,6 +485,7 @@ def test_residuals_both_kinds_can_coexist() -> None:
 
     with (
         patch("lawvm.finland.johtolause.surface_parse.parse", return_value=truncated),
+        patch("lawvm.finland.johtolause.grammar.parser.parse", return_value=truncated),
         patch(
             "lawvm.finland.johtolause.surface_resolve.resolve_surface_clause",
             return_value=resolved_with_residual,

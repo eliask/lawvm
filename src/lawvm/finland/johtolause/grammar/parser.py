@@ -63,8 +63,10 @@ from lawvm.finland.johtolause.grammar.insertions import (
     recognize_insertion,
 )
 from lawvm.finland.johtolause.grammar.moves import (
+    apply_leading_move_destination_chapter,
     recognize_cross_verb_move_tail,
     recognize_inline_move_tail,
+    recognize_leading_move_destination_chapter,
     recognize_relabel_from_context,
     retag_moved_targets,
 )
@@ -561,6 +563,148 @@ def _section_continuation_is_kept(scan: _Scan, has_jolloin: bool = False) -> boo
     return False
 
 
+def _skip_named_row_residue(scan: _Scan) -> bool:
+    """Consume a post-target named-row residue like ``koodi 121`` (old sp:3652).
+
+    The structural target parser stops before the row-designator tail (``koodi
+    <num>``); a mixed clause continues with additional ordinary targets after it.
+    Without this skip the continuation loop would treat ``koodi 121`` as an
+    undecodable tail and drop every later target. Faithful to the old
+    ``_skip_named_row_residue``: only consumes a ``koodi`` WORD followed by at
+    least one NUM / LETTER / DASH; otherwise leaves the cursor untouched.
+    """
+    saved = scan.pos
+    t = scan.peek()
+    if not (t and t.cat == "WORD" and (t.text or "").lower() == "koodi"):
+        return False
+    scan.advance()
+    saw_code = False
+    while (t := scan.peek()) and t.cat in ("NUM", "LETTER", "DASH"):
+        scan.advance()
+        saw_code = True
+    if saw_code:
+        return True
+    scan.goto(saved)
+    return False
+
+
+def _skip_heading_residue(scan: _Scan) -> bool:
+    """Consume a bare heading-placement residue left after provenance tagging
+    (old sp:3560): ``uusi [otsikko | <luku> otsikko | <num> luvun otsikko]``.
+
+    A trailing heading-placement arm whose payload the section family cannot mint
+    into a node is swallowed by the old outer loop. Reproduced so the continuation
+    loop skips it and keeps reaching later targets rather than declining.
+    """
+    saved = scan.pos
+    if not ((t := scan.peek()) and t.cat == "UUSI"):
+        return False
+    scan.advance()
+    t = scan.peek()
+    if t and t.cat == "OTSIKKO":
+        scan.advance()
+        return True
+    if t and t.cat == "LUKU" and t.case == "GEN":
+        scan.advance()
+        if (t := scan.peek()) and t.cat == "OTSIKKO":
+            scan.advance()
+            return True
+        scan.goto(saved)
+        return False
+    if t and t.cat == "NUM":
+        scan.advance()
+        if (t := scan.peek()) and t.cat == "LETTER":
+            scan.advance()
+        if (t := scan.peek()) and t.cat == "LUKU" and t.case == "GEN":
+            scan.advance()
+            if (t := scan.peek()) and t.cat == "OTSIKKO":
+                scan.advance()
+                return True
+    scan.goto(saved)
+    return False
+
+
+def _normalize_intrabatch_explicit_part_scope(
+    nodes: list[SurfaceNode], inherited_part: str
+) -> list[SurfaceNode]:
+    """Retarget later nodes in one batch when an explicit part switch appears
+    earlier in the same batch (faithful port of old sp:3272).
+
+    A single batch can switch parts mid-list (``V osan 4 luvun …, VI osan otsikko,
+    1-3 luvun …``); the running part context updates only after the whole batch is
+    built, so later chapter/section descendants can carry the stale pre-switch
+    part. When an explicit PART target precedes them, retarget them to the new
+    part — dropping a section's stale inherited ``chapter`` (which belonged to the
+    old part) so the address is not internally contradictory.
+    """
+    if not nodes:
+        return nodes
+    active_part = inherited_part
+    stale_part_after_explicit_switch = ""
+    result: list[SurfaceNode] = []
+    for node in nodes:
+        explicit_part = ""
+        if isinstance(node, SurfaceScopeBlock):
+            if node.scope_kind == ScopeKind.PART and node.scope_label:
+                explicit_part = node.scope_label
+        elif isinstance(node, SurfaceInsertion):
+            if node.kind == TargetKind.PART and node.label:
+                explicit_part = node.label
+        elif isinstance(node, SurfaceTargetRef):
+            if node.kind == TargetKind.PART and node.label:
+                explicit_part = node.label
+        if explicit_part:
+            if explicit_part != active_part:
+                stale_part_after_explicit_switch = active_part
+            active_part = explicit_part
+            result.append(node)
+            continue
+        if (
+            active_part
+            and stale_part_after_explicit_switch
+            and isinstance(node, SurfaceTargetRef)
+            and node.kind in {TargetKind.CHAPTER, TargetKind.SECTION}
+            and node.part == stale_part_after_explicit_switch
+        ):
+            retarget_chapter = node.chapter
+            if node.kind == TargetKind.SECTION:
+                retarget_chapter = ""
+            node = SurfaceTargetRef(
+                kind=node.kind,
+                label=node.label,
+                chapter=retarget_chapter,
+                part=active_part,
+                sub_refs=node.sub_refs,
+                notes=node.notes,
+                move_clause_target_unit_kind=node.move_clause_target_unit_kind,
+                is_exception=node.is_exception,
+                renumber_dest=node.renumber_dest,
+                renumber_dest_chapter=node.renumber_dest_chapter,
+                renumber_dest_part=node.renumber_dest_part,
+                witness=node.witness,
+            )
+        elif (
+            isinstance(node, SurfaceTargetRef)
+            and node.part
+            and not stale_part_after_explicit_switch
+        ):
+            active_part = node.part
+        result.append(node)
+    return result
+
+
+def _try_including_preceding_heading(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """``mukaanluettuna N §:n edellä olevan väliotsikon`` as a heading target
+    (old sp:3590). The section-range arm gains a HEADING facet; the enclosing
+    list continues past it. Rewinds on no match."""
+    parsed = recognize_including_preceding_heading_target(scan, chapter, part)
+    if parsed is None:
+        return None
+    return emit_headings_nodes(parsed, chapter=chapter, part=part)
+
+
 def _try_recognize_target(
     scan: _Scan, batch_start: int, chapter: str, part: str
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
@@ -933,6 +1077,27 @@ def _parse_verb_group(
                         part = _extract_part(more, part)
                         continue
                     scan.goto(saved)
+            # An ``mukaanluettuna N §:n edellä olevan väliotsikon`` included
+            # preceding-heading arm directly follows a section range (no
+            # separator); the old ``_target_list`` folds it in and keeps parsing
+            # later arms (sp:4117). Fold it and continue.
+            scan.goto(saved)
+            inc_nodes = _try_including_preceding_heading(scan, chapter, part)
+            if inc_nodes is not None:
+                nodes.extend(inc_nodes)
+                last_batch = list(inc_nodes)
+                chapter = _extract_chapter(inc_nodes, chapter, verb)
+                part = _extract_part(inc_nodes, part)
+                continue
+            # A named-row residue (``koodi 121``) or a bare heading-placement
+            # residue (``uusi [luvun] otsikko``) the section family stops before:
+            # the old outer loop skips it and continues reaching later targets
+            # (sp:3652 / sp:3560). Skip and re-enter the loop so the following
+            # ``, N §`` separator continuation is reached rather than dropped.
+            if kind in ("section", "container") and (
+                _skip_named_row_residue(scan) or _skip_heading_residue(scan)
+            ):
+                continue
             # The old parser otherwise ends the target list here and lets the
             # outer loop swallow the tail. For an INSERTION batch a structural
             # tail the old parser keeps folding into the same list (chained
@@ -941,7 +1106,6 @@ def _parse_verb_group(
             # re-introduces trailing appendix / table arms the old parser keeps —
             # decline. A SECTION batch legitimately reads a trailing out-of-family
             # arm as residue the old section path also drops — do not fail-loud.
-            scan.goto(saved)
             if kind == "insertion" and not _tail_is_benign(scan):
                 raise OutOfScope("undecodable insertion tail (no separator)")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
@@ -1058,6 +1222,13 @@ def _parse_verb_group(
 
         _consume_inline_move_tails(scan, nodes, last_batch)
 
+    # Intra-list part-switch retarget (old sp:4095/4119): when an explicit PART
+    # target switches the part mid-list, later bare chapter/section descendants
+    # that still carry the pre-switch part are retargeted to the new part (and a
+    # section's stale inherited chapter is dropped). The old parser applies this
+    # per ``_target`` batch; this driver splits the list at separators differently,
+    # so the equivalent fixed point is a single whole-verb-group pass.
+    nodes = _normalize_intrabatch_explicit_part_scope(nodes, "")
     return verb, nodes
 
 
@@ -1211,6 +1382,14 @@ def parse(
         {} if jolloin_renumber_pairs is not None else None
     )
 
+    # The first verb group in a same-clause move construction can be preceded by
+    # a destination-chapter lead-in (``lakiin uusi 3 a luku, johon samalla
+    # siirretään muutettu 11 §``). The main loop skips leading non-verb tokens,
+    # so probe that prefix on a throwaway scan first (old sp:5072).
+    leading_move_destination_chapter = recognize_leading_move_destination_chapter(
+        _Scan(Cursor(tokens))
+    )
+
     scan = _Scan(Cursor(tokens))
 
     # Skip leading non-verb tokens (the old parser does the same).
@@ -1230,6 +1409,12 @@ def parse(
     )
     if not nodes:
         raise OutOfScope("empty first verb group")
+    if leading_move_destination_chapter and verb == SourceVerb.SIIRTAA:
+        # The leading-destination move group's sections take the inserted chapter
+        # as their move destination (old sp:5109-5131).
+        nodes = apply_leading_move_destination_chapter(
+            nodes, leading_move_destination_chapter
+        )
     verb_groups.append(
         SurfaceVerbGroup(verb=VerbKind.from_code(verb or SourceVerb.MUUTTAA), nodes=tuple(nodes))
     )
