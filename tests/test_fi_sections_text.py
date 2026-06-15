@@ -532,6 +532,8 @@ class TestEidToSectionKey:
         ("part_1__chp_1__sec_3av20190809", "chapter:1/section:3a"),
         ("part_1__chp_2__sec_7v20140368", "chapter:2/section:7"),
         ("part_1__chp_1__sec_5v20190432", "chapter:1/section:5"),
+        ("chp_10v20010875__sec_2v20160356", "chapter:10/section:2"),
+        ("chp_48av20110339__sec_3v20110339", "chapter:48a/section:3"),
         ("", ""),
         ("chp_3", ""),  # no sec_ component
     ])

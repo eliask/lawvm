@@ -76,13 +76,13 @@ _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 # Section label extractor from AKN sec_N or sec_Na paths.
 # Bounded: [a-z0-9_]{0,100} is safe.
 _AKN_SECTION_PATH_RE = re.compile(
-    r"(?:^|/)sec_([0-9]{1,6}[a-z]?)(?:/|$|_sub)",
+    r"(?:^|/|__)sec_([0-9]{1,6}[a-z]?)(?:/|$|__|_sub)",
     re.IGNORECASE,
 )
 
 # Subsection extractor from AKN path: sec_N_sub_M or sub_M.
 _AKN_SUBSECTION_PATH_RE = re.compile(
-    r"_sub_([0-9]{1,4})(?:/|$|_)",
+    r"(?:_sub_|__subsec_)([0-9]{1,4})(?:/|$|__|_)",
     re.IGNORECASE,
 )
 

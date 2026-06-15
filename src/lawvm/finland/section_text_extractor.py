@@ -46,9 +46,9 @@ _TAG_FRBR_DATE = f"{{{_AKN_NS}}}FRBRdate"
 # Module-scope compiled patterns (AGENTS.md §1.11)
 # ---------------------------------------------------------------------------
 
-# Extract chapter number from eId: 'chp_N' component.
-# Bounded: \d{1,6} safe for any chapter number.
-_EID_CHN_RE = re.compile(r"chp_(\d{1,6})(?:__|$)", re.IGNORECASE)
+# Extract chapter number from eId: 'chp_N' component, optionally versioned.
+# Bounded: \d{1,6} safe for any chapter number; version suffix is capped.
+_EID_CHN_RE = re.compile(r"chp_(\d{1,6}[a-z]?)(?:v\d{1,10})?(?:__|$)", re.IGNORECASE)
 
 # Extract section number+letter from eId: 'sec_Na' optionally followed by
 # version suffix 'vYYYYNNNN' or end-of-string/double-underscore.

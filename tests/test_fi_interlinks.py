@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from lawvm.core.inline_citation import InlineCitation, InlineCitationContext, InlineCitationKind
 from lawvm.core.interlinks import legal_interlink_to_row
 from lawvm.core.preparatory_reference import (
@@ -44,6 +46,66 @@ def test_fi_reference_mention_adapter_preserves_role_status_and_locator() -> Non
     assert row["source_locator"] == "section:4"
     assert row["target_locator"] == "section:2/subsection:3"
     assert row["source_span_byte_offset"] == 10
+
+
+def test_fi_reference_mention_adapter_parses_and_preserves_akn_locator() -> None:
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="1996/1093", section_label="18"),
+        target_provision_ref=ProvisionRef(
+            statute_id="1889/39-001",
+            provision_path="chp_10__sec_2",
+        ),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+    )
+
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(
+            mention,
+            interlink_id="ref-akn-locator",
+            surface_text="(39/1889) 10 luvun 2 §:ssä",
+        )
+    )
+
+    assert row["target_locator"] == "chapter:10/section:2"
+    assert json.loads(str(row["detail_json"])) == {
+        "target_locator_resolver": "fi.akn_eid",
+        "target_raw_locator": "chp_10__sec_2",
+    }
+
+
+def test_fi_reference_mention_adapter_parses_chapter_only_akn_locator() -> None:
+    mention = ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="1996/1093", section_label="18"),
+        target_provision_ref=ProvisionRef(
+            statute_id="1889/39-001",
+            provision_path="chp_10",
+        ),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="ref_element",
+        source_span=None,
+        valid_at_interval=(None, None),
+        edge_subtype="CITES",
+    )
+
+    row = legal_interlink_to_row(
+        fi_interlink_from_reference_mention(
+            mention,
+            interlink_id="ref-akn-chapter",
+            surface_text="rikoslain 10 luvussa",
+        )
+    )
+
+    assert row["target_locator"] == "chapter:10"
+    assert json.loads(str(row["detail_json"])) == {
+        "target_locator_resolver": "fi.akn_eid",
+        "target_raw_locator": "chp_10",
+    }
 
 
 def test_fi_reference_mention_adapter_uses_owned_surface_text() -> None:

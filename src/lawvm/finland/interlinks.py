@@ -1,6 +1,8 @@
 """Finland adapters from local citation records to neutral interlink rows."""
 from __future__ import annotations
 
+import json
+import re
 from typing import Optional
 
 from lawvm.core.interlinks import (
@@ -16,6 +18,19 @@ from lawvm.core.interlinks import (
     RenderedTextSpan,
 )
 from lawvm.core.locator import HierarchicalLocator, LocatorSegment
+
+_AKN_LOCATOR_PARTS = {
+    "part": "part",
+    "chp": "chapter",
+    "sec": "section",
+    "subsec": "subsection",
+    "para": "paragraph",
+    "subpara": "subparagraph",
+}
+_AKN_LOCATOR_PART_RE = re.compile(
+    r"^(part|chp|sec|subsec|para|subpara)_([A-Za-z0-9.-]{1,40})$",
+    re.IGNORECASE,
+)
 
 
 def fi_work_ref(local_id: str, work_kind: str = "normative_act") -> LegalWorkRef:
@@ -52,6 +67,13 @@ def _locator_from_reference_provision(provision_ref: object) -> Optional[LegalLo
     subsection_num = getattr(provision_ref, "subsection_num", None)
     item_label = getattr(provision_ref, "item_label", None)
     provision_path = str(getattr(provision_ref, "provision_path", "") or "")
+    akn_locator = _locator_from_akn_provision_path(provision_path)
+    if akn_locator is not None:
+        return LegalLocatorRef(
+            locator=akn_locator,
+            raw_locator=provision_path,
+            resolver_namespace="fi.akn_eid",
+        )
     segments: list[LocatorSegment] = []
     if section_label:
         segments.append(LocatorSegment("section", section_label))
@@ -68,6 +90,36 @@ def _locator_from_reference_provision(provision_ref: object) -> Optional[LegalLo
     if provision_path:
         return LegalLocatorRef(raw_locator=provision_path, resolver_namespace="fi.provision_ref")
     return None
+
+
+def _locator_from_akn_provision_path(provision_path: str) -> Optional[HierarchicalLocator]:
+    if "_" not in provision_path:
+        return None
+    segments: list[LocatorSegment] = []
+    for raw_part in provision_path.split("__"):
+        match = _AKN_LOCATOR_PART_RE.fullmatch(raw_part)
+        if match is None:
+            return None
+        kind = _AKN_LOCATOR_PARTS[match.group(1).lower()]
+        segments.append(LocatorSegment(kind, match.group(2)))
+    return HierarchicalLocator(tuple(segments)) if segments else None
+
+
+def _reference_mention_detail_json(
+    *,
+    source_locator: Optional[LegalLocatorRef],
+    target_locator: Optional[LegalLocatorRef],
+) -> str:
+    detail: dict[str, str] = {}
+    if source_locator is not None and source_locator.raw_locator:
+        detail["source_raw_locator"] = source_locator.raw_locator
+        if source_locator.resolver_namespace:
+            detail["source_locator_resolver"] = source_locator.resolver_namespace
+    if target_locator is not None and target_locator.raw_locator:
+        detail["target_raw_locator"] = target_locator.raw_locator
+        if target_locator.resolver_namespace:
+            detail["target_locator_resolver"] = target_locator.resolver_namespace
+    return json.dumps(detail, ensure_ascii=False, sort_keys=True) if detail else "{}"
 
 
 def _source_span_from_reference_span(span: object | None) -> Optional[InterlinkSourceSpan]:
@@ -153,21 +205,27 @@ def fi_interlink_from_reference_mention(
         confidence = InterlinkConfidence.LEGACY_UNKNOWN
 
     owned_surface_text = str(getattr(mention, "surface_text", "") or "")
+    source_locator = _locator_from_reference_provision(src)
+    target_locator = _locator_from_reference_provision(tgt) if tgt is not None else None
 
     return LegalInterlink(
         interlink_id=interlink_id,
         source_work=source_work,
-        source_locator=_locator_from_reference_provision(src),
+        source_locator=source_locator,
         source_span=_source_span_from_reference_span(getattr(mention, "source_span", None)),
         rendered_span=rendered_span,
         surface_text=surface_text or owned_surface_text or phrase_lemma or edge_subtype or "reference",
         surface_kind=surface_kind,
-        target=InterlinkTarget(work=target_work, locator=_locator_from_reference_provision(tgt) if tgt is not None else None),
+        target=InterlinkTarget(work=target_work, locator=target_locator),
         role=role,
         resolution_status=status,
         confidence=confidence,
         resolver_id="fi.reference_mention",
         valid_at_interval=getattr(mention, "valid_at_interval", (None, None)),
+        detail_json=_reference_mention_detail_json(
+            source_locator=source_locator,
+            target_locator=target_locator,
+        ),
     )
 
 
