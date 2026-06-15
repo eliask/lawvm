@@ -250,6 +250,7 @@ class ProcessResultBuilder:
                 "APPLY.RELABEL_SKIPPED",
                 "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
                 "APPLY.SAME_WAVE_MIGRATION_REBASE",
+                "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
             ):
                 finding = _apply_mutation_fallback_event_finding(
                     event=event,

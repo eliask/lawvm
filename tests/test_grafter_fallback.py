@@ -1288,6 +1288,64 @@ def test_process_muutoslaki_projects_same_wave_migration_rebase_apply_fallback(m
     )
 
 
+def test_process_muutoslaki_projects_resolver_binding_contract_error(monkeypatch) -> None:
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+    mutation_events: list[ApplyMutationEvent] = []
+
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
+        return PhaseResult(output=[])
+
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
+        return PhaseResult(output=(), temporal_events=())
+
+    def fake_apply_ops_to_tree_typed(request, sinks):
+        mutation_events_out = sinks.mutation_events_out
+        assert mutation_events_out is not None
+        mutation_events_out.append(
+            ApplyMutationEvent(
+                op_id="op_binding",
+                source_statute="1996/1261",
+                action="replace",
+                helper="section_resolver_binding",
+                outcome="skipped",
+                resolved_target_path=(("section", "35"),),
+                used_fallback_tags=(
+                    "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
+                    "resolver_binding_contract_error",
+                ),
+                failure_reason="synthetic binding contract break",
+                reason_code="resolver_binding_contract_error",
+            )
+        )
+        return request.state
+
+    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+
+    result = process_muutoslaki(
+        "1996/1261",
+        state,
+        ctx,
+        corpus=_corpus_store({"1996/1261": _base_process_muutoslaki_xml()}),
+        mutation_events_out=mutation_events,
+    )
+
+    binding_findings = [
+        finding
+        for finding in result.findings()
+        if finding.kind == "APPLY.RESOLVER_BINDING_CONTRACT_ERROR"
+    ]
+    assert len(binding_findings) == 1
+    assert binding_findings[0].role == "observation"
+    assert binding_findings[0].blocking is False
+    assert binding_findings[0].detail.get("helper") == "section_resolver_binding"
+    assert binding_findings[0].detail.get("reason_code") == "resolver_binding_contract_error"
+    assert "synthetic binding contract break" in str(binding_findings[0].detail.get("failure_reason"))
+    assert binding_findings[0].detail.get("resolved_target_path") == (("section", "35"),)
+
+
 def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> None:
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     replay_meta: dict[str, object] = {}

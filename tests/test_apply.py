@@ -8137,6 +8137,57 @@ def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_s
     )
 
 
+def test_apply_op_emits_event_when_section_resolver_binding_contract_breaks(monkeypatch) -> None:
+    from lawvm.core.canonical_intent import ExecutionContract, IntentKind, NodeTarget, OccupancyPolicy, Replace
+    from lawvm.core.ir import LegalAddress
+
+    state = _make_state(_body(_sec("23", _content("old section"))))
+    op = _op(op_type="REPLACE", target_section="23")
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=NodeTarget(address=LegalAddress(path=(("section", "23"),))),
+        payload=cast(Any, _sec("23", _content("new section"))),
+        contract=ExecutionContract(occupancy=OccupancyPolicy.same_slot_replace()),
+    )
+    rop = _make_rop(op, intent, muutos_ir=_sec("23", _content("new section")))
+    mutation_events: list[ApplyMutationEvent] = []
+
+    def fake_binding(*_args, **_kwargs):
+        raise ValueError("synthetic binding contract break")
+
+    monkeypatch.setattr(
+        "lawvm.finland.apply_typed_dispatch.section_resolver_binding",
+        fake_binding,
+    )
+
+    result = apply_op(
+        state,
+        op,
+        _ctx(_body()),
+        muutos_ir=_sec("23", _content("new section")),
+        replay_mode="legal_pit",
+        mutation_events_out=mutation_events,
+        rop=rop,
+    )
+
+    assert result is not state
+    binding_events = [
+        event
+        for event in mutation_events
+        if event.helper == "section_resolver_binding"
+    ]
+    assert len(binding_events) == 1
+    assert binding_events[0].outcome == "skipped"
+    assert binding_events[0].used_fallback_tags == (
+        "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
+        "resolver_binding_contract_error",
+    )
+    assert binding_events[0].reason_code == "resolver_binding_contract_error"
+    assert "synthetic binding contract break" in binding_events[0].failure_reason
+    assert binding_events[0].resolved_target_path == (("section", "23"),)
+    assert any(event.outcome == "applied" for event in mutation_events)
+
+
 def test_apply_op_does_not_rehome_unique_global_section_across_part_for_grouped_part_scope() -> None:
     from lawvm.core import tree_ops as _tops
 

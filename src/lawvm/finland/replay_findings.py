@@ -132,6 +132,8 @@ def _apply_mutation_fallback_event_finding(
         message = "Section path resolution fell back to a live unique match after scoped lookup failed."
     elif fallback_kind == "APPLY.SAME_WAVE_MIGRATION_REBASE":
         message = "Section path resolution followed same-wave migration lineage to the current address."
+    elif fallback_kind == "APPLY.RESOLVER_BINDING_CONTRACT_ERROR":
+        message = "Apply target resolver binding instrumentation violated its contract."
     detail = {
         "message": message,
         "helper": event.helper,

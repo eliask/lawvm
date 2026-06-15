@@ -591,6 +591,22 @@ def _apply_intent_section_level(
         logger.warning(
             "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
         )
+        _emit_apply_mutation_event_for_rop(
+            mutation_events_out,
+            rop=rop,
+            helper="section_resolver_binding",
+            outcome="skipped",
+            resolved_target_path=_resolved_target_path_for_rop_event(
+                rop,
+                section_resolution.path,
+            ),
+            used_fallback_tags=(
+                "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
+                "resolver_binding_contract_error",
+            ),
+            failure_reason=str(exc),
+            reason_code="resolver_binding_contract_error",
+        )
     sec_path = section_resolution.path
     if section_resolution.used_live_unique_global_fallback:
         used_fallback_tags = (
