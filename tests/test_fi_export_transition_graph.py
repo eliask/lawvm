@@ -781,6 +781,75 @@ def test_export_places_unambiguous_lawvm_interlinks_in_rendered_text(
         conn.close()
 
 
+@pytest.mark.parametrize(
+    "surface_kind",
+    ["xml_ref", "preparatory_ref", "effect_feed_ref", "manual_claim_ref"],
+)
+def test_export_places_unambiguous_rendered_interlink_surfaces(
+    surface_kind: str,
+    patched_engine: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    row_data = _placeable_interlink_row()
+    row_data["surface_kind"] = surface_kind
+    row = etg.LawvmInterlinkRow.from_mapping(row_data)
+
+    out = tmp_path / f"synth_placed_{surface_kind}_links.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        interlink_provider=_interlink_provider_for_rows([row]),
+    )
+
+    assert stats.n_lawvm_interlinks == len(_CHANGE_DATES)
+    conn = sqlite3.connect(str(out))
+    try:
+        stored = conn.execute(
+            "SELECT rendered_effective_date, rendered_address, rendered_segment_index, "
+            "rendered_char_start, rendered_char_end, surface_kind, surface_text "
+            "FROM lawvm_interlinks AS l "
+            "JOIN checkpoints AS c ON l.rendered_effective_date = c.date "
+            "ORDER BY c.date"
+        ).fetchall()
+        assert stored == [
+            ("2010-01-01", "section:1", 0, 0, 5, surface_kind, "alpha"),
+            ("2015-01-01", "section:1", 0, 0, 5, surface_kind, "alpha"),
+            ("2020-01-01", "section:1", 0, 0, 5, surface_kind, "alpha"),
+        ]
+    finally:
+        conn.close()
+
+
+def test_export_does_not_place_metadata_interlinks_in_rendered_text(
+    patched_engine: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    row_data = _placeable_interlink_row()
+    row_data["surface_kind"] = "metadata_ref"
+    row = etg.LawvmInterlinkRow.from_mapping(row_data)
+
+    out = tmp_path / "synth_unplaced_metadata_links.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        interlink_provider=_interlink_provider_for_rows([row]),
+    )
+
+    assert stats.n_lawvm_interlinks == 1
+    conn = sqlite3.connect(str(out))
+    try:
+        stored = conn.execute(
+            "SELECT rendered_effective_date, rendered_address, rendered_char_start, "
+            "rendered_char_end, surface_kind, surface_text "
+            "FROM lawvm_interlinks"
+        ).fetchall()
+        assert stored == [(None, None, None, None, "metadata_ref", "alpha")]
+    finally:
+        conn.close()
+
+
 def test_export_captures_insert_and_expiry_transitions(
     patched_engine: None, tmp_path: Path
 ) -> None:

@@ -908,19 +908,89 @@ function metaValue(key) {
   try { return JSON.parse(row.value); } catch (e) { return row.value; }
 }
 
+function loadProgressHtml(label, percent, detail, indeterminate) {
+  const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
+  const barClass = indeterminate ? 'load-bar indeterminate' : 'load-bar';
+  const barStyle = indeterminate ? '' : ` style="width: ${pct}%"`;
+  return `<div class="load-panel" role="status" aria-live="polite">`
+    + `<div class="load-title" id="load-title">${escHtml(label)}</div>`
+    + `<div class="load-track" aria-hidden="true"><div id="load-bar" class="${barClass}"${barStyle}></div></div>`
+    + `<div class="load-meta" id="load-meta">${escHtml(detail || '')}</div>`
+    + `</div>`;
+}
+
+function setLoadProgress(percent, label, detail, indeterminate) {
+  const title = document.getElementById('load-title');
+  const bar = document.getElementById('load-bar');
+  const meta = document.getElementById('load-meta');
+  if (title) title.textContent = label;
+  if (bar) {
+    bar.classList.toggle('indeterminate', Boolean(indeterminate));
+    if (indeterminate) bar.style.removeProperty('width');
+    else bar.style.width = `${Math.max(0, Math.min(100, Math.round(percent || 0)))}%`;
+  }
+  if (meta) meta.textContent = detail || '';
+}
+
+function formatLoadBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+async function fetchArrayBufferWithProgress(url, onProgress) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} (${url})`);
+  const total = Number(resp.headers.get('content-length')) || 0;
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    const buf = await resp.arrayBuffer();
+    onProgress(buf.byteLength, total || buf.byteLength);
+    return buf;
+  }
+
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded, total);
+  }
+
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes.buffer;
+}
+
 async function loadStatute(statuteId, permalink) {
   const app = document.getElementById('app');
-  app.innerHTML = `<p class="loading">${escHtml(tr('loadingStatute'))}</p>`;
+  app.innerHTML = loadProgressHtml(tr('loadingStatute'), 2, '', true);
   const entry = manifest.find(s => s.statute_id === statuteId);
   if (!entry) { app.innerHTML = `<p class="error-box">${escHtml(tr('notInManifest'))}</p>`; return; }
   currentStatuteId = statuteId;
 
   try {
+    setLoadProgress(8, tr('loadingSql'), '', true);
     const SQL = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/${f}` });
-    const resp = await fetch(entry.db);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} (${entry.db})`);
-    const buf = await resp.arrayBuffer();
+    setLoadProgress(18, tr('loadingDb'), entry.db, true);
+    const buf = await fetchArrayBufferWithProgress(entry.db, (loaded, total) => {
+      if (total) {
+        const pct = 18 + (loaded / total) * 58;
+        setLoadProgress(pct, tr('loadingDb'), `${formatLoadBytes(loaded)} / ${formatLoadBytes(total)}`, false);
+      } else {
+        setLoadProgress(18, tr('loadingDb'), formatLoadBytes(loaded), true);
+      }
+    });
+    setLoadProgress(78, tr('openingDb'), formatLoadBytes(buf.byteLength), false);
     db = new SQL.Database(new Uint8Array(buf));
+    setLoadProgress(88, tr('indexingDb'), '', false);
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
     interlinks = []; interlinksByRenderedAddress = new Map(); interlinkTargetsByKey = new Map();

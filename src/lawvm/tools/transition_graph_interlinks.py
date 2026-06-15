@@ -306,6 +306,14 @@ _ADDRESSABLE_KINDS = frozenset({
     "subparagraph",
 })
 
+_PLACEABLE_SURFACE_KINDS = frozenset({
+    "prose_ref",
+    "xml_ref",
+    "preparatory_ref",
+    "effect_feed_ref",
+    "manual_claim_ref",
+})
+
 
 def _child_text(node: IRNode, kind: str) -> str:
     for child in node.children:
@@ -405,10 +413,11 @@ def _has_placeable_surface(row: LawvmInterlinkRow) -> bool:
 
     Jurisdiction adapters own sentinel labels such as XML element names or
     metadata edge names. The neutral placer only attempts string placement for
-    actual prose-reference surfaces; other rows remain valid semantic edges but
-    are not painted inline unless they already carry explicit rendered spans.
+    actual rendered-reference surfaces; other rows remain valid semantic edges
+    but are not painted inline unless they already carry explicit rendered
+    spans.
     """
-    return row.surface_kind == "prose_ref" and bool(row.surface_text.strip())
+    return row.surface_kind in _PLACEABLE_SURFACE_KINDS and bool(row.surface_text.strip())
 
 
 def _segment_matches_locator(segment_addr: str, locator: str) -> bool:

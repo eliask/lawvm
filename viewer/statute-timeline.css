@@ -73,6 +73,32 @@ select {
 .lang-toggle button.active { background: var(--accent); color: #fff; }
 
 .loading { color: var(--muted); padding: 2rem 0; }
+.load-panel { padding: 1.6rem 0 1.1rem; max-width: 34rem; }
+.load-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.55rem; }
+.load-track {
+  width: 100%;
+  height: 0.55rem;
+  background: #e8e8e2;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.load-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 150ms ease-out;
+}
+.load-bar.indeterminate {
+  width: 45%;
+  animation: load-slide 1.2s ease-in-out infinite;
+}
+.load-meta { margin-top: 0.45rem; color: var(--muted); font-size: 0.8rem; }
+@keyframes load-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(245%); }
+}
 
 /* =====================================================================
    Sticky topbar: modes + § jump + verify badge + time-axis scrubber.
