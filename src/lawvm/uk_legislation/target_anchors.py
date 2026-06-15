@@ -94,8 +94,19 @@ def _fallback_target_eid(addr: LegalAddress) -> str:
 
     if section:
         parts.append(f"section-{_clean_num(section)}")
-    for suffix_label in _body_target_eid_suffixes(addr):
-        parts.append(_canonicalize_eid_tail_label(suffix_label))
+        for suffix_label in _body_target_eid_suffixes(addr):
+            parts.append(_canonicalize_eid_tail_label(suffix_label))
+        return "-".join(part for part in parts if part)
+
+    # Body structural container without a section leaf (a whole part or chapter
+    # insert target, e.g. ``part:4/chapter:7A``). UK body containers carry
+    # hierarchical eIds (``part-4``, ``part-4-chapter-7A``, ``chapter-7A``);
+    # sections nested under them keep their own flat ``section-NNN`` eId and are
+    # not derived from this container eId.
+    if part:
+        parts.append(f"part-{_clean_num(part)}")
+    if chapter:
+        parts.append(f"chapter-{_clean_num(chapter)}")
     return "-".join(part for part in parts if part)
 
 

@@ -97,6 +97,25 @@ def _payload_local_suffix(child: UKMutableNode) -> str:
     return _canonicalize_eid_tail_label(raw_label)
 
 
+# Body section-like provisions always carry a flat root eId (``section-289A``,
+# ``article-4``) even when nested inside a part or chapter. When a whole-chapter
+# or whole-part payload is inserted, its section children must therefore reset
+# the descendant-eId namespace to that flat root rather than inherit the
+# container's hierarchical eId.
+_UK_BODY_SECTION_LIKE_KINDS = {"section", "article", "rule", "regulation"}
+
+
+def _payload_flat_section_root_eid(child: UKMutableNode) -> str:
+    """Return the flat root eId for a body section-like payload child, or ``''``."""
+    kind_name = str(child.kind or "").lower()
+    if kind_name not in _UK_BODY_SECTION_LIKE_KINDS:
+        return ""
+    clean_label = _clean_num(str(child.label or "")).strip()
+    if not clean_label:
+        return ""
+    return f"{kind_name}-{clean_label}"
+
+
 def _synthesize_whole_schedule_payload_descendant_eids(
     payload_node: UKMutableNode,
     *,
@@ -296,8 +315,28 @@ def _synthesize_payload_descendant_eids(
             if child_eid:
                 used_eids.add(child_eid)
             else:
-                suffix = _payload_local_suffix(child)
-                if suffix:
+                # A section-like provision nested inside a part/chapter payload
+                # carries a FLAT root eId (``section-289A``) and re-roots the
+                # descendant namespace, rather than inheriting the container eId.
+                flat_root = _payload_flat_section_root_eid(child)
+                suffix = "" if flat_root else _payload_local_suffix(child)
+                if flat_root:
+                    if flat_root in used_eids:
+                        skipped_duplicate += 1
+                        child_parent_eid = parent_eid
+                    else:
+                        used_eids.add(flat_root)
+                        child.attrs["eId"] = flat_root
+                        child_parent_eid = flat_root
+                        synthesized.append(
+                            {
+                                "kind": str(child.kind),
+                                "label": child.label,
+                                "parent_eid": parent_eid,
+                                "after_eid": flat_root,
+                            }
+                        )
+                elif suffix:
                     child_parent_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{suffix}"
                     if child_parent_eid in used_eids:
                         skipped_duplicate += 1

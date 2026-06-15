@@ -132,12 +132,12 @@ def test_real_affected_act_eid_is_preserved() -> None:
     )
 
 
-def test_foreign_source_id_not_retargeted_when_target_underivable() -> None:
-    """No guess: a target that derives no eId leaves the foreign id untouched.
+def test_whole_chapter_target_reanchored_to_container_eid() -> None:
+    """A whole-chapter target derives a hierarchical container eId.
 
-    A whole-chapter target (no section leaf) has no body fallback eId, so the
-    fix must not invent placement — the foreign id is preserved and no
-    retargeting record is emitted.
+    A part/chapter insert target (no section leaf) carries the UK hierarchical
+    container eId (``part-2-chapter-5C``). The chapter payload's foreign physical
+    id is re-anchored to that derived eId, and the foreign id is dropped.
     """
     payload = UKMutableNode(
         kind="chapter",
@@ -156,12 +156,75 @@ def test_foreign_source_id_not_retargeted_when_target_underivable() -> None:
         allow_payload_identity_synthesis=True,
     )
 
-    assert result.attrs.get("id") == "p03769"
-    assert result.attrs.get("eId") in (None, "")
-    assert not any(
-        r.get("rule_id") == UK_PAYLOAD_FOREIGN_SOURCE_ID_RETARGETED_RULE_ID
+    # Chapter container re-anchored to its derived hierarchical eId; foreign id dropped.
+    assert result.attrs.get("eId") == "part-2-chapter-5c"
+    assert "id" not in result.attrs
+    retarget = [
+        r
         for r in records
+        if r.get("rule_id") == UK_PAYLOAD_FOREIGN_SOURCE_ID_RETARGETED_RULE_ID
+    ]
+    assert len(retarget) == 1
+    assert retarget[0]["root_eid"] == "part-2-chapter-5c"
+
+
+def test_whole_chapter_child_section_gets_flat_eid() -> None:
+    """Sections nested in an inserted chapter payload get FLAT ``section-NNN`` eIds.
+
+    UK body sections always carry a flat root eId even when nested under a part
+    or chapter, so a chapter payload's section children must re-root the
+    descendant namespace rather than inherit the container eId.
+    """
+    payload = UKMutableNode(
+        kind="chapter",
+        label="Chapter 7A",
+        attrs={"eId": "part-4-chapter-7A"},
+        children=[
+            UKMutableNode(
+                kind="section",
+                label="289A",
+                children=[
+                    UKMutableNode(
+                        kind="subsection",
+                        label="1",
+                        children=[
+                            UKMutableNode(kind="paragraph", label="a"),
+                            UKMutableNode(kind="paragraph", label="b"),
+                        ],
+                    ),
+                    UKMutableNode(kind="subsection", label="2"),
+                ],
+            ),
+            UKMutableNode(kind="section", label="289B"),
+        ],
     )
+    target = LegalAddress((("part", "4"), ("chapter", "7a")))
+    records: list[dict[str, object]] = []
+
+    result = _synthesize_payload_descendant_eids(
+        payload,
+        target=target,
+        effect=_effect(),
+        lowering_records_out=records,
+        allow_payload_identity_synthesis=True,
+    )
+
+    # The chapter container keeps its hierarchical eId.
+    assert result.attrs.get("eId") == "part-4-chapter-7A"
+    section_289a = result.children[0]
+    section_289b = result.children[1]
+    # Sections get a FLAT root eId, not ``part-4-chapter-7A-section-289A``.
+    assert section_289a.attrs.get("eId") == "section-289a"
+    assert section_289b.attrs.get("eId") == "section-289b"
+    # Section descendants are suffixed from the flat section root.
+    sub1 = section_289a.children[0]
+    assert sub1.attrs.get("eId") == "section-289a-1"
+    assert sub1.children[0].attrs.get("eId") == "section-289a-1-a"
+    assert sub1.children[1].attrs.get("eId") == "section-289a-1-b"
+    assert section_289a.children[1].attrs.get("eId") == "section-289a-2"
+    # No descendant retains a container-prefixed section eId.
+    eids = _collect(result)
+    assert not any(e.startswith("part-4-chapter-7A-section") for e in eids)
 
 
 def _collect(node: UKMutableNode) -> set[str]:

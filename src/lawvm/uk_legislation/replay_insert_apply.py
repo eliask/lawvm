@@ -534,12 +534,31 @@ class UKReplayInsertApplyMixin:
             label = str(candidate.label or _addr_leaf_label(target) or "").strip()
             if not parent_eid or not label:
                 return candidate
+            candidate_kind = str(candidate.kind or "").lower()
+            is_body_structural_container = (
+                _addr_container(target) != "schedule"
+                and candidate_kind in {"part", "chapter"}
+            )
             if current_eid and (
-                (current_eid == target_eid and _addr_container(target) == "schedule")
+                (
+                    target_eid
+                    and current_eid.lower() == target_eid.lower()
+                    and (
+                        _addr_container(target) == "schedule"
+                        or is_body_structural_container
+                    )
+                )
                 or current_eid in self.eid_map.values()
             ):
+                # The candidate already carries its source-derived canonical eId
+                # (a schedule descendant matching the target, or a body part/
+                # chapter container whose hierarchical eId was synthesized from
+                # the target). It is authoritative; do not overwrite it with a
+                # parent-local label suffix.
                 return candidate
-            if target_eid and _addr_container(target) == "schedule":
+            if target_eid and (
+                _addr_container(target) == "schedule" or is_body_structural_container
+            ):
                 candidate.attrs["eId"] = target_eid
                 return candidate
             candidate.attrs["eId"] = f"{parent_eid}-{label}"
@@ -965,12 +984,24 @@ class UKReplayInsertApplyMixin:
             else:
                 # Try section and article prefixes
                 for prefix in ["article", "section"] if is_eur else ["section", "article"]:
-                    parts = []
-                    if section:
-                        parts.append(f"{prefix}-{_clean_num(section)}")
-                        for suffix_label in _body_target_eid_suffixes(addr):
-                            parts.append(_canonicalize_eid_tail_label(suffix_label))
+                    if not section:
+                        continue
+                    parts = [f"{prefix}-{_clean_num(section)}"]
+                    for suffix_label in _body_target_eid_suffixes(addr):
+                        parts.append(_canonicalize_eid_tail_label(suffix_label))
                     yield "-".join(parts)
+                # Body structural container without a section leaf (a whole part
+                # or chapter insert target, e.g. ``part:4/chapter:7A``). These
+                # carry hierarchical container eIds; nested sections keep their
+                # own flat ``section-NNN`` eId and are not derived from here.
+                if not section:
+                    container_parts: list[str] = []
+                    if part:
+                        container_parts.append(f"part-{_clean_num(part)}")
+                    if chapter:
+                        container_parts.append(f"chapter-{_clean_num(chapter)}")
+                    if container_parts:
+                        yield "-".join(container_parts)
 
         for full_key in _get_candidates():
             if not full_key:
