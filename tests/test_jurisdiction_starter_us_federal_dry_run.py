@@ -36,7 +36,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_REFUSED_SECTION_NOT_IN_BEFORE_RULE_ID,
     US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
     US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID,
-    US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID,
+    US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
     US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
@@ -143,18 +143,21 @@ def _plaw_bytes_with_target_and_strike(title: int, section: str, struck: str) ->
     ).encode("utf-8")
 
 
-def test_match_text_not_found_is_a_lawvm_wrong_residual_never_fuzzy_matched() -> None:
-    # Strike a phrase that does not occur in section 10's before text.
+def test_strike_anchor_absent_from_the_section_is_refused_never_fuzzy_matched() -> None:
+    # Strike a phrase that does not occur in section 10's before text: the target
+    # node this op edits is absent from the window's before edition. We never
+    # fuzzy-match; the op is REFUSED (mirroring REPEAL), not materialized. With this
+    # the sole op as the only claim on the section, the section is not claimed at all
+    # (a refusal makes no materialization claim) and never a wrong materialization.
     pl = _plaw_bytes_with_target_and_strike(99, "10", "nonexistent-phrase")
     report = _build({"PL 99-3": pl})
     rows = {row.section_key: row for row in report.rows}
-    assert "99:10" in rows
-    row = rows["99:10"]
-    assert row.status == "residual"
-    assert row.rule_id == US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID
-    assert row.disposition == DISPOSITION_LAWVM_WRONG
-    # No materialization was produced; we refused to guess.
-    assert row.materialized_text == ""
+    # No materialized row is published for a section whose only op was refused.
+    assert "99:10" not in rows
+    # The op surfaces as a visible typed refusal carrying the offending anchor.
+    refusals = [r for r in report.refusals if r.rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID]
+    assert len(refusals) == 1
+    assert "nonexistent-phrase" in refusals[0].message
 
 
 def test_wrong_replacement_is_a_text_mismatch_residual_not_repaired_to_oracle() -> None:
@@ -726,10 +729,15 @@ def test_multiple_ops_on_one_section_compose_before_a_single_comparison() -> Non
     assert "99-3" in row.op_id and "99-4" in row.op_id
 
 
-def test_match_not_found_on_a_later_composed_op_fails_the_whole_section() -> None:
-    # First op composes (15-year -> 17-year); the second strikes a phrase the
-    # running text no longer carries (15-year). The section is a residual, never a
-    # fuzzy match, and no partial materialization is published.
+def test_absent_anchor_on_a_later_composed_op_is_refused_not_a_section_tanking_residual() -> None:
+    # First op composes (15-year -> 17-year); the second strikes a phrase the running
+    # text no longer carries (15-year is gone). That op's anchor is absent from the
+    # running edition, so it is REFUSED (mirroring REPEAL) rather than breaking the
+    # composition and tanking the whole section into an empty residual. The first op's
+    # materialization survives: the section composes to "17-year". Because the oracle
+    # after-text is "19-year", the surviving composition still disagrees — but it is a
+    # genuine text-mismatch residual carrying the real materialized text, NOT a
+    # corruption-induced empty residual, and the absent-anchor op is a visible refusal.
     pl3 = _plaw_bytes_strike_insert(
         congress=99, number=3, title=99, section="10", struck="15-year", inserted="17-year"
     )
@@ -739,10 +747,15 @@ def test_match_not_found_on_a_later_composed_op_fails_the_whole_section() -> Non
     report = _build({"PL 99-3": pl3, "PL 99-4": pl4})
     rows = {row.section_key: row for row in report.rows}
     row = rows["99:10"]
+    # The surviving first-op materialization is published (not blanked out).
     assert row.status == "residual"
-    assert row.rule_id == US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID
+    assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     assert row.disposition == DISPOSITION_LAWVM_WRONG
-    assert row.materialized_text == ""
+    assert "17-year" in row.materialized_text
+    assert row.materialized_text != ""
+    # The absent-anchor op is a visible typed refusal, never silently dropped.
+    refusal_rules = {r.rule_id for r in report.refusals}
+    assert US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID in refusal_rules
 
 
 # ---------------------------------------------------------------------------
@@ -989,6 +1002,101 @@ def test_strike_subsection_of_an_absent_node_is_refused_not_a_wrong_deletion() -
     outcome = _materialize_one(op, section.statutory_text, before_section=section)
     assert isinstance(outcome, USDryRunRefusal)
     assert outcome.rule_id == US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID
+
+
+def test_redesignate_of_an_absent_from_node_is_refused_not_a_section_tanking_residual() -> None:
+    # "redesignating paragraph (z) as (y)" where (z) is NOT present in the before
+    # edition (introduced by an un-lowered sibling op, or already moved). Relabelling
+    # an absent node is a no-op against the before text: a typed REFUSAL (mirroring
+    # the REPEAL absent-node refusal), never a lawvm_wrong residual that would tank a
+    # sibling op's correct materialization of the same section.
+    section = _section77_before()
+    op = LegalOperation(
+        op_id="redesignate-absent-paragraph-z",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "z"))
+        ),
+        destination=LegalAddress(
+            path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "y"))
+        ),
+    )
+    outcome = _materialize_one(op, section.statutory_text, before_section=section)
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID
+    # The refusal embeds the offending absent enumerator (self-evidencing).
+    assert "(z)" in outcome.message
+
+
+def test_text_replace_against_an_absent_anchor_is_refused_not_a_section_tanking_residual() -> None:
+    # A whole-section TEXT_REPLACE whose match anchor is absent from the section's
+    # before edition is refused (mirroring REPEAL), not emitted as a section-tanking
+    # lawvm_wrong residual. The target node the op edits is simply not present here.
+    op = LegalOperation(
+        op_id="text-replace-absent-anchor",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("title", "99"), ("section", "10"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="anchor-not-in-this-section", occurrence=0),
+            replacement="whatever",
+        ),
+    )
+    outcome = _materialize_one(op, "Section 10 body with a 15-year period.")
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID
+    assert "anchor-not-in-this-section" in outcome.message
+
+
+def test_present_node_text_replace_still_materializes_normally() -> None:
+    # Guard: the absent-target refusal must NOT swallow a PRESENT-anchor edit. A
+    # TEXT_REPLACE whose anchor IS in the section still materializes (no refusal).
+    op = LegalOperation(
+        op_id="text-replace-present-anchor",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("title", "99"), ("section", "10"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=0),
+            replacement="19-year",
+        ),
+    )
+    outcome = _materialize_one(op, "Section 10 body with a 15-year period.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert materialized == "Section 10 body with a 19-year period."
+
+
+def test_absent_anchor_op_refusal_does_not_corrupt_a_sibling_ops_correct_materialization() -> None:
+    # End-to-end de-corruption proof. Two window laws touch section 10:
+    #   PL 99-5 strikes "15-year" -> "19-year"      (reaches the oracle's after text)
+    #   PL 99-6 strikes "97-year" -> "98-year"      (anchor ABSENT in this window)
+    # Composed in source order, PL 99-6's absent-anchor op is REFUSED (not composed),
+    # so PL 99-5's correct materialization survives and the section AGREES. Before
+    # this fix PL 99-6 emitted a match-text-not-found residual that broke the loop and
+    # tanked the whole section into an empty lawvm_wrong residual (the corruption).
+    pl5 = _plaw_bytes_strike_insert(
+        congress=99, number=5, title=99, section="10", struck="15-year", inserted="19-year"
+    )
+    pl6 = _plaw_bytes_strike_insert(
+        congress=99, number=6, title=99, section="10", struck="97-year", inserted="98-year"
+    )
+    report = _build({"PL 99-5": pl5, "PL 99-6": pl6})
+    rows = {row.section_key: row for row in report.rows}
+    assert "99:10" in rows
+    row = rows["99:10"]
+    # The section materializes correctly and AGREES with the oracle (de-corrupted).
+    assert row.status == "agree", f"expected agree, got {row.status}/{row.rule_id}"
+    assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
+    assert "19-year" in row.materialized_text
+    assert "15-year" not in row.materialized_text
+    # The absent-anchor op surfaces as a visible typed refusal (refuse, not repair).
+    refusal_rules = {r.rule_id for r in report.refusals}
+    assert US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID in refusal_rules
 
 
 def test_insert_node_after_a_paragraph_splices_payload_after_the_anchor_node() -> None:

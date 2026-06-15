@@ -213,6 +213,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "Refusal: a text op carries no text patch (no match/replacement) — nothing to "
         "materialize."
     ),
+    "us_dry_run_refused_text_or_renumber_target_node_absent_in_before_edition": (
+        "Refusal: a text-patch (strike/replace) or redesignation op named a target "
+        "node — or, for a whole-section strike, a match anchor — not present in this "
+        "window's before/running edition. Editing an absent node is a no-op against "
+        "the before text, so it is refused (mirroring the REPEAL absent-node refusal) "
+        "rather than composed as a section-tanking divergence that would corrupt a "
+        "sibling op's correct materialization of the same section."
+    ),
     # --- Sunset / temporal reclassification (F2) --------------------------------------
     "us_sunset_temporary_provision_reverted_to_prior_permanent": (
         "An otherwise missing-source oracle change is explained by the expiry of a "

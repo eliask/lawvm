@@ -117,6 +117,18 @@ US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID = (
     "us_dry_run_refused_structural_op_not_representable_at_section_granularity"
 )
 US_DRY_RUN_REFUSED_NO_TEXT_PATCH_RULE_ID = "us_dry_run_refused_text_op_missing_text_patch"
+# A text-patch (TEXT_REPLACE / TEXT_REPEAL) or RENUMBER op whose target node — or,
+# for a whole-section text strike, whose match anchor — is not present in the
+# before/running edition of this window. The node was introduced by an un-lowered
+# sibling op, removed/renamed by an earlier op, or is simply absent from this
+# window's before-edition. Striking/relabelling a node that is not there is a NO-OP
+# against the before text, not a wrong materialization: it is refused (the honest
+# absent-target gap stays a visible typed refusal) rather than composed as a
+# section-tanking divergence that would CORRUPT a sibling op's correct
+# materialization of the same section. Mirrors the REPEAL absent-node refusal.
+US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID = (
+    "us_dry_run_refused_text_or_renumber_target_node_absent_in_before_edition"
+)
 
 # Residual dispositions (AGENTS.md §0/§9). The oracle is a witness; a residual
 # carries which side the gap is on, never a silent repair-to-oracle.
@@ -620,6 +632,35 @@ def _counts(values: Any) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
+def _refuse_absent_text_target(
+    operation: LegalOperation,
+    *,
+    absent_kind: str,
+    absent_text: str,
+) -> USDryRunRefusal:
+    """Refuse a text-patch / RENUMBER op whose target node (or anchor) is absent.
+
+    Mirrors the REPEAL absent-node refusal: striking/relabelling a node — or
+    striking a match anchor — that is not present in the before/running edition of
+    this window is a NO-OP against the before text, not a wrong materialization.
+    Refusing (rather than emitting a section-tanking ``lawvm_wrong`` residual) keeps
+    the absent-target gap visible AND prevents this op from corrupting a sibling
+    op's correct materialization of the same section. The offending absent text is
+    embedded so the refusal is self-evidencing.
+    """
+    return USDryRunRefusal(
+        op_id=operation.op_id,
+        rule_id=US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID,
+        message=(
+            f"{operation.action.value} op target {str(operation.target)}: "
+            f"{absent_kind} {absent_text!r} not present in the before/running edition "
+            "(introduced by an un-lowered sibling op, removed by an earlier op, or "
+            "absent from this window); refused, not composed"
+        ),
+        target_address=str(operation.target),
+    )
+
+
 def _materialize_one(
     operation: LegalOperation,
     before_text: str,
@@ -681,7 +722,13 @@ def _materialize_one(
                 materialized = before_text.replace(match_text, replacement or "", count)
                 return (materialized, "", "")
             if match_text not in before_text:
-                return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+                # The targeted sub-section node is not locatable AND its match anchor
+                # is absent from the whole section: the target node is not present in
+                # this window's before edition. Refuse (mirroring REPEAL) rather than
+                # tank the section's sibling ops with a divergent residual.
+                return _refuse_absent_text_target(
+                    operation, absent_kind="match anchor", absent_text=match_text
+                )
             return (
                 "",
                 US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
@@ -689,10 +736,14 @@ def _materialize_one(
             )
 
         if match_text not in before_text:
-            # Honest gap: the strike anchor is not literally present. Never
-            # fuzzy-match. This is a residual (our op vs this section), disposition
-            # lawvm_wrong: the lowering produced a match_text the source doesn't carry.
-            return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+            # The strike anchor is not literally present in the (whole) section: the
+            # target node this op edits is absent from this window's before edition.
+            # Never fuzzy-match. Refuse (mirroring REPEAL) so a sibling op's correct
+            # materialization of the same section is not corrupted into an empty,
+            # section-tanking residual.
+            return _refuse_absent_text_target(
+                operation, absent_kind="match anchor", absent_text=match_text
+            )
         materialized = before_text.replace(match_text, replacement or "", count)
         return (materialized, "", "")
 
@@ -828,10 +879,13 @@ def _materialize_one(
         to_label = operation.destination.leaf_label()
         node_text = _locate_subsection_text(before_section, operation.target)
         if node_text is None or node_text not in before_text:
-            return (
-                "",
-                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                DISPOSITION_LAWVM_WRONG,
+            # The from-node being redesignated is not present in this window's before
+            # edition (introduced by an un-lowered sibling op, or already moved by an
+            # earlier op). Relabelling an absent node is a NO-OP against the before
+            # text: refuse (mirroring REPEAL) rather than tank the section's sibling
+            # ops with a divergent residual that would corrupt the composition.
+            return _refuse_absent_text_target(
+                operation, absent_kind="redesignate-from node", absent_text=f"({from_label})"
             )
         lead = f"({from_label})"
         if not node_text.lstrip().startswith(lead):
