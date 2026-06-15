@@ -1138,6 +1138,26 @@ def _bench_primary_replay_score(result: _BenchResult, *, has_commencement: bool)
     return result.replay_score
 
 
+def _replay_regime_label(acc: "_BenchRunAccumulator") -> str:
+    """Human label for the replay regime axis (source-first vs oracle-aligned).
+
+    The regime tuple is ``(metadata_backfill, oracle_alignment, ...)``.  When
+    ``oracle_alignment`` is enabled the replay LEANS ON THE ORACLE to place
+    provisions, which inflates apparent capability relative to a pure
+    source-first replay.  Labelling-only; the regime selection itself is
+    computed elsewhere and is not changed here.
+    """
+    if not acc.regime_counts:
+        return ""
+    oracle_aligned_seen = any(bool(regime[1]) for regime in acc.regime_counts)
+    source_first_seen = any(not bool(regime[1]) for regime in acc.regime_counts)
+    if oracle_aligned_seen and source_first_seen:
+        return "mixed (both source-first and oracle-aligned rows present)"
+    if oracle_aligned_seen:
+        return "oracle-aligned (leans on oracle to place provisions; inflates apparent capability vs source-first)"
+    return "source-first (honest; does not consult oracle to place provisions)"
+
+
 def _format_uk_bench_progress_score(result: _BenchResult, *, has_commencement: bool) -> str:
     primary_score = _bench_primary_score(result, has_commencement=has_commencement)
     if result.status == "OK" and result.core_benchmark:
@@ -3841,6 +3861,46 @@ def _load_phase_timings(row: Mapping[str, str]) -> dict[str, float]:
     return phase_timings
 
 
+def _print_report_legend(acc: "_BenchRunAccumulator") -> None:
+    """Self-documenting legend so every printed number names its four axes.
+
+    The summary overloads four orthogonal axes; without this legend a reader
+    cannot tell what (e.g.) "unfiltered" means or that the headline EID score is
+    structural coverage rather than text fidelity.
+    """
+    has_commencement = len(acc.commencement_scores) > 0
+    has_replay = acc.replayed_count > 0
+    print("\nHow to read this report (four orthogonal axes):")
+    print(
+        "  - Run mode:    enacted-baseline (ops=0, measures how AMENDED an act is — NOT fidelity)"
+        " vs replay (applies amendments; this is the fidelity lane)"
+    )
+    print(
+        "  - Metric:      EID score = STRUCTURAL COVERAGE (are all provisions present?, Jaccard over eIds)."
+        "  Text similarity = a SEPARATE Levenshtein lane over common eIds only (blind to missing provisions)."
+    )
+    print(
+        "  - Lens:        commenced/in-force = in-force provisions only (the headline lens)."
+        "  unfiltered = ALL provisions incl. not-yet-commenced (temporal noise → lower; diagnostic only)."
+    )
+    if has_replay:
+        print(f"  - Replay regime: {_replay_regime_label(acc)}")
+    if has_replay and has_commencement:
+        print(
+            "  PRIMARY FIDELITY FIGURE = Replay (commenced) Replayed avg, below."
+            "  The enacted-baseline EID score measures amendment volume, not fidelity."
+        )
+    elif has_replay:
+        print(
+            "  PRIMARY FIDELITY FIGURE = Replay Replayed avg, below."
+            "  The enacted-baseline EID score measures amendment volume, not fidelity."
+        )
+    else:
+        print(
+            "  No --replay: numbers below are the ENACTED BASELINE only (amendment volume), NOT fidelity."
+        )
+
+
 def _print_report(
     results: list[_BenchResult] | _BenchRunAccumulator,
     label: str,
@@ -3905,6 +3965,7 @@ def _print_report(
         f"enacted={dict(sorted(acc.enacted_source_counts.items()))} "
         f"oracle={dict(sorted(acc.oracle_source_counts.items()))}"
     )
+    _print_report_legend(acc)
     if summary_only:
         _print_summary_only_report(acc)
         return
@@ -4164,15 +4225,18 @@ def _print_report(
         ge90_comm = sum(1 for score in acc.commencement_scores if score >= 0.9)
         ge80_comm = sum(1 for score in acc.commencement_scores if score >= 0.8)
         avg_commenced_n = acc.avg_commenced_n_sum / len(acc.commencement_scores)
-        print(f"\nEID score (commenced, N={len(acc.commencement_scores)}):")
-        print(f"  Average:        {avg_comm:.1%}    (unfiltered: {avg_raw:.1%})")
-        print(f"  Median:         {med_comm:.1%}    (unfiltered: {med_score_raw:.1%})")
+        print(
+            f"\nEnacted-baseline structural-coverage EID score (commenced/in-force, N={len(acc.commencement_scores)}):"
+        )
+        print("  [diagnostic: enacted vs oracle eId coverage = amendment volume, not fidelity; see Replay block for fidelity]")
+        print(f"  Average:        {avg_comm:.1%}    (all incl. not-yet-commenced: {avg_raw:.1%})")
+        print(f"  Median:         {med_comm:.1%}    (all incl. not-yet-commenced: {med_score_raw:.1%})")
         print(
             f"  Perfect (1.0):  {perfect_comm} ({100 * perfect_comm / len(acc.commencement_scores):.0f}%)"
-            f"    (unfiltered: {perfect_raw})"
+            f"    (all incl. not-yet-commenced: {perfect_raw})"
         )
-        print(f"  >=90%:          {ge90_comm} ({100 * ge90_comm / len(acc.commencement_scores):.0f}%)    (unfiltered: {ge90_raw})")
-        print(f"  >=80%:          {ge80_comm} ({100 * ge80_comm / len(acc.commencement_scores):.0f}%)    (unfiltered: {ge80_raw})")
+        print(f"  >=90%:          {ge90_comm} ({100 * ge90_comm / len(acc.commencement_scores):.0f}%)    (all incl. not-yet-commenced: {ge90_raw})")
+        print(f"  >=80%:          {ge80_comm} ({100 * ge80_comm / len(acc.commencement_scores):.0f}%)    (all incl. not-yet-commenced: {ge80_raw})")
         print(f"  Avg commenced EIDs: {avg_commenced_n:.0f}")
         print(f"  With parsed effect rows>0: {with_effect_rows}")
         print(f"  With effect-feed pages>0: {with_effect_pages}")
@@ -4181,7 +4245,8 @@ def _print_report(
             print(f"  Core commenced avg: {avg_core_comm:.1%}")
     else:
         # No commencement data — show raw scores normally.
-        print(f"\nEID similarity score (N={acc.ok_count}):")
+        print(f"\nEnacted-baseline structural-coverage EID score (all provisions, N={acc.ok_count}):")
+        print("  [diagnostic: enacted vs oracle eId coverage = amendment volume, not fidelity; see Replay block for fidelity]")
         print(f"  Average:        {avg_raw:.1%}")
         print(f"  Median:         {med_score_raw:.1%}")
         print(f"  Perfect (1.0):  {perfect_raw} ({100 * perfect_raw / len(acc.raw_scores):.0f}%)")
@@ -4209,8 +4274,9 @@ def _print_report(
                 applicability_mode,
                 authority_mode,
             ), _count = next(iter(acc.regime_counts.items()))
+            print(f"\nReplay regime: {_replay_regime_label(acc)}")
             print(
-                "\nReplay regime: "
+                "  flags: "
                 f"metadata_backfill={metadata_backfill} "
                 f"oracle_alignment={oracle_alignment} "
                 f"metadata_only_effects={metadata_only_effects} "
@@ -4218,7 +4284,7 @@ def _print_report(
                 f"authority={authority_mode}"
             )
         else:
-            print("\nReplay regimes:")
+            print(f"\nReplay regimes: {_replay_regime_label(acc)}")
             for (
                 metadata_backfill,
                 oracle_alignment,
@@ -4384,13 +4450,20 @@ def _print_report(
                 avg_enacted_comm = sum(acc.replay_commencement_enacted_scores) / len(acc.replay_commencement_enacted_scores)
                 delta_comm = avg_replay_comm - avg_enacted_comm
                 perfect_replay_comm = sum(1 for score in acc.replay_commencement_scores if score == 1.0)
-                print(f"\nReplay (commenced, N={len(acc.replay_commencement_scores)}, {acc.total_ops} ops total):")
-                print(f"  Enacted avg:    {avg_enacted_comm:.1%}    (unfiltered: {avg_enacted_raw:.1%})")
                 print(
-                    f"  Replayed avg:   {avg_replay_comm:.1%} ({delta_comm:+.1%})    (unfiltered: {avg_replay_raw:.1%})"
+                    f"\n>>> PRIMARY FIDELITY — Replay structural-coverage EID score "
+                    f"(commenced/in-force, regime: {_replay_regime_label(acc)}, "
+                    f"N={len(acc.replay_commencement_scores)}, {acc.total_ops} ops total):"
+                )
+                print(f"  Enacted avg:    {avg_enacted_comm:.1%}    (all incl. not-yet-commenced: {avg_enacted_raw:.1%})  [baseline before replay]")
+                print(
+                    f"  Replayed avg:   {avg_replay_comm:.1%} ({delta_comm:+.1%})    (all incl. not-yet-commenced: {avg_replay_raw:.1%})  <-- HEADLINE FIDELITY"
                 )
                 print(
                     f"  Perfect replay: {perfect_replay_comm} ({100 * perfect_replay_comm / len(acc.replay_commencement_scores):.0f}%)"
+                )
+                print(
+                    "  [interpretation: any structural-coverage gap on old heavily-amended acts reflects unlowered/placement residual, not text errors]"
                 )
                 print(f"  Improved:       {len(acc.improvements_comm)}  Regressed: {len(acc.regressions_comm)}")
                 if acc.total_alignment_changes:
@@ -4429,9 +4502,13 @@ def _print_report(
             improved = len(acc.improvements_raw)
             regressed = len(acc.regressions_raw)
             delta = avg_replay_raw - avg_enacted_raw
-            print(f"\nReplay score (N={acc.replayed_count}, {acc.total_ops} ops total):")
-            print(f"  Enacted avg:    {avg_enacted_raw:.1%}")
-            print(f"  Replayed avg:   {avg_replay_raw:.1%} ({delta:+.1%})")
+            print(
+                f"\n>>> PRIMARY FIDELITY — Replay structural-coverage EID score "
+                f"(all provisions, regime: {_replay_regime_label(acc)}, "
+                f"N={acc.replayed_count}, {acc.total_ops} ops total):"
+            )
+            print(f"  Enacted avg:    {avg_enacted_raw:.1%}  [baseline before replay]")
+            print(f"  Replayed avg:   {avg_replay_raw:.1%} ({delta:+.1%})  <-- HEADLINE FIDELITY")
             if acc.core_count > 0 and len(acc.core_replay_scores) > 0:
                 print(
                     f"  Core replay avg: {core_replay_raw:.1%} "
@@ -4487,7 +4564,10 @@ def _print_report(
     # Text similarity summary
     if acc.text_scores:
         avg_text_enacted = sum(acc.text_scores) / len(acc.text_scores)
-        print(f"\nText similarity (common EIDs, N={len(acc.text_scores)} EIDs):")
+        print(
+            f"\nText similarity — SEPARATE metric (Levenshtein over common eIds only; "
+            f"BLIND to missing provisions, N={len(acc.text_scores)} EIDs):"
+        )
         print(f"  Enacted avg:    {avg_text_enacted:.1%}")
         if acc.replay_text_scores:
             avg_text_replay = sum(acc.replay_text_scores) / len(acc.replay_text_scores)
@@ -4589,27 +4669,31 @@ def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
         return
     has_commencement = len(acc.commencement_scores) > 0
     primary_scores = acc.commencement_scores if has_commencement else acc.raw_scores
-    primary_label = "commenced" if has_commencement else "raw"
+    primary_label = "commenced/in-force" if has_commencement else "all provisions"
     if primary_scores:
         average, median = _score_summary(primary_scores)
-        print(f"EID score ({primary_label}, N={len(primary_scores)}): avg={average:.1%} median={median:.1%}")
+        print(
+            f"Enacted-baseline structural-coverage EID score ({primary_label}, "
+            f"N={len(primary_scores)}): avg={average:.1%} median={median:.1%}  "
+            "[amendment volume, not fidelity]"
+        )
         core_primary_scores = acc.core_comm_scores if has_commencement else acc.core_scores
         if core_primary_scores and len(core_primary_scores) != len(primary_scores):
             core_average, core_median = _score_summary(core_primary_scores)
             print(
-                f"Core EID score ({primary_label}, N={len(core_primary_scores)}): "
+                f"Core enacted-baseline structural-coverage EID score ({primary_label}, N={len(core_primary_scores)}): "
                 f"avg={core_average:.1%} median={core_median:.1%}"
             )
     if acc.replay_scores:
         replay_average = sum(acc.replay_scores) / len(acc.replay_scores)
         print(
-            f"Replay score (N={len(acc.replay_scores)}, ops={acc.total_ops}): "
-            f"avg={replay_average:.1%}"
+            f"Replay structural-coverage EID score (all provisions, regime: {_replay_regime_label(acc)}, "
+            f"N={len(acc.replay_scores)}, ops={acc.total_ops}): avg={replay_average:.1%}"
         )
         if acc.core_replay_scores and len(acc.core_replay_scores) != len(acc.replay_scores):
             core_replay_average = sum(acc.core_replay_scores) / len(acc.core_replay_scores)
             print(
-                f"Core replay score (N={len(acc.core_replay_scores)}, ops={acc.core_total_ops}): "
+                f"Core replay structural-coverage EID score (all provisions, N={len(acc.core_replay_scores)}, ops={acc.core_total_ops}): "
                 f"avg={core_replay_average:.1%}"
             )
     if acc.replay_commencement_scores:
@@ -4617,7 +4701,8 @@ def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
             acc.replay_commencement_scores
         )
         print(
-            f"Replay commenced score (N={len(acc.replay_commencement_scores)}): "
+            f">>> PRIMARY FIDELITY — Replay structural-coverage EID score (commenced/in-force, "
+            f"regime: {_replay_regime_label(acc)}, N={len(acc.replay_commencement_scores)}): "
             f"avg={replay_comm_average:.1%}"
         )
         if (
@@ -4628,8 +4713,8 @@ def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
                 acc.core_replay_commencement_scores
             )
             print(
-                f"Core replay commenced score (N={len(acc.core_replay_commencement_scores)}): "
-                f"avg={core_replay_comm_average:.1%}"
+                f"Core replay structural-coverage EID score (commenced/in-force, "
+                f"N={len(acc.core_replay_commencement_scores)}): avg={core_replay_comm_average:.1%}"
             )
     print(
         "Evidence totals: "

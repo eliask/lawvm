@@ -193,6 +193,81 @@ def test_uk_bench_diagnostics_report_envelopes_sidecar_claims(tmp_path, monkeypa
     assert "diagnostic_row_as_execution_authorization" in payload["forbidden_shortcuts"]
 
 
+def _make_replay_commenced_result(**overrides: Any) -> "uk_bench._BenchResult":
+    base: dict[str, Any] = dict(
+        statute_id="ukpga/2000/8",
+        act_type="ukpga",
+        year=2000,
+        n_effects=10,
+        n_enacted_eids=100,
+        n_oracle_eids=120,
+        n_common=84,
+        score=0.70,  # enacted-baseline structural coverage (heavily amended)
+        status="OK",
+        comparison_class="commensurable",
+        core_benchmark=True,
+        n_ops=58,
+        replay_score=0.99,
+        commencement_score=0.84,
+        replay_commencement_score=0.99,
+        text_score=0.97,
+        replay_text_score=0.98,
+        uk_oracle_alignment_enabled=True,
+    )
+    base.update(overrides)
+    return uk_bench._BenchResult(**base)
+
+
+def test_uk_bench_report_legend_and_headline_label_replay_commenced_lane(capsys) -> None:
+    acc = uk_bench._BenchRunAccumulator(has_commencement=True)
+    acc.feed(_make_replay_commenced_result())
+
+    uk_bench._print_report(acc, label="legend_unit")
+    out = capsys.readouterr().out
+
+    # Legend documents all four axes and decodes "unfiltered" once and for all.
+    assert "How to read this report (four orthogonal axes):" in out
+    assert "STRUCTURAL COVERAGE" in out
+    assert "Text similarity" in out
+    assert "all incl. not-yet-commenced" in out
+    # The old undecoded inline "(unfiltered: X%)" form must never appear again;
+    # the only remaining use of the word is the legend line that defines it.
+    assert "(unfiltered:" not in out
+    # Replay regime is named; oracle-aligned is flagged as inflating capability.
+    assert "oracle-aligned" in out
+    assert "inflates apparent capability" in out
+    # The headline fidelity figure is the replay+commenced lane, clearly marked.
+    assert "PRIMARY FIDELITY" in out
+    assert "HEADLINE FIDELITY" in out
+    # Enacted-baseline EID block is demoted to a diagnostic measuring amendment volume.
+    assert "amendment volume, not fidelity" in out
+
+
+def test_uk_bench_summary_only_report_marks_primary_fidelity(capsys) -> None:
+    acc = uk_bench._BenchRunAccumulator(has_commencement=True)
+    acc.feed(_make_replay_commenced_result())
+
+    uk_bench._print_report(acc, label="legend_summary", summary_only=True)
+    out = capsys.readouterr().out
+
+    assert "How to read this report (four orthogonal axes):" in out
+    assert "PRIMARY FIDELITY" in out
+    assert "Replay structural-coverage EID score (commenced/in-force" in out
+    assert "amendment volume, not fidelity" in out
+    assert "(unfiltered:" not in out
+
+
+def test_uk_bench_report_labels_source_first_regime(capsys) -> None:
+    acc = uk_bench._BenchRunAccumulator(has_commencement=True)
+    acc.feed(_make_replay_commenced_result(uk_oracle_alignment_enabled=False))
+
+    uk_bench._print_report(acc, label="source_first_unit")
+    out = capsys.readouterr().out
+
+    assert "source-first (honest" in out
+    assert "oracle-aligned" not in out
+
+
 def test_uk_bench_parser_accepts_summary_only_flag() -> None:
     parser = cli._build_parser()
 

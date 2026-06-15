@@ -387,8 +387,12 @@ def test_uk_bench_report_summary_only_bounds_terminal_output(capsys) -> None:
 
     out = capsys.readouterr().out
     assert "=== UK Bench: summary ===" in out
-    assert "EID score (raw, N=1): avg=90.0% median=90.0%" in out
-    assert "Replay score (N=1, ops=1900): avg=80.0%" in out
+    assert (
+        "Enacted-baseline structural-coverage EID score (all provisions, N=1): "
+        "avg=90.0% median=90.0%" in out
+    )
+    assert "Replay structural-coverage EID score (all provisions, regime: " in out
+    assert "N=1, ops=1900): avg=80.0%" in out
     assert "Evidence totals:" in out
     assert "source_parse_obs=3" in out
     assert "lowering_rejections=5" in out
@@ -426,7 +430,10 @@ def test_uk_bench_report_summary_only_uses_true_even_median(capsys) -> None:
     uk_bench._print_report([low, high], "summary", summary_only=True)
 
     out = capsys.readouterr().out
-    assert "EID score (raw, N=2): avg=60.0% median=60.0%" in out
+    assert (
+        "Enacted-baseline structural-coverage EID score (all provisions, N=2): "
+        "avg=60.0% median=60.0%" in out
+    )
 
 
 def test_uk_bench_report_summary_only_shows_core_lane_for_mixed_rows(capsys) -> None:
@@ -463,10 +470,17 @@ def test_uk_bench_report_summary_only_shows_core_lane_for_mixed_rows(capsys) -> 
     uk_bench._print_report([core, noncore], "summary", summary_only=True)
 
     out = capsys.readouterr().out
-    assert "EID score (raw, N=2): avg=55.0% median=55.0%" in out
-    assert "Core EID score (raw, N=1): avg=90.0% median=90.0%" in out
-    assert "Replay score (N=2, ops=1000): avg=45.0%" in out
-    assert "Core replay score (N=1, ops=100): avg=80.0%" in out
+    assert (
+        "Enacted-baseline structural-coverage EID score (all provisions, N=2): "
+        "avg=55.0% median=55.0%" in out
+    )
+    assert (
+        "Core enacted-baseline structural-coverage EID score (all provisions, N=1): "
+        "avg=90.0% median=90.0%" in out
+    )
+    assert "Replay structural-coverage EID score (all provisions, regime: " in out
+    assert "N=2, ops=1000): avg=45.0%" in out
+    assert "Core replay structural-coverage EID score (all provisions, N=1, ops=100): avg=80.0%" in out
 
 
 def test_uk_bench_report_summary_only_shows_core_commencement_lane(capsys) -> None:
@@ -505,10 +519,19 @@ def test_uk_bench_report_summary_only_shows_core_commencement_lane(capsys) -> No
     uk_bench._print_report([core, noncore], "summary", summary_only=True)
 
     out = capsys.readouterr().out
-    assert "EID score (commenced, N=2): avg=60.0% median=60.0%" in out
-    assert "Core EID score (commenced, N=1): avg=95.0% median=95.0%" in out
-    assert "Replay commenced score (N=2): avg=55.0%" in out
-    assert "Core replay commenced score (N=1): avg=90.0%" in out
+    assert (
+        "Enacted-baseline structural-coverage EID score (commenced/in-force, N=2): "
+        "avg=60.0% median=60.0%" in out
+    )
+    assert (
+        "Core enacted-baseline structural-coverage EID score (commenced/in-force, N=1): "
+        "avg=95.0% median=95.0%" in out
+    )
+    assert "PRIMARY FIDELITY — Replay structural-coverage EID score (commenced/in-force, " in out
+    assert "N=2): avg=55.0%" in out
+    assert (
+        "Core replay structural-coverage EID score (commenced/in-force, N=1): avg=90.0%" in out
+    )
 
 
 def test_uk_bench_accumulator_keeps_report_rows_memory_bounded() -> None:
@@ -4010,8 +4033,9 @@ def test_uk_bench_show_run_reports_persisted_evidence_lanes(monkeypatch, tmp_pat
     assert "Effect-feed rejection rules: uk_effect_feed_xml_parse_rejected=1" in out
     assert "Effect-feed count errors: rows=1" in out
     assert "ukpga/2000/1: ValueError: bad effect feed" in out
+    assert "Replay regime: source-first (honest" in out
     assert (
-        "Replay regime: metadata_backfill=False oracle_alignment=False "
+        "  flags: metadata_backfill=False oracle_alignment=False "
         "metadata_only_effects=False "
         "applicability=effective_date_only authority=source_text_only"
     ) in out
