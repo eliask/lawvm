@@ -162,6 +162,66 @@ def test_out_of_scope_shapes_raise() -> None:
         new_parser.parse(*_tokens_for("Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."))
 
 
+HEADING_CHANGE_EXAMPLES = [
+    # Single section heading-change ("edellä oleva otsikko").
+    "muutetaan 1 §:n edellä oleva otsikko",
+    # Heading-change after a momentti qualifier (both parsers drop the heading
+    # past the momentti — still byte-identical).
+    "muutetaan 5 §:n 2 momentin edellä oleva otsikko",
+    # Continuation: a plain section then a heading-change section.
+    "muutetaan 1 §, 2 §:n edellä oleva otsikko",
+    # Optional "luvun" before otsikko ("edellä oleva luvun otsikko").
+    "muutetaan 1 §:n edellä oleva luvun otsikko",
+    # The (väli)otsikko spelling also binds a section-level HEADING facet.
+    "muutetaan 16 luvun 3 §:n edellä oleva väliotsikko",
+    # Plural participle heading-renumbering, distributed over the section list.
+    "muutetaan 3 ja 5 §:n edellä olevien lukujen otsikoiden numerointi",
+]
+
+
+@pytest.mark.parametrize("text", HEADING_CHANGE_EXAMPLES)
+def test_heading_change_sub_ref_is_zero_delta(text: str) -> None:
+    # The "edellä oleva/olevien otsikko" heading-CHANGE arm is now owned by the
+    # section recognizer (a section-level HEADING facet), byte-identical to the
+    # old parser rather than declining to the surface fallback.
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_heading_change_emits_section_heading_facet() -> None:
+    from lawvm.core.semantic_types import FacetKind
+
+    model = parse_text_with("muutetaan 1 §:n edellä oleva otsikko", new_parser.parse)
+    (vg,) = model.verb_groups
+    target = _as_target(vg.nodes[0])
+    assert target.label == "1"
+    assert len(target.sub_refs) == 1
+    assert target.sub_refs[0].facet == FacetKind.HEADING
+    assert target.witness is not None and target.witness.rule_id == "fi.section_ref"
+
+
+def test_heading_change_before_backref_continuation_declines() -> None:
+    # "N §:n edellä oleva väliotsikko ja mainitun pykälän …": the old parser
+    # folds the leading separator into the backref span, which the integrated
+    # driver does not reproduce — the recognizer declines rather than miscompile.
+    text = "muutetaan 16 luvun 3 §:n edellä oleva väliotsikko ja mainitun pykälän 2 momentin 14 kohta"
+    with pytest.raises(OutOfScope):
+        new_parser.parse(*_tokens_for(text))
+
+
+def test_heading_change_with_multi_section_heading_insert_declines() -> None:
+    # A heading-CHANGE coexisting with a multi-section heading-INSERT elsewhere
+    # in the clause is declined: the insertion family does not yet expand the
+    # multi-section insert identically to the old parser, so recovering the
+    # heading-change would surface that divergence as a miscompile.
+    text = (
+        "muutetaan 6 luvun otsikko, 48 §:n edellä oleva väliotsikko, "
+        "lisätään 41 c ja 54 a §:n edelle uusi väliotsikko seuraavasti:"
+    )
+    with pytest.raises(OutOfScope):
+        new_parser.parse(*_tokens_for(text))
+
+
 def _tokens_for(text: str):
     """Build the (tokens, jolloin) the contract entry point expects."""
     from lawvm.finland.johtolause.lexer import tokenize

@@ -522,15 +522,58 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
     return None
 
 
+def _clause_has_multi_section_heading_insert(scan: _Scan) -> bool:
+    """True iff the clause carries a ``N [letter] (ja|,|–) M [letter] §:n edelle
+    uusi (väli)otsikko`` heading-INSERT spanning two or more sections.
+
+    Such a multi-section heading-insert is an insertion-family shape the
+    integrated pipeline does not yet expand identically to the old parser when
+    it appears in a later verb group (the old parser drops the trailing chained
+    insert there; the new insertion family keeps it). Recovering a heading-CHANGE
+    in the SAME clause would unblock the clause and surface that downstream
+    insertion divergence as a miscompile, so the heading-change arm declines when
+    this shape is present — fail-loud rather than emit a divergent model. A
+    single-section heading-insert (the common case) does NOT match and is left
+    untouched. Scans the whole token stream (recognizer-local; read-only).
+    """
+    tokens = scan.cur.tokens
+    n = len(tokens)
+    for i in range(n):
+        tk = tokens[i]
+        if tk.cat != "EDELLA" or (tk.text or "").lower() != "edelle":
+            continue
+        if i == 0 or tokens[i - 1].cat != "PYKALA":
+            continue
+        # Backward count of NUM groups feeding this §, requiring a separator.
+        nums = 0
+        saw_sep = False
+        k = i - 2
+        while k >= 0 and tokens[k].cat in ("NUM", "LETTER", "CONJ", "COMMA", "DASH", "SEKA"):
+            if tokens[k].cat == "NUM":
+                nums += 1
+            elif tokens[k].cat in ("CONJ", "COMMA", "DASH", "SEKA"):
+                saw_sep = True
+            k -= 1
+        if nums < 2 or not saw_sep:
+            continue
+        # ``edelle uusi (väli)otsikko`` within the next few tokens.
+        window = tokens[i + 1 : i + 5]
+        if any(w.cat == "UUSI" for w in window) and any(
+            w.cat == "OTSIKKO" for w in window
+        ):
+            return True
+    return False
+
+
 def _sub_ref(scan: _Scan) -> Optional[list[SubRef]]:
     """Parse a sub-reference after a § token (slice-1 subset).
 
-    Recognizes the section-level facets (otsikko / johdantokappale) and the
-    momentti/kohta descendant coordination. The heading-placement and
-    edellä-oleva forms are NOT recognized here — those phrases are out of scope
-    for this slice (the driver rejects the clause). A bare 'edellä' lookahead is
-    surfaced as "no sub-ref" so the caller can decline (matching the old
-    parser's guard that backs out of a section ref before 'edelle uusi …').
+    Recognizes the section-level facets (otsikko / johdantokappale), the
+    ``edellä oleva/olevien otsikko`` heading-CHANGE reference, and the
+    momentti/kohta descendant coordination. The heading-INSERT form
+    ``N §:n edelle uusi väliotsikko`` (allative ``edelle`` + ``uusi``) is NOT
+    recognized here — that is a heading placement, not a section ref, and the
+    caller backs out of the whole section ref on a bare 'edelle' lookahead.
     """
     saved = scan.pos
 
@@ -541,6 +584,71 @@ def _sub_ref(scan: _Scan) -> Optional[list[SubRef]]:
     if t and t.cat == "JOHD":
         scan.advance()
         return [SubRef(facet=FacetKind.INTRO)]
+
+    # "edellä oleva (luvun) otsikko" — heading-CHANGE reference (locative
+    # "edellä" + participle of "olla"), distinct from the heading-INSERT form
+    # "N §:n edelle uusi väliotsikko" (allative "edelle" + "uusi") which the
+    # caller backs out of. The change form binds the preceding section number as
+    # a heading-amend target (HEADING facet) so the enclosing kumotaan/muutetaan
+    # list keeps going. Faithful to surface_parse._sub_ref.
+    if t and t.cat == "EDELLA" and (t.text or "").lower() == "edellä":
+        # A multi-section heading-INSERT elsewhere in the clause is an
+        # insertion-family shape the integrated pipeline does not yet expand
+        # identically to the old parser. Recovering this heading-CHANGE would
+        # unblock the clause and surface that downstream divergence as a
+        # miscompile, so decline (back out to the bare 'edellä' the caller's
+        # guard rejects) rather than emit a divergent model.
+        if _clause_has_multi_section_heading_insert(scan):
+            return None
+        saved_e = scan.pos
+        scan.advance()
+        nxt = scan.peek()
+        if nxt and nxt.lemma == "olla":
+            # "edellä oleva [luvun] otsikko" — optional LUKU genitive
+            # ("luvun otsikko" = the chapter heading preceding the section).
+            scan.advance()
+            if (t2 := scan.peek()) and t2.cat == "LUKU":
+                scan.advance()
+            if (t2 := scan.peek()) and t2.cat == "OTSIKKO":
+                scan.advance()
+                # When a ``(ja|,) mainitun pykälän …`` anaphoric backref
+                # continuation immediately follows the heading change, the old
+                # parser routes the backref through its ``_parse_backref_
+                # continuation`` arm, which folds the leading separator into the
+                # backref node's span START. The integrated driver instead
+                # consumes that separator before reaching the backref, so the
+                # backref node's span would diverge by one token. Back out so the
+                # clause declines rather than emit a span-divergent backref —
+                # faithful-or-decline, never miscompile.
+                bt0 = scan.peek()
+                bt1 = scan.peek(1)
+                if (
+                    bt0 is not None
+                    and bt0.cat in ("CONJ", "COMMA")
+                    and bt1 is not None
+                    and bt1.cat == "BACKREF"
+                ):
+                    scan.goto(saved)
+                    return None
+                return [SubRef(facet=FacetKind.HEADING)]
+        elif nxt and (nxt.text or "").lower() == "olevien":
+            # Plural participle: "edellä olevien lukujen otsikoiden numerointi"
+            # — a heading-renumbering reference distributed over the preceding
+            # section list. Consume the descriptive tail up to "numerointi".
+            tail_saved = scan.pos
+            scan.advance()
+            saw_otsikko = False
+            while (t2 := scan.peek()) and t2.cat in ("LUKU", "OTSIKKO", "WORD"):
+                if t2.cat == "OTSIKKO" or (t2.text or "").lower().startswith("otsiko"):
+                    saw_otsikko = True
+                consumed_numerointi = (t2.text or "").lower().startswith("numeroin")
+                scan.advance()
+                if consumed_numerointi:
+                    break
+            if saw_otsikko:
+                return [SubRef(facet=FacetKind.HEADING)]
+            scan.goto(tail_saved)
+        scan.goto(saved_e)
 
     result = _parse_descendant_coordination(scan)
     if result is not None:
