@@ -64,9 +64,11 @@ from lawvm.finland.johtolause.grammar.insertions import (
 )
 from lawvm.finland.johtolause.grammar.moves import (
     apply_leading_move_destination_chapter,
+    apply_leading_move_destination_part,
     recognize_cross_verb_move_tail,
     recognize_inline_move_tail,
     recognize_leading_move_destination_chapter,
+    recognize_leading_move_destination_part,
     recognize_relabel_from_context,
     retag_moved_targets,
 )
@@ -1056,6 +1058,13 @@ def _parse_verb_group(
     # verb group / the discourse context — cross-verb-group resolution this
     # driver does not perform. Decline rather than mis-read the move's source
     # section as an operative target.
+    #
+    # A leading destination-part prefix (``I osaan, ...``) on a SIIRTAA group is
+    # NOT a cross-verb form: it supplies the move destination part for the targets
+    # that follow; it is consumed here (not parsed as an operative target) and
+    # threaded onto every resulting target ref as ``renumber_dest_part``
+    # (old sp:4912/4921-4939).
+    move_dest_part = ""
     if verb == SourceVerb.SIIRTAA:
         saved_move = scan.pos
         if recognize_cross_verb_move_tail(scan) is not None:
@@ -1064,6 +1073,9 @@ def _parse_verb_group(
         if recognize_relabel_from_context(scan) is not None:
             raise OutOfScope("relabel from context (cross-verb-group resolution)")
         scan.goto(saved_move)
+        leading_part = recognize_leading_move_destination_part(scan)
+        if leading_part is not None:
+            move_dest_part = leading_part.destination_part
 
     batch, kind = _recognize_one_target(scan)
     nodes = list(batch)
@@ -1256,6 +1268,8 @@ def _parse_verb_group(
     # per ``_target`` batch; this driver splits the list at separators differently,
     # so the equivalent fixed point is a single whole-verb-group pass.
     nodes = _normalize_intrabatch_explicit_part_scope(nodes, "")
+    if move_dest_part:
+        nodes = apply_leading_move_destination_part(nodes, move_dest_part)
     return verb, nodes
 
 

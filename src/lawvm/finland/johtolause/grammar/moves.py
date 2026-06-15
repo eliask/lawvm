@@ -305,6 +305,43 @@ def apply_leading_move_destination_chapter(
     return out
 
 
+def apply_leading_move_destination_part(
+    nodes: list[SurfaceNode], dest_part: str
+) -> list[SurfaceNode]:
+    """Patch every target ref in a leading-destination SIIRTAA group with the
+    destination part (old sp:4921-4939): set ``renumber_dest_part`` on all target
+    refs, and for a bare PART target with no existing ``renumber_dest`` also seed
+    ``renumber_dest`` with the destination part.
+    """
+    if not dest_part:
+        return nodes
+    out: list[SurfaceNode] = []
+    for node in nodes:
+        if isinstance(node, SurfaceTargetRef):
+            new_rd = node.renumber_dest
+            if node.kind == TargetKind.PART and not new_rd:
+                new_rd = dest_part
+            out.append(
+                SurfaceTargetRef(
+                    kind=node.kind,
+                    label=node.label,
+                    chapter=node.chapter,
+                    part=node.part,
+                    sub_refs=node.sub_refs,
+                    notes=node.notes,
+                    move_clause_target_unit_kind=node.move_clause_target_unit_kind,
+                    is_exception=node.is_exception,
+                    renumber_dest=new_rd,
+                    renumber_dest_chapter=node.renumber_dest_chapter,
+                    renumber_dest_part=dest_part,
+                    witness=node.witness,
+                )
+            )
+        else:
+            out.append(node)
+    return out
+
+
 def recognize_inline_move_tail(scan: _Scan) -> Optional[ParsedMove]:
     """Recognize ``[,] [conj] jotka samalla siirretään [spans] N lukuun / N osaan``.
 
