@@ -18,6 +18,50 @@ from lawvm.finland.restructure_plan import (
 
 ReplayPrint = Callable[[str], None]
 
+FI_CHAPTER_SEED_SKIP_RULE_ID = "fi.chapter_seed.skip_seeded_chapter_op"
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterSeedDroppedOp:
+    """Operation suppressed because chapter seeding already materialized it."""
+
+    op_id: str
+    op_type: str
+    target_unit_kind: str
+    target_section: str
+    target_chapter: str | None
+    target_part: str | None
+    description: str
+    source_statute: str
+    witness_rule_id: str | None
+
+    @classmethod
+    def from_op(cls, op: AmendmentOp) -> "ChapterSeedDroppedOp":
+        return cls(
+            op_id=op.op_id,
+            op_type=op.op_type,
+            target_unit_kind=op.target_unit_kind,
+            target_section=op.target_section,
+            target_chapter=op.target_chapter,
+            target_part=op.target_part,
+            description=op.description(),
+            source_statute=op.source_statute,
+            witness_rule_id=op.witness_rule_id,
+        )
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "op_id": self.op_id,
+            "op_type": self.op_type,
+            "target_unit_kind": self.target_unit_kind,
+            "target_section": self.target_section,
+            "target_chapter": self.target_chapter,
+            "target_part": self.target_part,
+            "description": self.description,
+            "source_statute": self.source_statute,
+            "witness_rule_id": self.witness_rule_id,
+        }
+
 
 @dataclass(slots=True)
 class ProcessStructuralPrepareContext:
@@ -53,13 +97,24 @@ class ProcessStructuralPrepareContext:
             return ops
 
         kept_ops = [op for op in ops if not _op_targets_chapter(op, seeded_labels)]
+        dropped_records = tuple(ChapterSeedDroppedOp.from_op(op) for op in dropped_ops)
         self.elaboration_observations.append(
             {
                 "kind": "ELAB.CHAPTER_SEED_SKIP",
+                "rule_id": FI_CHAPTER_SEED_SKIP_RULE_ID,
+                "family": "ontology_normalization",
+                "phase": "process_muutoslaki.structural_prepare",
                 "source_statute": self.amendment_id,
+                "strict_disposition": "inherit_chapter_seed_repair",
+                "quirks_disposition": "suppress_duplicate_apply",
+                "reason": (
+                    "chapter body was already seeded from this amendment; "
+                    "re-applying matching chapter op would duplicate or fail"
+                ),
                 "seeded_chapters": sorted(seeded_labels),
                 "dropped_count": len(dropped_ops),
                 "dropped_ops": [op.description() for op in dropped_ops],
+                "dropped_op_records": [record.as_detail() for record in dropped_records],
             }
         )
         self.replay_print(

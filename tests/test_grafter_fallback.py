@@ -890,6 +890,8 @@ def test_process_muutoslaki_does_not_flag_when_temporal_coverage_matches(monkeyp
 
 
 def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
+    from lawvm.finland.process_structural_prepare import FI_CHAPTER_SEED_SKIP_RULE_ID
+
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
     skipped_op = AmendmentOp(
@@ -924,9 +926,27 @@ def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
     findings = result.findings()
     seed_skip = [finding for finding in findings if finding.kind == "ELAB.CHAPTER_SEED_SKIP"]
     assert len(seed_skip) == 1
+    assert seed_skip[0].detail.get("rule_id") == FI_CHAPTER_SEED_SKIP_RULE_ID
+    assert seed_skip[0].detail.get("family") == "ontology_normalization"
+    assert seed_skip[0].detail.get("phase") == "process_muutoslaki.structural_prepare"
+    assert seed_skip[0].detail.get("strict_disposition") == "inherit_chapter_seed_repair"
+    assert seed_skip[0].detail.get("quirks_disposition") == "suppress_duplicate_apply"
     assert seed_skip[0].detail.get("dropped_count") == 1
     assert seed_skip[0].detail.get("seeded_chapters") == ("7",)
     assert seed_skip[0].detail.get("dropped_ops") == (skipped_op.description(),)
+    assert seed_skip[0].detail.get("dropped_op_records") == (
+        {
+            "op_id": "replace_ch_7",
+            "op_type": "REPLACE",
+            "target_unit_kind": "chapter",
+            "target_section": "7",
+            "target_chapter": None,
+            "target_part": None,
+            "description": skipped_op.description(),
+            "source_statute": "1996/1261",
+            "witness_rule_id": None,
+        },
+    )
 
 
 def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> None:
