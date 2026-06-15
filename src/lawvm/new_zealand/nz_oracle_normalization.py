@@ -40,14 +40,18 @@ frequently encountered to most expensive and broadest:
    punctuation (.,;:) and collapsing interior whitespace the strings agree
    (case-insensitively).  Broader than trailing-punctuation; catches mixed
    interior/leading punctuation and whitespace normalization.
-6. ``editorial_digit_word_numeral`` — after mapping digit-tokens ("1", "2", …)
+6. ``editorial_word_spacing`` — the strings agree after removing ALL whitespace
+   (case-insensitively): a compound-word spacing normalization such as
+   "motor cycle" → "motorcycle". A strict, safe fold — genuine content cannot
+   collapse to equality by deleting spaces alone.
+7. ``editorial_digit_word_numeral`` — after mapping digit-tokens ("1", "2", …)
    to English word-equivalents ("one", "two", …) the tokenised streams agree.
-7. ``structural`` — token count ratio exceeds 2× (whole-Part non-commensurable
+8. ``structural`` — token count ratio exceeds 2× (whole-Part non-commensurable
    replace/insert) or one side is empty.
-8. ``substantive`` — the difference survives all folds; genuine content
+9. ``substantive`` — the difference survives all folds; genuine content
    divergence.
 
-``is_editorial`` is ``True`` for sub-families 1–6 inclusive.
+``is_editorial`` is ``True`` for sub-families 1–7 inclusive.
 
 Notes
 -----
@@ -75,6 +79,7 @@ __all__ = [
     "_fold_punct_whitespace",
     "_fold_numerals",
     "_strip_trailing_period",
+    "_strip_all_whitespace",
     "_tokenize_words",
 ]
 
@@ -131,6 +136,7 @@ class NZDivergenceSubFamily(str, Enum):
     editorial_capitalization = "editorial_capitalization"
     editorial_digit_word_numeral = "editorial_digit_word_numeral"
     editorial_trailing_punctuation = "editorial_trailing_punctuation"
+    editorial_word_spacing = "editorial_word_spacing"
     structural = "structural"
     substantive = "substantive"
 
@@ -143,6 +149,7 @@ _EDITORIAL_SUBFAMILIES: frozenset[NZDivergenceSubFamily] = frozenset(
         NZDivergenceSubFamily.editorial_capitalization,
         NZDivergenceSubFamily.editorial_digit_word_numeral,
         NZDivergenceSubFamily.editorial_trailing_punctuation,
+        NZDivergenceSubFamily.editorial_word_spacing,
     ]
 )
 
@@ -226,6 +233,18 @@ def _strip_trailing_period(text: str) -> str:
     if stripped.endswith("."):
         return stripped[:-1].rstrip()
     return stripped
+
+
+def _strip_all_whitespace(text: str) -> str:
+    """Remove every whitespace character from *text*.
+
+    Used to detect compound-word spacing normalization (the official
+    consolidation writes ``motorcycle`` where the amending text had ``motor
+    cycle``). Comparing the all-whitespace-stripped forms is a strict, safe
+    fold: a genuine content difference cannot collapse to equality merely by
+    removing spaces, so this never masks a substantive divergence.
+    """
+    return re.sub(r"\s+", "", text)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +354,20 @@ def classify_oracle_divergence(
             "divergence eliminated by stripping punctuation/whitespace and lower-casing",
         )
 
-    # 6. Digit ↔ word numeral normalization
+    # 6. Compound-word spacing normalization (e.g. "motor cycle" -> "motorcycle").
+    #    Equality after removing ALL whitespace (case-insensitive) is a strict,
+    #    safe fold: a genuine content difference cannot collapse to equality by
+    #    deleting spaces alone. Checked after the punctuation/whitespace fold,
+    #    which only collapses runs to a single space and so misses concatenation.
+    if _strip_all_whitespace(c_zw).lower() == _strip_all_whitespace(o_zw).lower():
+        return _make(
+            NZDivergenceSubFamily.editorial_word_spacing,
+            _strip_all_whitespace(c_zw).lower(),
+            _strip_all_whitespace(o_zw).lower(),
+            "divergence eliminated by removing intra-word spacing (compound-word normalization)",
+        )
+
+    # 7. Digit ↔ word numeral normalization
     c_tokens = _tokenize_words(c_zw)
     o_tokens = _tokenize_words(o_zw)
     if _fold_numerals(c_tokens) == _fold_numerals(o_tokens):

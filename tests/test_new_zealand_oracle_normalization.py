@@ -160,6 +160,30 @@ class TestPoCWorkedExamples:
         assert result.sub_family == NZDivergenceSubFamily.editorial_trailing_punctuation
         assert result.is_editorial is True
 
+    def test_word_spacing_motorcycle(self) -> None:
+        """act_public_2001_49 §214: "moped or motor cycle" vs "moped or motorcycle"."""
+        c = "A registered owner of a motor vehicle that is a moped or motor cycle must pay"
+        o = "A registered owner of a motor vehicle that is a moped or motorcycle must pay"
+        result = _cls(c, o)
+        assert result.sub_family == NZDivergenceSubFamily.editorial_word_spacing
+        assert result.is_editorial is True
+
+    def test_word_spacing_with_bom_and_spacing(self) -> None:
+        """act_public_2001_49 §213: BOM + "motor cycle" → folds to word_spacing."""
+        c = "moped and motor cycle riders from the levy referred to in subsection (2)﻿(d)."
+        o = "moped and motorcycle riders from the levy referred to in subsection (2)(d)."
+        result = _cls(c, o)
+        assert result.is_editorial is True
+        assert result.sub_family == NZDivergenceSubFamily.editorial_word_spacing
+
+    def test_word_spacing_does_not_fold_genuine_difference(self) -> None:
+        """Removing spaces must NOT collapse a genuine multi-word content difference."""
+        c = "sections 23E to 23H showing the amount"
+        o = "sections 23E to 23H, 23J, and 23K showing the amount"
+        result = _cls(c, o)
+        assert result.is_editorial is False
+        assert result.sub_family != NZDivergenceSubFamily.editorial_word_spacing
+
     def test_genuine_substantive_change(self) -> None:
         """A genuine content change that survives all folds."""
         c = "The Minister may by notice in writing"
