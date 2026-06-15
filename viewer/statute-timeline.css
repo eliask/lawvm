@@ -311,6 +311,7 @@ select {
 
 /* Tombstone (repealed/removed unit — muted, never silently gone) */
 .node.tombstone { opacity: 0.75; }
+.pblock.tombstone { opacity: 0.78; }
 .tomb-label { color: var(--muted); }
 .tomb-label em { color: var(--red); font-style: normal; font-weight: 600; }
 .tomb-meta { font-size: 0.7rem; color: var(--muted); font-family: var(--mono); margin-left: 0.4rem; }
@@ -442,14 +443,11 @@ select {
 
 /* Ghost tombstone line: a repealed/expired unit shown at its original place */
 .pblock.ghost-line {
-  display: flex; align-items: baseline; gap: 0.5rem;
-  opacity: 0.78; margin: 0.25rem 0;
-  /* Match .node-row's right inset so the lifecycle strip column stays flush. */
-  padding-right: 0.3rem;
+  opacity: 0.78;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
 }
-.pblock.ghost-line .tomb-label { flex: 0 1 auto; }
-.pblock.ghost-line .chg-badge { margin-left: auto; opacity: 1; }
-.pblock.ghost-line > .hist-btn { position: static; margin-left: 0.2rem; }
+.pblock.ghost-line .chg-badge { margin-left: 0.45rem; opacity: 1; vertical-align: middle; }
 
 /* =====================================================================
    Diff rendering: unified tracked-changes by default; stacked blocks for

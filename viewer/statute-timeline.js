@@ -1476,17 +1476,58 @@ function orderedBodyHtml(addr, node, depth, prevMap) {
 }
 
 function tombstoneHtml(addr, info) {
+  const [kind] = (addr.split('/').pop() || '').split(':');
+  if (!ROW_KINDS.has(kind)) return proseTombstoneHtml(addr, info);
+
   const src = info && info.source_id ? sourceById[info.source_id] : null;
   const srcLabel = src ? (src.canonical_id || src.title || info.source_id) : (info ? info.source_id : '');
+  const label = localAddressLabel(addr, info);
   return `<div class="node tombstone" data-addr="${escAttr(addr)}">`
     + `<div class="node-row spyable" data-addr="${escAttr(addr)}">`
     + `<span class="node-toggle leaf"></span>`
-    + `<span class="tomb-label">${escHtml(prettyAddr(addr))} <em>${escHtml(tr('tombstone'))}</em></span>`
+    + `<span class="tomb-label" title="${escAttr(prettyAddr(addr))}">${escHtml(label)} <em>${escHtml(tr('tombstone'))}</em></span>`
     + (info && info.date ? `<span class="tomb-meta">${refLink('date', { date: info.date, addr })}`
         + (info.source_id ? ' · ' + refLink('source', { id: info.source_id }, srcLabel) : '') + `</span>` : '')
     + evidenceBadgeHtml(addr)
     + historyBtnHtml(addr)
     + `</div></div>`;
+}
+
+function proseTombstoneHtml(addr, info, opts) {
+  const src = info && info.source_id ? sourceById[info.source_id] : null;
+  const srcLabel = src ? (src.canonical_id || src.title || info.source_id) : (info ? info.source_id : '');
+  const label = localAddressLabel(addr, info);
+  const meta = info && info.date
+    ? refLink('date', { date: info.date, addr })
+      + (info.source_id ? ' · ' + refLink('source', { id: info.source_id }, srcLabel) : '')
+    : '';
+  const extraClass = opts && opts.extraClass ? ` ${opts.extraClass}` : '';
+  const hasEvidence = evidenceRelatedToAddress(addr).length > 0;
+  return `<div class="pblock tombstone${extraClass} kind-${escAttr(addrKind(addr))}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`
+    + `<div class="pblock-inner">`
+    + `<span class="pblock-num" title="${escAttr(prettyAddr(addr))}">${escHtml(label)}</span>`
+    + `<span class="pblock-body tomb-label"><em>${escHtml(tr('tombstone'))}</em>`
+    + (meta ? `<span class="tomb-meta">${meta}</span>` : '')
+    + (opts && opts.changeBadge ? changeBadgeHtml(addr) : '')
+    + `</span>`
+    + `</div>`
+    + evidenceBadgeHtml(addr)
+    + historyBtnHtml(addr, /*showCount*/ false)
+    + `</div>`;
+}
+
+function addrKind(addr) {
+  return (addr.split('/').pop() || '').split(':')[0] || '';
+}
+
+function localAddressLabel(addr, tombInfo) {
+  const tail = addr.split('/').pop() || '';
+  const [kind, label] = tail.split(':');
+  const removedIdx = tombInfo && tombInfo.date ? changeDates.indexOf(tombInfo.date) : -1;
+  const prevDate = removedIdx > 0 ? changeDates[removedIdx - 1] : null;
+  const wasNode = prevDate ? nodeAtAddress(allFolds()[prevDate].live, addr) : null;
+  if (wasNode) return kindLabel(wasNode, parseInt(label || '0', 10) || 0);
+  return J.addrSeg(kind, label || '');
 }
 
 function wireDoc(docEl) {
@@ -1891,25 +1932,11 @@ function ghostHtml(g) {
   const date = changeDates[g.removedIdx];
   const ts = transitionsFor(g.addr, date);
   const t = ts.length ? ts[ts.length - 1] : null;
-  const src = t && t.source_id ? sourceById[t.source_id] : null;
-  const srcLabel = src ? (src.canonical_id || src.title || t.source_id) : (t ? t.source_id : '');
-  const [k, n] = g.addr.split('/').pop().split(':');
-  const meta = refLink('date', { date, addr: g.addr })
-    + (t && t.source_id ? ' · ' + refLink('source', { id: t.source_id }, srcLabel) : '');
-  // Label the ghost exactly as the live node would have read (kindLabel from
-  // the pre-removal fold) — same format as live rows, only the muting differs.
-  const prevDate = g.removedIdx > 0 ? changeDates[g.removedIdx - 1] : null;
-  const wasNode = prevDate ? nodeAtAddress(allFolds()[prevDate].live, g.addr) : null;
-  const label = wasNode ? kindLabel(wasNode, parseInt(n, 10) || 0) : J.addrSeg(k, n);
-  return `<div class="pblock ghost-line" data-addr="${escAttr(g.addr)}">`
-    + `<span class="tomb-label">${escHtml(label)} <em>${escHtml(tr('tombstone'))}</em></span>`
-    + `<span class="tomb-meta">${meta}</span>`
-    + changeBadgeHtml(g.addr)
-    + evidenceBadgeHtml(g.addr)
-    // Row-style button (not the count chip): identical trailing width keeps
-    // the lifecycle-strip column flush with section rows.
-    + historyBtnHtml(g.addr, /*showCount*/ false)
-    + `</div>`;
+  return proseTombstoneHtml(
+    g.addr,
+    { date, source_id: t && t.source_id ? t.source_id : '' },
+    { extraClass: 'ghost-line', changeBadge: true },
+  );
 }
 
 // Transitions on `date` whose target is related to `addr` (equal, ancestor or
