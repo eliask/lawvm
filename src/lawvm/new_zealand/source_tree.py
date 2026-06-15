@@ -12,6 +12,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -1377,12 +1378,17 @@ def _attr(node: etree._Element, key: str) -> str:
     return node.attrib.get(key, "")
 
 
+@lru_cache(maxsize=None)
+def _localname_of_tag(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
 def _localname(value: Any) -> str:
     if hasattr(value, "tag"):
         value = value.tag
     if isinstance(value, str):
-        return value.rsplit("}", 1)[-1]
-    return str(value).rsplit("}", 1)[-1]
+        return _localname_of_tag(value)
+    return _localname_of_tag(str(value))
 
 
 def main(args: Any) -> None:
