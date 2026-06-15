@@ -135,6 +135,7 @@ def test_aggregate_keeps_coverage_lanes_separate_from_similarity() -> None:
         text_similarity=0.95,
         tree_similarity=0.9,
         tree_similarity_stable=0.99,
+        residual_family_counts={"agreement": 3, "temporal_mismatch": 5},
         transition_scores=[
             nz_bench._TransitionScore(
                 amendment_date_iso="2020-01-01",
@@ -177,6 +178,11 @@ def test_aggregate_keeps_coverage_lanes_separate_from_similarity() -> None:
     assert agg["transitions_scored"] == 2
     assert agg["text_similarity"] == pytest.approx(0.95)
     assert agg["tree_similarity"] == pytest.approx(0.9)
+    # Oracle agreement is reported BY typed residual family, not just a number.
+    assert agg["oracle_agreement_residual_family_counts"] == {
+        "agreement": 3,
+        "temporal_mismatch": 5,
+    }
 
 
 # --- real-archive canary ----------------------------------------------------
@@ -234,3 +240,8 @@ def test_nz_bench_canary_scores_high_similarity_on_replayed_transitions(capsys, 
     assert summary["transitions_scored"] == summary["transitions_replayed"]
     assert summary["text_similarity"] >= 0.85
     assert summary["tree_similarity"] >= 0.85
+
+    # Oracle agreement is reported BY typed residual family: the canary's clean
+    # replayed transitions contribute at least one "agreement" residual.
+    family_counts = summary["oracle_agreement_residual_family_counts"]
+    assert family_counts.get("agreement", 0) >= 1

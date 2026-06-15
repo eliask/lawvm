@@ -325,13 +325,17 @@ def test_build_nz_benchmark_report_is_archive_first_and_blocks_replay(tmp_path) 
     }
     assert triage["ready_candidate_work_ids"] == []
     assert summary["snapshot_diffs"] == 1
-    assert summary["replay_blocked"] == 1
+    # Without include_actual_replay the benchmark makes no replay claim: it reports
+    # the work as not_evaluated rather than asserting a stale hardcoded "blocked".
+    assert summary["replay_blocked"] == 0
     assert summary["replay_blocking_rule_id"] == "nz_replay_canonical_effects_not_implemented"
-    assert summary["oracle_agreement_blocked"] == 1
+    assert summary["oracle_agreement_blocked"] == 0
     assert summary["oracle_agreement_blocking_rule_id"] == "nz_oracle_agreement_candidate_replay_missing"
+    assert summary["include_actual_replay"] is False
+    assert summary["replay_status_counts"] == {"not_evaluated": 1}
     work = report.work_reports[0]
-    assert work.replay_status == "blocked"
-    assert work.oracle_agreement_status == "blocked_no_candidate_replay"
+    assert work.replay_status == "not_evaluated"
+    assert work.oracle_agreement_status == "not_evaluated"
     assert work.history_operation_counts == {"amended": 1}
     assert work.operation_witness_rows == 1
     assert work.target_hint_status_counts == {"parsed": 1}
@@ -410,10 +414,12 @@ def test_build_nz_benchmark_report_is_archive_first_and_blocks_replay(tmp_path) 
         "nz_effect_readiness_amendment_semantics_not_extracted": 1,
     }
     assert work.snapshot_change_count == 2
+    # Without include_actual_replay the only replay finding is the non-blocking
+    # "replay not evaluated" note; the benchmark asserts no blocked-replay claim.
     assert [finding["rule_id"] for finding in work.findings] == [
         "nz_replay_canonical_effects_not_implemented",
-        "nz_oracle_agreement_candidate_replay_missing",
     ]
+    assert work.findings[0]["blocking"] is False
 
 
 def test_build_nz_benchmark_report_default_payload_path_has_empty_candidate_maps(tmp_path) -> None:
@@ -458,7 +464,8 @@ def test_build_nz_benchmark_report_default_payload_path_has_empty_candidate_maps
     assert summary["effect_candidate_witness_rule_counts"] == {}
     assert summary["effect_candidate_action_witness_rule_counts"] == {}
     assert summary["effect_preflight_status_counts"] == {}
-    assert summary["replay_blocked"] == 1
+    assert summary["replay_blocked"] == 0
+    assert report.work_reports[0].replay_status == "not_evaluated"
     assert report.work_reports[0].effect_candidate_witness_rule_counts == {}
     assert report.work_reports[0].effect_candidate_action_witness_rule_counts == {}
 

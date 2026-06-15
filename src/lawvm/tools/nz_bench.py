@@ -144,6 +144,9 @@ class _WorkResult:
     text_similarity: float
     tree_similarity: float
     tree_similarity_stable: float
+    # Oracle agreement BY typed residual family (agreement vs source-honest
+    # disagreement vs replay_bug) — never just a similarity number.
+    residual_family_counts: dict[str, int] = field(default_factory=dict)
     transition_scores: list[_TransitionScore] = field(default_factory=list)
 
     def to_jsonable(self) -> dict[str, Any]:
@@ -164,6 +167,7 @@ class _WorkResult:
             "text_similarity": round(self.text_similarity, 6),
             "tree_similarity": round(self.tree_similarity, 6),
             "tree_similarity_stable": round(self.tree_similarity_stable, 6),
+            "residual_family_counts": dict(sorted(self.residual_family_counts.items())),
             "transition_scores": [
                 {
                     "amendment_date_iso": ts.amendment_date_iso,
@@ -258,6 +262,7 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
             text_similarity=0.0,
             tree_similarity=0.0,
             tree_similarity_stable=0.0,
+            residual_family_counts={"error": 1},
         )
 
     summary = report.summary()
@@ -326,6 +331,10 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
         text_similarity=text_mean,
         tree_similarity=tree_mean,
         tree_similarity_stable=tree_stable_mean,
+        residual_family_counts={
+            str(family): int(count)
+            for family, count in (summary.get("residual_family_counts") or {}).items()
+        },
         transition_scores=transition_scores,
     )
 
@@ -380,6 +389,15 @@ def _aggregate(results: list[_WorkResult]) -> dict[str, Any]:
         total_slice_agreements / total_slice_nodes if total_slice_nodes else 0.0
     )
 
+    # Oracle agreement BY typed residual family across the slice: agreement vs
+    # source-honest disagreement (accepted_non_executable_frontier /
+    # temporal_mismatch / source_footing_gap) vs genuine replay_bug. Reported as a
+    # separate lane so agreement is counted by family, not just a similarity number.
+    residual_family_counts: dict[str, int] = {}
+    for r in ok:
+        for family, count in r.residual_family_counts.items():
+            residual_family_counts[family] = residual_family_counts.get(family, 0) + int(count)
+
     return {
         "n_works": len(results),
         "n_ok": len(ok),
@@ -407,6 +425,8 @@ def _aggregate(results: list[_WorkResult]) -> dict[str, Any]:
         "text_similarity": round(text_sim, 6),
         "tree_similarity": round(tree_sim, 6),
         "tree_similarity_stable": round(tree_sim_stable, 6),
+        # Oracle agreement by typed residual family (not just a similarity number).
+        "oracle_agreement_residual_family_counts": dict(sorted(residual_family_counts.items())),
     }
 
 
@@ -443,6 +463,8 @@ def _print_report(results: list[_WorkResult], agg: dict[str, Any], corpus: Path)
     print(f"  text similarity               : {agg['text_similarity']:.1%}")
     print(f"  tree similarity (path jaccard): {agg['tree_similarity']:.1%}")
     print(f"  tree similarity (stable)      : {agg['tree_similarity_stable']:.1%}")
+    print("\nOracle agreement by typed residual family (not just a similarity number):")
+    print(f"  {agg['oracle_agreement_residual_family_counts']}")
 
     replayed_works = sorted(
         (r for r in results if r.transitions_replayed > 0),

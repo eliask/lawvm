@@ -8725,6 +8725,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="resolve operation witnesses to archived amending-act payload nodes where possible",
     )
+    nz_benchmark_p.add_argument(
+        "--include-actual-replay",
+        action="store_true",
+        help=(
+            "run the strict actual-replay surface per work so the benchmark reports "
+            "real replay-coverage + oracle-agreement-by-residual-family lanes and can "
+            "compute the dry-run/replay/jurisdiction declaration rungs (slower)"
+        ),
+    )
     nz_benchmark_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
     nz_benchmark_p.add_argument("--output-json", metavar="PATH", help="write full benchmark report JSON")
     nz_benchmark_p.add_argument("--json", action="store_true", help="emit full benchmark report JSON")
