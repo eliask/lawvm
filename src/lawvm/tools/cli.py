@@ -12945,7 +12945,7 @@ def _main_impl() -> None:
 
         _dest = _Path(args.dest) if getattr(args, "dest", None) else None
         report = import_usc_sources(
-            list(args.sources),
+            [(src, None) for src in args.sources],
             db_path=_dest,
             skip_existing=bool(getattr(args, "skip_existing", False)),
             dry_run=bool(getattr(args, "dry_run", False)),

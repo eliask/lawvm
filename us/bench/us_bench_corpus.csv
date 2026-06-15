@@ -78,3 +78,73 @@ title,before_year,after_year,include,window_law_count,prior_edition_years,note
 42,2020,2022,true,42,,Title 42 public health (non-positive): large 117th-Congress window
 42,2022,2023,true,5,,Title 42 public health (non-positive): 118th-Congress amendments
 42,2023,2024,true,29,,Title 42 public health (non-positive): large 118th-Congress window
+# Title 5 Government Organization & Employees (positive law) — newly acquired ladder.
+5,2014,2016,true,18,,Title 5 government organization: 114th-Congress amendments
+5,2016,2018,true,22,,Title 5 government organization: large 115th-Congress window
+5,2018,2020,true,7,,Title 5 government organization: 116th-Congress amendments
+5,2020,2022,true,10,,Title 5 government organization: 117th-Congress amendments
+5,2022,2023,true,3,,Title 5 government organization: 118th-Congress amendments
+5,2023,2024,true,8,,Title 5 government organization: 118th-Congress amendments
+# Title 12 Banks & Banking (non-positive) — newly acquired ladder.
+12,2014,2016,true,6,,Title 12 banks (non-positive): 114th-Congress amendments
+12,2016,2018,true,4,,Title 12 banks (non-positive): 115th-Congress amendments
+12,2018,2020,true,6,,Title 12 banks (non-positive): 116th-Congress amendments
+12,2020,2022,true,6,,Title 12 banks (non-positive): 117th-Congress amendments
+12,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+12,2023,2024,true,1,,Title 12 banks (non-positive): single 118th-Congress amendment
+# Title 15 Commerce & Trade (non-positive) — newly acquired ladder.
+15,2014,2016,true,20,,Title 15 commerce (non-positive): 114th-Congress amendments
+15,2016,2018,true,25,,Title 15 commerce (non-positive): large 115th-Congress window
+15,2018,2020,true,18,,Title 15 commerce (non-positive): 116th-Congress amendments
+15,2020,2022,true,22,,Title 15 commerce (non-positive): large 117th-Congress window
+15,2022,2023,true,2,,Title 15 commerce (non-positive): 118th-Congress amendments
+15,2023,2024,true,4,,Title 15 commerce (non-positive): 118th-Congress amendments
+# Title 16 Conservation (non-positive) — newly acquired ladder.
+16,2014,2016,true,20,,Title 16 conservation (non-positive): 114th-Congress amendments
+16,2016,2018,true,22,,Title 16 conservation (non-positive): large 115th-Congress window
+16,2018,2020,true,24,,Title 16 conservation (non-positive): large 116th-Congress window
+16,2020,2022,true,12,,Title 16 conservation (non-positive): 117th-Congress amendments
+16,2022,2023,true,3,,Title 16 conservation (non-positive): 118th-Congress amendments
+16,2023,2024,true,11,,Title 16 conservation (non-positive): 118th-Congress amendments
+# Title 21 Food & Drugs (non-positive) — newly acquired ladder.
+21,2014,2016,true,11,,Title 21 food and drugs (non-positive): 114th-Congress amendments
+21,2016,2018,true,10,,Title 21 food and drugs (non-positive): 115th-Congress amendments
+21,2018,2020,true,12,,Title 21 food and drugs (non-positive): 116th-Congress amendments
+21,2020,2022,true,13,,Title 21 food and drugs (non-positive): 117th-Congress amendments
+21,2022,2023,true,1,,Title 21 food and drugs (non-positive): single 118th-Congress amendment
+21,2023,2024,true,3,,Title 21 food and drugs (non-positive): 118th-Congress amendments
+# Title 23 Highways (positive law) — newly acquired ladder.
+23,2014,2016,true,7,,Title 23 highways: 114th-Congress amendments
+23,2016,2018,true,5,,Title 23 highways: 115th-Congress amendments
+23,2018,2020,true,4,,Title 23 highways: 116th-Congress amendments
+23,2020,2022,true,3,,Title 23 highways: 117th-Congress amendments
+23,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+23,2023,2024,true,1,,Title 23 highways: single 118th-Congress amendment
+# Title 25 Indians (non-positive) — newly acquired ladder.
+25,2014,2016,true,5,,Title 25 indians (non-positive): 114th-Congress amendments
+25,2016,2018,true,7,,Title 25 indians (non-positive): 115th-Congress amendments
+25,2018,2020,true,7,,Title 25 indians (non-positive): 116th-Congress amendments
+25,2020,2022,true,8,,Title 25 indians (non-positive): 117th-Congress amendments
+25,2022,2023,true,1,,Title 25 indians (non-positive): single 118th-Congress amendment
+25,2023,2024,true,1,,Title 25 indians (non-positive): single 118th-Congress amendment
+# Title 29 Labor (non-positive) — newly acquired ladder.
+29,2014,2016,true,7,,Title 29 labor (non-positive): 114th-Congress amendments
+29,2016,2018,true,4,,Title 29 labor (non-positive): 115th-Congress amendments
+29,2018,2020,true,6,,Title 29 labor (non-positive): 116th-Congress amendments
+29,2020,2022,true,6,,Title 29 labor (non-positive): 117th-Congress amendments
+29,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+29,2023,2024,false,0,,no new source-credit public law in the 2024 edition
+# Title 40 Public Buildings, Property & Works (positive law) — newly acquired ladder.
+40,2014,2016,true,5,,Title 40 public buildings: 114th-Congress amendments
+40,2016,2018,true,7,,Title 40 public buildings: 115th-Congress amendments
+40,2018,2020,true,5,,Title 40 public buildings: 116th-Congress amendments
+40,2020,2022,true,9,,Title 40 public buildings: 117th-Congress amendments
+40,2022,2023,true,1,,Title 40 public buildings: single 118th-Congress amendment
+40,2023,2024,true,4,,Title 40 public buildings: 118th-Congress amendments
+# Title 46 Shipping (positive law) — newly acquired ladder.
+46,2014,2016,true,5,,Title 46 shipping: 114th-Congress amendments
+46,2016,2018,true,6,,Title 46 shipping: 115th-Congress amendments
+46,2018,2020,true,3,,Title 46 shipping: 116th-Congress amendments
+46,2020,2022,true,6,,Title 46 shipping: 117th-Congress amendments
+46,2022,2023,true,2,,Title 46 shipping: 118th-Congress amendments
+46,2023,2024,true,1,,Title 46 shipping: single 118th-Congress amendment
