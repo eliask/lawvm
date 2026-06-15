@@ -372,8 +372,29 @@ document.addEventListener('focusout', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && _hcEl && !_hcEl.hidden) { _hcToken++; _hcEl.hidden = true; }
+  if (timelineArrowShortcutAllowed(e)) {
+    const delta = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+    if (delta) {
+      const nextIdx = Math.max(0, Math.min(changeDates.length - 1, curDateIdx + delta));
+      if (nextIdx !== curDateIdx) {
+        e.preventDefault();
+        selectDate(nextIdx);
+      }
+    }
+  }
 });
 window.addEventListener('scroll', () => { if (_hcEl && !_hcEl.hidden) hideHovercard(); }, true);
+
+function timelineArrowShortcutAllowed(e) {
+  if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
+  if (mode !== 'law' || !changeDates.length) return false;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return false;
+  const target = e.target;
+  if (!target || !target.closest) return true;
+  return !target.closest(
+    'input, textarea, select, button, a, summary, [contenteditable="true"], [contenteditable=""]'
+  );
+}
 
 // Sync hovercard content for an amending act. Returns null (→ no card) if the
 // source is unknown, so the link still navigates but nothing pops.
@@ -543,10 +564,12 @@ function evidenceMetaHtml(row) {
   return bits.join(' · ');
 }
 
-function evidenceListHtml(rows, title) {
+function evidenceListHtml(rows, title, opts) {
   const items = dedupeEvidenceRows(rows || []);
   if (!items.length) return '';
-  let html = `<details class="evidence-list" open><summary>${escHtml(title || tr('evidenceListTitle', items.length))}</summary>`;
+  const open = !opts || opts.open !== false;
+  const extraClass = opts && opts.className ? ` ${escAttr(opts.className)}` : '';
+  let html = `<details class="evidence-list${extraClass}"${open ? ' open' : ''}><summary>${escHtml(title || tr('evidenceListTitle', items.length))}</summary>`;
   for (const row of items) {
     const cls = evidenceSeverityClass(row);
     html += `<div class="evidence-item ev-${cls}">`
@@ -1386,6 +1409,12 @@ function derivedScaffoldTombstoneInfo(entry) {
   };
 }
 
+function tombstoneInfoForTreeEntry(entry) {
+  if (!entry) return null;
+  if (entry.tomb && !entry.hash) return entry.tomb;
+  return derivedScaffoldTombstoneInfo(entry);
+}
+
 // Per-root map of address -> node at the PREVIOUS change date (change marking).
 const prevMapCache = new Map();
 function prevNodeMap(rootAddr) {
@@ -1763,25 +1792,36 @@ function buildToc() {
     const chLabel = chapterDisplay.label;
     const chHeading = chapterDisplay.heading;
     const chChanged = changedAddrs.has(entry.addr);
+    const chTomb = tombstoneInfoForTreeEntry(entry);
+    const chDisposition = chTomb ? tombstoneDisposition(entry.addr, chTomb) : null;
     html += `<li class="toc-chapter">`
-      + `<a href="#" class="toc-link toc-ch${chChanged ? ' ch-changed' : ''}" data-addr="${escAttr(entry.addr)}">`
-      + `<span class="toc-num">${escHtml(chLabel)}</span> <span class="toc-h">${escHtml(chHeading)}</span></a>`;
+      + `<a href="#" class="toc-link toc-ch${chChanged ? ' ch-changed' : ''}${chDisposition ? ` toc-tombstone toc-${escAttr(chDisposition.reason)}` : ''}" data-addr="${escAttr(entry.addr)}">`
+      + `<span class="toc-num">${escHtml(chLabel)}</span> <span class="toc-h">${escHtml(chHeading)}</span>`
+      + tocDispositionHtml(entry.addr, chTomb)
+      + `</a>`;
+    const childEntries = new Map([...entry.children.values()].map(childEntry => [childEntry.addr, childEntry]));
     const secs = node
       ? structChildren(node, entry.addr)
           .filter(s => s.child.kind === 'section')
           .filter(s => !focusAddrs || addressVisibleInFocus(s.childAddr, focusAddrs))
+          .map(s => ({ ...s, entry: childEntries.get(s.childAddr) || null }))
       : sortedEntries(entry.children).map(c => ({ child: null, childAddr: c.addr }))
           .filter(c => c.childAddr.includes('section:'))
-          .filter(c => !focusAddrs || addressVisibleInFocus(c.childAddr, focusAddrs));
+          .filter(c => !focusAddrs || addressVisibleInFocus(c.childAddr, focusAddrs))
+          .map(c => ({ ...c, entry: childEntries.get(c.childAddr) || null }));
     if (secs.length) {
       html += '<ul class="toc-sections">';
-      for (const { child, childAddr } of secs) {
+      for (const { child, childAddr, entry: childEntry } of secs) {
         const sectionDisplay = displayLabelHeading(childAddr, child);
         const sLabel = sectionDisplay.label;
         const sHeading = sectionDisplay.heading;
-        html += `<li><a href="#" class="toc-link toc-sec" data-addr="${escAttr(childAddr)}" `
+        const sTomb = tombstoneInfoForTreeEntry(childEntry);
+        const sDisposition = sTomb ? tombstoneDisposition(childAddr, sTomb) : null;
+        html += `<li><a href="#" class="toc-link toc-sec${sDisposition ? ` toc-tombstone toc-${escAttr(sDisposition.reason)}` : ''}" data-addr="${escAttr(childAddr)}" `
           + `data-search="${escAttr((sLabel + ' ' + sHeading).toLowerCase())}">`
-          + `<span class="toc-num">${escHtml(sLabel)}</span> <span class="toc-h">${escHtml(sHeading)}</span></a></li>`;
+          + `<span class="toc-num">${escHtml(sLabel)}</span> <span class="toc-h">${escHtml(sHeading)}</span>`
+          + tocDispositionHtml(childAddr, sTomb)
+          + `</a></li>`;
       }
       html += '</ul>';
     }
@@ -1798,6 +1838,12 @@ function buildToc() {
     panel.addEventListener('mouseenter', () => { spy.hover = true; });
     panel.addEventListener('mouseleave', () => { spy.hover = false; });
   }
+}
+
+function tocDispositionHtml(addr, info) {
+  if (!info) return '';
+  const disposition = tombstoneDisposition(addr, info);
+  return ` <span class="toc-status toc-status-${escAttr(disposition.reason)}">${escHtml(disposition.label)}</span>`;
 }
 
 const spy = { observer: null, visible: new Set(), current: null, hover: false, suppressUntil: 0 };
@@ -2593,7 +2639,11 @@ function renderAmendDetail(sourceId) {
   if (heRef) html += `<span><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(heRef)}</span>`;
   if (src && src.url) html += `<span><span class="lbl">${escHtml(tr('sourceLink'))}:</span> <a href="${escAttr(src.url)}" target="_blank" rel="noopener">↗</a></span>`;
   html += `</div></div>`;
-  html += evidenceListHtml(evidenceForSource(sourceId), tr('evidenceForAmendment'));
+  html += evidenceListHtml(
+    evidenceForSource(sourceId),
+    tr('evidenceForAmendment'),
+    { open: false, className: 'amend-evidence' },
+  );
 
   html += `<div class="op-list">`;
   for (const t of ops) {

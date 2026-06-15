@@ -209,6 +209,15 @@ select {
 .toc-sec { font-size: 0.8rem; }
 .toc-num { font-weight: 600; }
 .toc-h { color: var(--muted); }
+.toc-link.toc-tombstone { color: var(--muted); }
+.toc-link.toc-tombstone .toc-num { font-style: italic; }
+.toc-status {
+  margin-left: 0.22rem;
+  color: var(--muted);
+  font-size: 0.72em;
+  font-style: italic;
+}
+.toc-status-expiry { color: #8a5a00; }
 
 /* =====================================================================
    Reading document: statute as readable prose. Chapters/sections are

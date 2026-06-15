@@ -158,6 +158,10 @@ with sync_playwright() as p:
         " const item = el.closest('.legend-item');"
         " return !!(item && getComputedStyle(item).whiteSpace === 'nowrap'); })()")
     check("evidence legend marker stays with label", evidence_legend_nowrap)
+    toc_derived_section_tomb = page.evaluate(
+        "(() => { const el = document.querySelector('#toc .toc-sec[data-addr=\"chapter:4/section:47a\"]');"
+        " return !!(el && el.classList.contains('toc-tombstone') && el.textContent.includes('[kumottu]')); })()")
+    check("TOC marks derived repealed section", toc_derived_section_tomb)
     # Lifecycle strip on the ghost shows an expiry/repeal segment somewhere
     n_seg = page.locator("#doc .chg-strip .seg-rep, #doc .chg-strip .seg-exp").count()
     check("lifecycle strips show repeal/expiry segments", n_seg >= 1, f"{n_seg} segments")
@@ -177,6 +181,22 @@ with sync_playwright() as p:
     some_badge = page.locator("#doc .chg-badge .chg-count").all_text_contents()
     check("badge counts render", any("/" in t for t in some_badge) or len(some_badge) > 0,
           f"sample: {some_badge[:5]}")
+
+    # Timeline keyboard browse: arrows work in the main reading view, but not
+    # while a real input/control owns focus.
+    page.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")
+    key_before = page.text_content("#sel-date")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(700)
+    key_after = page.text_content("#sel-date")
+    check("right arrow browses timeline in main view", key_after != key_before, f"{key_before} -> {key_after}")
+    page.focus("#sec-jump")
+    guarded_before = page.text_content("#sel-date")
+    page.keyboard.press("ArrowLeft")
+    page.wait_for_timeout(300)
+    guarded_after = page.text_content("#sel-date")
+    check("timeline arrows ignore focused input", guarded_after == guarded_before, f"{guarded_before} -> {guarded_after}")
+    page.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")
 
     # Contextual focus keeps the full law available, but collapses unchanged
     # outline branches around selected-date changes.
@@ -220,6 +240,19 @@ with sync_playwright() as p:
     page.wait_for_timeout(400)
     n_opch = page.locator(".op-change").count()
     check("amendments localized changes", n_opch >= 1, f"{n_opch} localized entries")
+    amend_evidence = page.evaluate("""(() => {
+        const entries = typeof evidenceBySource !== 'undefined' ? [...evidenceBySource.entries()] : [];
+        const hit = entries.find(([id, rows]) => id && rows && rows.length);
+        if (!hit) return { ok: false, reason: 'no source evidence rows' };
+        selectedSourceId = hit[0];
+        renderAmendments();
+        const details = document.querySelector('#amend-detail > details.evidence-list.amend-evidence');
+        const summary = details ? (details.querySelector('summary')?.textContent || '') : '';
+        return { ok: !!details, open: details ? details.open : null, summary };
+    })()""")
+    check("amendment LawVM evidence defaults collapsed",
+          bool(amend_evidence.get("ok")) and amend_evidence.get("open") is False and "LawVM" in amend_evidence.get("summary", ""),
+          str(amend_evidence))
 
     # Diachronic search: deep-localized hits with highlighted snippets
     page.click(".mode-btn[data-mode='search']")
