@@ -146,6 +146,13 @@ _US_RULE_SPECS: Dict[str, str] = {
         "(it amends another law / a non-Code provision): out of the section-replay "
         "frame."
     ),
+    "us_amendatory_compound_strike_insert_node": (
+        "A strike-and-insert instruction that also splices a whole new structural node "
+        "('striking <x> at the end of paragraph (1) … and by inserting after paragraph "
+        "(2) the following: <block>') is a positional compound a single 2-operand "
+        "text_replace cannot represent; held out as a typed residual rather than "
+        "lowered to a corrupt phrase swap."
+    ),
     # --- Dry-run outcome rules: the witness classifier --------------------------------
     "us_dry_run_section_materialized_text_matches_oracle": (
         "AGREES witness: the composed section text (before-text with all in-scope ops "

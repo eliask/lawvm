@@ -15,6 +15,7 @@ from pathlib import Path
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
+    COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
     NON_TITLE_TARGET_RULE_ID,
     RULE_ADD_AT_END,
     RULE_INSERT_AFTER,
@@ -25,6 +26,7 @@ from lawvm.us_federal.amendatory import (
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
+    _join_insert_after,
     _resolve_target,
     lower_plaw_amendatory,
     parse_relative_usc_target,
@@ -375,6 +377,104 @@ def test_insert_after_classifies_and_assigns_operands_at_the_anchor():
     # anchor is the match; inserted clause is appended AFTER it (not inverted).
     assert op.text_patch.selector.match_text == "may"
     assert op.text_patch.replacement == "may, based on reasonable due diligence,"
+
+
+def test_insert_after_word_anchor_preserves_boundary_space():
+    # 10:1161 (PL 114-328 §507): "inserting 'or the Secretary…,' after 'President'".
+    # The OLRC body renders 'President or the Secretary…' — a single boundary space
+    # joins the anchor word to the inserted phrase. Concatenating them naively
+    # ('Presidentor the Secretary…') is the dominant US-frontend residual; the join
+    # restores the genuine inter-word space the enacted result carries.
+    body = (
+        '<section identifier="/us/pl/114/328/s507"><num value="507">SEC. 507. </num>'
+        '<content><ref href="/us/usc/t11/s1161/b">Section 1161(b) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>or the Secretary of Defense,</quotedText>” after '
+        '“<quotedText>President</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    op = report.instructions[0].operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.selector.match_text == "President"
+    assert op.text_patch.replacement == "President or the Secretary of Defense,"
+
+
+def test_insert_after_word_anchor_space_for_air_force_space_force():
+    # 10:9203-class: "inserting 'or the Space Force' after 'the Air Force'" → the
+    # OLRC body reads 'the Air Force or the Space Force'.
+    body = (
+        '<section identifier="/us/pl/118/22/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s9203">Section 9203 of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>or the Space Force</quotedText>” after '
+        '“<quotedText>the Air Force</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    op = report.instructions[0].operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.replacement == "the Air Force or the Space Force"
+
+
+def test_insert_after_does_not_invent_a_space_at_a_punctuation_junction():
+    # When the inserted phrase OPENS with attaching punctuation (a comma), the OLRC
+    # body binds it directly to the anchor word with NO separating space:
+    # '…trade or business' + ', and' → '…trade or business, and' (never '… , and').
+    # This guards the boundary-space fix from inventing spaces the enacted text does
+    # not contain.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>, and</quotedText>” after '
+        '“<quotedText>business</quotedText>”.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    op = report.instructions[0].operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.replacement == "business, and"
+
+
+def test_join_insert_after_boundary_rule_is_data_backed():
+    # Word↔word and word↔open-bracket junctions take a single space (a fresh token is
+    # spliced into running prose). Attaching punctuation and pre-supplied edge
+    # whitespace take NONE — the join never doubles or invents a separator.
+    assert _join_insert_after("section 310", "or 351") == "section 310 or 351"
+    assert _join_insert_after("opportunities", "(including X)") == "opportunities (including X)"
+    assert _join_insert_after("business", ", and") == "business, and"  # punct → no space
+    assert _join_insert_after("clause", " (i)") == "clause (i)"  # insert already spaced
+    assert _join_insert_after("(", "subsection") == "(subsection"  # anchor opens bracket → no space
+    assert _join_insert_after("word", "") == "word"
+
+
+def test_compound_strike_insert_with_block_node_is_held_out_not_corrupted():
+    # 26:6050I (PL 117-58 §80603(b)(3)): a positional compound — strike 'and' at the
+    # end of paragraph (1), strike the period at the end of paragraph (2) and insert
+    # ', and', AND insert after paragraph (2) a whole new paragraph block. The naive
+    # 2-operand text_replace grabs strike 'and' / insert ', and' and applies ', and'
+    # after an existing comma ('business,, and') while dropping the block. We refuse
+    # it as a typed residual rather than emit a corrupt patch.
+    body = (
+        '<section identifier="/us/pl/117/58/s80603"><num value="80603">SEC. 80603. </num>'
+        '<content><ref href="/us/usc/t11/s6050I">Section 6050I(d) of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>and</quotedText>” at the end of paragraph (1), by '
+        '<amendingAction type="delete">striking</amendingAction> the period at the end '
+        'of paragraph (2) and <amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>, and</quotedText>”, and by '
+        '<amendingAction type="insert">inserting</amendingAction> after paragraph (2) '
+        'the following new paragraph:<quotedContent><paragraph><num value="3">“(3) </num>'
+        '<content>any digital asset.”</content></paragraph></quotedContent>.</content></section>'
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "strike_insert"
+    assert instr.operation is None  # no corrupt phrase swap emitted
+    assert instr.finding is not None
+    assert instr.finding.rule_id == COMPOUND_STRIKE_INSERT_FINDING_RULE_ID
 
 
 def _patch(instr):

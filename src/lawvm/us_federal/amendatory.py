@@ -64,6 +64,10 @@ RULE_INSERT_NODE_AFTER = "us_amend_insert_node_after_unit"
 UNLOWERED_FINDING_RULE_ID = "us_amendatory_unlowered"
 TARGET_UNRESOLVED_FINDING_RULE_ID = "us_amendatory_target_unresolved"
 NON_TITLE_TARGET_RULE_ID = "us_amendatory_target_non_us_code"
+# A strike-and-insert that also splices a whole new structural node is a positional
+# compound (multiple end-of-paragraph conjunction edits + a block add) that a single
+# 2-operand text_replace cannot faithfully represent; held out as a typed residual.
+COMPOUND_STRIKE_INSERT_FINDING_RULE_ID = "us_amendatory_compound_strike_insert_node"
 
 # USC nesting order (deepest-last). Used to type bare positional labels from a
 # ref href / prose chain into the pinned LegalAddress segment kinds. This MUST stay
@@ -573,6 +577,44 @@ def _peel_enclosing_quotes(text: str) -> str:
     return text
 
 
+# Characters that BEGIN a fresh token when they open an inserted phrase. Inserting
+# a phrase "after" a word splices it into the running prose, so a new token must be
+# whitespace-separated from the anchor word: a letter, digit, or an opening bracket
+# all start a new word/clause. Closing/attaching punctuation (",", ".", ";", ":",
+# ")", …) instead binds to the preceding word and takes NO separating space.
+_INSERT_TOKEN_START = "([{"
+
+
+def _join_insert_after(anchor: str, insert: str) -> str:
+    """Assemble the "insert ``insert`` after ``anchor``" replacement faithfully.
+
+    Legislative "inserting 'X' after 'Y'" places X immediately after the anchor word
+    Y in the consolidated body. When Y ends in a word character and X opens a fresh
+    token (letter/digit/opening bracket), the OLRC body renders a single separating
+    space at the junction — ``President`` + ``or the Secretary…`` materializes as
+    ``President or the Secretary…`` (the enacted result, not an invented space). The
+    space is added ONLY at a genuine word↔word (or word↔open-bracket) junction:
+
+    - if either operand already supplies edge whitespace, nothing is added (the
+      enacted text already carries the boundary — never double it);
+    - if the insert opens with attaching punctuation (``,`` ``.`` ``)`` …) it binds
+      to the anchor word with NO space (``trade or business`` + ``, and`` →
+      ``…business, and``);
+    - if the anchor ends in a non-word char (e.g. ``(``) no space is forced either.
+
+    This reflects what the slip-law instruction means for the consolidated surface;
+    it never inserts a separator the enacted text would not contain.
+    """
+    if not anchor or not insert:
+        return anchor + insert
+    a, b = anchor[-1], insert[0]
+    if a.isspace() or b.isspace():
+        return anchor + insert
+    if a.isalnum() and (b.isalnum() or b in _INSERT_TOKEN_START):
+        return anchor + " " + insert
+    return anchor + insert
+
+
 def _quoted_texts(elem: ET.Element) -> list[str]:
     out: list[str] = []
     for q in elem.iter():
@@ -1042,7 +1084,23 @@ def _lower_instruction(
     )
 
     if family == "strike_insert":
-        if len(quoted) >= 2:
+        # A strike-and-insert unit that ALSO splices a whole new structural node
+        # ("striking 'and' at the end of paragraph (1), … and by inserting after
+        # paragraph (2) the following new paragraph: <block>") is a positional
+        # COMPOUND, not a single phrase swap. The 2-operand text_replace below would
+        # grab an arbitrary quotedText pair (e.g. strike 'and' / insert ', and') and
+        # silently drop the structural block insert AND mis-apply the conjunction
+        # edits at the wrong positions (26:6050I: ', and' spliced after an existing
+        # comma → 'business,, and'). We cannot represent the compound as one op, so
+        # we refuse it as a typed residual rather than emit a corrupt patch.
+        if _INSERT_NODE_AFTER_RE.search(raw_text) is not None:
+            finding = _finding(
+                COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+                "strike-and-insert is a positional compound that also splices a new "
+                "structural node ('inserting after … the following'); not lowerable "
+                "to a single text_replace",
+            )
+        elif len(quoted) >= 2:
             old, new = quoted[0], quoted[1]
             op = _make_op(
                 StructuralAction.TEXT_REPLACE,
@@ -1123,7 +1181,7 @@ def _lower_instruction(
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
                     selector=TextSelector(match_text=anchor_text),
-                    replacement=anchor_text + new_text,
+                    replacement=_join_insert_after(anchor_text, new_text),
                 ),
             )
             witness_rule_id = RULE_INSERT_AFTER
