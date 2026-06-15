@@ -34,10 +34,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, cast
+from typing import Any, Dict, List, Mapping, Sequence, cast
 
 from lawvm.tools.spec_ledger import (
     DivergenceRow,
@@ -275,6 +276,25 @@ def _synthetic_residuals(report: USDryRunReport) -> List[tuple[str, str, str]]:
     return out
 
 
+def _window_ledger_input(
+    archive: UsArchiveReader, window: BenchWindow
+) -> StatuteLedgerInput | None:
+    """The neutral per-window ledger input for one included window (or ``None``).
+
+    Evaluates the window's dry-run report and its compiled-op amendatory firings, then
+    maps them through :func:`us_ledger_inputs_from_reports` exactly as the serial builder
+    does — only scoped to a single window. A skipped window (no report) contributes
+    nothing and yields ``None``. This is the unit of parallel work: it is pure given the
+    archive + window, so per-window inputs are independent and order-free.
+    """
+    result = evaluate_window(archive, window)
+    amendatory_firings = {window.key: _amendatory_witness_firings(archive, window)}
+    inputs = us_ledger_inputs_from_reports(
+        [result], amendatory_firings=amendatory_firings
+    )
+    return inputs[0] if inputs else None
+
+
 def build_us_spec_ledger(
     archive: UsArchiveReader,
     windows: List[BenchWindow],
@@ -302,6 +322,152 @@ def build_us_spec_ledger(
     )
     # statutes counts evaluated windows; skipped windows are the errors-equivalent.
     ledger.statute_errors = sum(1 for w in windows if w.include) - ledger.statutes
+    return ledger
+
+
+# ---------------------------------------------------------------------------
+# Parallel spec-ledger (determinism contract: byte-identical to build_us_spec_ledger)
+# ---------------------------------------------------------------------------
+#
+# The serial builder evaluates the dry-run kernel for every included window in
+# one process; over the grown bench corpus (175+ windows, the title-42 ACA-era
+# window alone composing 800+ Public Laws) that is minutes of serial CPU. The
+# parallel builder shards the included windows across worker processes (each with
+# its OWN read-only farchive handle) and reassembles the per-window neutral
+# ``StatuteLedgerInput`` rows in *corpus order* before the single ``build_ledger``
+# pass on the parent.
+#
+# DETERMINISM CONTRACT (non-negotiable)
+# -------------------------------------
+#   * ``_window_ledger_input(archive, window)`` is pure given the archive + window
+#     (it only reads), so each window's ledger input is independent of the others.
+#   * ``build_ledger`` consumes inputs in iteration order and appends exemplars in
+#     that order, so reassembling the inputs in corpus order and running the SAME
+#     ``build_ledger`` / catalog on the parent reproduces the serial ledger
+#     byte-for-byte. Only the per-window evaluation is parallelized; the ledger
+#     SEMANTICS (firing tally, disposition mapping, ranking) are untouched.
+#   * Each worker opens its own read-only farchive handle (a SQLite connection
+#     never crosses a process boundary); ``readonly=True`` makes parallel readers
+#     safe.
+
+# Pool-size ceiling, matching the bench parallel path: each worker holds an open
+# farchive handle and replays one window at a time, bounding resident memory under
+# the WSL2 ceiling regardless of host core count or an over-large explicit value.
+US_SPEC_LEDGER_MAX_WORKERS = 16
+
+_WORKER_STORE: UsArchiveReader | None = None
+
+
+def _spec_worker_init() -> None:
+    """Process-pool initializer: open this worker's own read-only farchive once."""
+    from lawvm.us_federal.sources import open_us_federal_farchive
+
+    global _WORKER_STORE
+    _WORKER_STORE = open_us_federal_farchive(readonly=True)
+
+
+def _spec_worker_run_shard(
+    task: tuple[int, Sequence[tuple[int, BenchWindow]]],
+) -> tuple[int, list[tuple[int, StatuteLedgerInput | None]]]:
+    """Compute the neutral ledger input for one shard of ``(corpus_index, window)``.
+
+    Returns ``(shard_index, [(corpus_index, StatuteLedgerInput | None), ...])``. The
+    heavy :class:`USDryRunReport` never crosses the process boundary — only the small
+    projected ledger input does — so per-worker resident memory stays bounded.
+    """
+    shard_index, items = task
+    assert _WORKER_STORE is not None, "worker store not initialized"
+    out: list[tuple[int, StatuteLedgerInput | None]] = []
+    for corpus_index, window in items:
+        out.append((corpus_index, _window_ledger_input(_WORKER_STORE, window)))
+    return shard_index, out
+
+
+def _make_spec_shards(
+    indexed: Sequence[tuple[int, BenchWindow]], workers: int
+) -> list[tuple[int, list[tuple[int, BenchWindow]]]]:
+    """Split indexed windows into contiguous, order-preserving shards.
+
+    Several shards per worker balances uneven per-window replay cost (the title-42
+    window dwarfs the rest) while keeping shards large enough to amortize dispatch.
+    Mirrors ``bench._make_window_shards``.
+    """
+    n = len(indexed)
+    if n == 0:
+        return []
+    target_shards = max(workers, min(n, workers * 4))
+    chunk = (n + target_shards - 1) // target_shards
+    shards: list[tuple[int, list[tuple[int, BenchWindow]]]] = []
+    idx = 0
+    start = 0
+    while start < n:
+        shards.append((idx, list(indexed[start:start + chunk])))
+        idx += 1
+        start += chunk
+    return shards
+
+
+def build_us_spec_ledger_parallel(
+    windows: List[BenchWindow],
+    *,
+    workers: int,
+) -> SpecLedger:
+    """Parallel sibling of :func:`build_us_spec_ledger`, byte-identical in output.
+
+    Shards the included windows across ``workers`` processes (each with its own
+    read-only farchive handle), reassembles the per-window neutral inputs in corpus
+    order, and runs the SAME single ``build_ledger`` pass on the parent. ``workers <= 1``
+    (or a corpus of <= 1 included window) falls back to the serial builder over a single
+    shared handle, so the parallel path is always a safe superset of the serial one.
+
+    Unlike the serial builder, this opens the archive itself (one handle per worker)
+    rather than taking a shared handle — a SQLite connection must never cross a process
+    boundary.
+    """
+    from lawvm.us_federal.sources import open_us_federal_farchive
+
+    included = [w for w in windows if w.include]
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+    workers = min(workers, US_SPEC_LEDGER_MAX_WORKERS)
+
+    # Serial fast path / fallback: identical to build_us_spec_ledger.
+    if workers <= 1 or len(included) <= 1:
+        archive = open_us_federal_farchive(readonly=True)
+        try:
+            return build_us_spec_ledger(archive, windows)
+        finally:
+            archive.close()
+
+    from concurrent.futures import as_completed
+
+    from lawvm.tools._worker_pool import managed_executor
+
+    indexed = list(enumerate(included))
+    shards = _make_spec_shards(indexed, workers)
+
+    # corpus_index -> StatuteLedgerInput | None, for stable reassembly in corpus order.
+    collected: dict[int, StatuteLedgerInput | None] = {}
+    with managed_executor(workers, initializer=_spec_worker_init, initargs=()) as pool:
+        futures = {
+            pool.submit(_spec_worker_run_shard, task): task[0] for task in shards
+        }
+        for future in as_completed(futures):
+            _shard_index, pairs = future.result()
+            for corpus_index, inp in pairs:
+                collected[corpus_index] = inp
+
+    inputs = [
+        collected[i] for i in range(len(included)) if collected[i] is not None
+    ]
+    ledger = build_ledger(
+        cast(List[StatuteLedgerInput], inputs),
+        jurisdiction="us",
+        mode="dry_run_section_text_vs_usc_after_edition",
+        catalog=_US_RULE_SPECS,
+    )
+    # statutes counts evaluated windows; skipped windows are the errors-equivalent.
+    ledger.statute_errors = len(included) - ledger.statutes
     return ledger
 
 
@@ -400,6 +566,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit the ledger JSON instead of the table"
     )
     parser.add_argument(
+        "--parallel",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "evaluate windows across N worker processes (byte-identical ledger); "
+            "0 = serial, <0 = auto (cpu-2)"
+        ),
+    )
+    parser.add_argument(
         "--json-out",
         default="",
         metavar="PATH",
@@ -418,11 +594,14 @@ def main(argv: List[str] | None = None) -> int:
     from lawvm.us_federal.sources import open_us_federal_farchive
 
     windows = load_corpus(corpus_path)
-    archive = open_us_federal_farchive(readonly=True)
-    try:
-        ledger = build_us_spec_ledger(archive, windows)
-    finally:
-        archive.close()
+    if args.parallel != 0:
+        ledger = build_us_spec_ledger_parallel(windows, workers=args.parallel)
+    else:
+        archive = open_us_federal_farchive(readonly=True)
+        try:
+            ledger = build_us_spec_ledger(archive, windows)
+        finally:
+            archive.close()
 
     if args.json:
         print(json.dumps(ledger_to_dict(ledger), ensure_ascii=False, indent=2))
@@ -442,6 +621,7 @@ __all__ = [
     "US_LEGACY_UNKNOWN",
     "US_NON_RULE_LITERALS",
     "build_us_spec_ledger",
+    "build_us_spec_ledger_parallel",
     "ledger_to_dict",
     "main",
     "render_text",

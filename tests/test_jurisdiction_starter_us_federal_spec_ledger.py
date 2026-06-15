@@ -49,6 +49,7 @@ from lawvm.us_federal.dry_run import (
 from lawvm.us_federal.spec_ledger_adapter import (
     US_LEGACY_UNKNOWN,
     build_us_spec_ledger,
+    build_us_spec_ledger_parallel,
     ledger_to_dict,
     render_text,
     us_ledger_inputs_from_reports,
@@ -305,20 +306,49 @@ def _canonical_archive_available() -> bool:
     return (Path(root) / "data" / "us_federal.farchive").exists()
 
 
+# Opt-in env flag to run the WHOLE corpus through the SERIAL builder in a single
+# process (the historical path). The default real-corpus test below runs the full
+# corpus through the PARALLEL builder (byte-identical ledger, same assertions) so the
+# shard stays fast; this flag exists only for an explicit single-process reproduction.
+_FULL_CORPUS_SERIAL = os.environ.get("LAWVM_US_FULL_CORPUS_TEST") == "1"
+
+# Worker count for the parallelized real-corpus ledger build. Bounded so the test
+# stays well under the WSL2 memory ceiling (each worker holds an open farchive handle).
+_SPEC_LEDGER_TEST_WORKERS = min(8, (os.cpu_count() or 2))
+
+
 @pytest.mark.skipif(
     not _canonical_archive_available(),
     reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
 def test_real_corpus_builds_a_ranked_ledger_with_every_fired_rule_cataloged() -> None:
+    """Full real corpus, ranked + every-fired-rule-cataloged — parallelized.
+
+    The POINT of this test is the ledger SHAPE over the *whole* real corpus (rules
+    ranked contradicted-desc, no legacy_unknown blind spots, the amendatory family
+    visible). Coverage is therefore NOT sampled: every included window is evaluated.
+    Only the EXECUTION MODEL changes — the windows are sharded across worker processes
+    via :func:`build_us_spec_ledger_parallel`, whose determinism contract makes the
+    resulting ledger byte-identical to the serial builder (pinned by the dedicated
+    parallel-vs-serial test below). The corpus grew to 175+ windows (the title-42
+    ACA-era window alone composes 800+ Public Laws); serial evaluation was ~15-20 min.
+    Set ``LAWVM_US_FULL_CORPUS_TEST=1`` to run the full sweep through the single-process
+    serial builder instead.
+    """
     from lawvm.us_federal.bench import load_corpus
     from lawvm.us_federal.sources import open_us_federal_farchive
 
     windows = load_corpus(DEFAULT_CORPUS)
-    archive = open_us_federal_farchive(readonly=True)
-    try:
-        ledger = build_us_spec_ledger(archive, windows)
-    finally:
-        archive.close()
+    if _FULL_CORPUS_SERIAL:
+        archive = open_us_federal_farchive(readonly=True)
+        try:
+            ledger = build_us_spec_ledger(archive, windows)
+        finally:
+            archive.close()
+    else:
+        ledger = build_us_spec_ledger_parallel(
+            windows, workers=_SPEC_LEDGER_TEST_WORKERS
+        )
 
     assert isinstance(ledger, SpecLedger)
     assert ledger.jurisdiction == "us"
@@ -353,3 +383,57 @@ def test_real_corpus_builds_a_ranked_ledger_with_every_fired_rule_cataloged() ->
     # render_text never crashes and surfaces the headline.
     text = render_text(ledger)
     assert "US discovered-spec ledger" in text
+
+
+@pytest.mark.skipif(
+    not _canonical_archive_available(),
+    reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_parallel_spec_ledger_is_byte_identical_to_serial() -> None:
+    """The parallel ledger builder reproduces the serial builder exactly.
+
+    Determinism contract: sharding the windows across worker processes (each with its
+    own read-only farchive handle) and reassembling the neutral per-window inputs in
+    corpus order, then running the SAME ``build_ledger`` pass on the parent, yields a
+    ledger whose ``ledger_to_dict`` JSON view is byte-identical to the serial builder's
+    on the same windows — same firings, same dispositions, same ranking, same exemplars.
+
+    This is what licenses the full-corpus test above to use the parallel builder: a
+    fast, fixed, multi-window sub-corpus (the always-present Title 11 windows plus a
+    second title so multi-shard reassembly across titles is exercised) pins the
+    serial==parallel equivalence without paying the full-corpus cost.
+    """
+    from lawvm.us_federal.bench import load_corpus
+    from lawvm.us_federal.sources import open_us_federal_farchive
+
+    all_windows = load_corpus(DEFAULT_CORPUS)
+    # A small but multi-title, multi-window sub-corpus: enough to exercise sharding
+    # across >1 worker and cross-title reassembly, cheap enough to stay fast.
+    title11 = [w for w in all_windows if w.title == 11]
+    title10 = [w for w in all_windows if w.title == 10][:2]
+    excluded = [w for w in all_windows if not w.include][:1]
+    sub_corpus = title11 + title10 + excluded
+    assert len([w for w in sub_corpus if w.include]) >= 2, (
+        "need >=2 included windows to exercise sharding"
+    )
+
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        serial = build_us_spec_ledger(archive, sub_corpus)
+    finally:
+        archive.close()
+
+    parallel = build_us_spec_ledger_parallel(sub_corpus, workers=2)
+
+    # Byte-identical JSON projection of the whole ledger (firings, dispositions,
+    # ranking, exemplars, legacy_unknown set, statute/error counts).
+    import json
+
+    serial_json = json.dumps(ledger_to_dict(serial), sort_keys=True)
+    parallel_json = json.dumps(ledger_to_dict(parallel), sort_keys=True)
+    assert parallel_json == serial_json
+
+    # And the headline render is identical too (exemplar ordering is corpus-stable).
+    assert render_text(parallel) == render_text(serial)
+    assert parallel.statutes == serial.statutes
+    assert parallel.statute_errors == serial.statute_errors
