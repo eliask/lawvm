@@ -148,3 +148,87 @@ title,before_year,after_year,include,window_law_count,prior_edition_years,note
 46,2020,2022,true,6,,Title 46 shipping: 117th-Congress amendments
 46,2022,2023,true,2,,Title 46 shipping: 118th-Congress amendments
 46,2023,2024,true,1,,Title 46 shipping: single 118th-Congress amendment
+# Title 50 war and national defense (non-positive) — newly acquired ladder.
+50,2014,2016,true,140,,Title 50 war and national defense: 114th-Congress window
+50,2016,2018,true,8,,Title 50 war and national defense: 115th-Congress window
+50,2018,2020,true,9,,Title 50 war and national defense: 116th-Congress window
+50,2020,2022,true,10,,Title 50 war and national defense: 117th-Congress window
+50,2022,2023,true,1,,Title 50 war and national defense: early 118th-Congress amendments
+50,2023,2024,true,3,,Title 50 war and national defense: 118th-Congress amendments
+# Title 22 foreign relations (non-positive) — newly acquired ladder.
+22,2014,2016,true,17,,Title 22 foreign relations: 114th-Congress window
+22,2016,2018,true,26,,Title 22 foreign relations: 115th-Congress window
+22,2018,2020,true,10,,Title 22 foreign relations: 116th-Congress window
+22,2020,2022,true,14,,Title 22 foreign relations: 117th-Congress window
+22,2022,2023,true,1,,Title 22 foreign relations: early 118th-Congress amendments
+22,2023,2024,true,6,,Title 22 foreign relations: 118th-Congress amendments
+# Title 6 domestic security (non-positive) — newly acquired ladder.
+6,2014,2016,true,17,,Title 6 domestic security: 114th-Congress window
+6,2016,2018,true,14,,Title 6 domestic security: 115th-Congress window
+6,2018,2020,true,11,,Title 6 domestic security: 116th-Congress window
+6,2020,2022,true,13,,Title 6 domestic security: 117th-Congress window
+6,2022,2023,true,2,,Title 6 domestic security: early 118th-Congress amendments
+6,2023,2024,true,11,,Title 6 domestic security: 118th-Congress amendments
+# Title 2 the Congress (non-positive) — newly acquired ladder.
+2,2014,2016,true,8,,Title 2 the Congress: 114th-Congress window
+2,2016,2018,true,12,,Title 2 the Congress: 115th-Congress window
+2,2018,2020,true,9,,Title 2 the Congress: 116th-Congress window
+2,2020,2022,true,12,,Title 2 the Congress: 117th-Congress window
+2,2022,2023,true,2,,Title 2 the Congress: early 118th-Congress amendments
+2,2023,2024,true,5,,Title 2 the Congress: 118th-Congress amendments
+# Title 33 navigation and navigable waters (non-positive) — newly acquired ladder.
+33,2014,2016,true,9,,Title 33 navigation and navigable waters: 114th-Congress window
+33,2016,2018,true,10,,Title 33 navigation and navigable waters: 115th-Congress window
+33,2018,2020,true,11,,Title 33 navigation and navigable waters: 116th-Congress window
+33,2020,2022,true,7,,Title 33 navigation and navigable waters: 117th-Congress window
+33,2022,2023,true,1,,Title 33 navigation and navigable waters: early 118th-Congress amendments
+33,2023,2024,true,4,,Title 33 navigation and navigable waters: 118th-Congress amendments
+# Title 47 telecommunications (non-positive) — newly acquired ladder.
+47,2014,2016,true,4,,Title 47 telecommunications: 114th-Congress window
+47,2016,2018,true,7,,Title 47 telecommunications: 115th-Congress window
+47,2018,2020,true,8,,Title 47 telecommunications: 116th-Congress window
+47,2020,2022,true,8,,Title 47 telecommunications: 117th-Congress window
+47,2022,2023,true,1,,Title 47 telecommunications: early 118th-Congress amendments
+47,2023,2024,true,1,,Title 47 telecommunications: 118th-Congress amendments
+# Title 43 public lands (non-positive) — newly acquired ladder.
+43,2014,2016,true,2,,Title 43 public lands: 114th-Congress window
+43,2016,2018,true,5,,Title 43 public lands: 115th-Congress window
+43,2018,2020,true,5,,Title 43 public lands: 116th-Congress window
+43,2020,2022,true,6,,Title 43 public lands: 117th-Congress window
+43,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+43,2023,2024,true,6,,Title 43 public lands: 118th-Congress amendments
+# Title 19 customs duties (non-positive) — newly acquired ladder.
+19,2014,2016,true,6,,Title 19 customs duties: 114th-Congress window
+19,2016,2018,true,9,,Title 19 customs duties: 115th-Congress window
+19,2018,2020,true,4,,Title 19 customs duties: 116th-Congress window
+19,2020,2022,true,3,,Title 19 customs duties: 117th-Congress window
+19,2022,2023,true,1,,Title 19 customs duties: early 118th-Congress amendments
+19,2023,2024,true,1,,Title 19 customs duties: 118th-Congress amendments
+# Title 8 aliens and nationality (non-positive) — newly acquired ladder.
+8,2014,2016,true,3,,Title 8 aliens and nationality: 114th-Congress window
+8,2016,2018,true,5,,Title 8 aliens and nationality: 115th-Congress window
+8,2018,2020,true,6,,Title 8 aliens and nationality: 116th-Congress window
+8,2020,2022,true,5,,Title 8 aliens and nationality: 117th-Congress window
+8,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+8,2023,2024,true,1,,Title 8 aliens and nationality: 118th-Congress amendments
+# Title 30 mineral lands and mining (non-positive) — newly acquired ladder.
+30,2014,2016,true,4,,Title 30 mineral lands and mining: 114th-Congress window
+30,2016,2018,true,4,,Title 30 mineral lands and mining: 115th-Congress window
+30,2018,2020,true,3,,Title 30 mineral lands and mining: 116th-Congress window
+30,2020,2022,true,4,,Title 30 mineral lands and mining: 117th-Congress window
+30,2022,2023,false,0,,no new source-credit public law in the 2023 edition
+30,2023,2024,true,3,,Title 30 mineral lands and mining: 118th-Congress amendments
+# Title 48 territories and insular possessions (non-positive) — newly acquired ladder.
+48,2014,2016,true,2,,Title 48 territories and insular possessions: 114th-Congress window
+48,2016,2018,true,5,,Title 48 territories and insular possessions: 115th-Congress window
+48,2018,2020,true,4,,Title 48 territories and insular possessions: 116th-Congress window
+48,2020,2022,true,4,,Title 48 territories and insular possessions: 117th-Congress window
+48,2022,2023,true,1,,Title 48 territories and insular possessions: early 118th-Congress amendments
+48,2023,2024,true,2,,Title 48 territories and insular possessions: 118th-Congress amendments
+# Title 39 postal service (positive law) — newly acquired ladder.
+39,2014,2016,true,4,,Title 39 postal service: 114th-Congress window
+39,2016,2018,true,1,,Title 39 postal service: 115th-Congress window
+39,2018,2020,true,3,,Title 39 postal service: 116th-Congress window
+39,2020,2022,true,2,,Title 39 postal service: 117th-Congress window
+39,2022,2023,true,1,,Title 39 postal service: early 118th-Congress amendments
+39,2023,2024,false,0,,no new source-credit public law in the 2024 edition
