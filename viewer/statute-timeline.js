@@ -494,6 +494,7 @@ function semanticTargetLinks(row, target) {
 function semanticInterlinkHovercardHtml(row) {
   if (!row) return null;
   const target = semanticTargetForRow(row);
+  const targetDetail = jsonObj(target && target.detail_json);
   const links = semanticTargetLinks(row, target);
   const title = (target && target.title) || row.target_work_id || row.surface_text || row.interlink_id || '';
   let h = `<div class="hc-title">${escHtml(title)}</div>`;
@@ -522,6 +523,12 @@ function semanticInterlinkHovercardHtml(row) {
   if (row.target_work_id) h += `<div><dt>${escHtml(tr('interlinkTarget'))}</dt><dd>${escHtml(row.target_work_id)}</dd></div>`;
   if (row.target_locator) h += `<div><dt>${escHtml(tr('interlinkLocator'))}</dt><dd>${escHtml(row.target_locator)}</dd></div>`;
   if (target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
+  if (targetDetail.preview_date_consolidated) {
+    h += `<div><dt>${escHtml(tr('interlinkPreviewDate'))}</dt><dd>${escHtml(targetDetail.preview_date_consolidated)}</dd></div>`;
+  }
+  if (targetDetail.preview_version_tag) {
+    h += `<div><dt>${escHtml(tr('interlinkPreviewVersion'))}</dt><dd>${escHtml(targetDetail.preview_version_tag)}</dd></div>`;
+  }
   if (row.resolution_status) h += `<div><dt>${escHtml(tr('interlinkStatus'))}</dt><dd>${escHtml(row.resolution_status)}</dd></div>`;
   if (row.confidence) h += `<div><dt>${escHtml(tr('interlinkConfidence'))}</dt><dd>${escHtml(row.confidence)}</dd></div>`;
   if (row.resolver_id) h += `<div><dt>${escHtml(tr('interlinkResolver'))}</dt><dd>${escHtml(row.resolver_id)}</dd></div>`;
@@ -861,6 +868,23 @@ function rebuildStatuteOptions() {
   statuteSel.value = cur;
 }
 
+function localTodayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function defaultChangeDateIndex() {
+  if (!changeDates.length) return -1;
+  const today = localTodayIso();
+  for (let i = changeDates.length - 1; i >= 0; i--) {
+    if (changeDates[i] <= today) return i;
+  }
+  return 0;
+}
+
 async function rerenderAll() {
   if (!db || !changeDates.length) return;
   const m = mode;
@@ -868,7 +892,7 @@ async function rerenderAll() {
   try {
     renderShell();
     setMode(m, /*skipRender*/ true);
-    if (m === 'law') await selectDate(curDateIdx >= 0 ? curDateIdx : changeDates.length - 1);
+    if (m === 'law') await selectDate(curDateIdx >= 0 ? curDateIdx : defaultChangeDateIndex());
     else if (m === 'amendments') renderAmendments();
     else if (m === 'search') renderSearch();
     else renderCompare();
@@ -947,10 +971,10 @@ async function loadStatute(statuteId, permalink) {
     if (permalink && permalink.statute === statuteId) {
       // A permalink landing in a mode that doesn't pick a date (amendments/search)
       // still needs a baseline fold so a later switch to the law view has one.
-      if (permalink.mode !== 'law') await selectDate(changeDates.length - 1, { skipRender: true });
+      if (permalink.mode !== 'law') await selectDate(defaultChangeDateIndex(), { skipRender: true });
       applyPermalink(permalink);
     } else {
-      await selectDate(changeDates.length - 1);
+      await selectDate(defaultChangeDateIndex());
     }
   } catch (e) {
     app.innerHTML = `<p class="error-box">${escHtml(tr('loadFail'))}: ${escHtml(e.message)}</p>`;
@@ -2959,7 +2983,7 @@ function highlightPhrase(snippet, phrase) {
 function goToAddrAtDate(addr, date, phrase) {
   setMode('law', /*skipRender*/ true);
   const idx = date ? changeDates.indexOf(date) : -1;
-  const targetIdx = idx >= 0 ? idx : curDateIdx >= 0 ? curDateIdx : changeDates.length - 1;
+  const targetIdx = idx >= 0 ? idx : curDateIdx >= 0 ? curDateIdx : defaultChangeDateIndex();
   selectedAddress = addr;
   // A bare nav (amendments/compare link, no phrase) drops any prior search mark.
   searchHighlight = phrase ? { addr, phrase } : null;
@@ -3402,7 +3426,7 @@ async function applyPermalink(pl) {
     }
     setMode('law', /*skipRender*/ true);
     let idx = pl.date ? changeDates.indexOf(pl.date) : -1;
-    if (idx < 0) idx = changeDates.length - 1;
+    if (idx < 0) idx = defaultChangeDateIndex();
     selectedAddress = pl.address || null;
     searchHighlight = (pl.query && pl.address) ? { addr: pl.address, phrase: pl.query } : null;
     await selectDate(idx, { skipRender: true });

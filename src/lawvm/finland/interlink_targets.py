@@ -39,9 +39,12 @@ def build_fi_interlink_target_row(
     engine_id = engine_statute_id(target_ref.local_id)
     if not _looks_like_engine_statute_id(engine_id):
         return _unsupported_fi_target_row(target_ref, status="unsupported_fi_target_id")
-    target_url = _finlex_lainsaadanto_url(engine_id)
-    source_publication_url = _finlex_saadoskokoelma_url(engine_id)
     preview = _target_preview_payload(target_ref, engine_id=engine_id, corpus=corpus)
+    target_url = _finlex_lainsaadanto_url(
+        engine_id,
+        fragment=str(preview.get("target_fragment") or ""),
+    )
+    source_publication_url = _finlex_saadoskokoelma_url(engine_id)
     links = _target_links(target_url=target_url, source_publication_url=source_publication_url)
     preview["links"] = links
     return LawvmInterlinkTargetRow(
@@ -119,11 +122,14 @@ def _unsupported_fi_target_row(
     )
 
 
-def _finlex_lainsaadanto_url(engine_id: str) -> str | None:
+def _finlex_lainsaadanto_url(engine_id: str, *, fragment: str = "") -> str | None:
     year, sep, num = engine_id.partition("/")
     if not sep or not year.isdigit() or not num:
         return None
-    return f"https://www.finlex.fi/fi/lainsaadanto/{year}/{num}"
+    url = f"https://www.finlex.fi/fi/lainsaadanto/{year}/{num}"
+    if fragment:
+        url = f"{url}#{fragment}"
+    return url
 
 
 def _finlex_saadoskokoelma_url(engine_id: str) -> str | None:
@@ -168,6 +174,12 @@ def _target_preview_payload(
         "locator_label": locator_label,
         "hierarchy": [],
         "preview_text": "",
+        "preview_date_consolidated": "",
+        "preview_version_tag": "",
+        "target_fragment": _finlex_fragment_from_locator(
+            target_ref.locator,
+            allow_bare_section=False,
+        ),
     }
     xml_bytes = corpus.read_oracle(engine_id)
     if xml_bytes is None:
@@ -182,12 +194,14 @@ def _target_preview_payload(
             "title": title,
         }
 
+    identity = _consolidated_preview_identity(xml_bytes)
     title, chapter_titles = _title_and_chapter_titles(xml_bytes)
     payload = {
         **base_payload,
         "status": "law_title_only",
         "source": "fi.read_oracle.latest_consolidated",
         "title": title,
+        **identity,
     }
     matched_section = _matching_section_preview(engine_id, target_ref.locator, xml_bytes)
     if matched_section is None:
@@ -215,6 +229,33 @@ def _target_preview_payload(
         "locator_label": locator_label or matched_section.section_label,
         "hierarchy": hierarchy,
         "preview_text": _short_preview(matched_section.body_text),
+        "preview_date_consolidated": (
+            matched_section.valid_at_start.isoformat()
+            if matched_section.valid_at_start is not None
+            else str(identity.get("preview_date_consolidated") or "")
+        ),
+        "target_fragment": _finlex_fragment_from_locator(
+            matched_section.section_key,
+            allow_bare_section=True,
+        )
+        or str(payload.get("target_fragment") or ""),
+    }
+
+
+def _consolidated_preview_identity(xml_bytes: bytes) -> dict[str, str]:
+    root = ET.fromstring(xml_bytes)
+    date_consolidated = ""
+    version_tag = ""
+    for date_el in root.iter(f"{{{_AKN_NS}}}FRBRdate"):
+        if date_el.get("name") == "dateConsolidated":
+            date_consolidated = date_el.get("date", "")
+            break
+    version_el = root.find(f".//{{{_AKN_NS}}}FRBRversionNumber")
+    if version_el is not None:
+        version_tag = version_el.get("value", "")
+    return {
+        "preview_date_consolidated": date_consolidated,
+        "preview_version_tag": version_tag,
     }
 
 
@@ -285,6 +326,33 @@ def _section_label_from_locator(locator: str | None) -> str:
 def _subsection_label_from_locator(locator: str | None) -> str:
     match = _SUBSECTION_LOCATOR_RE.search(locator or "")
     return match.group(1) if match else ""
+
+
+_FINLEX_FRAGMENT_KINDS = {
+    "part": "part",
+    "chapter": "chp",
+    "section": "sec",
+    "subsection": "subsec",
+    "paragraph": "para",
+    "subparagraph": "subpara",
+}
+
+
+def _finlex_fragment_from_locator(locator: str | None, *, allow_bare_section: bool = False) -> str:
+    if not locator:
+        return ""
+    if not allow_bare_section and locator.startswith("section:") and "/" not in locator:
+        return ""
+    parts: list[str] = []
+    for raw_part in locator.split("/"):
+        if ":" not in raw_part:
+            return ""
+        kind, value = raw_part.split(":", 1)
+        prefix = _FINLEX_FRAGMENT_KINDS.get(kind)
+        if prefix is None or not value:
+            return ""
+        parts.append(f"{prefix}_{value}")
+    return "__".join(parts)
 
 
 def _chapter_label_from_section_key(section_key: str) -> str:
