@@ -131,9 +131,9 @@ const JURIS = {
   },
 };
 
-let T = STR.fi;     // active UI strings
-let J = JURIS.fi;   // active jurisdiction profile
-let uiLang = 'fi';  // effective UI language (override > statute default)
+let T = STR.en;          // active UI strings
+let J = JURIS.generic;   // active jurisdiction profile
+let uiLang = 'en';       // effective UI language (override > statute default)
 let uiLangOverride = null;
 try { uiLangOverride = localStorage.getItem('lawvm-viewer-lang') || null; } catch (e) { /* storage unavailable */ }
 
@@ -165,6 +165,7 @@ let changeDates = [];       // sorted ISO date strings
 let sourceById = {};        // source_id -> source_artifacts row
 let interlinks = [];        // optional precomputed semantic interlink rows
 let interlinksByRenderedAddress = new Map();
+let interlinkTargetsByKey = new Map();
 let displayNodeByDateAddress = new Map();
 let evidenceEvents = [];    // optional precomputed LawVM uncertainty rows
 let evidenceBySource = new Map();
@@ -403,14 +404,18 @@ function sourceHovercardHtml(id) {
   if (!src) return null;
   const am = amendmentList().find(a => a.source_id === id);
   const effDates = [...new Set(transitions.filter(t => t.source_id === id).map(t => t.effective_date))].sort();
-  const heRef = (transitions.find(t => t.source_id === id && t.he_ref) || {}).he_ref;
+  const sourceRef = transitionSourceRef(transitions.find(t => t.source_id === id && transitionSourceRef(t)));
   let h = `<div class="hc-title">${escHtml(src.title || src.canonical_id || id)}</div><dl class="hc-meta">`;
   if (src.canonical_id) h += `<div><dt>${escHtml(tr('amendingAct'))}</dt><dd>${escHtml(src.canonical_id)}</dd></div>`;
   if (src.date) h += `<div><dt>${escHtml(tr('givenDate'))}</dt><dd>${escHtml(src.date)}</dd></div>`;
   if (effDates.length) h += `<div><dt>${escHtml(tr('effectiveLbl'))}</dt><dd>${escHtml(effDates.join(', '))}</dd></div>`;
   if (am) h += `<div><dt>${escHtml(tr('amendWhat'))}</dt><dd>${escHtml(tr('targetings', am.opCount))}</dd></div>`;
-  if (heRef) h += `<div><dt>${escHtml(tr('prepWorks'))}</dt><dd>${prepWorksHtml(heRef)}</dd></div>`;
+  if (sourceRef) h += `<div><dt>${escHtml(tr('prepWorks'))}</dt><dd>${prepWorksHtml(sourceRef)}</dd></div>`;
   return h + `</dl>`;
+}
+
+function transitionSourceRef(t) {
+  return t ? (t.source_ref || t.he_ref || '') : '';
 }
 
 function indexInterlinks() {
@@ -423,12 +428,100 @@ function indexInterlinks() {
   }
 }
 
+function indexInterlinkTargets(rows) {
+  interlinkTargetsByKey = new Map();
+  for (const row of rows || []) {
+    if (row.target_key) interlinkTargetsByKey.set(row.target_key, row);
+  }
+}
+
+function jsonObj(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function jsonArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function semanticTargetForRow(row) {
+  const detail = jsonObj(row && row.detail_json);
+  return detail.target_key ? interlinkTargetsByKey.get(detail.target_key) : null;
+}
+
+function semanticTargetHierarchy(target) {
+  const hierarchy = jsonArray(target && target.hierarchy_json);
+  return Array.isArray(hierarchy) ? hierarchy : [];
+}
+
+function semanticTargetLinks(row, target) {
+  const detail = jsonObj(row && row.detail_json);
+  const links = [
+    ...jsonArray(target && target.target_links_json),
+    ...jsonArray(detail.links),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const link of links) {
+    if (!link || !link.url || seen.has(link.url)) continue;
+    seen.add(link.url);
+    out.push({
+      rel: link.rel || '',
+      label: link.label || link.title || link.rel || tr('interlinkOpenTarget'),
+      url: link.url,
+    });
+  }
+  const fallbackUrl = (target && target.target_url) || row.target_url || '';
+  if (fallbackUrl && !seen.has(fallbackUrl)) {
+    out.unshift({ rel: 'target', label: tr('interlinkOpenTarget'), url: fallbackUrl });
+  }
+  return out;
+}
+
 function semanticInterlinkHovercardHtml(row) {
   if (!row) return null;
-  let h = `<div class="hc-title">${escHtml(row.surface_text || row.target_work_id || row.interlink_id || '')}</div><dl class="hc-meta">`;
+  const target = semanticTargetForRow(row);
+  const links = semanticTargetLinks(row, target);
+  const title = (target && target.title) || row.target_work_id || row.surface_text || row.interlink_id || '';
+  let h = `<div class="hc-title">${escHtml(title)}</div>`;
+  const hierarchy = semanticTargetHierarchy(target);
+  if (hierarchy.length) {
+    h += `<div class="hc-path">${hierarchy.map(part => {
+      const label = [part.label, part.title].filter(Boolean).join(' ');
+      return escHtml(label || part.kind || '');
+    }).filter(Boolean).join(' › ')}</div>`;
+  } else if (target && target.locator_label) {
+    h += `<div class="hc-path">${escHtml(target.locator_label)}</div>`;
+  }
+  if (target && target.preview_text) {
+    h += `<div class="hc-preview">${escHtml(target.preview_text)}</div>`;
+  }
+  if (links.length) {
+    h += `<div class="hc-actions">`;
+    for (const link of links) {
+      h += `<a href="${escAttr(link.url)}" target="_blank" rel="noopener noreferrer">${escHtml(link.label)}</a>`;
+    }
+    h += `</div>`;
+  }
+  h += `<dl class="hc-meta">`;
+  if (row.surface_text) h += `<div><dt>${escHtml(tr('interlinkSurface'))}</dt><dd>${escHtml(row.surface_text)}</dd></div>`;
   if (row.role) h += `<div><dt>${escHtml(tr('interlinkRole'))}</dt><dd>${escHtml(row.role)}</dd></div>`;
   if (row.target_work_id) h += `<div><dt>${escHtml(tr('interlinkTarget'))}</dt><dd>${escHtml(row.target_work_id)}</dd></div>`;
   if (row.target_locator) h += `<div><dt>${escHtml(tr('interlinkLocator'))}</dt><dd>${escHtml(row.target_locator)}</dd></div>`;
+  if (target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
   if (row.resolution_status) h += `<div><dt>${escHtml(tr('interlinkStatus'))}</dt><dd>${escHtml(row.resolution_status)}</dd></div>`;
   if (row.confidence) h += `<div><dt>${escHtml(tr('interlinkConfidence'))}</dt><dd>${escHtml(row.confidence)}</dd></div>`;
   if (row.resolver_id) h += `<div><dt>${escHtml(tr('interlinkResolver'))}</dt><dd>${escHtml(row.resolver_id)}</dd></div>`;
@@ -666,7 +759,7 @@ function foldAt(date) {
       tombstoned.set(t.target_address, {
         date: t.effective_date,
         source_id: t.source_id,
-        he_ref: t.he_ref,
+        source_ref: transitionSourceRef(t),
         reason: removalReasonForTransition(t),
       });
     } else {
@@ -706,7 +799,7 @@ async function reproducibleTreeHash(live) {
 const statuteSel = document.getElementById('statute-select');
 let manifest = [];
 
-applyLocale('fi', 'fi'); // boot locale (honors a stored override) before any data loads
+applyLocale('en', 'generic'); // boot locale before DB/manifest jurisdiction metadata loads
 
 fetch('statute-timeline-manifest.json').then(r => r.json()).then(m => {
   manifest = m;
@@ -725,7 +818,7 @@ document.querySelectorAll('#lang-toggle button').forEach(b => {
 });
 
 function applyLocale(statuteLang, juris) {
-  const lang = uiLangOverride || statuteLang || 'fi';
+  const lang = uiLangOverride || statuteLang || 'en';
   uiLang = STR[lang] ? lang : 'en';
   T = STR[uiLang];
   J = JURIS[juris] || JURIS.generic;
@@ -750,7 +843,7 @@ function setUiLang(lang) {
   if (lang === uiLang) return;
   uiLangOverride = lang;
   try { localStorage.setItem('lawvm-viewer-lang', lang); } catch (e) { /* ignore */ }
-  applyLocale(metaInfo.lang || 'fi', metaInfo.jurisdiction || 'fi');
+  applyLocale(metaInfo.lang || 'en', metaInfo.jurisdiction || 'generic');
   rebuildStatuteOptions();
   rerenderAll();
 }
@@ -806,7 +899,7 @@ async function loadStatute(statuteId, permalink) {
     db = new SQL.Database(new Uint8Array(buf));
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
-    interlinks = []; interlinksByRenderedAddress = new Map();
+    interlinks = []; interlinksByRenderedAddress = new Map(); interlinkTargetsByKey = new Map();
     displayNodeByDateAddress = new Map();
     evidenceEvents = []; evidenceBySource = new Map(); evidenceByDate = new Map(); evidenceWithAddress = [];
     compareSel = { d1: null, d2: null };
@@ -830,13 +923,18 @@ async function loadStatute(statuteId, permalink) {
       interlinks = q('SELECT * FROM lawvm_interlinks ORDER BY interlink_id');
       indexInterlinks();
     }
+    if (tableExists('lawvm_interlink_targets')) {
+      indexInterlinkTargets(q('SELECT * FROM lawvm_interlink_targets ORDER BY target_key'));
+    } else {
+      indexInterlinkTargets([]);
+    }
     evidenceEvents = q('SELECT * FROM evidence_events ORDER BY event_id');
     indexEvidenceEvents();
 
     metaInfo = {
       title: metaValue('title') || entry.title || '',
-      lang: metaValue('lang') || entry.lang || 'fi',
-      jurisdiction: metaValue('jurisdiction') || entry.jurisdiction || 'fi',
+      lang: metaValue('lang') || entry.lang || 'en',
+      jurisdiction: metaValue('jurisdiction') || entry.jurisdiction || 'generic',
       certGranularity: metaValue('certification_granularity') || metaValue('granularity') || 'chapter',
     };
     applyLocale(metaInfo.lang, metaInfo.jurisdiction);
@@ -1142,7 +1240,7 @@ function addrComponent(node, ordinal) {
   if (lbl) return lbl.replace(/\s+/g, '');
   const num = nodeNum(node);
   if (num) {
-    const cleaned = num.replace(/[§).]/g, '').replace(/luku/gi, '').trim().replace(/\s+/g, '');
+    const cleaned = num.replace(/[§).]/g, '').trim().replace(/\s+/g, '');
     if (cleaned) return cleaned;
   }
   return String(ordinal);
@@ -2477,7 +2575,8 @@ function prepWorksHtml(ref) {
 
 function provenanceHtml(t) {
   const src = sourceById[t.source_id];
-  if (!src && !t.he_ref && !t.source_id) return '';
+  const sourceRef = transitionSourceRef(t);
+  if (!src && !sourceRef && !t.source_id) return '';
   let html = `<div class="provenance">`;
   if (src) {
     html += `<div><span class="lbl">${escHtml(tr('amendingAct'))}:</span> `;
@@ -2489,7 +2588,7 @@ function provenanceHtml(t) {
   } else if (t.source_id) {
     html += `<div><span class="lbl">${escHtml(tr('amendingAct'))}:</span> ${escHtml(t.source_id)}</div>`;
   }
-  if (t.he_ref) html += `<div><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(t.he_ref)}</div>`;
+  if (sourceRef) html += `<div><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(sourceRef)}</div>`;
   html += `</div>`;
   return html;
 }
@@ -2635,8 +2734,8 @@ function renderAmendDetail(sourceId) {
       + effectiveDates.map(d => changeDates.indexOf(d) >= 0 ? refLink('date', { date: d }) : escHtml(d)).join(', ')
       + `</span>`;
   }
-  const heRef = (ops.find(o => o.he_ref) || {}).he_ref;
-  if (heRef) html += `<span><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(heRef)}</span>`;
+  const sourceRef = transitionSourceRef(ops.find(o => transitionSourceRef(o)));
+  if (sourceRef) html += `<span><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(sourceRef)}</span>`;
   if (src && src.url) html += `<span><span class="lbl">${escHtml(tr('sourceLink'))}:</span> <a href="${escAttr(src.url)}" target="_blank" rel="noopener">↗</a></span>`;
   html += `</div></div>`;
   html += evidenceListHtml(
@@ -2823,14 +2922,14 @@ function attributionRow(label, idx, addr, phrase) {
   const src = tSrc ? sourceById[tSrc.source_id] : null;
   const srcLabel = src ? (src.title || src.canonical_id || tSrc.source_id)
     : (tSrc ? tSrc.source_id : tr('originalAct'));
-  const heRef = (ts.find(t => t.he_ref) || {}).he_ref;
+  const sourceRef = transitionSourceRef(ts.find(t => transitionSourceRef(t)));
   // Date jumps to the law in force then (carrying the search phrase so the
   // main-pane highlight repaints); the act opens in the Amendments view.
   const dateLink = refLink('date', { date, addr, phrase });
   const actLink = tSrc ? refLink('source', { id: tSrc.source_id }, srcLabel) : escHtml(srcLabel);
   let html = `<div class="search-attr"><span class="attr-label">${escHtml(label)}:</span> ${dateLink} — ${actLink}`;
   if (src && src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
-  if (heRef) html += ` · ${prepWorksHtml(heRef)}`;
+  if (sourceRef) html += ` · ${prepWorksHtml(sourceRef)}`;
   html += `</div>`;
   return html;
 }
@@ -3066,7 +3165,7 @@ function runCompare() {
 
 // =====================================================================
 // Word-level diff: diff_match_patch token-encoded (preferred, same engine as
-// the finlex/estonia viewers) with an LCS fallback if the CDN is unavailable.
+// other LawVM viewers) with an LCS fallback if the CDN is unavailable.
 // Rendering: UNIFIED tracked-changes style by default; below a similarity
 // threshold the change is presented as a wholesale replacement (stacked
 // before/after blocks) because word-level highlighting is noise there.
@@ -3203,7 +3302,7 @@ function diffBlockHtml(preTxt, postTxt) {
   // Unified tracked-changes rendering with STREAK COALESCING: alternating
   // del/ins word runs bridged only by whitespace merge into one deletion
   // streak followed by one insertion streak — word-by-word red/green
-  // alternation is unreadable (same grouping as the finlex/estonia viewers).
+  // alternation is unreadable (same grouping as other LawVM viewers).
   const isWs = (s) => !String(s).replace(/\s+/g, '');
   let html = '<div class="diff-unified">';
   let i = 0;

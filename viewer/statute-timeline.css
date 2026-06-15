@@ -591,13 +591,25 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 
 /* Shared hovercard popover (above the sticky topbar at z-index 40). */
 .ref-hovercard {
-  position: absolute; z-index: 60; max-width: 22rem;
+  position: absolute; z-index: 60; max-width: 28rem;
   background: var(--card-bg); border: 1px solid #bcd2e8; border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
   padding: 0.55rem 0.7rem; font-size: 0.8rem; line-height: 1.4; color: var(--fg);
 }
 .ref-hovercard[hidden] { display: none; }
 .ref-hovercard .hc-title { font-weight: 700; font-size: 0.86rem; margin-bottom: 0.35rem; }
+.ref-hovercard .hc-path { color: var(--muted); font-size: 0.76rem; margin: -0.15rem 0 0.35rem; }
+.ref-hovercard .hc-preview {
+  font-family: var(--font-text); font-size: 0.86rem; line-height: 1.38;
+  border-left: 3px solid #d6e4f2; padding-left: 0.55rem; margin: 0.4rem 0;
+}
+.ref-hovercard .hc-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.45rem 0; }
+.ref-hovercard .hc-actions a {
+  display: inline-flex; align-items: center; min-height: 1.55rem;
+  padding: 0.14rem 0.48rem; border: 1px solid var(--border); border-radius: 5px;
+  background: #f7fafc; text-decoration: none; font-weight: 600;
+}
+.ref-hovercard .hc-actions a:hover { background: #eef2f6; }
 .ref-hovercard .hc-meta { margin: 0; display: grid; gap: 0.15rem; }
 .ref-hovercard .hc-meta > div { display: flex; gap: 0.4rem; }
 .ref-hovercard .hc-meta dt { font-weight: 600; color: var(--muted); flex: 0 0 auto; min-width: 5.5rem; }

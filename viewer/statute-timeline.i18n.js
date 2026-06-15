@@ -1,7 +1,7 @@
 // LawVM statute-timeline viewer — translation tables.
 // Loaded as a classic <script> BEFORE statute-timeline.js. Classic scripts
 // share one top-level lexical scope, so STR and OP_KINDS_BY_LANG defined here
-// are visible to the main script (which initializes T = STR.fi at load).
+// are visible to the main script.
 //   STR[lang]              — UI strings (values are user-visible; keys are internal).
 //   OP_KINDS_BY_LANG[lang] — amendment op-kind vocabulary.
 
@@ -112,6 +112,9 @@ const STR = {
     targetings: (n) => `${n} ${n === 1 ? 'kohdistus' : 'kohdistusta'}`,
     effectiveLbl: 'Voimaantulo',
     prepWorks: 'Esitöiden viite',
+    interlinkSurface: 'Viite',
+    interlinkOpenTarget: 'Avaa kohde',
+    interlinkPreviewStatus: 'Esikatselu',
     interlinkRole: 'Rooli',
     interlinkTarget: 'Kohde',
     interlinkLocator: 'Kohta',
@@ -253,6 +256,9 @@ const STR = {
     targetings: (n) => `${n} target${n === 1 ? '' : 's'}`,
     effectiveLbl: 'Effective',
     prepWorks: 'Preparatory works',
+    interlinkSurface: 'Citation',
+    interlinkOpenTarget: 'Open target',
+    interlinkPreviewStatus: 'Preview',
     interlinkRole: 'Role',
     interlinkTarget: 'Target',
     interlinkLocator: 'Locator',
@@ -397,6 +403,9 @@ const STR = {
     targetings: (n) => `${n} ${n === 1 ? 'ändringsställe' : 'ändringsställen'}`,
     effectiveLbl: 'Ikraftträdande',
     prepWorks: 'Förarbeten',
+    interlinkSurface: 'Hänvisning',
+    interlinkOpenTarget: 'Öppna målet',
+    interlinkPreviewStatus: 'Förhandsvisning',
     interlinkRole: 'Roll',
     interlinkTarget: 'Mål',
     interlinkLocator: 'Punkt',
