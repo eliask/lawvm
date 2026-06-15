@@ -150,7 +150,7 @@ def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) ->
     }
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -163,7 +163,7 @@ def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) ->
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -218,7 +218,7 @@ def test_build_capture_summarizes_apply_mutation_invariant_result_codes(monkeypa
     }
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -231,7 +231,7 @@ def test_build_capture_summarizes_apply_mutation_invariant_result_codes(monkeypa
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -253,7 +253,7 @@ def test_build_capture_does_not_publish_strictness_summary_rails(monkeypatch) ->
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -263,7 +263,7 @@ def test_build_capture_does_not_publish_strictness_summary_rails(monkeypatch) ->
         _adjudications_out=None: fake_master,
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -308,7 +308,7 @@ def test_build_capture_projects_source_pathology_target_unit_kind_at_presentatio
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -318,7 +318,7 @@ def test_build_capture_projects_source_pathology_target_unit_kind_at_presentatio
         _adjudications_out=None: fake_master,
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -402,7 +402,7 @@ def test_build_capture_threads_per_amendment_source_pathologies_and_mutation_rep
     }
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -415,7 +415,7 @@ def test_build_capture_threads_per_amendment_source_pathologies_and_mutation_rep
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -526,9 +526,9 @@ def test_build_capture_serializes_typed_text_patch(monkeypatch) -> None:
             lo_ops_out.append(fake_op)
         return fake_master
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -598,9 +598,9 @@ def test_build_capture_projects_legacy_text_fields_from_typed_patch(monkeypatch)
             lo_ops_out.append(fake_op)
         return fake_master
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -641,7 +641,7 @@ def test_build_capture_uses_projection_row_public_names(monkeypatch) -> None:
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -653,7 +653,7 @@ def test_build_capture_uses_projection_row_public_names(monkeypatch) -> None:
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -703,7 +703,7 @@ def test_build_capture_hydrates_typed_source_adjudication_from_replay_meta(monke
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -723,7 +723,7 @@ def test_build_capture_hydrates_typed_source_adjudication_from_replay_meta(monke
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 
@@ -762,7 +762,7 @@ def test_build_capture_prefers_existing_typed_source_adjudication_over_conflicti
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id,
         mode="official_consolidation",
         compiled_ops_out=None,
@@ -789,7 +789,7 @@ def test_build_capture_prefers_existing_typed_source_adjudication_over_conflicti
         )[-1],
     )
     monkeypatch.setattr(
-        "lawvm.finland.grafter.get_corpus",
+        "lawvm.finland.corpus.get_corpus",
         lambda: SimpleNamespace(read_source=lambda mid: None),
     )
 

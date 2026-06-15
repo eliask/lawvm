@@ -590,7 +590,7 @@ def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
     The replay is materialized at the latest change-date so the full op stream
     and timeline graph are available for re-materialization at earlier dates.
     """
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     lo_ops: List[Any] = []

@@ -191,11 +191,8 @@ def _run_for_statute(
     """Run lower-audit for a statute's amendments. Returns exit code."""
     import sys
 
-    from lawvm.finland.grafter import (
-        get_johtolause,
-        _normalize_johtolause_verbs,
-        _resolve_applicable_amendment_records,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
     from lawvm.finland.citation_routing import OP_KEYWORDS
     from lawvm.finland.corpus import get_corpus
 

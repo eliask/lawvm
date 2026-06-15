@@ -33,7 +33,7 @@ def test_cmd_verify_replays_quietly(monkeypatch, tmp_path, capsys) -> None:
         seen.update(kwargs)
         return DummyMaster()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr("lawvm.tools.diff._extract_sections_ir", lambda _ir: {"section:1": DummySection()})
     monkeypatch.setattr("lawvm.core.ir_helpers.irnode_to_text", lambda _node: "x")
 
@@ -74,7 +74,7 @@ def test_cmd_verify_suppresses_raw_replay_chatter(monkeypatch, tmp_path, capsys)
             print("WARNING source pathology:")
         return DummyMaster()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr("lawvm.tools.diff._extract_sections_ir", lambda _ir: {"section:1": DummySection()})
     monkeypatch.setattr("lawvm.core.ir_helpers.irnode_to_text", lambda _node: "x")
 

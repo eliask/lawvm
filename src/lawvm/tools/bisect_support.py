@@ -34,12 +34,10 @@ def _section_bisect_support(
     from lawvm.tools._section_debug import render_node_text
     from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_sections
     from lawvm.tools.trace_section import build_trace_bundle
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        get_ground_truth_tree,
-        replay_xml,
-        process_muutoslaki,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import get_ground_truth_tree
+    from lawvm.finland.process_pipeline import process_muutoslaki
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.process_result_builder import ProcessAmendmentSinks
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml

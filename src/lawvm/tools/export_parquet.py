@@ -122,11 +122,8 @@ def _project_one_statute(
     """
     import Levenshtein
 
-    from lawvm.finland.grafter import (
-        _oracle_version_label,
-        get_ground_truth,
-        replay_xml,
-    )
+    from lawvm.finland.corpus import _oracle_version_label, get_ground_truth
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.tools.section_keys import (
         extract_ir_sections,
@@ -477,10 +474,10 @@ def export_projections(
 
     if workers > 1:
         from lawvm.tools._worker_pool import managed_executor
+        from lawvm.finland.corpus import _get_corpus_store
 
         # Pre-warm corpus cache in main process for COW sharing
         try:
-            from lawvm.finland.grafter import _get_corpus_store
             _get_corpus_store()
         except Exception:
             pass

@@ -63,14 +63,14 @@ from lawvm.tools.section_keys import (
     section_key_from_compile_failure,
     section_key_from_compiled_scope_row,
 )
-from lawvm.finland.grafter import (
-    _resolve_applicable_amendment_records,
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import (
     get_consolidated_oracle_context,
     get_corpus,
     get_ground_truth_tree,
-    process_muutoslaki,
-    replay_xml,
 )
+from lawvm.finland.process_pipeline import process_muutoslaki
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.corpus import get_consolidated_meta as _get_consolidated_meta
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
@@ -1712,7 +1712,7 @@ def _sort_sids_by_chain_length(sids: list[str]) -> list[str]:
     completion while workers sit idle (long-tail parallelism effect).
     Uses the cached _amendment_children_by_parent() index — effectively free.
     """
-    from lawvm.finland.grafter import _amendment_children_by_parent
+    from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
     children = _amendment_children_by_parent()
     return sorted(sids, key=lambda s: len(children.get(s, ())), reverse=True)
 

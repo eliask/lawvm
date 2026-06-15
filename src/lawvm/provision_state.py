@@ -63,7 +63,7 @@ def resolve_provision_state(
             diagnostic=selector_diagnostic,
         )
 
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.tools.timeline_integrity import (
         attach_effective_dates,

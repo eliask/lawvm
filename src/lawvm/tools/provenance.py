@@ -293,7 +293,7 @@ def _amendment_sources_from_replay(statute_id: str) -> dict[str, Any]:
     replay yields the whole statute's amendment commencement map without a
     per-amendment replay.
     """
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
     master = call_replay_xml(

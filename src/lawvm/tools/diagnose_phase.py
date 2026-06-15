@@ -143,12 +143,10 @@ def build_diagnose_phase_bundle(
     detector: str = "duplicate_label",
 ) -> Dict[str, Any]:
     """Produce a phase-by-phase diagnostic bundle for one statute+amendment."""
-    from lawvm.finland.grafter import (
-        get_corpus,
-        process_muutoslaki,
-        _resolve_applicable_amendment_records,
-        replay_xml,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.process_pipeline import process_muutoslaki
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.finland.statute import StatuteContext

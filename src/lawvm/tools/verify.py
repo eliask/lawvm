@@ -34,14 +34,11 @@ from typing import List, Literal, Optional, cast
 
 from lxml import etree
 
-from lawvm.finland.grafter import (
-    get_corpus,
-    _resolve_applicable_amendment_records,
-    _normalize_johtolause_verbs,
-    get_johtolause,
-    parse_ops_fallback_heuristic,
-    process_muutoslaki,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
+from lawvm.finland.normalize import parse_ops_fallback_heuristic
+from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.process_request import ProcessAmendmentRequest

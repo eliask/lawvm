@@ -1745,7 +1745,7 @@ def test_compile_one_replays_quietly(monkeypatch) -> None:
             bundle=SimpleNamespace(structural_ops=()),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     def fake_compile_fi_facade_from_replay(**kwargs):
         strict_profile = kwargs.get("strict_profile")
@@ -1803,7 +1803,7 @@ def test_compile_one_prefers_typed_source_adjudication_lineage_over_replay_meta(
             bundle=SimpleNamespace(structural_ops=()),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
         "lawvm.finland.compile.compile_fi_facade_from_replay",
         lambda **kwargs: SimpleNamespace(
@@ -1853,7 +1853,7 @@ def test_compile_one_hydrates_source_adjudication_from_replay_meta(monkeypatch) 
             bundle=SimpleNamespace(structural_ops=()),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
         "lawvm.finland.compile.compile_fi_facade_from_replay",
         lambda **kwargs: SimpleNamespace(

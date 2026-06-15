@@ -67,10 +67,8 @@ def build_product_debug_bundle(
     target_path: str = "",
 ) -> Dict[str, Any]:
     """Produce a timeline+materialization diagnostic bundle for one amendment."""
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        replay_xml,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.core.timeline import select_active_version_ex
     from lawvm.core.ir_helpers import irnode_to_text

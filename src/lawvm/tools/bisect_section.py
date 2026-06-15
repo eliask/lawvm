@@ -4,12 +4,9 @@ import json
 import sys
 from typing import Any, Dict, List, Literal, Optional
 
-from lawvm.finland.grafter import (
-    _resolve_applicable_amendment_records,
-    get_corpus,
-    get_ground_truth_tree,
-    process_muutoslaki,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
+from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import ReplayState, StatuteContext

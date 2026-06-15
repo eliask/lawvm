@@ -3,7 +3,7 @@ from lxml import etree
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.tree_ops import check_invariants
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.grafter import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.source_normalize import normalize_source_ir
 

@@ -35,10 +35,8 @@ from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.compile import compile_fi_facade_from_replay
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.strict_profile import default_finland_strict_profile
-from lawvm.finland.grafter import (
-    get_ground_truth_tree,
-    replay_xml,
-)
+from lawvm.finland.corpus import get_ground_truth_tree
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import (
     ReplayXmlRequest,
     ReplayXmlSinks,
@@ -2286,7 +2284,7 @@ def _sort_by_chain_length_desc(sids: List[str]) -> List[str]:
     completion while workers sit idle (long-tail parallelism effect).
     Uses the cached amendment index — effectively free.
     """
-    from lawvm.finland.grafter import _amendment_children_by_parent
+    from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
 
     try:
         children = _amendment_children_by_parent()

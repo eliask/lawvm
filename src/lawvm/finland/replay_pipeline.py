@@ -14,7 +14,7 @@ from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallba
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
-from lawvm.finland.grafter_uncovered import (
+from lawvm.finland.future_repeal_prescan import (
     PreScanRepealDiagnostic,
     PreScanRepealTargetsRequest,
     PreScanRepealTargetsSinks,
@@ -42,6 +42,24 @@ class ReplayPlan:
     cutoff_date: Any
     oracle_version_amendment_id: str
     oracle_suspect: str
+
+
+@dataclass(frozen=True, slots=True)
+class StopBeforeReplayNotice:
+    """User-facing diagnostic for a replay ``--before`` cutoff request."""
+
+    raw_stop_before: str
+    normalized_stop_before: str
+    found_in_lineage: bool
+
+    @property
+    def message(self) -> str:
+        if not self.found_in_lineage:
+            return (
+                f"WARNING: --before {self.raw_stop_before}: "
+                "amendment not found in chain, ignoring"
+            )
+        return f"--before {self.raw_stop_before}: replay truncated before {self.normalized_stop_before}"
 
 
 @dataclass(slots=True)
@@ -170,6 +188,21 @@ def _normalize_stop_before(stop_before: str) -> str:
         return token
     parts = token.split("/")
     return f"{parts[0]}/{parts[1]}" if len(parts[0]) == 4 else f"{parts[1]}/{parts[0]}"
+
+
+def build_stop_before_replay_notice(
+    stop_before: str,
+    amendment_records: list[dict[str, Any]],
+) -> StopBeforeReplayNotice | None:
+    normalized_stop_before = _normalize_stop_before(stop_before)
+    if not normalized_stop_before:
+        return None
+    plan_lineage_ids = [str(record["statute_id"]) for record in amendment_records]
+    return StopBeforeReplayNotice(
+        raw_stop_before=stop_before,
+        normalized_stop_before=normalized_stop_before,
+        found_in_lineage=normalized_stop_before in plan_lineage_ids,
+    )
 
 
 def _dedupe_consecutive_amendment_records(

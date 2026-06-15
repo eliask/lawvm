@@ -402,8 +402,8 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
     """APPLY.REPLAY_UNDECLARED_TREE_TOUCH observes an undeclared touch from production.
 
     Production lane: ``apply_ops_to_tree`` performs a real RENUMBER and, inside
-    the fold, runs the production passive observed-vs-declared cross-check
-    (``_cross_check_observed_vs_declared``, gated by
+    the resolved-op apply boundary, runs the production passive
+    observed-vs-declared cross-check (gated by
     ``OBSERVED_MUTATION_CROSS_CHECK_ENABLED``) against the op's declared mutation
     events. The drill patches the production stamping helper to under-declare
     (drop the renumbered/target/parent paths) so the genuine observed tree change
@@ -416,7 +416,8 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
     from lxml import etree
 
     import lawvm.finland.apply_typed_dispatch as apply_typed_dispatch
-    import lawvm.finland.grafter as grafter
+    import lawvm.finland.apply_resolved_op as apply_resolved_op
+    import lawvm.finland.apply_ops_executor as apply_ops_executor
     from lawvm.core.mutation_accounting import MutationAccountingResult
     from lawvm.finland.apply_events import (
         ApplyMutationEvent,
@@ -424,7 +425,7 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
     )
     from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 
-    assert grafter.OBSERVED_MUTATION_CROSS_CHECK_ENABLED, (
+    assert apply_resolved_op.OBSERVED_MUTATION_CROSS_CHECK_ENABLED, (
         "observed-vs-declared cross-check is disabled; the K1 gate cannot observe"
     )
 
@@ -474,7 +475,7 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
         "_emit_apply_mutation_event_from_receipt",
         _underdeclaring_receipt_emit,
     ):
-        grafter._apply_ops_to_tree_typed(
+        apply_ops_executor._apply_ops_to_tree_typed(
             ApplyOpsRequest(
                 state=state,
                 ctx=ctx,

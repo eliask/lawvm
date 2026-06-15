@@ -22,7 +22,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause
+from lawvm.finland.compile_amendment import compile_amendment_ops, get_corpus, get_johtolause
 from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
@@ -1747,7 +1747,7 @@ def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections(
     """Regression: 1996/476 introduces §72a/§72b/§72c under a top-level pseudo-chapter-marker
     '8 a luku' (not inside a <chapter> element).
 
-    grafter_uncovered.py primary coverage path was comparing CoverageUnit.kind (str)
+    The uncovered-body recovery primary coverage path was comparing CoverageUnit.kind (str)
     to IRNodeKind.SECTION (enum) with `is not`, which always evaluated True and skipped
     all sections in the supplemental_candidates loop.  The fix changes to `!= "section"`.
     """

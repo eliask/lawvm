@@ -3468,12 +3468,10 @@ def test_sort_label_key_numeric_ordering() -> None:
 # Determinism 8: replay_xml is deterministic
 # ---------------------------------------------------------------------------
 
-from lawvm.finland.grafter import (
-    _get_corpus_store,
-    _resolve_applicable_amendment_records,
-    _sec1_fallback_peg_skip_required,
-    process_muutoslaki,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import _get_corpus_store
+from lawvm.finland.normalize import _sec1_fallback_peg_skip_required
+from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor

@@ -32,12 +32,9 @@ from typing import List, Literal, Tuple
 
 import Levenshtein
 
-from lawvm.finland.grafter import (
-    get_corpus,
-    _resolve_applicable_amendment_records,
-    process_muutoslaki,
-    get_ground_truth,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import get_corpus, get_ground_truth
+from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor

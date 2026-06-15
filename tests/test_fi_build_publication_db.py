@@ -558,7 +558,7 @@ def test_compute_live_returns_sections_without_db_reads(
     )
     # No replay available → replay_sections will be empty.
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda *a, **kw: None,
     )
     # Oracle returns our minimal XML.

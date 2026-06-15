@@ -475,7 +475,7 @@ def cli_solver_diag(args: object) -> None:
     verbose = getattr(args, "verbose", False)
 
     # Replay and capture binding data
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     replay_meta: dict[str, Any] = {}

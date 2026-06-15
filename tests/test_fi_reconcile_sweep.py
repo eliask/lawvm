@@ -117,40 +117,40 @@ def test_write_reports_emits_csv_and_md(tmp_path: Path) -> None:
 
 
 def test_reconcile_statute_replay_error_is_data_defect(monkeypatch) -> None:
-    import lawvm.finland.grafter as grafter
+    import lawvm.finland.replay_entrypoint as replay_entrypoint
 
     def _boom(*a, **k):
         raise FileNotFoundError("Statute z/9 not found in corpus")
 
-    monkeypatch.setattr(grafter, "replay_xml", _boom)
+    monkeypatch.setattr(replay_entrypoint, "replay_xml", _boom)
     r = rs.reconcile_statute("z/9", 3, as_of="2026-06-01")
     assert r.replay_error
     assert "data_defect" in r.class_counts
 
 
 def test_memoized_provision_replay_caches_no_outparam_calls() -> None:
-    import lawvm.finland.grafter as grafter
+    import lawvm.finland.replay_entrypoint as replay_entrypoint
     from lawvm.finland.replay_request import ReplayXmlRequest
 
     calls = {"n": 0}
-    real = grafter.replay_xml
+    real = replay_entrypoint.replay_xml
 
     def _counting(*, request: ReplayXmlRequest, sinks: Any = None) -> str:
         calls["n"] += 1
         return f"master::{request.parent_id}"
 
-    cast(Any, grafter).replay_xml = _counting
+    cast(Any, replay_entrypoint).replay_xml = _counting
     try:
         with rs._memoized_provision_replay():
             # Same statute, no out-params: cached after first call.
-            a1 = grafter.replay_xml(request=ReplayXmlRequest(parent_id="x/1", quiet=True))
-            a2 = grafter.replay_xml(request=ReplayXmlRequest(parent_id="x/1", quiet=True))
+            a1 = replay_entrypoint.replay_xml(request=ReplayXmlRequest(parent_id="x/1", quiet=True))
+            a2 = replay_entrypoint.replay_xml(request=ReplayXmlRequest(parent_id="x/1", quiet=True))
             assert a1 == a2 == "master::x/1"
             assert calls["n"] == 1
             # Different statute: a fresh call.
-            grafter.replay_xml(request=ReplayXmlRequest(parent_id="y/2", quiet=True))
+            replay_entrypoint.replay_xml(request=ReplayXmlRequest(parent_id="y/2", quiet=True))
             assert calls["n"] == 2
         # Restored after context exit.
-        assert grafter.replay_xml is _counting
+        assert replay_entrypoint.replay_xml is _counting
     finally:
-        cast(Any, grafter).replay_xml = real
+        cast(Any, replay_entrypoint).replay_xml = real

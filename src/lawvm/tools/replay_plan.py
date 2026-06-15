@@ -5,15 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from lawvm.finland.corpus import get_corpus
-from lawvm.finland.grafter import (
-    _resolve_applicable_amendment_records,
-    get_consolidated_oracle_suspect,
-)
+from lawvm.finland.corpus import get_consolidated_oracle_suspect, get_corpus
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
 from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.replay_pipeline import prepare_replay_plan
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
-from lawvm.finland.grafter import get_replay_profile
 from lawvm.finland.corrigendum import extract_inline_corrections
 from lawvm.finland.corpus import get_consolidated_oracle_inspection
 from lawvm.tools.oracle_context import _selector_from_args

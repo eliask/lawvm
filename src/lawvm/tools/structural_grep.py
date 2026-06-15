@@ -358,7 +358,7 @@ def _extract_section_ops(statute_id: str) -> dict[str, set[str]]:
     Only called when --has-op or --no-op is specified.
     """
     try:
-        from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_entrypoint import replay_xml
         from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
         compiled_ops: list[dict[str, Any]] = []

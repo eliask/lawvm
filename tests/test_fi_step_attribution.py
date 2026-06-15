@@ -122,7 +122,7 @@ def test_run_single_prefers_typed_source_adjudication_over_conflicting_replay_me
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id, mode="official_consolidation", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
             replay_meta_out.update(
                 {"lineage": [{"statute_id": "2000/999", "included": False, "effective_date": ""}]}
@@ -130,7 +130,7 @@ def test_run_single_prefers_typed_source_adjudication_over_conflicting_replay_me
             fake_master,
         )[-1],
     )
-    monkeypatch.setattr("lawvm.finland.grafter.get_ground_truth_tree", lambda statute_id: object())
+    monkeypatch.setattr("lawvm.finland.corpus.get_ground_truth_tree", lambda statute_id: object())
     monkeypatch.setattr("lawvm.tools.step_attribution._extract_replay_sections", lambda _ir: {})
     monkeypatch.setattr("lawvm.tools.step_attribution._extract_oracle_sections", lambda _root: {})
     monkeypatch.setattr("lawvm.tools.step_attribution.reconcile_unique_unscoped_aliases", lambda a, b: (a, b))
@@ -149,7 +149,7 @@ def test_run_single_hydrates_source_adjudication_from_replay_meta(monkeypatch) -
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         lambda statute_id, mode="official_consolidation", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
             replay_meta_out.update(
                 {
@@ -163,7 +163,7 @@ def test_run_single_hydrates_source_adjudication_from_replay_meta(monkeypatch) -
             fake_master,
         )[-1],
     )
-    monkeypatch.setattr("lawvm.finland.grafter.get_ground_truth_tree", lambda statute_id: object())
+    monkeypatch.setattr("lawvm.finland.corpus.get_ground_truth_tree", lambda statute_id: object())
     monkeypatch.setattr("lawvm.tools.step_attribution._extract_replay_sections", lambda _ir: {})
     monkeypatch.setattr("lawvm.tools.step_attribution._extract_oracle_sections", lambda _root: {})
     monkeypatch.setattr("lawvm.tools.step_attribution.reconcile_unique_unscoped_aliases", lambda a, b: (a, b))

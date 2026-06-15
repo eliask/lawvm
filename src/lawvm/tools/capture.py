@@ -319,7 +319,8 @@ def build_capture(
     replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     source_filter: str = "",
 ) -> CapturePayload:
-    from lawvm.finland.grafter import get_corpus, replay_xml
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     with redirect_stdout(io.StringIO()):

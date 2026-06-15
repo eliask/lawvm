@@ -184,7 +184,7 @@ def _norm_ws(s: str) -> str:
 
 def _load_amendment_xml(amendment_id: str) -> "etree._Element | None":
     """Load the Finnish AKN XML for an amendment via CorpusStore."""
-    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.corpus import get_corpus
     xml_bytes = get_corpus().read_source(amendment_id)
     if xml_bytes is None:
         return None

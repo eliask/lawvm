@@ -105,7 +105,7 @@ def _replay_section_count(sid: str) -> tuple[int, str]:
     other replay calls (high memory usage per worker).
     """
     try:
-        from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_entrypoint import replay_xml
         from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
         previous_disable = logging.root.manager.disable
         logging.disable(logging.CRITICAL)

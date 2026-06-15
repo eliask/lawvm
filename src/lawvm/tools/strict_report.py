@@ -899,7 +899,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
         from lawvm.finland.compile import (
             compile_fi_facade_from_replay,
         )
-        from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_entrypoint import replay_xml
         from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
         from lawvm.finland.strict_profile import default_finland_strict_profile
 
@@ -2377,7 +2377,7 @@ def main(args: Any) -> None:
     mode = getattr(args, "mode", "official_consolidation")
     show_facade = getattr(args, "facade", False)
     from lawvm.finland.compile import compile_fi_facade_from_replay
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.finland.strict_profile import default_finland_strict_profile
 

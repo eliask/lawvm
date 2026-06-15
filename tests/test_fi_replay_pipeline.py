@@ -9,7 +9,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
-from lawvm.finland.grafter_uncovered import (
+from lawvm.finland.future_repeal_prescan import (
     PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
     PreScanRepealDiagnostic,
     PreScanRepealTargetsRequest,
@@ -20,6 +20,7 @@ from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.replay_pipeline import (
     ReplayPlan,
     ReplaySignalBuffers,
+    build_stop_before_replay_notice,
     execute_replay_plan,
     prepare_replay_plan,
 )
@@ -35,6 +36,34 @@ from lawvm.finland.vts import (
 
 def _corpus_stub() -> CorpusStore:
     return cast(CorpusStore, object())
+
+
+def test_build_stop_before_replay_notice_normalizes_and_reports_found_cutoff() -> None:
+    notice = build_stop_before_replay_notice(
+        "443/1994",
+        [{"statute_id": "1994/443"}, {"statute_id": "1999/1"}],
+    )
+
+    assert notice is not None
+    assert notice.normalized_stop_before == "1994/443"
+    assert notice.found_in_lineage is True
+    assert notice.message == "--before 443/1994: replay truncated before 1994/443"
+
+
+def test_build_stop_before_replay_notice_reports_missing_cutoff() -> None:
+    notice = build_stop_before_replay_notice(
+        "2019-371",
+        [{"statute_id": "2018/301"}],
+    )
+
+    assert notice is not None
+    assert notice.normalized_stop_before == "2019/371"
+    assert notice.found_in_lineage is False
+    assert notice.message == "WARNING: --before 2019-371: amendment not found in chain, ignoring"
+
+
+def test_build_stop_before_replay_notice_ignores_empty_cutoff() -> None:
+    assert build_stop_before_replay_notice("", [{"statute_id": "1994/443"}]) is None
 
 
 def test_execute_replay_plan_records_post_amendment_tree_invariant_findings() -> None:

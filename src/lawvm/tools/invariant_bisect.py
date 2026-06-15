@@ -115,7 +115,7 @@ def _scan_tree_detector_steps_authoritative(
     scan window ``amendment_ids[start_idx:end_idx]`` and ``initial_violations``
     is the detector result on the state immediately before the window.
     """
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
     # Detector result per amendment id, in chain order.
@@ -189,7 +189,7 @@ def _scan_transition_detector_steps(
     not affected by the chapter-seeding gap because they compare ops to
     snapshots rather than querying absolute unit presence.
     """
-    from lawvm.finland.grafter import process_muutoslaki
+    from lawvm.finland.process_pipeline import process_muutoslaki
     from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.process_result_builder import ProcessAmendmentSinks
     from lawvm.finland.statute import ReplayState
@@ -541,10 +541,8 @@ def build_invariant_bisect_bundle(
     before_mid:
         Stop scan before this amendment ID (exclusive).
     """
-    from lawvm.finland.grafter import (
-        get_corpus,
-        _resolve_applicable_amendment_records,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import get_corpus
     from lawvm.finland.statute import StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
 

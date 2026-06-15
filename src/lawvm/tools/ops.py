@@ -16,7 +16,7 @@ import json
 import sys
 from typing import Any, Literal, Optional
 
-from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.core.ir import LegalOperation
 

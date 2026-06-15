@@ -8,31 +8,39 @@ from lxml import etree
 
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.source_normalize import normalize_source_ir
-from lawvm.finland.grafter import (
-    _FilterCtx,
-    _coalesce_same_target_mixed_scope_section_groups,
-    compile_amendment_ops,
-    _find_muutos_ir,
-    _filter_ops_by_constraints,
-    _group_ops_by_target,
-    _group_shadow_pruning_foreign_scoped_section_targets,
-    _group_shadow_pruning_section_targets,
-    _normalize_johtolause_verbs,
-    _resolve_group_surface_scope,
-    _restrict_sec1_fallback_to_parent,
-    _tree_title,
-    get_corpus,
-    get_johtolause,
-    get_replay_profile,
-    normalize_and_compile_ops,
-    replay_xml,
-    route_amendment,
+from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
+from lawvm.finland.acquisition import (
     should_use_sec1_fallback_post_routing,
     should_use_sec1_fallback_pre_routing,
 )
+from lawvm.finland.citation_routing import route_amendment
+from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.frontend_compile import _tree_title, normalize_and_compile_ops
+from lawvm.finland.group_plan import (
+    coalesce_same_target_mixed_scope_section_groups as _coalesce_same_target_mixed_scope_section_groups,
+    group_ops_by_target as _group_ops_by_target,
+)
+from lawvm.finland.lowering_scope_recovery import (
+    resolve_group_surface_scope as _resolve_group_surface_scope,
+)
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.helpers import _norm_row_anchor_text
+from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
+from lawvm.finland.ops import (
+    get_replay_profile,
+    legacy_target_kind_for_unit_kind,
+    scope_authority_parity_for_op,
+)
+from lawvm.finland.scope import restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent
+from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
+from lawvm.finland.standalone_targets import (
+    group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
+    group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
+)
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.core.elaboration_context import (
     build_payload_elaboration_context,
@@ -48,7 +56,6 @@ from lawvm.finland.replay_notices import (
     reset_replay_verbose as _reset_replay_verbose,
     set_replay_verbose as _set_replay_verbose,
 )
-from lawvm.finland.ops import legacy_target_kind_for_unit_kind, scope_authority_parity_for_op
 from lawvm.finland.projection_rows import projection_row_from_finding
 from lawvm.tools._section_debug import summarize_node
 
@@ -402,7 +409,10 @@ def build_amendment_bundle(
         section_groups = _coalesce_same_target_mixed_scope_section_groups(
             _group_ops_by_target(ops),
             master=before_master.replay_fold_state,
-            muutos_tree=muutos_tree,
+            find_body_section_chapter=lambda target_norm: _find_body_section_chapter(
+                muutos_tree,
+                target_norm,
+            ),
         )
         for group_key, group_ops in section_groups.items():
             target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)

@@ -249,7 +249,7 @@ def pinned_replay(
 
 def replay_xml_for_test(parent_id: str, **kwargs):
     """Typed replay_xml bridge for tests that still use legacy-shaped inputs."""
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
 
     request = ReplayXmlRequest(

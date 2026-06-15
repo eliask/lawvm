@@ -157,7 +157,7 @@ def _run_xml(args: Any, selector: str) -> None:
 
 def _run_statute_scope(args: Any) -> None:
     """No selector → whole-statute replay (== replay --as-of --show-text)."""
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.core.ir_helpers import irnode_to_text
 

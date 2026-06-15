@@ -19,7 +19,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland import merge as finland_merge
-from lawvm.finland.grafter import _hoist_trailing_wrapup_ir
+from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 from lawvm.finland.helpers import classify_rangaistussaannos
 
 

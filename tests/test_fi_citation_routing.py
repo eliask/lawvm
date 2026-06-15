@@ -22,10 +22,8 @@ from __future__ import annotations
 import os
 import pytest
 
-from lawvm.finland.grafter import (
-    route_amendment,
-    _normalize_johtolause_verbs,
-)
+from lawvm.finland.citation_routing import route_amendment
+from lawvm.finland.metadata import _normalize_johtolause_verbs
 from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
     extract_pending_amendment_target_id,
@@ -548,7 +546,7 @@ def test_route_amendment_matches_captured_citation_action(cap: "AmendmentCapture
       "skip_citation_mismatch"  → reason="citation_mismatch_skip"
       ""  (not captured)        → any True result is acceptable
     """
-    from lawvm.finland.grafter import _normalize_johtolause_verbs as _nvn
+    from lawvm.finland.metadata import _normalize_johtolause_verbs as _nvn
 
     johto_norm = _nvn(cap.preamble_raw)
     should_apply, reason = route_amendment(

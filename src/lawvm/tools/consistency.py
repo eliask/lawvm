@@ -267,7 +267,8 @@ def check_one(sid: str) -> ConsistencyResult:
     result = ConsistencyResult(sid=sid)
 
     try:
-        from lawvm.finland.grafter import replay_xml, get_ground_truth_tree
+        from lawvm.finland.corpus import get_ground_truth_tree
+        from lawvm.finland.replay_entrypoint import replay_xml
         from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
         import io
         import contextlib

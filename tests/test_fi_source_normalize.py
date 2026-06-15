@@ -25,7 +25,7 @@ from lawvm.core.semantic_types import (
     SourceNormalizationKind,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.grafter import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.source_normalize import (
     normalize_source_ir,
     source_normalization_fact_finding_kind,

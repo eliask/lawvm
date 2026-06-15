@@ -131,7 +131,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         fake_replay_xml,
     )
     monkeypatch.setattr(
@@ -262,7 +262,7 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
         return SimpleNamespace(findings=())
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         fake_replay_xml,
     )
     monkeypatch.setattr(
@@ -301,7 +301,7 @@ def test_audit_invariants_error_row_marks_status_error(monkeypatch) -> None:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter.replay_xml",
+        "lawvm.finland.replay_entrypoint.replay_xml",
         fake_replay_xml,
     )
     monkeypatch.setattr(

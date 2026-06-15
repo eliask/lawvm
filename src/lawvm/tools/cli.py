@@ -11811,7 +11811,7 @@ def _main_impl() -> None:
 
             uk_replay_main(args)
         elif j == "fi":
-            from lawvm.finland.grafter import replay_xml
+            from lawvm.finland.replay_entrypoint import replay_xml
             from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
             as_of = getattr(args, "as_of", "")

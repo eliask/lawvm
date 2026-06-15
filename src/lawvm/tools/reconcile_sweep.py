@@ -155,7 +155,7 @@ def reconcile_statute(
         statute_id=statute_id, amendment_count=amendment_count, as_of=as_of
     )
     try:
-        from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_entrypoint import replay_xml
         from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
         replayed = call_replay_xml(
@@ -236,10 +236,10 @@ def _memoized_provision_replay():
     Only calls with no sinks are cached; evidence-collecting calls fall through
     to the real function.
     """
-    from lawvm.finland import grafter
+    from lawvm.finland import replay_entrypoint
 
-    real = grafter.replay_xml
-    mutable_grafter = cast(Any, grafter)
+    real = replay_entrypoint.replay_xml
+    mutable_entrypoint = cast(Any, replay_entrypoint)
     cache: dict[tuple[object, ...], object] = {}
 
     def _wrapped(*, request, sinks=None):
@@ -265,11 +265,11 @@ def _memoized_provision_replay():
             return cache[key]
         return real(request=request, sinks=sinks)
 
-    mutable_grafter.replay_xml = _wrapped
+    mutable_entrypoint.replay_xml = _wrapped
     try:
         yield
     finally:
-        mutable_grafter.replay_xml = real
+        mutable_entrypoint.replay_xml = real
         cache.clear()
 
 

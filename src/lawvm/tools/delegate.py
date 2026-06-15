@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 def main(args: "argparse.Namespace") -> None:
     from lawvm.finland.delegation import extract_delegations, extract_asetus_authority
-    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.corpus import get_corpus
 
     sid = args.statute_id
     cs = get_corpus()

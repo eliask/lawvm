@@ -4,7 +4,7 @@ Regression tests for BASE_UNNUMBERED_PARAGRAPH_PEER and LABEL_EID_DIVERGENCE.
 """
 
 from lawvm.corpus_store import get_corpus_store
-from lawvm.finland.grafter import XMLStatute
+from lawvm.finland.xml_statute import XMLStatute
 from lawvm.finland.xml_ir import (
     detect_unnumbered_paragraph_peers,
     detect_label_eid_divergence,

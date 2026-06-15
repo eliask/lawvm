@@ -38,12 +38,12 @@ from lawvm.tools.section_keys import (
 )
 from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_bare_section_stub
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-from lawvm.finland.grafter import (
+from lawvm.finland.corpus import (
     _oracle_version_label,
     get_consolidated_oracle_context,
     get_corpus,
-    replay_xml,
 )
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 

@@ -1056,7 +1056,7 @@ def test_classify_statute_treats_oracle_version_mid_future_effective_as_oracle_s
 
 def test_cutoff_witness_matches_mixed_oracle_section_for_2016_258() -> None:
     from tests.corpus_pin_helpers import pinned_replay
-    from lawvm.finland.grafter import get_ground_truth_tree
+    from lawvm.finland.corpus import get_ground_truth_tree
 
     replay = pinned_replay("2016/258", mode="official_consolidation", quiet=True)
     oracle_root = get_ground_truth_tree("2016/258")

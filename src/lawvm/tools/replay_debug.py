@@ -18,7 +18,7 @@ from lxml import etree
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
-from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from lawvm.tools.ops import _fmt_target, _matches_source, _matches_target
 from lawvm.finland.corpus import get_corpus

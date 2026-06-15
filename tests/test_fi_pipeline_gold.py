@@ -22,10 +22,8 @@ import pytest
 
 from lawvm.core.pipeline_capture import AmendmentCapture, CaptureStore
 from lawvm.corpus_store import get_corpus_store
-from lawvm.finland.grafter import (
-    get_johtolause,
-    _extract_kumotaan_section_refs,
-)
+from lawvm.finland.kumotaan import _extract_kumotaan_section_refs
+from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.citation_routing import _johtolause_references_parent
 from lawvm.finland.johtolause import extract_legal_ops
 

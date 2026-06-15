@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 from lxml import etree
 
-from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.compile_result import StrictProfile
@@ -34,84 +34,112 @@ from lawvm.finland.kumotaan import (
     _extract_muutetaan_chapter_section_map,
     kumotaan_recycle_guard_result,
 )
-from lawvm.finland.ops import _build_canonical_intent
+from lawvm.finland.amendment_chapter_precreate import _pre_create_amendment_chapters
+from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
+from lawvm.finland.apply_payload_ops import (
+    _find_amend_paragraph,
+    _has_single_intro_numbered_item_list_ir,
+)
+from lawvm.finland.apply_runtime_support import _snapshot_op_source
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.frontend_observations import (
+    _duplicate_frontend_target_observations,
+    _scope_anchor_dependence_observations,
+    _semantic_collapse_move_or_renumber_observations,
+)
+from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.future_repeal_prescan import (
+    PreScanRepealTargetsRequest,
+    PreScanRepealTargetsSinks,
+    _pre_scan_repeal_targets,
+)
+from lawvm.finland.group_ops import stabilize_insert_order as _stabilize_insert_order
+from lawvm.finland.group_plan import (
+    coalesce_same_target_mixed_scope_section_groups as _coalesce_same_target_mixed_scope_section_groups_impl,
+)
+from lawvm.finland.johto_scope_mentions import (
+    collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels,
+)
+from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
+from lawvm.finland.johtolause_supplements import (
+    _supplement_missing_repeals_after_item_shift_clause,
+    _supplement_named_table_row_mixed_clause_ops,
+    _tag_explicit_item_shift_after_repeal_hints,
+    _tag_named_table_row_single_clause_ops,
+)
+from lawvm.finland.kumotaan import _extract_kumotaan_section_refs
+from lawvm.finland.kumotaan_replay import _rewrite_kumotaan_snapshot_replaces_to_repeal
+from lawvm.finland.lowering_scope_recovery import (
+    allow_unscoped_live_section_retarget as _allow_unscoped_live_section_retarget,
+)
+from lawvm.finland.merge import (
+    _is_suspicious_partial_section_replace_ir,
+    _merge_letter_item_from_content_subsection_ir,
+    _merge_letter_item_into_content_only_subsection_ir,
+    _merge_section_with_omission_ir,
+    _merge_sparse_alakohta_insert_ir,
+    _merge_sparse_alakohta_replace_ir,
+)
+from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.normalize import (
+    _dedupe_fallback_ops_ir,
+    _extract_insert_subsection_ops_fallback,
+    _extract_replace_ops_from_muutetaan_tail,
+    _extract_root_insert_ops_fallback,
+    _extract_root_replace_ops_from_body_fallback,
+    parse_ops_fallback_heuristic,
+    parse_ops_fallback_heuristic_with_coverage,
+)
+from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.replay_findings import (
+    _apply_mutation_boundary_violation_finding,
+    _serialize_apply_mutation_event,
+)
+from lawvm.finland.replay_horizon import (
+    oracle_version_future_repeal_only_uses_cutoff_date as _oracle_version_future_repeal_only_uses_cutoff_date,
+)
 from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+from lawvm.finland.restructure_plan import (
+    resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
+)
+from lawvm.finland.scope import (
+    assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause,
+    chapter_chunks_from_johtolause as _chapter_chunks_from_johtolause,
+    find_body_section_chapter as _find_body_section_chapter,
+    restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent,
+    retarget_duplicate_body_section_scope_from_close_live_siblings as _retarget_duplicate_body_section_scope_from_close_live_siblings,
+    strip_unjustified_chapter_scope_from_unique_sections as _strip_unjustified_chapter_scope_from_unique_sections,
+)
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
+from lawvm.finland.standalone_targets import (
+    build_standalone_section_targets as _build_standalone_section_targets,
+    group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
+    group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
+)
+from lawvm.finland.temporal_rewrites import (
+    _rewrite_compiled_op_activation_rule_effective_for_addresses,
+    _rewrite_later_effective_lo_groups,
+    _rewrite_lo_op_source_effective,
+)
 from lawvm.finland.payload_normalize import (
     _container_pruning_is_expected_heading_only,
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
 )
-from lawvm.finland.grafter_uncovered import _collect_johto_mentioned_section_labels
-from lawvm.finland.grafter import (
-    AmendmentOp,
-    FailedOp,
-    IRNode,
-    RepealTargetRef,
-    ResolvedOp,
-    _allow_unscoped_live_section_retarget,
-    _pre_create_amendment_chapters,
-    _assign_chapter_scope_from_johtolause,
-    _apply_ops_to_tree_typed,
-    _BuildGroupSurfaceRequest,
-    _build_group_surface,
-    _coalesce_same_target_mixed_scope_section_groups,
-    _chapter_chunks_from_johtolause,
-    _compile_group_typed,
-    _dedupe_fallback_ops_ir,
-    _build_standalone_section_targets,
-    _ElaborateGroupRequest,
-    _elaborate_group,
-    _apply_mutation_boundary_violation_finding,
-    _serialize_apply_mutation_event,
-    _duplicate_frontend_target_observations,
-    _drop_payloadless_source_replace_shadowed_by_same_group_relabel,
-    _oracle_version_future_repeal_only_uses_cutoff_date,
-    _scope_anchor_dependence_observations,
-    _semantic_collapse_move_or_renumber_observations,
-    _extract_root_replace_ops_from_body_fallback,
-    _find_amend_paragraph,
-    _find_muutos_ir,
-    PreScanRepealTargetsRequest,
-    PreScanRepealTargetsSinks,
-    _pre_scan_repeal_targets,
-    _prune_container_payload_sections_shadowed_by_standalone_targets,
-    _retarget_duplicate_body_section_scope_from_close_live_siblings,
-    _strip_unjustified_chapter_scope_from_unique_sections,
-    _extract_root_insert_ops_fallback,
-    _extract_insert_subsection_ops_fallback,
-    _extract_kumotaan_section_refs,
-    _group_shadow_pruning_section_targets,
-    _group_shadow_pruning_foreign_scoped_section_targets,
-    _has_single_intro_numbered_item_list_ir,
-    _is_suspicious_partial_section_replace_ir,
-    _merge_section_with_omission_ir,
-    _merge_sparse_alakohta_insert_ir,
-    _merge_sparse_alakohta_replace_ir,
-    _merge_letter_item_into_content_only_subsection_ir,
-    _merge_letter_item_from_content_subsection_ir,
-    _stabilize_insert_order,
-    _restrict_sec1_fallback_to_parent,
-    _resolved_op_is_owned_by_restructure_plan,
-    _rewrite_kumotaan_snapshot_replaces_to_repeal,
-    _rewrite_later_effective_lo_groups,
-    _rewrite_compiled_op_activation_rule_effective_for_addresses,
-    _rewrite_lo_op_source_effective,
-    _snapshot_op_source,
-    _supplement_named_table_row_mixed_clause_ops,
-    _tag_named_table_row_single_clause_ops,
-    _supplement_missing_repeals_after_item_shift_clause,
-    _tag_explicit_item_shift_after_repeal_hints,
-    _extract_replace_ops_from_muutetaan_tail,
-    extract_johtolause_legal_ops,
-    get_corpus,
-    get_johtolause,
-    parse_ops_fallback_heuristic,
-    parse_ops_fallback_heuristic_with_coverage,
-    process_muutoslaki as _process_muutoslaki_typed,
+from lawvm.finland.process_pipeline import process_muutoslaki as _process_muutoslaki_typed
+from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
+from lawvm.finland.compile_group_surface import (
+    BuildGroupSurfaceRequest as _BuildGroupSurfaceRequest,
+    build_group_surface as _build_group_surface,
 )
+from lawvm.finland.compile_group_elaboration import (
+    ElaborateGroupRequest as _ElaborateGroupRequest,
+    _drop_payloadless_source_replace_shadowed_by_same_group_relabel,
+    elaborate_group as _elaborate_group,
+)
+from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from tests.corpus_pin_helpers import replay_xml_for_test as replay_xml
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
@@ -128,21 +156,31 @@ from lawvm.finland.frontend_compile import (
     _extract_enacting_formula_body_replace_ops_fallback,
 )
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
-from lawvm.finland.grafter_uncovered import (
-    FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
-    FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
+from lawvm.finland.apply_resolved_op import FI_APPLY_RESOLVED_OP_RULE_ID
+from lawvm.finland.future_repeal_prescan import (
     PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
-    KumotaanRecoveryRequest,
-    KumotaanRecoverySinks,
-    UncoveredBodyRecoveryFindingRequest,
+    PreScanRepealDiagnostic,
+)
+from lawvm.finland.uncovered_body_recovery import (
     UncoveredBodyRecoveryRequest,
     UncoveredBodyRecoveryResult,
     UncoveredBodyRecoverySinks,
-    PreScanRepealDiagnostic,
+    recover_uncovered_body_ops as _recover_uncovered_body_ops_typed,
+)
+from lawvm.finland.uncovered_kumotaan_recovery import (
+    FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
+    KumotaanRecoveryRequest,
+    KumotaanRecoverySinks,
+    _apply_uncovered_kumotaan_typed,
+)
+from lawvm.finland.uncovered_recovery_findings import (
     _uncovered_body_recovery_finding,
     _uncovered_body_recovery_skipped_finding,
-    _apply_uncovered_kumotaan_typed,
-    _recover_uncovered_body_ops_typed,
+)
+from lawvm.finland.uncovered_recovery_findings import UncoveredBodyRecoveryFindingRequest
+from lawvm.finland.uncovered_recovery_state import (
+    FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
+    UncoveredCandidateAudit,
 )
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.apply import apply_op
@@ -161,6 +199,48 @@ from lawvm.finland.statute import ReplayState, StatuteContext
 from lawvm.finland.restructure_plan import StructuralTransformPlan
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from lawvm.tools.trace_section import build_trace_bundle
+
+
+def _prune_container_payload_sections_shadowed_by_standalone_targets(
+    master: "ReplayState",
+    target_unit_kind: str,
+    target_norm: str,
+    muutos_ir: IRNode | None,
+    standalone_section_targets: set[str],
+):
+    lookups = snapshot_replay_lookups(master)
+    return _prune_container_payload_sections_shadowed_by_standalone_targets_impl(
+        build_payload_elaboration_context(
+            snapshot_target_context(
+                master,
+                target_unit_kind,
+                target_norm,
+                None,
+                lookups,
+            ),
+            lookups,
+        ),
+        target_unit_kind,
+        target_norm,
+        muutos_ir,
+        standalone_section_targets,
+    )
+
+
+def _coalesce_same_target_mixed_scope_section_groups(
+    section_groups,
+    *,
+    master: "ReplayState",
+    muutos_tree: etree._Element,
+):
+    return _coalesce_same_target_mixed_scope_section_groups_impl(
+        section_groups,
+        master=master,
+        find_body_section_chapter=lambda target_norm: _find_body_section_chapter(
+            muutos_tree,
+            target_norm,
+        ),
+    )
 
 
 def _recover_uncovered_body_ops(
@@ -706,6 +786,156 @@ def test_process_muutoslaki_ignores_preseeded_compat_sinks_when_building_finding
     assert len(preseeded_failed_ops) == 1
 
 
+def test_apply_ops_to_tree_preserves_uncovered_candidate_audits(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        b'<akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"><body /></akn>'
+    )
+    ops = [
+        AmendmentOp(
+            op_id="phase2_replace_7",
+            op_type="REPLACE",
+            target_section="7",
+            target_unit_kind="section",
+            source_statute="1996/1261",
+        )
+    ]
+
+    def fake_recover_uncovered_body_ops_typed(*_args, **_kwargs):
+        return UncoveredBodyRecoveryResult(
+            recovered_ops=(),
+            candidate_audits=(
+                UncoveredCandidateAudit(
+                    section="7",
+                    chapter="3",
+                    part="",
+                    disposition="SKIP",
+                    reason="johto_guard",
+                ),
+            ),
+        )
+
+    def fake_apply_uncovered_kumotaan_typed(request, _sinks):
+        return SimpleNamespace(state=request.state)
+
+    monkeypatch.setattr(
+        "lawvm.finland.apply_supplemental_recovery.recover_uncovered_body_ops",
+        fake_recover_uncovered_body_ops_typed,
+    )
+    monkeypatch.setattr(
+        "lawvm.finland.apply_supplemental_recovery._apply_uncovered_kumotaan_typed",
+        fake_apply_uncovered_kumotaan_typed,
+    )
+    observations: list[dict[str, object]] = []
+
+    _apply_ops_to_tree_typed(
+        ApplyOpsRequest(
+            state=state,
+            ctx=ctx,
+            resolved=[],
+            ops=ops,
+            muutos_tree=muutos_tree,
+            johto="",
+            amendment_id="1996/1261",
+            source_title="",
+            amendment_issue_date=None,
+            amendment_effective_date=None,
+            amendment_expiry_date=None,
+            replay_mode=cast(Any, "legal_pit"),
+            strict_profile=None,
+            vts_ops_enrich_done=False,
+        ),
+        ApplyOpsSinks(observations_out=observations),
+    )
+
+    assert observations == [
+        {
+            "kind": "APPLY.UNCOVERED_BODY_CANDIDATE_AUDIT",
+            "source_statute": "1996/1261",
+            "detail": {
+                "rule_id": FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
+                "target_section": "7",
+                "target_chapter": "3",
+                "target_part": "",
+                "disposition": "SKIP",
+                "reason": "johto_guard",
+            },
+        }
+    ]
+
+
+def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        b'<akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"><body /></akn>'
+    )
+    op = AmendmentOp(
+        op_id="replace_7",
+        op_type="REPLACE",
+        target_section="7",
+        target_unit_kind="section",
+        source_statute="1996/1261",
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="7", text="new text"),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter=None,
+    )
+
+    def fake_apply_op(*args, **_kwargs):
+        return args[0]
+
+    monkeypatch.setattr("lawvm.finland.apply_resolved_op.apply_op", fake_apply_op)
+    observations: list[dict[str, object]] = []
+
+    _apply_ops_to_tree_typed(
+        ApplyOpsRequest(
+            state=state,
+            ctx=ctx,
+            resolved=[rop],
+            ops=[op],
+            muutos_tree=muutos_tree,
+            johto="muutetaan 7 §",
+            amendment_id="1996/1261",
+            source_title="",
+            amendment_issue_date=None,
+            amendment_effective_date=None,
+            amendment_expiry_date=None,
+            replay_mode=cast(Any, "legal_pit"),
+            strict_profile=None,
+            vts_ops_enrich_done=False,
+        ),
+        ApplyOpsSinks(observations_out=observations),
+    )
+
+    apply_audits = [
+        observation
+        for observation in observations
+        if observation.get("kind") == "APPLY.RESOLVED_OP_AUDIT"
+    ]
+    assert apply_audits == [
+        {
+            "kind": "APPLY.RESOLVED_OP_AUDIT",
+            "source_statute": "1996/1261",
+            "detail": {
+                "rule_id": FI_APPLY_RESOLVED_OP_RULE_ID,
+                "op_id": "replace_7",
+                "description": "REPLACE 7 §",
+                "target_unit_kind": "section",
+                "target_norm": "7",
+                "target_chapter": "",
+                "target_part": "",
+                "disposition": "APPLIED",
+            },
+        }
+    ]
+
+
 def _base_process_muutoslaki_xml() -> bytes:
     return """
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -773,9 +1003,9 @@ def test_process_muutoslaki_flags_missing_temporal_coverage(monkeypatch) -> None
     def fake_apply_ops_to_tree_typed(request, _sinks):
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
     mutation_events: list[ApplyMutationEvent] = []
 
     result = process_muutoslaki(
@@ -825,9 +1055,9 @@ def test_process_muutoslaki_carries_cao_violation_into_findings(monkeypatch) -> 
     def fake_apply_ops_to_tree_typed(request, _sinks):
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -871,9 +1101,9 @@ def test_process_muutoslaki_does_not_flag_when_temporal_coverage_matches(monkeyp
     def fake_apply_ops_to_tree_typed(request, _sinks):
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
     mutation_events: list[ApplyMutationEvent] = []
 
     result = process_muutoslaki(
@@ -913,9 +1143,9 @@ def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
     def fake_apply_ops_to_tree_typed(request, _sinks):
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -969,9 +1199,9 @@ def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> N
     def fake_apply_ops_to_tree_typed(request, _sinks):
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1993/949",
@@ -1056,13 +1286,13 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
         )
         return state_arg
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
     monkeypatch.setattr(
-        "lawvm.finland.grafter._recover_uncovered_body_ops_typed",
+        "lawvm.finland.apply_supplemental_recovery.recover_uncovered_body_ops",
         fake_recover_uncovered_body_ops_typed,
     )
-    monkeypatch.setattr("lawvm.finland.grafter.apply_op", fake_apply_op)
+    monkeypatch.setattr("lawvm.finland.apply_resolved_op.apply_op", fake_apply_op)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1105,9 +1335,9 @@ def test_process_muutoslaki_projects_apply_mutation_findings_from_typed_invarian
         )
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1154,9 +1384,9 @@ def test_process_muutoslaki_projects_governed_apply_fallback_findings(monkeypatc
         )
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1206,9 +1436,9 @@ def test_process_muutoslaki_projects_scope_confidence_global_fallback_as_apply_f
         )
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1263,9 +1493,9 @@ def test_process_muutoslaki_projects_same_wave_migration_rebase_apply_fallback(m
         )
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1322,9 +1552,9 @@ def test_process_muutoslaki_projects_resolver_binding_contract_error(monkeypatch
         )
         return request.state
 
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
 
     result = process_muutoslaki(
         "1996/1261",
@@ -1385,8 +1615,8 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
         )
         return state
 
-    monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-    monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
 
     result = replay_xml(
         "1996/1261",
@@ -1478,8 +1708,8 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
         )
         return state
 
-    monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-    monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
 
     result = replay_xml(
         "1996/1261",
@@ -1568,8 +1798,8 @@ def test_replay_xml_projects_base_tail_prose_absorb_fact() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     try:
-        monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-        monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
         result = replay_xml(
             "1996/1261",
             mode="legal_pit",
@@ -1634,8 +1864,8 @@ def test_replay_xml_projects_base_num_in_intro_normalization_facts() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     try:
-        monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-        monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
         result = replay_xml(
             "1996/1261",
             mode="legal_pit",
@@ -1722,8 +1952,8 @@ def test_replay_xml_projects_shape_rewrite_normalization_facts() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     try:
-        monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-        monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
         result = replay_xml(
             "1996/1261",
             mode="legal_pit",
@@ -1805,8 +2035,8 @@ def test_replay_xml_projects_editorial_and_numbering_family_facts() -> None:
 
     monkeypatch = pytest.MonkeyPatch()
     try:
-        monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
-        monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.prepare_replay_plan", fake_prepare_replay_plan)
+        monkeypatch.setattr("lawvm.finland.replay_entrypoint.execute_replay_plan", fake_execute_replay_plan)
         result = replay_xml(
             "1996/1261",
             mode="legal_pit",
@@ -5623,8 +5853,8 @@ def test_apply_ops_to_tree_does_not_use_unique_global_snapshot_hint_for_scoped_s
     ):
         seen["path_hint"] = kwargs.get("path_hint")
 
-    monkeypatch.setattr("lawvm.finland.grafter.apply_op", fake_apply_op)
-    monkeypatch.setattr("lawvm.finland.grafter._emit_section_snapshot", fake_emit_section_snapshot)
+    monkeypatch.setattr("lawvm.finland.apply_resolved_op.apply_op", fake_apply_op)
+    monkeypatch.setattr("lawvm.finland.apply_group_replay._emit_section_snapshot", fake_emit_section_snapshot)
 
     apply_ops_to_tree(
         state,
@@ -5709,8 +5939,8 @@ def test_apply_ops_to_tree_uses_cross_chapter_global_fallback_for_root_level_sec
     ):
         seen["path_hint"] = kwargs.get("path_hint")
 
-    monkeypatch.setattr("lawvm.finland.grafter.apply_op", fake_apply_op)
-    monkeypatch.setattr("lawvm.finland.grafter._emit_section_snapshot", fake_emit_section_snapshot)
+    monkeypatch.setattr("lawvm.finland.apply_resolved_op.apply_op", fake_apply_op)
+    monkeypatch.setattr("lawvm.finland.apply_group_replay._emit_section_snapshot", fake_emit_section_snapshot)
 
     apply_ops_to_tree(
         state,
@@ -6320,10 +6550,10 @@ def test_process_muutoslaki_projects_vts_skipped_targets_as_findings(monkeypatch
         )
         return []
 
-    monkeypatch.setattr("lawvm.finland.grafter.extract_vts_repeals_fallback", fake_extract_vts_repeals_fallback)
-    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
-    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
-    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", lambda request, _sinks: request.state)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.extract_vts_repeals_fallback", fake_extract_vts_repeals_fallback)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.normalize_and_compile_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
+    monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
+    monkeypatch.setattr("lawvm.finland.process_pipeline._apply_ops_to_tree_typed", lambda request, _sinks: request.state)
 
     phase = process_muutoslaki(
         "1996/1261",
@@ -6384,23 +6614,23 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     class _Selector:
         mode = SimpleNamespace(value="latest_cached_editorial")
 
-    import lawvm.finland.grafter as grafter_mod
+    import lawvm.finland.amendment_selection as selection_mod
 
-    orig_children = grafter_mod._amendment_children_by_parent
-    orig_reflected = grafter_mod.get_consolidated_oracle_reflected_source_vts_children
+    orig_children = selection_mod.amendment_children_by_parent
+    orig_reflected = selection_mod.get_consolidated_oracle_reflected_source_vts_children
     try:
-        grafter_patch = cast(Any, grafter_mod)
-        grafter_patch._amendment_children_by_parent = lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]}
-        grafter_patch.get_consolidated_oracle_reflected_source_vts_children = lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
-        records, cutoff_date, oracle_version = grafter_mod._resolve_applicable_amendment_records(
+        selection_patch = cast(Any, selection_mod)
+        selection_patch.amendment_children_by_parent = lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]}
+        selection_patch.get_consolidated_oracle_reflected_source_vts_children = lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
+        records, cutoff_date, oracle_version = selection_mod.resolve_applicable_amendment_records(
             "1986/506",
             "legal_pit",
             corpus=corpus,
             selector=cast(Any, _Selector()),
         )
     finally:
-        grafter_mod._amendment_children_by_parent = orig_children
-        grafter_mod.get_consolidated_oracle_reflected_source_vts_children = orig_reflected
+        selection_mod.amendment_children_by_parent = orig_children
+        selection_mod.get_consolidated_oracle_reflected_source_vts_children = orig_reflected
 
     assert oracle_version == "1994/1264"
     assert cutoff_date == dt.date(2025, 1, 1)
@@ -8243,7 +8473,7 @@ def test_uncovered_body_skips_sections_owned_by_whole_chapter_insert() -> None:
 
 
 def test_uncovered_body_records_future_repeal_skip_finding() -> None:
-    from lawvm.finland.grafter import RepealTargetRef
+    from lawvm.finland.future_repeal import RepealTargetRef
 
     state = ReplayState(
         ir=IRNode(
@@ -8299,7 +8529,7 @@ def test_uncovered_body_records_future_repeal_skip_finding() -> None:
 
 
 def test_uncovered_body_records_future_repeal_skip_finding_when_chapter_adopt_is_suppressed() -> None:
-    from lawvm.finland.grafter import RepealTargetRef
+    from lawvm.finland.future_repeal import RepealTargetRef
 
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
@@ -8434,7 +8664,7 @@ def test_uncovered_body_surfaces_unresolved_coverage_gap_obligations(monkeypatch
             ),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.analyze_coverage", _fake_analyze_coverage)
+    monkeypatch.setattr("lawvm.finland.uncovered_body_recovery.analyze_coverage", _fake_analyze_coverage)
 
     findings_out: list[Finding] = []
     rops = _recover_uncovered_body_ops(
@@ -8684,7 +8914,7 @@ def test_uncovered_body_chapter_payload_ownership_requires_subtree_claim(monkeyp
             )
         ]
 
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.assign_body_units_subtree_aware", _fake_assignments)
+    monkeypatch.setattr("lawvm.finland.uncovered_body_recovery.assign_body_units_subtree_aware", _fake_assignments)
 
     findings_out: list[Finding] = []
     rops = _recover_uncovered_body_ops(
@@ -10421,11 +10651,11 @@ def test_pre_scan_repeal_targets_accepts_parent_title_for_vts_scan(monkeypatch) 
         seen.append(parent_title)
         return []
 
-    # _pre_scan_repeal_targets lives in grafter_uncovered, which has its own
+    # _pre_scan_repeal_targets lives in future_repeal_prescan, which has its own
     # `from lawvm.finland.vts import extract_voimaantulo_repeals` binding.
     # Patching the grafter re-export does not affect that module's lookup.
     monkeypatch.setattr(
-        "lawvm.finland.grafter_uncovered.extract_voimaantulo_repeals",
+        "lawvm.finland.future_repeal_prescan.extract_voimaantulo_repeals",
         _fake_extract,
     )
     corpus = _corpus_store(
@@ -10488,7 +10718,7 @@ def test_pre_scan_repeal_targets_preserves_vts_skipped_targets(monkeypatch) -> N
         return []
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter_uncovered.extract_voimaantulo_repeals",
+        "lawvm.finland.future_repeal_prescan.extract_voimaantulo_repeals",
         _fake_extract,
     )
     corpus = _corpus_store(
@@ -10578,7 +10808,7 @@ def test_pre_scan_repeal_targets_records_vts_extraction_exception(monkeypatch) -
         raise ValueError("synthetic vts failure")
 
     monkeypatch.setattr(
-        "lawvm.finland.grafter_uncovered.extract_voimaantulo_repeals",
+        "lawvm.finland.future_repeal_prescan.extract_voimaantulo_repeals",
         _raise_vts_error,
     )
     diagnostics: list[PreScanRepealDiagnostic] = []
@@ -11357,7 +11587,7 @@ def test_subsection_replace_uses_label_not_position_current_apply_path() -> None
     # assertion here so the older grafter regression family still points at the
     # current executor path instead of the deleted grafter_simple module.
     from lawvm.core.tree_ops import resolve as tree_resolve
-    from tests.test_apply import _FINLEX_ORACLE, _body, _content, _make_state, _modified, _op, _sec, _sub
+    from tests.test_fi_apply import _FINLEX_ORACLE, _body, _content, _make_state, _modified, _op, _sec, _sub
     from lawvm.finland.apply_subsection_ops import _apply_subsection_replace
 
     sec = _sec(
@@ -12390,7 +12620,7 @@ def test_recover_uncovered_body_ops_quiet_replay_suppresses_high_uncovered_warni
 
     token = set_replay_verbose(False)
     try:
-        with caplog.at_level(logging.WARNING, logger="lawvm.finland.grafter_uncovered"):
+        with caplog.at_level(logging.WARNING, logger="lawvm.finland.uncovered_body_recovery"):
             _recover_uncovered_body_ops(
                 state,
                 ctx,
@@ -13336,13 +13566,13 @@ def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum
 def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber_lo() -> None:
     from lawvm.core.ir import LegalAddress
     from lawvm.core.provenance import MigrationEvent
-    from lawvm.finland.grafter import (
+    from lawvm.finland.restructure_plan_replay import (
         FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID,
-        _emit_restructure_plan_renumber_legal_operations,
+        emit_restructure_plan_renumber_legal_operations,
     )
 
     lo_ops: list[LegalOperation] = []
-    emitted = _emit_restructure_plan_renumber_legal_operations(
+    emitted = emit_restructure_plan_renumber_legal_operations(
         lo_ops_out=lo_ops,
         migration_events=(
             MigrationEvent(
@@ -13371,17 +13601,17 @@ def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber
 def test_build_chapter_part_move_timeline_ops_stamps_stable_witness_rule_id() -> None:
     from lawvm.core.ir import IRNode, LegalAddress, OperationSource
     from lawvm.core.semantic_types import IRNodeKind
-    from lawvm.finland.grafter import (
+    from lawvm.finland.restructure_plan_replay import (
+        ChapterPartMoveTimelineRequest,
         FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID,
-        _ChapterPartMoveTimelineRequest,
-        _build_chapter_part_move_timeline_ops,
+        build_chapter_part_move_timeline_ops,
     )
 
     chapter = IRNode(kind=IRNodeKind.CHAPTER, label="2", children=())
     source = OperationSource(statute_id="1994/318", title="Test", enacted="", effective="")
 
-    ops = _build_chapter_part_move_timeline_ops(
-        _ChapterPartMoveTimelineRequest(
+    ops = build_chapter_part_move_timeline_ops(
+        ChapterPartMoveTimelineRequest(
             amendment_id="1994/318",
             chapter_label="2",
             old_part_label="I",

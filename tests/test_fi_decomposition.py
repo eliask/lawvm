@@ -33,15 +33,12 @@ from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetContext, snapshot_target_context
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.finland.grafter import (
-    AmendmentOp,
-    ResolvedOp,
-    _apply_ops_to_tree_typed,
-    compile_amendment_ops,
-    normalize_and_compile_ops,
-    post_process_tree,
-    process_muutoslaki,
-)
+from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
+from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.frontend_compile import normalize_and_compile_ops
+from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.process_pipeline import process_muutoslaki
+from lawvm.finland.post_process import post_process_tree
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
 from lawvm.finland.process_call import ResolvedProcessAmendmentCall
@@ -172,7 +169,7 @@ def test_process_muutoslaki_adapter_passes_resolved_call(monkeypatch: pytest.Mon
         captured.append(call)
         return PhaseResult(output=call.state)
 
-    monkeypatch.setattr("lawvm.finland.grafter._process_muutoslaki_resolved", fake_resolved)
+    monkeypatch.setattr("lawvm.finland.process_pipeline.process_muutoslaki_resolved", fake_resolved)
 
     result = process_muutoslaki(
         ProcessAmendmentRequest(
@@ -2077,7 +2074,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2124,7 +2121,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2181,7 +2178,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2243,7 +2240,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2295,7 +2292,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2355,7 +2352,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.compile_amendment._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,

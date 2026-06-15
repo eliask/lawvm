@@ -1,0 +1,84 @@
+"""Candidate iteration policy for Finnish uncovered-body recovery."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Optional, Protocol, Tuple, cast
+
+import lxml.etree as etree
+
+from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.ops import AmendmentOp
+
+
+class UncoveredCandidateProcessor(Protocol):
+    """The mutation surface needed by candidate iteration."""
+
+    def record_skip(
+        self,
+        reason: str,
+        label: str,
+        amend_chapter_label: Optional[str],
+        amend_part_label: Optional[str] = None,
+    ) -> None: ...
+
+    def process_section_candidate(
+        self,
+        sec: etree._Element,
+        label: str,
+        amend_chapter_label: Optional[str],
+    ) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PegOwnedSectionTargets:
+    """Section targets already owned by PEG-compiled operations."""
+
+    by_chapter: frozenset[Tuple[Optional[str], str]]
+    labels: frozenset[str]
+
+
+def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTargets:
+    """Return section labels already owned by deterministic PEG output."""
+    targeted_sections: set[Tuple[Optional[str], str]] = set()
+    targeted_labels: set[str] = set()
+    for op in ops:
+        if op.target_unit_kind == "section" and op.target_section:
+            label = _norm_num_token(op.target_section)
+            targeted_sections.add((op.target_chapter, label))
+            targeted_labels.add(label)
+    return PegOwnedSectionTargets(
+        by_chapter=frozenset(targeted_sections),
+        labels=frozenset(targeted_labels),
+    )
+
+
+def run_uncovered_candidate_iteration(
+    *,
+    supplemental_candidates: Iterable[object],
+    peg_owned_targets: PegOwnedSectionTargets,
+    processor: UncoveredCandidateProcessor,
+) -> None:
+    """Enumerate coverage gaps and dispatch valid section candidates.
+
+    Non-section gaps and malformed gap records are ignored. PEG-owned sections
+    are recorded as explicit skip findings because deterministic PEG output
+    outranks uncovered-body recovery.
+    """
+    for gap in supplemental_candidates:
+        unit = getattr(gap, "unit", None)
+        if unit is None or getattr(unit, "kind", None) != "section":
+            continue
+        section_el = getattr(unit, "payload_ref", None)
+        if section_el is None:
+            continue
+        label = getattr(unit, "observed_label", "") or ""
+        if not label:
+            continue
+        chapter = getattr(unit, "parent_label", None)
+        if (chapter, label) in peg_owned_targets.by_chapter:
+            processor.record_skip("peg_owned_same_chapter", label, chapter)
+            continue
+        if label in peg_owned_targets.labels:
+            processor.record_skip("peg_owned_label_collision", label, chapter)
+            continue
+        processor.process_section_candidate(cast(etree._Element, section_el), label, chapter)

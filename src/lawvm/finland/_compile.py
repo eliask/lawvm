@@ -887,7 +887,7 @@ def compile_fi_facade(
     execution directly and returns the shared `CompileFacade` without
     reconstructing a second Finland-specific dossier carrier.
     """
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     compiled_ops: List[Dict[str, object]] = []

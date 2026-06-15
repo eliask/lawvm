@@ -142,6 +142,26 @@ def _project_replay_meta(request: ReplayEvidenceProjectionRequest) -> None:
         ]
     if request.elaboration_observations:
         replay_meta_out["elaboration_observations"] = list(request.elaboration_observations)
+    uncovered_candidate_audits = [
+        {
+            "source_statute": str(observation.get("source_statute", "") or ""),
+            **_detail_dict(observation),
+        }
+        for observation in request.elaboration_observations
+        if str(observation.get("kind", "") or "") == "APPLY.UNCOVERED_BODY_CANDIDATE_AUDIT"
+    ]
+    if uncovered_candidate_audits:
+        replay_meta_out["uncovered_body_candidate_audits"] = uncovered_candidate_audits
+    apply_resolved_op_audits = [
+        {
+            "source_statute": str(observation.get("source_statute", "") or ""),
+            **_detail_dict(observation),
+        }
+        for observation in request.elaboration_observations
+        if str(observation.get("kind", "") or "") == "APPLY.RESOLVED_OP_AUDIT"
+    ]
+    if apply_resolved_op_audits:
+        replay_meta_out["apply_resolved_op_audits"] = apply_resolved_op_audits
     if request.sparse_slot_bindings:
         replay_meta_out["sparse_slot_bindings"] = list(request.sparse_slot_bindings)
     if request.sparse_leftovers:

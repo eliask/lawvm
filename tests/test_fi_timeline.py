@@ -22,7 +22,7 @@ def test_timeline_main_replays_quietly(monkeypatch, capsys) -> None:
             ctx=SimpleNamespace(base_ir=IRNode(kind=IRNodeKind.BODY, children=())),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     timeline.main(
         Namespace(

@@ -473,7 +473,7 @@ def main(args: Any) -> None:
 
 def _run_statute_scope(args: Any, as_of: str, query_type: str) -> None:
     """Whole-statute reconcile: list only diverging sections."""
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
     result = call_replay_xml(

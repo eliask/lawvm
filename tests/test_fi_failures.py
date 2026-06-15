@@ -9,7 +9,7 @@ from lawvm.finland.source_pathology import (
     build_item_target_structure_absent_pathology,
     build_sparse_item_body_missing_pathology,
 )
-from lawvm.finland.grafter import FailedOp
+from lawvm.finland.ops import FailedOp
 from lawvm.tools import failures
 
 

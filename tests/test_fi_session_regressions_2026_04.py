@@ -52,7 +52,7 @@ from lawvm.finland.apply_runtime_support import (
 from lawvm.finland.johtolause.compat import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.statute import ReplayState
-from lawvm.finland.grafter import _resolved_op_is_owned_by_restructure_plan
+from lawvm.finland.restructure_plan import resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan
 from tests.corpus_pin_helpers import pinned_replay
 
 # ---------------------------------------------------------------------------
@@ -1562,7 +1562,7 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
     """
     from lxml import etree
 
-    from lawvm.finland.grafter import get_corpus, normalize_and_compile_ops
+    from lawvm.finland.corpus import get_corpus, normalize_and_compile_ops
 
     from lawvm.tools.inspect_amendment import _working_johtolause
 
@@ -1638,7 +1638,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
     """Real corpus anchor for the active `1992/110 <- 2017/48` chain-drop family."""
     from lxml import etree
 
-    from lawvm.finland.grafter import get_corpus, normalize_and_compile_ops
+    from lawvm.finland.corpus import get_corpus, normalize_and_compile_ops
     from tests.corpus_pin_helpers import pinned_replay
 
     from lawvm.tools.inspect_amendment import _working_johtolause
@@ -1684,7 +1684,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
 
 def test_1994_201_2018_253_does_not_false_repeal_section_3_via_voimaantulo_extraction() -> None:
     """Real corpus anchor for the active `1994/201 <- 2018/253` false-repeal family."""
-    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.corpus import get_corpus
     from lawvm.finland.vts import extract_voimaantulo_repeals
 
     statute_id = "1994/201"
@@ -1858,7 +1858,7 @@ def test_stabilize_chapter_relabel_order_reverses_forward_chain() -> None:
     consumes the just-renamed ch:10 as the ch:12 target, leaving no ch:11.
     The fix reverses the chain so ch:11→12 runs first.
     """
-    from lawvm.finland.grafter import _stabilize_chapter_relabel_order
+    from lawvm.finland.relabel_identity import stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order
 
     r1 = _make_chapter_relabel_rop("10", "11")  # chain head
     r2 = _make_chapter_relabel_rop("11", "12")  # chain tail
@@ -1882,7 +1882,7 @@ def test_stabilize_chapter_relabel_order_with_interleaved_insert() -> None:
     reordered so 11→12 runs before 10→11.  The INSERT stays at its original
     position relative to the RELABEL op slots.
     """
-    from lawvm.finland.grafter import _stabilize_chapter_relabel_order
+    from lawvm.finland.relabel_identity import stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order
 
     r1 = _make_chapter_relabel_rop("10", "11")
     ins = _make_chapter_insert_rop("10")
@@ -1905,7 +1905,7 @@ def test_stabilize_chapter_relabel_order_with_interleaved_insert() -> None:
 
 def test_stabilize_chapter_relabel_order_no_chain_unchanged() -> None:
     """Unrelated relabels (no forward chain) must be left in their original order."""
-    from lawvm.finland.grafter import _stabilize_chapter_relabel_order
+    from lawvm.finland.relabel_identity import stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order
 
     r1 = _make_chapter_relabel_rop("3", "4")   # 3→4
     r2 = _make_chapter_relabel_rop("10", "11")  # 10→11, not a chain with 3→4
@@ -1919,7 +1919,7 @@ def test_stabilize_chapter_relabel_order_no_chain_unchanged() -> None:
 
 def test_stabilize_chapter_relabel_order_single_op_unchanged() -> None:
     """A single chapter-RELABEL op must be returned unchanged."""
-    from lawvm.finland.grafter import _stabilize_chapter_relabel_order
+    from lawvm.finland.relabel_identity import stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order
 
     r1 = _make_chapter_relabel_rop("5", "6")
     reordered = _stabilize_chapter_relabel_order([r1])
@@ -1929,7 +1929,7 @@ def test_stabilize_chapter_relabel_order_single_op_unchanged() -> None:
 
 def test_stabilize_chapter_relabel_order_three_op_chain() -> None:
     """Three-op chain [3→4, 4→5, 5→6] must be reversed to [5→6, 4→5, 3→4]."""
-    from lawvm.finland.grafter import _stabilize_chapter_relabel_order
+    from lawvm.finland.relabel_identity import stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order
 
     r1 = _make_chapter_relabel_rop("3", "4")
     r2 = _make_chapter_relabel_rop("4", "5")

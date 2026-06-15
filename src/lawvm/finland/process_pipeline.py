@@ -1,0 +1,331 @@
+"""Typed per-amendment process pipeline for Finland.
+
+This module owns the end-to-end processing of one amendment act over a replay
+state.  The individual phases remain in the focused ``process_*`` modules; this
+file is only the coordinator that wires acquisition, frontend normalization,
+compile projection, apply, temporal postprocessing, and failed-op governance.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from lawvm.core.phase_result import PhaseResult
+from lawvm.core.mutation_accounting import MutationAccountingResult
+from lawvm.finland.acquisition import amendment_lacks_operative_structure as _amendment_lacks_operative_structure
+from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
+from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
+from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _tree_title, normalize_and_compile_ops
+from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.process_acquisition import ProcessAcquisitionContext
+from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
+from lawvm.finland.process_call import ResolvedProcessAmendmentCall, resolve_process_amendment_call
+from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
+from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
+from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
+from lawvm.finland.process_request import ProcessAmendmentRequest
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+from lawvm.finland.process_runtime import build_process_runtime
+from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
+from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
+from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
+from lawvm.finland.replay_notices import replay_print as _replay_print
+from lawvm.finland.statute import ReplayState
+from lawvm.finland.vts import extract_vts_repeals_fallback
+
+logger = logging.getLogger(__name__)
+
+
+def process_muutoslaki(
+    request: ProcessAmendmentRequest,
+    sinks: ProcessAmendmentSinks | None = None,
+) -> PhaseResult[ReplayState]:
+    """Process one amendment through the typed amendment-processing boundary."""
+
+    return process_muutoslaki_resolved(
+        resolve_process_amendment_call(request, sinks)
+    )
+
+
+def process_muutoslaki_resolved(
+    process_call: ResolvedProcessAmendmentCall,
+) -> PhaseResult[ReplayState]:
+    """Process one amendment statute end-to-end.
+
+    Returns a ``PhaseResult`` where:
+    - ``output`` is the updated replay state after applying this amendment;
+    - ``findings`` carry source pathologies, elaboration observations, replay
+      warnings/rejections, and failed-op obligations;
+    - ``temporal_events`` carry executable amendment temporal authority.
+    """
+
+    amendment_id = process_call.amendment_id
+    state = process_call.state
+    ctx = process_call.ctx
+    replay_mode = process_call.replay_mode
+    compiled_ops_out = process_call.compiled_ops_out
+    lo_ops_out = process_call.lo_ops_out
+    parent_id = process_call.parent_id
+    strict_profile = process_call.strict_profile
+    chapter_seed_skip = process_call.chapter_seed_skip
+    corpus = process_call.corpus
+    future_repeals = process_call.future_repeals
+    regex_recognition_coverage_out = process_call.regex_recognition_coverage_out
+    mutation_events_out = process_call.mutation_events_out
+    write_audits_out = process_call.write_audits_out
+    migration_events_out = process_call.migration_events_out
+    runtime = build_process_runtime(process_call)
+    amendment_temporal_events = runtime.amendment_temporal_events
+    process_findings = runtime.process_findings
+    compat_failed_ops = runtime.compat_failed_ops
+    compat_source_pathologies = runtime.compat_source_pathologies
+    compat_elaboration_observations = runtime.compat_elaboration_observations
+    compat_sparse_slot_bindings = runtime.compat_sparse_slot_bindings
+    compat_sparse_leftovers = runtime.compat_sparse_leftovers
+    commencement_expiry_override_notes = runtime.commencement_expiry_override_notes
+    vts_skipped_targets = runtime.vts_skipped_targets
+    effective_restructure_plans_out = runtime.effective_restructure_plans_out
+    processed_amendment_titles = runtime.processed_amendment_titles
+
+    finding_recorder = runtime.finding_recorder
+    record_process_finding = runtime.record_process_finding
+    corpus = runtime.corpus
+    migration_ledger = runtime.migration_ledger
+    migration_ledger_initial_len = runtime.migration_ledger_initial_len
+    result_builder = runtime.result_builder
+
+    try:
+        xml_bytes = corpus.read_source(amendment_id)
+        if xml_bytes is None:
+            _replay_print(f"  [{amendment_id}] not found in corpus — skipping")
+            return result_builder.build(state)
+        acquired = ProcessAcquisitionContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            parent_title=ctx.title,
+            parent_issue_date=ctx.issue_date,
+            xml_bytes=xml_bytes,
+            strict_profile=strict_profile,
+            processed_amendment_titles=processed_amendment_titles,
+            finding_recorder=finding_recorder,
+            record_finding=record_process_finding,
+            replay_print=_replay_print,
+            tree_title=_tree_title,
+            amendment_lacks_operative_structure=_amendment_lacks_operative_structure,
+        ).acquire()
+        xml_bytes = acquired.xml_bytes
+        muutos_tree = acquired.muutos_tree
+        lacks_operative_structure = acquired.lacks_operative_structure
+        operative_tags = list(acquired.operative_tags)
+        johto = acquired.johto
+        source_title = acquired.source_title
+        acquisition = acquired.acquisition
+        used_sec1_fallback = acquired.used_sec1_fallback
+
+        should_apply = acquisition.decision.should_apply
+        route_reason = acquisition.decision.route_reason
+        ops: list[AmendmentOp] = []
+        vts_ops_enrich_done = False
+        if not should_apply:
+            route_rejection = ProcessRouteRejectionContext(
+                amendment_id=amendment_id,
+                parent_id=parent_id,
+                parent_title=ctx.title,
+                source_title=source_title,
+                johto=johto,
+                xml_bytes=xml_bytes,
+                muutos_tree=muutos_tree,
+                route_reason=route_reason,
+                route_target_amendment_id=acquisition.decision.route_target_amendment_id,
+                strict_profile=strict_profile,
+                replay_mode=replay_mode,
+                lo_ops_out=lo_ops_out,
+                vts_skipped_targets=vts_skipped_targets,
+                commencement_expiry_override_notes=commencement_expiry_override_notes,
+                record_finding=record_process_finding,
+                replay_print=_replay_print,
+            ).handle()
+            if route_rejection.should_return_state:
+                return result_builder.build(state)
+            ops = list(route_rejection.ops)
+            vts_ops_enrich_done = route_rejection.vts_ops_enrich_done
+            skip_to_compile = route_rejection.skip_to_compile
+        else:
+            skip_to_compile = False
+
+        precompile_selection = ProcessPrecompileSelectionContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            parent_title=ctx.title,
+            source_title=source_title,
+            johto=johto,
+            xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
+            strict_profile=strict_profile,
+            acquisition=acquisition,
+            skip_to_compile=skip_to_compile,
+            ops=ops,
+            vts_ops_enrich_done=vts_ops_enrich_done,
+            lacks_operative_structure=lacks_operative_structure,
+            operative_tags=operative_tags,
+            source_pathologies=compat_source_pathologies,
+            vts_skipped_targets=vts_skipped_targets,
+            finding_recorder=finding_recorder,
+            replay_print=_replay_print,
+            extract_vts_repeals=extract_vts_repeals_fallback,
+            enrich_ops_from_amendment_tree=_enrich_ops_from_amendment_tree,
+        ).select()
+        if precompile_selection.should_return_state:
+            return result_builder.build(state)
+        ops = list(precompile_selection.ops)
+        vts_ops_enrich_done = precompile_selection.vts_ops_enrich_done
+
+        if not vts_ops_enrich_done:
+            phase2_result = ProcessFrontendNormalizationContext(
+                johto=johto,
+                muutos_tree=muutos_tree,
+                state=state,
+                base_ir=ctx.base_ir,
+                amendment_id=amendment_id,
+                source_title=source_title,
+                used_sec1_fallback=used_sec1_fallback,
+                parent_id=parent_id,
+                strict_profile=strict_profile,
+                regex_recognition_coverage_out=regex_recognition_coverage_out,
+                normalize_and_compile_ops=normalize_and_compile_ops,
+            ).run()
+            ops = list(phase2_result.ops)
+            amendment_temporal_events.extend(phase2_result.temporal_events)
+            compat_elaboration_observations.extend(phase2_result.elaboration_observations)
+            process_findings.extend(phase2_result.process_findings)
+
+        ops = ProcessStructuralPrepareContext(
+            amendment_id=amendment_id,
+            target_statute=ctx.id,
+            ops=ops,
+            chapter_seed_skip=chapter_seed_skip,
+            restructure_plans=effective_restructure_plans_out,
+            elaboration_observations=compat_elaboration_observations,
+            replay_print=_replay_print,
+        ).prepare()
+
+        temporal_authority = ProcessTemporalAuthorityContext(
+            amendment_id=amendment_id,
+            johto=johto,
+            muutos_tree=muutos_tree,
+            record_finding=record_process_finding,
+        ).derive()
+        amendment_effective_date = temporal_authority.effective_date
+        amendment_expiry_date = temporal_authority.expiry_date
+        amendment_issue_date = temporal_authority.issue_date
+
+        compile_result = compile_amendment_ops(
+            state,
+            ops,
+            muutos_tree,
+            johto,
+            replay_mode,
+            compiled_ops_out=compiled_ops_out,
+            strict_profile=strict_profile,
+            source_ref=amendment_id,
+            source_title=source_title,
+            target_statute=ctx.id,
+        )
+        resolved = compile_result.output
+
+        ProcessCompileSignalsContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            resolved=resolved,
+            compile_result=compile_result,
+            amendment_temporal_events=amendment_temporal_events,
+            source_pathologies=compat_source_pathologies,
+            elaboration_observations=compat_elaboration_observations,
+            sparse_slot_bindings=compat_sparse_slot_bindings,
+            sparse_leftovers=compat_sparse_leftovers,
+            process_findings=process_findings,
+            record_finding=record_process_finding,
+        ).project()
+
+        observed_touch_results: list[MutationAccountingResult] = []
+        final_state = _apply_ops_to_tree_typed(
+            ApplyOpsRequest(
+                state=state,
+                ctx=ctx,
+                resolved=resolved,
+                ops=ops,
+                muutos_tree=muutos_tree,
+                johto=johto,
+                amendment_id=amendment_id,
+                source_title=source_title,
+                amendment_issue_date=amendment_issue_date,
+                amendment_effective_date=amendment_effective_date,
+                amendment_expiry_date=amendment_expiry_date,
+                replay_mode=replay_mode,
+                strict_profile=strict_profile,
+                vts_ops_enrich_done=vts_ops_enrich_done,
+                future_repeals=future_repeals,
+            ),
+            ApplyOpsSinks(
+                compiled_ops_out=compiled_ops_out,
+                lo_ops_out=lo_ops_out,
+                failed_ops_out=compat_failed_ops,
+                source_pathologies_out=compat_source_pathologies,
+                mutation_events_out=mutation_events_out,
+                migration_ledger=migration_ledger,
+                restructure_plans_out=effective_restructure_plans_out,
+                observations_out=compat_elaboration_observations,
+                findings_out=process_findings,
+                observed_touch_results_out=observed_touch_results,
+                write_audits_out=write_audits_out,
+            ),
+        )
+        ProcessApplyProjectionContext(
+            amendment_id=amendment_id,
+            observed_touch_results=observed_touch_results,
+            elaboration_observations=compat_elaboration_observations,
+            migration_ledger=migration_ledger,
+            migration_ledger_initial_len=migration_ledger_initial_len,
+            migration_events_out=migration_events_out,
+            logger=logger,
+        ).project()
+        ProcessTemporalPostprocessContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            ctx_id=ctx.id,
+            source_title=source_title,
+            johto=johto,
+            xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
+            base_ir=ctx.base_ir,
+            state=state,
+            replay_mode=replay_mode,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            lo_ops_out=lo_ops_out,
+            compiled_ops_out=compiled_ops_out,
+            amendment_temporal_events=amendment_temporal_events,
+            commencement_expiry_override_notes=commencement_expiry_override_notes,
+            record_finding=record_process_finding,
+            replay_print=_replay_print,
+        ).run()
+        ProcessFailedOpGovernance(
+            amendment_id=amendment_id,
+            johto=johto,
+            failed_ops=compat_failed_ops,
+            process_findings=process_findings,
+            source_pathologies=compat_source_pathologies,
+            lo_ops=tuple(lo_ops_out or ()),
+            resolved_ops=tuple(resolved),
+            migration_ledger=migration_ledger,
+            migration_ledger_initial_len=migration_ledger_initial_len,
+            record_finding=record_process_finding,
+        ).govern_all(final_state)
+        return result_builder.build(final_state)
+
+    except KeyError:
+        _replay_print(f"  [{amendment_id}] SKIPPED — not found in zip")
+        return result_builder.build(state)

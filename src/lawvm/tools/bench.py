@@ -37,7 +37,7 @@ import Levenshtein
 
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
-from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
@@ -1068,9 +1068,9 @@ def _run_benchmark(
         # @lru_cache; it delegates to corpus_store.oracle_path_index() which
         # caches on the CorpusStore instance.  Calling it here pre-warms that
         # instance-level cache so workers inherit a ready index.
-        from lawvm.finland.grafter import (
+        from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
+        from lawvm.finland.corpus import (
             _get_corpus_store,
-            _amendment_children_by_parent,
             _latest_consolidated_path_by_statute,
         )
 
@@ -2124,7 +2124,7 @@ def _warm_sources(sids: list[str]) -> int:
     """
     from lawvm.corpus_store import get_corpus_store
     from lawvm.corpus_store import statute_url
-    from lawvm.finland.grafter import _amendment_children_by_parent
+    from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
 
     cs = get_corpus_store()
 

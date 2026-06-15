@@ -34,7 +34,7 @@ async def _main(args) -> None:
     from lawvm.core.ir import IRStatute
     from lawvm.core.timeline import materialize_pit
     from lawvm.core.ir_helpers import irnode_to_text as _irnode_to_text
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     sid = args.statute_id

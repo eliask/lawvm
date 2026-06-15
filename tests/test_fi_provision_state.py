@@ -2186,7 +2186,7 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot() -> None:
-    from lawvm.finland.grafter import FailedOp
+    from lawvm.finland.ops import FailedOp
     from tests.corpus_pin_helpers import replay_xml_for_test
 
     failed_ops: list[FailedOp] = []

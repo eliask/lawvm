@@ -175,16 +175,19 @@ def test_build_statute_graph_fi_prefers_replay_owned_timelines(monkeypatch) -> N
                 return None
 
         replay_timelines = {"owned": "timeline"}
-        fake_grafter = types.SimpleNamespace(
+        fake_corpus = types.SimpleNamespace(
             get_corpus=lambda: _Corpus(),
+            _fi_label_postprocessor=lambda kind, label: label,
+        )
+        fake_replay_entrypoint = types.SimpleNamespace(
             replay_xml=lambda sid, lo_ops_out=None: types.SimpleNamespace(
                 title="Test",
                 timelines=replay_timelines,
                 temporal_events=("should-not-matter",),
             ),
-            _fi_label_postprocessor=lambda kind, label: label,
         )
-        monkeypatch.setitem(sys.modules, "lawvm.finland.grafter", fake_grafter)
+        monkeypatch.setitem(sys.modules, "lawvm.finland.corpus", fake_corpus)
+        monkeypatch.setitem(sys.modules, "lawvm.finland.replay_entrypoint", fake_replay_entrypoint)
         monkeypatch.setitem(
             sys.modules,
             "lawvm.finland.amendment_index",

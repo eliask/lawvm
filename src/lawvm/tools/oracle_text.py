@@ -369,7 +369,7 @@ def load_oracle_section(
       - oracle_cutoff_date / oracle_version_amendment_id: provenance
       - error:        present only when found is False
     """
-    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.corpus import get_corpus
     from lawvm.finland.consolidated_artifacts import build_consolidated_main_locator
     from lawvm.finland.corpus import get_consolidated_oracle_context
     from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
@@ -568,7 +568,7 @@ def build_oracle_text_bundle(
         using the structural amendment-version markers in the source XML. The
         default flattened `full_text` is unchanged.
     """
-    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.corpus import get_corpus
     from lawvm.finland.consolidated_artifacts import build_consolidated_main_locator
     from lawvm.finland.corpus import get_consolidated_oracle_context
     from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector

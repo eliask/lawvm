@@ -23,16 +23,13 @@ from typing import Optional, cast
 
 from lxml import etree
 
-from lawvm.finland.grafter import (
-    XMLStatute,
-    get_corpus,
-    _normalize_johtolause_verbs,
-    get_johtolause,
-    parse_ops_fallback_heuristic,
-    AmendmentOp,
-    _assign_chapter_scope_from_johtolause,
-    replay_xml,
-)
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
+from lawvm.finland.normalize import parse_ops_fallback_heuristic
+from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.scope import assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause
+from lawvm.finland.xml_statute import XMLStatute
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids

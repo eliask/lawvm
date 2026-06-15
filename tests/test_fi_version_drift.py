@@ -137,8 +137,8 @@ def test_nearly_perfect_score_returns_none():
     assert result is None
 
 
-@patch("lawvm.finland.grafter._get_corpus_store")
-@patch("lawvm.finland.grafter._resolve_applicable_amendment_records")
+@patch("lawvm.finland.corpus._get_corpus_store")
+@patch("lawvm.finland.amendment_selection.resolve_applicable_amendment_records")
 def test_single_amendment_returns_none(mock_resolve, mock_corpus):
     """Statutes with 0-1 amendments can't detect drift."""
     mock_corpus.return_value = MagicMock()

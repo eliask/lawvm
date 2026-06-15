@@ -292,7 +292,7 @@ def _cmd_verify(sid: str, mode: Literal["official_consolidation", "legal_pit"]) 
     print(f"Verifying {sid} against gold ({gold_date}, {len(gold_provisions)} provisions)...")
 
     # Re-run replay
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     master = call_replay_xml(
         replay_xml,

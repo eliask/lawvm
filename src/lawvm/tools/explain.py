@@ -295,11 +295,9 @@ def _get_pre_blame_sections(
     mode: Literal["official_consolidation", "legal_pit"],
     oracle_selector: ConsolidatedArtifactSelector | None = None,
 ) -> Dict[str, Any]:
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        get_corpus,
-        process_muutoslaki,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.process_pipeline import process_muutoslaki
 
     cs = get_corpus()
     xml_bytes = cs.read_source(sid)
@@ -345,7 +343,7 @@ def _section_filter_matches(key: str, section_filter: str) -> bool:
 
 def _load_johtolause(source_amendment_id: str) -> str:
     """Load and normalize johtolause for an amendment ID."""
-    from lawvm.finland.grafter import get_corpus, get_johtolause, _normalize_johtolause_verbs
+    from lawvm.finland.corpus import get_corpus, get_johtolause, _normalize_johtolause_verbs
 
     try:
         cs = get_corpus()
@@ -667,12 +665,12 @@ def _explain_sync(
     failed_ops: list[Any] = []
     _dossier_canonical_ops: list[Any] = []
     needs_dossier = show_compile_summary or show_facade
-    from lawvm.finland.grafter import (
+    from lawvm.finland.corpus import (
         _oracle_version_label,
         get_consolidated_oracle_context,
         get_corpus,
-        replay_xml,
     )
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     master = call_replay_xml(

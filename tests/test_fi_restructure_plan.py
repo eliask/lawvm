@@ -39,7 +39,7 @@ from lawvm.finland.body_pairing import (
     build_chapter_subtree_coverage,
 )
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.grafter import get_corpus
+from lawvm.finland.corpus import get_corpus
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.core.semantic_types import IRNodeKind

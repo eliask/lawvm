@@ -126,8 +126,8 @@ class TestExportParquet:
         levenshtein = types.ModuleType("Levenshtein")
         cast(Any, levenshtein).ratio = lambda _left, _right: 1.0
 
-        grafter = types.ModuleType("lawvm.finland.grafter")
-        grafter_patch = cast(Any, grafter)
+        replay_entrypoint = types.ModuleType("lawvm.finland.replay_entrypoint")
+        replay_entrypoint_patch = cast(Any, replay_entrypoint)
 
         class FakeMaster:
             title = "Synthetic statute"
@@ -136,9 +136,7 @@ class TestExportParquet:
             def serialize_text(self) -> str:
                 return "synthetic replay text"
 
-        grafter_patch.replay_xml = lambda *args, **kwargs: FakeMaster()
-        grafter_patch.get_ground_truth = lambda _statute_id: "synthetic replay text"
-        grafter_patch._oracle_version_label = lambda _statute_id: "synthetic-oracle"
+        replay_entrypoint_patch.replay_xml = lambda *args, **kwargs: FakeMaster()
 
         section_keys = types.ModuleType("lawvm.tools.section_keys")
         section_keys_patch = cast(Any, section_keys)
@@ -148,6 +146,8 @@ class TestExportParquet:
 
         corpus = types.ModuleType("lawvm.finland.corpus")
         corpus_patch = cast(Any, corpus)
+        corpus_patch.get_ground_truth = lambda _statute_id: "synthetic replay text"
+        corpus_patch._oracle_version_label = lambda _statute_id: "synthetic-oracle"
 
         def fail_ground_truth_tree(_statute_id: str) -> object:
             raise RuntimeError("synthetic section diff failure")
@@ -155,7 +155,7 @@ class TestExportParquet:
         corpus_patch.get_ground_truth_tree = fail_ground_truth_tree
 
         monkeypatch.setitem(sys.modules, "Levenshtein", levenshtein)
-        monkeypatch.setitem(sys.modules, "lawvm.finland.grafter", grafter)
+        monkeypatch.setitem(sys.modules, "lawvm.finland.replay_entrypoint", replay_entrypoint)
         monkeypatch.setitem(sys.modules, "lawvm.tools.section_keys", section_keys)
         monkeypatch.setitem(sys.modules, "lawvm.finland.corpus", corpus)
 

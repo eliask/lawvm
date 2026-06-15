@@ -21,7 +21,7 @@ from lawvm.core.table_model import (
     table_body_to_flat_text,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.grafter import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.semantic.projection import (
     _project_ir_table_body,
     _project_oracle_table_body,

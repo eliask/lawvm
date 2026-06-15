@@ -1,0 +1,319 @@
+"""Typed Finland replay-apply executor.
+
+This module owns the resolved-op apply orchestration for one amendment.  The
+boundary is still ``ApplyOpsRequest``/``ApplyOpsSinks``; ``grafter.py`` re-exports
+``_apply_ops_to_tree_typed`` while callers migrate.
+"""
+from __future__ import annotations
+
+from lawvm.core import tree_ops as _tops
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.amendment_chapter_precreate import (
+    PrecreateApplyChaptersRequest as _PrecreateApplyChaptersRequest,
+    precreate_apply_chapters as _precreate_apply_chapters,
+)
+from lawvm.finland.apply_group_replay import (
+    ApplyGroupSnapshotRequest as _ApplyGroupSnapshotRequest,
+    ApplyGroupSnapshotSinks as _ApplyGroupSnapshotSinks,
+    RefreshGroupPathHintRequest as _RefreshGroupPathHintRequest,
+    emit_apply_group_snapshot_if_allowed as _emit_apply_group_snapshot_if_allowed,
+    refresh_group_path_hint as _refresh_group_path_hint,
+)
+from lawvm.finland.apply_loop_state import ApplyGroupState
+from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
+from lawvm.finland.apply_resolved_op import (
+    ApplyResolvedOpRequest,
+    ApplyResolvedOpSinks,
+    apply_resolved_op_with_audit,
+)
+from lawvm.finland.apply_supplemental_recovery import (
+    ApplySupplementalRecoveryRequest,
+    ApplySupplementalRecoverySinks,
+    run_apply_supplemental_recovery,
+)
+from lawvm.finland.relabel_identity import (
+    stabilize_same_parent_relabel_order as _stabilize_same_parent_relabel_order,
+)
+from lawvm.finland.restructure_plan import (
+    resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
+    restructure_plan_owned_renumber_signatures as _restructure_plan_owned_renumber_signatures,
+)
+from lawvm.finland.restructure_plan_replay import (
+    ExecuteRestructurePlanRequest as _ExecuteRestructurePlanRequest,
+    ExecuteRestructurePlanSinks as _ExecuteRestructurePlanSinks,
+    execute_restructure_plan_with_evidence as _execute_restructure_plan_with_evidence,
+)
+from lawvm.finland.standalone_targets import (
+    build_standalone_section_targets as _build_standalone_section_targets,
+)
+
+
+def _apply_ops_to_tree_typed(
+    request: ApplyOpsRequest,
+    sinks: ApplyOpsSinks,
+) -> "ReplayState":
+    """Step 6: Apply resolved operations to IR tree as a pure fold.
+
+    Accepts immutable ``ctx`` and current ``state``.  Returns the updated
+    ``ReplayState`` after applying all ops, uncovered-body recovery, and
+    kumotaan heuristics.  The input ``state`` is never modified.
+
+    ``ctx`` is used by ``apply_op`` to resolve base-IR queries
+    (e.g. find_base_section for kumotaan placeholder decisions) and by the
+    ``_apply_uncovered_*`` heuristics.
+    """
+    state = request.state
+    ctx = request.ctx
+    resolved = request.resolved
+    ops = request.ops
+    muutos_tree = request.muutos_tree
+    johto = request.johto
+    amendment_id = request.amendment_id
+    source_title = request.source_title
+    amendment_issue_date = request.amendment_issue_date
+    amendment_effective_date = request.amendment_effective_date
+    amendment_expiry_date = request.amendment_expiry_date
+    replay_mode = request.replay_mode
+    strict_profile = request.strict_profile
+    _vts_ops_enrich_done = request.vts_ops_enrich_done
+    future_repeals = request.future_repeals
+
+    compiled_ops_out = sinks.compiled_ops_out
+    lo_ops_out = sinks.lo_ops_out
+    failed_ops_out = sinks.failed_ops_out
+    source_pathologies_out = sinks.source_pathologies_out
+    mutation_events_out = sinks.mutation_events_out
+    migration_ledger = sinks.migration_ledger
+    restructure_plans_out = sinks.restructure_plans_out
+    observations_out = sinks.observations_out
+    findings_out = sinks.findings_out
+    observed_touch_results_out = sinks.observed_touch_results_out
+    write_audits_out = sinks.write_audits_out
+
+    # Group-boundary bookkeeping for the resolved-op apply fold, threaded as one
+    # typed state machine (ApplyGroupState) rather than four bare locals mutated
+    # inline. The fold accumulates ops into same-target groups and emits one
+    # timeline snapshot per group at each boundary; the typed object owns the
+    # current group key, accumulated ops, live path hint, and the
+    # failed-apply replay barrier, with explicit transition methods.
+    grp = ApplyGroupState()
+
+    # Pre-compute standalone section targets as (chapter, label) tuples for
+    # container dedup/retention guards. When a section op was retargeted away
+    # from a stale body chapter to the unique live chapter, also record the
+    # original body chapter as an alias so chapter REPLACE payloads do not keep
+    # the stale child shell around.
+    _standalone_section_targets = _build_standalone_section_targets(ops)
+    base_ir = ctx.base_ir
+
+    # Stabilize same-parent RELABEL order: reverse forward chains so consumers
+    # run before producers. Prevents both chapter chains like "10→11 then 11→12"
+    # and section chains like "9→10, 10→11, 11→12" from consuming a label
+    # created by a just-applied earlier relabel.
+    resolved = _stabilize_same_parent_relabel_order(resolved)
+
+    active_restructure_plan = None
+    if restructure_plans_out:
+        for _rp in restructure_plans_out:
+            if _rp.amendment_id == amendment_id and _rp.has_unexecuted_ops:
+                active_restructure_plan = _rp
+                break
+    executed_restructure_plan_ids: set[str] = set()
+    if active_restructure_plan is not None:
+        # Restructure-plan ownership must be singular. When a relabel plan is
+        # active for this amendment, the main resolved-op loop must not also
+        # mutate the exact same relabel chain or emit stale old-address
+        # snapshots. Descendant renumbers outside the plan stay on the ordinary
+        # typed/apply path.
+        owned_relabels = _restructure_plan_owned_renumber_signatures(active_restructure_plan)
+        resolved = [
+            rop
+            for rop in resolved
+            if not _resolved_op_is_owned_by_restructure_plan(rop, owned_relabels)
+        ]
+        # Execute the pre-seeded relabel plan before the ordinary resolved-op
+        # fold. Large renumber waves like 2019/371 can move containers later in
+        # the same amendment; if the plan waits until uncovered-body recovery,
+        # its old-address section relabels chase a tree that has already moved.
+        _restructure_result = _execute_restructure_plan_with_evidence(
+            _ExecuteRestructurePlanRequest(
+                state=state,
+                plan=active_restructure_plan,
+                amendment_id=amendment_id,
+                source_title=source_title,
+                amendment_issue_date=amendment_issue_date,
+                amendment_effective_date=amendment_effective_date,
+                migration_ledger=migration_ledger,
+                log_label="early restructure_plan",
+            ),
+            _ExecuteRestructurePlanSinks(
+                lo_ops_out=lo_ops_out,
+                findings_out=findings_out,
+            ),
+        )
+        state = _restructure_result.state
+        if _restructure_result.executed:
+            executed_restructure_plan_ids.add(active_restructure_plan.amendment_id)
+
+    # Pre-create chapters introduced by the amendment body before the main
+    # apply loop. Section INSERT ops can target both real new chapters and
+    # pseudo-marker chapters in the same amendment, and both need their
+    # chapter shell to exist before the section-level apply path runs.
+    # Not run for VTS (cross-statute body) amendments.
+    _precreate_chapters = _precreate_apply_chapters(
+        _PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=resolved,
+            muutos_tree=muutos_tree,
+            amendment_id=amendment_id,
+            vts_ops_enrich_done=_vts_ops_enrich_done,
+        )
+    )
+    state = _precreate_chapters.state
+    _pre_real_chapter_refs = _precreate_chapters.real_chapter_refs
+    _pre_pseudo_chapter_refs = _precreate_chapters.pseudo_chapter_refs
+
+    # Snapshot chapter-to-part mapping before the main apply loop.
+    # Used after the loop to detect chapters that moved to a genuinely NEW part,
+    # so we can emit tombstone+insert LO ops that keep the materialized PIT
+    # consistent.  Only genuine part-creation moves are captured; part relabels
+    # (where the old part label disappears) are excluded.
+    _ch_to_part_before: dict[str, str] = {}
+    _parts_before: set[str] = set()
+    if lo_ops_out is not None:
+        _pp_snap = _tops.find_provisions_parent(state.ir)
+        _pp_snap_node = _tops.resolve(state.ir, _pp_snap) if _pp_snap else state.ir
+        if _pp_snap_node is not None:
+            for _snap_part in _pp_snap_node.children:
+                if _snap_part.kind is IRNodeKind.PART and _snap_part.label:
+                    _parts_before.add(_snap_part.label)
+                    for _snap_ch in _snap_part.children:
+                        if _snap_ch.kind is IRNodeKind.CHAPTER and _snap_ch.label:
+                            _ch_to_part_before[_snap_ch.label] = _snap_part.label
+
+    for rop in resolved:
+        group_key = rop.resolved_group_key_view
+        if grp.is_group_boundary(group_key):
+            # Emit snapshot for previous group (if any). A failed apply in the
+            # group is a replay barrier: its payload must not be promoted into
+            # timeline/materialized state by the snapshot lane.
+            _emit_apply_group_snapshot_if_allowed(
+                _ApplyGroupSnapshotRequest(
+                    state=state,
+                    group=grp,
+                    amendment_id=amendment_id,
+                    source_title=source_title,
+                    amendment_issue_date=amendment_issue_date,
+                    amendment_effective_date=amendment_effective_date,
+                    base_ir=base_ir,
+                    migration_ledger=migration_ledger,
+                    standalone_section_targets=_standalone_section_targets,
+                ),
+                _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+            )
+            grp.start_group(group_key)
+        # Apply. One typed disposition per op records whether it was applied,
+        # whether the apply failed, or whether no apply pass was required.
+        _apply_result = apply_resolved_op_with_audit(
+            ApplyResolvedOpRequest(
+                state=state,
+                ctx=ctx,
+                rop=rop,
+                amendment_id=amendment_id,
+                replay_mode=replay_mode,
+                path_hint=grp.group_path_hint,
+                standalone_section_targets=_standalone_section_targets,
+                migration_ledger=migration_ledger,
+                strict_profile=strict_profile,
+            ),
+            ApplyResolvedOpSinks(
+                lo_ops_out=lo_ops_out,
+                failed_ops_out=failed_ops_out,
+                source_pathologies_out=source_pathologies_out,
+                mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
+                observed_touch_results_out=observed_touch_results_out,
+                write_audits_out=write_audits_out,
+            ),
+        )
+        state = _apply_result.state
+        _disposition = _apply_result.disposition
+        if observations_out is not None:
+            observations_out.append(_apply_result.audit.to_observation())
+        if _disposition == "APPLY_FAILED":
+            grp.mark_failed_apply()
+        if _disposition != "NO_APPLY_PASS":
+            rop_group = rop.resolved_group_key_view
+            grp.set_path_hint(
+                _refresh_group_path_hint(
+                    _RefreshGroupPathHintRequest(
+                        state=state,
+                        target_unit_kind=rop_group.unit_kind,
+                        target_norm=rop_group.target_norm,
+                        target_chapter=rop_group.target_chapter,
+                        target_part=rop_group.target_part,
+                        path_hint=grp.group_path_hint,
+                        rop=rop,
+                        migration_ledger=migration_ledger,
+                    )
+                )
+            )
+        grp.append_rop(rop, disposition=_disposition)
+
+    # Emit snapshot for the last group
+    _emit_apply_group_snapshot_if_allowed(
+        _ApplyGroupSnapshotRequest(
+            state=state,
+            group=grp,
+            amendment_id=amendment_id,
+            source_title=source_title,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            base_ir=base_ir,
+            migration_ledger=migration_ledger,
+            standalone_section_targets=_standalone_section_targets,
+        ),
+        _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+    )
+
+    supplemental_result = run_apply_supplemental_recovery(
+        ApplySupplementalRecoveryRequest(
+            state=state,
+            ctx=ctx,
+            ops=ops,
+            muutos_tree=muutos_tree,
+            johto=johto,
+            amendment_id=amendment_id,
+            source_title=source_title,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            amendment_expiry_date=amendment_expiry_date,
+            replay_mode=replay_mode,
+            strict_profile=strict_profile,
+            vts_ops_enrich_done=_vts_ops_enrich_done,
+            future_repeals=future_repeals,
+            base_ir=base_ir,
+            pre_real_chapter_refs=_pre_real_chapter_refs,
+            pre_pseudo_chapter_refs=_pre_pseudo_chapter_refs,
+            ch_to_part_before=_ch_to_part_before,
+            parts_before=_parts_before,
+            executed_restructure_plan_ids=executed_restructure_plan_ids,
+            standalone_section_targets=_standalone_section_targets,
+            migration_ledger=migration_ledger,
+        ),
+        ApplySupplementalRecoverySinks(
+            compiled_ops_out=compiled_ops_out,
+            lo_ops_out=lo_ops_out,
+            failed_ops_out=failed_ops_out,
+            source_pathologies_out=source_pathologies_out,
+            mutation_events_out=mutation_events_out,
+            restructure_plans_out=restructure_plans_out,
+            observations_out=observations_out,
+            findings_out=findings_out,
+            observed_touch_results_out=observed_touch_results_out,
+            write_audits_out=write_audits_out,
+        ),
+    )
+    state = supplemental_result.state
+
+    return state

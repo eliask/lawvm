@@ -34,11 +34,9 @@ if TYPE_CHECKING:
 import Levenshtein
 from lxml import etree
 
-from lawvm.finland.grafter import (
-    get_corpus,
-    _resolve_applicable_amendment_records,
-    process_muutoslaki,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.corpus import list_cached_consolidated_pit_locators
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState

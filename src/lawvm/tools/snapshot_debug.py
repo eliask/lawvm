@@ -60,12 +60,10 @@ def build_snapshot_debug_bundle(
     target_path: str = "",
 ) -> Dict[str, Any]:
     """Capture lo_ops from process_muutoslaki and filter to the target address."""
-    from lawvm.finland.grafter import (
-        get_corpus,
-        process_muutoslaki,
-        _resolve_applicable_amendment_records,
-        replay_xml,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.process_pipeline import process_muutoslaki
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.process_result_builder import ProcessAmendmentSinks
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml

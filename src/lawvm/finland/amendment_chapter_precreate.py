@@ -19,6 +19,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 
 if TYPE_CHECKING:
+    from lawvm.finland.ops import ResolvedOp
     from lawvm.finland.statute import ReplayState
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,26 @@ class PrecreatedChaptersResult:
 
     state: ReplayState
     created_refs: tuple[ChapterRef, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PrecreateApplyChaptersRequest:
+    """Inputs for pre-creating amendment body chapters before apply."""
+
+    state: ReplayState
+    resolved: list[ResolvedOp]
+    muutos_tree: etree._Element
+    amendment_id: str
+    vts_ops_enrich_done: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PrecreateApplyChaptersResult:
+    """State and chapter refs produced by pre-apply chapter creation."""
+
+    state: ReplayState
+    real_chapter_refs: tuple[ChapterRef, ...]
+    pseudo_chapter_refs: tuple[ChapterRef, ...]
 
 
 def _tag(el: etree._Element) -> str:
@@ -102,6 +123,76 @@ def _find_existing_chapter_path(
         # creation when the label is genuinely absent or per-part ambiguous.
         return _globally_unique_chapter_path(state, chapter_label)
     return state.find("chapter", chapter_label)
+
+
+def state_has_scoped_chapter(
+    state: ReplayState,
+    part_label: str,
+    chapter_label: str,
+) -> bool:
+    if part_label:
+        part_path = state.find("part", part_label)
+        part_node = _tops.resolve(state.ir, part_path) if part_path else None
+        if part_node is None:
+            return False
+        return _tops.find(part_node, "chapter", chapter_label) is not None
+    return state.find("chapter", chapter_label) is not None
+
+
+def precreate_apply_chapters(
+    request: PrecreateApplyChaptersRequest,
+) -> PrecreateApplyChaptersResult:
+    """Pre-create real and pseudo chapters needed by section-level apply ops."""
+    if request.vts_ops_enrich_done:
+        return PrecreateApplyChaptersResult(
+            state=request.state,
+            real_chapter_refs=(),
+            pseudo_chapter_refs=(),
+        )
+    muutos_body = request.muutos_tree.find(".//{*}body")
+    if muutos_body is None:
+        return PrecreateApplyChaptersResult(
+            state=request.state,
+            real_chapter_refs=(),
+            pseudo_chapter_refs=(),
+        )
+
+    required_real_chapters = {
+        (
+            _norm_num_token(rop.resolved_target_scope_part_label or "")
+            if rop.resolved_target_scope_part_label
+            else "",
+            rop.resolved_target_chapter_label,
+        )
+        for rop in request.resolved
+        if rop.target_unit_kind == "section"
+        and rop.resolved_target_chapter_label
+        and not state_has_scoped_chapter(
+            request.state,
+            (
+                _norm_num_token(rop.resolved_target_scope_part_label or "")
+                if rop.resolved_target_scope_part_label
+                else ""
+            ),
+            rop.resolved_target_chapter_label,
+        )
+    }
+    real_chapters = _pre_create_amendment_chapters(
+        request.state,
+        muutos_body,
+        request.amendment_id,
+        required_labels=required_real_chapters,
+    )
+    pseudo_chapters = _pre_create_pseudo_marker_chapters(
+        real_chapters.state,
+        muutos_body,
+        request.amendment_id,
+    )
+    return PrecreateApplyChaptersResult(
+        state=pseudo_chapters.state,
+        real_chapter_refs=real_chapters.created_refs,
+        pseudo_chapter_refs=pseudo_chapters.created_refs,
+    )
 
 
 def _chapter_insert_parent(

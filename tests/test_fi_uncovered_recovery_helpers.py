@@ -6,6 +6,7 @@ constructing a full ReplayState.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import lxml.etree as etree
@@ -14,28 +15,33 @@ import pytest
 
 from lawvm.core.ir import IRNode, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.finland.grafter_uncovered import (
+from lawvm.finland.uncovered_recovery_runner import _UncoveredRecoveryRun
+from lawvm.finland.uncovered_recovery_support import (
     ChapterPayloadOutcome,
     ChapterPayloadOwnershipRequest,
-    FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
     PreGuardRequest,
     PreGuardVerdict,
-    RecoveryState,
-    UncoveredCandidateAudit,
-    UncoveredChapterScaffoldDraft,
-    UncoveredRecoveryGuards,
-    _UncoveredRecoveryRun,
-    build_uncovered_chapter_scaffold_lo,
     _evaluate_chapter_payload_ownership,
     _evaluate_pre_guards,
     _next_letter_label,
     _part_label_from_path,
     _section_heading_text,
     _uncovered_disposition_for_op_id,
-    _uncovered_section_key,
     _xml_part_label,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.uncovered_chapter_scaffold import (
+    FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
+    UncoveredChapterScaffoldDraft,
+    build_uncovered_chapter_scaffold_lo,
+)
+from lawvm.finland.uncovered_recovery_state import (
+    RecoveryState,
+    UncoveredCandidateAudit,
+    UncoveredRecoveryGuards,
+    uncovered_section_key as _uncovered_section_key,
+)
+from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -95,6 +101,35 @@ def test_part_label_from_path_finds_part() -> None:
 def test_part_label_from_path_none_when_absent() -> None:
     assert _part_label_from_path((("chapter", "3"), ("section", "5"))) is None
     assert _part_label_from_path(None) is None
+
+
+def test_uncovered_recovery_context_records_relabel_destinations() -> None:
+    op = SimpleNamespace(
+        op_type="RENUMBER",
+        target_unit_kind="section",
+        target_paragraph=None,
+        target_item=None,
+        target_special=None,
+        target_chapter="3",
+        target_part="II",
+        lo=SimpleNamespace(
+            destination=SimpleNamespace(
+                path=(("part", "II"), ("chapter", "7"), ("section", "5a")),
+            ),
+        ),
+    )
+    xml = etree.fromstring(b"<act><body/></act>")
+
+    context = build_uncovered_recovery_context(
+        muutos_tree=xml,
+        ops=[cast(Any, op)],
+        new_chapter_labels={"4"},
+    )
+
+    assert context.relabel_destination_sections == frozenset({
+        _uncovered_section_key(part="II", chapter="7", section="5a")
+    })
+    assert context.owned_chapter_labels == frozenset({"4"})
 
 
 # --- UncoveredCandidateAudit invariants ---

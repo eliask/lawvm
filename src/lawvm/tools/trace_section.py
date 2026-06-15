@@ -5,12 +5,9 @@ import sys
 from typing import Any, Dict, Literal, Optional
 
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-from lawvm.finland.corpus import get_consolidated_oracle_context
-from lawvm.finland.grafter import (
-    _resolve_applicable_amendment_records,
-    get_ground_truth_tree,
-    replay_xml,
-)
+from lawvm.finland.corpus import get_consolidated_oracle_context, get_ground_truth_tree
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.tools._section_debug import (
     render_node_text,

@@ -214,7 +214,8 @@ def _run_single(
 
     try:
         with redirect_stdout(buf):
-            from lawvm.finland.grafter import replay_xml, get_ground_truth_tree
+            from lawvm.finland.corpus import get_ground_truth_tree
+            from lawvm.finland.replay_entrypoint import replay_xml
             from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
             compiled_ops: list[dict[str, object]] = []

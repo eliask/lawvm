@@ -1,0 +1,428 @@
+"""Stage 2 payload elaboration for Finland compile groups."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable, Optional
+
+import lxml.etree as etree
+
+from lawvm.core.compile_result import SourcePathology, StrictProfile
+from lawvm.core.elaboration_context import (
+    ReplayLookups,
+    TargetContext,
+    TargetUnitKind,
+    build_payload_elaboration_context,
+)
+from lawvm.core.ir import IRNode
+from lawvm.core.payload_surface import GroupSurface, PayloadSurface, build_payload_surface
+from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
+from lawvm.finland.constraints import _FilterCtx, _filter_ops_by_constraints
+from lawvm.finland.elaborated_group import ElaboratedGroup, build_elaborated_group
+from lawvm.finland.group_ops import (
+    normalize_group_ops_for_repeal_reenact,
+    remap_body_root_replace_group_before_terminal_voimaantulo,
+)
+from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
+from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.payload_normalize import elaborate_payload_against_live, prepare_payload_surface
+from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
+
+
+def _internal_replay_scope_row(
+    *,
+    source_statute: str,
+    target_unit_kind: str,
+    target_norm: str,
+    target_chapter: str | None,
+) -> dict[str, object]:
+    """Canonical neutral replay-meta scope row for internal Finland reporting."""
+    return {
+        "source_statute": source_statute,
+        "target_unit_kind": target_unit_kind,
+        "target_norm": target_norm,
+        "target_chapter": str(target_chapter or ""),
+    }
+
+
+def _internal_elaboration_observation_row(
+    *,
+    kind: str,
+    stage: str,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: str | None,
+    detail: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "kind": kind,
+        "stage": stage,
+        "detail": dict(detail),
+        **_internal_replay_scope_row(
+            source_statute=source_statute,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+        ),
+    }
+
+
+def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
+    group_ops: list[AmendmentOp],
+    *,
+    muutos_ir: IRNode | None,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: str | None,
+    target_part: str | None,
+) -> tuple[list[AmendmentOp], list[FailedOp]]:
+    """Reject payloadless whole-section REPLACE ops shadowed by same-group relabel."""
+    if muutos_ir is not None or target_unit_kind != "section":
+        return group_ops, []
+    if not any(op.op_type == "RENUMBER" for op in group_ops):
+        return group_ops, []
+
+    kept_ops: list[AmendmentOp] = []
+    rejected_ops: list[FailedOp] = []
+    for op in group_ops:
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == target_norm
+            and op.target_paragraph is None
+            and not op.target_item
+            and not op.target_special
+            and op.target_chapter == target_chapter
+            and op.target_part == target_part
+        ):
+            rejected_ops.append(
+                FailedOp.from_scope(
+                    amendment_id=str(op.source_statute or ""),
+                    description=str(op.description()),
+                    reason="payloadless_source_replace_shadowed_by_relabel",
+                    reason_code="ELAB.PAYLOADLESS_REPLACE_SHADOWED_BY_RELABEL",
+                    target_section=target_norm,
+                    target_unit_kind="section",
+                    target_chapter=target_chapter,
+                    target_part=target_part,
+                )
+            )
+            continue
+        kept_ops.append(op)
+    return kept_ops, rejected_ops
+
+
+_REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
+
+
+def rejected_operation_findings(failed_ops: Iterable[Any], stage: str) -> list[Finding]:
+    """Paired rejected-before-apply findings for a batch of failed ops."""
+    findings: list[Finding] = []
+    for failed in failed_ops:
+        findings.append(
+            Finding(
+                kind="ELAB.REJECTED_OPERATION",
+                role="observation",
+                stage=stage,
+                detail={**failed.as_detail(), "message": _REJECTED_OPERATION_MESSAGE},
+                source_statute=failed.amendment_id,
+                blocking=False,
+            )
+        )
+    for failed in failed_ops:
+        findings.append(
+            Finding(
+                kind="ELAB.STRICT_REJECTED_OPERATION",
+                role="obligation",
+                stage=stage,
+                detail={**failed.as_detail(), "message": _REJECTED_OPERATION_MESSAGE},
+                source_statute=failed.amendment_id,
+                blocking=True,
+            )
+        )
+    return findings
+
+
+@dataclass(frozen=True, slots=True)
+class ElaborateGroupRequest:
+    """Typed inputs for compile-group payload elaboration."""
+
+    target_ctx: TargetContext
+    lookups: ReplayLookups
+    group_surface: GroupSurface
+    group_ops: list[AmendmentOp]
+    standalone_section_targets: set[str]
+    foreign_scoped_standalone_section_targets: set[str]
+    effective_target_part: str | None
+    muutos_tree: etree._Element
+    johto: str
+    profile: ReplayProfile
+    strict_profile: Optional[StrictProfile]
+
+
+def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGroup]:
+    """Stage 2: elaborate payload against live state."""
+    target_ctx = request.target_ctx
+    lookups = request.lookups
+    group_surface = request.group_surface
+    group_ops = request.group_ops
+    standalone_section_targets = request.standalone_section_targets
+    foreign_scoped_standalone_section_targets = (
+        request.foreign_scoped_standalone_section_targets
+    )
+    target_part = request.effective_target_part
+    muutos_tree = request.muutos_tree
+    johto = request.johto
+    profile = request.profile
+    strict_profile = request.strict_profile
+
+    target_unit_kind = group_surface.target_unit_kind
+    target_norm = group_surface.target_norm
+    target_chapter = group_surface.target_chapter
+    observation_source_statute = group_surface.source_statute
+    muutos_ir = group_surface.body_ir
+    payload_ctx = build_payload_elaboration_context(
+        target_ctx,
+        lookups,
+        row_anchor_normalizer=_norm_row_anchor_text,
+    )
+    muutos_ir = prepare_payload_surface(
+        payload_ctx,
+        group_ops,
+        muutos_ir,
+        profile,
+        strict_profile,
+    )
+    surface: PayloadSurface = build_payload_surface(
+        muutos_ir,
+        group_surface.cross_heading_ir,
+        source_statute=observation_source_statute,
+    )
+
+    local_rejected_ops: list[FailedOp] = []
+    fctx = _FilterCtx(muutos_ir=muutos_ir, muutos_tree=muutos_tree, johto=johto)
+    group_ops = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=local_rejected_ops)
+    group_ops, shadowed_replace_rejections = drop_payloadless_source_replace_shadowed_by_same_group_relabel(
+        group_ops,
+        muutos_ir=muutos_ir,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+    )
+    local_rejected_ops.extend(shadowed_replace_rejections)
+    if not group_ops:
+        elaborated = build_elaborated_group(
+            muutos_ir=None,
+            cross_ir=group_surface.cross_heading_ir,
+            group_ops=[],
+            remapped_target_norm=target_norm,
+            slot_assignment=None,
+            was_filtered=True,
+            payload_surface=surface,
+            payload_completeness=None,
+        )
+        b = PhaseBuilder()
+        b.add_findings(
+            Finding(
+                kind="ELAB.STRICT_REJECTED_OPERATION",
+                role="obligation",
+                stage="_elaborate_group",
+                detail={**failed.as_detail(), "message": "operation rejected before apply"},
+                source_statute=failed.amendment_id,
+                blocking=True,
+            )
+            for failed in local_rejected_ops
+        )
+        return b.finish(elaborated)
+
+    payload_norm = elaborate_payload_against_live(
+        payload_ctx,
+        group_ops,
+        muutos_ir,
+        standalone_section_targets,
+        foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        surface=surface,
+    )
+    muutos_ir = payload_norm.muutos_ir
+    group_ops = list(payload_norm.group_ops)
+
+    local_source_pathologies: list[SourcePathology] = list(payload_norm.source_pathologies or [])
+    local_elaboration_observations: list[dict[str, object]] = [
+        _internal_elaboration_observation_row(
+            kind=str(observation.kind or ""),
+            stage=str(observation.stage or ""),
+            detail=dict(observation.detail or {}),
+            source_statute=observation_source_statute,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+        )
+        for observation in (payload_norm.elaboration_observations or [])
+        if str(observation.kind or "").strip()
+    ]
+    slot_assignment = payload_norm.slot_assignment
+    local_payload_completeness: list[dict[str, object]] = (
+        [
+            _internal_elaboration_observation_row(
+                kind="ELAB.PAYLOAD_COMPLETENESS",
+                stage="group_payload_normalization",
+                detail={
+                    "payload_completeness_kind": str(payload_norm.payload_completeness.kind or ""),
+                    "reasons": list(payload_norm.payload_completeness.reasons or []),
+                    "tail_policy": str(payload_norm.payload_completeness.tail_policy or ""),
+                    **dict(payload_norm.payload_completeness.detail or {}),
+                },
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        ]
+        if payload_norm.payload_completeness is not None
+        else []
+    )
+    local_sparse_slot_bindings: list[dict[str, object]] = [
+        {
+            **_internal_replay_scope_row(
+                source_statute=observation_source_statute,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            ),
+            "op_description": binding.op_description,
+            "op_type": binding.op_type,
+            "target_paragraph": binding.target_paragraph,
+            "target_item": binding.target_item or "",
+            "target_special": binding.target_special or "",
+            "payload_slot_index": binding.payload_slot_index,
+            "payload_slot_label": binding.payload_slot_label,
+        }
+        for binding in (slot_assignment.sparse_slot_bindings if slot_assignment is not None else [])
+    ]
+    local_sparse_leftovers: list[dict[str, object]] = (
+        [
+            {
+                **_internal_replay_scope_row(
+                    source_statute=observation_source_statute,
+                    target_unit_kind=target_unit_kind,
+                    target_norm=target_norm,
+                    target_chapter=target_chapter,
+                ),
+                "unassigned_slots": list(slot_assignment.unassigned_payload_slots),
+            }
+        ]
+        if slot_assignment is not None and slot_assignment.unassigned_payload_slots
+        else []
+    )
+    local_rejected_ops.extend(payload_norm.rejected_ops or ())
+    local_strict_rejection_findings: list[Finding] = []
+    if strict_profile is not None and payload_norm.source_pathologies:
+        local_strict_rejection_findings.extend(
+            _strict_rejected_source_pathology_finding(
+                pathology,
+                stage="_elaborate_group",
+                fallback_source_statute=observation_source_statute,
+            )
+            for pathology in payload_norm.source_pathologies
+        )
+
+    if not group_ops:
+        elaborated = build_elaborated_group(
+            muutos_ir=None,
+            cross_ir=group_surface.cross_heading_ir,
+            group_ops=[],
+            remapped_target_norm=target_norm,
+            slot_assignment=None,
+            was_filtered=True,
+            payload_surface=surface,
+            payload_completeness=payload_norm.payload_completeness,
+        )
+    else:
+        fctx.slot_assignment = slot_assignment
+        group_ops = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=local_rejected_ops)
+        group_ops = normalize_group_ops_for_repeal_reenact(group_ops)
+        remapped_target_norm, muutos_ir, group_ops = remap_body_root_replace_group_before_terminal_voimaantulo(
+            target_ctx, lookups, muutos_ir, group_ops
+        )
+        elaborated = build_elaborated_group(
+            muutos_ir=muutos_ir,
+            cross_ir=group_surface.cross_heading_ir,
+            group_ops=group_ops,
+            remapped_target_norm=remapped_target_norm,
+            slot_assignment=slot_assignment,
+            source_pathologies=local_source_pathologies,
+            was_filtered=False,
+            payload_surface=surface,
+            payload_completeness=payload_norm.payload_completeness,
+        )
+
+    b = PhaseBuilder()
+    b.add_findings(rejected_operation_findings(local_rejected_ops, "_elaborate_group"))
+    b.add_findings(
+        Finding(
+            kind="ELAB.SOURCE_PATHOLOGY",
+            role="observation",
+            stage="_elaborate_group",
+            detail=p.as_detail(),
+            source_statute=p.source_statute or observation_source_statute,
+            blocking=False,
+        )
+        for p in local_source_pathologies
+    )
+    b.add_findings(
+        Finding(
+            kind=str(o.get("kind", "")),
+            role="observation",
+            stage="_elaborate_group",
+            detail=dict(o),
+            source_statute=str(o.get("source_statute", observation_source_statute)),
+            blocking=False,
+        )
+        for o in local_elaboration_observations
+        if str(o.get("kind", "")).strip()
+    )
+    b.add_findings(
+        Finding(
+            kind="ELAB.PAYLOAD_COMPLETENESS",
+            role="observation",
+            stage="_elaborate_group",
+            detail=dict(witness),
+            source_statute=str(witness.get("source_statute", observation_source_statute)),
+            blocking=False,
+        )
+        for witness in local_payload_completeness
+    )
+    b.add_findings(
+        Finding(
+            kind="ELAB.SPARSE_SLOT_BINDING",
+            role="observation",
+            stage="_elaborate_group",
+            detail=dict(binding),
+            source_statute=str(binding.get("source_statute", observation_source_statute)),
+            blocking=False,
+        )
+        for binding in local_sparse_slot_bindings
+    )
+    b.add_findings(
+        Finding(
+            kind="ELAB.SPARSE_PAYLOAD_LEFTOVER",
+            role="obligation",
+            stage="_elaborate_group",
+            detail=dict(leftover),
+            blocking=False,
+        )
+        for leftover in local_sparse_leftovers
+    )
+    b.add_findings(local_strict_rejection_findings)
+
+    return b.finish(elaborated)
+
+
+_drop_payloadless_source_replace_shadowed_by_same_group_relabel = (
+    drop_payloadless_source_replace_shadowed_by_same_group_relabel
+)
+_rejected_operation_findings = rejected_operation_findings
+_ElaborateGroupRequest = ElaborateGroupRequest
+_elaborate_group = elaborate_group

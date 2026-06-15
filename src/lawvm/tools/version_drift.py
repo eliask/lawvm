@@ -138,12 +138,10 @@ def detect_content_version_drift(
     if full_score >= 0.9999:
         return None
 
-    from lawvm.finland.grafter import (
-        _get_corpus_store,
-        _resolve_applicable_amendment_records,
-        get_ground_truth_tree,
-        replay_xml,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import _get_corpus_store
+    from lawvm.finland.corpus import get_ground_truth_tree
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lxml import etree
 

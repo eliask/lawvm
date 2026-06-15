@@ -61,7 +61,7 @@ from lawvm.finland.apply_structure_ops import (
     _apply_whole_section_op,
     _insert_or_replace_same_labeled_child,
 )
-from lawvm.finland.grafter_uncovered import (
+from lawvm.finland.uncovered_kumotaan_recovery import (
     KumotaanRecoveryRequest,
     KumotaanRecoverySinks,
     _apply_uncovered_kumotaan_typed,

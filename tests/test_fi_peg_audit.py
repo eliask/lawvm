@@ -169,10 +169,8 @@ class TestCorpusSmoke:
     def test_known_statute_2009_953(self):
         """2009/953 is a well-tested statute in the conformance corpus."""
         from lawvm.finland.corpus import get_corpus
-        from lawvm.finland.grafter import (
-            _amendment_children_by_parent,
-            get_johtolause,
-        )
+        from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
+        from lawvm.finland.metadata import get_johtolause
         from lawvm.finland.citation_routing import OP_KEYWORDS
         from lawvm.finland.metadata import _normalize_johtolause_verbs
 

@@ -60,7 +60,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
     DestructiveRepairLedgerEntry(
         family="apply_mutation_boundary",
         function="_apply_mutation_boundary_violation_finding",
-        file="src/lawvm/finland/grafter.py",
+        file="src/lawvm/finland/replay_findings.py",
         mutation_type="post_apply_boundary_violation",
         target_region="declared_target_region",
         can_mutate_outside_target=True,
@@ -80,7 +80,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
     DestructiveRepairLedgerEntry(
         family="uncovered_body_skip",
         function="_uncovered_body_recovery_skipped_finding",
-        file="src/lawvm/finland/grafter_uncovered.py",
+        file="src/lawvm/finland/uncovered_recovery_findings.py",
         mutation_type="candidate_section_skip",
         target_region="uncovered_body_section_candidate",
         can_mutate_outside_target=False,

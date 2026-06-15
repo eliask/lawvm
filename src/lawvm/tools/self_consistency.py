@@ -514,7 +514,7 @@ def _project_self_consistency(
     ``replay_meta``) AND the per-op log that carries the silently-swallowed
     target-absent / coverage-gap / skipped-amendment signals.
     """
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     failed: List[Any] = []

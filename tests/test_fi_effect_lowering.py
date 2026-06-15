@@ -472,7 +472,7 @@ def _make_minimal_replay_state():
 
 def test_compile_amendment_ops_emits_temporal_events_without_retaining_effect_intents():
     """compile_amendment_ops keeps only executable temporal authority when available."""
-    from lawvm.finland.grafter import compile_amendment_ops
+    from lawvm.finland.compile_amendment import compile_amendment_ops
     import lxml.etree as etree
 
     # Minimal muutos_tree (empty amendment body)
@@ -520,7 +520,7 @@ def test_compile_amendment_ops_emits_temporal_events_without_retaining_effect_in
 
 
 def test_compile_amendment_ops_surfaces_unsupported_meta_clause() -> None:
-    from lawvm.finland.grafter import compile_amendment_ops
+    from lawvm.finland.compile_amendment import compile_amendment_ops
     import lxml.etree as etree
 
     muutos_xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -552,7 +552,7 @@ def test_compile_amendment_ops_surfaces_unsupported_meta_clause() -> None:
 
 def test_compile_amendment_ops_no_effect_intents_without_johto():
     """compile_amendment_ops with empty johto produces no temporal rails."""
-    from lawvm.finland.grafter import compile_amendment_ops
+    from lawvm.finland.compile_amendment import compile_amendment_ops
     import lxml.etree as etree
 
     muutos_xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">

@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
 

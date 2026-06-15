@@ -19,12 +19,10 @@ from lxml import etree
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.acquisition import build_amendment_acquisition_result, operative_lane_selection_evidence
-from lawvm.finland.grafter import (
-    _resolve_applicable_amendment_records,
-    _tree_title,
-    get_corpus,
-    replay_xml,
-)
+from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.frontend_compile import _tree_title
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.johtolause.api import parse_clause
 from lawvm.tools._section_debug import summarize_node

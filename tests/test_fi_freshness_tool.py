@@ -18,7 +18,7 @@ def test_replay_section_count_replays_quietly(monkeypatch) -> None:
         seen.update(kwargs)
         return DummyMaster()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     count, err = freshness._replay_section_count("2000/1")
 
@@ -42,10 +42,10 @@ def test_replay_section_count_suppresses_replay_warning_logs(monkeypatch, caplog
         ir = IRNode(kind=IRNodeKind.SECTION)
 
     def fake_replay_xml(_sid: str, **_kwargs):
-        logging.getLogger("lawvm.finland.grafter_uncovered").warning("should stay hidden")
+        logging.getLogger("lawvm.finland.uncovered_body_recovery").warning("should stay hidden")
         return DummyMaster()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     with caplog.at_level(logging.WARNING):
         count, err = freshness._replay_section_count("2000/1")

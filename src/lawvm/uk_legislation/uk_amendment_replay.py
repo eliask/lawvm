@@ -2,7 +2,7 @@
 
 This module implements the acquisition and op-extraction layer for building
 a PIT (Point-in-Time) legal graph from first principles for UK legislation —
-analogous to lawvm.finland.grafter but without LLM dependency for the
+analogous to Finland's replay frontend but without LLM dependency for the
 amendment schedule, since UK effects feeds provide structured metadata.
 
 Architecture:

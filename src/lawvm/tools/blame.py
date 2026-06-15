@@ -70,9 +70,7 @@ from lawvm.tools.timeline_integrity import (
     sorted_breaks,
     timeline_breaks_from_findings,
 )
-from lawvm.finland.grafter import (
-    replay_xml,
-)
+from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.tools.provision_state import provision_selector_diagnostic
 
 

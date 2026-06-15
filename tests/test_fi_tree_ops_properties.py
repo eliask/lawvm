@@ -53,13 +53,12 @@ from lawvm.core.tree_ops import (
     replace_at,
     resolve,
 )
-from lawvm.finland.grafter import (
-    AmendmentOp,
-    _apply_deterministic_subsection_op,
+from lawvm.finland.apply_subsection_dispatch import _apply_deterministic_subsection_op
+from lawvm.finland.merge import (
     _merge_section_with_omission_ir,
     _merge_subsection_with_omission_ir,
-    get_replay_profile,
 )
+from lawvm.finland.ops import AmendmentOp, get_replay_profile
 
 
 # ---------------------------------------------------------------------------

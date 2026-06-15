@@ -801,7 +801,7 @@ def test_lukuun_ottamatta_relabel_recovers_source_and_dest():
         "joka siirretään 7 luvun 61 §:ksi,"
     )
     # Verify via legal_ops that the relabel still works correctly
-    from lawvm.finland.grafter import extract_johtolause_legal_ops
+    from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 
     legal_ops = extract_johtolause_legal_ops(text)
     relabel = next(lo for lo in legal_ops if lo.action is StructuralAction.RENUMBER)

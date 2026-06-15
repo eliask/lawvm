@@ -464,7 +464,7 @@ def test_dedup_versioned_children_prefers_versioned_same_slot_subsection_over_pl
 
 def test_extract_oracle_sections_prefers_versioned_same_slot_subsection_for_2016_768_section_35() -> None:
     from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-    from lawvm.finland.grafter import get_consolidated_oracle_context, get_corpus
+    from lawvm.finland.corpus import get_consolidated_oracle_context, get_corpus
 
     ctx = get_consolidated_oracle_context(
         "2016/768",
@@ -557,7 +557,7 @@ def test_extract_oracle_sections_excludes_kumottu_tombstone_with_original_versio
 
 def test_extract_oracle_sections_keeps_2017_519_section_28_live_replacement_subsection() -> None:
     """Corpus pin: 2017/519 oracle 28 § must retain the 2022/1048 live subsection."""
-    from lawvm.finland.grafter import get_ground_truth_tree
+    from lawvm.finland.corpus import get_ground_truth_tree
 
     oracle = get_ground_truth_tree("2017/519")
     assert oracle is not None

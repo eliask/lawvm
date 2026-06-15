@@ -658,7 +658,7 @@ def dump_single_side(
     from lawvm.core.ir import IRNode
     from lawvm.core.ir_helpers import irnode_to_text
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_sections
     from typing import cast, Literal
@@ -792,7 +792,7 @@ def compute_statute_section_diffs(
     replay call when the caller has already replayed the statute, e.g. bench).
     """
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.semantic.contracts import build_semantic_support
     from lawvm.semantic.structure import (
         semantic_structure_from_ir,
@@ -1260,7 +1260,7 @@ def dump_triple_view(
         section_filter: Optional section key substring filter.
     """
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.finlex_html import html_heading_entries
     from lawvm.semantic.projection import (
         semantic_structure_from_ir,

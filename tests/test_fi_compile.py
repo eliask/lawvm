@@ -69,19 +69,19 @@ def get_corpus_store() -> Any:
 
 
 def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
-    from lawvm.finland.grafter import compile_amendment_ops as _real_compile_amendment_ops
+    from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 
     return _real_compile_amendment_ops(*args, **kwargs)
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
-    from lawvm.finland.grafter import get_johtolause as _real_get_johtolause
+    from lawvm.finland.metadata import get_johtolause as _real_get_johtolause
 
     return _real_get_johtolause(*args, **kwargs)
 
 
 def normalize_and_compile_ops(*args: Any, **kwargs: Any) -> Any:
-    from lawvm.finland.grafter import normalize_and_compile_ops as _real_normalize_and_compile_ops
+    from lawvm.finland.frontend_compile import normalize_and_compile_ops as _real_normalize_and_compile_ops
 
     if "mid" in kwargs and "amendment_id" not in kwargs:
         kwargs["amendment_id"] = kwargs.pop("mid")
@@ -462,7 +462,7 @@ def test_compile_fi_extracts_explicit_scope_rewrite_projection_from_compiled_ops
             replay_meta_out["lineage"] = []
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -508,7 +508,7 @@ def test_compile_fi_extracts_explicit_chunk_scope_projection_from_compiled_ops(
             replay_meta_out["lineage"] = []
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -571,7 +571,7 @@ def test_compile_fi_prefers_replay_scope_finding_over_compiled_op_scope_transpor
             replay_meta_out["lineage"] = []
         return _replay_result_stub(findings=(replay_finding,))
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -933,7 +933,7 @@ def test_compile_fi_facade_strict_mode_passes_strict_temporal_authority(monkeypa
         captured["strict_johto_temporal"] = bool(kwargs.get("strict_johto_temporal"))
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="strict")
 
     assert captured.get("strict_johto_temporal") is True
@@ -946,7 +946,7 @@ def test_compile_fi_facade_default_mode_is_strict_temporal_authority(monkeypatch
         captured["strict_johto_temporal"] = bool(kwargs.get("strict_johto_temporal"))
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     compile_fi_facade("2009/953", replay_mode="legal_pit")
 
     assert captured.get("strict_johto_temporal") is True
@@ -959,7 +959,7 @@ def test_compile_fi_facade_quirks_mode_does_not_enable_strict_temporal_authority
         captured["strict_johto_temporal"] = bool(kwargs.get("strict_johto_temporal"))
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
 
     assert captured.get("strict_johto_temporal") is False
@@ -1349,7 +1349,7 @@ def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
             source_adjudication=source_adjudication,
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
         "lawvm.finland._compile._compile_artifacts_from_replay",
         fake_compile_artifacts_from_replay,
@@ -1414,7 +1414,7 @@ def test_compile_fi_facade_routes_warn_projection_rows_to_observations(monkeypat
             source_adjudication=source_adjudication,
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
         "lawvm.finland._compile._compile_artifacts_from_replay",
         fake_compile_artifacts_from_replay,
@@ -1477,7 +1477,7 @@ def test_compile_fi_facade_keeps_temporal_bundle_empty_when_replay_events_absent
             source_adjudication=source_adjudication,
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
     monkeypatch.setattr(
         "lawvm.finland._compile._compile_artifacts_from_replay",
         fake_compile_artifacts_from_replay,
@@ -1538,7 +1538,7 @@ def test_compile_fi_surfaces_frontend_elaboration_observations_as_projection_row
             ]
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1593,7 +1593,7 @@ def test_compile_fi_preserves_payload_completeness_witness_detail(
             ]
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1651,7 +1651,7 @@ def test_compile_fi_surfaces_source_pathology_with_neutral_target_unit_kind(
             ]
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1727,7 +1727,7 @@ def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
             ),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1773,7 +1773,7 @@ def test_compile_fi_surfaces_legacy_dispatch_reason_code_from_fallback_tags_when
             ),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1829,7 +1829,7 @@ def test_compile_fi_facade_carries_legacy_dispatch_fallback_in_finding_ledger(
             ),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1882,7 +1882,7 @@ def test_compile_fi_surfaces_relabel_skipped_as_projection_row(
             ),
         )
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1928,7 +1928,7 @@ def test_compile_fi_surfaces_registered_provenance_projection_kinds(
             replay_meta_out["lineage"] = []
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -1986,7 +1986,7 @@ def test_compile_fi_keeps_registered_provenance_projection_rows_target_scoped(
             replay_meta_out["lineage"] = []
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -2053,7 +2053,7 @@ def test_compile_fi_extracts_provenance_target_scope_from_flat_compiled_op_scope
             replay_meta_out["lineage"] = []
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -2103,7 +2103,7 @@ def test_compile_fi_surfaces_sparse_leftovers_as_projection_rows(
             ]
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
@@ -2165,7 +2165,7 @@ def test_compile_fi_surfaces_sparse_slot_bindings_as_projection_rows(
             ]
         return _replay_result_stub()
 
-    monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+    monkeypatch.setattr("lawvm.finland.replay_entrypoint.replay_xml", fake_replay_xml)
 
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
