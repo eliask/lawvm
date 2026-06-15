@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+from types import SimpleNamespace
 
+import pytest
+
+from lawvm.tools import export_markdown_git as mdgit
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools.export_markdown_git import (
@@ -13,6 +17,8 @@ from lawvm.tools.export_markdown_git import (
     render_act_markdown,
     write_fast_import_stream,
 )
+from lawvm.tools.transition_graph_jurisdictions import TransitionGraphJurisdictionAdapter
+from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 from lawvm.tools.transition_graph_interlinks import LawvmInterlinkRow
 
 
@@ -220,3 +226,45 @@ def test_build_commits_uses_jurisdiction_fallback_for_non_num_year_ids() -> None
     commits = build_markdown_git_commits((prepared,), jurisdiction="uk")
 
     assert "acts/uk/ukpga__2020__1.md" in commits[0].files
+
+
+def test_prepare_markdown_git_export_includes_future_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = {
+        "2020-01-01": _body_with_link_text("Current text."),
+        "2999-01-01": _body_with_link_text("Prospective text."),
+    }
+
+    def replay_runner(_engine_id: str, *, profile: TransitionGraphExportProfile) -> SimpleNamespace:
+        return SimpleNamespace(
+            change_dates=("2020-01-01", "2999-01-01"),
+            title="Test Act",
+        )
+
+    def materializer(_bundle: SimpleNamespace, as_of: str) -> IRNode:
+        return roots[as_of]
+
+    profile = TransitionGraphExportProfile(
+        jurisdiction="zz",
+        lang="zz",
+        canonical_statute_id=lambda value: value,
+        engine_statute_id=lambda value: value,
+        corpus=lambda: None,
+    )
+    adapter = TransitionGraphJurisdictionAdapter(
+        profile=profile,
+        replay_runner=replay_runner,
+        tree_materializer=materializer,
+        interlink_provider=None,
+    )
+    monkeypatch.setattr(mdgit, "transition_graph_adapter_for_jurisdiction", lambda _jurisdiction: adapter)
+
+    prepared = mdgit.prepare_markdown_git_export(("100/2020",), jurisdiction="zz")
+    capped = mdgit.prepare_markdown_git_export(
+        ("100/2020",),
+        jurisdiction="zz",
+        include_future=False,
+        until="2020-12-31",
+    )
+
+    assert prepared[0].dates == ("2020-01-01", "2999-01-01")
+    assert capped[0].dates == ("2020-01-01",)

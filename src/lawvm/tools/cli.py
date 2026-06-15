@@ -11305,12 +11305,20 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--until",
         metavar="YYYY-MM-DD",
         default=None,
-        help="latest effective date to include (default: current date)",
+        help="latest effective date to include (default: no cutoff)",
     )
     export_md_git_p.add_argument(
         "--include-future",
+        dest="include_future",
         action="store_true",
-        help="include prospective future versions when --until is not set",
+        default=True,
+        help="include prospective future versions when --until is not set (default)",
+    )
+    export_md_git_p.add_argument(
+        "--no-future",
+        dest="include_future",
+        action="store_false",
+        help="cap export at the current date when --until is not set",
     )
     export_md_git_p.add_argument(
         "--out",

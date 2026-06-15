@@ -122,7 +122,7 @@ def prepare_markdown_git_export(
     statute_ids: Iterable[str],
     *,
     jurisdiction: str,
-    include_future: bool = False,
+    include_future: bool = True,
     until: str | None = None,
 ) -> tuple[PreparedStatute, ...]:
     adapter = transition_graph_adapter_for_jurisdiction(jurisdiction)
@@ -716,7 +716,7 @@ def main(args: argparse.Namespace) -> None:
     prepared = prepare_markdown_git_export(
         statute_ids,
         jurisdiction=jurisdiction,
-        include_future=bool(getattr(args, "include_future", False)),
+        include_future=bool(getattr(args, "include_future", True)),
         until=getattr(args, "until", None),
     )
     commits = build_markdown_git_commits(prepared, jurisdiction=jurisdiction)
