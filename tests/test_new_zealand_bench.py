@@ -422,3 +422,52 @@ def test_parallel_aggregate_is_byte_identical_to_serial(tmp_path) -> None:
     assert _json.dumps(serial["works"], sort_keys=True) == _json.dumps(
         parallel["works"], sort_keys=True
     )
+
+
+@pytest.mark.skipif(
+    not (_REAL_DB.exists() and _REAL_CORPUS.exists()),
+    reason="archived NZ farchive / corpus not present",
+)
+def test_run_scoped_parse_cache_is_byte_identical_to_uncached(
+    tmp_path, monkeypatch
+) -> None:
+    # The run-scoped parse/archive cache (corpus_run_cache) the bench activates is
+    # a PURE performance layer: it must produce a byte-identical report to a run
+    # with the cache forcibly disabled. This pins the safe-win invariant — the
+    # speedup never changes any score.
+    import contextlib
+    import csv as _csv
+    import json as _json
+
+    with open(_REAL_CORPUS, newline="") as f:
+        rows = [r for r in _csv.DictReader(f)][:6]
+    assert rows, "expected a non-empty real NZ corpus"
+    slice_csv = tmp_path / "slice.csv"
+    with open(slice_csv, "w", newline="") as f:
+        writer = _csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    # Cache ON: the bench's normal (now cached) serial path.
+    cached = _run_bench_json(
+        db=_REAL_DB, corpus=slice_csv, parallel=1, out_json=tmp_path / "cached.json"
+    )
+
+    # Cache OFF: replace corpus_run_cache with a no-op context that never
+    # activates a cache, so every parse/archive call falls through to the
+    # uncached path. _run_bench_json uses the serial path (parallel=1), so only
+    # the serial activation needs neutralizing.
+    @contextlib.contextmanager
+    def _no_cache():
+        yield None
+
+    monkeypatch.setattr(nz_bench, "corpus_run_cache", _no_cache)
+    monkeypatch.setattr(nz_bench, "active_corpus_run_cache", lambda: None)
+    uncached = _run_bench_json(
+        db=_REAL_DB, corpus=slice_csv, parallel=1, out_json=tmp_path / "uncached.json"
+    )
+
+    assert cached["summary"] == uncached["summary"]
+    assert _json.dumps(cached["works"], sort_keys=True) == _json.dumps(
+        uncached["works"], sort_keys=True
+    )

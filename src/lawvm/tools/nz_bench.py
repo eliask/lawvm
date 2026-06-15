@@ -51,6 +51,10 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.new_zealand.acquisition import open_farchive
+from lawvm.new_zealand.corpus_cache import (
+    active_corpus_run_cache,
+    corpus_run_cache,
+)
 from lawvm.new_zealand.actual_replay import (
     NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES,
     NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
@@ -413,6 +417,12 @@ _MAX_WORKERS = 8
 # Worker-process globals, set once by the initializer (never pickled per task).
 _WORKER_ARCHIVE: Any = None
 _WORKER_DB_PATH: Path | None = None
+# Each worker process holds one run-scoped parse/archive cache open for its whole
+# lifetime so the same archived version XML is parsed at most once per worker
+# (across the preflight, surface, dry-run families, change-window, and oracle
+# re-parse). The cache is purely a performance layer (frozen, input-addressed
+# parses) so per-work results stay byte-identical to the uncached path.
+_WORKER_CACHE_CM: Any = None
 
 
 def _default_workers() -> int:
@@ -433,8 +443,17 @@ def _resolve_workers(requested: int | None) -> int:
 
 
 def _worker_init(db_path_str: str) -> None:
-    """Process-pool initializer: open this worker's own farchive handle once."""
-    global _WORKER_ARCHIVE, _WORKER_DB_PATH
+    """Process-pool initializer: open this worker's own farchive handle once.
+
+    Also enters a run-scoped parse/archive cache held open for the worker's
+    lifetime, so the worker's farchive handle is the shared cache wrapper and
+    each archived version XML parses at most once per worker. The cache only
+    memoizes pure, (locator, version_id)-addressed parses, so results stay
+    byte-identical to the uncached path.
+    """
+    global _WORKER_ARCHIVE, _WORKER_DB_PATH, _WORKER_CACHE_CM
+    _WORKER_CACHE_CM = corpus_run_cache()
+    _WORKER_CACHE_CM.__enter__()
     _WORKER_DB_PATH = Path(db_path_str)
     _WORKER_ARCHIVE = open_farchive(_WORKER_DB_PATH)
 
@@ -444,7 +463,13 @@ def _score_one_work_worker(work_id: str) -> _WorkResult:
     assert _WORKER_ARCHIVE is not None and _WORKER_DB_PATH is not None, (
         "NZ bench worker not initialized (farchive handle missing)"
     )
-    return _score_one_work(_WORKER_ARCHIVE, work_id, _WORKER_DB_PATH)
+    result = _score_one_work(_WORKER_ARCHIVE, work_id, _WORKER_DB_PATH)
+    # Bound per-worker memory: distinct works share ~no archived XML, so drop the
+    # parsed-document memo between works while keeping the shared archive handle.
+    cache = active_corpus_run_cache()
+    if cache is not None:
+        cache.reset_parsed()
+    return result
 
 
 def _score_corpus(
@@ -478,14 +503,31 @@ def _score_corpus(
         )
 
     if workers <= 1:
-        archive = open_farchive(db_path)
-        try:
-            for i, work_id in enumerate(ordered_work_ids):
-                result = _score_one_work(archive, work_id, db_path)
-                results.append(result)
-                _stream(i + 1, result)
-        finally:
-            archive.close()
+        # Share one parsed-document/archive cache across the whole serial run so
+        # each archived version XML is decompressed + lxml-parsed at most once
+        # across the preflight, operation surface, every dry-run family, the
+        # change-window lookups, and the oracle re-parse — instead of re-parsing
+        # the same before/oracle/latest versions per call. Pure performance: the
+        # cache only memoizes frozen, (locator, version_id)-addressed parses, so
+        # each ``_WorkResult`` is byte-identical to the uncached path. The shared
+        # archive handle returned by ``open_farchive`` is the cache wrapper while
+        # the run context is active.
+        with corpus_run_cache():
+            run_cache = active_corpus_run_cache()
+            archive = open_farchive(db_path)
+            try:
+                for i, work_id in enumerate(ordered_work_ids):
+                    result = _score_one_work(archive, work_id, db_path)
+                    results.append(result)
+                    _stream(i + 1, result)
+                    # Distinct works share ~no archived XML, so drop the parsed
+                    # memo between works to bound the working set while keeping
+                    # the run-shared archive handle (same pattern as the NZ
+                    # dry-run/chain-replay corpus runners).
+                    if run_cache is not None:
+                        run_cache.reset_parsed()
+            finally:
+                archive.close()
         return results
 
     from concurrent.futures import as_completed
