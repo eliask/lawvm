@@ -1230,6 +1230,64 @@ def test_process_muutoslaki_projects_scope_confidence_global_fallback_as_apply_f
     )
 
 
+def test_process_muutoslaki_projects_same_wave_migration_rebase_apply_fallback(monkeypatch) -> None:
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+    mutation_events: list[ApplyMutationEvent] = []
+
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
+        return PhaseResult(output=[])
+
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
+        return PhaseResult(output=(), temporal_events=())
+
+    def fake_apply_ops_to_tree_typed(request, sinks):
+        mutation_events_out = sinks.mutation_events_out
+        assert mutation_events_out is not None
+        mutation_events_out.append(
+            ApplyMutationEvent(
+                op_id="op_migrated",
+                source_statute="1996/1261",
+                action="replace",
+                helper="apply_op",
+                outcome="applied",
+                resolved_target_path=(("chapter", "7"), ("section", "61")),
+                used_fallback_tags=(
+                    "APPLY.SAME_WAVE_MIGRATION_REBASE",
+                    "follow_same_wave_migration",
+                ),
+                reason_code="follow_same_wave_migration",
+            )
+        )
+        return request.state
+
+    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.grafter._apply_ops_to_tree_typed", fake_apply_ops_to_tree_typed)
+
+    result = process_muutoslaki(
+        "1996/1261",
+        state,
+        ctx,
+        corpus=_corpus_store({"1996/1261": _base_process_muutoslaki_xml()}),
+        mutation_events_out=mutation_events,
+    )
+
+    migration_findings = [
+        finding
+        for finding in result.findings()
+        if finding.kind == "APPLY.SAME_WAVE_MIGRATION_REBASE"
+    ]
+    assert len(migration_findings) == 1
+    assert migration_findings[0].role == "observation"
+    assert migration_findings[0].blocking is False
+    assert migration_findings[0].detail.get("reason_code") == "follow_same_wave_migration"
+    assert migration_findings[0].detail.get("resolved_target_path") == (
+        ("chapter", "7"),
+        ("section", "61"),
+    )
+
+
 def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> None:
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     replay_meta: dict[str, object] = {}

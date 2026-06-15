@@ -130,6 +130,8 @@ def _apply_mutation_fallback_event_finding(
         message = "Typed relabel intent was skipped for a governed reason."
     elif fallback_kind == "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK":
         message = "Section path resolution fell back to a live unique match after scoped lookup failed."
+    elif fallback_kind == "APPLY.SAME_WAVE_MIGRATION_REBASE":
+        message = "Section path resolution followed same-wave migration lineage to the current address."
     detail = {
         "message": message,
         "helper": event.helper,

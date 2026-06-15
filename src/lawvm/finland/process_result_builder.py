@@ -249,6 +249,7 @@ class ProcessResultBuilder:
                 "APPLY.LEGACY_DISPATCH_FALLBACK",
                 "APPLY.RELABEL_SKIPPED",
                 "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
+                "APPLY.SAME_WAVE_MIGRATION_REBASE",
             ):
                 finding = _apply_mutation_fallback_event_finding(
                     event=event,
