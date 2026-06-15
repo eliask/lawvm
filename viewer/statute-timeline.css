@@ -182,6 +182,7 @@ select {
 .tree-tools { display: flex; gap: 0.35rem; }
 .tree-tools button { font-size: 0.74rem; padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; }
 .tree-tools button:hover { background: #eef2f6; }
+.tree-tools button:disabled { opacity: 0.45; cursor: default; background: #f4f4f0; }
 .tree-legend { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.5rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
 .tree-legend .leg-changed { color: var(--changed); font-weight: 700; }
 .tree-legend .leg-tomb { color: var(--muted); font-style: italic; }
@@ -209,6 +210,9 @@ select {
 .node { margin: 0.05rem 0; border-left: 2px solid transparent; padding-left: 0.1rem; }
 .node[data-depth="0"] { margin-top: 1.1rem; }
 .node.changed { border-left-color: var(--changed); }
+.node.change-added { border-left-color: var(--green); }
+.node.change-removed { border-left-color: var(--red); }
+.node.change-expired { border-left-color: var(--amber); }
 .node-row {
   display: flex; gap: 0.45rem; align-items: baseline; padding: 0.16rem 0.3rem;
   border-radius: 5px;
@@ -226,6 +230,9 @@ select {
 .node-heading { color: var(--fg); font-weight: 600; }
 .kind-chapter > .node-row .node-heading { font-size: 1.02rem; }
 .changed-tag { font-size: 0.62rem; font-weight: 700; color: var(--changed); background: var(--changed-bg); border: 1px solid #efd9ad; border-radius: 3px; padding: 0.02rem 0.32rem; align-self: center; }
+.changed-tag-added { color: var(--green); background: var(--ins-bg); border-color: #bfe6cd; }
+.changed-tag-removed { color: var(--red); background: var(--del-bg); border-color: #f0c5bf; }
+.changed-tag-expired { color: #8a5a00; background: #fff8e6; border-color: #f0d79a; }
 .node-body { padding-left: 1.45rem; }
 .node.collapsed > .node-body:not([hidden]) { display: none; }
 .node.scaffold > .node-row .node-label { color: var(--muted); }
@@ -286,8 +293,14 @@ select {
 .pblock.has-evidence > .pblock-inner { max-width: min(72ch, calc(100% - 7.8rem)); }
 .pblock-inner .pblock-body { flex: 1; min-width: 0; }
 .pblock.changed { border-left-color: var(--changed); background: #fffcf4; }
+.pblock.change-added { border-left-color: var(--green); background: #f8fcf9; }
+.pblock.change-removed { border-left-color: var(--red); background: #fff8f7; }
+.pblock.change-expired { border-left-color: var(--amber); background: #fffdf7; }
 .pblock:hover { background: #f4f6f8; }
 .pblock.changed:hover { background: #fdf6e4; }
+.pblock.change-added:hover { background: #edf8f0; }
+.pblock.change-removed:hover { background: #fbecea; }
+.pblock.change-expired:hover { background: #fff7df; }
 .pblock-num {
   flex: 0 0 auto;
   font-weight: 700; font-size: 0.72rem; color: var(--muted);
@@ -314,6 +327,7 @@ select {
 .pblock.tombstone { opacity: 0.78; }
 .tomb-label { color: var(--muted); }
 .tomb-label em { color: var(--red); font-style: normal; font-weight: 600; }
+.tomb-label em.expiry { color: #8a5a00; }
 .tomb-meta { font-size: 0.7rem; color: var(--muted); font-family: var(--mono); margin-left: 0.4rem; }
 
 /* =====================================================================
@@ -408,10 +422,11 @@ select {
 .chg-badge {
   display: inline-flex; align-items: center; gap: 0.35rem;
   margin-left: auto; flex: 0 0 auto; align-self: center;
-  font-size: 0.66rem; font-weight: 600; color: var(--muted);
-  border: 1px solid transparent; border-radius: 4px;
-  background: transparent; cursor: pointer; padding: 0.08rem 0.35rem;
+  font-size: 0.66rem; font-weight: 600; color: rgba(43, 92, 138, 0.8);
+  border: 1px solid #dde4ea; border-radius: 4px;
+  background: var(--card-bg); cursor: pointer; padding: 0.08rem 0.35rem;
   font-family: var(--mono);
+  box-shadow: 0 0 0 2px var(--card-bg);
 }
 .chg-badge:hover { border-color: var(--accent); color: var(--accent); background: #eef2f6; }
 .chg-badge + .hist-btn { margin-left: 0.2rem; }

@@ -133,8 +133,13 @@ with sync_playwright() as p:
     n_ghosts = page.locator("#doc .ghost-line").count()
     check("ghost tombstones rendered", n_ghosts >= 1, f"{n_ghosts} ghosts")
     found_54a_ghost = page.evaluate(
-        "!!document.querySelector('#doc .ghost-line[data-addr$=\"section:54a\"]')")
+        "(() => { const el = document.querySelector('#doc [data-addr$=\"section:54a\"]');"
+        " return !!(el && el.textContent.includes('[kumottu]')); })()")
     check("54a § ghost tombstone present", found_54a_ghost)
+    old_54a_neutral = page.evaluate(
+        "(() => { const el = document.querySelector('#doc [data-addr$=\"section:54a\"]');"
+        " return !!(el && !el.classList.contains('change-removed')); })()")
+    check("old repealed tombstone is visually neutral", old_54a_neutral)
     page.fill("#sec-jump", "54 a")
     page.press("#sec-jump", "Enter")
     page.wait_for_timeout(1000)
@@ -162,6 +167,25 @@ with sync_playwright() as p:
     some_badge = page.locator("#doc .chg-badge .chg-count").all_text_contents()
     check("badge counts render", any("/" in t for t in some_badge) or len(some_badge) > 0,
           f"sample: {some_badge[:5]}")
+
+    # Focus current-date changes: collapse unchanged outline branches while
+    # keeping changed nodes and their ancestors visible.
+    page.click("#focus-changes")
+    page.wait_for_timeout(400)
+    collapsed_after_focus = page.locator("#doc .node.collapsed").count()
+    hidden_changed = page.evaluate(
+        "(() => [...document.querySelectorAll('#doc .changed')].filter(el => {"
+        " let p = el.parentElement;"
+        " while (p && p.id !== 'doc') {"
+        "   if (p.classList && p.classList.contains('node') && p.classList.contains('collapsed')) return true;"
+        "   p = p.parentElement;"
+        " }"
+        " return false;"
+        "}).length)()")
+    check("focus changed collapses unchanged branches", collapsed_after_focus > 0,
+          f"{collapsed_after_focus} collapsed")
+    check("focus changed keeps changed nodes visible", hidden_changed == 0,
+          f"{hidden_changed} hidden changed nodes")
 
     # Muutokset mode: localized per-provision changes
     page.click(".mode-btn[data-mode='amendments']")
@@ -404,6 +428,24 @@ with sync_playwright() as p:
         page.select_option("#statute-select", sid)
         page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
         check(f"statute {sid} loads + verifies", True)
+
+    # 527/2014 has a zero-delta checkpoint at 2028-05-01, then a fixed-term
+    # expiry on 2029-01-01. Surface both honestly in the primary law view.
+    page.select_option("#statute-select", "527/2014")
+    page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
+    page.select_option("#date-jump", label="2028-05-01")
+    page.wait_for_timeout(700)
+    zero_delta_meta = page.text_content("#date-meta") or ""
+    focus_disabled = page.locator("#focus-changes").is_disabled()
+    check("zero-delta checkpoint is labelled", "ei näkyviä tekstimuutoksia" in zero_delta_meta,
+          zero_delta_meta)
+    check("zero-delta checkpoint disables changed-only focus", focus_disabled)
+    page.select_option("#date-jump", label="2029-01-01")
+    page.wait_for_timeout(700)
+    expired_197a = page.evaluate(
+        "(() => { const el = document.querySelector('#doc .tombstone[data-addr$=\"section:197a/subsection:1\"]');"
+        " return !!(el && el.textContent.includes('[rauennut]') && el.classList.contains('change-expired')); })()")
+    check("fixed-term expiry tombstone is distinct", expired_197a)
     page.select_option("#statute-select", "301/2004")
     page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
 

@@ -639,7 +639,12 @@ function foldAt(date) {
     }
     if (t.action === 'delete_subtree' || t.action === 'tombstone' || t.post_hash === '') {
       live.delete(t.target_address);
-      tombstoned.set(t.target_address, { date: t.effective_date, source_id: t.source_id, he_ref: t.he_ref });
+      tombstoned.set(t.target_address, {
+        date: t.effective_date,
+        source_id: t.source_id,
+        he_ref: t.he_ref,
+        reason: removalReasonForTransition(t),
+      });
     } else {
       live.set(t.target_address, t.post_hash);
       tombstoned.delete(t.target_address);
@@ -1058,10 +1063,15 @@ async function selectDate(idx, opts) {
   }
 
   const meta = document.getElementById('date-meta');
-  const changedCount = [...changedAddrs].filter(a => live.has(a)).length;
+  const changedCount = changedAddrs.size;
   if (meta) {
+    const changeText = idx === 0
+      ? tr('originalAct')
+      : changedCount > 0
+        ? tr('changedToday', changedCount)
+        : tr('checkpointNoVisibleChanges');
     meta.textContent = `${tr('topUnits', live.size)} · `
-      + (idx === 0 ? tr('originalAct') : tr('changedToday', changedCount))
+      + changeText
       + ` · ${tr('changeDayOf', idx + 1, changeDates.length)}`;
   }
 
@@ -1233,6 +1243,7 @@ function renderLaw(opts) {
           <div class="tree-tools">
             <button id="expand-all">${escHtml(tr('expandAll'))}</button>
             <button id="collapse-all">${escHtml(tr('collapseAll'))}</button>
+            <button id="focus-changes" title="${escAttr(changedAddrs.size ? tr('focusChangedTip') : tr('focusChangedNoneTip'))}"${changedAddrs.size ? '' : ' disabled'}>${escHtml(tr('focusChanged'))}</button>
           </div>
         </div>
         <div class="tree-legend">
@@ -1245,6 +1256,7 @@ function renderLaw(opts) {
     </div>`;
   document.getElementById('expand-all').addEventListener('click', () => setAllCollapsed(false));
   document.getElementById('collapse-all').addEventListener('click', () => setAllCollapsed(true));
+  document.getElementById('focus-changes').addEventListener('click', collapseUnchangedAtSelectedDate);
   const tf = document.getElementById('toc-filter');
   tf.addEventListener('input', () => filterToc(tf.value));
   tf.addEventListener('keydown', (e) => { if (e.key === 'Enter') jumpFirstTocMatch(); });
@@ -1308,10 +1320,11 @@ function renderTreeEntry(entry, depth) {
     ? J.kindLabel(displayKind, display.num || '', display.label || n, parseInt(n || '0', 10) || 0)
     : J.addrSeg(k, n);
   const heading = display && display.heading ? display.heading : '';
-  const changed = [...entry.children.values()].some(c => changedAddrs.has(c.addr));
+  const changeKind = changeKindAtSelectedDate(entry.addr);
+  const changed = !!changeKind || [...entry.children.values()].some(c => changedAddrs.has(c.addr));
   const collapsed = collapsedAddrs.has(entry.addr);
-  let html = `<div class="node scaffold kind-${escAttr(displayKind)}${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
-  html += rowHtml(entry.addr, label, heading, changed, true, collapsed);
+  let html = `<div class="node scaffold kind-${escAttr(displayKind)}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
+  html += rowHtml(entry.addr, label, heading, changed, true, collapsed, changeKind);
   html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
   for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1);
   html += `</div></div>`;
@@ -1336,13 +1349,16 @@ function prevNodeMap(rootAddr) {
   return map;
 }
 
-function rowHtml(addr, label, heading, changed, collapsible, collapsed) {
+function rowHtml(addr, label, heading, changed, collapsible, collapsed, changeKind) {
   const kind = (addr.split('/').pop() || '').split(':')[0];
   let html = `<div class="node-row${collapsible ? ' clk' : ''} spyable" data-addr="${escAttr(addr)}">`;
   html += `<span class="node-toggle${collapsible ? '' : ' leaf'}">${collapsible ? (collapsed ? '▸' : '▾') : ''}</span>`;
   html += `<span class="node-label">${escHtml(label)}</span>`;
   if (heading) html += `<span class="node-heading">${escHtml(heading)}</span>`;
-  if (changed) html += `<span class="changed-tag">${escHtml(tr('changedTag'))}</span>`;
+  if (changed) {
+    const tagKind = changeKind || 'changed';
+    html += `<span class="changed-tag changed-tag-${escAttr(tagKind)}">${escHtml(changeKindLabel(tagKind))}</span>`;
+  }
   // Lifecycle badge cascades to every outline level (part/chapter/section):
   // an ancestor's strip aggregates all change activity beneath it.
   if (ROW_KINDS.has(kind)) html += changeBadgeHtml(addr);
@@ -1387,8 +1403,10 @@ function renderNode(node, addr, depth, prevMap) {
     // Outline row: chapter/section — collapsible, default expanded (reading
     // mode); collapse state is remembered across date scrubs and re-renders.
     const collapsed = collapsedAddrs.has(addr);
-    let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
-    html += rowHtml(addr, label, heading, changed, true, collapsed);
+    const changeKind = changeKindAtSelectedDate(addr);
+    if (changeKind) changed = true;
+    let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
+    html += rowHtml(addr, label, heading, changed, true, collapsed, changeKind);
     html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
     html += orderedBodyHtml(addr, node, depth, prevMap);
     html += `</div></div>`;
@@ -1399,7 +1417,9 @@ function renderNode(node, addr, depth, prevMap) {
   // rendered as readable statute text, addressable + history-hoverable. Class
   // mirrors the outline-node `kind-${kind}` pattern (jurisdiction-neutral).
   const hasEvidence = evidenceRelatedToAddress(addr).length > 0;
-  let html = `<div class="pblock kind-${kind}${changed ? ' changed' : ''}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`;
+  const changeKind = changeKindAtSelectedDate(addr);
+  if (changeKind) changed = true;
+  let html = `<div class="pblock kind-${kind}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`;
   // Block-level inner wrapper caps the reading measure; the label and text
   // flow inline within it (an inline-block text body would wrap to its own
   // line whenever the measure doesn't fit beside the label).
@@ -1482,10 +1502,11 @@ function tombstoneHtml(addr, info) {
   const src = info && info.source_id ? sourceById[info.source_id] : null;
   const srcLabel = src ? (src.canonical_id || src.title || info.source_id) : (info ? info.source_id : '');
   const label = localAddressLabel(addr, info);
-  return `<div class="node tombstone" data-addr="${escAttr(addr)}">`
+  const disposition = tombstoneDisposition(addr, info);
+  return `<div class="node tombstone${disposition.activeClass}" data-addr="${escAttr(addr)}">`
     + `<div class="node-row spyable" data-addr="${escAttr(addr)}">`
     + `<span class="node-toggle leaf"></span>`
-    + `<span class="tomb-label" title="${escAttr(prettyAddr(addr))}">${escHtml(label)} <em>${escHtml(tr('tombstone'))}</em></span>`
+    + `<span class="tomb-label" title="${escAttr(prettyAddr(addr))}">${escHtml(label)} <em class="${escAttr(disposition.reason)}">${escHtml(disposition.label)}</em></span>`
     + (info && info.date ? `<span class="tomb-meta">${refLink('date', { date: info.date, addr })}`
         + (info.source_id ? ' · ' + refLink('source', { id: info.source_id }, srcLabel) : '') + `</span>` : '')
     + evidenceBadgeHtml(addr)
@@ -1503,10 +1524,11 @@ function proseTombstoneHtml(addr, info, opts) {
     : '';
   const extraClass = opts && opts.extraClass ? ` ${opts.extraClass}` : '';
   const hasEvidence = evidenceRelatedToAddress(addr).length > 0;
-  return `<div class="pblock tombstone${extraClass} kind-${escAttr(addrKind(addr))}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`
+  const disposition = tombstoneDisposition(addr, info);
+  return `<div class="pblock tombstone${disposition.activeClass}${extraClass} kind-${escAttr(addrKind(addr))}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`
     + `<div class="pblock-inner">`
     + `<span class="pblock-num" title="${escAttr(prettyAddr(addr))}">${escHtml(label)}</span>`
-    + `<span class="pblock-body tomb-label"><em>${escHtml(tr('tombstone'))}</em>`
+    + `<span class="pblock-body tomb-label"><em class="${escAttr(disposition.reason)}">${escHtml(disposition.label)}</em>`
     + (meta ? `<span class="tomb-meta">${meta}</span>` : '')
     + (opts && opts.changeBadge ? changeBadgeHtml(addr) : '')
     + `</span>`
@@ -1570,6 +1592,63 @@ function setAllCollapsed(collapsed) {
   document.querySelectorAll('#doc .node').forEach(n => {
     if (n.querySelector(':scope > .node-body')) toggleCollapse(n, collapsed);
   });
+}
+
+function addressesChangedAtSelectedDate() {
+  if (curDateIdx <= 0) return new Set();
+  const changed = new Set();
+  for (const [addr, events] of changeIndex()) {
+    if (events.some(e => e.idx === curDateIdx)) changed.add(addr);
+  }
+  return changed;
+}
+
+function changeKindAtSelectedDate(addr) {
+  if (curDateIdx <= 0) return '';
+  const events = changeIndex().get(addr) || [];
+  const today = events.filter(e => e.idx === curDateIdx);
+  if (today.some(e => e.kind === 'removed')) {
+    return removalReason(addr, curDateIdx) === 'expiry' ? 'expired' : 'removed';
+  }
+  if (today.some(e => e.kind === 'added')) return 'added';
+  if (today.some(e => e.kind === 'changed')) return 'changed';
+  return '';
+}
+
+function changeKindLabel(kind) {
+  if (kind === 'added') return tr('insertedTag');
+  if (kind === 'expired') return tr('expiredTag');
+  if (kind === 'removed') return tr('removedTag');
+  return tr('changedTag');
+}
+
+function addressWithAncestors(addr) {
+  const keep = [];
+  const segs = String(addr || '').split('/').filter(Boolean);
+  let path = '';
+  for (const seg of segs) {
+    path = path ? `${path}/${seg}` : seg;
+    keep.push(path);
+  }
+  return keep;
+}
+
+function collapseUnchangedAtSelectedDate() {
+  const changed = addressesChangedAtSelectedDate();
+  const keepOpen = new Set();
+  for (const addr of changed) {
+    for (const parent of addressWithAncestors(addr)) keepOpen.add(parent);
+  }
+  document.querySelectorAll('#doc .node').forEach(n => {
+    if (!n.querySelector(':scope > .node-body')) return;
+    const addr = n.dataset.addr || '';
+    toggleCollapse(n, !keepOpen.has(addr));
+  });
+  const firstChanged = [...changed].sort(addrCompare)[0];
+  if (firstChanged) {
+    const el = document.querySelector(`#doc [data-addr="${cssEsc(firstChanged)}"]`);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 }
 
 // Find-in-page reveal of hidden="until-found" content: expand ancestors.
@@ -1806,8 +1885,16 @@ function changeIndex() {
     }
     l.push({ idx, kind });
   };
+  const pushWithAncestors = (addr, idx, kind) => {
+    const parts = String(addr || '').split('/').filter(Boolean);
+    let path = '';
+    for (let i = 0; i < parts.length; i++) {
+      path = path ? `${path}/${parts[i]}` : parts[i];
+      push(path, idx, i === parts.length - 1 ? kind : 'changed');
+    }
+  };
   const markAllAddressable = (node, addr, idx, kind) => {
-    push(addr, idx, kind);
+    pushWithAncestors(addr, idx, kind);
     for (const { child, childAddr } of structChildren(node, addr)) {
       markAllAddressable(child, childAddr, idx, kind);
     }
@@ -1817,7 +1904,7 @@ function changeIndex() {
     if (!nA) { markAllAddressable(nB, addr, idx, 'added'); return; }
     if (!nB) { markAllAddressable(nA, addr, idx, 'removed'); return; }
     if (subtreeFingerprint(nA) === subtreeFingerprint(nB)) return;
-    push(addr, idx, 'changed');
+    pushWithAncestors(addr, idx, 'changed');
     const kidsA = new Map(structChildren(nA, addr).map(k => [k.childAddr, k.child]));
     const kidsB = new Map(structChildren(nB, addr).map(k => [k.childAddr, k.child]));
     for (const ca of new Set([...kidsA.keys(), ...kidsB.keys()])) {
@@ -1844,11 +1931,27 @@ function changeIndex() {
   return changeIdxCache;
 }
 
+function removalReasonForTransition(t) {
+  return String((t && t.legal_op_kind) || '').split(',').includes('expiry')
+    ? 'expiry' : 'repeal';
+}
+
 // Was a removal at changeDates[idx] a scheduled fixed-term expiry or a repeal?
 function removalReason(addr, idx) {
   const ts = transitionsFor(addr, changeDates[idx]);
-  return ts.some(t => String(t.legal_op_kind || '').split(',').includes('expiry'))
-    ? 'expiry' : 'repeal';
+  return ts.some(t => removalReasonForTransition(t) === 'expiry') ? 'expiry' : 'repeal';
+}
+
+function tombstoneDisposition(addr, info) {
+  const removedIdx = info && info.date ? changeDates.indexOf(info.date) : -1;
+  const reason = info && info.reason ? info.reason : (removedIdx >= 0 ? removalReason(addr, removedIdx) : 'repeal');
+  const active = removedIdx === curDateIdx;
+  const activeClass = active ? (reason === 'expiry' ? ' change-expired' : ' change-removed') : '';
+  return {
+    reason,
+    activeClass,
+    label: reason === 'expiry' ? tr('expiredTombstone') : tr('tombstone'),
+  };
 }
 
 // Badge "3/12" (changes up to the scrubbed date / total over the timeline)
@@ -1934,7 +2037,11 @@ function ghostHtml(g) {
   const t = ts.length ? ts[ts.length - 1] : null;
   return proseTombstoneHtml(
     g.addr,
-    { date, source_id: t && t.source_id ? t.source_id : '' },
+    {
+      date,
+      source_id: t && t.source_id ? t.source_id : '',
+      reason: removalReason(g.addr, g.removedIdx),
+    },
     { extraClass: 'ghost-line', changeBadge: true },
   );
 }
