@@ -63,6 +63,7 @@ from lawvm.finland.johtolause.grammar.sections import (
     _letter,
     _number_list,
     _part_ctx,
+    _sep,
 )
 from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
@@ -393,6 +394,25 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
                     )
                 )
         return out
+
+    # ``uusi N §`` / ``uusi N luku`` — a whole-section / whole-chapter insert that
+    # the old ``_insertion_sub_target`` (lines 2008-2029) also recognizes at a
+    # sub-target position. This is the continuation arm a chained insertion folds
+    # into the same §:ILL/§:GEN batch (``130 §:ään uusi 2 ja 3 momentti sekä uusi
+    # 145 a §``): the ``145 a §`` is a fresh whole-section insert (the host
+    # ``sec`` is not its scope), kept in the batch by the shared witness span.
+    if _at(scan, "PYKALA"):
+        scan.advance()
+        return [
+            InsNode(kind=TargetKind.SECTION, label=n + sf, chapter=chapter, part=part)
+            for n, sf in nums
+        ]
+    if _at(scan, "LUKU"):
+        scan.advance()
+        return [
+            InsNode(kind=TargetKind.CHAPTER, label=n + sf, part=part)
+            for n, sf in nums
+        ]
 
     return None
 
@@ -853,8 +873,12 @@ def _try_section_gen_sub_target(
                 all_nodes.extend(sub)
             if sec != sec_nums[-1]:
                 scan.goto(saved_sub)
+        # Unlike the §:ILL Pattern A arm, the old §:GEN Patterns B2/B3
+        # (surface_parse lines 2520-2548) have NO anaphoric continuation loop: a
+        # following ``ja uusi N §`` / ``sekä uusi M momentti`` arm starts a fresh
+        # ``_target`` batch (its own witness span), so it is NOT folded here —
+        # the driver's separator loop owns it.
         if all_nodes:
-            _consume_sub_target_continuation(scan, sec_nums, chapter, part, all_nodes)
             return all_nodes
         scan.goto(saved)
         return None
@@ -871,7 +895,6 @@ def _try_section_gen_sub_target(
             if sec != sec_nums[-1]:
                 scan.goto(saved_sub)
         if all_nodes:
-            _consume_sub_target_continuation(scan, sec_nums, chapter, part, all_nodes)
             return all_nodes
     scan.goto(saved)
     return None
@@ -900,6 +923,96 @@ def _try_luku_scoped(
         ]
     scan.goto(saved)
     return None
+
+
+# Heading-facet / postfix-chapter markers whose presence in a post-``§`` DOC
+# continuation arm means the old parser folds an arm this recogniser cannot
+# reproduce in-batch (heading placement / postfix chapter). Their presence
+# forces the whole DOC insertion to decline.
+_DOC_CONT_OOS_CATS = frozenset({"EDELLA", "OTSIKKO", "VALIOTSIKKO", "LIITE"})
+
+
+def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> bool:
+    """Fold post-``§`` ``[sekä/ja] [DOC:ILL] [uusi] <nums> § (NOM)`` arms.
+
+    Faithful to the in-scope subset of the old Pattern C continuation loop
+    (surface_parse lines 2726-2764): a plain whole-section continuation joined by
+    a separator extends the SAME batch. Each folded arm appends SECTION
+    ``InsNode``s to ``out_nodes`` so they share the driver's batch witness span.
+
+    Returns ``True`` when the continuation was fully folded / cleanly ended (the
+    cursor is left after the last folded arm, with any unparsed separator rewound
+    so the driver's loop owns the next arm). Returns ``False`` when a continuation
+    arm the old parser would fold into this batch is one this recogniser cannot
+    reproduce (a heading-placement or postfix-chapter arm: ``<nums> § lukuun`` /
+    ``<nums> §:n edelle … väliotsikko``) — the caller then declines the whole
+    insertion rather than emit a divergent grouping / span.
+    """
+    while True:
+        cont_saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(cont_saved)
+            return True
+        # Optional ``…, lakiin uusi …`` re-anchor and repeated ``uusi``.
+        if _at_cat_case(scan, "DOC", "ILL"):
+            scan.advance()
+        _consume_uusi(scan)
+
+        arm_start = scan.pos
+        more_nums = _number_list(scan)
+        nxt = scan.peek()
+        if more_nums and nxt is not None and nxt.cat == "PYKALA" and nxt.case == "NOM":
+            # A ``<nums> § lukuun <chap>`` postfix-chapter arm is folded by the old
+            # parser into this batch but is out of scope here — decline.
+            after = scan.peek(1)
+            if after is not None and after.cat == "LUKU" and after.case == "ILL":
+                scan.goto(cont_saved)
+                return False
+            scan.advance()  # consume § (NOM)
+            out_nodes.extend(
+                InsNode(kind=TargetKind.SECTION, label=n + sf, chapter="")
+                for n, sf in more_nums
+            )
+            continue
+
+        # Not a plain NOM-section arm. If this arm carries a heading-facet /
+        # postfix / appendix marker (which the old parser folds into THIS batch),
+        # we cannot reproduce it — decline. Otherwise (a §:ILL / §:GEN sub-target
+        # arm, or any other shape the old parser leaves for the outer target-list
+        # loop) rewind to the separator and let the driver own the next arm.
+        boundary = _doc_cont_arm_boundary(scan, arm_start)
+        if _arm_has_oos_marker(scan, arm_start, boundary):
+            scan.goto(cont_saved)
+            return False
+        scan.goto(cont_saved)
+        return True
+
+
+def _doc_cont_arm_boundary(scan: _Scan, start: int) -> int:
+    """Index of the next separator / verb / end at/after ``start`` (one arm)."""
+    toks = scan.cur.tokens
+    for i in range(start, len(toks)):
+        if toks[i].cat in ("VERB", "END", "END_SENTINEL_SPAN", "COMMA", "CONJ", "SEKA"):
+            return i
+    return len(toks)
+
+
+def _arm_has_oos_marker(scan: _Scan, start: int, end: int) -> bool:
+    """True if a heading / postfix / appendix marker lives in [start, end)."""
+    toks = scan.cur.tokens
+    for i in range(start, min(end, len(toks))):
+        if toks[i].cat in _DOC_CONT_OOS_CATS:
+            return True
+        # A ``§ lukuun`` postfix-chapter arm: a PYKALA immediately followed by a
+        # LUKU:ILL destination.
+        if (
+            toks[i].cat == "PYKALA"
+            and i + 1 < len(toks)
+            and toks[i + 1].cat == "LUKU"
+            and toks[i + 1].case == "ILL"
+        ):
+            return True
+    return False
 
 
 def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
@@ -945,15 +1058,29 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
         scan.goto(saved)
         return None
 
-    # A chained ``sekä/ja uusi …`` continuation is out of scope: if a separator
-    # immediately follows that would extend the enumeration, decline.
+    # Pre-``§`` chained ``[sekä/ja] uusi <nums>`` groups: the old Pattern C
+    # (lines 2680-2689) collects every ``uusi <range>`` arm joined by a separator
+    # before the closing structural noun into one batch (``lakiin uusi 5 ja 6
+    # sekä uusi 7 ja 8 §``). Reproduce the collection so the closing ``§`` applies
+    # to the whole list.
+    all_nums = list(nums2)
+    while True:
+        saved_chain = scan.pos
+        if _sep(scan) is not None and _consume_uusi(scan):
+            more = _number_list(scan)
+            if more:
+                all_nums.extend(more)
+                continue
+        scan.goto(saved_chain)
+        break
+
     t = scan.peek()
     if t is None:
         scan.goto(saved)
         return None
     if t.cat == "OSA":
         scan.advance()
-        return [InsNode(kind=TargetKind.PART, label=n + sf, chapter="") for n, sf in nums2]
+        return [InsNode(kind=TargetKind.PART, label=n + sf, chapter="") for n, sf in all_nums]
     if t.cat in ("PYKALA", "LUKU") and t.case != "GEN":
         # Malformed ``§ luku`` chapter insert is out of scope.
         if t.cat == "PYKALA":
@@ -963,12 +1090,22 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
                 return None
         kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
         scan.advance()
-        # A trailing separator (the start of a ``sekä/ja …`` continuation arm)
-        # means a multi-arm enumeration the old parser threads — out of scope.
-        if kind == TargetKind.SECTION and _at(scan, "COMMA", "CONJ"):
-            scan.goto(saved)
-            return None
-        return [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in nums2]
+        out_nodes = [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in all_nums]
+        # Post-``§`` NOM-section continuation: the old Pattern C (lines 2726-2764)
+        # folds further ``[sekä/ja] [DOC:ILL] [uusi] <nums> § (NOM)`` whole-section
+        # arms into the SAME batch (one shared witness span). Reproduce ONLY the
+        # plain NOM-section arms. A trailing heading-placement / postfix-chapter
+        # arm (which the old parser would ALSO fold into this batch) cannot have
+        # its in-batch span reproduced here, so its presence forces a decline of
+        # the whole insertion (cursor rewound to ``saved``). A §:ILL / §:GEN
+        # sub-target continuation (which the old parser leaves for the outer loop)
+        # is left un-folded: the cursor is rewound to just after the last folded
+        # section so the driver's separator loop owns the next arm.
+        if kind == TargetKind.SECTION:
+            if not _fold_doc_section_continuation(scan, out_nodes):
+                scan.goto(saved)
+                return None
+        return out_nodes
 
     # ``DOC:ILL uusi numlist §:GEN M momentti/kohta`` (old Pattern C, lines
     # 2766-2795): the genitive §:n is a sub-target insert into the single section.

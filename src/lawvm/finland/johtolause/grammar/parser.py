@@ -362,28 +362,55 @@ def _prov_rementtion_leaks(scan: _Scan) -> bool:
         # fresh duplicate target. The new section path drops it → leak.
         return True
     # The first arm IS closed by a provenance trigger, so the old skip consumes
-    # it. A SECOND, separately-attributed ``ja <N> § … [CITE]`` arm joined by a
-    # CONJ right after the first closer is re-parsed by the old target loop as a
-    # fresh duplicate section ref and leaks — BUT only when that second arm
-    # carries a ``PYKALA`` (a re-parseable section target). A second arm that is
-    # a bare comma-list continuation (no leading CONJ) or a sub-component-only
-    # ``ja 10 kohta [CITE]`` run (KOHTA, no ``§``) the old ``_target`` cannot mint
-    # into a node, and it is dropped byte-identically — so those do NOT leak and
-    # must not be declined (over-decline of 0-delta). The bare-list multi-arm
-    # ``[CITE] 6, 8, … § [CITE]`` continuation is likewise absorbed by the old
-    # residue-skipping (no CONJ second-arm head), and is intentionally left as a
-    # residual structural delta rather than risk over-declining.
+    # it. A SECOND, separately-attributed arm joined by a CONJ or COMMA right
+    # after the first closer is re-parsed by the old target loop as a fresh
+    # duplicate section ref and leaks — but only when that arm carries a
+    # re-parseable ``PYKALA`` and is itself closed by a PROV / CITATION_SPAN
+    # trigger. A sub-component-only ``ja 10 kohta [CITE]`` run (KOHTA, no ``§``)
+    # the old ``_target`` cannot mint into a node, and a run NOT closed by a
+    # trigger is the operative target list the old parser keeps — neither leaks,
+    # so neither is declined (over-decline of 0-delta).
+    #
+    # A CONJ-led second arm is always honoured. The COMMA-led case is honoured
+    # ONLY when the ``näistä/niistä`` anchor sits IMMEDIATELY at the dropped-tail
+    # cursor (only separators / sentinels between ``scan.pos`` and the anchor).
+    # When the old parser TRUNCATED its target list before ever reaching the
+    # anchor (an intervening structural arm the new section path also dropped —
+    # e.g. a ``96 a §:n johdantolause`` JOHD arm), the old loop never reaches the
+    # re-mention and so never leaks; firing there would over-decline a clause the
+    # new parser already reproduces 0-delta.
     j = i + 1
-    if j < n and toks[j].cat == "CONJ":
-        j += 1
-        saw_pykala = False
-        while j < n and toks[j].cat in _PROV_RUN_CATS:
-            if toks[j].cat == "PYKALA":
-                saw_pykala = True
+    if j < n and toks[j].cat in ("CONJ", "COMMA"):
+        comma_led = toks[j].cat == "COMMA"
+        if not comma_led or _anchor_is_immediate(toks, scan.pos, anchor):
             j += 1
-        if saw_pykala and j < n and toks[j].cat in _PROV_CLOSER_CATS:
-            return True
+            saw_pykala = False
+            while j < n and toks[j].cat in _PROV_RUN_CATS:
+                if toks[j].cat == "PYKALA":
+                    saw_pykala = True
+                j += 1
+            if saw_pykala and j < n and toks[j].cat in _PROV_CLOSER_CATS:
+                return True
     return False
+
+
+# Separator / sentinel cats that may sit between the dropped-tail cursor and a
+# ``näistä/niistä`` re-mention anchor without the old parser having truncated its
+# target list first (so the anchor is "immediately" reachable).
+_ANCHOR_LEADIN_CATS = frozenset(
+    {"COMMA", "CONJ", "SEKA", "DASH"}
+) | _SENTINEL_SPAN_CATS
+
+
+def _anchor_is_immediate(toks, start: int, anchor: int) -> bool:
+    """True if only separators / sentinels sit between ``start`` and ``anchor``.
+
+    When any structural token (NUM / PYKALA / MOMENTTI / JOHD / …) intervenes,
+    the old parser truncated its target list before reaching the re-mention
+    anchor (it never leaks the anchor's arms), so the comma-led leak cue must not
+    fire.
+    """
+    return all(toks[k].cat in _ANCHOR_LEADIN_CATS for k in range(start, anchor))
 
 
 def _tail_starts_with_appendix_arm(scan: _Scan) -> bool:
@@ -1347,13 +1374,30 @@ def _tail_is_benign(scan: _Scan) -> bool:
     Used to decide whether an undecodable insertion continuation is a genuine
     out-of-scope shape (real content the old parser would have emitted) or
     merely trailing punctuation / sentinel spans the old outer loop swallows.
+
+    A trailing ``WORD`` run is benign ONLY when it runs straight to end-of-stream
+    (no VERB, no structural target after it): a misspelled ``seuraavasti`` END
+    marker the lexer left as a WORD, or stray discourse trivia the old outer loop
+    swallows to reach the end. A WORD that LEADS INTO a later VERB / structural
+    target is NOT benign — it can open a move tail (``johon samalla siirretään
+    …``) or anchor (``sanottuun lakiin …``) the old parser folds into the group,
+    so the insertion tail must stay out of scope rather than truncate the group.
     """
     toks = scan.cur.tokens
+    saw_word = False
     for i in range(scan.pos, len(toks)):
-        if toks[i].cat == "VERB":
-            return True
-        if toks[i].cat not in _BENIGN_TAIL_CATS:
-            return False
+        cat = toks[i].cat
+        if cat == "VERB":
+            # A WORD run that precedes a later VERB may open a move/anchor tail the
+            # old parser folds into THIS group; only a pure benign run (no WORD)
+            # up to the verb is safe.
+            return not saw_word
+        if cat in _BENIGN_TAIL_CATS:
+            continue
+        if cat == "WORD":
+            saw_word = True
+            continue
+        return False
     return True
 
 

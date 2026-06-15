@@ -136,6 +136,65 @@ def test_corpus_kohta_into_momentti_regressions_are_zero_delta(text: str) -> Non
     assert report.equal, f"delta on {text!r}:\n{report.summary()}"
 
 
+# Multi-arm chained insertion clauses the old parser threads across separators:
+# a DOC:ILL whole-section batch folds further ``[, | sekä/ja] [DOC:ILL] [uusi]
+# <nums> § (NOM)`` whole-section arms into ONE shared witness span, while a
+# following §:ILL / §:GEN sub-target arm starts a fresh ``_target`` batch (its
+# own span). A §:ILL sub-target arm in turn folds a trailing ``sekä uusi N §``
+# whole-section continuation into its OWN batch. Each must round-trip 0-delta.
+CHAINED_INSERTION_EXAMPLES = [
+    # Pre-``§`` ``uusi … sekä uusi …`` chain folded into one batch.
+    "lisätään lakiin uusi 5 ja 6 sekä uusi 7 ja 8 § seuraavasti:",
+    "lisätään lakiin uusi 5 ja 6 § sekä uusi 35 c § seuraavasti:",
+    # Post-``§`` bare NOM-section continuation folded into the same batch.
+    "lisätään lakiin uusi 5 §, 6 § ja 7 § seuraavasti:",
+    "lisätään lakiin uusi 5 § ja uusi 6 § seuraavasti:",
+    # DOC:ILL whole-section arm + a fresh §:ILL sub-target arm (separate batches).
+    "lisätään lakiin uusi 100 a §, lain 124 §:ään uusi 3 momentti seuraavasti:",
+    # §:ILL sub-target arm with a trailing ``sekä uusi N §`` whole-section fold.
+    "lisätään 130 §:ään uusi 2 ja 3 momentti sekä uusi 145 a § seuraavasti:",
+    # A DOC:ILL whole-section arm followed by a §:ILL whole-section sekä-fold:
+    "lisätään lakiin uusi 5 § sekä 6 §:ään uusi 2 momentti seuraavasti:",
+    # The full multi-section / multi-momentti chain (1975/674 shape).
+    "lisätään lakiin uusi 42 a ja 100 a §, lain 124 §:ään uusi 3 momentti ja "
+    "130 §:ään uusi 2 ja 3 momentti sekä uusi 145 a § seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", CHAINED_INSERTION_EXAMPLES)
+def test_chained_insertion_arms_are_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_doc_section_chain_shares_one_batch_witness_span() -> None:
+    # ``lakiin uusi 5 §, 6 § ja 7 §`` — the post-``§`` NOM-section continuation is
+    # folded into the SAME batch, so all three inserts share one witness span (the
+    # old ``_target`` stamps one span per batch).
+    model = parse_text_with(
+        "lisätään lakiin uusi 5 §, 6 § ja 7 § seuraavasti:", new_parser.parse
+    )
+    (vg,) = model.verb_groups
+    labels = [_as_insertion(n).label for n in vg.nodes]
+    assert labels == ["5", "6", "7"]
+    spans = {_as_insertion(n).witness.source_span for n in vg.nodes if n.witness}
+    assert len(spans) == 1, f"expected one shared batch span, got {spans}"
+
+
+def test_section_ill_sub_target_folds_trailing_whole_section() -> None:
+    # ``130 §:ään uusi 2 ja 3 momentti sekä uusi 145 a §`` — the trailing whole
+    # section is folded into the §:ILL sub-target arm's batch (old Pattern A's
+    # continuation reaching ``_insertion_sub_target``'s PYKALA arm).
+    model = parse_text_with(
+        "lisätään 130 §:ään uusi 2 ja 3 momentti sekä uusi 145 a § seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    assert [_as_insertion(n).label for n in vg.nodes] == ["130", "130", "145a"]
+    spans = {_as_insertion(n).witness.source_span for n in vg.nodes if n.witness}
+    assert len(spans) == 1, f"expected one shared batch span, got {spans}"
+
+
 def test_momentin_tilalle_uusi_momentti_stays_section_ref() -> None:
     # A §:GEN momentti GENITIVE reinstatement ("N §:n M momentin tilalle uusi M
     # momentti") is NOT a Pattern B2 insertion (the old parser does not skip the
