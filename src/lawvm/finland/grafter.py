@@ -127,6 +127,11 @@ logger = logging.getLogger(__name__)
 
 AMENDMENT_PARENTS_CSV = Path(".cache/finland/amendment_parents.csv")  # internal cache, auto-built
 
+FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID = "fi.restructure.renumber_timeline"
+FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID = (
+    "fi.restructure.chapter_part_move_timeline"
+)
+
 
 # ---------------------------------------------------------------------------
 # Uncovered body recovery cluster (moved to grafter_uncovered.py; re-exported)
@@ -625,10 +630,61 @@ def _emit_restructure_plan_renumber_legal_operations(
                 destination=event.to_address,
                 source=source,
                 group_id=f"finland-restructure:{amendment_id}",
+                witness_rule_id=FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID,
             )
         )
         emitted += 1
     return emitted
+
+
+@dataclass(frozen=True, slots=True)
+class _ChapterPartMoveTimelineRequest:
+    amendment_id: str
+    chapter_label: str
+    old_part_label: str
+    new_part_label: str
+    payload: IRNode
+    source: OperationSource
+
+
+@dataclass(frozen=True, slots=True)
+class _ChapterPartMoveTimelineOps:
+    repeal: _LegalOperation
+    insert: _LegalOperation
+
+
+def _build_chapter_part_move_timeline_ops(
+    request: _ChapterPartMoveTimelineRequest,
+) -> _ChapterPartMoveTimelineOps:
+    old_chapter_path = (
+        ("part", request.old_part_label),
+        ("chapter", request.chapter_label),
+    )
+    new_chapter_path = (
+        ("part", request.new_part_label),
+        ("chapter", request.chapter_label),
+    )
+    return _ChapterPartMoveTimelineOps(
+        repeal=_LegalOperation(
+            op_id=f"chapter_part_move_repeal_{request.chapter_label}_{request.amendment_id}",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=old_chapter_path),
+            source=request.source,
+            group_id=f"finland-johto:{request.amendment_id}",
+            witness_rule_id=FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID,
+        ),
+        insert=_LegalOperation(
+            op_id=f"chapter_part_move_insert_{request.chapter_label}_{request.amendment_id}",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=new_chapter_path),
+            payload=request.payload,
+            source=request.source,
+            group_id=f"finland-johto:{request.amendment_id}",
+            witness_rule_id=FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID,
+        ),
+    )
 
 
 def _duplicate_section_labels_across_chapters(master_ir: IRNode) -> Set[str]:
@@ -3437,31 +3493,20 @@ def _apply_ops_to_tree_typed(
                         if _old_part not in _parts_after:
                             continue  # old part gone → chapter was relabeled, not moved
                         # Chapter moved from _old_part to _mp.label this amendment.
-                        _old_ch_tl = (("part", _old_part), ("chapter", _mc.label))
-                        _new_ch_tl = (("part", _mp.label), ("chapter", _mc.label))
-                        # Tombstone old address so base overlay omits ch from old part.
-                        lo_ops_out.append(
-                            _LegalOperation(
-                                op_id=f"chapter_part_move_repeal_{_mc.label}_{amendment_id}",
-                                sequence=0,
-                                action=StructuralAction.REPEAL,
-                                target=LegalAddress(path=_old_ch_tl),
-                                source=_uncov_src,
-                                group_id=f"finland-johto:{amendment_id}",
-                            )
-                        )
-                        # Insert full chapter content at new address.
-                        lo_ops_out.append(
-                            _LegalOperation(
-                                op_id=f"chapter_part_move_insert_{_mc.label}_{amendment_id}",
-                                sequence=0,
-                                action=StructuralAction.INSERT,
-                                target=LegalAddress(path=_new_ch_tl),
+                        _part_move_ops = _build_chapter_part_move_timeline_ops(
+                            _ChapterPartMoveTimelineRequest(
+                                amendment_id=amendment_id,
+                                chapter_label=_mc.label,
+                                old_part_label=_old_part,
+                                new_part_label=_mp.label,
                                 payload=_mc,
                                 source=_uncov_src,
-                                group_id=f"finland-johto:{amendment_id}",
                             )
                         )
+                        # Tombstone old address so base overlay omits ch from old part.
+                        lo_ops_out.append(_part_move_ops.repeal)
+                        # Insert full chapter content at new address.
+                        lo_ops_out.append(_part_move_ops.insert)
                         logger.debug(
                             "  [%s] chapter part-move LO: ch:%s part:%s → part:%s",
                             amendment_id, _mc.label, _old_part, _mp.label,

@@ -13121,7 +13121,10 @@ def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum
 def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber_lo() -> None:
     from lawvm.core.ir import LegalAddress
     from lawvm.core.provenance import MigrationEvent
-    from lawvm.finland.grafter import _emit_restructure_plan_renumber_legal_operations
+    from lawvm.finland.grafter import (
+        FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID,
+        _emit_restructure_plan_renumber_legal_operations,
+    )
 
     lo_ops: list[LegalOperation] = []
     emitted = _emit_restructure_plan_renumber_legal_operations(
@@ -13147,6 +13150,39 @@ def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber
     assert lo_ops[0].action is StructuralAction.RENUMBER
     assert lo_ops[0].target == LegalAddress(path=(("section", "73"),))
     assert lo_ops[0].destination == LegalAddress(path=(("chapter", "7"), ("section", "61")))
+    assert lo_ops[0].witness_rule_id == FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID
+
+
+def test_build_chapter_part_move_timeline_ops_stamps_stable_witness_rule_id() -> None:
+    from lawvm.core.ir import IRNode, LegalAddress, OperationSource
+    from lawvm.core.semantic_types import IRNodeKind
+    from lawvm.finland.grafter import (
+        FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID,
+        _ChapterPartMoveTimelineRequest,
+        _build_chapter_part_move_timeline_ops,
+    )
+
+    chapter = IRNode(kind=IRNodeKind.CHAPTER, label="2", children=())
+    source = OperationSource(statute_id="1994/318", title="Test", enacted="", effective="")
+
+    ops = _build_chapter_part_move_timeline_ops(
+        _ChapterPartMoveTimelineRequest(
+            amendment_id="1994/318",
+            chapter_label="2",
+            old_part_label="I",
+            new_part_label="II",
+            payload=chapter,
+            source=source,
+        )
+    )
+
+    assert ops.repeal.action is StructuralAction.REPEAL
+    assert ops.repeal.target == LegalAddress(path=(("part", "I"), ("chapter", "2")))
+    assert ops.repeal.witness_rule_id == FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID
+    assert ops.insert.action is StructuralAction.INSERT
+    assert ops.insert.target == LegalAddress(path=(("part", "II"), ("chapter", "2")))
+    assert ops.insert.payload is chapter
+    assert ops.insert.witness_rule_id == FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID
 
 
 def test_ambiguous_unscoped_additive_fallback_insert_observation() -> None:

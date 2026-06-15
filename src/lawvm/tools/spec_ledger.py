@@ -271,6 +271,8 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi.recovery.uncovered_body": "Uncovered-body recovery synthesizes a section INSERT/REPLACE from unclaimed amendment body XML.",
     "fi.recovery.uncovered_chapter_scaffold": "Uncovered-body recovery materializes a missing chapter scaffold needed to host recovered or parsed section operations.",
     "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
+    "fi.restructure.renumber_timeline": "A restructure-plan migration event emits an explicit RENUMBER operation so timeline compilation tombstones the old address.",
+    "fi.restructure.chapter_part_move_timeline": "A chapter moved under a newly created part emits an old-address tombstone plus new-address insert so PIT materialization preserves the move.",
 }
 
 # Fold the FI catalog supplement (firing parse-witness rules + the fallback-extraction
