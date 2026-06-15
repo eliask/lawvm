@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import pytest
 
+from typing import get_args
+
 from lawvm.finland.johtolause.rule_registry import (
     FINLAND_RULE_REGISTRY,
     ParseRule,
+    Register,
     RuleExample,
 )
 
@@ -135,6 +138,61 @@ def test_registry_get_known_rule():
 
 def test_registry_get_unknown_rule_returns_none():
     assert FINLAND_RULE_REGISTRY.get("fi.nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# Register tier: every emitted rule must carry a valid best-practice tier
+# ---------------------------------------------------------------------------
+
+
+def test_every_rule_has_a_valid_register_tier():
+    """Every registered (and thus emitted) rule must carry a register tier
+    drawn from the Register literal — the DATA half of the best-practice
+    drafting grammar.  No rule may be left untiered."""
+    valid = set(get_args(Register))
+    assert valid == {"canonical", "accepted", "discouraged", "archaic"}
+    for rule in FINLAND_RULE_REGISTRY.all_rules():
+        assert rule.register in valid, (
+            f"Rule {rule.rule_id!r} has invalid/absent register "
+            f"tier {rule.register!r}"
+        )
+
+
+def test_every_emitted_rule_id_resolves_to_a_register_tier():
+    """The completeness guard: every witness rule_id the johtolause module can
+    emit must resolve (directly or via legacy alias) to a registry rule that
+    carries a register tier."""
+    from lawvm.finland.johtolause.rule_registry import get_rule
+
+    valid = set(get_args(Register))
+    emitted = _collect_emitted_rule_ids()
+    untiered: list[str] = []
+    for rid in sorted(emitted):
+        rule = get_rule(rid)
+        if rule is None or rule.register not in valid:
+            untiered.append(rid)
+    assert not untiered, (
+        "Emitted witness rule_id(s) lacking a register tier:\n"
+        + "\n".join(f"  - {rid}" for rid in untiered)
+    )
+
+
+def test_canonical_workhorse_rules_are_canonical():
+    """Spot-check the tier assignment: the dominant clean forms are canonical
+    and the known archaic/anaphoric fossils are not."""
+    expected = {
+        "fi.section_ref": "canonical",
+        "fi.meta_commencement": "canonical",
+        "fi.backref_singular": "archaic",
+        "fi.section_ref_pykala_prefix": "archaic",
+        "fi.insertion_other": "discouraged",
+    }
+    for rule_id, tier in expected.items():
+        rule = FINLAND_RULE_REGISTRY.get(rule_id)
+        assert rule is not None, f"missing rule {rule_id!r}"
+        assert rule.register == tier, (
+            f"{rule_id!r}: expected register {tier!r}, got {rule.register!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

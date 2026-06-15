@@ -26,9 +26,38 @@ Rule categories:
 """
 
 from __future__ import annotations
+from typing import Literal
 from typing_extensions import override
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+
+# ---------------------------------------------------------------------------
+# Register tier — best-practice drafting classification (DATA, not logic)
+# ---------------------------------------------------------------------------
+
+# A static "register" tier per witness rule: the cheap half of the
+# best-practice-grammar side-goal.  This is metadata only — it does NOT affect
+# parsing.  The new parser keeps PARSING every form (old laws are immutable);
+# the tier only RECOMMENDS the modern canonical subset for NEW drafting.
+#
+# The criterion is MULTI-AXIS, not raw frequency.  A form is pushed below
+# ``canonical`` if it trips ANY of:
+#   * archaic register      — bad even if unambiguous (old ministerial anaphora,
+#                             genitive-plural prefix forms); plain-drafting +
+#                             convention-uniformity grounds.
+#   * ambiguous / parser-hack-requiring / silent-drop-prone — caused diff
+#                             deltas, needs special-case arms or a precedence
+#                             rule, or relies on discourse/anaphora resolution.
+#   * needlessly variant of a canonical form — two ways to say the same thing.
+# Spared: rare-but-modern-clear forms (legitimate compositions of standard
+# parts).  Frequency is EVIDENCE, not the criterion.
+#
+#   canonical   — the dominant clean forms; recommend these for new drafting.
+#   accepted    — rare-but-modern-clear; legitimate, no reason to discourage.
+#   discouraged — needlessly-variant / ambiguous / parser-hack / catch-all.
+#   archaic     — archaic register; parse forever, never recommend.
+Register = Literal["canonical", "accepted", "discouraged", "archaic"]
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +127,9 @@ class ParseRule:
         category:    Rule family: "structural", "insertion", "sub_ref",
                      "resolution", "renumber", "meta", "text_amend".
         shape:       Compact token-pattern notation (optional).
+        register:    Best-practice drafting tier (see ``Register``).  Metadata
+                     only — does not affect parsing.  Assigned from
+                     ``_REGISTER_TIERS`` when the registry is built.
     """
 
     rule_id: str
@@ -106,6 +138,7 @@ class ParseRule:
     examples: tuple[RuleExample, ...]
     category: str = ""
     shape: str = ""
+    register: Register = "accepted"
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +191,111 @@ class RuleRegistry:
     @override
     def __repr__(self) -> str:
         return f"RuleRegistry({len(self._rules)} rules)"
+
+
+# ---------------------------------------------------------------------------
+# Register tier assignment (DATA — one tier per registered rule_id)
+# ---------------------------------------------------------------------------
+
+# rule_id -> Register tier.  Every rule registered in ``_build_registry`` MUST
+# appear here exactly once; the build raises otherwise (no silent default).
+# Rationale for the below-canonical entries is in the trailing comments and in
+# `notes/FI_JOHTOLAUSE_SURFACE_PARSER_CONTRACT.md` + memory
+# project_fi_best_practice_grammar_sidegoal / project_fi_parser_swap_adjudication.
+_REGISTER_TIERS: dict[str, Register] = {
+    # --- CANONICAL: dominant clean modern forms; recommend for new drafting ---
+    "fi.section_ref": "canonical",  # the 130k-op workhorse "N §"
+    "fi.chapter_ref": "canonical",
+    "fi.part_ref": "canonical",
+    "fi.nimike_ref": "canonical",
+    "fi.appendix_ref": "canonical",
+    "fi.insertion_section_ill": "canonical",  # "N §:ään uusi M momentti"
+    "fi.insertion_momentti_ill": "canonical",
+    "fi.insertion_law_level": "canonical",  # "lakiin uusi N §"
+    "fi.insertion_chapter_ill": "canonical",
+    "fi.insertion_chapter_scoped": "canonical",
+    "fi.heading_placement": "canonical",  # "N §:n edelle uusi väliotsikko"
+    "fi.sub_ref_momentti": "canonical",
+    "fi.sub_ref_kohta": "canonical",
+    "fi.sub_ref_otsikko": "canonical",
+    "fi.sub_ref_johdantokappale": "canonical",
+    "fi.sub_target_momentti": "canonical",
+    "fi.sub_target_kohta": "canonical",
+    "fi.sub_target_pykala": "canonical",
+    "fi.sub_target_luku": "canonical",
+    "fi.section_renumber": "canonical",  # "N §:n numero M:ksi"
+    "fi.chapter_renumber": "canonical",
+    "fi.part_renumber": "canonical",
+    "fi.jolloin_section_renumber": "canonical",  # "jolloin nykyinen N § siirtyy"
+    "fi.jolloin_chapter_renumber": "canonical",
+    "fi.jolloin_renumber": "canonical",  # canonical consequence-clause emitter
+    "fi.meta_commencement": "canonical",
+    "fi.meta_expiry": "canonical",
+    "fi.meta_transition": "canonical",
+    "fi.meta_delegation": "canonical",
+    "fi.text_amend_sana": "canonical",
+    "fi.text_amend_sanat": "canonical",
+    "fi.target_version_binding": "canonical",  # "sellaisena kuin se on laissa X"
+    # --- ACCEPTED: rare-but-modern-clear; legitimate compositions ---
+    "fi.scope_block_chapter": "accepted",
+    "fi.scope_block_part": "accepted",
+    "fi.valiotsikko_heading_ref": "accepted",  # "sen edellä oleva väliotsikko"
+    "fi.lukuun_ottamatta_exception": "accepted",  # clear carve-out, rare
+    "fi.coordinated_part_chapter_heading_ref": "accepted",
+    "fi.heading_edelle_luvun_otsikko": "accepted",
+    "fi.text_amend_target": "accepted",  # target ref inside a text-amend clause
+    # --- DISCOURAGED: needlessly-variant / ambiguous / hack / catch-all ---
+    # Catch-all buckets: a witness signalling a shape that matched no precise
+    # rule — by definition off the recommended subset.
+    "fi.insertion_section": "discouraged",
+    "fi.insertion_chapter": "discouraged",
+    "fi.insertion_heading": "discouraged",
+    "fi.insertion_sub_target": "discouraged",
+    "fi.insertion_other": "discouraged",
+    # Anaphora-dependent inserts: rely on discourse resolution of the antecedent
+    # section/momentti rather than restating it; ambiguous for a fresh reader and
+    # the source of cosmetic witness deltas (anaphoric_bare_uusi vs sub_target).
+    "fi.insertion_chapter_anaphoric": "discouraged",
+    "fi.anaphoric_pykala_ill": "discouraged",
+    "fi.anaphoric_momentti_ill": "discouraged",
+    "fi.anaphoric_bare_uusi": "discouraged",
+    "fi.anaphoric_determiner_insert": "discouraged",  # "sanottuun/samaan pykälään"
+    # Cross-verb-group context inheritance: fragile, leans on VerbGroupContext;
+    # restate the target instead.
+    "fi.cross_verb_momentti": "discouraged",
+    "fi.cross_verb_bare_uusi": "discouraged",
+    "fi.cross_verb_move_retarget": "discouraged",
+    "fi.direct_section_relabel": "discouraged",  # context-dependent relabel
+    # Renumber backref continuation — same anaphora objection as the backrefs.
+    "fi.renumber_backref": "discouraged",
+    # Heading-arm continuations that caused truncation deltas (2003/1067,
+    # 2007/461) — parser-hack-requiring, needs a precedence rule.
+    "fi.heading_edelle_otsikko_after_uusi": "discouraged",
+    "fi.heading_edelle_otsikko_target_list": "discouraged",
+    # Glued "N § otsikko" target including its preceding heading — ambiguous
+    # boundary between the section ref and the heading qualifier.
+    "fi.including_preceding_heading_target": "discouraged",
+    # Sentence-level heuristic meta duplicates of the fi.meta_* rules — a
+    # needless second path to the same clause; the structured fi.meta_* is canon.
+    "meta_parse:commencement": "discouraged",
+    "meta_parse:expiry": "discouraged",
+    "meta_parse:transition": "discouraged",
+    "meta_parse:delegation": "discouraged",
+    # --- ARCHAIC: archaic register; parse forever, never recommend ---
+    # Genitive-plural prefix "pykälien N, M" instead of "N, M §" — archaic
+    # ministerial register, a needless variant of the canonical postfix form.
+    "fi.section_ref_pykala_prefix": "archaic",
+    # Old-style anaphora "mainitun/mainittujen pykälän" / "mainittu pykälä":
+    # restate the section number for a modern, self-contained clause.
+    "fi.backref_singular": "archaic",
+    "fi.backref_plural": "archaic",
+    # Chapter list written in reversed numeric order (e.g. "5-2 luku") — a
+    # malformed/buggy shape preserved only to parse legacy text.
+    "fi.chapter_ref_reversed": "archaic",
+    # Section-postfix-chapter insertion "uusi 35 a § lukuun 5" — single-owner
+    # weirdness-ledger fossil; the canonical form puts the chapter scope first.
+    "fi.insertion_section_postfix_chapter": "archaic",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1230,6 +1368,19 @@ def _build_registry() -> RuleRegistry:
             examples=(),
         )
     )
+
+    # Stamp every rule with its register tier (DATA, applied uniformly).  Every
+    # registered rule MUST have a tier and every tier MUST name a registered
+    # rule — no silent default, no stale entries.
+    registered_ids = {r.rule_id for r in reg.all_rules()}
+    missing_tier = registered_ids - _REGISTER_TIERS.keys()
+    if missing_tier:
+        raise ValueError(f"Rules with no register tier: {sorted(missing_tier)}")
+    stale_tier = _REGISTER_TIERS.keys() - registered_ids
+    if stale_tier:
+        raise ValueError(f"_REGISTER_TIERS names unregistered rules: {sorted(stale_tier)}")
+    for rid in list(reg._rules):
+        reg._rules[rid] = replace(reg._rules[rid], register=_REGISTER_TIERS[rid])
 
     return reg
 
