@@ -12,17 +12,20 @@ import lxml.etree as etree
 
 import pytest
 
-from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.ir import IRNode, OperationSource
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.grafter_uncovered import (
     ChapterPayloadOutcome,
     ChapterPayloadOwnershipRequest,
+    FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
     PreGuardRequest,
     PreGuardVerdict,
     RecoveryState,
     UncoveredCandidateAudit,
+    UncoveredChapterScaffoldDraft,
     UncoveredRecoveryGuards,
     _UncoveredRecoveryRun,
+    build_uncovered_chapter_scaffold_lo,
     _evaluate_chapter_payload_ownership,
     _evaluate_pre_guards,
     _next_letter_label,
@@ -137,6 +140,27 @@ def test_disposition_for_op_id_falls_back_to_insert() -> None:
     disposition, reason = _uncovered_disposition_for_op_id("mystery_op")
     assert disposition == "INSERT"
     assert reason == "recovered"
+
+
+def test_uncovered_chapter_scaffold_lo_has_stable_witness_rule_id() -> None:
+    payload = IRNode(kind=IRNodeKind.CHAPTER, label="7a")
+    source = OperationSource(statute_id="2020/1", effective="2020-01-01")
+    lo = build_uncovered_chapter_scaffold_lo(
+        UncoveredChapterScaffoldDraft(
+            op_id="pseudo_chapter_create_root_7a",
+            path=(("chapter", "7a"),),
+            payload=payload,
+            source=source,
+            amendment_id="2020/1",
+        )
+    )
+
+    assert lo.action is StructuralAction.INSERT
+    assert lo.target.path == (("chapter", "7a"),)
+    assert lo.payload is payload
+    assert lo.source is source
+    assert lo.group_id == "finland-johto:2020/1"
+    assert lo.witness_rule_id == FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID
 
 
 # --- RecoveryState skip + audit bookkeeping ---

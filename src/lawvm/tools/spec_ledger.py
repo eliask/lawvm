@@ -269,6 +269,7 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi_body_chapter_scope_from_source_body": "A body-scoped section inherits chapter scope from the amendment body container.",
     "fi_chapter_seed_inserted_from_amendment_body": "Chapter seeding inserts a missing base chapter from the earliest amendment body before replay.",
     "fi.recovery.uncovered_body": "Uncovered-body recovery synthesizes a section INSERT/REPLACE from unclaimed amendment body XML.",
+    "fi.recovery.uncovered_chapter_scaffold": "Uncovered-body recovery materializes a missing chapter scaffold needed to host recovered or parsed section operations.",
     "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
 }
 

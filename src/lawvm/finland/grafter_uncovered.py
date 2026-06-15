@@ -131,6 +131,7 @@ logger = logging.getLogger(__name__)
 
 FI_RECOVERY_UNCOVERED_BODY_RULE_ID = "fi.recovery.uncovered_body"
 FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID = "fi.recovery.uncovered_kumotaan"
+FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID = "fi.recovery.uncovered_chapter_scaffold"
 
 
 @dataclass(frozen=True, slots=True)
@@ -776,6 +777,17 @@ class UncoveredRopDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class UncoveredChapterScaffoldDraft:
+    """Draft fields for a synthetic chapter LegalOperation recovery."""
+
+    op_id: str
+    path: tuple[tuple[str, str], ...]
+    payload: IRNode
+    source: Optional[OperationSource]
+    amendment_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class ExistingSectionCandidate:
     """Live section candidate resolved for uncovered-body recovery."""
 
@@ -842,6 +854,26 @@ def _build_uncovered_rop(
                 + (("section", draft.target_label),)
             )
         ),
+    )
+
+
+def build_uncovered_chapter_scaffold_lo(draft: UncoveredChapterScaffoldDraft) -> _LegalOperation:
+    """Build a chapter-scaffold LegalOperation with explicit recovery witness.
+
+    Uncovered-body replay sometimes has to materialize a chapter container before
+    section-level recovered ops can attach to it.  That scaffold is still legal
+    state, so it must carry the same rule-attribution surface as recovered
+    section ops instead of being an anonymous LO side effect.
+    """
+    return _LegalOperation(
+        op_id=draft.op_id,
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=draft.path),
+        payload=draft.payload,
+        source=draft.source,
+        group_id=f"finland-johto:{draft.amendment_id}",
+        witness_rule_id=FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
     )
 
 

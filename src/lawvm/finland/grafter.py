@@ -132,11 +132,13 @@ AMENDMENT_PARENTS_CSV = Path(".cache/finland/amendment_parents.csv")  # internal
 # Uncovered body recovery cluster (moved to grafter_uncovered.py; re-exported)
 # ---------------------------------------------------------------------------
 from lawvm.finland.grafter_uncovered import (
+    UncoveredChapterScaffoldDraft,
     _recover_uncovered_body_ops_typed,
     _apply_uncovered_kumotaan_typed,
     _pre_scan_repeal_targets,
     _uncovered_body_recovery_finding,
     _strict_rejected_uncovered_body_finding,
+    build_uncovered_chapter_scaffold_lo,
     KumotaanRecoveryRequest,
     KumotaanRecoverySinks,
     UncoveredBodyRecoveryRequest,
@@ -3195,14 +3197,14 @@ def _apply_ops_to_tree_typed(
                                 (k, v) for k, v in _ch_path if v
                             )
                             lo_ops_out.append(
-                                _LegalOperation(
-                                    op_id=f"uncov_chapter_create_{_new_ch_part or 'root'}_{_new_ch_label}",
-                                    sequence=0,
-                                    action=StructuralAction.INSERT,
-                                    target=LegalAddress(path=_ch_tl_path),
-                                    payload=_ch_node,
-                                    source=_uncov_src,
-                                    group_id=f"finland-johto:{amendment_id}",
+                                build_uncovered_chapter_scaffold_lo(
+                                    UncoveredChapterScaffoldDraft(
+                                        op_id=f"uncov_chapter_create_{_new_ch_part or 'root'}_{_new_ch_label}",
+                                        path=_ch_tl_path,
+                                        payload=_ch_node,
+                                        source=_uncov_src,
+                                        amendment_id=amendment_id,
+                                    )
                                 )
                             )
                             logger.debug(
@@ -3227,14 +3229,14 @@ def _apply_ops_to_tree_typed(
                         if _pch_path is not None and _pch_node is not None:
                             _pch_tl_path = tuple((k, v) for k, v in _pch_path if v)
                             lo_ops_out.append(
-                                _LegalOperation(
-                                    op_id=f"pseudo_chapter_create_{_pch_part or 'root'}_{_pch_label}",
-                                    sequence=0,
-                                    action=StructuralAction.INSERT,
-                                    target=LegalAddress(path=_pch_tl_path),
-                                    payload=_pch_node,
-                                    source=_uncov_src,
-                                    group_id=f"finland-johto:{amendment_id}",
+                                build_uncovered_chapter_scaffold_lo(
+                                    UncoveredChapterScaffoldDraft(
+                                        op_id=f"pseudo_chapter_create_{_pch_part or 'root'}_{_pch_label}",
+                                        path=_pch_tl_path,
+                                        payload=_pch_node,
+                                        source=_uncov_src,
+                                        amendment_id=amendment_id,
+                                    )
                                 )
                             )
                             logger.debug(
