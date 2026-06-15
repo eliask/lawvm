@@ -131,12 +131,14 @@ from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.grafter_uncovered import (
     FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
+    PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
     KumotaanRecoveryRequest,
     KumotaanRecoverySinks,
     UncoveredBodyRecoveryFindingRequest,
     UncoveredBodyRecoveryRequest,
     UncoveredBodyRecoveryResult,
     UncoveredBodyRecoverySinks,
+    PreScanRepealDiagnostic,
     _uncovered_body_recovery_finding,
     _uncovered_body_recovery_skipped_finding,
     _apply_uncovered_kumotaan_typed,
@@ -10528,6 +10530,83 @@ def test_pre_scan_repeal_targets_preserves_vts_skipped_targets(monkeypatch) -> N
     assert skipped[0].reason_code == "unsupported_subitem_target"
     assert skipped[0].target_subitem == "a"
     assert source_diagnostics == []
+
+
+def test_pre_scan_repeal_targets_records_missing_source_diagnostic() -> None:
+    diagnostics: list[PreScanRepealDiagnostic] = []
+
+    got = _pre_scan_repeal_targets(
+        PreScanRepealTargetsRequest(
+            muutoslait=["2025/1352"],
+            corpus_store=_corpus_store({}),
+            parent_id="1996/1260",
+            parent_title="Sahkoverolaki",
+        ),
+        PreScanRepealTargetsSinks(prescan_diagnostics_out=diagnostics),
+    )
+
+    assert got == [set()]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].rule_id == PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID
+    assert diagnostics[0].reason_code == "missing_source"
+    assert diagnostics[0].source_statute == "2025/1352"
+    assert diagnostics[0].blocking is False
+
+
+def test_pre_scan_repeal_targets_records_xml_parse_diagnostic() -> None:
+    diagnostics: list[PreScanRepealDiagnostic] = []
+
+    got = _pre_scan_repeal_targets(
+        PreScanRepealTargetsRequest(
+            muutoslait=["2025/1352"],
+            corpus_store=_corpus_store({"2025/1352": b"<akn><broken"}),
+            parent_id="1996/1260",
+            parent_title="Sahkoverolaki",
+        ),
+        PreScanRepealTargetsSinks(prescan_diagnostics_out=diagnostics),
+    )
+
+    assert got == [set()]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].reason_code == "prescan_parse_error"
+    assert diagnostics[0].exception_type == "XMLSyntaxError"
+    assert diagnostics[0].source_excerpt.startswith("<akn>")
+
+
+def test_pre_scan_repeal_targets_records_vts_extraction_exception(monkeypatch) -> None:
+    def _raise_vts_error(*_args, **_kwargs):
+        raise ValueError("synthetic vts failure")
+
+    monkeypatch.setattr(
+        "lawvm.finland.grafter_uncovered.extract_voimaantulo_repeals",
+        _raise_vts_error,
+    )
+    diagnostics: list[PreScanRepealDiagnostic] = []
+
+    got = _pre_scan_repeal_targets(
+        PreScanRepealTargetsRequest(
+            muutoslait=["2025/1352"],
+            corpus_store=_corpus_store(
+                {
+                    "2025/1352": """
+                    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+                      <dateEntryIntoForce date="2025-01-01" />
+                      <formula name="enactingClause">Talla lailla muutetaan lakia.</formula>
+                    </akn>
+                    """.encode("utf-8"),
+                }
+            ),
+            parent_id="1996/1260",
+            parent_title="Sahkoverolaki",
+        ),
+        PreScanRepealTargetsSinks(prescan_diagnostics_out=diagnostics),
+    )
+
+    assert got == [set()]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].reason_code == "vts_extraction_error"
+    assert diagnostics[0].exception_type == "ValueError"
+    assert diagnostics[0].exception_message == "synthetic vts failure"
 
 
 def test_fallback_does_not_repeal_parent_for_amendment_act_titles() -> None:

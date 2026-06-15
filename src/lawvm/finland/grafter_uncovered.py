@@ -22,7 +22,7 @@ import re
 import datetime as dt
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
 
@@ -132,6 +132,47 @@ logger = logging.getLogger(__name__)
 FI_RECOVERY_UNCOVERED_BODY_RULE_ID = "fi.recovery.uncovered_body"
 FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID = "fi.recovery.uncovered_kumotaan"
 FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID = "fi.recovery.uncovered_chapter_scaffold"
+PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID = "PARSE.FUTURE_REPEAL_PRESCAN_DIAGNOSTIC"
+
+PreScanRepealDiagnosticReason = Literal[
+    "missing_source",
+    "prescan_parse_error",
+    "vts_extraction_error",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class PreScanRepealDiagnostic:
+    """Typed visibility record for future-repeal pre-scan blind spots."""
+
+    rule_id: str
+    reason_code: PreScanRepealDiagnosticReason
+    source_reason: str
+    source_statute: str
+    source_excerpt: str = ""
+    exception_type: str = ""
+    exception_message: str = ""
+    phase: str = "frontend_extraction"
+    family: str = "future_repeal_prescan"
+    blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "reason_code": self.reason_code,
+            "source_reason": self.source_reason,
+            "source_statute": self.source_statute,
+            "source_excerpt": self.source_excerpt,
+            "exception_type": self.exception_type,
+            "exception_message": self.exception_message,
+            "phase": self.phase,
+            "family": self.family,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,6 +433,7 @@ class PreScanRepealTargetsSinks:
 
     vts_skipped_targets_out: Optional[List[VtsSkippedTarget]] = None
     vts_source_diagnostics_out: Optional[List[VtsSourceDiagnostic]] = None
+    prescan_diagnostics_out: Optional[List[PreScanRepealDiagnostic]] = None
 
 
 @dataclass(slots=True)
@@ -2396,6 +2438,36 @@ def _apply_uncovered_kumotaan_typed(
     return KumotaanRecoveryResult(state=state)
 
 
+def _prescan_source_excerpt(xml_bytes: bytes | None) -> str:
+    if not xml_bytes:
+        return ""
+    return re.sub(r"\s+", " ", xml_bytes.decode("utf-8", errors="replace")).strip()[:160]
+
+
+def _record_prescan_diagnostic(
+    diagnostics_out: Optional[List[PreScanRepealDiagnostic]],
+    *,
+    reason_code: PreScanRepealDiagnosticReason,
+    source_reason: str,
+    source_statute: str,
+    xml_bytes: bytes | None = None,
+    exc: BaseException | None = None,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        PreScanRepealDiagnostic(
+            rule_id=PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
+            reason_code=reason_code,
+            source_reason=source_reason,
+            source_statute=source_statute,
+            source_excerpt=_prescan_source_excerpt(xml_bytes),
+            exception_type=exc.__class__.__name__ if exc is not None else "",
+            exception_message=str(exc)[:240] if exc is not None else "",
+        )
+    )
+
+
 def _pre_scan_repeal_targets(
     request: PreScanRepealTargetsRequest,
     sinks: Optional[PreScanRepealTargetsSinks] = None,
@@ -2427,6 +2499,9 @@ def _pre_scan_repeal_targets(
     vts_source_diagnostics_out = (
         sinks.vts_source_diagnostics_out if sinks is not None else None
     )
+    prescan_diagnostics_out = (
+        sinks.prescan_diagnostics_out if sinks is not None else None
+    )
 
     per_amendment: List[Set[RepealTargetRef]] = []
 
@@ -2434,6 +2509,12 @@ def _pre_scan_repeal_targets(
         targets: Set[RepealTargetRef] = set()
         xml_bytes = corpus_store.read_source(amendment_id)
         if xml_bytes is None:
+            _record_prescan_diagnostic(
+                prescan_diagnostics_out,
+                reason_code="missing_source",
+                source_reason="future-repeal pre-scan could not read amendment source",
+                source_statute=amendment_id,
+            )
             per_amendment.append(targets)
             continue
         try:
@@ -2490,10 +2571,24 @@ def _pre_scan_repeal_targets(
                         )
                         if sec_n:
                             targets.add(RepealTargetRef(op.target_unit_kind, sec_n, ch_n))
-                except (ValueError, KeyError, AttributeError, TypeError, IndexError):
-                    pass  # vts extraction is best-effort in pre-scan
-        except (ValueError, KeyError, AttributeError, TypeError, IndexError, etree.XMLSyntaxError):
-            pass  # pre-scan errors are non-fatal — just emit empty set
+                except (ValueError, KeyError, AttributeError, TypeError, IndexError) as exc:
+                    _record_prescan_diagnostic(
+                        prescan_diagnostics_out,
+                        reason_code="vts_extraction_error",
+                        source_reason="future-repeal pre-scan VTS extraction failed",
+                        source_statute=amendment_id,
+                        xml_bytes=xml_bytes,
+                        exc=exc,
+                    )
+        except (ValueError, KeyError, AttributeError, TypeError, IndexError, etree.XMLSyntaxError) as exc:
+            _record_prescan_diagnostic(
+                prescan_diagnostics_out,
+                reason_code="prescan_parse_error",
+                source_reason="future-repeal pre-scan could not inspect amendment source",
+                source_statute=amendment_id,
+                xml_bytes=xml_bytes,
+                exc=exc,
+            )
         per_amendment.append(targets)
 
     return per_amendment

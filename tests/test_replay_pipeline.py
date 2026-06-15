@@ -10,6 +10,8 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 from lawvm.finland.grafter_uncovered import (
+    PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
+    PreScanRepealDiagnostic,
     PreScanRepealTargetsRequest,
     PreScanRepealTargetsSinks,
 )
@@ -481,6 +483,63 @@ def test_execute_replay_plan_projects_vts_prescan_source_diagnostics_as_findings
     ]
     assert findings[0].stage == "frontend_extraction"
     assert findings[0].detail["reason_code"] == "no_candidate_containers"
+    assert findings[0].detail["prescan_phase"] == "future_repeal_scan"
+
+
+def test_execute_replay_plan_projects_prescan_diagnostics_as_findings() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Parent Law",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    findings: list[Finding] = []
+
+    def fake_pre_scan(
+        request: PreScanRepealTargetsRequest,
+        sinks: PreScanRepealTargetsSinks | None = None,
+    ):
+        assert sinks is not None
+        assert sinks.prescan_diagnostics_out is not None
+        sinks.prescan_diagnostics_out.append(
+            PreScanRepealDiagnostic(
+                rule_id=PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
+                reason_code="missing_source",
+                source_reason="future-repeal pre-scan could not read amendment source",
+                source_statute="1991/1",
+            )
+        )
+        return [set()]
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=lambda request, _sinks: PhaseResult(output=request.state),
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=fake_pre_scan,
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        findings_out=findings,
+    )
+
+    assert [(finding.kind, finding.role, finding.blocking) for finding in findings] == [
+        (PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID, "observation", False)
+    ]
+    assert findings[0].stage == "frontend_extraction"
+    assert findings[0].source_statute == "1991/1"
+    assert findings[0].detail["reason_code"] == "missing_source"
     assert findings[0].detail["prescan_phase"] == "future_repeal_scan"
 
 
