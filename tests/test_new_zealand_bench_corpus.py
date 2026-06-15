@@ -260,20 +260,28 @@ def test_dry_run_corpus_main_reads_corpus_csv(tmp_path: Path, monkeypatch: pytes
     assert captured["work_ids"] == ("act_public_2010_1", "act_public_2011_2")
 
 
-def test_bench_dash_j_nz_fails_loudly_without_running_finland(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Regression: 'bench -j nz' must NOT silently run the Finland bench.
+def test_bench_dash_j_nz_routes_to_nz_bench_not_finland(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: 'bench -j nz' must run the NZ actual-replay bench, NOT the
+    # Finland bench. (It used to fail loudly with exit 2 when NZ had no replay
+    # bench; now it dispatches to the real NZ bench.)
     import lawvm.tools.bench as fi_bench
+    import lawvm.tools.nz_bench as nz_bench
     from lawvm.tools.cli import _main_impl
 
     def _explode(_args: object) -> None:  # pragma: no cover - must never run
         raise AssertionError("bench -j nz silently invoked the Finland bench")
 
+    called: dict[str, object] = {}
+
+    def _nz_main(args: object) -> None:
+        called["nz"] = args
+
     monkeypatch.setattr(fi_bench, "main", _explode)
+    monkeypatch.setattr(nz_bench, "main", _nz_main)
     monkeypatch.setattr("sys.argv", ["lawvm", "bench", "-j", "nz"])
 
-    with pytest.raises(SystemExit) as excinfo:
-        _main_impl()
-    assert excinfo.value.code == 2
+    _main_impl()
+    assert "nz" in called, "bench -j nz did not dispatch to the NZ bench"
 
 
 # --- scan filtering against the real archive (gated) -----------------------
