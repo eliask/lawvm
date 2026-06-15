@@ -37,12 +37,17 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
+from lawvm.finland.johtolause.grammar.backrefs import (
+    emit_backref_nodes,
+    recognize_backref,
+)
 from lawvm.finland.johtolause.grammar.combinators import Cursor, Span
 from lawvm.finland.johtolause.grammar.containers import (
     ContainerForm,
     emit_containers_nodes,
     recognize_containers,
 )
+from lawvm.finland.johtolause.grammar.jolloin import build_jolloin_group
 from lawvm.finland.johtolause.grammar.headings import (
     emit_headings_nodes,
     recognize_valiotsikko_ref,
@@ -69,11 +74,21 @@ from lawvm.finland.johtolause.grammar.sections import (
     recognize_pykala_prefix_section_ref,
     recognize_section_ref,
 )
+from lawvm.finland.johtolause.grammar.tail import (
+    emit_exception_nodes,
+    emit_postfix_insert_nodes,
+    recognize_exception,
+    recognize_postfix_insert,
+)
 from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.surface_model import (
+    ScopeKind,
     SurfaceClause,
+    SurfaceDescendantCoordination,
+    SurfaceHeadingPlacement,
     SurfaceInsertion,
     SurfaceNode,
+    SurfaceScopeBlock,
     SurfaceTargetRef,
     SurfaceVerbGroup,
     SurfaceWitness,
@@ -237,7 +252,7 @@ _SENTINEL_SPAN_CATS = frozenset(
 )
 
 
-def _section_continuation_is_kept(scan: _Scan) -> bool:
+def _section_continuation_is_kept(scan: _Scan, has_jolloin: bool = False) -> bool:
     """True if a separator-led continuation the old parser keeps follows.
 
     Called (with the cursor rewound to the loop-iteration ``saved`` position)
@@ -285,8 +300,11 @@ def _section_continuation_is_kept(scan: _Scan) -> bool:
     # heading token being present in the clause: a pure section-reference clause
     # (the section subset) never carries one, so the guard cannot regress it,
     # while the heading-bearing clause where the old parser resumes a kept arm
-    # does — exactly the clause this must decline rather than truncate.
-    if not any(t.cat == "VALIOTSIKKO" for t in toks):
+    # does — exactly the clause this must decline rather than truncate. A clause
+    # carrying jolloin renumber pairs is likewise out of the pure-section subset,
+    # so ``has_jolloin`` opens the same gate (the old parser keeps the resumed arm
+    # there too — declining is fail-loud, not a regression of the section subset).
+    if not (has_jolloin or any(t.cat == "VALIOTSIKKO" for t in toks)):
         return False
     i = scan.pos
     saw_anaphor = False
@@ -451,11 +469,118 @@ def _consume_inline_move_tails(
         retag_moved_targets(nodes, last_batch, move)
 
 
-def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNode]]:
+def _consume_jolloin_move(
+    scan: _Scan,
+    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None,
+    consumed_jolloin_positions: list[int] | None,
+    consumed_jolloin_contexts: dict[int, tuple[str, str]] | None,
+    last_batch: list[SurfaceNode],
+    all_nodes: list[SurfaceNode],
+) -> bool:
+    """Consume a ``JOLLOIN_MOVE`` at the cursor; record its position + context.
+
+    Faithful to the old ``_target_list`` JOLLOIN_MOVE site: advance past the
+    marker (it contributes to ``consumed_count``), and — when the stream carries
+    renumber-pair data keyed at this position — record the position in
+    consumption order and capture the anchor ``(section, chapter)`` from the
+    just-parsed batch (``last_batch`` else ``all_nodes``), via the section-context
+    extractor. Returns True iff a JOLLOIN_MOVE was at the cursor and consumed.
+    """
+    t = scan.peek()
+    if t is None or t.cat != "JOLLOIN_MOVE":
+        return False
+    jm_pos = scan.pos
+    scan.advance()
+    if (
+        jolloin_renumber_pairs is not None
+        and jm_pos in jolloin_renumber_pairs
+        and consumed_jolloin_positions is not None
+    ):
+        consumed_jolloin_positions.append(jm_pos)
+        if consumed_jolloin_contexts is not None:
+            context_nodes = last_batch if last_batch else all_nodes
+            consumed_jolloin_contexts[jm_pos] = _extract_jolloin_section_context(
+                context_nodes
+            )
+    return True
+
+
+def _try_exception(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """Recognize a ``lukuun ottamatta (kuitenkaan)? <sec>`` exception arm.
+
+    The excepted section ref inherits the batch chapter/part (the old
+    ``_lukuun_ottamatta_exception`` threads them into its section recognition).
+    Returns the re-stamped exception nodes, or None (rewinding ``scan``).
+    """
+    saved = scan.pos
+    parsed = recognize_exception(scan, chapter, part)
+    if parsed is None:
+        scan.goto(saved)
+        return None
+    return emit_exception_nodes(parsed, chapter, part)
+
+
+def _try_backref(scan: _Scan) -> Optional[list[SurfaceNode]]:
+    """Recognize a ``mainitun/mainittujen pykälän …`` anaphoric back-ref arm.
+
+    A continuation arm only (the old parser reads a leading bare backref as an
+    empty verb group, never a target). The recognizer entry is the BACKREF
+    token; the preceding separator the driver already consumed is folded into
+    the witness span START — exactly as the VALIOTSIKKO heading backref — so the
+    span is rewritten to begin at ``sep_saved``. Returns None (rewinding) on no
+    match.
+    """
+    sep_saved = scan.pos
+    parsed = recognize_backref(scan)
+    if parsed is None:
+        scan.goto(sep_saved)
+        return None
+    from dataclasses import replace as _replace
+
+    parsed = _replace(parsed, span=Span(sep_saved, parsed.span.end))
+    return emit_backref_nodes(parsed)
+
+
+def _try_postfix_insert(scan: _Scan, part: str) -> Optional[list[SurfaceNode]]:
+    """Recognize a ``[lakiin] [uusi] <num> § lukuun <chap> …`` postfix arm.
+
+    Faithful to the old route-2 trailing-postfix continuation: an optional
+    ``DOC:ILL`` re-anchor (``…, lakiin uusi …``) then an optional ``uusi`` may
+    precede the postfix-chapter insert group. The postfix recognizer requires at
+    least one full ``<num> § lukuun <chap>`` arm (else None). On no match the
+    cursor is fully rewound so the generic continuation handling is unchanged.
+    """
+    saved = scan.pos
+    t = scan.peek()
+    if t and t.cat == "DOC" and t.case == "ILL":
+        scan.advance()
+    t = scan.peek()
+    if t and t.cat == "UUSI":
+        scan.advance()
+    parsed = recognize_postfix_insert(scan, part)
+    if parsed is None:
+        scan.goto(saved)
+        return None
+    return emit_postfix_insert_nodes(parsed, part)
+
+
+def _parse_verb_group(
+    scan: _Scan,
+    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
+    consumed_jolloin_positions: list[int] | None = None,
+    consumed_jolloin_contexts: dict[int, tuple[str, str]] | None = None,
+) -> tuple[Optional[SourceVerb], list[SurfaceNode]]:
     """Parse one verb group: VERB then a separator-joined structural-target list.
 
     Returns (verb_code, nodes). Raises :class:`OutOfScope` on any shape inside
     the group this driver does not reproduce.
+
+    When ``jolloin_renumber_pairs`` is supplied, a ``JOLLOIN_MOVE`` token whose
+    position keys the map is consumed in-list (recording its position + the
+    just-parsed batch's anchor section context) so ``parse()`` can build and
+    prepend the synthetic renumber group, mirroring the old parser.
     """
     t = scan.peek()
     if t is None or t.cat != "VERB":
@@ -548,6 +673,51 @@ def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNo
             nodes.extend(val_nodes)
             last_batch = list(val_nodes)
             continue
+        # A ``, jolloin …`` consequence-renumber sentinel after the separator:
+        # record it (context from the just-parsed batch) and continue. The
+        # synthetic renumber group is built + prepended after all verb groups.
+        if after_sep.cat == "JOLLOIN_MOVE":
+            _consume_jolloin_move(
+                scan,
+                jolloin_renumber_pairs,
+                consumed_jolloin_positions,
+                consumed_jolloin_contexts,
+                last_batch,
+                nodes,
+            )
+            continue
+        # A ``lukuun ottamatta (kuitenkaan)? <sec>`` exception carve-out: the
+        # excepted section ref is re-stamped is_exception, inheriting the batch
+        # chapter/part (faithful to the old ``_lukuun_ottamatta_exception``).
+        exc_nodes = _try_exception(scan, chapter, part)
+        if exc_nodes is not None:
+            nodes.extend(exc_nodes)
+            last_batch = list(exc_nodes)
+            chapter = _extract_chapter(exc_nodes, chapter, verb)
+            part = _extract_part(exc_nodes, part)
+            _consume_inline_move_tails(scan, nodes, last_batch)
+            continue
+        # A ``mainitun/mainittujen pykälän …`` anaphoric back-ref arm: the span
+        # folds in the consumed separator (like VALIOTSIKKO). The old parser
+        # appends the SurfaceBackRef and continues without updating scope.
+        br_nodes = _try_backref(scan)
+        if br_nodes is not None:
+            nodes.extend(br_nodes)
+            last_batch = list(br_nodes)
+            continue
+        # A trailing ``[lakiin] [uusi] <num> § lukuun <chap>`` postfix-chapter
+        # insert arm folded into a SECTION-insert continuation (the old route-2
+        # ``_postfix_chapter_section_inserts`` after an optional DOC:ILL re-anchor
+        # and ``uusi``). Only an insertion batch reaches this; the emitted SECTION
+        # insertions keep the batch's insertion family (no mixed grouping).
+        if kind == "insertion":
+            pf_nodes = _try_postfix_insert(scan, part)
+            if pf_nodes is not None:
+                nodes.extend(pf_nodes)
+                last_batch = list(pf_nodes)
+                chapter = _extract_chapter(pf_nodes, chapter, verb)
+                part = _extract_part(pf_nodes, part)
+                continue
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
         except OutOfScope:
@@ -567,7 +737,9 @@ def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNo
                 raise OutOfScope("undecodable insertion continuation")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
                 raise OutOfScope("container näistä/niistä provenance continuation")
-            if kind == "section" and _section_continuation_is_kept(scan):
+            if kind == "section" and _section_continuation_is_kept(
+                scan, jolloin_renumber_pairs is not None
+            ):
                 raise OutOfScope("undecodable heading-change continuation")
             break
         # Mixing insertion and non-insertion batches inside one verb group is an
@@ -623,6 +795,54 @@ def _extract_part(nodes: list[SurfaceNode], current: str) -> str:
     return extract_part(nodes, current)
 
 
+def _extract_jolloin_section_context(nodes: list[SurfaceNode]) -> tuple[str, str]:
+    """The anchor ``(section, chapter)`` for a JOLLOIN_MOVE momentti renumber.
+
+    A faithful narrowing of ``surface_parse._extract_section_context_from_nodes``
+    to the node types the wired families emit: walk the batch in reverse and
+    return the first SECTION-bearing node's ``(label, chapter)`` — for a plain
+    section ref, an insertion section, a scope block (whose effective chapter is
+    the block's CHAPTER scope label), and a descendant-coordination base. A
+    heading placement breaks the walk and contributes only its chapter (no
+    section). The empty context ``("", "")`` (no anchor) drops the momentti
+    renumber pair, exactly as the old parser does.
+    """
+    for node in reversed(nodes):
+        if isinstance(node, SurfaceHeadingPlacement):
+            return "", node.chapter or ""
+        if isinstance(node, SurfaceScopeBlock) and node.targets:
+            last_t = node.targets[-1]
+            if not isinstance(last_t, SurfaceTargetRef):
+                continue
+            if last_t.kind == TargetKind.SECTION and last_t.label:
+                eff_chapter = (
+                    node.scope_label
+                    if node.scope_kind == ScopeKind.CHAPTER
+                    else last_t.chapter
+                )
+                return last_t.label, eff_chapter or ""
+            break
+        if (
+            isinstance(node, SurfaceInsertion)
+            and node.kind == TargetKind.SECTION
+            and node.label
+        ):
+            return node.label, node.chapter or ""
+        if (
+            isinstance(node, SurfaceDescendantCoordination)
+            and node.base.kind == TargetKind.SECTION
+            and node.base.label
+        ):
+            return node.base.label, node.base.chapter or ""
+        if (
+            isinstance(node, SurfaceTargetRef)
+            and node.kind == TargetKind.SECTION
+            and node.label
+        ):
+            return node.label, node.chapter or ""
+    return "", ""
+
+
 def _has_later_verb(scan: _Scan) -> bool:
     toks = scan.cur.tokens
     return any(toks[i].cat == "VERB" for i in range(scan.pos, len(toks)))
@@ -670,14 +890,24 @@ def parse(
 ) -> SurfaceClause:
     """Parse a filtered token stream as a pure structural-target clause.
 
-    Mirrors ``surface_parse.parse`` for the in-scope subset. Raises
-    :class:`OutOfScope` for any clause outside it (including any that supplies
-    ``jolloin_renumber_pairs`` — jolloin is out of scope for this driver).
+    Mirrors ``surface_parse.parse`` for the in-scope subset, including the native
+    ``jolloin`` consequence-renumber group: when ``jolloin_renumber_pairs`` is
+    supplied, the ``JOLLOIN_MOVE`` positions consumed during parsing build a
+    synthetic SIIRTAA verb group prepended at index 0. Raises :class:`OutOfScope`
+    for any clause outside the wired families.
     """
     source_text = " ".join(t.text for t in tokens if t.text)
 
-    if jolloin_renumber_pairs:
-        raise OutOfScope("jolloin renumber pairs are out of scope")
+    # jolloin renumber accumulators — only when pairs were supplied (mirrors the
+    # old parser's ``[] if … is not None else None`` init). Threaded into every
+    # verb group so a ``JOLLOIN_MOVE`` keyed in the map records its position +
+    # anchor-section context for the prepended renumber group.
+    consumed_jolloin_positions: list[int] | None = (
+        [] if jolloin_renumber_pairs is not None else None
+    )
+    consumed_jolloin_contexts: dict[int, tuple[str, str]] | None = (
+        {} if jolloin_renumber_pairs is not None else None
+    )
 
     scan = _Scan(Cursor(tokens))
 
@@ -690,7 +920,12 @@ def parse(
 
     verb_groups: list[SurfaceVerbGroup] = []
 
-    verb, nodes = _parse_verb_group(scan)
+    verb, nodes = _parse_verb_group(
+        scan,
+        jolloin_renumber_pairs,
+        consumed_jolloin_positions,
+        consumed_jolloin_contexts,
+    )
     if not nodes:
         raise OutOfScope("empty first verb group")
     verb_groups.append(
@@ -718,7 +953,12 @@ def parse(
                 while not scan.cur.at_end:
                     scan.advance()
                 break
-        verb2, nodes2 = _parse_verb_group(scan)
+        verb2, nodes2 = _parse_verb_group(
+            scan,
+            jolloin_renumber_pairs,
+            consumed_jolloin_positions,
+            consumed_jolloin_contexts,
+        )
         if not nodes2:
             scan.goto(saved)
             break
@@ -727,6 +967,20 @@ def parse(
                 verb=VerbKind.from_code(verb2 or SourceVerb.MUUTTAA), nodes=tuple(nodes2)
             )
         )
+
+    # Native jolloin renumber group: build the synthetic SIIRTAA verb group from
+    # the consumed JOLLOIN_MOVE positions + their captured anchor contexts and
+    # PREPEND it at index 0 (before every source-order group), exactly as the old
+    # parser does. ``None`` (no node produced, e.g. all-M pairs with no anchor)
+    # prepends nothing.
+    if jolloin_renumber_pairs is not None and consumed_jolloin_positions:
+        jolloin_vg = build_jolloin_group(
+            consumed_jolloin_positions,
+            jolloin_renumber_pairs,
+            consumed_jolloin_contexts,
+        )
+        if jolloin_vg is not None:
+            verb_groups = [jolloin_vg] + verb_groups
 
     # Totality: the old parser's consumed_count is its final cursor position.
     # Any residual tail we did not account for means a shape the old parser
