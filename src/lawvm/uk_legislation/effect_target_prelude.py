@@ -26,6 +26,7 @@ from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
     _expand_heading_facet_section_range_ref,
+    _is_crossheading_only_ref,
     _is_heading_facet_word_patch_supported,
     _is_heading_only_ref,
     _source_explicit_heading_facet_word_patch_supported,
@@ -302,13 +303,47 @@ def expand_single_target_prelude(
 def reject_unsupported_target_facet(
     *,
     effect: UKEffectRecord,
+    action: str,
     t_str: str,
     target_candidate_count: int,
+    structured_crossheading_op_built: bool,
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
+    if action == "insert" and _is_crossheading_only_ref(t_str):
+        # The effect target names a cross-heading facet (e.g. "s. 221
+        # cross-heading", "insert the heading before that section"). The only
+        # sound structural lowering is the standalone crossheading payload
+        # extracted from a source Pblock (handled by build_crossheading_insert_ops
+        # before this per-target loop runs). When that structured op was built,
+        # the cross-heading is already owned and this per-target iteration must
+        # not also coerce the heading instruction into a body provision insert.
+        # When it was NOT built (the source carries only inline heading text with
+        # no Pblock carrier), the source does not license a structural op: keep
+        # it as typed residue instead of inserting an instruction-text paragraph
+        # at a mis-resolved body location, which corrupts the tree.
+        if structured_crossheading_op_built:
+            return True
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_crossheading_insert_rejected",
+            family="unsupported_target_facet",
+            reason_code="crossheading_insert_no_structured_payload",
+            reason=(
+                "UK effect inserts a cross-heading facet but the source carries "
+                "no standalone cross-heading payload (Pblock with a Title); "
+                "lowering cannot coerce the heading instruction into a body "
+                "provision insert without corrupting structure"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target_candidate_count": target_candidate_count},
+        )
+        return True
+
     if _is_schedule_note_ref(t_str):
         modeled_target = _parse_schedule_group_note_target(t_str)
         detail: dict[str, Any] = {

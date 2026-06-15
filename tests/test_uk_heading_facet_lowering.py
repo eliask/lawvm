@@ -183,3 +183,114 @@ def test_for_the_heading_without_substitute_stays_unmatched() -> None:
         )
         is None
     )
+
+
+# --------------------------------------------------------------------------
+# Cross-heading inserts: heading-only target must not become a body insert
+# --------------------------------------------------------------------------
+
+
+def test_crossheading_only_insert_without_pblock_payload_stays_residue() -> None:
+    """ukpga/2003/1 + Finance Act 2013 Sch. 23 para. 4(b):
+    'before section 221 insert the heading "Payments".'
+
+    The effect feed names a cross-heading facet ('s. 221 cross-heading') and the
+    source carries only inline heading text — no standalone cross-heading Pblock
+    carrier. Lowering must NOT coerce the heading instruction into a body
+    paragraph insert (which mis-resolves to an unrelated section and corrupts
+    the tree); it must stay typed residue under a distinct rejection rule.
+    """
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-23-paragraph-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>before section 221 insert the heading "Payments".</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_only_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-07-17",
+        affected_uri="/id/ukpga/2003/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2003",
+        affected_number="1",
+        affected_provisions="s. 221 cross-heading",
+        affecting_uri="/id/ukpga/2013/29",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2013",
+        affecting_number="29",
+        affecting_provisions="Sch. 23 para. 4",
+        affecting_title="Finance Act 2013",
+        comments="",
+        in_force_dates=[{"date": "2013-07-17", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect, extracted_el, sequence=0, lowering_rejections_out=lowering_rejections
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_insert_rejected"
+        for record in lowering_rejections
+    )
+
+
+def test_structural_insert_with_crossheading_carrier_still_lowers() -> None:
+    """A combined 'structural provision AND its cross-heading' insert
+    ('Sch. 6 para. 43A and cross-heading') carries a real Pblock/P1group payload
+    and must still lower to a structural op — the cross-heading-only rejection
+    must not fire on the combined form.
+    """
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>After paragraph 43 insert-</Text>
+          <BlockAmendment>
+            <P1group>
+              <Title>Electronic monitoring: general</Title>
+              <P1 eId="schedule-6-paragraph-43A">
+                <Pnumber>43A</Pnumber>
+                <Text>Where a youth rehabilitation order imposes an electronic monitoring requirement.</Text>
+              </P1>
+            </P1group>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_structural_plus_crossheading_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/schedule/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 43A and cross-heading",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 1",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        comments="",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect, extracted_el, sequence=0, lowering_rejections_out=lowering_rejections
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")))
+    assert not any(
+        record["rule_id"] == "uk_effect_crossheading_insert_rejected"
+        for record in lowering_rejections
+    )

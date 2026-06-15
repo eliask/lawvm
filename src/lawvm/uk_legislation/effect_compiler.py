@@ -799,16 +799,17 @@ def _compile_effect_to_ir_ops_impl(
     unlowered_overlap_substitution_targets: list[str] = []
     unlowered_overlap_substitution_reason = ""
     chained_insert_anchor = _ChainedInsertAnchorState()
+    structured_crossheading_op_built = False
     if action == "insert":
-        ops.extend(
-            build_crossheading_insert_ops(
-                effect=effect,
-                extracted_el=extracted_el,
-                sequence=sequence,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-            )
+        crossheading_insert_ops = build_crossheading_insert_ops(
+            effect=effect,
+            extracted_el=extracted_el,
+            sequence=sequence,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
         )
+        structured_crossheading_op_built = bool(crossheading_insert_ops)
+        ops.extend(crossheading_insert_ops)
     source_replaced_sibling_count = (
         _source_replaced_sibling_count_from_substitution_text(
             extracted_text=extracted_text,
@@ -847,6 +848,7 @@ def _compile_effect_to_ir_ops_impl(
                 chained_insert_anchor=chained_insert_anchor,
                 lowering_rejections_out=lowering_rejections_out,
                 target_index=target_index,
+                structured_crossheading_op_built=structured_crossheading_op_built,
             )
         )
         ops.extend(target_result.ops)

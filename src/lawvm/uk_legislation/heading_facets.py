@@ -401,6 +401,24 @@ def _is_crossheading_ref(ref: str) -> bool:
     return "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean
 
 
+def _is_crossheading_only_ref(ref: str) -> bool:
+    """Return True for a target that names *only* a cross-heading facet.
+
+    Distinguishes the heading-only form ``s. 221 cross-heading`` (the
+    cross-heading associated with a provision, with no structural payload of
+    its own) from the combined structural+heading insert form
+    ``Sch. 6 para. 43A and cross-heading`` (a real provision insert that also
+    carries its heading). Only the heading-only form lacks a structural payload
+    and must not be coerced into a body provision insert.
+    """
+    ref_clean = " ".join(str(ref or "").split()).strip().lower()
+    if not _is_crossheading_ref(ref_clean):
+        return False
+    if re.search(r"\band\s+(?:cross[-\s]?heading|heading)\b", ref_clean):
+        return False
+    return True
+
+
 def _is_schedule_note_ref(ref: str) -> bool:
     tokens = (
         str(ref or "")

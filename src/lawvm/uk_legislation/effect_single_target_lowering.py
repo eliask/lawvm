@@ -156,6 +156,7 @@ class _EffectTargetLoweringInput:
     source_root: Optional[ET._Element]
     chained_insert_anchor: _ChainedInsertAnchorState
     lowering_rejections_out: Optional[list[dict[str, Any]]]
+    structured_crossheading_op_built: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,8 +183,10 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
 
     if reject_unsupported_target_facet(
         effect=effect,
+        action=action,
         t_str=t_str,
         target_candidate_count=len(ctx.targets_str),
+        structured_crossheading_op_built=ctx.structured_crossheading_op_built,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         source_root=ctx.source_root,
