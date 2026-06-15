@@ -17,10 +17,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.core.interlinks import (
     INTERLINK_ROW_COLUMNS,
-    interlink_from_inline_citation,
-    interlink_from_preparatory_reference,
-    interlink_from_reference_mention,
     legal_interlink_to_row,
+)
+from lawvm.finland.interlinks import (
+    fi_interlink_from_inline_citation,
+    fi_interlink_from_preparatory_reference,
+    fi_interlink_from_reference_mention,
 )
 
 
@@ -63,7 +65,7 @@ def _project_interlinks_for_statute(
 
     ref_result = extract_all_reference_mentions(xml_bytes, statute_id)
     for index, mention in enumerate(ref_result.mentions):
-        link = interlink_from_reference_mention(
+        link = fi_interlink_from_reference_mention(
             mention,
             interlink_id=_stable_interlink_id("refs", statute_id, index),
         )
@@ -80,7 +82,7 @@ def _project_interlinks_for_statute(
 
     prep_result = extract_preparatory_refs(xml_bytes, statute_id)
     for index, ref in enumerate(prep_result.refs):
-        link = interlink_from_preparatory_reference(
+        link = fi_interlink_from_preparatory_reference(
             ref,
             interlink_id=_stable_interlink_id("preparatory_refs", statute_id, index),
         )
@@ -115,7 +117,7 @@ def _project_interlinks_for_statute(
         source_span_file=None,
     )
     for index, citation in enumerate(inline_result.citations):
-        link = interlink_from_inline_citation(
+        link = fi_interlink_from_inline_citation(
             citation,
             interlink_id=_stable_interlink_id("inline_citations", statute_id, index),
         )
