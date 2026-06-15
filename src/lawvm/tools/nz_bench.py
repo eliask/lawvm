@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -87,9 +88,33 @@ _VERIFICATION_FAILED_REFUSAL_RULE_IDS = frozenset(
 # ---------------------------------------------------------------------------
 
 
+# Cheap size proxies, in priority order, that the curated corpus CSV exposes
+# before any scoring happens. Per-work scoring cost scales with the number of
+# amendment operations / history witnesses (each drives a transition replay +
+# oracle parse), so these are a faithful, free load-balancing key.
+_SIZE_PROXY_COLUMNS = ("n_amendment_operations", "n_history_witnesses")
+
+
 def _load_corpus(csv_path: Path, max_works: int | None) -> list[str]:
     """Load work_ids from a curated NZ bench corpus CSV (in file order)."""
-    work_ids: list[str] = []
+    return [wid for wid, _ in _load_corpus_with_size(csv_path, max_works)]
+
+
+def _load_corpus_with_size(
+    csv_path: Path, max_works: int | None
+) -> list[tuple[str, int]]:
+    """Load ``(work_id, size_proxy)`` pairs in CSV (file) order.
+
+    ``size_proxy`` is a cheap, pre-scoring estimate of per-work scoring cost
+    read straight from the corpus CSV (``n_amendment_operations``, falling back
+    to ``n_history_witnesses``). It is used only for largest-work-first
+    execution ordering and never affects which works are scored: ``max_works``
+    is still applied to the CSV (file) order here, BEFORE any reordering.
+
+    When no size column is present the proxy is 0 for every work, so callers
+    fall back to a stable (CSV-order) execution order.
+    """
+    pairs: list[tuple[str, int]] = []
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames is None or "work_id" not in reader.fieldnames:
@@ -97,13 +122,41 @@ def _load_corpus(csv_path: Path, max_works: int | None) -> list[str]:
                 f"NZ bench corpus {csv_path} is missing a 'work_id' column "
                 f"(found {reader.fieldnames})"
             )
+        size_col = next(
+            (c for c in _SIZE_PROXY_COLUMNS if c in reader.fieldnames), None
+        )
         for row in reader:
             wid = (row.get("work_id") or "").strip()
-            if wid:
-                work_ids.append(wid)
+            if not wid:
+                continue
+            size = 0
+            if size_col is not None:
+                raw = (row.get(size_col) or "").strip()
+                if raw:
+                    try:
+                        size = int(raw)
+                    except ValueError:
+                        size = 0
+            pairs.append((wid, size))
     if max_works is not None and max_works > 0:
-        work_ids = work_ids[:max_works]
-    return work_ids
+        pairs = pairs[:max_works]
+    return pairs
+
+
+def _execution_order(pairs: list[tuple[str, int]]) -> list[str]:
+    """Largest-work-first execution order for load balancing.
+
+    Sorts the (already ``--max-works``-selected) works by descending size proxy
+    so long-running works start first and workers do not idle on a long tail.
+    Ties (and the no-size-column case, where every proxy is 0) break on the
+    original CSV index, keeping the order stable and deterministic. This only
+    affects the ORDER work is dispatched to the pool — the scored set and the
+    final aggregate are unchanged because results are re-sorted to CSV order
+    before aggregation.
+    """
+    indexed = list(enumerate(pairs))
+    indexed.sort(key=lambda iw: (-iw[1][1], iw[0]))
+    return [wid for _, (wid, _) in indexed]
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +393,122 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
 
 
 # ---------------------------------------------------------------------------
+# Parallel scoring (one farchive handle per worker process)
+# ---------------------------------------------------------------------------
+#
+# Each work is scored independently: ``_score_one_work`` opens nothing that is
+# shared across works except the read-only farchive handle, and an open Farchive
+# handle is NOT safe to share across processes. So workers open their OWN handle
+# once per process (in the initializer) and reuse it for every work they score.
+# Determinism: the parallel path scores the exact same works and each
+# ``_WorkResult`` is a pure function of its ``work_id``; results are re-sorted to
+# CSV order by the caller before aggregation, so the aggregate + JSON are
+# byte-identical to the serial path regardless of completion scheduling.
+
+# Hard pool-size ceiling. Each worker holds its own open farchive handle and the
+# per-work parse caches, so pool size multiplies resident memory; cap it to stay
+# under the WSL2 memory ceiling regardless of host core count.
+_MAX_WORKERS = 8
+
+# Worker-process globals, set once by the initializer (never pickled per task).
+_WORKER_ARCHIVE: Any = None
+_WORKER_DB_PATH: Path | None = None
+
+
+def _default_workers() -> int:
+    """Default worker count: min(16, cpu-2), then clamped to the memory cap."""
+    cpus = os.cpu_count() or 2
+    return max(1, min(_MAX_WORKERS, min(16, cpus - 2)))
+
+
+def _resolve_workers(requested: int | None) -> int:
+    """Resolve the requested ``--parallel`` value into an effective pool size.
+
+    ``None`` / ``0`` -> auto default (min(16, cpu-2), capped at the memory
+    ceiling); ``1`` -> serial; ``N`` -> clamped to the memory ceiling.
+    """
+    if requested is None or requested <= 0:
+        return _default_workers()
+    return max(1, min(_MAX_WORKERS, requested))
+
+
+def _worker_init(db_path_str: str) -> None:
+    """Process-pool initializer: open this worker's own farchive handle once."""
+    global _WORKER_ARCHIVE, _WORKER_DB_PATH
+    _WORKER_DB_PATH = Path(db_path_str)
+    _WORKER_ARCHIVE = open_farchive(_WORKER_DB_PATH)
+
+
+def _score_one_work_worker(work_id: str) -> _WorkResult:
+    """Picklable per-work task: score using this worker's own farchive handle."""
+    assert _WORKER_ARCHIVE is not None and _WORKER_DB_PATH is not None, (
+        "NZ bench worker not initialized (farchive handle missing)"
+    )
+    return _score_one_work(_WORKER_ARCHIVE, work_id, _WORKER_DB_PATH)
+
+
+def _score_corpus(
+    *,
+    db_path: Path,
+    ordered_work_ids: list[str],
+    workers: int,
+    quiet: bool,
+    total: int,
+    t0: float,
+) -> list[_WorkResult]:
+    """Score every work, parallel when ``workers > 1``, else serial.
+
+    ``ordered_work_ids`` is the largest-work-first execution order. Progress
+    lines stream as results COMPLETE (so they may be out of CSV order — each
+    line carries the work_id so it stays readable). Returns results in
+    completion order; the caller sorts them to CSV order for the aggregate.
+    """
+    results: list[_WorkResult] = []
+
+    def _stream(done: int, result: _WorkResult) -> None:
+        if quiet:
+            return
+        elapsed = time.time() - t0
+        print(
+            _format_progress_line(
+                done=done, total=total, elapsed=elapsed, result=result
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+
+    if workers <= 1:
+        archive = open_farchive(db_path)
+        try:
+            for i, work_id in enumerate(ordered_work_ids):
+                result = _score_one_work(archive, work_id, db_path)
+                results.append(result)
+                _stream(i + 1, result)
+        finally:
+            archive.close()
+        return results
+
+    from concurrent.futures import as_completed
+
+    from lawvm.tools._worker_pool import managed_executor
+
+    with managed_executor(
+        workers,
+        initializer=_worker_init,
+        initargs=(str(db_path),),
+    ) as pool:
+        futures = {
+            pool.submit(_score_one_work_worker, work_id): work_id
+            for work_id in ordered_work_ids
+        }
+        for done, future in enumerate(as_completed(futures), start=1):
+            result = future.result()
+            results.append(result)
+            _stream(done, result)
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Aggregate + report
 # ---------------------------------------------------------------------------
 
@@ -547,20 +716,35 @@ def main(args: Any) -> None:
         raise SystemExit(2)
 
     max_works = getattr(args, "max_works", None)
-    work_ids = _load_corpus(corpus, max_works)
-    if not work_ids:
+    # --max-works is applied to the CSV (file) order FIRST, so it always selects
+    # the same set of works regardless of the execution ordering below.
+    corpus_pairs = _load_corpus_with_size(corpus, max_works)
+    if not corpus_pairs:
         print(f"NZ bench corpus {corpus} contained no work_ids", file=sys.stderr)
         raise SystemExit(2)
+
+    # Canonical CSV order: results are re-sorted into this order before the
+    # aggregate + JSON so those outputs are deterministic regardless of worker
+    # count or completion scheduling.
+    csv_order = [wid for wid, _ in corpus_pairs]
+    csv_rank = {wid: i for i, wid in enumerate(csv_order)}
+    # Largest-work-first execution order for load balancing (does NOT change the
+    # scored set; results are sorted back to CSV order afterwards).
+    ordered_work_ids = _execution_order(corpus_pairs)
+
+    workers = _resolve_workers(getattr(args, "parallel", None))
 
     quiet = getattr(args, "json", False) and not getattr(args, "output_json", None)
 
     corpus_label = "smoke" if corpus == _SMOKE_CORPUS else "full"
     if max_works is not None and max_works > 0:
         corpus_label += f"; capped at first {max_works}"
+    total = len(csv_order)
     if not quiet:
         print(
-            f"NZ actual-replay bench: scoring {len(work_ids)} works "
-            f"from {corpus} ({corpus_label})",
+            f"NZ actual-replay bench: scoring {total} works "
+            f"from {corpus} ({corpus_label}; workers={workers}, "
+            f"largest-work-first)",
             file=sys.stderr,
             flush=True,
         )
@@ -572,24 +756,18 @@ def main(args: Any) -> None:
             )
 
     t0 = time.time()
-    archive = open_farchive(db_path)
-    results: list[_WorkResult] = []
-    total = len(work_ids)
-    try:
-        for i, work_id in enumerate(work_ids):
-            result = _score_one_work(archive, work_id, db_path)
-            results.append(result)
-            if not quiet:
-                elapsed = time.time() - t0
-                print(
-                    _format_progress_line(
-                        done=i + 1, total=total, elapsed=elapsed, result=result
-                    ),
-                    file=sys.stderr,
-                    flush=True,
-                )
-    finally:
-        archive.close()
+    results = _score_corpus(
+        db_path=db_path,
+        ordered_work_ids=ordered_work_ids,
+        workers=workers,
+        quiet=quiet,
+        total=total,
+        t0=t0,
+    )
+
+    # Deterministic aggregate + JSON: re-sort completion-order results into the
+    # canonical CSV order before aggregating or emitting.
+    results.sort(key=lambda r: csv_rank[r.work_id])
 
     agg = _aggregate(results)
 

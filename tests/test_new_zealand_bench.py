@@ -259,6 +259,56 @@ _REAL_DB = (
     / "nz_legislation.farchive"
 )
 _CANARY_WORK = "act_public_1992_122"
+_REAL_CORPUS = (
+    Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT") or Path(__file__).resolve().parents[1])
+    / "data"
+    / "nz"
+    / "bench_corpus.csv"
+)
+
+
+# --- size proxy + execution ordering ----------------------------------------
+
+
+def test_load_corpus_with_size_reads_proxy_and_respects_max_works(tmp_path) -> None:
+    # The cheap size proxy comes straight from the CSV; --max-works is applied to
+    # the CSV (file) order BEFORE any reordering, so the selected set is stable.
+    corpus = tmp_path / "c.csv"
+    corpus.write_text(
+        "work_id,n_amendment_operations,n_history_witnesses\n"
+        "a,5,5\n"
+        "b,40,40\n"
+        "c,1,1\n"
+        "d,99,99\n",
+        encoding="utf-8",
+    )
+    pairs = nz_bench._load_corpus_with_size(corpus, max_works=3)
+    # max_works selects the first 3 CSV rows, NOT the 3 largest.
+    assert [wid for wid, _ in pairs] == ["a", "b", "c"]
+    assert [sz for _, sz in pairs] == [5, 40, 1]
+
+
+def test_execution_order_is_largest_work_first_then_stable() -> None:
+    pairs = [("a", 5), ("b", 40), ("c", 1), ("d", 40)]
+    # Descending by size proxy; ties (b, d) break on original CSV index.
+    assert nz_bench._execution_order(pairs) == ["b", "d", "a", "c"]
+
+
+def test_execution_order_falls_back_to_csv_order_without_size_column(tmp_path) -> None:
+    corpus = tmp_path / "c.csv"
+    corpus.write_text("work_id\na\nb\nc\n", encoding="utf-8")
+    pairs = nz_bench._load_corpus_with_size(corpus, max_works=None)
+    # No size column -> all proxies 0 -> stable CSV order preserved.
+    assert [sz for _, sz in pairs] == [0, 0, 0]
+    assert nz_bench._execution_order(pairs) == ["a", "b", "c"]
+
+
+def test_resolve_workers_semantics() -> None:
+    # None / 0 -> auto default (>=1, capped); 1 -> serial; large -> capped.
+    assert nz_bench._resolve_workers(1) == 1
+    assert nz_bench._resolve_workers(None) >= 1
+    assert nz_bench._resolve_workers(0) >= 1
+    assert nz_bench._resolve_workers(10_000) == nz_bench._MAX_WORKERS
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
@@ -318,3 +368,57 @@ def test_nz_bench_canary_scores_high_similarity_on_replayed_transitions(capsys, 
     # replayed transitions contribute at least one "agreement" residual.
     family_counts = summary["oracle_agreement_residual_family_counts"]
     assert family_counts.get("agreement", 0) >= 1
+
+
+def _run_bench_json(*, db, corpus, parallel, out_json) -> dict:
+    args = SimpleNamespace(
+        db=str(db),
+        corpus=str(corpus),
+        smoke=False,
+        max_works=None,
+        json=False,
+        output_json=str(out_json),
+        parallel=parallel,
+    )
+    nz_bench.main(args)
+    import json
+
+    return json.loads(Path(out_json).read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(
+    not (_REAL_DB.exists() and _REAL_CORPUS.exists()),
+    reason="archived NZ farchive / corpus not present",
+)
+def test_parallel_aggregate_is_byte_identical_to_serial(tmp_path) -> None:
+    # Parallelism + largest-work-first ordering must NOT change any score: the
+    # aggregate summary and the per-work payloads (sorted to CSV order) are
+    # byte-identical between the serial and the parallel run over the same slice.
+    import csv as _csv
+    import json as _json
+
+    with open(_REAL_CORPUS, newline="") as f:
+        rows = [r for r in _csv.DictReader(f)][:6]
+    assert rows, "expected a non-empty real NZ corpus"
+    slice_csv = tmp_path / "slice.csv"
+    with open(slice_csv, "w", newline="") as f:
+        writer = _csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    serial = _run_bench_json(
+        db=_REAL_DB, corpus=slice_csv, parallel=1, out_json=tmp_path / "serial.json"
+    )
+    parallel = _run_bench_json(
+        db=_REAL_DB, corpus=slice_csv, parallel=4, out_json=tmp_path / "parallel.json"
+    )
+
+    # Aggregate numbers are byte-identical.
+    assert serial["summary"] == parallel["summary"]
+    # Per-work payloads are emitted in CSV order in both runs and identical.
+    assert [w["work_id"] for w in serial["works"]] == [
+        w["work_id"] for w in parallel["works"]
+    ]
+    assert _json.dumps(serial["works"], sort_keys=True) == _json.dumps(
+        parallel["works"], sort_keys=True
+    )
