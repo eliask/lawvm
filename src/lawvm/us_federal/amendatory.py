@@ -69,6 +69,13 @@ NON_TITLE_TARGET_RULE_ID = "us_amendatory_target_non_us_code"
 # compound (multiple end-of-paragraph conjunction edits + a block add) that a single
 # 2-operand text_replace cannot faithfully represent; held out as a typed residual.
 COMPOUND_STRIKE_INSERT_FINDING_RULE_ID = "us_amendatory_compound_strike_insert_node"
+# An "add at the end the following: <block>" whose block opens with a NEW section /
+# chapter head ("§ 2328. …", "CHAPTER 37—…") is a whole-new-section CREATE, not an
+# append to the inherited section's body. It does not materialize from any before-
+# node (the section/chapter does not yet exist), so forcing it onto the inherited
+# section corrupts that sibling's text. Held out as a typed residual (an honest
+# new-section insert), never appended to the wrong before-node.
+NEW_SECTION_INSERT_FINDING_RULE_ID = "us_amendatory_new_section_insert"
 
 # USC nesting order (deepest-last). Used to type bare positional labels from a
 # ref href / prose chain into the pinned LegalAddress segment kinds. This MUST stay
@@ -1036,6 +1043,23 @@ def _strike_structural_unit_list(
     )
 
 
+# A quoted "add at the end" payload that OPENS with a new section / chapter head —
+# "§ 2328. Mandatory forfeiture…", "CHAPTER 37—NONPOSTAL SERVICES", "SUBCHAPTER V…"
+# — is a whole-new-unit CREATE, not an append to the inherited section's body. The
+# leading curly/straight quote the USLM wraps the block in is allowed before the
+# head. A bare "(a)"/"(1)" enumerator (a real subsection/paragraph append) does NOT
+# match, so a legitimate add-at-end of section content is never mis-held-out.
+_NEW_SECTION_PAYLOAD_HEAD_RE = re.compile(
+    r'^\s*["“]?\s*(?:§+\s*\d|CHAPTER\s+\d|SUBCHAPTER\s+[IVXLC]|PART\s+[A-Z]\b)',
+    re.IGNORECASE,
+)
+
+
+def _payload_opens_new_section(payload_text: str) -> bool:
+    """True when an add-at-end payload opens with a new section/chapter/part head."""
+    return _NEW_SECTION_PAYLOAD_HEAD_RE.match(payload_text or "") is not None
+
+
 def _lower_instruction(
     *,
     statute_id: str,
@@ -1299,7 +1323,21 @@ def _lower_instruction(
                 "insert-after without both inserted text and anchor text",
             )
     elif family == "add_at_end":
-        if payload_node is not None:
+        add_payload_text = (
+            payload_node.text if payload_node is not None
+            else (quoted[0] if quoted else "")
+        )
+        if _payload_opens_new_section(add_payload_text):
+            # "by adding at the end the following: '§ 2328. …'" — a whole-new-section
+            # CREATE, not an append to the inherited section's body. It does not
+            # materialize from any before-node; held out as a typed residual rather
+            # than corrupting the inherited sibling section's text.
+            finding = _finding(
+                NEW_SECTION_INSERT_FINDING_RULE_ID,
+                "add-at-end payload opens with a new section/chapter head "
+                "(whole-new-unit create, not a body append)",
+            )
+        elif payload_node is not None:
             op = _make_op(
                 StructuralAction.INSERT,
                 rule_id=RULE_ADD_AT_END,
@@ -1468,6 +1506,48 @@ def _unit_own_target(unit: ET.Element, *, exclude: ET.Element | None = None) -> 
     # Scan only text outside the excluded descendant sub-units.
     own_text = _shallow_text(unit, exclude=exclude)
     return parse_usc_target_phrase(own_text)
+
+
+# A title-only enclosing scope: a parent chapeau that amends a WHOLE title with no
+# section of its own — "Part I of title 18, United States Code, is amended—" (or the
+# bare ``<ref href="/us/usc/t18">`` the converter emits for it). It names the title
+# the enacted language operates under but no codified section, so it does not resolve
+# to a target address. We thread the TITLE alone so a leaf that names its own section
+# in relative prose ("(A) in section 1583(a), by striking …") can resolve under it —
+# the title is the OLRC's own (enacted) scope, never invented. The prose form must
+# carry "United States Code" so a stray "title 18 of the report" is not mistaken for
+# a USC title.
+_TITLE_ONLY_HREF_RE = re.compile(r"^/us/usc/t(?P<title>\d+)/?$")
+_TITLE_ONLY_PROSE_RE = re.compile(
+    r"\btitle\s+(?P<title>\d+),?\s+United\s+States\s+Code\b", re.IGNORECASE
+)
+
+
+def _unit_title_only_scope(
+    unit: ET.Element, *, exclude: ET.Element | None = None
+) -> str:
+    """The bare USC title a unit's title-only chapeau scopes, or "".
+
+    Returns the title number when the unit's own ref/prose names a whole USC title
+    with NO section ("Part I of title 18, United States Code" / ``/us/usc/t18``).
+    Returns "" when the unit names a section (that is a full target, handled by
+    :func:`_unit_own_target`) or names no USC title at all. Never invents a title.
+    """
+    phrase, href = _first_usc_ref(unit)
+    # A section-bearing href/prose is a full target, not a title-only scope.
+    if href:
+        m = _TITLE_ONLY_HREF_RE.match(href.strip())
+        if m is not None:
+            return m.group("title")
+    own_text = _shallow_text(unit, exclude=exclude)
+    # If the unit's own prose already names a "section X of title N", that is a full
+    # target (or a relative one); do not treat it as a bare title-only scope.
+    if parse_usc_target_phrase(own_text) is not None:
+        return ""
+    m = _TITLE_ONLY_PROSE_RE.search(own_text)
+    if m is not None:
+        return m.group("title")
+    return ""
 
 
 def _shallow_text(elem: ET.Element, *, exclude: ET.Element | None = None) -> str:
@@ -1673,7 +1753,39 @@ def _iter_instruction_units(
                             head_text, inherited_title=title
                         )
                     ancestor = parent_of.get(ancestor)
-            if inherited is not None and intermediate_anchors:
+            title_only_scope = ""
+            if inherited is None:
+                # Title-only enclosing scope: a parent chapeau amends a WHOLE title
+                # ("Part I of title 18, United States Code, is amended—") with no
+                # section, so no inherited ADDRESS resolves. Thread the bare TITLE so
+                # a leaf that names its own section in relative prose ("(A) in section
+                # 1583(a), by striking …") resolves under it. The section + segments
+                # come from the leaf's own prose; only the title is inherited (the
+                # enacted scope, never invented). A title-only address has no section,
+                # so the intermediate sub-unit anchors (which refine an inherited
+                # section's sub-units) do not apply — the leaf's own relative prose
+                # carries the full address below the section.
+                ancestor = parent_of.get(elem)
+                child_for_exclude2 = elem
+                while ancestor is not None and not title_only_scope:
+                    title_only_scope = _unit_title_only_scope(
+                        ancestor, exclude=child_for_exclude2
+                    )
+                    child_for_exclude2 = ancestor
+                    ancestor = parent_of.get(ancestor)
+                if not title_only_scope:
+                    # The title-only scope usually lives in the SECTION's own chapeau
+                    # ("Part I of title 18, United States Code, is amended—") rather
+                    # than a nested amendatory unit; consult it (and the content) too.
+                    for tag in ("u:chapeau", "u:content"):
+                        head_el = section.find(tag, _NS)
+                        if head_el is not None:
+                            title_only_scope = _unit_title_only_scope(head_el)
+                            if title_only_scope:
+                                break
+                if title_only_scope:
+                    inherited = LegalAddress(path=(("title", title_only_scope),))
+            if inherited is not None and intermediate_anchors and not title_only_scope:
                 # Apply outermost intermediate anchor first (it is the shallowest
                 # scope); each refinement descends from the prior frontier.
                 for anchor_text in reversed(intermediate_anchors):

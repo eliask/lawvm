@@ -9,13 +9,17 @@ built from fixtures (no network).
 
 from __future__ import annotations
 
+import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+import pytest
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     COMPOUND_STRIKE_INSERT_FINDING_RULE_ID,
+    NEW_SECTION_INSERT_FINDING_RULE_ID,
     NON_TITLE_TARGET_RULE_ID,
     RULE_ADD_AT_END,
     RULE_INSERT_AFTER,
@@ -28,6 +32,7 @@ from lawvm.us_federal.amendatory import (
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
     _join_insert_after,
+    _payload_opens_new_section,
     _resolve_target,
     lower_plaw_amendatory,
     parse_relative_usc_target,
@@ -1116,3 +1121,140 @@ def test_strike_unit_insert_new_units_is_held_out_not_a_whole_node_replace():
     assert instr.operation is None
     assert instr.finding is not None
     assert instr.finding.rule_id == COMPOUND_STRIKE_INSERT_FINDING_RULE_ID
+
+
+def test_title_only_chapeau_threads_title_to_relative_prose_leaf():
+    # Real PL 115-392 §11 shape (recovers 18:1583): the section CHAPEAU amends a
+    # whole title ("Part I of title 18, United States Code, is amended—") with NO
+    # section of its own, and a leaf names its own section in RELATIVE prose ("(A) in
+    # section 1583(a), … by striking 'X' and inserting 'Y'"). The bare title from the
+    # chapeau is threaded down so the leaf resolves to 18:1583(a) — the enacted scope,
+    # never invented. Before this threading the leaf stayed target_unresolved.
+    body = (
+        '<section identifier="/us/pl/115/392/s11"><num value="11">SEC. 11. </num>'
+        '<chapeau>Part I of <ref href="/us/usc/t18">title 18, United States Code'
+        "</ref>, <amendingAction type=\"amend\">is amended</amendingAction>—</chapeau>"
+        '<paragraph identifier="/us/pl/115/392/s11/1"><num value="1">(1) </num>'
+        "<chapeau>in chapter 77—</chapeau>"
+        '<subparagraph identifier="/us/pl/115/392/s11/1/A"><num value="A">(A) </num>'
+        "<content>in section 1583(a), in the flush text following paragraph (3), by "
+        '<amendingAction type="delete">striking</amendingAction> '
+        "“<quotedText>not more than 20 years</quotedText>” and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "“<quotedText>not more than 30 years</quotedText>”."
+        "</content></subparagraph></paragraph></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    leaf = next(
+        i for i in report.instructions if i.target_address is not None
+    )
+    assert str(leaf.target_address) == "title:18/section:1583/subsection:a"
+    assert leaf.action == "strike_insert"
+    op = leaf.operation
+    assert op is not None and op.text_patch is not None
+    assert op.text_patch.selector.match_text == "not more than 20 years"
+    assert op.text_patch.replacement == "not more than 30 years"
+    # The title is threaded, never invented: a chapeau naming no USC title leaves the
+    # relative-prose leaf unresolved.
+    no_title_body = body.replace(
+        '<ref href="/us/usc/t18">title 18, United States Code</ref>',
+        "Part I",
+    )
+    no_title_report = lower_plaw_amendatory(_synthetic_plaw(no_title_body))
+    assert all(i.target_address is None for i in no_title_report.instructions)
+
+
+def test_add_at_end_new_section_block_is_held_out_not_appended_to_sibling():
+    # Real PL 115-70 §402 shape (protects 18:2326): "(4) by adding at the end the
+    # following: '§ 2328. Mandatory forfeiture …'" CREATES a new section §2328. It must
+    # NOT be appended to the inherited section's body (which would corrupt the sibling
+    # section's text). It is held out as a typed new-section-insert residual.
+    body = (
+        '<section identifier="/us/pl/115/70/s402"><num value="402">SEC. 402. </num>'
+        '<content><ref href="/us/usc/t18/s2326">Section 2326 of title 18, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">adding</amendingAction> at the end the '
+        "following:<quotedContent>“§ 2328. Mandatory forfeiture “(a) In General.—The "
+        "court shall order forfeiture.”</quotedContent>.</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "add_at_end"
+    assert instr.operation is None
+    assert instr.finding is not None
+    assert instr.finding.rule_id == NEW_SECTION_INSERT_FINDING_RULE_ID
+
+
+def test_add_at_end_subsection_content_still_lowers_guard_is_precise():
+    # The new-section guard must NOT reject a legitimate add-at-end of subsection
+    # content: a payload that opens with a bare "(d)" enumerator is a body append, not
+    # a new-section create, and still lowers to an INSERT anchored at the section.
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<content><ref href="/us/usc/t11/s523">Section 523 of title 11, '
+        'United States Code</ref>, <amendingAction type="amend">is amended</amendingAction>'
+        ' by <amendingAction type="insert">adding</amendingAction> at the end the '
+        "following:<quotedContent>“(d) The court may award costs.”</quotedContent>."
+        "</content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    instr = report.instructions[0]
+    assert instr.action == "add_at_end"
+    assert instr.operation is not None
+    assert instr.witness_rule_id == RULE_ADD_AT_END
+    # And the head detector itself: section/chapter heads are new units; bare
+    # subsection/paragraph enumerators are body content.
+    assert _payload_opens_new_section("§ 2328. Mandatory forfeiture")
+    assert _payload_opens_new_section("“§ 171. Wildlife crossings")
+    assert _payload_opens_new_section("CHAPTER 37—NONPOSTAL SERVICES")
+    assert not _payload_opens_new_section("(d) The court may award costs.")
+    assert not _payload_opens_new_section("“(2) If a disclosure is made")
+
+
+# ---------------------------------------------------------------------------
+# Real positive-title recovery over the canonical archive (archive-gated, no network)
+# ---------------------------------------------------------------------------
+
+
+def _canonical_archive_available() -> bool:
+    root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT")
+    if not root:
+        return False
+    return (Path(root) / "data" / "us_federal.farchive").exists()
+
+
+@pytest.mark.skipif(
+    not _canonical_archive_available(),
+    reason="canonical us_federal.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_real_title28_pl115_141_title_only_inheritance_reaches_agreement() -> None:
+    # End-to-end recovery (28:1871, 2016->2018, PL 115-141): the section chapeau
+    # amends a whole title with no section of its own, and the leaf names its section
+    # in relative prose ("in section 1871(b), … by striking '$40' and inserting
+    # '$50'"). The bare title threaded from the chapeau lets the leaf resolve to
+    # 28:1871(b) and the strike/insert materializes in AGREEMENT with the published
+    # Code — a section that was a missing_source target-resolution gap before the
+    # title-only inheritance. Confirms the recovered op reaches a genuine agreement
+    # (not just that it lowers).
+    from lawvm.us_federal.dry_run import build_us_dry_run_from_archive
+
+    archive = open_us_federal_farchive(readonly=True)
+    try:
+        report = build_us_dry_run_from_archive(
+            archive,
+            title=28,
+            before_year=2016,
+            after_year=2018,
+            plaw_locators={"PL 115-141": plaw_locator(115, 141)},
+        )
+    finally:
+        archive.close()
+
+    assert "28:1871" in report.oracle_changed_sections
+    assert "28:1871" in report.claimed_sections
+    row = next(r for r in report.rows if r.section_key == "28:1871")
+    assert row.status == "agree"
+    assert row.target_address == "title:28/section:1871/subsection:b"
+    assert row.match_text == "$40"
+    assert row.replacement == "$50"
+    assert report.replay_authorized is False

@@ -158,6 +158,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "text_replace cannot represent; held out as a typed residual rather than "
         "lowered to a corrupt phrase swap."
     ),
+    "us_amendatory_new_section_insert": (
+        "An 'add at the end the following: <block>' instruction whose block opens with "
+        "a new section/chapter/part head ('§ 2328. …', 'CHAPTER 37—…') is a whole-new-"
+        "unit create, not an append to the inherited section's body; held out as a "
+        "typed residual rather than corrupting the inherited sibling section's text."
+    ),
     # --- Dry-run outcome rules: the witness classifier --------------------------------
     "us_dry_run_section_materialized_text_matches_oracle": (
         "AGREES witness: the composed section text (before-text with all in-scope ops "
