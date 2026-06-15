@@ -119,6 +119,10 @@ _ROMAN_VALUES = (
 _ROMAN_RE = re.compile(r"^m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$")
 _LOWER_ALPHA_RE = re.compile(r"^[a-z]+$")
 _UPPER_ALPHA_RE = re.compile(r"^[A-Z]+$")
+# A paragraph enumerator inserted between two numbered paragraphs: ``(51A)``,
+# ``(4A)`` — a digit root with a single trailing letter. Digit-rooted, so always a
+# paragraph (never a letter level).
+_DIGIT_LETTER_PARAGRAPH_RE = re.compile(r"^(?P<num>[0-9]+)[A-Za-z]$")
 
 
 def _int_to_roman(value: int) -> str:
@@ -166,13 +170,21 @@ def _homogeneous_letter_ordinal(token: str, *, upper: bool) -> int | None:
 def _marker_interpretations(token: str) -> tuple[tuple[int, int], ...]:
     """All ``(level, ordinal)`` the enumerator token can denote on the USC ladder.
 
-    A digit is unambiguously a paragraph. A single lowercase letter is ambiguous
+    A digit is unambiguously a paragraph. A digit with a trailing letter suffix
+    (``4A``, ``51D``) is also unambiguously a paragraph: the USC numbers a paragraph
+    inserted between ``(51)`` and ``(52)`` as ``(51A)``, ``(51B)``, ... — a digit-
+    rooted enumerator, never a letter level. A single lowercase letter is ambiguous
     between a subsection-letter and a lowercase-roman clause; uppercase likewise
     between subparagraph-letter and uppercase-roman subclause. Doubled letters
     (``aa``/``AA``) denote the item / sub-item levels.
     """
     if token.isdigit():
         return ((_LEVEL_PARAGRAPH, int(token)),)
+    digit_letter = _DIGIT_LETTER_PARAGRAPH_RE.match(token)
+    if digit_letter is not None:
+        # ``51D`` → paragraph; ordinal is the numeric root (the lettered insert sits
+        # at the same paragraph level as its root number, placed as a reopen-sibling).
+        return ((_LEVEL_PARAGRAPH, int(digit_letter.group("num"))),)
     out: list[tuple[int, int]] = []
     if _LOWER_ALPHA_RE.match(token) is not None:
         letter = _homogeneous_letter_ordinal(token, upper=False)
@@ -229,12 +241,21 @@ def _resolve_marker_level(
         else:
             is_sibling = any(sl == level and so == ordinal - 1 for sl, so in stack)
             is_reopen = any(sl == level for sl, so in stack)
-            if is_sibling:
-                score = 0  # clean next-sibling continuation of an open level
+            # A sibling continuation of the FRONTIER (deepest open level) is the
+            # cleanest fit. A sibling continuation that matches a SHALLOWER open
+            # ancestor (``level < frontier``) requires closing the frontier subtree
+            # to jump back up — structurally weaker than descending one clean level
+            # into the just-opened frontier. This is the roman/letter discriminator:
+            # under an open ``(A)`` (frontier = subparagraph) a ``(i)`` is the clause
+            # first-child, NOT the 9th subsection reopening a far-shallower ``(h)``.
+            if is_sibling and level >= frontier:
+                score = 0  # clean next-sibling continuation of the deepest open level
             elif level == frontier + 1 and ordinal == 1:
                 score = 1  # clean first child of the deepest open level
+            elif is_sibling:
+                score = 2  # next-sibling of a shallower ancestor (closes the frontier subtree)
             elif is_reopen:
-                score = 2  # sibling of an open level with a gap (renumbered/skipped)
+                score = 3  # sibling of an open level with a gap (renumbered/skipped)
             elif level > frontier:
                 score = 4  # a deeper child jump (>1 level) — irregular but placeable
             else:

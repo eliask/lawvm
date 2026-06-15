@@ -435,3 +435,155 @@ def test_strip_replacement_section_catchline_refuses_when_unsafe() -> None:
     )
     # Plain body (no catchline at all) is left untouched.
     assert strip_replacement_section_catchline("(a) The program shall.", "100") is None
+
+
+# ---------------------------------------------------------------------------
+# Subsection-split node-coverage: digit-letter paragraph + frontier roman/letter
+# disambiguation (the node-not-located residual classes).
+# ---------------------------------------------------------------------------
+
+
+# A digit-letter paragraph enumerator (``(4A)``) is the USC convention for a
+# paragraph inserted between ``(4)`` and ``(5)``. The token is digit-rooted, so it
+# is unambiguously a paragraph — never a letter level. Before this was handled the
+# splitter flagged every such marker ``us_usc_subsection_parse_ambiguous`` and the
+# stack desynchronised for the rest of the definition list.
+_DIGIT_LETTER_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:11 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 11-BANKRUPTCY!@!CHAPTER 1!@!Sec. 101 -->
+<h3 class="section-head">&sect;101. Definitions</h3>
+<!-- field-start:statute -->
+<p class="statutory-body-1em">(4) The term "attorney" means attorney.</p>
+<p class="statutory-body-1em">(4A) The term "bankruptcy assistance" means goods or services.</p>
+<p class="statutory-body-1em">(5) The term "claim" means&mdash;</p>
+<p class="statutory-body-2em">(A) right to payment; or</p>
+<p class="statutory-body-2em">(B) right to an equitable remedy.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 95&ndash;598.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_split_digit_letter_paragraph_is_a_paragraph_node() -> None:
+    """``(4A)`` is a paragraph (digit-rooted insert), exposed with label ``4A`` and
+    kind ``paragraph`` — never flagged ambiguous, and the following ``(5)``/``(A)``
+    ladder stays correctly synchronised behind it."""
+    doc = parse_usc_title_document(_DIGIT_LETTER_HTM, title=11, year="2018")
+    section = doc.section_by_number("101")
+    assert section is not None
+    nodes, findings = split_statutory_subsections(section)
+    assert findings == []
+    by_segs = {n.address.path[2:]: n for n in nodes}
+    para4a = by_segs[(("paragraph", "4A"),)]
+    assert para4a.kind == "paragraph"
+    assert para4a.label == "4A"
+    assert para4a.text.startswith('(4A) The term "bankruptcy assistance"')
+    # The digit-letter insert does not desync the rest: (5)(A) and (5)(B) follow.
+    assert (("paragraph", "5"), ("subparagraph", "A")) in by_segs
+    assert (("paragraph", "5"), ("subparagraph", "B")) in by_segs
+
+
+# A deep ``(A)(i)(I)`` ladder opened UNDER a far-shallower subsection ``(h)``: the
+# roman/letter ambiguity (``(i)`` is both the 9th subsection-letter and the clause
+# roman) must resolve to the CLAUSE first-child of the open ``(A)``, descending the
+# ladder, NOT reopen the shallow ``(h)`` as the 9th subsection. Likewise ``(I)`` is
+# the subclause first-child, not subparagraph ``I``.
+_DEEP_LADDER_HTM = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:38 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 38-VETERANS!@!CHAPTER 1!@!Sec. 7253 -->
+<h3 class="section-head">&sect;7253. Synthetic deep ladder</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">(h) Temporary expansion.&mdash;(1) During the period the court is expanded.</p>
+<p class="statutory-body">(2)(A) Of the additional judges&mdash;</p>
+<p class="statutory-body-1em">(i) one may be appointed in 2002; and</p>
+<p class="statutory-body-2em">(I) the first appointee serves a short term; and</p>
+<p class="statutory-body-2em">(II) the second appointee serves a full term.</p>
+<p class="statutory-body-1em">(ii) one may be appointed in 2003.</p>
+<p class="statutory-body">(i) Additional expansion.&mdash;(1) Subject to paragraph (2), the court grows.</p>
+<!-- field-end:statute -->
+<!-- field-start:sourcecredit -->
+<p class="source-credit">(Pub. L. 100&ndash;1.)</p>
+<!-- field-end:sourcecredit -->
+  </div>
+ </body>
+</html>
+"""
+
+
+def test_split_deep_roman_ladder_descends_not_reopen_shallow_subsection() -> None:
+    """Under an open ``(h)(2)(A)`` the ``(i)``/``(ii)`` are CLAUSES (children of A),
+    and ``(I)``/``(II)`` are SUBCLAUSES — not a 9th subsection reopening ``(h)`` nor
+    a subparagraph ``I``. The trailing run-in ``(i)`` subsection (after the (2)(A)
+    subtree closes, with paragraph the frontier) is the real 9th subsection."""
+    doc = parse_usc_title_document(_DEEP_LADDER_HTM, title=38, year="2018")
+    section = doc.section_by_number("7253")
+    assert section is not None
+    nodes, findings = split_statutory_subsections(section)
+    assert findings == []
+    segs = {n.address.path[2:] for n in nodes}
+    base = (("subsection", "h"), ("paragraph", "2"), ("subparagraph", "A"))
+    assert base + (("clause", "i"),) in segs
+    assert base + (("clause", "i"), ("subclause", "I")) in segs
+    assert base + (("clause", "i"), ("subclause", "II")) in segs
+    assert base + (("clause", "ii"),) in segs
+    # The (2)(A) subtree never mis-opened a 9th subsection (i) or a subparagraph I.
+    by_segs = {n.address.path[2:]: n for n in nodes}
+    deep_i = by_segs[base + (("clause", "i"),)]
+    assert deep_i.kind == "clause"
+    # The trailing ``(i) Additional expansion.—(1) ...`` IS the 9th subsection
+    # (it closes the (h)(2)(A) subtree): a top-level subsection sibling of (h), not
+    # a clause buried under the prior subparagraph. The ``(1)`` here is prose-
+    # separated (not abutting), so it stays part of the subsection's run-in text.
+    assert (("subsection", "i"),) in segs
+    subsec_i = by_segs[(("subsection", "i"),)]
+    assert subsec_i.kind == "subsection"
+    assert subsec_i.text.startswith("(i) Additional expansion")
+
+
+def test_split_genuinely_ambiguous_marker_stays_flagged_never_guessed() -> None:
+    """A bare ``(i)`` opening with NO disambiguating ancestor stack (no open ``(A)``
+    to make it a clause, no ``(h)`` to make it the 9th subsection) is genuinely
+    ambiguous between subsection and clause: it must be flagged, never guessed onto
+    one level. Guards the refuse-on-ambiguity contract the locator relies on."""
+    htm = b"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+<!-- AUTHORITIES-USC-TITLE-ENUM:11 -->
+ </head>
+ <body>
+  <div>
+<!-- expcite:TITLE 11!@!Sec. 9 -->
+<h3 class="section-head">&sect;9. Synthetic ambiguous opener</h3>
+<!-- field-start:statute -->
+<p class="statutory-body">(i) the program shall be carried out.</p>
+<!-- field-end:statute -->
+  </div>
+ </body>
+</html>
+"""
+    doc = parse_usc_title_document(htm, title=11, year="2018")
+    section = doc.section_by_number("9")
+    assert section is not None
+    _nodes, findings = split_statutory_subsections(section)
+    # ``(i)`` with an empty stack ties subsection (1st sibling of nothing) against
+    # clause: the resolver refuses rather than pinning a level.
+    assert any(
+        f["rule_id"] == "us_usc_subsection_parse_ambiguous" for f in findings
+    )
