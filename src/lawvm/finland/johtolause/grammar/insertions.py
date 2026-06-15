@@ -36,13 +36,20 @@ anchor and the structural target is skipped (faithful to the old parser's
 ``_skip_archaic_nain_kuuluva`` at every arm), so a ``lisätään lakiin uusi näin
 kuuluva N §`` is the same clean insertion as ``lisätään lakiin uusi N §``.
 
+A reinstatement preamble between a ``N lukuun`` chapter anchor and ``uusi``
+(``N lukuun siitä lailla X kumotun K §:n tilalle uusi M §``) is consumed by the
+chapter-scoped arm itself (faithful to old Pattern F); a CITATION_SPAN there is a
+chapter provenance attribution the old parser scopes differently, so it declines.
+The plain genitive whole-section variant (``uuden N §:n`` with no momentti/kohta)
+is reproduced — the old parser consumes the §:GEN and emits a whole-section
+insert.
+
 Out of scope for slice 2 (the recognizer returns None / the driver raises
 ``OutOfScope`` for these): heading-placement inserts (``§:n edelle uusi
-väliotsikko``), reinstatement (``kumotun N §:n tilalle uusi``), the
+väliotsikko``), the §:ILL / §:GEN / DOC:ILL reinstatement preamble forms
+(``kumotun N §:n tilalle uusi`` between a §/DOC anchor and ``uusi``), the
 enumeration-truncation continuation arms, postfix-chapter ``§ lukuun N`` lists,
-appendix inserts, malformed ``§ luku`` chapter inserts, the plain genitive
-whole-section stylistic variant as a continuation arm (``uuden N §:n`` whose
-shared batch witness span is not reproducible here), backref/anaphora,
+appendix inserts, malformed ``§ luku`` chapter inserts, backref/anaphora,
 move/renumber tails, jolloin, and meta/text-amend. Whenever a clause needs any of
 those, the recognizer declines so the driver treats the clause as out of scope
 rather than miscompiling it.
@@ -446,13 +453,13 @@ def _recognize_whole_target_list(
 
       * ``numlist OSA``                    → whole-part inserts.
       * ``numlist §:GEN M momentti/kohta`` → a sub-target insert into ``§``.
+      * ``numlist §:GEN`` (no momentti/kohta) → the genitive whole-section
+        *stylistic* variant (``uuden N §:n``); the old parser consumes the §:GEN
+        and emits a plain whole-section insert, so it is reproduced here.
       * ``numlist §`` / ``numlist luku`` (nominative/illative) → plain
         whole-section / whole-chapter inserts.
 
-    Declines (returns None) for the malformed ``§ luku`` chapter-repair form and
-    the plain genitive whole-section *stylistic* variant (``uuden N §:n`` with no
-    momentti/kohta): the old parser threads that into a shared batch witness span
-    this context-free recogniser cannot reproduce, so it stays out of scope.
+    Declines (returns None) only for the malformed ``§ luku`` chapter-repair form.
     """
     nums = _number_list(scan)
     if not nums:
@@ -494,9 +501,13 @@ def _recognize_whole_target_list(
                         )
                     )
             return out
-        # Plain genitive whole-section stylistic variant → out of scope.
+        # Plain genitive whole-section stylistic variant (``uuden N §:n`` with no
+        # momentti/kohta). The old parser restores to the §:GEN (saved_gen here),
+        # falls through to the whole-section emit below (kind=SECTION, consume the
+        # §, one node per number) — the §:GEN is NOT a malformed ``§ luku`` form
+        # (a NOM LUKU never directly follows a GEN §:n), so the chapter-repair
+        # guard cannot fire. Rewind and let the shared whole-section tail own it.
         scan.goto(saved_gen)
-        return None
 
     # Malformed ``§ luku`` (PYKALA immediately followed by a NOM LUKU) is an
     # old-parser chapter-repair path — out of scope here.
@@ -743,7 +754,18 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
                 return gen
             return None
         if t is not None and t.cat == "LUKU" and t.case == "ILL":
-            # LUKU:ILL (chapter-scoped whole-target insert) is guarded below.
+            # LUKU:ILL chapter-scoped whole-target insert (old Pattern F). Tried
+            # here, BEFORE the broad provenance guard, because the old parser
+            # skips a reinstatement preamble between ``N lukuun`` and ``uusi``
+            # (``N lukuun siitä lailla X kumotun K §:n tilalle uusi M §``). That
+            # REINST / TILALLE span is a preamble this arm consumes itself, not an
+            # out-of-scope feature — letting the guard see it would wrongly
+            # decline. The arm self-validates (it returns None for any non-clean
+            # ``uusi numlist (§|luku)`` shape), so out-of-scope LUKU:ILL forms
+            # (heading placement / appendix folds) still decline below.
+            luku = _try_luku_scoped(scan, nums, effective_part)
+            if luku is not None:
+                return luku
             scan.goto(pre_nums_pos)
         else:
             scan.goto(pre_nums_pos)
@@ -769,17 +791,8 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
     if osa_nodes is not None:
         return osa_nodes
 
-    # ── LUKU:ILL-scoped insert: ``N LUKU:ILL uusi numlist (§ | luku)`` ──────
-    pre_nums_pos = scan.pos
-    nums = _number_list(scan)
-    if nums:
-        t = scan.peek()
-        if t is not None and t.cat == "LUKU" and t.case == "ILL":
-            luku = _try_luku_scoped(scan, nums, effective_part)
-            if luku is not None:
-                return luku
-            return None
-        scan.goto(pre_nums_pos)
+    # (The LUKU:ILL-scoped insert arm is dispatched above, before the broad
+    # provenance guard, so its reinstatement preamble is consumed faithfully.)
 
     # ── DOC:ILL arms ───────────────────────────────────────────────────────
     if _at_cat_case(scan, "DOC", "ILL"):
@@ -979,11 +992,60 @@ def _try_section_gen_sub_target(
 def _try_luku_scoped(
     scan: _Scan, nums: list[NumSuffix], effective_part: str
 ) -> Optional[list[InsNode]]:
-    """``N LUKU:ILL [,] uusi numlist (§ | luku)`` — chapter-scoped insertion."""
+    """``N LUKU:ILL [reinst preamble] uusi numlist (§ | luku)`` — chapter-scoped insert.
+
+    Faithful to the old Pattern F (lines 2550-2610). Between ``N lukuun`` and
+    ``uusi`` the old parser skips a reinstatement preamble:
+
+      * an optional comma;
+      * a single TILALLE / REINST_SPAN span (``siitä lailla X kumotun K §:n
+        tilalle`` collapses to one token). A CITATION_SPAN here is a chapter
+        provenance attribution the old parser scopes differently (chapter=''), so
+        the arm declines rather than mis-scoping the inserted section;
+      * a residual ``<nums> §:GEN tilalle`` partial-reinstatement clause (taken
+        only when closed by a tilalle/reinst token, else rewound).
+
+    A heading-placement fold (``<nums> §:GEN edelle uusi otsikko``) the old parser
+    would consume and emit in-batch is NOT reproducible here, so its presence
+    (an EDELLA / OTSIKKO before the inserted ``uusi``) declines the arm.
+    """
     saved = scan.pos
     scan.advance()  # consume LUKU:ILL
     chap_num = nums[0][0] + nums[0][1]
     _optional_comma(scan)
+
+    # A CITATION_SPAN between ``lukuun`` and ``uusi`` is a provenance attribution
+    # of the chapter (``N lukuun, sellaisena kuin se on laissa X, uusi M §``). The
+    # old parser's chapter-scope pre-parse swallows the ``N lukuun , [CITE]`` run
+    # and ``_insertion`` then declines (returning the section via the bare-target
+    # path with chapter=''). Reproduce that by declining the chapter-scoped arm
+    # here, so the citation case is NOT mis-scoped to the chapter.
+    if _at(scan, "CITATION_SPAN"):
+        scan.goto(saved)
+        return None
+
+    # Single tilalle / reinstatement span (the collapsed reinstatement preamble:
+    # ``siitä lailla X kumotun K §:n tilalle``). CITATION_SPAN is excluded above.
+    if _at(scan, "TILALLE", "REINST_SPAN"):
+        scan.advance()
+
+    # Residual ``<nums> §:GEN tilalle`` partial-reinstatement clause.
+    saved_rf = scan.pos
+    rf_nums = _number_list(scan)
+    if rf_nums and _at_cat_case(scan, "PYKALA", "GEN"):
+        scan.advance()
+        if _at(scan, "TILALLE", "REINST_SPAN"):
+            scan.advance()
+        else:
+            scan.goto(saved_rf)
+    elif rf_nums:
+        scan.goto(saved_rf)
+
+    # A heading-placement fold here is out of scope (cannot reproduce in-batch).
+    if _at(scan, "EDELLA", "OTSIKKO"):
+        scan.goto(saved)
+        return None
+
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
@@ -1185,8 +1247,6 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
 
     # ``DOC:ILL uusi numlist §:GEN M momentti/kohta`` (old Pattern C, lines
     # 2766-2795): the genitive §:n is a sub-target insert into the single section.
-    # The plain stylistic ``uuden N §:n`` variant (no momentti/kohta) is left out
-    # of scope (its shared batch witness span is not reproducible here).
     if t.cat == "PYKALA" and t.case == "GEN":
         saved_gen = scan.pos
         scan.advance()  # consume §:GEN
@@ -1207,9 +1267,15 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
                         InsNode(kind=TargetKind.SECTION, label=sec_num, chapter="", sub_target=st_sub)
                     )
             return out
+        # Plain stylistic ``DOC:ILL uuden N §:n`` variant (no momentti/kohta). The
+        # old parser (line 2957) consumes the §:GEN and emits a plain
+        # whole-section insert, one node per pre-§ number. Reproduce it: rewind to
+        # the §:GEN, consume it, and emit whole-section nodes for ``all_nums``.
         scan.goto(saved_gen)
+        scan.advance()  # consume §:GEN
+        return [InsNode(kind=TargetKind.SECTION, label=n + sf, chapter="") for n, sf in all_nums]
 
-    # Other GEN §/luku stylistic variants → out of scope for this slice.
+    # Other GEN luku stylistic variants → out of scope for this slice.
     scan.goto(saved)
     return None
 

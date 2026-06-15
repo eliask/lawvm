@@ -272,14 +272,52 @@ def test_gen_momentti_sub_target_after_uusi_is_zero_delta() -> None:
     assert report.equal
 
 
-def test_gen_plain_whole_section_is_declined() -> None:
-    # ``uuden N §:n seuraavasti`` with no momentti/kohta — the plain genitive
-    # whole-section stylistic variant. The old parser threads its witness span in
-    # a way this context-free recogniser cannot reproduce without risking a
-    # divergent per-batch span (and exposing latent deltas in preceding verb
-    # groups), so it stays out of scope: the driver must DECLINE (fail-loud).
-    text = "lisätään päätökseen uuden 6 a §:n seuraavasti:"
-    tokens, _ = _tokenize(text)
+@pytest.mark.parametrize(
+    "text",
+    [
+        # ``uuden N §:n`` with no momentti/kohta — the plain genitive whole-section
+        # stylistic variant. DOC-anchored and bare (citation-stripped) forms; the
+        # old parser consumes the §:GEN and emits a plain whole-section insert.
+        "lisätään päätökseen uuden 6 a §:n seuraavasti:",
+        "lisätään uuden 3 a §:n seuraavasti:",
+        "lisätään lakiin uuden 11 §:n seuraavasti:",
+    ],
+)
+def test_gen_plain_whole_section_is_recovered(text: str) -> None:
+    # The genitive whole-section variant is now reproduced byte-identically to the
+    # old parser (it was previously declined as out of scope).
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # ``N lukuun [reinstatement] uusi M §`` — chapter-scoped section insert
+        # whose reinstatement preamble (``siitä lailla X kumotun K §:n tilalle``)
+        # sits between ``lukuun`` and ``uusi``. The new arm consumes the preamble
+        # and scopes the inserted section to the chapter, byte-identical to old.
+        "lisätään 15 lukuun 16 §:n tilalle uusi 16 § seuraavasti:",
+        "lisätään 4 lukuun 6 §:n tilalle uusi 6 § seuraavasti:",
+        "lisätään 10 lukuun 4 ja 5 §:n tilalle uusi 4 ja 5 § seuraavasti:",
+    ],
+)
+def test_luku_scoped_reinstatement_preamble_is_recovered(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal
+
+
+def test_luku_scoped_citation_provenance_does_not_misscope() -> None:
+    # ``DOC … N lukuun, sellaisena kuin se on laissa X, uusi M §`` — a CITATION_SPAN
+    # provenance attribution between ``lukuun`` and ``uusi``. In the corpus shape
+    # (a leading statute-name citation present) the old parser declines the
+    # chapter-scoped insert (chapter=''), so the chapter-scoped arm must NOT fire
+    # and mis-scope the inserted section to the chapter. The arm declines on the
+    # CITATION_SPAN preamble; here we assert it does not emit a chapter-scoped node.
+    tokens, _ = _tokenize(
+        "lisätään lain (610/2014) 3 lukuun, sellaisena kuin se on laissa 679/2003, "
+        "uusi 96 a § seuraavasti:"
+    )
     with pytest.raises(OutOfScope):
         new_parser.parse(tokens)
 
