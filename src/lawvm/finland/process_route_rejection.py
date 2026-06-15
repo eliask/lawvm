@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Mapping, Optional
 
 from lxml import etree
 
@@ -33,6 +33,39 @@ RecordProcessFinding = Callable[..., Finding]
 ReplayPrint = Callable[[str], None]
 
 logger = logging.getLogger(__name__)
+
+
+FI_ROUTE_REJECTION_NUM_COLLISION_RULE_ID = "fi.route_rejection.num_collision"
+FI_ROUTE_REJECTION_PENDING_AMENDMENT_RULE_ID = "fi.route_rejection.pending_amendment_of_parent"
+FI_ROUTE_REJECTION_DELEGATED_AUTHORITY_RULE_ID = "fi.route_rejection.delegated_authority_nojalla"
+FI_ROUTE_REJECTION_META_REPEAL_RULE_ID = "fi.route_rejection.meta_repeal"
+FI_ROUTE_REJECTION_TITLE_OTHER_STATUTE_RULE_ID = "fi.route_rejection.title_targets_other_statute"
+FI_ROUTE_REJECTION_CITATION_MISMATCH_RULE_ID = "fi.route_rejection.citation_mismatch"
+
+
+@dataclass(frozen=True, slots=True)
+class RouteRejectionDisposition:
+    rule_id: str
+    route_reason: str
+    branch: str
+    family: str = "source_routing"
+    phase: str = "process_muutoslaki.route_rejection"
+    strict_disposition: str = "block"
+    quirks_disposition: str = "skip_with_finding"
+
+    def as_detail(self, extra: Mapping[str, object] | None = None) -> dict[str, object]:
+        detail: dict[str, object] = {
+            "route_reason": self.route_reason,
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "branch": self.branch,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+        if extra:
+            detail.update(extra)
+        return detail
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +148,11 @@ class ProcessRouteRejectionContext:
 
     def _record_source_incomplete(self) -> None:
         if self.route_reason == "num_collision_skip":
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_NUM_COLLISION_RULE_ID,
+                route_reason="num_collision_skip",
+                branch="num_collision",
+            )
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — NUM-collision false mapping: "
                 f"{self._cited_statute_phrase()} (not {self.parent_id})"
@@ -123,12 +161,17 @@ class ProcessRouteRejectionContext:
                 kind="APPLY.SOURCE_INCOMPLETE",
                 message="Amendment skipped: lineage routing rejected by NUM collision.",
                 source_statute=self.amendment_id,
-                detail={"route_reason": "num_collision_skip"},
+                detail=disposition.as_detail(),
                 role="obligation",
             )
             return
 
         if self.route_reason == "pending_amendment_of_parent_skip":
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_PENDING_AMENDMENT_RULE_ID,
+                route_reason="pending_amendment_of_parent_skip",
+                branch="pending_amendment_of_parent",
+            )
             target_suffix = f" via pending {self.route_target_amendment_id}" if self.route_target_amendment_id else ""
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — pending amendment of parent recognized "
@@ -138,15 +181,17 @@ class ProcessRouteRejectionContext:
                 kind="APPLY.SOURCE_INCOMPLETE",
                 message="Amendment skipped: pending amendment-of-amendment target not yet composed.",
                 source_statute=self.amendment_id,
-                detail={
-                    "route_reason": "pending_amendment_of_parent_skip",
-                    "target_amendment_id": self.route_target_amendment_id,
-                },
+                detail=disposition.as_detail({"target_amendment_id": self.route_target_amendment_id}),
                 role="obligation",
             )
             return
 
         if self.route_reason == "delegated_authority_nojalla_skip":
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_DELEGATED_AUTHORITY_RULE_ID,
+                route_reason="delegated_authority_nojalla_skip",
+                branch="delegated_authority_nojalla",
+            )
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — delegated-authority nojalla clause: "
                 f"{self._cited_statute_phrase()} is enabling authority (not replay target {self.parent_id})"
@@ -155,16 +200,31 @@ class ProcessRouteRejectionContext:
                 kind="APPLY.SOURCE_INCOMPLETE",
                 message="Amendment skipped: delegated-authority nojalla lead-in cites enabling statute.",
                 source_statute=self.amendment_id,
-                detail={"route_reason": "delegated_authority_nojalla_skip"},
+                detail=disposition.as_detail(),
                 role="obligation",
             )
             return
 
         if _looks_like_fi_meta_repeal(self.johto):
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_META_REPEAL_RULE_ID,
+                route_reason=str(self.route_reason or "citation_mismatch_skip"),
+                branch="meta_repeal",
+            )
             logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", self.amendment_id, self.parent_id)
         elif _title_explicitly_targets_other_statute(self.source_title, self.parent_title):
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_TITLE_OTHER_STATUTE_RULE_ID,
+                route_reason=str(self.route_reason or "citation_mismatch_skip"),
+                branch="title_targets_other_statute",
+            )
             self.replay_print(f"  [{self.amendment_id}] SKIPPED — title targets different statute (not {self.parent_id})")
         else:
+            disposition = RouteRejectionDisposition(
+                rule_id=FI_ROUTE_REJECTION_CITATION_MISMATCH_RULE_ID,
+                route_reason=str(self.route_reason or "citation_mismatch_skip"),
+                branch="citation_mismatch",
+            )
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — citation mismatch: "
                 f"{self._cited_statute_phrase()} (not {self.parent_id})"
@@ -173,7 +233,7 @@ class ProcessRouteRejectionContext:
             kind="APPLY.SOURCE_INCOMPLETE",
             message="Amendment skipped: citation routing rejected.",
             source_statute=self.amendment_id,
-            detail={"route_reason": str(self.route_reason or "citation_mismatch_skip")},
+            detail=disposition.as_detail(),
             role="obligation",
         )
 
