@@ -410,14 +410,62 @@ def reproducible_tree_hash(units: List[Tuple[str, str]]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def resolve_commencement_date(timelines: Dict[LegalAddress, Any]) -> str:
+    """Resolve the statute's real commencement (display axis), or ``""``.
+
+    The engine seeds the original (unamended) provision content at the
+    ``0000-00-00`` base sentinel, which is load-bearing for ``--query-type
+    governing`` but is NOT a real calendar date. For the viewer/cert *display*
+    axis we need the real commencement so the as-enacted version anchors at the
+    date the law actually came into force instead of at its first amendment.
+
+    Source precedence (legally-correct first):
+
+    1. The parsed chapter-15 voimaantulo date ("Tämä laki tulee voimaan
+       <date>"), via :func:`_scan_statute_commencements` — the legal "in force
+       from" date. When more than one distinct date is stated, do not guess.
+    2. The FRBR issue/signature date (``enacted``) carried on the base-version
+       provisions (effective == ``0000-00-00``), i.e. the *annettu* date — a
+       day or so earlier than the voimaantulo in practice.
+    3. Otherwise ``""`` (caller keeps the sentinel-dropping behavior).
+    """
+    from lawvm.finland.fixed_term_expiry import _scan_statute_commencements
+
+    commencements = _scan_statute_commencements(timelines)
+    if len(commencements) == 1:
+        return commencements[0]
+
+    # FRBR fallback: the enacted date stamped on base-version provisions.
+    enacted: set[str] = set()
+    for timeline in timelines.values():
+        for version in timeline.versions:
+            if version.effective == _BASE_SENTINEL_DATE and version.enacted:
+                enacted.add(version.enacted)
+    if len(enacted) == 1:
+        return next(iter(enacted))
+    return ""
+
+
 def compute_change_dates(timelines: Dict[LegalAddress, Any]) -> List[str]:
     """Return the sorted list of real calendar change-dates from timelines.
 
-    The union of every version effective/expires date, excluding the
-    ``0000-00-00`` base sentinel and empty strings. An expiry date D is itself
-    a change-date: the provision is gone on/after D, so the tree at D differs.
+    The union of every version effective/expires date. The ``0000-00-00`` base
+    sentinel is the engine's placeholder for the original (unamended) content;
+    for the display axis it is SUBSTITUTED with the statute's real commencement
+    (see :func:`resolve_commencement_date`) rather than dropped, so that
+    ``change_dates[0]`` is the commencement — the as-enacted version's window
+    then reads ``<commencement>–<first amendment>`` instead of starting at the
+    first amendment. Empty strings are excluded. An expiry date D is itself a
+    change-date: the provision is gone on/after D, so the tree at D differs.
+
+    Only the EXPORT/display axis is affected; the engine seed and
+    ``compile_timelines``' base ``effective`` keep the ``0000-00-00`` sentinel
+    (load-bearing for ``--query-type governing``).
     """
     dates: set[str] = set()
+    commencement = resolve_commencement_date(timelines)
+    if commencement:
+        dates.add(commencement)
     for timeline in timelines.values():
         for version in timeline.versions:
             if version.effective and version.effective != _BASE_SENTINEL_DATE:
