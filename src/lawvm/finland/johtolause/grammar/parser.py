@@ -1027,6 +1027,77 @@ def _try_postfix_insert(scan: _Scan, part: str) -> Optional[list[SurfaceNode]]:
     return emit_postfix_insert_nodes(parsed, part)
 
 
+# Structural-anchor token categories: their presence in a verb group's span means
+# the old ``_target_list`` would anchor a target there, so the group is NOT
+# genuinely empty even when the wired families decline its first target.
+_STRUCTURAL_ANCHOR_CATS = frozenset(
+    {"PYKALA", "LUKU", "OSA", "MOMENTTI", "KOHTA", "NIMIKE", "OTSIKKO", "LIITE"}
+)
+
+
+def _group_span_has_structural_anchor(scan: _Scan) -> bool:
+    """True if a structural-anchor token sits before the next VERB / end.
+
+    Used to distinguish a genuinely-empty verb group (an un-modelled named
+    provision the old parser also yields nothing for) from one whose targets the
+    wired families merely cannot reproduce (which must decline, not drop).
+    """
+    toks = scan.cur.tokens
+    for i in range(scan.pos, len(toks)):
+        if toks[i].cat == "VERB":
+            return False
+        if toks[i].cat in _STRUCTURAL_ANCHOR_CATS:
+            return True
+    return False
+
+
+def _recognize_first_target_or_empty(
+    scan: _Scan,
+) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
+    """Recognize a verb group's first target, or ``None`` for an empty group.
+
+    Mirrors the old ``_target_list`` first-target acquisition (sp:4036-4093): the
+    bare ``_target`` recognizer first, then — on failure — a single leading
+    ``ja``/``sekä`` separator skip and a re-attempt (``muutetaan [CITE] ja N §``).
+    Only the ``not a target at target position`` failure (no structural target)
+    falls through to the leading-separator retry / empty result; any other
+    out-of-scope shape propagates so the driver still declines loudly.
+
+    Returns ``(nodes, family_kind)`` on success, or ``None`` when even the
+    leading-separator retry finds no target — in which case the cursor is left at
+    the post-sentinel position (where the un-modelled target sits) so the caller
+    can return an empty group and ``parse()`` resumes the verb-seeking skip.
+    """
+    try:
+        return _recognize_one_target(scan)
+    except OutOfScope as exc:
+        if str(exc) != "not a target at target position":
+            raise
+    # ``_recognize_one_target`` rewound to the post-sentinel position. Try a
+    # single leading separator (sp:4088-4090) then re-attempt the first target.
+    after_decline = scan.pos
+    if _sep(scan) is not None:
+        try:
+            return _recognize_one_target(scan)
+        except OutOfScope as exc:
+            if str(exc) != "not a target at target position":
+                raise
+    # No target even after a leading separator. The group is droppable as empty
+    # ONLY when the old parser would ALSO recognize nothing here. The old
+    # ``_target_list`` returns ``[]`` precisely when it can anchor no structural
+    # target in the span up to the next VERB — so when a structural anchor token
+    # (``§`` / ``luku`` / ``osa`` / ``momentti`` / ``kohta`` / ``nimike`` /
+    # ``otsikko`` / ``liite``) DOES sit in this group's span, the old parser
+    # recognizes a target the wired families cannot reproduce (a bare-number
+    # ``lakiin N a §`` insert, a ``N §:n edellä oleva väliotsikko`` heading-
+    # before-section, …). Dropping that group would silently lose a verb group
+    # the old parser keeps — so DECLINE loudly instead.
+    scan.goto(after_decline)
+    if _group_span_has_structural_anchor(scan):
+        raise OutOfScope("not a target at target position")
+    return None
+
+
 def _parse_verb_group(
     scan: _Scan,
     jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
@@ -1077,7 +1148,25 @@ def _parse_verb_group(
         if leading_part is not None:
             move_dest_part = leading_part.destination_part
 
-    batch, kind = _recognize_one_target(scan)
+    # An *empty* verb group: this verb names a target none of the wired families
+    # recognizes (an un-modelled named provision such as ``soveltamissäännöksen
+    # N momentti`` / ``N §:ään sisältyvä … ryhmä``, a heading-before-section
+    # ``N §:n edellä oleva väliotsake``, …). The old parser's ``_target_list``
+    # returns ``[]`` for these and the outer loop DROPS the group (old sp:5107 /
+    # sp:5154), then advances to the next VERB to parse the following group(s).
+    # Mirror that: return ``(verb, [])`` WITHOUT consuming so ``parse()`` resumes
+    # the verb-seeking skip from here, reproducing the old grouping rather than
+    # raising and falling back to the old parser wholesale.
+    #
+    # Before declaring the group empty, mirror the old ``_target_list`` leading
+    # fallback (sp:4085-4090): a verb group may open with a stray leading
+    # ``ja``/``sekä`` separator (``muutetaan [CITE] ja N §``) — skip one such
+    # separator and re-attempt the first target so the group is recognized, not
+    # spuriously dropped.
+    batch_kind = _recognize_first_target_or_empty(scan)
+    if batch_kind is None:
+        return verb, []
+    batch, kind = batch_kind
     nodes = list(batch)
     last_batch: list[SurfaceNode] = list(batch)
     # Intra-group scope carry-forward: a later bare section list inherits the
@@ -1466,16 +1555,26 @@ def parse(
         consumed_jolloin_contexts,
     )
     if not nodes:
-        raise OutOfScope("empty first verb group")
-    if leading_move_destination_chapter and verb == SourceVerb.SIIRTAA:
-        # The leading-destination move group's sections take the inserted chapter
-        # as their move destination (old sp:5109-5131).
-        nodes = apply_leading_move_destination_chapter(
-            nodes, leading_move_destination_chapter
+        # The first verb names a target none of the wired families recognizes
+        # (an un-modelled named provision). The old parser drops the group
+        # entirely (``if nodes:`` at sp:5107) and the outer loop advances to the
+        # next VERB. There must be a later verb whose group carries the operative
+        # targets, else the whole clause is empty — out of scope. The verb-seeking
+        # skip below (mirroring sp:5137-5148) then reaches that next group.
+        if not _has_later_verb(scan):
+            raise OutOfScope("empty first verb group")
+    else:
+        if leading_move_destination_chapter and verb == SourceVerb.SIIRTAA:
+            # The leading-destination move group's sections take the inserted
+            # chapter as their move destination (old sp:5109-5131).
+            nodes = apply_leading_move_destination_chapter(
+                nodes, leading_move_destination_chapter
+            )
+        verb_groups.append(
+            SurfaceVerbGroup(
+                verb=VerbKind.from_code(verb or SourceVerb.MUUTTAA), nodes=tuple(nodes)
+            )
         )
-    verb_groups.append(
-        SurfaceVerbGroup(verb=VerbKind.from_code(verb or SourceVerb.MUUTTAA), nodes=tuple(nodes))
-    )
 
     # Subsequent verb groups, with the old outer loop's verb-seeking skip.
     while not scan.cur.at_end:
@@ -1505,6 +1604,13 @@ def parse(
             consumed_jolloin_contexts,
         )
         if not nodes2:
+            # An empty subsequent group: the verb named an un-modelled target
+            # (the family recognizers declined its first target). The old parser
+            # (sp:5154-5158) keeps scanning for further verb groups when the
+            # group consumed any tokens past the loop-iteration start, and only
+            # stops (rewinding the separator) when nothing advanced.
+            if scan.pos > saved:
+                continue
             scan.goto(saved)
             break
         verb_groups.append(
