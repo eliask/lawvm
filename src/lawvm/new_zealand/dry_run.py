@@ -270,7 +270,10 @@ NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING = "not_in_scope_candidate_op
 NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS = "not_in_scope_blocked_operation_witness"
 # Typed not-in-scope reasons for the selected_family_text_replace scope.
 NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY = "not_in_scope_non_text_replace_family"
-NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE = "not_in_scope_text_replace_not_single_occurrence"
+# A text substitution whose selector is neither single-occurrence (occurrence 1)
+# nor each-place (occurrence 0) — e.g. a specific occurrence >= 2 or a last-place
+# selector. Such selectors are out of scope for this kernel.
+NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_UNSUPPORTED_SELECTOR = "not_in_scope_text_replace_unsupported_selector"
 
 # NZ history-note family verb for a repeal operation witness. This is the
 # ``operation_family`` value the readiness lowering assigns to a repeal (the
@@ -350,6 +353,12 @@ class NZMutationBoundaryProof:
     text_old_occurrences_after: int = 0
     text_oracle_old_occurrences: int = 0
     text_oracle_contains_new_text: bool = False
+    # Whether the substitution applies at EVERY occurrence in the target node
+    # ("in each place it occurs") rather than at the single occurrence. An
+    # each-place proof legitimately records ``text_old_occurrences_before > 1``;
+    # the apply kernel substitutes every occurrence. False for single-occurrence
+    # substitutions (and for all non-text proofs).
+    text_each_place: bool = False
     # Structural whole-provision replace evidence (empty for non-replace proofs).
     # The amending source the replacement payload was read from, the descendant
     # count of the extracted replacement subtree, and the digest of the candidate
@@ -407,6 +416,7 @@ class NZMutationBoundaryProof:
             "text_old_occurrences_after": self.text_old_occurrences_after,
             "text_oracle_old_occurrences": self.text_oracle_old_occurrences,
             "text_oracle_contains_new_text": self.text_oracle_contains_new_text,
+            "text_each_place": self.text_each_place,
             "replace_amending_work_id": self.replace_amending_work_id,
             "replace_amending_provision_href": self.replace_amending_provision_href,
             "replace_replacement_descendant_count": self.replace_replacement_descendant_count,
@@ -928,26 +938,32 @@ def _replayable_repeal_rows(
     return tuple(rows)
 
 
-def _is_single_occurrence_text_replace_operation(operation: LegalOperation) -> bool:
-    """A single-occurrence text substitution selects exactly occurrence 1.
+def _is_eligible_text_replace_operation(operation: LegalOperation) -> bool:
+    """A text substitution the kernel can apply: single-occurrence OR each-place.
 
-    The each-place scope (occurrence 0) and any other multi-place selector are
-    out of scope for the first text_replace kernel; they refuse, typed.
+    Single-occurrence selects exactly occurrence 1; each-place selects
+    occurrence 0 and substitutes at every matching occurrence in the target
+    node. Any other selector (a specific occurrence >= 2, or a -1 last-place
+    selector) is out of scope for this kernel and refuses, typed.
     """
 
     patch = operation.text_patch
-    return patch is not None and patch.selector.occurrence == 1 and patch.replacement is not None
+    if patch is None or patch.replacement is None:
+        return False
+    return patch.selector.occurrence in (0, 1)
 
 
 def _replayable_text_replace_rows(
     preflight: NZEffectCandidatePreflightReport,
 ) -> tuple[NZCanonicalEffectCandidateRow, ...]:
-    """The emitted, exact-target, single-occurrence text-substitution candidates.
+    """The emitted, exact-target, single-occurrence and each-place candidates.
 
     Mirrors :func:`_replayable_repeal_rows`: it consumes only what preflight
-    emitted and never broadens the set. Each-place / multi-occurrence candidates
-    are NOT in scope here (handled as typed not-in-scope in the census and as a
-    typed refusal if forced through the kernel).
+    emitted and never broadens the set. Both single-occurrence (occurrence 1)
+    and each-place (occurrence 0) substitutions are in scope. Any other selector
+    (a specific occurrence >= 2 or a last-place selector) is NOT in scope
+    (handled as typed not-in-scope in the census and as a typed refusal if
+    forced through the kernel).
     """
 
     rows: list[NZCanonicalEffectCandidateRow] = []
@@ -964,7 +980,7 @@ def _replayable_text_replace_rows(
             and row.latest_oracle_target_resolution_status != "exact_source_path"
         ):
             continue
-        if not _is_single_occurrence_text_replace_operation(row.operation):
+        if not _is_eligible_text_replace_operation(row.operation):
             continue
         rows.append(row)
     return tuple(rows)
@@ -1043,8 +1059,8 @@ def _text_replace_not_in_scope_reason(row: NZCanonicalEffectCandidateRow) -> str
         and row.latest_oracle_target_resolution_status != "exact_source_path"
     ):
         return NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_TARGET_RECOVERY
-    if not _is_single_occurrence_text_replace_operation(row.operation):
-        return NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE
+    if not _is_eligible_text_replace_operation(row.operation):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_UNSUPPORTED_SELECTOR
     # An emitted, exact, single-occurrence text substitution that is not in the
     # in-scope set would contradict the in-scope filter. Name it distinctly so
     # any future filter drift surfaces loudly rather than being absorbed.
@@ -1239,18 +1255,24 @@ def _dry_run_one_text_replace(
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
         )
-    if patch.selector.occurrence != 1:
+    # The kernel applies two selector shapes: single-occurrence (occurrence 1)
+    # and each-place (occurrence 0, "in each place it occurs"). Any other
+    # selector — a specific occurrence >= 2 or a last-place selector — is not
+    # supported and refuses, typed. ``each_place`` drives the apply count and the
+    # before-occurrence precondition below.
+    if patch.selector.occurrence not in (0, 1):
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_TEXT_SCOPE_NOT_SINGLE_OCCURRENCE_RULE_ID,
             message=(
-                "dry-run text-replace refused because the substitution is not single-occurrence "
-                f"(selector.occurrence={patch.selector.occurrence}); each-place/multi not yet supported"
+                "dry-run text-replace refused because the selector is neither single-occurrence "
+                f"nor each-place (selector.occurrence={patch.selector.occurrence}); not supported"
             ),
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
             detail={"selector_occurrence": patch.selector.occurrence},
         )
+    each_place = patch.selector.occurrence == 0
 
     # Defence in depth: refuse any non-exact target locally (mirror repeal).
     if row.latest_oracle_target_resolution_status and row.latest_oracle_target_resolution_status != "exact_source_path":
@@ -1342,29 +1364,49 @@ def _dry_run_one_text_replace(
 
     old_text = patch.selector.match_text
     new_text = patch.replacement
-    # The single-occurrence precondition: the old_text must occur exactly once
-    # in the before target node text (normalized comparison). Zero or many is a
-    # typed refusal — the kernel never guesses which occurrence to edit.
+    # Occurrence precondition. For single-occurrence the old_text must occur
+    # exactly once in the before target node text (normalized comparison): zero
+    # or many is a typed refusal — the kernel never guesses which occurrence to
+    # edit. For each-place the old_text must occur at least once (every
+    # occurrence is substituted); only zero occurrences is a refusal. The kernel
+    # never guesses: a well-defined match is required either way.
     old_occ_before = normalized_inline_occurrence_count(before_target.text, old_text)
-    if old_occ_before != 1:
+    if each_place:
+        precondition_ok = old_occ_before >= 1
+        precondition_msg = (
+            "dry-run text-replace refused because the each-place old_text does not occur "
+            f"at least once in the before target node (normalized occurrences={old_occ_before})"
+        )
+    else:
+        precondition_ok = old_occ_before == 1
+        precondition_msg = (
+            "dry-run text-replace refused because the old_text does not occur exactly once "
+            f"in the before target node (normalized occurrences={old_occ_before})"
+        )
+    if not precondition_ok:
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID,
-            message=(
-                "dry-run text-replace refused because the old_text does not occur exactly once "
-                f"in the before target node (normalized occurrences={old_occ_before})"
-            ),
+            message=precondition_msg,
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
-            detail={"old_text": old_text, "old_occurrences_before": old_occ_before},
+            detail={
+                "old_text": old_text,
+                "old_occurrences_before": old_occ_before,
+                "each_place": each_place,
+            },
         )
 
-    # --- The boring apply kernel: substitute old->new (single occurrence) on the
-    # target node text, keep the node otherwise identical (addressable in place).
-    after_target = _substitute_node_text(before_target, old_text, new_text)
+    # --- The boring apply kernel: substitute old->new on the target node text,
+    # keeping the node otherwise identical (addressable in place). For each-place
+    # every literal occurrence is substituted; for single-occurrence only the
+    # first.
+    after_target = _substitute_node_text(
+        before_target, old_text, new_text, count=-1 if each_place else 1
+    )
     if after_target.text == before_target.text:
-        # The normalized count said one occurrence but the literal text did not
-        # change. Surface loudly rather than emitting a vacuous mutation proof.
+        # The normalized count said the old_text occurs but the literal text did
+        # not change. Surface loudly rather than emitting a vacuous mutation proof.
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_TEXT_APPLY_NO_OP_RULE_ID,
@@ -1431,6 +1473,7 @@ def _dry_run_one_text_replace(
         text_old_occurrences_after=old_occ_after,
         text_oracle_old_occurrences=oracle_old_occ,
         text_oracle_contains_new_text=oracle_has_new,
+        text_each_place=each_place,
     )
 
 
@@ -1507,10 +1550,15 @@ def _oracle_partition_text(
     )
 
 
-def _substitute_node_text(node: NZSourceNode, old_text: str, new_text: str) -> NZSourceNode:
-    # Boring kernel: replace the first literal occurrence of old_text with
-    # new_text in the node text, keeping the node otherwise identical (same
+def _substitute_node_text(
+    node: NZSourceNode, old_text: str, new_text: str, *, count: int = 1
+) -> NZSourceNode:
+    # Boring kernel: replace literal occurrences of old_text with new_text in the
+    # node text, keeping the node otherwise identical (same
     # kind/path/xml_id/label/heading/occupancy). Never delete-and-forget.
+    # ``count`` bounds how many occurrences are substituted: 1 for the single
+    # leading occurrence, -1 for every occurrence (each-place). The count is
+    # passed straight to ``str.replace``, whose -1 sentinel replaces all.
     return NZSourceNode(
         kind=node.kind,
         path=node.path,
@@ -1520,7 +1568,7 @@ def _substitute_node_text(node: NZSourceNode, old_text: str, new_text: str) -> N
         label=node.label,
         heading=node.heading,
         deletion_status=node.deletion_status,
-        text=node.text.replace(old_text, new_text, 1),
+        text=node.text.replace(old_text, new_text, count),
         history=node.history,
     )
 

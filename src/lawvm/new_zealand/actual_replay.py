@@ -1061,7 +1061,15 @@ def _apply_verified_mutation(node: NZSourceNode, proof: NZMutationBoundaryProof)
     if proof.action == str(StructuralAction.REPEAL):
         return _tombstone_node(node)
     if proof.action == str(StructuralAction.TEXT_REPLACE):
-        return _substitute_node_text(node, proof.text_old_text, proof.text_new_text)
+        # Each-place substitutions replace every occurrence (-1); single-occurrence
+        # substitutions replace only the leading occurrence (1). The dry-run proof
+        # recorded which mode it verified.
+        return _substitute_node_text(
+            node,
+            proof.text_old_text,
+            proof.text_new_text,
+            count=-1 if proof.text_each_place else 1,
+        )
     # Defence in depth: only the two promotable families reach here (others are
     # refused before they can be verified). Fail loud rather than guess a kernel.
     raise ValueError(

@@ -8,7 +8,7 @@ from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS,
     NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY,
-    NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE,
+    NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_UNSUPPORTED_SELECTOR,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID,
     NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID,
@@ -101,6 +101,55 @@ _AFTER_XML_NEW_ABSENT = b"""\
 """
 
 
+# Each-place fixtures: 108(1) carries the old phrase TWICE; an each-place
+# substitution must rewrite BOTH occurrences. Sibling 108(2) untouched.
+_BEFORE_XML_EACH_PLACE = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360602s1"><label>1</label><para><text>A party may apply to the Principal Judge, and the Principal Judge may make an order.</text></para></subprov>
+        <subprov id="DLM360602s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# On-or-after: BOTH occurrences rewritten (Principal Judge -> Chief Judge).
+_AFTER_XML_EACH_PLACE_AGREES = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360602s1"><label>1</label><para><text>A party may apply to the Chief Judge, and the Chief Judge may make an order.</text></para></subprov>
+        <subprov id="DLM360602s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# On-or-after where only ONE of the two occurrences was rewritten: the oracle
+# still carries the old phrase once that the each-place candidate removed. This
+# is a residual (substitution not fully reflected), never a false agreement.
+_AFTER_XML_EACH_PLACE_ONE_REMAINS = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360602s1"><label>1</label><para><text>A party may apply to the Chief Judge, and the Principal Judge may make an order.</text></para></subprov>
+        <subprov id="DLM360602s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+
 class _FakeArchive:
     def __init__(self, rows: dict[str, bytes]) -> None:
         self.rows = rows
@@ -137,6 +186,21 @@ def _archive(after_xml: bytes) -> _FakeArchive:
                 _BEFORE_VERSION, "2017-04-19"
             ),
             "https://www.legislation.govt.nz/act/public/2005/87/en/2017-04-19.xml": _BEFORE_XML,
+            f"https://api.legislation.govt.nz/v0/versions/{_AFTER_VERSION}/": _version_detail(
+                _AFTER_VERSION, "2019-10-24"
+            ),
+            "https://www.legislation.govt.nz/act/public/2005/87/en/2019-10-24.xml": after_xml,
+        }
+    )
+
+
+def _archive_each_place(after_xml: bytes) -> _FakeArchive:
+    return _FakeArchive(
+        {
+            f"https://api.legislation.govt.nz/v0/versions/{_BEFORE_VERSION}/": _version_detail(
+                _BEFORE_VERSION, "2017-04-19"
+            ),
+            "https://www.legislation.govt.nz/act/public/2005/87/en/2017-04-19.xml": _BEFORE_XML_EACH_PLACE,
             f"https://api.legislation.govt.nz/v0/versions/{_AFTER_VERSION}/": _version_detail(
                 _AFTER_VERSION, "2019-10-24"
             ),
@@ -223,6 +287,17 @@ def _run(after_xml: bytes, rows: tuple[NZCanonicalEffectCandidateRow, ...]):
     )
 
 
+def _run_each_place(after_xml: bytes, rows: tuple[NZCanonicalEffectCandidateRow, ...]):
+    preflight = _preflight_from_rows(rows)
+    archive = _archive_each_place(after_xml)
+    return build_dry_run_repeal(
+        archive,
+        work_id=_WORK_ID,
+        preflight=preflight,
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+    )
+
+
 def test_scope_from_arg_accepts_text_replace() -> None:
     assert scope_from_arg("selected-family-text-replace") == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE
 
@@ -250,6 +325,7 @@ def test_text_replace_applies_substitution_and_agrees_with_oracle() -> None:
     # Mutation boundary: old occurs once before, zero after; sibling untouched.
     assert proof.text_old_occurrences_before == 1
     assert proof.text_old_occurrences_after == 0
+    assert proof.text_each_place is False
     assert proof.neighbors_unchanged is True
     # Oracle reflects the substitution.
     assert proof.oracle_match == "agrees"
@@ -299,10 +375,85 @@ def test_text_replace_residual_when_new_text_absent_in_oracle() -> None:
     assert proof.text_oracle_contains_new_text is False
 
 
-def test_text_replace_refuses_each_place_scope() -> None:
-    # Each-place (occurrence 0) is not yet supported; it is not even selected as
-    # an in-scope row (typed not-in-scope), so the work refuses with no proof.
-    report = _run(_AFTER_XML_AGREES, (_text_replace_row(occurrence=0),))
+def test_text_replace_each_place_applies_at_every_occurrence_and_agrees() -> None:
+    # Each-place (occurrence 0): the before target carries the old phrase twice;
+    # the kernel rewrites BOTH and the oracle reflects both. The mutation
+    # boundary still holds — siblings/parent untouched.
+    report = _run_each_place(
+        _AFTER_XML_EACH_PLACE_AGREES,
+        (_text_replace_row(occurrence=0, old_text="the Principal Judge", new_text="the Chief Judge"),),
+    )
+
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1
+    assert summary["operations_refused"] == 0
+    assert summary["dry_run_oracle_agreements"] == 1
+    assert summary["dry_run_oracle_residuals"] == 0
+    assert summary["neighbors_unchanged_all"] is True
+
+    proof = report.proofs[0]
+    assert proof.text_each_place is True
+    # Both occurrences existed before and were removed; oracle carries zero.
+    assert proof.text_old_occurrences_before == 2
+    assert proof.text_old_occurrences_after == 0
+    assert proof.text_oracle_old_occurrences == 0
+    assert proof.text_oracle_contains_new_text is True
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_TEXT_REPLACE_AGREES_RULE_ID
+    assert proof.neighbors_unchanged is True
+
+
+def test_text_replace_each_place_residual_when_one_occurrence_remains() -> None:
+    # The oracle rewrote only ONE of the two occurrences: the each-place
+    # candidate removed both, so the oracle's residual old-count exceeds the
+    # candidate after-count. This is a typed residual, never a false agreement.
+    report = _run_each_place(
+        _AFTER_XML_EACH_PLACE_ONE_REMAINS,
+        (_text_replace_row(occurrence=0, old_text="the Principal Judge", new_text="the Chief Judge"),),
+    )
+
+    summary = report.summary()
+    assert summary["dry_run_oracle_agreements"] == 0
+    assert summary["dry_run_oracle_residuals"] == 1
+    proof = report.proofs[0]
+    assert proof.text_each_place is True
+    assert proof.text_old_occurrences_before == 2
+    assert proof.text_old_occurrences_after == 0
+    assert proof.text_oracle_old_occurrences == 1
+    assert proof.oracle_match == "residual_old_text_remains"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_TEXT_RESIDUAL_OLD_TEXT_REMAINS_RULE_ID
+
+
+def test_text_replace_each_place_refuses_when_old_text_absent() -> None:
+    # Each-place still never guesses: a zero-occurrence old_text is a typed
+    # refusal, not a silent no-op.
+    report = _run_each_place(
+        _AFTER_XML_EACH_PLACE_AGREES,
+        (_text_replace_row(occurrence=0, old_text="a phrase not present", new_text="x"),),
+    )
+
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID
+
+
+def test_text_replace_kernel_refuses_unsupported_selector_when_forced() -> None:
+    # Defence in depth: a selector that is neither single-occurrence (1) nor
+    # each-place (0) — here a specific occurrence 2 — is a typed refusal, never a
+    # guessed edit.
+    from lawvm.new_zealand.dry_run import _dry_run_one_text_replace
+
+    operation = _text_replace_operation(occurrence=2)
+    row = _text_replace_row(operation=operation, occurrence=2)
+    refusal = _dry_run_one_text_replace(_archive(_AFTER_XML_AGREES), _WORK_ID, row, operation, {})
+    assert isinstance(refusal, NZDryRunRefusal)
+    assert refusal.rule_id == NZ_DRY_RUN_REFUSED_TEXT_SCOPE_NOT_SINGLE_OCCURRENCE_RULE_ID
+
+
+def test_text_replace_unsupported_selector_typed_not_in_scope() -> None:
+    # An occurrence-2 selector is not selected as in-scope (typed not-in-scope),
+    # so the work refuses with no proof and the census names the reason.
+    report = _run(_AFTER_XML_AGREES, (_text_replace_row(occurrence=2),))
 
     assert report.proofs == ()
     assert len(report.refusals) == 1
@@ -311,22 +462,10 @@ def test_text_replace_refuses_each_place_scope() -> None:
     assert completeness is not None
     assert (
         completeness.repeal_witnesses_not_in_scope_reason_counts.get(
-            NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE
+            NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_UNSUPPORTED_SELECTOR
         )
         == 1
     )
-
-
-def test_text_replace_kernel_refuses_each_place_when_forced() -> None:
-    # Defence in depth: if an occurrence!=1 selector reaches the kernel directly
-    # it is a typed refusal, never a guessed multi-place edit.
-    from lawvm.new_zealand.dry_run import _dry_run_one_text_replace
-
-    operation = _text_replace_operation(occurrence=0)
-    row = _text_replace_row(operation=operation, occurrence=0)
-    refusal = _dry_run_one_text_replace(_archive(_AFTER_XML_AGREES), _WORK_ID, row, operation, {})
-    assert isinstance(refusal, NZDryRunRefusal)
-    assert refusal.rule_id == NZ_DRY_RUN_REFUSED_TEXT_SCOPE_NOT_SINGLE_OCCURRENCE_RULE_ID
 
 
 def test_text_replace_refuses_when_old_text_not_single_occurrence() -> None:

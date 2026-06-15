@@ -426,3 +426,60 @@ def test_actual_replay_canary_replays_transitions_against_archived_oracle() -> N
         assert transition.materialized_after is not None
         assert transition.materialized_node_count > 0
         assert transition.target_slice_agrees is True
+
+
+def test_apply_verified_mutation_each_place_replaces_every_occurrence() -> None:
+    # The promotion kernel materializes an each-place text substitution at EVERY
+    # occurrence (not just the first), driven by the proof's ``text_each_place``
+    # flag. Single-occurrence proofs still replace only the leading occurrence.
+    from lawvm.new_zealand.actual_replay import _apply_verified_mutation
+    from lawvm.new_zealand.dry_run import NZMutationBoundaryProof
+    from lawvm.new_zealand.source_tree import NZSourceNode
+
+    node = NZSourceNode(
+        kind="subprov",
+        path=("prov:108", "subprov:1"),
+        xml_id="DLM1",
+        xml_path="",
+        source_zone="body",
+        label="1",
+        heading="",
+        deletion_status="",
+        text="the old phrase here and the old phrase there",
+        history=(),
+    )
+
+    def _proof(each_place: bool) -> NZMutationBoundaryProof:
+        return NZMutationBoundaryProof(
+            op_id="nz:x:1:text_replace",
+            action=str(StructuralAction.TEXT_REPLACE),
+            target_address="section:108/subsection:1",
+            selected_source_path=("prov:108", "subprov:1"),
+            target_xml_id="DLM1",
+            target_digest_before="",
+            target_digest_after="",
+            operation_payload="",
+            occupancy_before="substantive",
+            occupancy_after="substantive",
+            parent_source_path=("prov:108",),
+            parent_digest_before="",
+            parent_digest_after="",
+            unaffected_neighbor_paths=(),
+            unaffected_neighbor_digests_before=(),
+            unaffected_neighbor_digests_after=(),
+            neighbors_unchanged=True,
+            oracle_version_id="v",
+            oracle_target_present=True,
+            oracle_target_occupancy="substantive",
+            oracle_match="agrees",
+            oracle_match_rule_id="r",
+            text_old_text="the old phrase",
+            text_new_text="the new phrase",
+            text_each_place=each_place,
+        )
+
+    each = _apply_verified_mutation(node, _proof(each_place=True))
+    assert each.text == "the new phrase here and the new phrase there"
+
+    single = _apply_verified_mutation(node, _proof(each_place=False))
+    assert single.text == "the new phrase here and the old phrase there"
