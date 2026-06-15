@@ -293,6 +293,70 @@ def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
     assert report.equal
 
 
+# Chained-insertion continuation arms where a LATER batch carries a trailing
+# reinstatement / citation / provenance span. The arm-level out-of-scope guard
+# must inspect only the CURRENT insertion arm, not scan to the next verb — a
+# downstream batch's own provenance must not force the clean leading arm out of
+# scope. Each clause used to DECLINE (the over-broad whole-phrase scan caught the
+# downstream span); now each is folded byte-identically to the old parser.
+CHAINED_CONTINUATION_WITH_DOWNSTREAM_PROV_EXAMPLES = [
+    # A §:ILL momentti insert, then a fresh DOC-reanchored §:ILL insert whose own
+    # ``sellaisena kuin …`` provenance span closes the trailing batch.
+    "lisätään lakiin uusi 5 § sekä 7 §:ään, sellaisena kuin se on laissa 12/1990, "
+    "uusi 2 momentti seuraavasti:",
+    # Two whole-section DOC inserts, the trailing one carrying a provenance span.
+    "lisätään lakiin uusi 5 §, asetukseen uusi 8 §, sellaisena kuin se on laissa "
+    "12/1990, seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", CHAINED_CONTINUATION_WITH_DOWNSTREAM_PROV_EXAMPLES)
+def test_chained_insertion_continuation_with_downstream_prov_is_zero_delta(
+    text: str,
+) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_multi_section_edelle_heading_after_insertion_is_declined() -> None:
+    # After an insertion batch the old parser folds only a SINGLE-section heading
+    # placement (``…, 20 §:n edelle uusi väliotsikko``) and swallows a placement
+    # scoped to MULTIPLE sections (``…, 41 c ja 54 a §:n edelle uusi väliotsikko``)
+    # as residue. The driver must NOT fold the multi-section form (which would
+    # over-produce extra SurfaceHeadingPlacement nodes) — it declines loudly.
+    text = (
+        "lisätään 27 §:ään uusi 3 ja 4 momentti, 41 c ja 54 a §:n edelle uusi "
+        "väliotsikko ja asetukseen uusi 72 d § seuraavasti:"
+    )
+    tokens, _ = _tokenize(text)
+    with pytest.raises(OutOfScope):
+        new_parser.parse(tokens)
+
+
+def test_single_section_edelle_heading_after_insertion_is_zero_delta() -> None:
+    # The single-section counterpart the old parser DOES fold after an insertion
+    # batch — the driver must reproduce it byte-identically (not over-decline it).
+    text = (
+        "lisätään 16 §:ään uusi 11 kohta, 20 §:n edelle uusi väliotsikko "
+        "seuraavasti:"
+    )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_doc_ill_reanchor_resets_inherited_chapter_scope() -> None:
+    # ``3 lukuun uusi 21 a §`` scopes chapter 3; a following ``lakiin uusi 36 a §``
+    # DOC re-anchors at the statute root and RESETS the chapter, so the trailing
+    # ``56 §:ään uusi 3 momentti`` must NOT inherit chapter 3 (it stays statute-
+    # level). The driver mirrors the old parser's per-batch DOC:ILL chapter reset.
+    text = (
+        "lisätään 3 lukuun uusi 21 a §, lakiin uusi 36 a §, "
+        "56 §:ään uusi 3 momentti seuraavasti:"
+    )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
 def _tokenize(text: str):
     from lawvm.finland.johtolause.lexer import tokenize
     from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs

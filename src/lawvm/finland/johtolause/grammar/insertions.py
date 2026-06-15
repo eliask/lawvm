@@ -148,6 +148,21 @@ _OOS_CATS = frozenset(
     }
 )
 
+# OOS markers that are PROVENANCE attributions (reinstatement / citation spans).
+# These only ever attach to the arm they close — a downstream batch's provenance
+# never belongs to the current arm — so the guard scans for them only inside the
+# CURRENT insertion arm. (A genuine reinstatement preamble between this arm's
+# anchor and its ``uusi`` still sits inside the arm boundary and is caught.)
+_OOS_PROVENANCE_CATS = frozenset(
+    {"REINST_SPAN", "CITATION_SPAN", "PROVENANCE_SPAN", "STATUTE_NAME_SPAN", "PROV", "TILALLE"}
+)
+# OOS markers that signal an in-batch HEADING / APPENDIX / BACKREF fold the old
+# parser performs across the WHOLE remaining phrase (it folds a trailing
+# ``§:n edelle … väliotsikko`` / ``liite`` / anaphoric backref arm into the same
+# ``_target`` batch span). These must stay scanned to the next VERB / END so a
+# clause whose later arm is such a fold still declines rather than mis-grouping.
+_OOS_STRUCTURAL_CATS = frozenset({"EDELLA", "OTSIKKO", "LIITE", "BACKREF", "VALIOTSIKKO"})
+
 
 # ---------------------------------------------------------------------------
 # Leaf reads.
@@ -569,11 +584,11 @@ def recognize_insertion(
     return ParsedInsertion(span=Span(start, scan.pos), nodes=tuple(nodes))
 
 
-def _phrase_has_oos_token(scan: _Scan, end: int) -> bool:
-    """True if any token in [scan.pos, end) is an out-of-scope marker."""
+def _phrase_has_oos_token(scan: _Scan, end: int, cats: frozenset[str] = _OOS_CATS) -> bool:
+    """True if any token in [scan.pos, end) is an out-of-scope marker in ``cats``."""
     toks = scan.cur.tokens
     for i in range(scan.pos, min(end, len(toks))):
-        if toks[i].cat in _OOS_CATS:
+        if toks[i].cat in cats:
             return True
     return False
 
@@ -585,6 +600,58 @@ def _next_verb_or_end(scan: _Scan) -> int:
         if toks[i].cat in ("VERB", "END", "END_SENTINEL_SPAN"):
             return i
     return len(toks)
+
+
+# Structural nouns that close an inserted-target arm (the inserted entity itself).
+_ARM_CLOSE_NOUNS = frozenset({"PYKALA", "LUKU", "OSA", "MOMENTTI", "KOHTA", "LIITE"})
+
+
+def _whole_target_arm_boundary(scan: _Scan, hard: int) -> int:
+    """Boundary for the whole-target OOS guard: the end of THIS insertion arm.
+
+    The phrase-level out-of-scope guard must inspect only the CURRENT insertion
+    arm, not a downstream continuation batch joined by a separator. A reinstatement
+    / citation / heading / appendix marker that forces this arm out of scope always
+    sits in the arm's own span — before its ``uusi`` (a residue preamble) or as the
+    inserted entity right after it — never past the separator that ends the arm.
+
+    Faithful arm extent: walk to the first ``uusi``, then past its inserted-target
+    payload (the ``<nums> (§|luku|osa|momentti|kohta|liite)`` it closes on, plus any
+    chained ``sep uusi <nums>`` pre-noun groups), and return the position of the
+    first list separator (``,`` / ``ja`` / ``sekä``) after that closing noun — the
+    point where a fresh continuation batch begins. Falls back to ``hard`` (the next
+    VERB / END) when no such arm-closing structure is found, so a malformed arm with
+    no ``uusi`` keeps the old whole-phrase scan (never under-declines).
+    """
+    toks = scan.cur.tokens
+    i = scan.pos
+    # Find the first ``uusi`` opening this arm (before any VERB / END).
+    while i < hard and toks[i].cat != "UUSI":
+        i += 1
+    if i >= hard:
+        return hard
+    i += 1  # past ``uusi``
+    # Walk the inserted-target payload to its FIRST closing structural noun, then
+    # past any further chained ``sep [uusi] <nums> (noun)`` groups in the same arm
+    # (``uusi 5 ja 6 sekä uusi 7 §``). The boundary is the first separator that does
+    # NOT lead back into another ``<nums> noun`` chain group — i.e. the next batch.
+    seen_close = False
+    while i < hard:
+        cat = toks[i].cat
+        if cat in _ARM_CLOSE_NOUNS:
+            seen_close = True
+            i += 1
+            continue
+        if cat in ("COMMA", "CONJ", "SEKA"):
+            if not seen_close:
+                # A separator before any closing noun is internal to the arm's
+                # ``uusi <nums> ja <nums> …`` number list — keep walking.
+                i += 1
+                continue
+            # A separator after a closing noun ends this arm.
+            return i
+        i += 1
+    return hard
 
 
 # Structural-authority token categories that may precede a citation-stamped
@@ -681,11 +748,20 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
         else:
             scan.goto(pre_nums_pos)
 
-    # Out-of-scope guard for the remaining (whole-target) arms: if the operative
-    # phrase up to the next VERB/END carries a reinstatement / citation / heading
-    # marker, those arms need the old parser's residue handling — decline.
-    boundary = _next_verb_or_end(scan)
-    if _phrase_has_oos_token(scan, boundary):
+    # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
+    #
+    #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
+    #     the arm they close, so a downstream continuation batch's provenance is
+    #     not this arm's concern — scan for them only inside the CURRENT arm.
+    #   * Heading / appendix / backref markers signal an in-batch fold the old
+    #     parser performs across the whole remaining phrase (folding a trailing
+    #     ``§:n edelle … väliotsikko`` / ``liite`` arm into the same batch span);
+    #     this driver cannot reproduce that grouping — scan to the next VERB / END.
+    hard = _next_verb_or_end(scan)
+    arm_boundary = _whole_target_arm_boundary(scan, hard)
+    if _phrase_has_oos_token(scan, arm_boundary, _OOS_PROVENANCE_CATS):
+        return None
+    if _phrase_has_oos_token(scan, hard, _OOS_STRUCTURAL_CATS):
         return None
 
     # ── OSA:ILL-scoped insert: ``[N] OSA:ILL uusi numlist (§ | luku)`` ──────

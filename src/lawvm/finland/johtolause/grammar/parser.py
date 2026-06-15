@@ -501,19 +501,54 @@ def _tail_starts_with_heading_arm(scan: _Scan) -> bool:
     return False
 
 
+def _tail_starts_with_minka_ohella_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail is a ``minkä ohella <sec> … muutetaan`` arm the
+    old parser keeps as an operative section ref.
+
+    Real source family (``… sekä 93 §, minkä ohella 48 §:n 1 momentin
+    ruotsinkielinen sanamuoto muutetaan, …``): the ``minkä ohella`` ("in addition
+    to which") connective introduces a further amendment target that the old
+    ``_target`` reaches past the WORD lead-in and keeps as a section ref. This
+    driver's section continuation cannot skip the WORD lead-in, so it would
+    silently drop the kept section — decline instead.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    while i < n and toks[i].cat in ("COMMA", "CONJ", "SEKA", "DASH"):
+        i += 1
+    if not (
+        i + 1 < n
+        and toks[i].cat == "WORD"
+        and (toks[i].text or "").lower() == "minkä"
+        and toks[i + 1].cat == "WORD"
+        and (toks[i + 1].text or "").lower() == "ohella"
+    ):
+        return False
+    # The connective must lead into a structural section ref (the kept target).
+    for k in range(i + 2, min(i + 6, n)):
+        if toks[k].cat == "PYKALA":
+            return True
+        if toks[k].cat not in ("NUM", "LETTER", "DASH", "WORD"):
+            break
+    return False
+
+
 def _section_tail_carries_kept_content(scan: _Scan) -> bool:
     """True iff the dropped SECTION/CONTAINER tail holds nodes the old parser
     keeps or leaks — so the driver must decline rather than silently truncate.
 
     Unions the faithful keep/leak detectors over the dropped tail: a prov
-    re-mention the old parser leaks, a trailing appendix arm it keeps, and a
-    dropped ``uusi`` insert arm it keeps. (The heading-change arm is handled
-    separately by ``_section_continuation_is_kept``.)
+    re-mention the old parser leaks, a trailing appendix arm it keeps, a dropped
+    ``uusi`` insert arm it keeps, and a ``minkä ohella <sec> … muutetaan`` arm it
+    keeps. (The heading-change arm is handled separately by
+    ``_section_continuation_is_kept``.)
     """
     return (
         _prov_rementtion_leaks(scan)
         or _tail_starts_with_appendix_arm(scan)
         or _tail_starts_with_heading_arm(scan)
+        or _tail_starts_with_minka_ohella_arm(scan)
     )
 
 
@@ -1163,6 +1198,7 @@ def _parse_verb_group(
     # ``ja``/``sekä`` separator (``muutetaan [CITE] ja N §``) — skip one such
     # separator and re-attempt the first target so the group is recognized, not
     # spuriously dropped.
+    first_batch_start = scan.pos
     batch_kind = _recognize_first_target_or_empty(scan)
     if batch_kind is None:
         return verb, []
@@ -1171,8 +1207,9 @@ def _parse_verb_group(
     last_batch: list[SurfaceNode] = list(batch)
     # Intra-group scope carry-forward: a later bare section list inherits the
     # preceding "N luvun" / "N osan" scope (the old parser threads this between
-    # target batches in one verb group).
-    chapter = _extract_chapter(batch, "", verb)
+    # target batches in one verb group). A DOC:ILL re-anchor in the batch resets
+    # the chapter to statute root (old sp:4102).
+    chapter = _chapter_after_batch(scan, first_batch_start, batch, "", verb)
     part = _extract_part(batch, "")
 
     _consume_inline_move_tails(scan, nodes, last_batch)
@@ -1258,13 +1295,24 @@ def _parse_verb_group(
         # A target-first heading-PLACEMENT arm folded into the running list
         # (``<num_list> §:n edelle uusi väliotsikko`` / the ``luvun otsikko``
         # window / ``mukaanluettuna … edellä olevan väliotsikon``). The old
-        # ``_target_list`` recognizes these as continuation targets; the scope
-        # is the batch chapter/part already threaded.
+        # ``_target_list`` recognizes these as continuation targets; the scope is
+        # the batch chapter/part already threaded.
+        #
+        # After an INSERTION batch the old parser folds only a SINGLE-section
+        # heading placement (``…, 20 §:n edelle uusi väliotsikko``); a placement
+        # scoped to MULTIPLE sections (``…, 41 c ja 54 a §:n edelle uusi
+        # väliotsikko``) it ends the list on and swallows as residue (2009/1786).
+        # Folding the multi-section form here over-produces, so it is rejected:
+        # the cursor is rewound and the non-benign tail declines loudly below.
+        saved_hp = scan.pos
         hp_nodes = _try_heading_placement(scan, chapter, part)
         if hp_nodes is not None:
-            nodes.extend(hp_nodes)
-            last_batch = list(hp_nodes)
-            continue
+            if kind == "insertion" and len(hp_nodes) > 1:
+                scan.goto(saved_hp)
+            else:
+                nodes.extend(hp_nodes)
+                last_batch = list(hp_nodes)
+                continue
         # A ``, jolloin …`` consequence-renumber sentinel after the separator:
         # record it (context from the just-parsed batch) and continue. The
         # synthetic renumber group is built + prepended after all verb groups.
@@ -1310,6 +1358,7 @@ def _parse_verb_group(
                 chapter = _extract_chapter(pf_nodes, chapter, verb)
                 part = _extract_part(pf_nodes, part)
                 continue
+        more_batch_start = scan.pos
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
         except OutOfScope:
@@ -1345,7 +1394,7 @@ def _parse_verb_group(
             raise OutOfScope("mixed insertion/non-insertion continuation in verb group")
         nodes.extend(more)
         last_batch = list(more)
-        chapter = _extract_chapter(more, chapter, verb)
+        chapter = _chapter_after_batch(scan, more_batch_start, more, chapter, verb)
         part = _extract_part(more, part)
 
         _consume_inline_move_tails(scan, nodes, last_batch)
@@ -1360,6 +1409,40 @@ def _parse_verb_group(
     if move_dest_part:
         nodes = apply_leading_move_destination_part(nodes, move_dest_part)
     return verb, nodes
+
+
+def _batch_has_doc_ill(scan: _Scan, start: int, end: int) -> bool:
+    """True if a DOC:ILL (``asetukseen`` / ``lakiin``) sits in ``[start, end)``.
+
+    Faithful to the old ``_has_doc_ill_in_range``: a batch that re-anchors at the
+    statute root via a DOC:ILL resets the inherited chapter scope (old sp:4102),
+    so a following bare ``N §:ään uusi …`` arm does NOT inherit a chapter from an
+    EARLIER chapter-scoped (``N lukuun uusi …``) insert in the same verb group.
+    """
+    toks = scan.cur.tokens
+    for i in range(start, min(end, len(toks))):
+        if toks[i].cat == "DOC" and toks[i].case == "ILL":
+            return True
+    return False
+
+
+def _chapter_after_batch(
+    scan: _Scan,
+    batch_start: int,
+    nodes: list[SurfaceNode],
+    current: str,
+    verb: Optional[SourceVerb],
+) -> str:
+    """Chapter scope after a batch, with the old DOC:ILL statute-root reset.
+
+    The old ``_target_list`` resets ``chapter = ""`` when the just-parsed batch
+    consumed a DOC:ILL re-anchor (sp:4101-4103), BEFORE falling back to the
+    node-based extractor. Mirror that so a DOC-reanchored insert (``…, lakiin uusi
+    36 a §``) clears the chapter a preceding ``3 lukuun uusi 21 a §`` set.
+    """
+    if _batch_has_doc_ill(scan, batch_start, scan.pos):
+        return ""
+    return _extract_chapter(nodes, current, verb)
 
 
 def _extract_chapter(
