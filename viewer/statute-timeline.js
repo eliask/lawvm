@@ -181,6 +181,7 @@ let curLive = new Map();
 let curTombstoned = new Map();
 let prevLive = new Map();
 let changedAddrs = new Set();   // covering-unit addresses changed vs previous date
+let focusChangesOnly = false;
 let curTreeHash = '';
 let allFoldsMemo = null;        // date -> {live, tombstoned} for all change dates
 let changeIdxCache = null;      // addr -> sorted date indices where its content changed
@@ -863,6 +864,7 @@ function renderShell() {
             <select id="date-jump">${changeDates.map((d, i) => `<option value="${i}">${escHtml(d)}</option>`).join('')}</select>
           </div>
           <span class="date-meta" id="date-meta"></span>
+          <button id="focus-changes-toggle" class="focus-toggle" type="button" aria-pressed="${focusChangesOnly ? 'true' : 'false'}">${escHtml(tr('focusChanged'))}</button>
         </div>
         <div class="timeaxis" id="timeaxis" title="">${timeAxisInnerHtml()}</div>
       </div>
@@ -876,6 +878,7 @@ function renderShell() {
   document.getElementById('prev-date').addEventListener('click', () => selectDate(Math.max(0, curDateIdx - 1)));
   document.getElementById('next-date').addEventListener('click', () => selectDate(Math.min(changeDates.length - 1, curDateIdx + 1)));
   document.getElementById('date-jump').addEventListener('change', (e) => selectDate(parseInt(e.target.value, 10)));
+  document.getElementById('focus-changes-toggle').addEventListener('click', toggleFocusChangesOnly);
   wireTimeAxis();
   wireSecJump();
 
@@ -1074,6 +1077,7 @@ async function selectDate(idx, opts) {
       + changeText
       + ` · ${tr('changeDayOf', idx + 1, changeDates.length)}`;
   }
+  updateFocusChangesToggle();
 
   if (mode === 'law' && !(opts && opts.skipRender)) renderLaw({ preserveScroll: true });
   if (!suppressHashUpdate) updateHash();
@@ -1243,7 +1247,7 @@ function renderLaw(opts) {
           <div class="tree-tools">
             <button id="expand-all">${escHtml(tr('expandAll'))}</button>
             <button id="collapse-all">${escHtml(tr('collapseAll'))}</button>
-            <button id="focus-changes" title="${escAttr(changedAddrs.size ? tr('focusChangedTip') : tr('focusChangedNoneTip'))}"${changedAddrs.size ? '' : ' disabled'}>${escHtml(tr('focusChanged'))}</button>
+            <button id="focus-changes-context" title="${escAttr(tr('focusChangedContextTip'))}">${escHtml(tr('focusChangedContext'))}</button>
           </div>
         </div>
         <div class="tree-legend">
@@ -1256,7 +1260,7 @@ function renderLaw(opts) {
     </div>`;
   document.getElementById('expand-all').addEventListener('click', () => setAllCollapsed(false));
   document.getElementById('collapse-all').addEventListener('click', () => setAllCollapsed(true));
-  document.getElementById('focus-changes').addEventListener('click', collapseUnchangedAtSelectedDate);
+  document.getElementById('focus-changes-context').addEventListener('click', focusChangedContext);
   const tf = document.getElementById('toc-filter');
   tf.addEventListener('input', () => filterToc(tf.value));
   tf.addEventListener('keydown', (e) => { if (e.key === 'Enter') jumpFirstTocMatch(); });
@@ -1298,19 +1302,21 @@ function renderDoc() {
   const docEl = document.getElementById('doc');
   if (!docEl) return;
   const tree = buildRenderTree(curLive, curTombstoned);
+  const focusAddrs = focusChangesOnly ? addressesChangedAtSelectedDate() : null;
   let html = '';
-  for (const entry of sortedEntries(tree)) html += renderTreeEntry(entry, 0);
-  docEl.innerHTML = html || `<p class="muted-empty">${escHtml(tr('noProvisions'))}</p>`;
+  for (const entry of sortedEntries(tree)) html += renderTreeEntry(entry, 0, focusAddrs);
+  docEl.innerHTML = html || `<p class="muted-empty">${escHtml(focusChangesOnly ? tr('noChangedProvisions') : tr('noProvisions'))}</p>`;
   wireDoc(docEl);
 }
 
-function renderTreeEntry(entry, depth) {
+function renderTreeEntry(entry, depth, focusAddrs) {
+  if (focusAddrs && !addressVisibleInFocus(entry.addr, focusAddrs)) return '';
   if (entry.tomb && !entry.hash) return tombstoneHtml(entry.addr, entry.tomb);
   if (entry.hash) {
     const node = getBlob(entry.hash);
     if (!node) return '';
     const prevMap = prevNodeMap(entry.addr);
-    return renderNode(node, entry.addr, depth, prevMap);
+    return renderNode(node, entry.addr, depth, prevMap, focusAddrs);
   }
   // Scaffold ancestor (no blob at this address — finer-grained export).
   const [k, n] = entry.addr.split('/').pop().split(':');
@@ -1326,7 +1332,7 @@ function renderTreeEntry(entry, depth) {
   let html = `<div class="node scaffold kind-${escAttr(displayKind)}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
   html += rowHtml(entry.addr, label, heading, changed, true, collapsed, changeKind);
   html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
-  for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1);
+  for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1, focusAddrs);
   html += `</div></div>`;
   return html;
 }
@@ -1384,7 +1390,8 @@ function historyBtnHtml(addr, showCount) {
   return `<button class="hist-btn" data-addr="${escAttr(addr)}" title="${escAttr(tr('historyBtnTip'))}">⌚ ${escHtml(tr('historyBtn'))}</button>`;
 }
 
-function renderNode(node, addr, depth, prevMap) {
+function renderNode(node, addr, depth, prevMap, focusAddrs) {
+  if (focusAddrs && !addressVisibleInFocus(addr, focusAddrs)) return '';
   const kind = node.kind;
   const heading = nodeHeading(node);
   const children = structChildren(node, addr);
@@ -1408,7 +1415,7 @@ function renderNode(node, addr, depth, prevMap) {
     let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
     html += rowHtml(addr, label, heading, changed, true, collapsed, changeKind);
     html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
-    html += orderedBodyHtml(addr, node, depth, prevMap);
+    html += orderedBodyHtml(addr, node, depth, prevMap, focusAddrs);
     html += `</div></div>`;
     return html;
   }
@@ -1433,7 +1440,7 @@ function renderNode(node, addr, depth, prevMap) {
   html += `</span></div>`;
   html += evidenceBadgeHtml(addr);
   html += historyBtnHtml(addr, /*showCount*/ true);
-  const kidsHtml = childrenWithGhostsHtml(addr, children, depth, prevMap);
+  const kidsHtml = childrenWithGhostsHtml(addr, children, depth, prevMap, focusAddrs);
   if (kidsHtml) html += `<div class="pblock-children">${kidsHtml}</div>`;
   html += `</div>`;
   return html;
@@ -1441,10 +1448,13 @@ function renderNode(node, addr, depth, prevMap) {
 
 // Children in document order with derived ghost tombstones interleaved at
 // their original positions (repealed/expired units never silently vanish).
-function childrenWithGhostsHtml(addr, children, depth, prevMap) {
-  const ghosts = ghostMap().get(addr) || [];
+function childrenWithGhostsHtml(addr, children, depth, prevMap, focusAddrs) {
+  const ghosts = (ghostMap().get(addr) || [])
+    .filter(g => !focusAddrs || focusAddrs.has(g.addr));
   const items = [
-    ...children.map(c => ({ sort: c.childAddr, render: () => renderNode(c.child, c.childAddr, depth + 1, prevMap) })),
+    ...children
+      .filter(c => !focusAddrs || addressVisibleInFocus(c.childAddr, focusAddrs))
+      .map(c => ({ sort: c.childAddr, render: () => renderNode(c.child, c.childAddr, depth + 1, prevMap, focusAddrs) })),
     ...ghosts.map(g => ({ sort: g.addr, render: () => ghostHtml(g) })),
   ].sort((a, b) => addrCompare(a.sort, b.sort));
   let html = '';
@@ -1456,7 +1466,7 @@ function childrenWithGhostsHtml(addr, children, depth, prevMap) {
 // crossheadings, intro/wrapup prose) interleaved with structural children as
 // they appear in the source — never "all headings first, then all sections".
 // Ghost tombstones slot in by address order within the structural sequence.
-function orderedBodyHtml(addr, node, depth, prevMap) {
+function orderedBodyHtml(addr, node, depth, prevMap, focusAddrs) {
   const counts = {};
   const items = [];
   if (node.text && node.text.trim()) items.push({ type: 'text', kind: node.kind, text: node.text.trim() });
@@ -1471,7 +1481,9 @@ function orderedBodyHtml(addr, node, depth, prevMap) {
       items.push({ type: 'text', kind: c.kind, text: c.text.trim() });
     }
   }
-  const ghosts = [...(ghostMap().get(addr) || [])].sort((a, b) => addrCompare(a.addr, b.addr));
+  const ghosts = [...(ghostMap().get(addr) || [])]
+    .filter(g => !focusAddrs || focusAddrs.has(g.addr))
+    .sort((a, b) => addrCompare(a.addr, b.addr));
   let gi = 0;
   let html = '';
   let textSegmentIndex = 0;
@@ -1482,13 +1494,15 @@ function orderedBodyHtml(addr, node, depth, prevMap) {
   };
   for (const it of items) {
     if (it.type === 'text') {
+      if (focusAddrs && !focusAddrs.has(addr)) continue;
       const cls = it.kind === 'crossHeading' ? 'crossheading'
         : it.kind === 'intro' ? 'intro'
         : it.kind === 'wrapUp' ? 'wrapup' : 'content';
       html += `<p class="prov-text ${cls}">${renderTextWithInterlinks(addr, textSegmentIndex++, it.text)}</p>`;
     } else {
+      if (focusAddrs && !addressVisibleInFocus(it.childAddr, focusAddrs)) continue;
       flushGhostsBefore(it.childAddr);
-      html += renderNode(it.child, it.childAddr, depth + 1, prevMap);
+      html += renderNode(it.child, it.childAddr, depth + 1, prevMap, focusAddrs);
     }
   }
   flushGhostsBefore(null);
@@ -1603,6 +1617,15 @@ function addressesChangedAtSelectedDate() {
   return changed;
 }
 
+function addressVisibleInFocus(addr, focusAddrs) {
+  if (!focusAddrs) return true;
+  if (focusAddrs.has(addr)) return true;
+  for (const changed of focusAddrs) {
+    if (changed.startsWith(addr + '/')) return true;
+  }
+  return false;
+}
+
 function changeKindAtSelectedDate(addr) {
   if (curDateIdx <= 0) return '';
   const events = changeIndex().get(addr) || [];
@@ -1622,27 +1645,33 @@ function changeKindLabel(kind) {
   return tr('changedTag');
 }
 
-function addressWithAncestors(addr) {
-  const keep = [];
-  const segs = String(addr || '').split('/').filter(Boolean);
-  let path = '';
-  for (const seg of segs) {
-    path = path ? `${path}/${seg}` : seg;
-    keep.push(path);
-  }
-  return keep;
+function toggleFocusChangesOnly() {
+  focusChangesOnly = !focusChangesOnly;
+  updateFocusChangesToggle();
+  if (mode === 'law') renderLaw({ preserveScroll: true });
 }
 
-function collapseUnchangedAtSelectedDate() {
-  const changed = addressesChangedAtSelectedDate();
-  const keepOpen = new Set();
-  for (const addr of changed) {
-    for (const parent of addressWithAncestors(addr)) keepOpen.add(parent);
+function updateFocusChangesToggle() {
+  const btn = document.getElementById('focus-changes-toggle');
+  if (!btn) return;
+  btn.classList.toggle('active', focusChangesOnly);
+  btn.setAttribute('aria-pressed', focusChangesOnly ? 'true' : 'false');
+  btn.title = changedAddrs.size
+    ? (focusChangesOnly ? tr('focusChangedActiveTip') : tr('focusChangedTip'))
+    : tr('focusChangedNoneTip');
+}
+
+function focusChangedContext() {
+  if (focusChangesOnly) {
+    focusChangesOnly = false;
+    updateFocusChangesToggle();
+    renderLaw({ preserveScroll: true });
   }
+  const changed = addressesChangedAtSelectedDate();
   document.querySelectorAll('#doc .node').forEach(n => {
     if (!n.querySelector(':scope > .node-body')) return;
     const addr = n.dataset.addr || '';
-    toggleCollapse(n, !keepOpen.has(addr));
+    toggleCollapse(n, !addressVisibleInFocus(addr, changed));
   });
   const firstChanged = [...changed].sort(addrCompare)[0];
   if (firstChanged) {
@@ -1670,8 +1699,10 @@ function buildToc() {
   const tocEl = document.getElementById('toc');
   if (!tocEl) return;
   const tree = buildRenderTree(curLive, curTombstoned);
+  const focusAddrs = focusChangesOnly ? addressesChangedAtSelectedDate() : null;
   let html = '<ul class="toc-list">';
   for (const entry of sortedEntries(tree)) {
+    if (focusAddrs && !addressVisibleInFocus(entry.addr, focusAddrs)) continue;
     const node = entry.hash ? getBlob(entry.hash) : null;
     const chapterDisplay = displayLabelHeading(entry.addr, node);
     const chLabel = chapterDisplay.label;
@@ -1681,9 +1712,12 @@ function buildToc() {
       + `<a href="#" class="toc-link toc-ch${chChanged ? ' ch-changed' : ''}" data-addr="${escAttr(entry.addr)}">`
       + `<span class="toc-num">${escHtml(chLabel)}</span> <span class="toc-h">${escHtml(chHeading)}</span></a>`;
     const secs = node
-      ? structChildren(node, entry.addr).filter(s => s.child.kind === 'section')
+      ? structChildren(node, entry.addr)
+          .filter(s => s.child.kind === 'section')
+          .filter(s => !focusAddrs || addressVisibleInFocus(s.childAddr, focusAddrs))
       : sortedEntries(entry.children).map(c => ({ child: null, childAddr: c.addr }))
-          .filter(c => c.childAddr.includes('section:'));
+          .filter(c => c.childAddr.includes('section:'))
+          .filter(c => !focusAddrs || addressVisibleInFocus(c.childAddr, focusAddrs));
     if (secs.length) {
       html += '<ul class="toc-sections">';
       for (const { child, childAddr } of secs) {

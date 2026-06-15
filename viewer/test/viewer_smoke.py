@@ -168,24 +168,38 @@ with sync_playwright() as p:
     check("badge counts render", any("/" in t for t in some_badge) or len(some_badge) > 0,
           f"sample: {some_badge[:5]}")
 
-    # Focus current-date changes: collapse unchanged outline branches while
-    # keeping changed nodes and their ancestors visible.
-    page.click("#focus-changes")
+    # Contextual focus keeps the full law available, but collapses unchanged
+    # outline branches around selected-date changes.
+    full_addr_count = page.locator("#doc [data-addr]").count()
+    page.click("#focus-changes-context")
     page.wait_for_timeout(400)
-    collapsed_after_focus = page.locator("#doc .node.collapsed").count()
-    hidden_changed = page.evaluate(
-        "(() => [...document.querySelectorAll('#doc .changed')].filter(el => {"
-        " let p = el.parentElement;"
-        " while (p && p.id !== 'doc') {"
-        "   if (p.classList && p.classList.contains('node') && p.classList.contains('collapsed')) return true;"
-        "   p = p.parentElement;"
-        " }"
-        " return false;"
-        "}).length)()")
-    check("focus changed collapses unchanged branches", collapsed_after_focus > 0,
-          f"{collapsed_after_focus} collapsed")
-    check("focus changed keeps changed nodes visible", hidden_changed == 0,
-          f"{hidden_changed} hidden changed nodes")
+    context_addr_count = page.locator("#doc [data-addr]").count()
+    context_collapsed = page.locator("#doc .node.collapsed").count()
+    check("context focus keeps full document",
+          context_addr_count == full_addr_count,
+          f"{context_addr_count} vs {full_addr_count} addressed elements")
+    check("context focus collapses unchanged branches",
+          context_collapsed > 0,
+          f"{context_collapsed} collapsed")
+    page.click("#expand-all")
+    page.wait_for_timeout(300)
+
+    # Changed-only topbar toggle filters the primary law view to selected-date
+    # changes and survives date scrubs.
+    page.click("#focus-changes-toggle")
+    page.wait_for_timeout(400)
+    focused_addr_count = page.locator("#doc [data-addr]").count()
+    focus_pressed = page.locator("#focus-changes-toggle").get_attribute("aria-pressed") == "true"
+    check("focus changed filters unchanged branches",
+          0 < focused_addr_count < full_addr_count,
+          f"{focused_addr_count} of {full_addr_count} addressed elements")
+    check("focus changed toggle is pressed", focus_pressed)
+    page.click("#next-date")
+    page.wait_for_timeout(700)
+    focus_survived = page.locator("#focus-changes-toggle").get_attribute("aria-pressed") == "true"
+    check("focus changed persists across date scrub", focus_survived)
+    page.click("#focus-changes-toggle")
+    page.wait_for_timeout(400)
 
     # Muutokset mode: localized per-provision changes
     page.click(".mode-btn[data-mode='amendments']")
@@ -436,10 +450,16 @@ with sync_playwright() as p:
     page.select_option("#date-jump", label="2028-05-01")
     page.wait_for_timeout(700)
     zero_delta_meta = page.text_content("#date-meta") or ""
-    focus_disabled = page.locator("#focus-changes").is_disabled()
     check("zero-delta checkpoint is labelled", "ei näkyviä tekstimuutoksia" in zero_delta_meta,
           zero_delta_meta)
-    check("zero-delta checkpoint disables changed-only focus", focus_disabled)
+    page.click("#focus-changes-toggle")
+    page.wait_for_timeout(400)
+    zero_delta_empty = page.text_content("#doc") or ""
+    check("zero-delta changed-only view is empty",
+          "Ei näkyviä tekstimuutoksia" in zero_delta_empty,
+          zero_delta_empty[:120])
+    page.click("#focus-changes-toggle")
+    page.wait_for_timeout(400)
     page.select_option("#date-jump", label="2029-01-01")
     page.wait_for_timeout(700)
     expired_197a = page.evaluate(
