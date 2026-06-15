@@ -37,6 +37,12 @@ from __future__ import annotations
 from typing import Optional
 
 from lawvm.finland.johtolause.grammar.combinators import Cursor
+from lawvm.finland.johtolause.grammar.insertions import (
+    OutOfScopeInsertion,
+    emit_insertion_nodes,
+    insertion_rule_id,
+    recognize_insertion,
+)
 from lawvm.finland.johtolause.grammar.sections import (
     _Scan,
     _sep,
@@ -50,8 +56,10 @@ from lawvm.finland.johtolause.grammar.sections import (
 from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.surface_model import (
     SurfaceClause,
+    SurfaceInsertion,
     SurfaceNode,
     SurfaceVerbGroup,
+    SurfaceWitness,
     VerbKind,
 )
 from lawvm.finland.source_verb import SourceVerb
@@ -76,31 +84,115 @@ def _skip_cat(scan: _Scan, category: str) -> None:
         scan.advance()
 
 
-def _try_recognize_section(scan: _Scan, chapter: str, part: str) -> Optional[list[SurfaceNode]]:
-    """Try the section-ref then prefix form at the cursor; None on no match.
+def _stamp_insertion_batch(
+    nodes: list[SurfaceNode], start: int, end: int
+) -> list[SurfaceNode]:
+    """Stamp the shared batch witness on insertion nodes (old-parser semantics).
 
-    ``chapter`` / ``part`` are the intra-group inherited scope (empty at the
-    first target); the emitter applies them where no explicit scope was parsed.
+    The old ``_stamp_default_witness`` attaches one witness per insertion node
+    whose span is the whole ``_target`` call ``(start, end)`` and whose rule_id
+    is inferred from the node's shape. Reproduced here so the new parser's
+    insertion witnesses are byte-identical.
+    """
+    out: list[SurfaceNode] = []
+    for node in nodes:
+        assert isinstance(node, SurfaceInsertion)
+        out.append(
+            SurfaceInsertion(
+                kind=node.kind,
+                label=node.label,
+                chapter=node.chapter,
+                part=node.part,
+                sub_target=node.sub_target,
+                witness=SurfaceWitness(rule_id=insertion_rule_id(node), source_span=(start, end)),
+            )
+        )
+    return out
+
+
+def _uusi_attached_to_current_target(scan: _Scan) -> bool:
+    """True if a UUSI anchors THIS target (before any batch separator / verb).
+
+    An ``uusi`` directly in the current target's operative span (no intervening
+    list separator) marks the target as an insertion. When the insertion
+    recognizer declines such a span (an out-of-scope insertion shape), the
+    driver must NOT fall through to the section-reference recognizer — that
+    would mis-read the insertion's authority/anchor section as an operative
+    target (e.g. ``15 §:n 3 momentin nojalla uusi 8 a §``). The clause is out of
+    scope instead.
+
+    A UUSI that appears only AFTER a list separator (``…, sellaisena kuin se on
+    uudistettuna …``) or in a later verb group is NOT attached to this target —
+    the section-ref recognizer legitimately owns the leading targets, so the
+    guard does not fire.
+    """
+    toks = scan.cur.tokens
+    for i in range(scan.pos, len(toks)):
+        cat = toks[i].cat
+        if cat in ("VERB", "COMMA", "CONJ", "SEKA"):
+            return False
+        if cat == "UUSI":
+            return True
+    return False
+
+
+def _try_recognize_target(
+    scan: _Scan, batch_start: int, chapter: str, part: str
+) -> Optional[tuple[list[SurfaceNode], bool]]:
+    """Try insertion, then the section-ref / prefix forms at the cursor.
+
+    Mirrors the old ``_target`` dispatch order (``_insertion`` before
+    ``_section_ref``). Returns ``(nodes, is_insertion)`` or None when nothing
+    matched. Insertion nodes get the batch witness spanning ``(batch_start,
+    cursor)``; section nodes carry their own recognizer witness.
+
+    Fail-loud: if the phrase carries an ``uusi`` anchor but the insertion
+    recognizer declined it (an out-of-scope insertion shape), this raises
+    :class:`OutOfScope` rather than mis-parsing the anchor section as a
+    section reference.
     """
     start = scan.pos
+    try:
+        parsed_ins = recognize_insertion(scan, chapter, part)
+    except OutOfScopeInsertion as exc:
+        # The recogniser identified an out-of-scope insertion shape (e.g. a
+        # ``… nojalla uusi 8 b`` bare-section authority insert). Decline the
+        # whole clause rather than mis-read the authority list as a section ref.
+        raise OutOfScope(str(exc)) from exc
+    if parsed_ins is not None:
+        nodes = emit_insertion_nodes(parsed_ins)
+        return _stamp_insertion_batch(nodes, batch_start, scan.pos), True
+
+    scan.goto(start)
     parsed = recognize_section_ref(scan)
     if parsed is None:
         scan.goto(start)
         parsed = recognize_pykala_prefix_section_ref(scan)
     if parsed is None:
         scan.goto(start)
+        # Nothing parsed here. If an ``uusi`` anchors this very target (an
+        # out-of-scope insertion shape the recognizer declined), reject loudly
+        # rather than let the driver swallow it as benign residue and silently
+        # drop the insertion the old parser would have emitted.
+        if _uusi_attached_to_current_target(scan):
+            raise OutOfScope("out-of-scope insertion shape (uusi anchor present)")
         return None
-    return emit_section_nodes(parsed, chapter=chapter, part=part)
+    return emit_section_nodes(parsed, chapter=chapter, part=part), False
 
 
-def _recognize_one_target(scan: _Scan, chapter: str = "", part: str = "") -> list[SurfaceNode]:
-    """Recognize a single section-reference target at the cursor; emit nodes.
+def _recognize_one_target(
+    scan: _Scan, chapter: str = "", part: str = ""
+) -> tuple[list[SurfaceNode], bool]:
+    """Recognize a single target (insertion or section ref); emit nodes.
 
-    Skips sentinel-span lead-in and an optional DOC:GEN ("lain 6, 7 ja 18 §"),
-    then tries the section-ref form, then the genitive-plural prefix form
-    (matching the old ``_target`` dispatch order for the section families).
-    Raises :class:`OutOfScope` if no section reference is found.
+    Records the batch start (the old ``_target`` entry, before its own
+    sentinel skip — the witness anchor for insertions), skips sentinel-span
+    lead-in and an optional DOC:GEN ("lain 6, 7 ja 18 §"), then tries the
+    insertion form, then the section-ref form, then the genitive-plural prefix
+    form (matching the old ``_target`` dispatch order). Returns
+    ``(nodes, is_insertion)``. Raises :class:`OutOfScope` if no target is found.
     """
+    batch_start = scan.pos
     _skip_sentinels(scan)
 
     # Optional DOC:GEN before structural targets (the old _target skips it).
@@ -110,12 +202,12 @@ def _recognize_one_target(scan: _Scan, chapter: str = "", part: str = "") -> lis
         scan.advance()
         _skip_sentinels(scan)
 
-    nodes = _try_recognize_section(scan, chapter, part)
-    if nodes is not None:
-        return nodes
+    result = _try_recognize_target(scan, batch_start, chapter, part)
+    if result is not None:
+        return result
 
     scan.goto(doc_saved)
-    raise OutOfScope("not a section reference at target position")
+    raise OutOfScope("not a target at target position")
 
 
 def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNode]]:
@@ -133,13 +225,13 @@ def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNo
     _skip_sentinels(scan)
     _skip_cat(scan, "TEMPORAL")
 
-    batch = _recognize_one_target(scan)
+    batch, is_insertion = _recognize_one_target(scan)
     nodes = list(batch)
     # Intra-group scope carry-forward: a later bare section list inherits the
     # preceding "N luvun" / "N osan" scope (the old parser threads this between
     # target batches in one verb group).
-    chapter = extract_chapter(batch, "")
-    part = extract_part(batch, "")
+    chapter = _extract_chapter(batch, "")
+    part = _extract_part(batch, "")
 
     while True:
         saved = scan.pos
@@ -157,6 +249,8 @@ def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNo
             # was a target the old parser would have kept, the diff shows the
             # missing node as a delta (never a false 0-delta).
             scan.goto(saved)
+            if is_insertion and not _tail_is_benign(scan):
+                raise OutOfScope("undecodable insertion tail (no separator)")
             break
         after_sep = scan.peek()
         if after_sep is None or after_sep.cat == "VERB":
@@ -165,26 +259,93 @@ def _parse_verb_group(scan: _Scan) -> tuple[Optional[SourceVerb], list[SurfaceNo
             scan.goto(saved)
             break
         try:
-            more = _recognize_one_target(scan, chapter, part)
+            more, more_is_insertion = _recognize_one_target(scan, chapter, part)
         except OutOfScope:
-            # The separator led into a non-section continuation (a provenance
-            # tail like ", viimemainittu niinkuin ...", a heading residue, …).
-            # The old parser also stops the section list here and lets its outer
-            # loop swallow the residue. Rewind to before the separator and break;
-            # the outer totality skip consumes the tail to end (or the diff
-            # records a genuinely dropped target as a delta — never a false pass).
+            # The separator led into a continuation this driver cannot parse.
+            # For an insertion verb group the old parser would have kept folding
+            # the residue into the same target list (chained ``sekä uusi …``,
+            # postfix-chapter, heading arms), so letting the outer loop silently
+            # swallow it would DROP nodes the old parser emits — a false pass.
+            # Reject loudly instead. (For a section-ref group the residue is
+            # genuinely benign trailing trivia the old outer loop also skips.)
             scan.goto(saved)
+            if is_insertion and not _tail_is_benign(scan):
+                raise OutOfScope("undecodable insertion continuation")
             break
+        # Mixing insertion and section-ref batches inside one verb group is an
+        # out-of-scope shape: the old parser threads scope/anaphora across them
+        # in ways this driver does not reproduce. Reject loudly rather than
+        # emit a divergent grouping.
+        if is_insertion != more_is_insertion:
+            raise OutOfScope("mixed insertion/section-ref continuation in verb group")
         nodes.extend(more)
-        chapter = extract_chapter(more, chapter)
-        part = extract_part(more, part)
+        chapter = _extract_chapter(more, chapter)
+        part = _extract_part(more, part)
 
     return verb, nodes
+
+
+def _extract_chapter(nodes: list[SurfaceNode], current: str) -> str:
+    """Chapter scope carried forward from a batch (section- and insertion-aware).
+
+    A faithful narrowing of ``surface_parse._extract_chapter_from_nodes`` for the
+    node types these two families emit: the section-family extractor handles
+    scope blocks / coordination / section targets; an insertion's ``chapter``
+    field also propagates to a following bare batch in the same verb group.
+    """
+    for node in reversed(nodes):
+        if isinstance(node, SurfaceInsertion) and node.chapter:
+            return node.chapter
+    return extract_chapter(nodes, current)
+
+
+def _extract_part(nodes: list[SurfaceNode], current: str) -> str:
+    """Part scope carried forward from a batch (section- and insertion-aware)."""
+    for node in reversed(nodes):
+        if isinstance(node, SurfaceInsertion) and node.part:
+            return node.part
+    return extract_part(nodes, current)
 
 
 def _has_later_verb(scan: _Scan) -> bool:
     toks = scan.cur.tokens
     return any(toks[i].cat == "VERB" for i in range(scan.pos, len(toks)))
+
+
+# Token categories that may benignly trail an insertion batch (separators and
+# sentinel spans the old parser also swallows without emitting a node).
+_BENIGN_TAIL_CATS = frozenset(
+    {
+        "COMMA",
+        "CONJ",
+        "DASH",
+        "SEKA",
+        "TEMPORAL",
+        "END_SENTINEL_SPAN",
+        "CITATION_SPAN",
+        "STATUTE_NAME_SPAN",
+        "PROVENANCE_SPAN",
+        "REINST_SPAN",
+        "JOLLOIN_MOVE",
+        "VALIOTSIKKO",
+    }
+)
+
+
+def _tail_is_benign(scan: _Scan) -> bool:
+    """True if everything up to the next VERB / end is benign trailing trivia.
+
+    Used to decide whether an undecodable insertion continuation is a genuine
+    out-of-scope shape (real content the old parser would have emitted) or
+    merely trailing punctuation / sentinel spans the old outer loop swallows.
+    """
+    toks = scan.cur.tokens
+    for i in range(scan.pos, len(toks)):
+        if toks[i].cat == "VERB":
+            return True
+        if toks[i].cat not in _BENIGN_TAIL_CATS:
+            return False
+    return True
 
 
 def parse(

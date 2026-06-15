@@ -153,9 +153,10 @@ def test_degenerate_pykala_prefix_with_trailing_section_is_out_of_scope() -> Non
 
 
 def test_out_of_scope_shapes_raise() -> None:
-    # Insertion (uusi) is out of scope for slice 1.
+    # Heading-placement inserts ("§:n edelle uusi väliotsikko") remain out of
+    # scope after slice 2 (plain section / sub-target inserts are now handled).
     with pytest.raises(OutOfScope):
-        new_parser.parse(*_tokens_for("lisätään uusi 5 a §"))
+        new_parser.parse(*_tokens_for("lisätään 5 §:n edelle uusi väliotsikko seuraavasti:"))
     # Meta-only clause (no amendment verb) is out of scope.
     with pytest.raises(OutOfScope):
         new_parser.parse(*_tokens_for("Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."))
