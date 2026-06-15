@@ -25,6 +25,8 @@ from lawvm.finland.johtolause.grammar.headings import (
     emit_headings_nodes,
     heading_rule_id,
     recognize_heading_after_uusi,
+    recognize_heading_edelle_luvun_otsikko,
+    recognize_including_preceding_heading_target,
     recognize_trailing_heading_placement,
     recognize_valiotsikko_ref,
 )
@@ -33,6 +35,7 @@ from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
 from lawvm.finland.johtolause.surface_model import (
     SurfaceHeadingPlacement,
+    SurfaceTargetRef,
     SurfaceValiotsikkoRef,
     SurfaceWitness,
 )
@@ -203,6 +206,156 @@ def test_emit_carries_chapter_part_context():
 
 
 # ---------------------------------------------------------------------------
+# Heading placement before a section, CHAPTER-heading payload
+# (``<N> §:n edelle uusi [<M>] luvun otsikko``).  The old parser keeps this as a
+# continuation arm with an 8-token look-ahead window; we pin the recognizer's
+# emitted node + span byte-identically to the node the old parser produces.
+# ---------------------------------------------------------------------------
+
+
+def _old_heading_placement_nodes(text: str):
+    raw = tokenize(text)
+    tokens, jolloin = apply_annotations_with_jolloin_pairs(raw)
+    clause = surface_parse.parse(tokens, jolloin_renumber_pairs=jolloin or None)
+    return [
+        n
+        for vg in clause.verb_groups
+        for n in vg.nodes
+        if isinstance(n, SurfaceHeadingPlacement)
+    ]
+
+
+def _anchor_num_pos(tokens) -> int:
+    """The NUM token immediately governing a ``§:GEN`` (skipping a LETTER)."""
+    for i in range(len(tokens) - 1):
+        if tokens[i].cat != "NUM":
+            continue
+        j = i + 1
+        if tokens[j].cat == "LETTER":
+            j += 1
+        if j < len(tokens) and tokens[j].cat == "PYKALA" and tokens[j].case == "GEN":
+            return i
+    raise AssertionError("no anchor NUM found")
+
+
+def test_heading_edelle_luvun_otsikko_matches_old_parser():
+    text = "lisätään lakiin uusi 53 a § ja 53 §:n edelle uusi luvun otsikko"
+    tokens = _filtered(text)
+    old_nodes = _old_heading_placement_nodes(text)
+    assert len(old_nodes) == 1
+    old = old_nodes[0]
+    assert old.witness is not None
+    assert old.witness.rule_id == "fi.heading_edelle_luvun_otsikko"
+
+    entry = _anchor_num_pos(tokens)
+    scan = _scan_at(tokens, entry)
+    parsed = recognize_heading_edelle_luvun_otsikko(scan)
+    assert parsed is not None
+    assert parsed.form is HeadingForm.LUVUN_OTSIKKO
+    assert heading_rule_id(parsed) == "fi.heading_edelle_luvun_otsikko"
+    node = emit_headings_nodes(parsed)[0]
+    assert node == old  # byte-identical: target_section, span, rule_id, ctx
+    # Cursor advanced exactly to just past the matched OTSIKKO.
+    assert scan.pos == old.witness.source_span[1]
+
+
+def test_heading_edelle_luvun_otsikko_anchor_letter_suffix():
+    text = "lisätään lakiin uusi 12 a § ja 12 a §:n edelle uusi luvun otsikko"
+    tokens = _filtered(text)
+    old = _old_heading_placement_nodes(text)[0]
+    entry = _anchor_num_pos(tokens)
+    scan = _scan_at(tokens, entry)
+    parsed = recognize_heading_edelle_luvun_otsikko(scan)
+    assert parsed is not None
+    node = emit_headings_nodes(parsed)[0]
+    assert node.target_section == "12a"
+    assert node == old
+
+
+def test_heading_edelle_luvun_otsikko_num_chapter_payload():
+    # "uusi 5 luvun otsikko" — the payload chapter carries its own number.
+    text = "lisätään lakiin uusi 4 § ja 4 §:n edelle uusi 5 luvun otsikko"
+    tokens = _filtered(text)
+    old = _old_heading_placement_nodes(text)[0]
+    entry = _anchor_num_pos(tokens)
+    scan = _scan_at(tokens, entry)
+    parsed = recognize_heading_edelle_luvun_otsikko(scan)
+    assert parsed is not None
+    node = emit_headings_nodes(parsed)[0]
+    assert node.target_section == "4"
+    assert node == old
+
+
+# ---------------------------------------------------------------------------
+# Explicit preceding-heading target (``mukaanluettuna N §:n edellä oleva
+# otsikko``) — emits SurfaceTargetRef (SECTION/HEADING facet) nodes, pinned
+# byte-identically to the old ``_consume_including_preceding_heading_target``.
+# ---------------------------------------------------------------------------
+
+
+def _old_including_preceding_nodes(text: str):
+    from lawvm.finland.johtolause.surface_parse import (
+        Stream,
+        _consume_including_preceding_heading_target,
+    )
+
+    tokens = _filtered(text)
+    s = Stream(list(tokens))
+    nodes = _consume_including_preceding_heading_target(s, "", part="")
+    return s.pos, nodes
+
+
+def test_including_preceding_single_matches_old_helper():
+    text = "mukaanluettuna 5 §:n edellä oleva otsikko"
+    tokens = _filtered(text)
+    old_pos, old_nodes = _old_including_preceding_nodes(text)
+    assert old_nodes is not None and len(old_nodes) == 1
+
+    scan = _scan_at(tokens, 0)
+    parsed = recognize_including_preceding_heading_target(scan)
+    assert parsed is not None
+    assert parsed.form is HeadingForm.INCLUDING_PRECEDING
+    assert heading_rule_id(parsed) == "fi.including_preceding_heading_target"
+    new_nodes = emit_headings_nodes(parsed)
+    assert len(new_nodes) == 1
+    node = new_nodes[0]
+    assert isinstance(node, SurfaceTargetRef)
+    assert node == old_nodes[0]
+    assert scan.pos == old_pos
+
+
+def test_including_preceding_range_expands_like_old_helper():
+    text = "mukaanluettuna 5—7 §:n edellä oleva otsikko"
+    tokens = _filtered(text)
+    old_pos, old_nodes = _old_including_preceding_nodes(text)
+    assert old_nodes is not None and len(old_nodes) == 3
+
+    scan = _scan_at(tokens, 0)
+    parsed = recognize_including_preceding_heading_target(scan)
+    assert parsed is not None
+    new_nodes = emit_headings_nodes(parsed)
+    assert [n.label for n in new_nodes if isinstance(n, SurfaceTargetRef)] == ["5", "6", "7"]
+    assert list(new_nodes) == list(old_nodes)
+    assert scan.pos == old_pos
+
+
+def test_including_preceding_letter_suffix_matches_old_helper():
+    text = "mukaanluettuna 5 a §:n edellä oleva otsikko"
+    tokens = _filtered(text)
+    old_pos, old_nodes = _old_including_preceding_nodes(text)
+    assert old_nodes is not None and len(old_nodes) == 1
+
+    scan = _scan_at(tokens, 0)
+    parsed = recognize_including_preceding_heading_target(scan)
+    assert parsed is not None
+    node = emit_headings_nodes(parsed)[0]
+    assert isinstance(node, SurfaceTargetRef)
+    assert node.label == "5a"
+    assert node == old_nodes[0]
+    assert scan.pos == old_pos
+
+
+# ---------------------------------------------------------------------------
 # Negative: a pure section reference is correctly DECLINED by every heading
 # recognizer (None, cursor rewound).
 # ---------------------------------------------------------------------------
@@ -214,6 +367,8 @@ def test_emit_carries_chapter_part_context():
         recognize_valiotsikko_ref,
         recognize_heading_after_uusi,
         recognize_trailing_heading_placement,
+        recognize_heading_edelle_luvun_otsikko,
+        recognize_including_preceding_heading_target,
     ],
 )
 def test_declines_plain_section_ref(recognizer):
@@ -225,3 +380,13 @@ def test_declines_plain_section_ref(recognizer):
     assert parsed is None
     # Cursor rewound (no partial consumption left dangling).
     assert scan.pos == sec_pos
+
+
+def test_including_preceding_declines_without_mukaanluettuna():
+    # A bare "N §:n edellä oleva otsikko" (no leading word) is NOT this rule.
+    text = "5 §:n edellä oleva otsikko"
+    tokens = _filtered(text)
+    scan = _scan_at(tokens, 0)
+    parsed = recognize_including_preceding_heading_target(scan)
+    assert parsed is None
+    assert scan.pos == 0
