@@ -130,3 +130,26 @@ def test_nz_agreement_cli_parse_defaults() -> None:
     assert args.db == "data/nz_legislation.farchive"
     assert args.candidate_xml_locator == "candidate"
     assert args.oracle_xml_locator == "oracle"
+    assert args.from_actual_replay is False
+
+
+def test_nz_agreement_cli_parse_from_actual_replay() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(
+        [
+            "nz-corpus",
+            "agreement",
+            "--from-actual-replay",
+            "--work-id",
+            "act_public_1992_122",
+        ]
+    )
+
+    assert args.nz_corpus_command == "agreement"
+    assert args.from_actual_replay is True
+    assert args.work_id == "act_public_1992_122"
+    assert args.families == "all"
+    # The XML locators are optional in this mode (replay output is the candidate).
+    assert args.candidate_xml_locator == ""
+    assert args.oracle_xml_locator == ""

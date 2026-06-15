@@ -7801,11 +7801,18 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     nz_diff_p.add_argument("--json", action="store_true", help="emit full diff JSON")
     nz_agreement_p = nz_corpus_sub.add_parser(
         "agreement",
-        help="compare candidate NZ XML source tree against oracle XML",
+        help="compare candidate NZ XML source tree (or actual replay output) against oracle XML",
         description=(
-            "Compare two archived NZ XML source trees as candidate-vs-oracle "
-            "agreement. This does not produce a candidate replay; it is the "
-            "agreement metric surface future NZ replay should feed."
+            "Compare a candidate NZ XML source tree against an oracle XML source "
+            "tree as candidate-vs-oracle agreement, typing every mismatch row "
+            "into a core agreement-residual family. In the default standalone "
+            "mode it compares two archived XML blobs (it produces no candidate "
+            "replay). With --from-actual-replay it instead consumes ACTUAL "
+            "replay output: it runs the fail-closed actual replay for --work-id "
+            "and, for every materialized transition, compares the replay's "
+            "materialized after-tree against the archived on-or-after oracle, "
+            "carrying the actual-replay refusal lane through as typed residuals "
+            "so source-honest disagreement stays distinct from a replay bug."
         ),
     )
     nz_agreement_p.add_argument(
@@ -7814,8 +7821,29 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         metavar="PATH",
         help="Farchive DB path (default: data/nz_legislation.farchive)",
     )
-    nz_agreement_p.add_argument("--candidate-xml-locator", required=True, metavar="LOCATOR")
-    nz_agreement_p.add_argument("--oracle-xml-locator", required=True, metavar="LOCATOR")
+    nz_agreement_p.add_argument(
+        "--from-actual-replay",
+        action="store_true",
+        help=(
+            "consume actual replay output: run the fail-closed actual replay for "
+            "--work-id and compare each materialized after-tree to the archived "
+            "on-or-after oracle (instead of two hand-picked XML blobs)"
+        ),
+    )
+    nz_agreement_p.add_argument(
+        "--work-id",
+        default="",
+        metavar="ID",
+        help="archived work_id (required with --from-actual-replay)",
+    )
+    nz_agreement_p.add_argument(
+        "--families",
+        default="all",
+        metavar="SPEC",
+        help="with --from-actual-replay, promotable families to replay (default: all)",
+    )
+    nz_agreement_p.add_argument("--candidate-xml-locator", default="", metavar="LOCATOR")
+    nz_agreement_p.add_argument("--oracle-xml-locator", default="", metavar="LOCATOR")
     nz_agreement_p.add_argument("--candidate-version-id", default="", metavar="ID")
     nz_agreement_p.add_argument("--oracle-version-id", default="", metavar="ID")
     nz_agreement_p.add_argument("--limit", type=int, default=40, metavar="N", help="mismatch rows to print")

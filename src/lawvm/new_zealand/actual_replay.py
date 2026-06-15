@@ -45,6 +45,7 @@ from typing import Any
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
+    AgreementResidualStatus,
     agreement_surface_from_residuals,
 )
 from lawvm.core.semantic_types import StructuralAction
@@ -328,6 +329,15 @@ class NZActualReplayReport:
             "target_slice_agreements": slice_agreements,
             "all_slices_agree": self.all_slices_agree(),
             "refusal_rule_counts": _counts(refusal.rule_id for refusal in self.refusals),
+            # Typed disagreement-family counts over every row (agrees +
+            # refusals), so a benchmark can count agreement by family and keep
+            # source-honest disagreement distinct from a replay bug.
+            "residual_family_counts": _counts(
+                residual.family for residual in self.agreement_residuals()
+            ),
+            "residual_status_counts": _counts(
+                residual.status for residual in self.agreement_residuals()
+            ),
             # Families requested but not attempted (e.g. structural family with no
             # operation surface). Separate from the fail-closed transition count.
             "families_not_attempted": _counts(
@@ -340,17 +350,21 @@ class NZActualReplayReport:
             "dry_run_claims": False,
         }
 
-    def agreement_surface(self) -> dict[str, Any]:
-        """Project the replayed target slice into the shared agreement surface.
+    def agreement_residuals(self) -> tuple[AgreementResidual, ...]:
+        """Every actual-replay row typed into a core agreement-residual family.
 
-        Each actually-replayed target node that agrees with the archived oracle
-        is an ``agrees`` residual owned by the ``actual_replay`` phase. The
-        materialization is labeled ``legal_text_state`` (an actually-reconstructed
-        legal state, NOT a ``proposed_future_branch`` dry-run candidate); the
-        comparison target is the official consolidation view. The oracle is the
-        thing the replay is checked against, never the replay's payload authority
-        — encoded in the forbidden shortcuts.
+        Two lanes feed this. The replayed-transition lane contributes one
+        ``agrees`` residual per materialized mutation. The fail-closed refusal
+        lane (and the families-not-attempted lane) contributes one typed residual
+        per refusal, classified with the shared
+        :func:`lawvm.new_zealand.dry_run_oracle.classify_refusal_family` map, so a
+        source-honest refusal (``accepted_non_executable_frontier`` /
+        ``temporal_mismatch`` / ``source_footing_gap``) is always distinct from a
+        genuine ``replay_bug``. The result is the queryable typed-family surface a
+        benchmark can count by family.
         """
+
+        from lawvm.new_zealand.dry_run_oracle import classify_refusal_family
 
         residuals: list[AgreementResidual] = []
         for transition in self.transitions:
@@ -377,6 +391,25 @@ class NZActualReplayReport:
                         },
                     )
                 )
+        for index, refusal in enumerate(self.refusals + self.families_not_attempted):
+            residuals.append(_refusal_residual(self.work_id, index, refusal, classify_refusal_family))
+        return tuple(residuals)
+
+    def agreement_surface(self) -> dict[str, Any]:
+        """Project every actual-replay row into the shared agreement surface.
+
+        Each actually-replayed target node that agrees with the archived oracle
+        is an ``agrees`` residual owned by the ``actual_replay`` phase, and each
+        fail-closed refusal is a typed residual (source-honest disagreement vs a
+        genuine ``replay_bug``, kept distinct). The materialization is labeled
+        ``legal_text_state`` (an actually-reconstructed legal state, NOT a
+        ``proposed_future_branch`` dry-run candidate); the comparison target is
+        the official consolidation view. The oracle is the thing the replay is
+        checked against, never the replay's payload authority — encoded in the
+        forbidden shortcuts.
+        """
+
+        residuals = self.agreement_residuals()
         slice_nodes = sum(transition.target_slice_node_count for transition in self.transitions)
         slice_agreements = sum(transition.target_slice_agreements for transition in self.transitions)
         surface = agreement_surface_from_residuals(
@@ -1100,6 +1133,56 @@ def _node_digest(node: NZSourceNode) -> str:
     from lawvm.new_zealand.dry_run import _node_digest as _dr_node_digest
 
     return _dr_node_digest(node)
+
+
+# Map a refusal's core family to an AgreementResidual status. A source-honest
+# non-executable frontier is a ``frontier`` row; a genuine replay bug is a
+# ``residual``; a missing temporal window or unreadable footing is ``blocked``.
+_REFUSAL_FAMILY_STATUS: dict[str, AgreementResidualStatus] = {
+    "accepted_non_executable_frontier": "frontier",
+    "replay_bug": "residual",
+    "temporal_mismatch": "blocked",
+    "source_footing_gap": "blocked",
+}
+
+
+def _refusal_residual(
+    work_id: str,
+    index: int,
+    refusal: NZActualReplayRefusal,
+    classify: Any,
+) -> AgreementResidual:
+    """Type one fail-closed refusal into a core agreement-residual row."""
+
+    dry_run_refusal_rule_id = str(refusal.detail.get("dry_run_refusal_rule_id", "") or "")
+    family = classify(
+        refusal_rule_id=refusal.rule_id,
+        dry_run_refusal_rule_id=dry_run_refusal_rule_id,
+    )
+    status: AgreementResidualStatus = _REFUSAL_FAMILY_STATUS.get(family, "blocked")
+    op_tag = refusal.op_ids[0] if refusal.op_ids else f"transition_{index}"
+    return AgreementResidual(
+        residual_id=f"{work_id}:{op_tag}:{refusal.rule_id}:{index}",
+        jurisdiction="nz",
+        agreement_surface="nz_actual_replay",
+        family=family,
+        status=status,
+        owner_phase="actual_replay",
+        rule_id=refusal.rule_id,
+        source_artifact_id=op_tag,
+        replay_count=0,
+        oracle_count=0,
+        missing_proofs=(dry_run_refusal_rule_id,) if dry_run_refusal_rule_id else (),
+        safe_default="materialize_only_dry_run_verified_ops_fail_closed_otherwise",
+        forbidden_shortcuts=_FORBIDDEN_SHORTCUTS,
+        detail={
+            "amendment_date_iso": refusal.amendment_date_iso,
+            "op_ids": list(refusal.op_ids),
+            "dry_run_refusal_rule_id": dry_run_refusal_rule_id,
+            "message": refusal.message,
+            **{key: value for key, value in refusal.detail.items() if key != "dry_run_refusal_rule_id"},
+        },
+    )
 
 
 def _counts(values: Any) -> dict[str, int]:

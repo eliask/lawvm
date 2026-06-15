@@ -42,6 +42,9 @@ from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.agreement import compare_source_documents
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
+    NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+    NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
     NZDryRunReport,
     _nodes_at_path,
     _occupancy,
@@ -106,6 +109,117 @@ _FORBIDDEN_SHORTCUTS = (
     "unapplied_non_repeal_residual_as_replay_bug",
     "oracle_consolidation_view_as_source_truth",
 )
+
+
+# --- Shared agreement-residual classification --------------------------------
+#
+# These two maps are the single typed-family vocabulary the agreement surfaces
+# reuse: the actual-replay refusal lane (every fail-closed refusal row) and the
+# standalone candidate-vs-oracle comparator (every node-status row). They extend
+# the whole-tree ``_CORE_FAMILY`` split above so a typed disagreement family is
+# attached to EVERY mismatch row, and the source-honest disagreement (the source
+# simply does not license the op, or the temporal window/footing is missing)
+# stays distinct from a genuine replay bug (the kernel applied an op and its
+# materialized result diverged from the oracle).
+
+
+def classify_refusal_family(
+    *,
+    refusal_rule_id: str,
+    dry_run_refusal_rule_id: str = "",
+) -> AgreementResidualFamily:
+    """Type one actual-replay refusal row into a core agreement-residual family.
+
+    The split is source-honest-vs-bug, not pass/fail magnitude:
+
+    * The kernel produced a candidate mutation whose oracle match was a residual
+      (the dry-run proof did not agree) or whose composited slice diverged → a
+      genuine ``replay_bug`` (the highest-value finding).
+    * The op was refused before any mutation because the source does not license
+      it (target not present/ambiguous/recovered, payload not extractable, anchor
+      not derivable, new node already present, family not promotable, or a
+      sibling op in the same fail-closed transition blocked it) → source-honest
+      ``accepted_non_executable_frontier``.
+    * The before/oracle XML (the footing the replay reads from) is unreadable, or
+      the amending payload XML could not be read → ``source_footing_gap``.
+    * The before/on-or-after version window is missing for the transition's date
+      → ``temporal_mismatch``.
+    """
+
+    # Imported lazily to avoid an import cycle: ``actual_replay`` imports this
+    # classifier, so its rule-id constants are read at call time, not load time.
+    from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+    )
+
+    rule = refusal_rule_id or ""
+    dry_rule = dry_run_refusal_rule_id or ""
+
+    # Genuine replay-direction divergence: a mutation was materialized and its
+    # result disagreed with the oracle (in isolation, or after compositing).
+    if rule in {
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_MATERIALIZED_SLICE_DIVERGES_RULE_ID,
+    }:
+        return "replay_bug"
+
+    # Temporal: the change window for the transition's date is absent.
+    if rule == NZ_ACTUAL_REPLAY_REFUSED_MISSING_VERSION_WINDOW_RULE_ID:
+        return "temporal_mismatch"
+    if dry_rule == NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID:
+        return "temporal_mismatch"
+
+    # Footing: the replay's before/oracle XML or the amending payload XML could
+    # not be read. The source is present in principle but its footing is missing.
+    if rule in {
+        NZ_ACTUAL_REPLAY_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+        NZ_ACTUAL_REPLAY_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+    }:
+        return "source_footing_gap"
+    if dry_rule in {
+        NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+    } or "amending_act_xml_unreadable" in dry_rule:
+        return "source_footing_gap"
+
+    # Everything else is source-honest: the op was correctly declined before any
+    # mutation because the source does not license a clean, exact replay. This
+    # includes target-recovery refusals, source-change-only payloads, family not
+    # promotable, missing operation surface, sibling-blocked transitions, and the
+    # structural payload/anchor-derivation refusals.
+    return "accepted_non_executable_frontier"
+
+
+# Comparator node-status (agreement.py ``_node_agreement_status`` plus the
+# present/absent partitions) → core agreement-residual family. The standalone
+# candidate-vs-oracle comparator is source-tree-vs-source-tree, so a divergence
+# is a non-commensurable / topology / editorial surface signal, never a kernel
+# replay bug: this comparator never applies an op, so it can never PRODUCE a
+# replay bug. ``replay_bug`` is reserved for surfaces that actually materialize.
+_COMPARATOR_STATUS_FAMILY: dict[str, AgreementResidualFamily] = {
+    "exact": "agreement",
+    # Both sides present, legal text differs: the candidate and oracle source
+    # surfaces are not commensurable at this node.
+    "changed": "non_commensurable_surface",
+    # Same legal text, different stable id / history witnesses: editorial drift
+    # in the oracle's consolidation view, not a substantive disagreement.
+    "text_exact_identity_drift": "oracle_editorial_pathology",
+    "text_exact_history_drift": "oracle_editorial_pathology",
+    # One side has a node the other does not: a topology/granularity mismatch
+    # between the two trees.
+    "oracle_only": "topology_granularity_mismatch",
+    "candidate_only": "topology_granularity_mismatch",
+}
+
+
+def classify_comparator_status_family(status: str) -> AgreementResidualFamily:
+    """Type one standalone-comparator node status into a core family."""
+
+    return _COMPARATOR_STATUS_FAMILY.get(status or "", "unknown")
 
 
 @dataclass(frozen=True)
