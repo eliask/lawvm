@@ -165,7 +165,7 @@ from lawvm.finland.uncovered_body_recovery import (
     UncoveredBodyRecoveryRequest,
     UncoveredBodyRecoveryResult,
     UncoveredBodyRecoverySinks,
-    recover_uncovered_body_ops as _recover_uncovered_body_ops_typed,
+    recover_uncovered_body_ops,
 )
 from lawvm.finland.uncovered_kumotaan_recovery import (
     FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
@@ -258,7 +258,7 @@ def _recover_uncovered_body_ops(
     observations_out: list[dict[str, object]] | None = None,
     findings_out: list[Finding] | None = None,
 ) -> list[ResolvedOp]:
-    result = _recover_uncovered_body_ops_typed(
+    result = recover_uncovered_body_ops(
         UncoveredBodyRecoveryRequest(
             state=state,
             ctx=ctx,
@@ -802,7 +802,7 @@ def test_apply_ops_to_tree_preserves_uncovered_candidate_audits(monkeypatch: pyt
         )
     ]
 
-    def fake_recover_uncovered_body_ops_typed(*_args, **_kwargs):
+    def fake_recover_uncovered_body_ops(*_args, **_kwargs):
         return UncoveredBodyRecoveryResult(
             recovered_ops=(),
             candidate_audits=(
@@ -821,7 +821,7 @@ def test_apply_ops_to_tree_preserves_uncovered_candidate_audits(monkeypatch: pyt
 
     monkeypatch.setattr(
         "lawvm.finland.apply_supplemental_recovery.recover_uncovered_body_ops",
-        fake_recover_uncovered_body_ops_typed,
+        fake_recover_uncovered_body_ops,
     )
     monkeypatch.setattr(
         "lawvm.finland.apply_supplemental_recovery._apply_uncovered_kumotaan_typed",
@@ -1254,7 +1254,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
     def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
-    def fake_recover_uncovered_body_ops_typed(*_args, **_kwargs):
+    def fake_recover_uncovered_body_ops(*_args, **_kwargs):
         return UncoveredBodyRecoveryResult(
             recovered_ops=(recovered_rop,),
             candidate_audits=(),
@@ -1290,7 +1290,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
     monkeypatch.setattr("lawvm.finland.process_pipeline.compile_amendment_ops", fake_compile_amendment_ops)
     monkeypatch.setattr(
         "lawvm.finland.apply_supplemental_recovery.recover_uncovered_body_ops",
-        fake_recover_uncovered_body_ops_typed,
+        fake_recover_uncovered_body_ops,
     )
     monkeypatch.setattr("lawvm.finland.apply_resolved_op.apply_op", fake_apply_op)
 
@@ -8362,11 +8362,11 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
         """
     )
 
-    # MVR: use the refactored two-step API.
+    # Uncovered-body recovery expects amendment chapters to be seeded first.
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
         state = _pre_create_amendment_chapters(state, muutos_body_el, "2021/1215").state
-    recovery = _recover_uncovered_body_ops_typed(
+    recovery = recover_uncovered_body_ops(
         UncoveredBodyRecoveryRequest(
             state=state,
             ctx=ctx,
@@ -8390,7 +8390,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
 
     assert got.find_section("4a") is not None
     assert got.find_section("4b") is not None
-    # MVR: op_ids are mirrored onto ResolvedOp (uncovered_insert_<label>)
+    # Recovered op ids are mirrored onto ResolvedOp for audit joins.
     assert [rop.op_id for rop in rops] == ["uncovered_insert_4a", "uncovered_insert_4b"]
     assert [rop.op_id for rop in rops] == [rop.op.op_id for rop in rops]
     assert {rop.witness_rule_id for rop in rops} == {FI_RECOVERY_UNCOVERED_BODY_RULE_ID}
@@ -8449,7 +8449,7 @@ def test_uncovered_body_skips_sections_owned_by_whole_chapter_insert() -> None:
         """
     )
 
-    # MVR: use the refactored two-step API.
+    # Uncovered-body recovery expects amendment chapters to be seeded first.
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
         state = _pre_create_amendment_chapters(state, muutos_body_el, "2020/1207").state

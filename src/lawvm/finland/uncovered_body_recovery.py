@@ -137,6 +137,3 @@ def recover_uncovered_body_ops(
         recovered_ops=tuple(rstate.result),
         candidate_audits=tuple(rstate.audits),
     )
-
-
-_recover_uncovered_body_ops_typed = recover_uncovered_body_ops
