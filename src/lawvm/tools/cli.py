@@ -11273,6 +11273,63 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
 
+    # --- export-markdown-git ---
+    export_md_git_p = sub.add_parser(
+        "export-markdown-git",
+        parents=_P,
+        help="stream LawVM Markdown snapshots as a git fast-import stream",
+        description=(
+            "Materialize selected adapter-backed LawVM statutes, render act-level "
+            "GitHub-compatible Markdown, and emit a git fast-import stream with "
+            "one commit per effective date. By default the stream is written to "
+            "stdout for an external consumer such as 'git --git-dir out.git "
+            "fast-import --date-format=raw'."
+        ),
+    )
+    export_md_git_p.add_argument(
+        "--statute",
+        action="append",
+        metavar="ID",
+        help=(
+            "statute id in the selected jurisdiction's canonical form (repeatable). "
+            "Default: viewer/statute-timeline-manifest.json"
+        ),
+    )
+    export_md_git_p.add_argument(
+        "--manifest",
+        default="viewer/statute-timeline-manifest.json",
+        metavar="PATH",
+        help="manifest used when --statute is omitted (default: viewer/statute-timeline-manifest.json)",
+    )
+    export_md_git_p.add_argument(
+        "--until",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="latest effective date to include (default: current date)",
+    )
+    export_md_git_p.add_argument(
+        "--include-future",
+        action="store_true",
+        help="include prospective future versions when --until is not set",
+    )
+    export_md_git_p.add_argument(
+        "--out",
+        default="-",
+        metavar="PATH",
+        help="write fast-import stream to PATH, or '-' for stdout (default)",
+    )
+    export_md_git_p.add_argument(
+        "--repo",
+        default=None,
+        metavar="BARE_REPO",
+        help="initialize/import directly into a new bare repo instead of writing stdout",
+    )
+    export_md_git_p.add_argument(
+        "--force",
+        action="store_true",
+        help="remove an existing --repo path before importing",
+    )
+
     # --- certificate-bundle (EXPERIMENTAL) ---
     cert_bundle_p = sub.add_parser(
         "certificate-bundle",
@@ -11622,7 +11679,11 @@ def _main_impl() -> None:
     # canonical säädös id in 'num/year' form (e.g. 301/2004); their handlers
     # normalize both orderings, so the year/num-only pre-1734 guard must not
     # reject them.
-    if args.command not in ("export-transition-graph", "certificate-bundle"):
+    if args.command not in (
+        "export-transition-graph",
+        "export-markdown-git",
+        "certificate-bundle",
+    ):
         _reject_pre_1734_fi_command_line_ids(args)
 
     if args.command == "bisect":
@@ -12911,6 +12972,11 @@ def _main_impl() -> None:
         from lawvm.tools.export_transition_graph import main as export_transition_graph_main
 
         export_transition_graph_main(args)
+
+    elif args.command == "export-markdown-git":
+        from lawvm.tools.export_markdown_git import main as export_markdown_git_main
+
+        export_markdown_git_main(args)
 
     elif args.command == "certificate-bundle":
         from lawvm.tools.certificate_bundle import main as certificate_bundle_main
