@@ -20,7 +20,7 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
 from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
-from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding
+from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding, binding_id_for
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 from lawvm.finland.ops import (
@@ -32,7 +32,7 @@ from lawvm.finland.ops import (
     _rebind_resolved_target_address,
     runtime_scope_confidence_for_op,
 )
-from lawvm.finland.apply_policy import container_resolver_binding
+from lawvm.finland.apply_policy import CONTAINER_TARGET_POLICY_ID, container_resolver_binding
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
     section_paths_for_label,
@@ -798,6 +798,39 @@ def _resolve_container_target(
     )
 
 
+def _container_resolver_contract_error_binding(
+    *,
+    kind: str,
+    label: str,
+    target_part: str | None,
+    resolution: ContainerPathResolution,
+    ctx_label: str,
+    exc: ValueError,
+) -> ResolverBinding:
+    scope_prefix = f"part:{target_part}/" if target_part else ""
+    target_text = f"{scope_prefix}{kind}:{label}"
+    return ResolverBinding(
+        binding_id=binding_id_for(
+            op_label=ctx_label,
+            target_text=target_text,
+            rung_id=None,
+            target_path=None,
+        ),
+        op_label=ctx_label,
+        target_text=target_text,
+        target_path=None,
+        status="blocked_by_policy",
+        policy_id=CONTAINER_TARGET_POLICY_ID,
+        rung_id=None,
+        candidate_count=resolution.candidate_count,
+        fallback_used=False,
+        fallback_rule_id=None,
+        rejection_reasons=("resolver_binding_contract_error",),
+        finding_refs=("APPLY.RESOLVER_BINDING_CONTRACT_ERROR",),
+        detail={"exception": str(exc)},
+    )
+
+
 def _apply_container_op(
     state,
     op: "_StructureApplyView | AmendmentOp | ResolvedOp",
@@ -863,9 +896,16 @@ def _apply_container_op(
             ctx_label=ctx_label,
         )
     except ValueError as exc:
-        container_binding = None
         logger.warning(
             "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
+        )
+        container_binding = _container_resolver_contract_error_binding(
+            kind=kind,
+            label=section_label,
+            target_part=_target_part,
+            resolution=container_resolution,
+            ctx_label=ctx_label,
+            exc=exc,
         )
     if container_binding is not None:
         if resolver_bindings_out is not None:
@@ -880,7 +920,7 @@ def _apply_container_op(
         )
     path = (
         container_binding.target_path
-        if container_binding is not None
+        if container_binding is not None and container_binding.target_path is not None
         else container_resolution.path
     )
 

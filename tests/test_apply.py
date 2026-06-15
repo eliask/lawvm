@@ -4852,6 +4852,59 @@ class TestApplyContainerInsert:
         assert [child.label for child in part_4.children if child.kind is IRNodeKind.CHAPTER] == ["2"]
         assert [child.label for child in part_5.children if child.kind is IRNodeKind.CHAPTER] == ["1", "2"]
 
+    def test_container_insert_records_binding_contract_error_without_rerouting(self, monkeypatch):
+        from lawvm.core.resolver_binding import ResolverBinding
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part5_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="5",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("1", _content("new part 5 chapter 2")),
+            ),
+        )
+        bindings: List[ResolverBinding] = []
+
+        def fake_container_binding(*_args, **_kwargs):
+            raise ValueError("synthetic container binding break")
+
+        monkeypatch.setattr(
+            "lawvm.finland.apply_structure_ops.container_resolver_binding",
+            fake_container_binding,
+        )
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT V osan 2 luku",
+            resolver_bindings_out=bindings,
+        )
+
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.policy_id == "fi.container_target.v0"
+        assert binding.status == "blocked_by_policy"
+        assert binding.target_path is None
+        assert binding.target_text == "part:5/chapter:2"
+        assert binding.rejection_reasons == ("resolver_binding_contract_error",)
+        assert binding.finding_refs == ("APPLY.RESOLVER_BINDING_CONTRACT_ERROR",)
+        assert binding.detail == {"exception": "synthetic container binding break"}
+
+        result = _modified(state, result)
+        part_5 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "5")
+        assert [child.label for child in part_5.children if child.kind is IRNodeKind.CHAPTER] == ["1", "2"]
+
     def test_container_insert_binding_resolved_within_declared_part_scope(self):
         """The consumed binding resolves the part-scoped chapter and records candidates."""
         from lawvm.core.resolver_binding import ResolverBinding
