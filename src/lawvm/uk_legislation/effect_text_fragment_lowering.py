@@ -115,6 +115,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
     UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
+    UK_METADATA_CARRIED_AT_END_INSERT_QUOTED_RULE_ID,
     UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
@@ -1227,6 +1228,16 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_at_end_add_insert is not None:
             subs = [metadata_carried_at_end_add_insert]
+    if not subs:
+        metadata_carried_at_end_insert_quoted = (
+            _effect_metadata_carried_at_end_insert_quoted_fragment(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_at_end_insert_quoted is not None:
+            subs = [metadata_carried_at_end_insert_quoted]
     if not subs:
         metadata_carried_range_insert_substitution = (
             _effect_metadata_carried_range_insert_substitution_fragment(
@@ -2802,6 +2813,167 @@ def _effect_metadata_carried_at_end_add_insert_fragment(
         "replacement": inserted,
         "rule_id": UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
     }
+
+
+# Source-shape patterns the quoted at-end insert lowering must refuse rather than
+# silently append to the host node's text: placement-ambiguous list/index inserts
+# ("at the appropriate place"), and table/step contexts where "at the end" does not
+# denote the end of the feed target's own text run.
+_AT_END_INSERT_QUOTED_REFUSED_CONTEXTS = (
+    "appropriate place",
+    "appropriate places",
+    "in step ",
+    "of the table",
+    "in the table",
+)
+
+
+def _effect_metadata_carried_at_end_insert_quoted_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    """Lower ``In <unit>(<label>), [at [the] end insert | insert at [the] end] "<q>"``.
+
+    This is the ``insert`` verb counterpart to the ``add`` verb handled by
+    ``_effect_metadata_carried_at_end_add_insert_fragment``.  Soundness mirrors that
+    path: the payload is a *single quoted string*, the preimage anchor is the end of
+    the feed target's own text run (``TEXT_END``), and any source-named unit/label is
+    validated against the resolved target leaf and path.  Shapes where "at the end"
+    does not denote the end of the target text run (definition entries, appropriate-
+    place index inserts, table/step contexts) are refused so the broad overlap
+    residue keeps owning them rather than appending to the wrong node.
+    """
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    lowered_text = text.lower()
+    if "definition of" in lowered_text:
+        return None
+    if any(marker in lowered_text for marker in _AT_END_INSERT_QUOTED_REFUSED_CONTEXTS):
+        return None
+    parsed = _parse_at_end_insert_quoted(text)
+    if parsed is None:
+        return None
+    parent_label, source_kind, source_label, inserted = parsed
+    if source_kind:
+        normalized_source_kind = source_kind.replace("-", "").lower()
+        if _addr_leaf_kind(target) != normalized_source_kind:
+            return None
+        if _clean_num(_addr_leaf_label(target) or "") != _clean_num(source_label):
+            return None
+    parent_label = _clean_num(parent_label)
+    if parent_label:
+        target_labels = {_clean_num(label) for _, label in target.path}
+        required_parent_labels = _source_label_parts(parent_label)
+        if not required_parent_labels.issubset(target_labels):
+            return None
+    inserted = inserted.strip()
+    if not inserted:
+        return None
+    return {
+        # TEXT_FROM__TO_END is the append sentinel the text-patch builder maps to a
+        # true APPEND op (match_text="TEXT_END", kind=APPEND).  A bare "TEXT_END"
+        # original would lower to a REPLACE whose synthetic selector cannot resolve.
+        "original": "TEXT_FROM__TO_END",
+        "replacement": inserted,
+        "rule_id": UK_METADATA_CARRIED_AT_END_INSERT_QUOTED_RULE_ID,
+    }
+
+
+def _parse_at_end_insert_quoted(text: str) -> Optional[tuple[str, str, str, str]]:
+    """Parse the two ``insert``-verb at-end word orders into a quoted tail payload.
+
+    Order A: ``... at [the] end insert <quoted>``      (anchor then verb)
+    Order B: ``... insert at [the] end <quoted>``       (verb then anchor)
+
+    Returns ``(parent_label, source_kind, source_label, inserted)`` where the payload
+    is required to be a single quoted string.  ``source_kind``/``source_label`` are
+    populated for the ``at [the] end of <unit>(<label>)`` form so the caller can bind
+    them to the target leaf.  Returns ``None`` when the shape is not a single-quoted
+    at-end insert.
+    """
+    lower = text.lower()
+    insert_idx = lower.find("insert")
+    at_end_match = re.search(r"\bat\s+(?:the\s+)?end\b", lower)
+    if insert_idx < 0 or at_end_match is None:
+        return None
+    at_end_start = at_end_match.start()
+    at_end_after = at_end_match.end()
+
+    if insert_idx > at_end_start:
+        # Order A: "at [the] end ... insert <quoted>".  Only an optional
+        # "of <unit>(<label>)" may sit between the anchor and the verb.
+        source_kind, source_label, between_end = _read_at_end_of_unit(text, at_end_after)
+        gap = lower[between_end:insert_idx].strip(" ,;—-")
+        if gap:
+            return None
+        cursor = _skip_spaces(text, insert_idx + len("insert"))
+        parent_label = _source_parent_label_at_end_insert(lower[:at_end_start])
+    else:
+        # Order B: "insert at [the] end <quoted>".  Nothing but separators may sit
+        # between the verb and the anchor.
+        gap = lower[insert_idx + len("insert") : at_end_start].strip(" ,;—-")
+        if gap:
+            return None
+        source_kind, source_label, cursor = _read_at_end_of_unit(text, at_end_after)
+        parent_label = _source_parent_label_at_end_insert(lower[:insert_idx])
+
+    cursor = _skip_spaces(text, cursor)
+    if cursor < len(text) and text[cursor] in ",;:—-":
+        cursor = _skip_spaces(text, cursor + 1)
+    inserted = _read_quoted(text, cursor)
+    if inserted is None:
+        return None
+    return parent_label, source_kind, source_label, inserted[0].strip()
+
+
+def _read_at_end_of_unit(text: str, cursor: int) -> tuple[str, str, int]:
+    """Read an optional ``of <unit>(<label>)`` immediately after an at-end anchor."""
+    lower = text.lower()
+    cursor = _skip_spaces(text, cursor)
+    if not lower.startswith("of ", cursor):
+        return "", "", cursor
+    after_of = _skip_spaces(text, cursor + len("of "))
+    for candidate in ("sub-paragraph", "paragraph", "subsection", "section"):
+        label_prefix = f"{candidate} ("
+        if lower.startswith(label_prefix, after_of):
+            label_start = after_of + len(label_prefix)
+            label_end = text.find(")", label_start)
+            if label_end < 0:
+                return "", "", cursor
+            return candidate, text[label_start:label_end], label_end + 1
+    return "", "", cursor
+
+
+def _source_parent_label_at_end_insert(prefix: str) -> str:
+    """Extract a parent unit label from ``In <unit> (<label>)`` left context.
+
+    Covers the common units that scope an at-end insert (subsection, paragraph,
+    sub-paragraph, section).  Returns "" when no explicit unit/label is named (e.g.
+    deictic "in that subsection"), in which case the caller falls back to the
+    resolved feed target as the placement anchor.
+    """
+    prefix = prefix.strip(" ,;")
+    best_idx = -1
+    best_needle = ""
+    for unit in ("sub-paragraph", "subsection", "paragraph", "section"):
+        needle = f"in {unit} ("
+        idx = prefix.rfind(needle)
+        if idx > best_idx:
+            best_idx = idx
+            best_needle = needle
+    if best_idx < 0:
+        return ""
+    start = best_idx + len(best_needle)
+    end = prefix.find(")", start)
+    if end < 0:
+        return ""
+    return prefix[start:end]
 
 
 def _parse_at_end_add_insert(text: str) -> Optional[tuple[str, str, str, str]]:

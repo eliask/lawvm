@@ -121,6 +121,9 @@ UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
 UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_at_end_add_insert_text_patch"
 )
+UK_METADATA_CARRIED_AT_END_INSERT_QUOTED_RULE_ID = (
+    "uk_effect_metadata_carried_at_end_insert_quoted_text_patch"
+)
 UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID = (
     "uk_effect_metadata_carried_range_insert_substitution_text_patch"
 )
