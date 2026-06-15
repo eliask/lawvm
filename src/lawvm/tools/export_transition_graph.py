@@ -48,28 +48,147 @@ _BASE_SENTINEL_DATE = "0000-00-00"
 _HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d{1,4}-\d{1,4}|\d{1,4})")
 _HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE)
 
-TransitionRow = Tuple[str, int, str, str, str, str, str, str, str, str, str, str, str, str]
-SourceArtifactRow = Tuple[str, str, str, str, str, str, str]
-EdgeRow = Tuple[str, str, str, str, str]
+@dataclasses.dataclass(frozen=True, slots=True)
+class TransitionRow:
+    transition_id: str
+    sequence: int
+    effective_date: str
+    expires_date: str
+    action: str
+    target_address: str
+    pre_hash: str
+    post_hash: str
+    payload_hash: str
+    legal_op_kind: str
+    legal_op_summary: str
+    source_id: str
+    he_ref: str
+    flags: str
+
+    def with_he_ref(self, he_ref: str) -> "TransitionRow":
+        return dataclasses.replace(self, he_ref=he_ref)
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (
+            self.transition_id,
+            self.sequence,
+            self.effective_date,
+            self.expires_date,
+            self.action,
+            self.target_address,
+            self.pre_hash,
+            self.post_hash,
+            self.payload_hash,
+            self.legal_op_kind,
+            self.legal_op_summary,
+            self.source_id,
+            self.he_ref,
+            self.flags,
+        )
 
 
-def _transition_row_with_he_ref(row: TransitionRow, he_ref: str) -> TransitionRow:
-    return (
-        row[0],
-        row[1],
-        row[2],
-        row[3],
-        row[4],
-        row[5],
-        row[6],
-        row[7],
-        row[8],
-        row[9],
-        row[10],
-        row[11],
-        he_ref,
-        row[13],
-    )
+@dataclasses.dataclass(frozen=True, slots=True)
+class SourceArtifactRow:
+    source_id: str
+    kind: str
+    canonical_id: str
+    title: str
+    url: str
+    content_hash: str
+    date: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (
+            self.source_id,
+            self.kind,
+            self.canonical_id,
+            self.title,
+            self.url,
+            self.content_hash,
+            self.date,
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CheckpointRow:
+    date: str
+    address_prefix: str
+    tree_hash: str
+    active_node_count: int
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (self.date, self.address_prefix, self.tree_hash, self.active_node_count)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ActiveAtRow:
+    date: str
+    address: str
+    content_hash: str
+    transition_id: str = ""
+
+    def with_transition_id(self, transition_id: str) -> "ActiveAtRow":
+        return dataclasses.replace(self, transition_id=transition_id)
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (self.date, self.address, self.content_hash, self.transition_id)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DisplayNodeRow:
+    date: str
+    address: str
+    kind: str
+    label: str
+    num: str
+    heading: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (self.date, self.address, self.kind, self.label, self.num, self.heading)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class EdgeRow:
+    edge_id: str
+    kind: str
+    from_id: str
+    to_id: str
+    payload: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (self.edge_id, self.kind, self.from_id, self.to_id, self.payload)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class EvidenceEventRow:
+    event_id: str
+    surface: str
+    kind: str
+    role: str
+    severity: str
+    phase: str
+    source_id: str
+    effective_date: str
+    target_address: str
+    rule_id: str
+    title: str
+    detail_json: str
+
+    def sql_values(self) -> tuple[object, ...]:
+        return (
+            self.event_id,
+            self.surface,
+            self.kind,
+            self.role,
+            self.severity,
+            self.phase,
+            self.source_id,
+            self.effective_date,
+            self.target_address,
+            self.rule_id,
+            self.title,
+            self.detail_json,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +342,49 @@ def covering_units(
     return out
 
 
+def _child_text(node: IRNode, kind: str) -> str:
+    for child in node.children:
+        if str(child.kind) == kind and child.text:
+            return child.text.strip()
+    return ""
+
+
+def display_node_rows(
+    date: str,
+    root: IRNode,
+    slice_prefix: str = "",
+    active_addresses: frozenset[str] = frozenset(),
+) -> List[DisplayNodeRow]:
+    """Display metadata for every addressed node visible in a rendered slice.
+
+    Fine-grained exports can store only subsection blobs in ``active_at``; the
+    viewer then synthesizes chapter/section scaffold rows from addresses. Those
+    scaffold rows still need engine-authored headings. Rows already present in
+    ``active_at`` carry their own blob metadata and are intentionally skipped.
+    """
+    rows: List[DisplayNodeRow] = []
+    for addr, node in _iter_addressed_nodes(root):
+        if addr in active_addresses:
+            continue
+        if slice_prefix and not (
+            addr == slice_prefix
+            or addr.startswith(slice_prefix + "/")
+            or slice_prefix.startswith(addr + "/")
+        ):
+            continue
+        rows.append(
+            DisplayNodeRow(
+                date=date,
+                address=addr,
+                kind=str(node.kind),
+                label=str(node.label or ""),
+                num=_child_text(node, "num"),
+                heading=_child_text(node, "heading"),
+            )
+        )
+    return rows
+
+
 def reproducible_tree_hash(units: List[Tuple[str, str]]) -> str:
     """Hash an (address, subtree_hash) covering set, ordered by address.
 
@@ -350,7 +512,7 @@ def _ops_for_covering(ops_on_date: List[Any], covering_address: str) -> List[Any
 # ---------------------------------------------------------------------------
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReplayBundle:
     """Everything captured from a single authoritative engine replay."""
 
@@ -361,6 +523,9 @@ class ReplayBundle:
     lo_ops: List[Any]
     timelines: Dict[LegalAddress, Any]
     change_dates: List[str]
+    replay_findings: List[Any] = dataclasses.field(default_factory=list)
+    failed_ops: List[Any] = dataclasses.field(default_factory=list)
+    source_pathologies: List[Any] = dataclasses.field(default_factory=list)
 
 
 def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
@@ -374,6 +539,9 @@ def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     lo_ops: List[Any] = []
+    replay_findings: List[Any] = []
+    failed_ops: List[Any] = []
+    source_pathologies: List[Any] = []
     # Materialize far in the future first to collect the complete timeline set.
     far_result = call_replay_xml(
         replay_xml,
@@ -383,7 +551,12 @@ def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
             as_of="9999-12-31",
             quiet=True,
         ),
-        sinks=ReplayXmlSinks(lo_ops_out=lo_ops),
+        sinks=ReplayXmlSinks(
+            lo_ops_out=lo_ops,
+            findings_out=replay_findings,
+            failed_ops_out=failed_ops,
+            source_pathologies_out=source_pathologies,
+        ),
     )
     timelines = far_result.timelines or {}
     change_dates = compute_change_dates(timelines)
@@ -395,6 +568,9 @@ def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
         lo_ops=lo_ops,
         timelines=timelines,
         change_dates=change_dates,
+        replay_findings=replay_findings,
+        failed_ops=failed_ops,
+        source_pathologies=source_pathologies,
     )
 
 
@@ -406,7 +582,7 @@ def _op_variant_kind(op: Any) -> str:
     return "permanent"
 
 
-def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[Tuple[str, str, str, int]]) -> Dict[str, Any]:
+def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[CheckpointRow]) -> Dict[str, Any]:
     """Build the JSON sidecar for independent browser-side L2 replay (Exp-2).
 
     Carries the base body tree and the full resolved L2 operation stream with
@@ -467,7 +643,8 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[Tuple[str, str, str,
         "ops": ops_json,
         "migration_events": migrations_json,
         "oracle_checkpoints": [
-            {"date": d, "tree_hash": th, "active_node_count": cnt} for (d, _prefix, th, cnt) in checkpoints
+            {"date": row.date, "tree_hash": row.tree_hash, "active_node_count": row.active_node_count}
+            for row in checkpoints
         ],
     }
 
@@ -575,6 +752,173 @@ def _extract_he_ref(amendment_xml: Optional[bytes]) -> str:
     return ""
 
 
+def _json_safe(value: Any) -> Any:
+    """Return a JSON-serializable projection without dropping evidence fields."""
+    if dataclasses.is_dataclass(value):
+        return _json_safe(dataclasses.asdict(value))
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _detail_json(value: Any) -> str:
+    return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True)
+
+
+def _canonical_source_id(value: object) -> str:
+    source_id = str(value or "").strip()
+    if not source_id:
+        return ""
+    return _canonical_statute_id(source_id)
+
+
+def _source_effective_dates(lo_ops: List[Any]) -> Dict[str, str]:
+    """Return source_id -> effective date only when the mapping is unambiguous."""
+    by_source: Dict[str, set[str]] = {}
+    for op in lo_ops:
+        src = getattr(op, "source", None)
+        source_id = _canonical_source_id(getattr(src, "statute_id", "") if src is not None else "")
+        effective_raw = getattr(src, "effective", "") if src is not None else ""
+        effective = str(effective_raw or "")
+        if source_id and effective:
+            by_source.setdefault(source_id, set()).add(effective)
+    return {source_id: next(iter(dates)) for source_id, dates in by_source.items() if len(dates) == 1}
+
+
+def _address_from_scope(
+    *,
+    target_unit_kind: object = "",
+    target_label: object = "",
+    target_section: object = "",
+    target_chapter: object = "",
+    target_part: object = "",
+) -> str:
+    kind = str(target_unit_kind or "")
+    label = str(target_label or target_section or "")
+    chapter = str(target_chapter or "")
+    part = str(target_part or "")
+    if kind == "part" and (label or part):
+        return f"part:{label or part}"
+    if kind == "chapter" and (label or chapter):
+        return f"chapter:{label or chapter}"
+    if kind == "section" and label:
+        return f"chapter:{chapter}/section:{label}" if chapter else f"section:{label}"
+    return ""
+
+
+def _target_address_from_detail(detail: Dict[str, Any]) -> str:
+    explicit = str(detail.get("target_address") or detail.get("address") or "")
+    if explicit:
+        return explicit
+    return _address_from_scope(
+        target_unit_kind=detail.get("target_unit_kind", ""),
+        target_label=detail.get("target_label", ""),
+        target_section=detail.get("target_section", ""),
+        target_chapter=detail.get("target_chapter", ""),
+        target_part=detail.get("target_part", ""),
+    )
+
+
+def build_evidence_event_rows(bundle: ReplayBundle) -> List[EvidenceEventRow]:
+    """Project internal LawVM uncertainty/evidence into viewer-safe rows."""
+    source_dates = _source_effective_dates(bundle.lo_ops)
+    rows: List[EvidenceEventRow] = []
+
+    def add(
+        *,
+        surface: str,
+        kind: str,
+        role: str,
+        severity: str,
+        phase: str,
+        source_id: str,
+        target_address: str,
+        rule_id: str,
+        title: str,
+        detail: Any,
+    ) -> None:
+        event_id = f"ev{len(rows) + 1:06d}"
+        rows.append(
+            EvidenceEventRow(
+                event_id=event_id,
+                surface=surface,
+                kind=kind,
+                role=role,
+                severity=severity,
+                phase=phase,
+                source_id=source_id,
+                effective_date=source_dates.get(source_id, ""),
+                target_address=target_address,
+                rule_id=rule_id,
+                title=title,
+                detail_json=_detail_json(detail),
+            )
+        )
+
+    for finding in bundle.replay_findings:
+        detail = dict(getattr(finding, "detail", {}) or {})
+        source_id = _canonical_source_id(getattr(finding, "source_statute", "") or detail.get("source_statute", ""))
+        role = str(getattr(finding, "role", "") or "")
+        blocking = bool(getattr(finding, "blocking", False))
+        severity = "error" if blocking or role == "violation" else "warning" if role == "obligation" else "info"
+        kind = str(getattr(finding, "kind", "") or "")
+        add(
+            surface="replay_finding",
+            kind=kind,
+            role=role,
+            severity=severity,
+            phase=str(getattr(finding, "stage", "") or ""),
+            source_id=source_id,
+            target_address=_target_address_from_detail(detail),
+            rule_id=kind,
+            title=kind,
+            detail=finding,
+        )
+
+    for pathology in bundle.source_pathologies:
+        detail = pathology.as_detail() if hasattr(pathology, "as_detail") else _json_safe(pathology)
+        detail_dict = detail if isinstance(detail, dict) else {}
+        source_id = _canonical_source_id(getattr(pathology, "source_statute", "") or detail_dict.get("source_statute", ""))
+        kind = str(getattr(pathology, "code", "") or detail_dict.get("code", ""))
+        add(
+            surface="source_pathology",
+            kind=kind,
+            role="source_pathology",
+            severity="warning",
+            phase="replay",
+            source_id=source_id,
+            target_address=_target_address_from_detail(detail_dict),
+            rule_id=kind,
+            title=str(getattr(pathology, "message", "") or detail_dict.get("message", kind)),
+            detail=detail,
+        )
+
+    for failed in bundle.failed_ops:
+        detail = failed.as_detail() if hasattr(failed, "as_detail") else _json_safe(failed)
+        detail_dict = detail if isinstance(detail, dict) else {}
+        source_id = _canonical_source_id(getattr(failed, "amendment_id", "") or detail_dict.get("amendment_id", ""))
+        reason_code = str(getattr(failed, "reason_code", "") or detail_dict.get("reason_code", ""))
+        kind = reason_code or "failed_operation"
+        add(
+            surface="failed_op",
+            kind=kind,
+            role="rejected_operation",
+            severity="error",
+            phase="apply",
+            source_id=source_id,
+            target_address=_target_address_from_detail(detail_dict),
+            rule_id=kind,
+            title=str(getattr(failed, "reason", "") or detail_dict.get("reason", kind)),
+            detail=detail,
+        )
+
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # SQLite schema
 # ---------------------------------------------------------------------------
@@ -634,9 +978,35 @@ CREATE TABLE active_at (
     transition_id TEXT,
     PRIMARY KEY (date, address)
 );
+CREATE TABLE display_nodes (
+    date    TEXT,
+    address TEXT,
+    kind    TEXT,
+    label   TEXT,
+    num     TEXT,
+    heading TEXT,
+    PRIMARY KEY (date, address)
+);
+CREATE TABLE evidence_events (
+    event_id       TEXT PRIMARY KEY,
+    surface        TEXT,
+    kind           TEXT,
+    role           TEXT,
+    severity       TEXT,
+    phase          TEXT,
+    source_id      TEXT,
+    effective_date TEXT,
+    target_address TEXT,
+    rule_id        TEXT,
+    title          TEXT,
+    detail_json    TEXT
+);
 CREATE INDEX idx_transitions_date ON transitions(effective_date);
 CREATE INDEX idx_transitions_addr ON transitions(target_address);
 CREATE INDEX idx_active_at_addr ON active_at(address);
+CREATE INDEX idx_display_nodes_addr ON display_nodes(address);
+CREATE INDEX idx_evidence_events_addr ON evidence_events(target_address);
+CREATE INDEX idx_evidence_events_source ON evidence_events(source_id);
 """
 
 
@@ -657,8 +1027,10 @@ class ExportStats:
     n_content_blob_inserts_attempted: int
     n_checkpoints: int
     n_active_at_rows: int
+    n_display_nodes: int
     n_source_artifacts: int
     n_edges: int
+    n_evidence_events: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -745,15 +1117,20 @@ def export_transition_graph(
         # ``cur_order`` is the document-ordered covering-address list.
         prev_state: Dict[str, str] = {}
         cur_order: List[str] = []
-        checkpoint_rows: List[Tuple[str, str, str, int]] = []
+        checkpoint_rows: List[CheckpointRow] = []
         # active_rows are appended in document order so SQLite rowid preserves it.
-        active_rows: List[Tuple[str, str, str, str]] = []
+        active_rows: List[ActiveAtRow] = []
+        display_rows: List[DisplayNodeRow] = []
         transition_rows: List[TransitionRow] = []
         seq = 0
 
         for date in bundle.change_dates:
             tree = materialize_oracle_tree(bundle, date)
             units = covering_units(tree, slice_prefix, granularity)
+            active_addresses = frozenset(addr for addr, _node in units)
+            display_rows.extend(
+                display_node_rows(date, tree, slice_prefix, active_addresses=active_addresses)
+            )
             cur_state = {}
             cur_order = []
             ordered_unit_hashes: List[Tuple[str, str]] = []
@@ -762,11 +1139,18 @@ def export_transition_graph(
                 cur_state[addr] = h
                 cur_order.append(addr)
                 ordered_unit_hashes.append((addr, h))
-                active_rows.append((date, addr, h, ""))
+                active_rows.append(ActiveAtRow(date=date, address=addr, content_hash=h))
 
             # certified checkpoint hash over the document-ordered covering set
             tree_hash = reproducible_tree_hash(ordered_unit_hashes)
-            checkpoint_rows.append((date, slice_prefix, tree_hash, len(cur_state)))
+            checkpoint_rows.append(
+                CheckpointRow(
+                    date=date,
+                    address_prefix=slice_prefix,
+                    tree_hash=tree_hash,
+                    active_node_count=len(cur_state),
+                )
+            )
 
             # --- diff prev -> cur into L3 transitions (in document order) ---
             all_addrs = list(dict.fromkeys(list(prev_state.keys()) + cur_order))
@@ -822,21 +1206,21 @@ def export_transition_graph(
                     flags["temporary_expiry"] = True
 
                 transition_rows.append(
-                    (
-                        transition_id,
-                        seq,
-                        date,
-                        "",  # expires_date filled below if known
-                        action,
-                        addr,
-                        pre,
-                        post,
-                        payload_hash,
-                        legal_op_kind,
-                        legal_op_summary,
-                        source_id,
-                        "",  # he_ref backfilled after amendment xml lookup
-                        json.dumps(flags, ensure_ascii=False),
+                    TransitionRow(
+                        transition_id=transition_id,
+                        sequence=seq,
+                        effective_date=date,
+                        expires_date="",
+                        action=action,
+                        target_address=addr,
+                        pre_hash=pre,
+                        post_hash=post,
+                        payload_hash=payload_hash,
+                        legal_op_kind=legal_op_kind,
+                        legal_op_summary=legal_op_summary,
+                        source_id=source_id,
+                        he_ref="",
+                        flags=json.dumps(flags, ensure_ascii=False),
                     )
                 )
 
@@ -851,14 +1235,14 @@ def export_transition_graph(
         he_by_amendment: Dict[str, str] = {}
         # the base statute
         source_rows.append(
-            (
-                canonical_id,
-                "statute",
-                canonical_id,
-                bundle.title,
-                f"https://www.finlex.fi/fi/laki/ajantasa/{engine_id.split('/')[0]}/{engine_id.split('/')[1]}",
-                "",
-                "",
+            SourceArtifactRow(
+                source_id=canonical_id,
+                kind="statute",
+                canonical_id=canonical_id,
+                title=bundle.title,
+                url=f"https://www.finlex.fi/fi/laki/ajantasa/{engine_id.split('/')[0]}/{engine_id.split('/')[1]}",
+                content_hash="",
+                date="",
             )
         )
         amendment_meta: Dict[str, Tuple[str, str]] = {}  # canonical -> (title, enacted)
@@ -882,17 +1266,30 @@ def export_transition_graph(
             he_by_amendment[canon] = he_ref
             yr, num = engine_amd.split("/") if "/" in engine_amd else ("", "")
             url = f"https://www.finlex.fi/fi/laki/alkup/{yr}/{engine_amd.replace('/', '')}" if yr else ""
-            source_rows.append((canon, "amendment", canon, title, url, "", date))
+            source_rows.append(
+                SourceArtifactRow(
+                    source_id=canon,
+                    kind="amendment",
+                    canonical_id=canon,
+                    title=title,
+                    url=url,
+                    content_hash="",
+                    date=date,
+                )
+            )
 
         conn.executemany(
             "INSERT OR REPLACE INTO source_artifacts"
             "(source_id, kind, canonical_id, title, url, content_hash, date) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) if len(r) == 7 else r for r in source_rows],
+            [row.sql_values() for row in source_rows],
         )
 
         # backfill he_ref onto transition rows
-        transition_rows = [_transition_row_with_he_ref(row, he_by_amendment.get(row[11], "")) for row in transition_rows]
+        transition_rows = [
+            row.with_he_ref(he_by_amendment.get(row.source_id, ""))
+            for row in transition_rows
+        ]
 
         conn.executemany(
             "INSERT INTO transitions"
@@ -900,20 +1297,28 @@ def export_transition_graph(
             " target_address, pre_hash, post_hash, payload_hash, legal_op_kind, "
             " legal_op_summary, source_id, he_ref, flags) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            transition_rows,
+            [row.sql_values() for row in transition_rows],
         )
         conn.executemany(
             "INSERT INTO checkpoints(date, address_prefix, tree_hash, active_node_count) VALUES (?, ?, ?, ?)",
-            checkpoint_rows,
+            [row.sql_values() for row in checkpoint_rows],
         )
         # set transition_id on active_at where a transition occurred at that date+addr
         trans_by_date_addr: Dict[Tuple[str, str], str] = {}
         for row in transition_rows:
-            trans_by_date_addr[(row[2], row[5])] = row[0]
-        active_rows = [(d, a, h, trans_by_date_addr.get((d, a), "")) for (d, a, h, _t) in active_rows]
+            trans_by_date_addr[(row.effective_date, row.target_address)] = row.transition_id
+        active_rows = [
+            row.with_transition_id(trans_by_date_addr.get((row.date, row.address), ""))
+            for row in active_rows
+        ]
         conn.executemany(
             "INSERT OR REPLACE INTO active_at(date, address, content_hash, transition_id) VALUES (?, ?, ?, ?)",
-            active_rows,
+            [row.sql_values() for row in active_rows],
+        )
+        conn.executemany(
+            "INSERT OR REPLACE INTO display_nodes(date, address, kind, label, num, heading) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [row.sql_values() for row in display_rows],
         )
 
         # --- edges: created_by / amended_by (address-version -> source) and
@@ -922,35 +1327,52 @@ def export_transition_graph(
         eid = 0
         # created_by / amended_by
         for row in transition_rows:
-            transition_id = row[0]
-            addr = row[5]
-            source_id = row[11]
-            flags = json.loads(row[13]) if row[13] else {}
+            transition_id = row.transition_id
+            addr = row.target_address
+            source_id = row.source_id
+            flags = json.loads(row.flags) if row.flags else {}
             if not source_id:
                 continue
             kind = "created_by" if flags.get("created") else "amended_by"
             eid += 1
-            edge_rows.append((f"e{eid:06d}", kind, transition_id, source_id, json.dumps({"address": addr})))
+            edge_rows.append(
+                EdgeRow(
+                    edge_id=f"e{eid:06d}",
+                    kind=kind,
+                    from_id=transition_id,
+                    to_id=source_id,
+                    payload=json.dumps({"address": addr}),
+                )
+            )
         # supersedes: consecutive transitions at the same address
         by_addr: Dict[str, List[TransitionRow]] = {}
         for row in transition_rows:
-            by_addr.setdefault(row[5], []).append(row)
+            by_addr.setdefault(row.target_address, []).append(row)
         for addr, rows in by_addr.items():
-            rows_sorted = sorted(rows, key=lambda r: r[1])
+            rows_sorted = sorted(rows, key=lambda r: r.sequence)
             for a, b in zip(rows_sorted, rows_sorted[1:], strict=False):
                 eid += 1
                 edge_rows.append(
-                    (
-                        f"e{eid:06d}",
-                        "supersedes",
-                        b[0],
-                        a[0],
-                        json.dumps({"address": addr}),
+                    EdgeRow(
+                        edge_id=f"e{eid:06d}",
+                        kind="supersedes",
+                        from_id=b.transition_id,
+                        to_id=a.transition_id,
+                        payload=json.dumps({"address": addr}),
                     )
                 )
         conn.executemany(
             "INSERT INTO edges(edge_id, kind, from_id, to_id, payload) VALUES (?, ?, ?, ?, ?)",
-            edge_rows,
+            [row.sql_values() for row in edge_rows],
+        )
+
+        evidence_rows = build_evidence_event_rows(bundle)
+        conn.executemany(
+            "INSERT INTO evidence_events"
+            "(event_id, surface, kind, role, severity, phase, source_id, "
+            " effective_date, target_address, rule_id, title, detail_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [row.sql_values() for row in evidence_rows],
         )
 
         # --- meta ---
@@ -1009,8 +1431,10 @@ def export_transition_graph(
         n_content_blob_inserts_attempted=blob_inserts_attempted,
         n_checkpoints=len(checkpoint_rows),
         n_active_at_rows=len(active_rows),
+        n_display_nodes=len(display_rows),
         n_source_artifacts=len(source_rows),
         n_edges=len(edge_rows),
+        n_evidence_events=len(evidence_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1048,6 +1472,8 @@ def main(args: Any) -> None:
     )
     print(f"  checkpoints:      {stats.n_checkpoints}", flush=True)
     print(f"  active_at rows:   {stats.n_active_at_rows}", flush=True)
+    print(f"  display_nodes:    {stats.n_display_nodes}", flush=True)
     print(f"  source_artifacts: {stats.n_source_artifacts}", flush=True)
     print(f"  edges:            {stats.n_edges}", flush=True)
+    print(f"  evidence_events:  {stats.n_evidence_events}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)

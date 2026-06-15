@@ -163,6 +163,13 @@ let transitions = [];       // all transitions, sequence-ordered
 let checkpointByDate = {};  // date -> {tree_hash, active_node_count}
 let changeDates = [];       // sorted ISO date strings
 let sourceById = {};        // source_id -> source_artifacts row
+let interlinks = [];        // optional precomputed semantic interlink rows
+let interlinksByRenderedAddress = new Map();
+let displayNodeByDateAddress = new Map();
+let evidenceEvents = [];    // optional precomputed LawVM uncertainty rows
+let evidenceBySource = new Map();
+let evidenceByDate = new Map();
+let evidenceWithAddress = [];
 let metaInfo = {};          // decoded meta table
 let selectedAddress = null; // address with an open inline history panel
 let mode = 'law';    // 'law' | 'amendments' | 'search' | 'compare'
@@ -207,6 +214,9 @@ function q(sql, params) {
   }
 }
 function q1(sql, params) { return q(sql, params)[0] || null; }
+function tableExists(name) {
+  return !!q1("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [name]);
+}
 
 function escHtml(s) {
   const d = document.createElement('div');
@@ -245,14 +255,15 @@ const REF_KINDS = {
     nav(p) { goToAddrAtDate(p.addr || null, p.date, p.phrase || undefined); },
     hover: null,
   },
-  // FUTURE seam (NOT built): a structured inline citation to another statute.
-  // payload {statute, addr, date?, cite?}. nav loads the foreign db; hover is
-  // ASYNC because the preview needs a different db than the one in memory.
-  // 'statute-ref': {
-  //   display(p) { return { text: p.text || p.cite, title: p.cite, cls: 'ref-statute' }; },
-  //   nav(p) { /* loadStatute(p.statute, {statute:p.statute, mode:'law', date:p.date, address:p.addr}) */ },
-  //   async hover(p) { const t = await resolveForeignProvision(p.statute, p.addr, p.date); return t ? provisionHovercardHtml(p, t) : null; },
-  // },
+  semantic: {
+    display(p) {
+      const text = p.text || p.surface_text || p.target_work_id || p.interlink_id || '';
+      const title = [p.role, p.target_work_id, p.target_locator].filter(Boolean).join(' · ');
+      return { text, title, cls: 'ref-semantic' };
+    },
+    nav: null,
+    hover(p) { return semanticInterlinkHovercardHtml(p); },
+  },
 };
 
 // Emit a reference as an <a>. The payload rides in a data-* attr (JSON) so the
@@ -378,6 +389,200 @@ function sourceHovercardHtml(id) {
   if (am) h += `<div><dt>${escHtml(tr('amendWhat'))}</dt><dd>${escHtml(tr('targetings', am.opCount))}</dd></div>`;
   if (heRef) h += `<div><dt>${escHtml(tr('prepWorks'))}</dt><dd>${prepWorksHtml(heRef)}</dd></div>`;
   return h + `</dl>`;
+}
+
+function indexInterlinks() {
+  interlinksByRenderedAddress = new Map();
+  for (const row of interlinks) {
+    if (!row.rendered_address) continue;
+    let rows = interlinksByRenderedAddress.get(row.rendered_address);
+    if (!rows) { rows = []; interlinksByRenderedAddress.set(row.rendered_address, rows); }
+    rows.push(row);
+  }
+}
+
+function semanticInterlinkHovercardHtml(row) {
+  if (!row) return null;
+  let h = `<div class="hc-title">${escHtml(row.surface_text || row.target_work_id || row.interlink_id || '')}</div><dl class="hc-meta">`;
+  if (row.role) h += `<div><dt>${escHtml(tr('interlinkRole'))}</dt><dd>${escHtml(row.role)}</dd></div>`;
+  if (row.target_work_id) h += `<div><dt>${escHtml(tr('interlinkTarget'))}</dt><dd>${escHtml(row.target_work_id)}</dd></div>`;
+  if (row.target_locator) h += `<div><dt>${escHtml(tr('interlinkLocator'))}</dt><dd>${escHtml(row.target_locator)}</dd></div>`;
+  if (row.resolution_status) h += `<div><dt>${escHtml(tr('interlinkStatus'))}</dt><dd>${escHtml(row.resolution_status)}</dd></div>`;
+  if (row.confidence) h += `<div><dt>${escHtml(tr('interlinkConfidence'))}</dt><dd>${escHtml(row.confidence)}</dd></div>`;
+  if (row.resolver_id) h += `<div><dt>${escHtml(tr('interlinkResolver'))}</dt><dd>${escHtml(row.resolver_id)}</dd></div>`;
+  return h + `</dl>`;
+}
+
+function interlinkActiveAt(row, date) {
+  if (date && row.rendered_effective_date && row.rendered_effective_date !== date) return false;
+  if (date && row.valid_at_start && row.valid_at_start > date) return false;
+  if (date && row.valid_at_end && row.valid_at_end < date) return false;
+  return true;
+}
+
+function renderedInterlinksForSegment(addr, segmentIndex, text) {
+  const rows = interlinksByRenderedAddress.get(addr) || [];
+  return rows
+    .filter(row => Number(row.rendered_segment_index) === segmentIndex && interlinkActiveAt(row, changeDates[curDateIdx]))
+    .map(row => ({ row, start: Number(row.rendered_char_start), end: Number(row.rendered_char_end) }))
+    .filter(item => Number.isInteger(item.start) && Number.isInteger(item.end)
+      && item.start >= 0 && item.end > item.start && item.end <= text.length)
+    .filter(item => !item.row.surface_text || text.slice(item.start, item.end) === item.row.surface_text)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+function renderTextWithInterlinks(addr, segmentIndex, text) {
+  const spans = renderedInterlinksForSegment(addr, segmentIndex, text);
+  if (!spans.length) return escHtml(text);
+  let html = '', pos = 0;
+  for (const span of spans) {
+    if (span.start < pos) continue;
+    html += escHtml(text.slice(pos, span.start));
+    const surface = text.slice(span.start, span.end);
+    html += refLink('semantic', { ...span.row, text: surface }, surface);
+    pos = span.end;
+  }
+  html += escHtml(text.slice(pos));
+  return html;
+}
+
+function pushMapList(map, key, row) {
+  if (!key) return;
+  let rows = map.get(key);
+  if (!rows) { rows = []; map.set(key, rows); }
+  rows.push(row);
+}
+
+function evidenceSeverityRank(row) {
+  const s = (row && row.severity) || '';
+  if (s === 'error' || s === 'critical') return 3;
+  if (s === 'warning' || s === 'warn') return 2;
+  return 1;
+}
+
+function evidenceSeverityClass(row) {
+  const rank = evidenceSeverityRank(row);
+  return rank >= 3 ? 'error' : rank === 2 ? 'warn' : 'info';
+}
+
+function indexEvidenceEvents() {
+  evidenceBySource = new Map();
+  evidenceByDate = new Map();
+  evidenceWithAddress = [];
+  for (const row of evidenceEvents) {
+    pushMapList(evidenceBySource, row.source_id || '', row);
+    pushMapList(evidenceByDate, row.effective_date || '', row);
+    if (row.target_address) evidenceWithAddress.push(row);
+  }
+}
+
+function addressesRelated(a, b) {
+  if (!a || !b) return false;
+  return a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
+}
+
+function sortEvidenceRows(rows) {
+  return rows.sort((a, b) =>
+    evidenceSeverityRank(b) - evidenceSeverityRank(a)
+    || String(a.event_id || '').localeCompare(String(b.event_id || '')));
+}
+
+function dedupeEvidenceRows(rows) {
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const key = row.event_id || `${row.surface}|${row.kind}|${row.source_id}|${row.target_address}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return sortEvidenceRows(out);
+}
+
+function evidenceRelatedToAddress(addr) {
+  if (!addr || !evidenceWithAddress.length) return [];
+  return dedupeEvidenceRows(evidenceWithAddress.filter(row => addressesRelated(addr, row.target_address)));
+}
+
+function evidenceForSource(sourceId) {
+  return dedupeEvidenceRows([...(evidenceBySource.get(sourceId || '') || [])]);
+}
+
+function evidenceForChange(addr, date, sourceId) {
+  const rows = [];
+  for (const row of evidenceRelatedToAddress(addr)) {
+    if (row.effective_date && date && row.effective_date !== date) continue;
+    if (row.source_id && sourceId && row.source_id !== sourceId) continue;
+    rows.push(row);
+  }
+  return dedupeEvidenceRows(rows);
+}
+
+function evidenceBadgeHtml(addr) {
+  const rows = evidenceRelatedToAddress(addr);
+  if (!rows.length) return '';
+  const cls = evidenceSeverityClass(rows[0]);
+  return `<button class="evidence-badge ev-${cls}" data-addr="${escAttr(addr)}"`
+    + ` title="${escAttr(tr('evidenceBadgeTip', rows.length))}">! ${escHtml(String(rows.length))}</button>`;
+}
+
+function evidenceLabel(row) {
+  return row.title || row.kind || row.surface || row.event_id || tr('evidence');
+}
+
+function evidenceMetaHtml(row) {
+  const bits = [];
+  if (row.surface) bits.push(row.surface);
+  if (row.role) bits.push(row.role);
+  if (row.phase) bits.push(row.phase);
+  if (row.source_id) bits.push(refLink('source', { id: row.source_id }, row.source_id));
+  if (row.effective_date) bits.push(refLink('date', { date: row.effective_date, addr: row.target_address || undefined }, row.effective_date));
+  if (row.target_address) bits.push(escHtml(prettyAddr(row.target_address)));
+  if (row.rule_id && row.rule_id !== row.kind) bits.push(escHtml(row.rule_id));
+  return bits.join(' · ');
+}
+
+function evidenceListHtml(rows, title) {
+  const items = dedupeEvidenceRows(rows || []);
+  if (!items.length) return '';
+  let html = `<details class="evidence-list" open><summary>${escHtml(title || tr('evidenceListTitle', items.length))}</summary>`;
+  for (const row of items) {
+    const cls = evidenceSeverityClass(row);
+    html += `<div class="evidence-item ev-${cls}">`
+      + `<div class="evidence-item-head">`
+      + `<span class="evidence-kind">${escHtml(row.kind || row.surface || '')}</span>`
+      + `<span class="evidence-title">${escHtml(evidenceLabel(row))}</span>`
+      + `</div>`;
+    const meta = evidenceMetaHtml(row);
+    if (meta) html += `<div class="evidence-meta">${meta}</div>`;
+    html += `</div>`;
+  }
+  html += `</details>`;
+  return html;
+}
+
+function indexDisplayNodes(rows) {
+  displayNodeByDateAddress = new Map();
+  for (const row of rows || []) {
+    if (!row.date || !row.address) continue;
+    displayNodeByDateAddress.set(`${row.date}\n${row.address}`, row);
+  }
+}
+
+function displayNodeFor(addr, date) {
+  if (!addr || !date) return null;
+  return displayNodeByDateAddress.get(`${date}\n${addr}`) || null;
+}
+
+function displayLabelHeading(addr, node) {
+  if (node) return { label: kindLabel(node, 0), heading: nodeHeading(node) };
+  const [k, n] = addr.split('/').pop().split(':');
+  const display = displayNodeFor(addr, changeDates[curDateIdx]);
+  if (!display) return { label: J.addrSeg(k, n), heading: '' };
+  return {
+    label: J.kindLabel(display.kind || k, display.num || '', display.label || n, parseInt(n || '0', 10) || 0),
+    heading: display.heading || '',
+  };
 }
 
 // Navigate to an amending act in the Amendments view.
@@ -572,6 +777,9 @@ async function loadStatute(statuteId, permalink) {
     db = new SQL.Database(new Uint8Array(buf));
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
+    interlinks = []; interlinksByRenderedAddress = new Map();
+    displayNodeByDateAddress = new Map();
+    evidenceEvents = []; evidenceBySource = new Map(); evidenceByDate = new Map(); evidenceWithAddress = [];
     compareSel = { d1: null, d2: null };
     // A search highlight + its `q` permalink param belong to the previous
     // statute; drop both so they never leak across a statute switch.
@@ -585,6 +793,16 @@ async function loadStatute(statuteId, permalink) {
     }
     sourceById = {};
     for (const s of q('SELECT * FROM source_artifacts')) sourceById[s.source_id] = s;
+    indexDisplayNodes(q('SELECT * FROM display_nodes ORDER BY date, address'));
+    if (tableExists('interlinks')) {
+      interlinks = q('SELECT * FROM interlinks ORDER BY interlink_id');
+      indexInterlinks();
+    } else if (tableExists('lawvm_interlinks')) {
+      interlinks = q('SELECT * FROM lawvm_interlinks ORDER BY interlink_id');
+      indexInterlinks();
+    }
+    evidenceEvents = q('SELECT * FROM evidence_events ORDER BY event_id');
+    indexEvidenceEvents();
 
     metaInfo = {
       title: metaValue('title') || entry.title || '',
@@ -1020,6 +1238,7 @@ function renderLaw(opts) {
         <div class="tree-legend">
           <span class="leg-changed">▍</span> ${escHtml(tr('legendChanged'))}
           <span class="leg-tomb">${escHtml(tr('tombstone'))}</span> ${escHtml(tr('legendTomb'))}
+          ${evidenceEvents.length ? `<span class="leg-evidence">!</span> ${escHtml(tr('legendEvidence'))}` : ''}
         </div>
         <div class="doc" id="doc"></div>
       </section>
@@ -1083,10 +1302,16 @@ function renderTreeEntry(entry, depth) {
   }
   // Scaffold ancestor (no blob at this address — finer-grained export).
   const [k, n] = entry.addr.split('/').pop().split(':');
+  const display = displayNodeFor(entry.addr, changeDates[curDateIdx]);
+  const displayKind = display && display.kind ? display.kind : k;
+  const label = display
+    ? J.kindLabel(displayKind, display.num || '', display.label || n, parseInt(n || '0', 10) || 0)
+    : J.addrSeg(k, n);
+  const heading = display && display.heading ? display.heading : '';
   const changed = [...entry.children.values()].some(c => changedAddrs.has(c.addr));
   const collapsed = collapsedAddrs.has(entry.addr);
-  let html = `<div class="node scaffold${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
-  html += rowHtml(entry.addr, J.addrSeg(k, n), '', changed, true, collapsed);
+  let html = `<div class="node scaffold kind-${escAttr(displayKind)}${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
+  html += rowHtml(entry.addr, label, heading, changed, true, collapsed);
   html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
   for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1);
   html += `</div></div>`;
@@ -1121,6 +1346,7 @@ function rowHtml(addr, label, heading, changed, collapsible, collapsed) {
   // Lifecycle badge cascades to every outline level (part/chapter/section):
   // an ancestor's strip aggregates all change activity beneath it.
   if (ROW_KINDS.has(kind)) html += changeBadgeHtml(addr);
+  html += evidenceBadgeHtml(addr);
   html += historyBtnHtml(addr);
   html += `</div>`;
   return html;
@@ -1172,15 +1398,20 @@ function renderNode(node, addr, depth, prevMap) {
   // Prose block: subsection (momentti) / paragraph (kohta) / subparagraph —
   // rendered as readable statute text, addressable + history-hoverable. Class
   // mirrors the outline-node `kind-${kind}` pattern (jurisdiction-neutral).
-  let html = `<div class="pblock kind-${kind}${changed ? ' changed' : ''}" data-addr="${escAttr(addr)}">`;
+  const hasEvidence = evidenceRelatedToAddress(addr).length > 0;
+  let html = `<div class="pblock kind-${kind}${changed ? ' changed' : ''}${hasEvidence ? ' has-evidence' : ''}" data-addr="${escAttr(addr)}">`;
   // Block-level inner wrapper caps the reading measure; the label and text
   // flow inline within it (an inline-block text body would wrap to its own
   // line whenever the measure doesn't fit beside the label).
   html += `<div class="pblock-inner">`;
   html += `<span class="pblock-num" title="${escAttr(prettyAddr(addr))}">${escHtml(label)}</span>`;
   html += `<span class="pblock-body">`;
-  for (const seg of inline) html += `<span class="pblock-text">${escHtml(seg.text)} </span>`;
+  for (let i = 0; i < inline.length; i++) {
+    const seg = inline[i];
+    html += `<span class="pblock-text">${renderTextWithInterlinks(addr, i, seg.text)} </span>`;
+  }
   html += `</span></div>`;
+  html += evidenceBadgeHtml(addr);
   html += historyBtnHtml(addr, /*showCount*/ true);
   const kidsHtml = childrenWithGhostsHtml(addr, children, depth, prevMap);
   if (kidsHtml) html += `<div class="pblock-children">${kidsHtml}</div>`;
@@ -1223,6 +1454,7 @@ function orderedBodyHtml(addr, node, depth, prevMap) {
   const ghosts = [...(ghostMap().get(addr) || [])].sort((a, b) => addrCompare(a.addr, b.addr));
   let gi = 0;
   let html = '';
+  let textSegmentIndex = 0;
   const flushGhostsBefore = (childAddr) => {
     while (gi < ghosts.length && (childAddr === null || addrCompare(ghosts[gi].addr, childAddr) < 0)) {
       html += ghostHtml(ghosts[gi++]);
@@ -1233,7 +1465,7 @@ function orderedBodyHtml(addr, node, depth, prevMap) {
       const cls = it.kind === 'crossHeading' ? 'crossheading'
         : it.kind === 'intro' ? 'intro'
         : it.kind === 'wrapUp' ? 'wrapup' : 'content';
-      html += `<p class="prov-text ${cls}">${escHtml(it.text)}</p>`;
+      html += `<p class="prov-text ${cls}">${renderTextWithInterlinks(addr, textSegmentIndex++, it.text)}</p>`;
     } else {
       flushGhostsBefore(it.childAddr);
       html += renderNode(it.child, it.childAddr, depth + 1, prevMap);
@@ -1252,6 +1484,7 @@ function tombstoneHtml(addr, info) {
     + `<span class="tomb-label">${escHtml(prettyAddr(addr))} <em>${escHtml(tr('tombstone'))}</em></span>`
     + (info && info.date ? `<span class="tomb-meta">${refLink('date', { date: info.date, addr })}`
         + (info.source_id ? ' · ' + refLink('source', { id: info.source_id }, srcLabel) : '') + `</span>` : '')
+    + evidenceBadgeHtml(addr)
     + historyBtnHtml(addr)
     + `</div></div>`;
 }
@@ -1261,11 +1494,11 @@ function wireDoc(docEl) {
   // explicit ⌚ button — reading/selection gestures stay free for text.
   docEl.querySelectorAll('.node-row.clk').forEach(r => {
     r.addEventListener('click', (e) => {
-      if (e.target.closest('.hist-btn') || e.target.closest('.chg-badge') || e.target.closest('a.ref-link')) return;
+      if (e.target.closest('.hist-btn') || e.target.closest('.chg-badge') || e.target.closest('.evidence-badge') || e.target.closest('a.ref-link')) return;
       toggleCollapse(r.closest('.node'));
     });
   });
-  docEl.querySelectorAll('.hist-btn, .chg-badge').forEach(b => {
+  docEl.querySelectorAll('.hist-btn, .chg-badge, .evidence-badge').forEach(b => {
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleInlineHistory(b.dataset.addr);
@@ -1320,9 +1553,9 @@ function buildToc() {
   let html = '<ul class="toc-list">';
   for (const entry of sortedEntries(tree)) {
     const node = entry.hash ? getBlob(entry.hash) : null;
-    const [k, n] = entry.addr.split('/').pop().split(':');
-    const chLabel = node ? kindLabel(node, 0) : J.addrSeg(k, n);
-    const chHeading = node ? nodeHeading(node) : '';
+    const chapterDisplay = displayLabelHeading(entry.addr, node);
+    const chLabel = chapterDisplay.label;
+    const chHeading = chapterDisplay.heading;
     const chChanged = changedAddrs.has(entry.addr);
     html += `<li class="toc-chapter">`
       + `<a href="#" class="toc-link toc-ch${chChanged ? ' ch-changed' : ''}" data-addr="${escAttr(entry.addr)}">`
@@ -1334,8 +1567,9 @@ function buildToc() {
     if (secs.length) {
       html += '<ul class="toc-sections">';
       for (const { child, childAddr } of secs) {
-        const sLabel = child ? kindLabel(child, 0) : prettyAddr(childAddr.split('/').pop());
-        const sHeading = child ? nodeHeading(child) : '';
+        const sectionDisplay = displayLabelHeading(childAddr, child);
+        const sLabel = sectionDisplay.label;
+        const sHeading = sectionDisplay.heading;
         html += `<li><a href="#" class="toc-link toc-sec" data-addr="${escAttr(childAddr)}" `
           + `data-search="${escAttr((sLabel + ' ' + sHeading).toLowerCase())}">`
           + `<span class="toc-num">${escHtml(sLabel)}</span> <span class="toc-h">${escHtml(sHeading)}</span></a></li>`;
@@ -1671,6 +1905,7 @@ function ghostHtml(g) {
     + `<span class="tomb-label">${escHtml(label)} <em>${escHtml(tr('tombstone'))}</em></span>`
     + `<span class="tomb-meta">${meta}</span>`
     + changeBadgeHtml(g.addr)
+    + evidenceBadgeHtml(g.addr)
     // Row-style button (not the count chip): identical trailing width keeps
     // the lifecycle-strip column flush with section rows.
     + historyBtnHtml(g.addr, /*showCount*/ false)
@@ -1800,6 +2035,8 @@ function historyHtml(addr) {
     html += `<p class="hist-derived-note">${escHtml(tr('derivedNote', g))}</p>`;
   }
 
+  html += evidenceListHtml(evidenceRelatedToAddress(addr), tr('evidenceForProvision'));
+
   if (!trail.some(v => v.present)) {
     html += `<p class="muted-empty">${escHtml(tr('historyEmpty'))}</p>`;
     return html;
@@ -1825,6 +2062,7 @@ function historyHtml(addr) {
       const ts = transitionsFor(addr, startDate);
       const tSrc = ts.find(t => t.source_id) || ts[ts.length - 1];
       if (tSrc) html += provenanceHtml(tSrc);
+      html += evidenceListHtml(evidenceForChange(addr, startDate, tSrc ? tSrc.source_id : ''), tr('evidenceForChange'));
       html += `</div>`;
       prevPresentNode = null; // diff after a repeal window compares to nothing
       continue;
@@ -1852,6 +2090,7 @@ function historyHtml(addr) {
     }
     const tSrc = ts.find(t => t.source_id) || ts[ts.length - 1];
     if (tSrc) html += provenanceHtml(tSrc);
+    html += evidenceListHtml(evidenceForChange(addr, startDate, tSrc ? tSrc.source_id : ''), tr('evidenceForChange'));
     html += diffNodeDetailsHtml(addr, prevPresentNode, v.node, /*open*/ isCurrent);
     prevPresentNode = v.node;
     html += `</div>`;
@@ -1885,6 +2124,7 @@ function toggleInlineHistory(addr) {
 function removeInlinePanel() {
   document.querySelectorAll('.inline-history').forEach(p => p.remove());
   document.querySelectorAll('.hist-btn.active').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.evidence-badge.active').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.hist-anchor').forEach(b => b.classList.remove('hist-anchor'));
 }
 
@@ -1911,6 +2151,8 @@ function openInlineHistory(addr, scroll) {
   anchor.classList.add('hist-anchor');
   const btn = document.querySelector(`.hist-btn[data-addr="${cssEsc(addr)}"]`);
   if (btn) btn.classList.add('active');
+  const evBtn = document.querySelector(`.evidence-badge[data-addr="${cssEsc(addr)}"]`);
+  if (evBtn) evBtn.classList.add('active');
   if (scroll) {
     spy.suppressUntil = Date.now() + 1500;
     (row || anchor).scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2113,6 +2355,7 @@ function renderAmendDetail(sourceId) {
   if (heRef) html += `<span><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(heRef)}</span>`;
   if (src && src.url) html += `<span><span class="lbl">${escHtml(tr('sourceLink'))}:</span> <a href="${escAttr(src.url)}" target="_blank" rel="noopener">↗</a></span>`;
   html += `</div></div>`;
+  html += evidenceListHtml(evidenceForSource(sourceId), tr('evidenceForAmendment'));
 
   html += `<div class="op-list">`;
   for (const t of ops) {
@@ -2122,6 +2365,7 @@ function renderAmendDetail(sourceId) {
     html += `<span class="op-addr">${escHtml(prettyAddr(t.target_address))}</span>`;
     html += `<span class="op-eff">${escHtml(t.effective_date)}</span>`;
     html += `</div>`;
+    html += evidenceListHtml(evidenceForChange(t.target_address, t.effective_date, sourceId), tr('evidenceForChange'));
     html += localizedOpChangesHtml(t);
     html += `</div>`;
   }

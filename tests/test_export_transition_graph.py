@@ -22,7 +22,10 @@ from typing import Any, Dict, List
 import pytest
 
 from lawvm.core.ir import IRNode
+from lawvm.core.compile_result import SourcePathology
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.ops import FailedOp
 from lawvm.tools import export_transition_graph as etg
 
 
@@ -73,11 +76,27 @@ def _subsection(label: str, text: str) -> IRNode:
 
 
 def _section_with_subs(label: str, subs: List[IRNode]) -> IRNode:
-    return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(subs))
+    return IRNode(
+        kind=IRNodeKind.SECTION,
+        label=label,
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{label} §"),
+            IRNode(kind=IRNodeKind.HEADING, text=f"Section {label} heading"),
+            *subs,
+        ),
+    )
 
 
 def _chapter(label: str, sections: List[IRNode]) -> IRNode:
-    return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+    return IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label=label,
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{label} luku"),
+            IRNode(kind=IRNodeKind.HEADING, text=f"Chapter {label} heading"),
+            *sections,
+        ),
+    )
 
 
 def _deep_tree(s1_sub2_text: str, s2_present: bool) -> IRNode:
@@ -179,6 +198,34 @@ def _make_bundle() -> etg.ReplayBundle:
         lo_ops=lo_ops,
         timelines={},
         change_dates=list(_CHANGE_DATES),
+        replay_findings=[
+            Finding(
+                kind="ELAB.SOURCE_PATHOLOGY",
+                role="observation",
+                stage="elab",
+                source_statute="12/2015",
+                detail={"target_address": "section:2", "message": "synthetic finding"},
+            )
+        ],
+        source_pathologies=[
+            SourcePathology.from_scope(
+                code="ITEM_TARGET_STRUCTURE_ABSENT",
+                message="synthetic pathology",
+                source_statute="12/2015",
+                target_unit_kind="section",
+                target_label="2",
+            )
+        ],
+        failed_ops=[
+            FailedOp.from_scope(
+                amendment_id="12/2015",
+                description="REPLACE 3 §",
+                reason="synthetic failure",
+                reason_code="synthetic_failed_op",
+                target_section="3",
+                target_unit_kind="section",
+            )
+        ],
     )
 
 
@@ -375,6 +422,29 @@ def test_export_produces_required_tables(patched_engine: None, tmp_path: Path) -
             "SELECT source_id FROM source_artifacts WHERE kind='statute'"
         ).fetchall()
         assert ("100/2010",) in statutes
+
+        # --- internal LawVM evidence surfaces are visible, not folded into law ---
+        evidence = conn.execute(
+            "SELECT surface, kind, role, severity, source_id, effective_date, "
+            "target_address, rule_id, title, detail_json "
+            "FROM evidence_events ORDER BY event_id"
+        ).fetchall()
+        assert stats.n_evidence_events == 3
+        assert {row[0] for row in evidence} == {
+            "replay_finding",
+            "source_pathology",
+            "failed_op",
+        }
+        by_surface = {row[0]: row for row in evidence}
+        assert by_surface["replay_finding"][1] == "ELAB.SOURCE_PATHOLOGY"
+        assert by_surface["replay_finding"][4] == "12/2015"
+        assert by_surface["replay_finding"][5] == "2015-01-01"
+        assert by_surface["replay_finding"][6] == "section:2"
+        assert by_surface["source_pathology"][6] == "section:2"
+        assert by_surface["failed_op"][1] == "synthetic_failed_op"
+        assert by_surface["failed_op"][3] == "error"
+        assert by_surface["failed_op"][6] == "section:3"
+        assert json.loads(by_surface["failed_op"][9])["reason"] == "synthetic failure"
     finally:
         conn.close()
 
@@ -443,6 +513,19 @@ def test_default_granularity_emits_subsection_targets(
         ).fetchall()
         d2_addrs = {a for (a, _act) in d2}
         assert d2_addrs == {"chapter:1/section:1/subsection:2"}
+
+        # Even though active_at stores subsection blobs at this granularity,
+        # display metadata preserves scaffold ancestor titles for the viewer.
+        section_display = conn.execute(
+            "SELECT kind, label, num, heading FROM display_nodes "
+            "WHERE date='2016-01-01' AND address='chapter:1/section:1'"
+        ).fetchone()
+        assert section_display == ("section", "1", "1 §", "Section 1 heading")
+        chapter_display = conn.execute(
+            "SELECT kind, label, num, heading FROM display_nodes "
+            "WHERE date='2016-01-01' AND address='chapter:1'"
+        ).fetchone()
+        assert chapter_display == ("chapter", "1", "1 luku", "Chapter 1 heading")
 
         # The section:2 removal at D3 surfaces at its subsection address.
         d3 = conn.execute(

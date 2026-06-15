@@ -41,6 +41,13 @@ class ReplayXmlSinks:
     failed_ops_out: Optional[list[FailedOp]] = None
     temporal_events_out: Optional[list[Any]] = None
     source_pathologies_out: Optional[list[SourcePathology]] = None
+    mutation_events_out: Optional[list[Any]] = None
+    migration_ledger: Optional[list[Any]] = None
+    restructure_plans_out: Optional[list[Any]] = None
+    observations_out: Optional[list[Any]] = None
+    findings_out: Optional[list[Any]] = None
+    observed_touch_results_out: Optional[list[Any]] = None
+    write_audits_out: Optional[list[Any]] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +75,13 @@ class ResolvedReplayXmlCall:
     failed_ops_out: Optional[list[FailedOp]]
     temporal_events_out: Optional[list[Any]]
     source_pathologies_out: Optional[list[SourcePathology]]
+    mutation_events_out: Optional[list[Any]]
+    migration_ledger: Optional[list[Any]]
+    restructure_plans_out: Optional[list[Any]]
+    observations_out: Optional[list[Any]]
+    findings_out: Optional[list[Any]]
+    observed_touch_results_out: Optional[list[Any]]
+    write_audits_out: Optional[list[Any]]
 
 
 def _callable_accepts_typed_replay_call(fn: Callable[..., Any]) -> bool:
@@ -134,6 +148,20 @@ def call_replay_xml(
         legacy_kwargs["temporal_events_out"] = sinks.temporal_events_out
     if sinks.source_pathologies_out is not None:
         legacy_kwargs["source_pathologies_out"] = sinks.source_pathologies_out
+    if sinks.mutation_events_out is not None:
+        legacy_kwargs["mutation_events_out"] = sinks.mutation_events_out
+    if sinks.migration_ledger is not None:
+        legacy_kwargs["migration_ledger"] = sinks.migration_ledger
+    if sinks.restructure_plans_out is not None:
+        legacy_kwargs["restructure_plans_out"] = sinks.restructure_plans_out
+    if sinks.observations_out is not None:
+        legacy_kwargs["observations_out"] = sinks.observations_out
+    if sinks.findings_out is not None:
+        legacy_kwargs["findings_out"] = sinks.findings_out
+    if sinks.observed_touch_results_out is not None:
+        legacy_kwargs["observed_touch_results_out"] = sinks.observed_touch_results_out
+    if sinks.write_audits_out is not None:
+        legacy_kwargs["write_audits_out"] = sinks.write_audits_out
 
     return replay_xml_func(
         request.parent_id,
@@ -167,4 +195,11 @@ def resolve_replay_xml_request(
         failed_ops_out=sinks.failed_ops_out,
         temporal_events_out=sinks.temporal_events_out,
         source_pathologies_out=sinks.source_pathologies_out,
+        mutation_events_out=sinks.mutation_events_out,
+        migration_ledger=sinks.migration_ledger,
+        restructure_plans_out=sinks.restructure_plans_out,
+        observations_out=sinks.observations_out,
+        findings_out=sinks.findings_out,
+        observed_touch_results_out=sinks.observed_touch_results_out,
+        write_audits_out=sinks.write_audits_out,
     )

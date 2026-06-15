@@ -9377,6 +9377,12 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="also export fi_inline_citations.parquet (InlineCitation body-prose citations)",
     )
     ep_p.add_argument(
+        "--include-interlinks",
+        dest="include_interlinks",
+        action="store_true",
+        help="also export lawvm_interlinks.parquet (neutral citation/interlink projection)",
+    )
+    ep_p.add_argument(
         "--include-sections-text",
         dest="include_sections_text",
         action="store_true",

@@ -435,6 +435,7 @@ def export_projections(
     include_he_corpus: bool = False,
     include_preparatory_refs: bool = False,
     include_inline_citations: bool = False,
+    include_interlinks: bool = False,
     include_sections_text: bool = False,
     he_farchive: Optional[str] = None,
     he_data_dir: Optional[str] = None,
@@ -625,6 +626,20 @@ def export_projections(
         )
         counts["fi_inline_citations"] = inline_count
 
+    # --- lawvm_interlinks.parquet: jurisdiction-neutral interlink projection ---
+    if include_interlinks:
+        print("\nExporting lawvm_interlinks projection...")
+        from lawvm.tools.export_fi_interlinks import export_fi_interlinks
+        interlinks_count = export_fi_interlinks(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+            compile_metadata=compile_metadata,
+            workers=workers,
+        )
+        counts["lawvm_interlinks"] = interlinks_count
+
     # --- fi_sections_text.parquet: oracle section-text projection ---
     if include_sections_text:
         print("\nExporting fi_sections_text projection...")
@@ -663,6 +678,7 @@ def main(args: Any) -> None:
         include_he_corpus=getattr(args, "include_he_corpus", False),
         include_preparatory_refs=getattr(args, "include_preparatory_refs", False),
         include_inline_citations=getattr(args, "include_inline_citations", False),
+        include_interlinks=getattr(args, "include_interlinks", False),
         include_sections_text=getattr(args, "include_sections_text", False),
         he_farchive=getattr(args, "he_farchive", None),
         he_data_dir=getattr(args, "he_data_dir", None),

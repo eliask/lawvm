@@ -259,3 +259,4 @@ pyrightconfig.json
 # Generated audit/sweep reports (reconcile-sweep, coverage-gap, ...) — local,
 # regenerable artifacts; never commit them.
 reports/
+viewer/data

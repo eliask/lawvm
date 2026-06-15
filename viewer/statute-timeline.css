@@ -185,6 +185,7 @@ select {
 .tree-legend { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.5rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
 .tree-legend .leg-changed { color: var(--changed); font-weight: 700; }
 .tree-legend .leg-tomb { color: var(--muted); font-style: italic; }
+.tree-legend .leg-evidence { color: var(--amber); font-weight: 800; font-family: var(--mono); }
 .muted-empty { color: var(--muted); font-size: 0.88rem; }
 
 /* TOC (sticky minimap; .current follows the main-pane scroll position) */
@@ -250,6 +251,18 @@ select {
   box-shadow: 0 0 0 2px var(--card-bg);
 }
 
+.evidence-badge {
+  flex: 0 0 auto; align-self: center;
+  font-size: 0.66rem; font-weight: 800; font-family: var(--mono);
+  border: 1px solid transparent; border-radius: 4px;
+  background: #fff8e6; color: #8a5a00; cursor: pointer;
+  padding: 0.08rem 0.35rem; margin-left: 0.2rem;
+}
+.evidence-badge.ev-error { background: var(--del-bg); color: var(--red); border-color: #f0c5bf; }
+.evidence-badge.ev-warn { background: #fff8e6; color: #8a5a00; border-color: #f0d79a; }
+.evidence-badge.ev-info { background: #eef2f6; color: var(--accent); border-color: #bcd2e8; }
+.evidence-badge:hover, .evidence-badge.active { border-color: var(--accent); color: var(--accent); background: #eef2f6; }
+
 /* Prose blocks (momentti / kohta / alakohta). The BLOCK keeps the full column
    width (so every history chip aligns at the same right edge, scannable as a
    column); the TEXT measure inside is capped at ~72ch for readability —
@@ -270,6 +283,7 @@ select {
 /* Measure capped at 72ch AND guaranteed clear of the absolute history chip
    (deeply indented alakohta could otherwise still reach under it). */
 .pblock-inner { max-width: min(72ch, calc(100% - 3.4rem)); line-height: 1.62; font-family: var(--font-text); font-size: 0.98rem; display: flex; gap: 0.45rem; align-items: baseline; }
+.pblock.has-evidence > .pblock-inner { max-width: min(72ch, calc(100% - 7.8rem)); }
 .pblock-inner .pblock-body { flex: 1; min-width: 0; }
 .pblock.changed { border-left-color: var(--changed); background: #fffcf4; }
 .pblock:hover { background: #f4f6f8; }
@@ -286,6 +300,7 @@ select {
 .kind-paragraph { margin-left: 1.4rem; }
 .kind-subparagraph { margin-left: 2.6rem; }
 .pblock > .hist-btn { position: absolute; top: 0.15rem; right: 0.3rem; margin-left: 0; }
+.pblock > .evidence-badge { position: absolute; top: 0.15rem; right: 4.2rem; margin-left: 0; }
 .pblock-children { margin-top: 0.15rem; }
 .hist-anchor { outline: 1px dashed #bcd2e8; outline-offset: 2px; }
 
@@ -317,6 +332,48 @@ select {
 .hist-addr-raw { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); word-break: break-all; }
 .hist-close { margin-left: auto; }
 .hist-derived-note { font-size: 0.74rem; color: var(--muted); font-style: italic; margin: 0.25rem 0 0.4rem; }
+
+.evidence-list {
+  margin: 0.4rem 0;
+  border: 1px solid #ead8ad;
+  border-radius: 6px;
+  background: #fffdf7;
+}
+.evidence-list summary {
+  cursor: pointer;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #8a5a00;
+}
+.evidence-item {
+  border-top: 1px solid #f0e2bf;
+  padding: 0.35rem 0.5rem;
+  border-left: 3px solid #e0b95f;
+}
+.evidence-item.ev-error { border-left-color: var(--red); }
+.evidence-item.ev-info { border-left-color: var(--accent); }
+.evidence-item-head {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.evidence-kind {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+.evidence-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.evidence-meta {
+  margin-top: 0.12rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.evidence-meta .ref-link { color: inherit; border-bottom-color: rgba(107, 107, 102, 0.5); }
 
 /* Citation buttons */
 .cite-btn { font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; }
