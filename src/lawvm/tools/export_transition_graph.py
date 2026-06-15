@@ -1056,16 +1056,6 @@ CREATE TABLE lawvm_interlink_targets (
     preview_text        TEXT,
     detail_json         TEXT
 );
-CREATE INDEX idx_transitions_date ON transitions(effective_date);
-CREATE INDEX idx_transitions_addr ON transitions(target_address);
-CREATE INDEX idx_active_at_addr ON active_at(address);
-CREATE INDEX idx_display_nodes_addr ON display_nodes(address);
-CREATE INDEX idx_evidence_events_addr ON evidence_events(target_address);
-CREATE INDEX idx_evidence_events_source ON evidence_events(source_id);
-CREATE INDEX idx_lawvm_interlinks_rendered_addr ON lawvm_interlinks(rendered_address);
-CREATE INDEX idx_lawvm_interlinks_source_work ON lawvm_interlinks(source_work_id);
-CREATE INDEX idx_lawvm_interlinks_target_work ON lawvm_interlinks(target_work_id);
-CREATE INDEX idx_lawvm_interlink_targets_work ON lawvm_interlink_targets(target_work_id);
 """
 
 
@@ -1531,6 +1521,7 @@ def export_transition_graph(
         )
 
         conn.commit()
+        conn.execute("VACUUM")
     finally:
         conn.close()
 

@@ -517,6 +517,12 @@ def test_export_produces_required_tables(patched_engine: None, tmp_path: Path) -
         assert stats.n_lawvm_interlink_targets == 0
         assert conn.execute("SELECT COUNT(*) FROM lawvm_interlink_targets").fetchone()[0] == 0
 
+        explicit_indexes = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+        ).fetchall()
+        assert explicit_indexes == []
+        assert conn.execute("PRAGMA freelist_count").fetchone()[0] == 0
+
         # --- internal LawVM evidence surfaces are visible, not folded into law ---
         evidence = conn.execute(
             "SELECT surface, kind, role, severity, source_id, effective_date, "
