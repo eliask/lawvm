@@ -133,6 +133,18 @@ _UK_TABLE_STRUCTURAL_SUBSTITUTION_RE = re.compile(
     r"\bfor\s+(?P<kind>paragraph|subsection)\s+\(?[0-9A-Za-z]+\)?\s+"
     r"(?:there\s+is\s+)?substitut(?:e|ed)\b"
 )
+# Inside a relating-cell instruction the operative preimage is the quoted
+# string in the trailing ``for "PRE" substitute "POST"`` clause, NOT the first
+# quoted group (which is the relating-entry label). Anchor on ``substitute`` and
+# take the quoted group immediately before it as the preimage and the quoted
+# group immediately after it as the replacement, so the preimage never spills
+# across the entry label / column wording that precedes the operative clause.
+_UK_QUOTED_PAYLOAD_BEFORE_SUBSTITUTE_RE = re.compile(
+    r"\bfor\s+[“\"'‘](?P<original>(?:(?![”\"'’]).)*)[”\"'’]\s*"
+    r"(?:,\s*)?substitute[ds]?\s+"
+    r"[“\"'‘](?P<replacement>(?:(?![”\"'’]).)*)[”\"'’]",
+    re.I,
+)
 
 # lxml _Element objects do not support weak references; use a plain dict.
 # Eviction is handled by explicit evict_source_root_caches() calls.
@@ -424,6 +436,32 @@ def _source_instruction_surface(text: str) -> str:
     return _UK_QUOTED_PAYLOAD_RE.sub("", text)
 
 
+_UK_SOURCE_EXPLICIT_CARRIER_SECTION_RE = re.compile(
+    r"\bin\s+(?:section|s\.|paragraph|para\.|schedule|sch\.|chapter|part|pt\.)\s+"
+    r"[0-9]+[A-Z]*\b",
+    re.I,
+)
+
+
+def source_names_explicit_table_carrier_provision(text: str) -> bool:
+    """Return true when the source instruction names an explicit carrier provision.
+
+    A relating-cell instruction may either anchor on the target itself
+    (``In the entry for "X", in the second column, ...``) or name an explicit
+    containing provision (``In section 98 ... of the Table, in the entry
+    relating to ...``). When it names an explicit carrier and that carrier was
+    not reduced to the affected target, lowering must not fall back to the
+    target's own descendant table: the source is pointing at a different
+    provision's table, so resolving the target's table would mutate the wrong
+    cell. This predicate detects the explicit-carrier surface so that case can
+    be blocked instead of recovered.
+    """
+    if not text:
+        return False
+    surface = _source_instruction_surface(text)
+    return _UK_SOURCE_EXPLICIT_CARRIER_SECTION_RE.search(surface) is not None
+
+
 def _source_names_table_column(text: str) -> bool:
     instruction_surface = _source_instruction_surface(text)
     return (
@@ -471,6 +509,28 @@ def _source_or_parent_names_containing_target_for_table_cell(
         source_names_containing_target=matched_parent_without_id,
         source_parent_id="",
     )
+
+
+def _relating_cell_for_substitute_fragment(text: str) -> Optional[dict[str, str]]:
+    """Return the clean ``for "PRE" substitute "POST"`` cell fragment.
+
+    Relating-cell instructions read ``in the entry for "LABEL", in the Nth
+    column, for "PRE" substitute "POST"``. The default greedy fragment parse
+    matches from the first quote (the entry label) through the ``for "PRE"``
+    quote, which is not a real cell preimage. The operative preimage is the
+    quoted string in the final ``for ... substitute ...`` clause; extract it so
+    the lowered text patch addresses the cell text rather than a span that
+    spills across the relating preamble.
+    """
+    matches = list(_UK_QUOTED_PAYLOAD_BEFORE_SUBSTITUTE_RE.finditer(text))
+    if not matches:
+        return None
+    match = matches[-1]
+    original = " ".join((match.group("original") or "").split()).strip()
+    replacement = (match.group("replacement") or "").strip()
+    if not original:
+        return None
+    return {"original": original, "replacement": replacement}
 
 
 def _uk_table_entry_inline_text_selector(
@@ -607,7 +667,7 @@ def _uk_table_entry_inline_text_selector(
                     (quoted_match.group("original") or "").split()
                 ).strip()
         if original_text and relating_text and column_index is not None and column_index >= 1:
-            return {
+            selector = {
                 "rule_id": UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
                 "selector_mode": "unique_relating_cell",
                 "relating_text": relating_text,
@@ -617,6 +677,10 @@ def _uk_table_entry_inline_text_selector(
                 "target_ref": target_ref,
                 "source_names_containing_target": source_names_containing_target,
             }
+            cell_fragment = _relating_cell_for_substitute_fragment(text)
+            if cell_fragment is not None:
+                selector["match_text"] = cell_fragment["original"]
+            return selector
     relating_match = re.search(
         r"\bin\s+the\s+entry\s+relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+for\b|,\s+after\b|,\s+omit\b|,\s+insert\b|$)",
         text,
@@ -647,7 +711,7 @@ def _uk_table_entry_inline_text_selector(
         column_token = relating_column_match.group("column_ordinal") or relating_column_match.group("column_number")
         column_index = _uk_ordinal_to_int(column_token or "")
         if relating_text and column_index is not None and column_index >= 1:
-            return {
+            selector = {
                 "rule_id": UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
                 "selector_mode": "unique_relating_cell",
                 "relating_text": relating_text,
@@ -657,6 +721,10 @@ def _uk_table_entry_inline_text_selector(
                 "target_ref": target_ref,
                 "source_names_containing_target": source_names_containing_target,
             }
+            cell_fragment = _relating_cell_for_substitute_fragment(text)
+            if cell_fragment is not None:
+                selector["match_text"] = cell_fragment["original"]
+            return selector
     column_first_entry_for_match = re.search(
         r"\bin\s+(?:the\s+)?"
         r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"

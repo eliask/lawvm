@@ -54,6 +54,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_table_entry_inline_text_selector,
     _uk_table_entry_row_insert_selector,
     _uk_table_entry_row_replace_selector,
+    source_names_explicit_table_carrier_provision,
 )
 from lawvm.uk_legislation.table_sources import (
     _UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
@@ -1573,6 +1574,40 @@ def prepare_table_cell_text_patch_context(
         and table_marker_parent is None
         else table_marker_parent
     )
+    # Relating-cell/relating-text selectors carry their own anchor (a quoted
+    # entry label plus a column index) extracted from the source instruction.
+    # When the effect metadata names only a broader table-owning container
+    # (e.g. ``Sch. 1 Pt. 2``) and there is no inline table marker to peel off,
+    # the container itself is the provision that holds the table. Anchor the
+    # cell replay at the container and let replay resolve the unique descendant
+    # table by the relating anchor — if the container holds more than one table
+    # and the anchor does not disambiguate, replay leaves it as typed residue
+    # (``table_not_unique``) rather than mutating the wrong cell.
+    _RELATING_TABLE_OWNER_LEAF_KINDS = {
+        "schedule",
+        "part",
+        "chapter",
+        "section",
+        "subsection",
+        "paragraph",
+        "subparagraph",
+    }
+    relating_anchor_descendant_recovery = (
+        parent_target is None
+        and table_marker_parent is None
+        and selector_mode in {"unique_relating_cell", "unique_relating_text"}
+        and _addr_leaf_kind(target) in _RELATING_TABLE_OWNER_LEAF_KINDS
+        # If the source names an explicit carrier provision that was not the
+        # affected target, the table lives under that other provision; falling
+        # back to the target's own descendant table would mutate the wrong
+        # cell, so leave it blocked rather than recovering.
+        and not (
+            source_names_explicit_table_carrier_provision(str(extracted_text or ""))
+            and not bool(table_cell_selector.get("source_names_containing_target"))
+        )
+    )
+    if relating_anchor_descendant_recovery:
+        parent_target = target
     if (
         parent_target is not None
         and selector_mode
@@ -1580,6 +1615,7 @@ def prepare_table_cell_text_patch_context(
         and (
             "table" in t_str.lower()
             or table_cell_selector.get("source_context") == "metadata_target_column_only"
+            or relating_anchor_descendant_recovery
         )
     ):
         table_cell_selector = {

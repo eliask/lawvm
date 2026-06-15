@@ -22741,6 +22741,133 @@ def test_replay_table_entry_for_column_omit_mutates_selected_cell_only() -> None
     assert table.children[1].children[1].text == "unchanged power"
 
 
+def test_compile_relating_cell_text_patch_uses_clean_preimage() -> None:
+    """A relating-cell substitution whose metadata target names only the
+    table-owning container (``Sch. 1 Pt. 2``) and whose source anchors on the
+    table itself must lower to a text patch whose preimage is the operative
+    ``for "PRE"`` quote — not a greedy span that spills from the entry label
+    through the column wording — and must anchor the cell replay at the target
+    via a unique-descendant-table recovery."""
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-446-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In the entry for “basic rate”, in the second column, for
+          “section 832(1) of ICTA” substitute “ section 6 of ITA 2007 ” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_relating_cell_clean_preimage",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-06",
+        affected_uri="/id/ukpga/2003/1/schedule/1/part/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2003",
+        affected_number="1",
+        affected_provisions="Sch. 1 Pt. 2",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 446(2)",
+        affecting_title="Income Tax Act 2007",
+        in_force_dates=[{"date": "2007-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+    ops = compile_effect_to_ir_ops(
+        effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "section 832(1) of ICTA"
+    # The relating preamble and the column wording must not leak into the preimage.
+    assert "basic rate" not in op.text_patch.selector.match_text
+    assert "second column" not in op.text_patch.selector.match_text
+    selector_tag = next(
+        tag for tag in op.provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR)
+    )
+    selector = json.loads(selector_tag[len(_NOTE_TABLE_CELL_SELECTOR):])
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["allow_unique_descendant_table"] is True
+
+
+def test_replay_relating_cell_descendant_recovery_mutates_correct_cell() -> None:
+    """End-to-end: the relating-cell op resolves the unique descendant table
+    under the Part target and rewrites only the matching cell, leaving sibling
+    rows untouched."""
+    selector = {
+        "rule_id": "uk_effect_table_entry_relating_column_text_patch",
+        "selector_mode": "unique_relating_cell",
+        "relating_text": "basic rate",
+        "column_index": 2,
+        "allow_unique_descendant_table": True,
+        "table_marker_parent_target": "schedule:1/part:2",
+    }
+    op = LegalOperation(
+        op_id="uk_test_relating_cell_descendant_recovery",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "1"), ("part", "2"))),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="section 832(1) of ICTA", occurrence=0),
+            replacement="section 6 of ITA 2007",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2003/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="2",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.TABLE,
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ROW,
+                                        children=(
+                                            IRNode(kind=IRNodeKind.CELL, text="basic rate"),
+                                            IRNode(kind=IRNodeKind.CELL, text="section 832(1) of ICTA"),
+                                        ),
+                                    ),
+                                    IRNode(
+                                        kind=IRNodeKind.ROW,
+                                        children=(
+                                            IRNode(kind=IRNodeKind.CELL, text="higher rate"),
+                                            IRNode(kind=IRNodeKind.CELL, text="section 832(1) of ICTA"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.supplements[0].children[0].children[0]
+    # Only the "basic rate" row's second column is rewritten.
+    assert table.children[0].children[1].text == "section 6 of ITA 2007"
+    assert table.children[1].children[1].text == "section 832(1) of ICTA"
+
+
 def test_compile_source_carried_table_entry_subparagraph_substitution() -> None:
     source_root = ET.fromstring(
         f"""
