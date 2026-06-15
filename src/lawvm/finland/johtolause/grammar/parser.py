@@ -50,6 +50,10 @@ from lawvm.finland.johtolause.grammar.containers import (
 from lawvm.finland.johtolause.grammar.jolloin import build_jolloin_group
 from lawvm.finland.johtolause.grammar.headings import (
     emit_headings_nodes,
+    recognize_heading_after_uusi,
+    recognize_heading_edelle_luvun_otsikko,
+    recognize_including_preceding_heading_target,
+    recognize_trailing_heading_placement,
     recognize_valiotsikko_ref,
 )
 from lawvm.finland.johtolause.grammar.insertions import (
@@ -251,6 +255,236 @@ _SENTINEL_SPAN_CATS = frozenset(
     {"CITATION_SPAN", "PROVENANCE_SPAN", "STATUTE_NAME_SPAN", "REINST_SPAN"}
 )
 
+# Words that open a ``näistä/niistä/joista …`` provenance re-mention back-ref.
+# The old ``_skip_provenance_anaphor_backref`` recognizes only ``näistä/niistä``;
+# ``joista`` never matches it, so a ``joista`` re-mention arm always falls
+# through to normal target parsing and leaks a duplicate.
+_PROV_REMENTTION_WORDS = frozenset({"näistä", "niistä", "joista"})
+_PROV_BACKREF_CONSUMED_WORDS = frozenset({"näistä", "niistä"})
+# Structural sub-noun cats the old anaphor-skip walks past inside one re-mention
+# arm (mirrors ``_skip_provenance_anaphor_backref``'s run loop).
+_PROV_RUN_CATS = frozenset(
+    {"NUM", "LETTER", "DASH", "CONJ", "COMMA", "PYKALA", "MOMENTTI", "KOHTA",
+     "ALAKOHTA", "JOHD", "OTSIKKO"}
+)
+_PROV_ARM_STRUCT_CATS = frozenset({"PYKALA", "MOMENTTI", "KOHTA"})
+_PROV_CLOSER_CATS = frozenset({"PROV", "CITATION_SPAN"})
+
+# Separator / sentinel cats that may lead a dropped appendix arm (the old outer
+# loop swallows them before the ``liite`` target).
+_APPENDIX_LEADIN_CATS = frozenset(
+    {"COMMA", "CONJ", "SEKA", "DASH", "TEMPORAL"}
+) | _SENTINEL_SPAN_CATS
+
+
+def _prov_rementtion_leaks(scan: _Scan) -> bool:
+    """True iff a ``näistä/niistä/joista`` re-mention tail leaks an old node.
+
+    Faithful reproduction of the OLD ``_skip_provenance_anaphor_backref`` (and
+    the target loop that re-parses what it leaves) over the dropped tail. The old
+    parser drops the re-mention arm ONLY when it is a single ``näistä/niistä``
+    arm that is *closed* by a PROV / CITATION_SPAN provenance trigger; otherwise
+    it leaks one or more duplicate operative nodes the new section path drops.
+    Concretely the old parser emits an extra node when:
+
+      * the anaphor is ``joista`` (the old backref-skip never recognizes it), or
+      * a re-mention arm is NOT closed by a PROV / CITATION_SPAN trigger (the
+        skip restores and the arm is re-parsed as a fresh target), or
+      * the discourse carries a SECOND structural arm after the first (the skip
+        consumes only the first; the ``ja N §`` after it is re-parsed).
+
+    The detector walks ONLY the dropped tail (from the cursor to the next VERB),
+    so it never fires on the head list the new parser already reproduced — and a
+    pure ``näistä N § sellaisina kuin ne ovat … laissa`` single closed arm (which
+    the old parser DOES drop, byte-identical to the new) does not trip it.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    # Locate the first prov-rementtion anaphor in the tail (before any VERB).
+    i = scan.pos
+    anchor: Optional[int] = None
+    while i < n:
+        t = toks[i]
+        if t.cat == "VERB":
+            return False
+        if t.cat == "WORD" and (t.text or "").lower() in _PROV_REMENTTION_WORDS:
+            anchor = i
+            break
+        i += 1
+    if anchor is None:
+        return False
+    first_word = (toks[anchor].text or "").lower()
+    # Mirror the old ``_skip_provenance_anaphor_backref``: greedily walk the WHOLE
+    # re-mention run (all sub-noun cats in one pass — a comma/ja-joined list of
+    # ``N §[:n M momentti]`` arms is ONE anaphor arm, NOT several), recording
+    # whether any structural unit was seen, then require the run to be closed by
+    # a PROV / CITATION_SPAN trigger.
+    i = anchor + 1
+    saw_structural = False
+    while i < n and toks[i].cat in _PROV_RUN_CATS:
+        if toks[i].cat in _PROV_ARM_STRUCT_CATS:
+            saw_structural = True
+        i += 1
+    if not saw_structural:
+        # The old run loop (which excludes ``LUKU``) stalled before any
+        # structural unit — a CHAPTER-scoped re-mention ``niistä 24 luvun 11 §
+        # …`` — so the old skip restores and re-parses the chapter-scoped section
+        # as a fresh duplicate target. The leak cue is a ``LUKU`` exactly where
+        # the run stalled (the chapter scope the old loop cannot cross), followed
+        # by a chapter-scoped ``PYKALA`` arm — NOT a distant ``§`` belonging to a
+        # later, unrelated continuation.
+        if i < n and toks[i].cat == "LUKU":
+            k = i + 1
+            saw_pykala = False
+            # Walk the chapter-scoped run (LUKU crossings allowed) to its end.
+            while k < n and (toks[k].cat in _PROV_RUN_CATS or toks[k].cat == "LUKU"):
+                if toks[k].cat == "PYKALA":
+                    saw_pykala = True
+                k += 1
+            # Only a chapter-scoped re-mention CLOSED by a provenance trigger is a
+            # leaked attribution; an unclosed chapter-scoped run is the operative
+            # target list the old parser keeps (and the new one reproduces) — must
+            # not over-decline it.
+            if saw_pykala and k < n and toks[k].cat in _PROV_CLOSER_CATS:
+                return True
+        return False
+    # ``joista`` is never recognized by the old backref-skip, so its arm always
+    # falls through to normal target parsing and leaks a duplicate.
+    if first_word == "joista":
+        return True
+    closer = i < n and toks[i].cat in _PROV_CLOSER_CATS
+    if not closer:
+        # The run is not closed by a PROV / CITATION_SPAN trigger (e.g. it ends in
+        # a PROVENANCE_SPAN / STATUTE_NAME_SPAN, or runs straight into ``näin
+        # kuuluviksi``): the old skip restores and the whole arm is re-parsed as a
+        # fresh duplicate target. The new section path drops it → leak.
+        return True
+    # The first arm IS closed by a provenance trigger, so the old skip consumes
+    # it. A SECOND, separately-attributed ``ja <N> § … [CITE]`` arm joined by a
+    # CONJ right after the first closer is re-parsed by the old target loop as a
+    # fresh duplicate section ref and leaks — BUT only when that second arm
+    # carries a ``PYKALA`` (a re-parseable section target). A second arm that is
+    # a bare comma-list continuation (no leading CONJ) or a sub-component-only
+    # ``ja 10 kohta [CITE]`` run (KOHTA, no ``§``) the old ``_target`` cannot mint
+    # into a node, and it is dropped byte-identically — so those do NOT leak and
+    # must not be declined (over-decline of 0-delta). The bare-list multi-arm
+    # ``[CITE] 6, 8, … § [CITE]`` continuation is likewise absorbed by the old
+    # residue-skipping (no CONJ second-arm head), and is intentionally left as a
+    # residual structural delta rather than risk over-declining.
+    j = i + 1
+    if j < n and toks[j].cat == "CONJ":
+        j += 1
+        saw_pykala = False
+        while j < n and toks[j].cat in _PROV_RUN_CATS:
+            if toks[j].cat == "PYKALA":
+                saw_pykala = True
+            j += 1
+        if saw_pykala and j < n and toks[j].cat in _PROV_CLOSER_CATS:
+            return True
+    return False
+
+
+def _tail_starts_with_appendix_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a ``[<doc> ] liite[nä …]``
+    appendix arm the old ``_target`` keeps as a trailing APPENDIX target.
+
+    The old parser keeps a trailing ``liite`` / ``liitteenä olevan taulukon``
+    appendix target after a section / momentti list (``… 8 §:n sekä päätöksen
+    liitteenä olevan taulukon``) that the section family ended the list before —
+    so the new parser drops it. The cue must be IMMEDIATE (the LIITE is the next
+    operative token after the leading separators / an optional ``päätöksen`` /
+    ``asetuksen`` genitive WORD), not a LIITE buried later in the tail behind
+    other content the old parser also drops — that would over-decline.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    # Require a real list separator (``sekä`` / ``ja`` / ``,``) before the arm:
+    # a standalone trailing appendix target (``8 §:n sekä päätöksen liitteenä
+    # olevan taulukon``) is separator-led, whereas a ``4 §:n liitteen`` appendix
+    # SUB-component of the preceding section carries no separator and is
+    # reproduced 0-delta by the section family — must not fire there.
+    saw_sep = False
+    while i < n and toks[i].cat in _APPENDIX_LEADIN_CATS:
+        if toks[i].cat in ("COMMA", "CONJ", "SEKA"):
+            saw_sep = True
+        i += 1
+    if not saw_sep:
+        return False
+    # An optional ``päätöksen`` / ``asetuksen`` / ``lain`` genitive WORD anchor.
+    if i < n and toks[i].cat == "WORD":
+        i += 1
+    return i < n and toks[i].cat == "LIITE"
+
+
+def _tail_starts_with_heading_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a separator-led heading-facet
+    arm the old ``_target`` keeps but the section family ended before.
+
+    Two shapes, both separator-led and immediate (so a benign deeper ``otsikko``
+    the old parser also drops does not over-decline):
+
+      * a CHAPTER-heading arm ``<N> luvun otsikko`` (the chapter container with a
+        HEADING facet — ``…, 4 luvun otsikko``), and
+      * a section heading-change arm ``<N> §:n edellä oleva (väli)otsikko`` /
+        ``<N> §:n otsikko`` (a SECTION ref carrying the HEADING facet).
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    saw_sep = False
+    while i < n and toks[i].cat in _APPENDIX_LEADIN_CATS:
+        if toks[i].cat in ("COMMA", "CONJ", "SEKA"):
+            saw_sep = True
+        i += 1
+    if not saw_sep:
+        return False
+    if i >= n or toks[i].cat != "NUM":
+        return False
+    # Walk the leading number(/letter/range) run.
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH", "CONJ", "COMMA"):
+        j += 1
+    if j >= n:
+        return False
+    # ``<N> luvun otsikko`` — chapter-heading arm. A LUKU directly followed by an
+    # OTSIKKO is the whole-chapter heading; a LUKU followed by a further number /
+    # PYKALA run is a chapter-SCOPED section (``4 a luvun 5 a §:n edellä …``), so
+    # skip the chapter scope prefix and fall through to the section-arm test.
+    if toks[j].cat == "LUKU":
+        k = j + 1
+        if k < n and toks[k].cat == "OTSIKKO":
+            return True
+        j = k
+        while j < n and toks[j].cat in ("NUM", "LETTER", "DASH", "CONJ", "COMMA"):
+            j += 1
+        if j >= n:
+            return False
+    # ``<N> §:n [edellä oleva] (väli)otsikko`` — section heading-facet arm.
+    if toks[j].cat == "PYKALA":
+        k = j + 1
+        return any(
+            toks[m].cat in ("OTSIKKO", "VALIOTSIKKO")
+            for m in range(k, min(k + 5, n))
+        )
+    return False
+
+
+def _section_tail_carries_kept_content(scan: _Scan) -> bool:
+    """True iff the dropped SECTION/CONTAINER tail holds nodes the old parser
+    keeps or leaks — so the driver must decline rather than silently truncate.
+
+    Unions the faithful keep/leak detectors over the dropped tail: a prov
+    re-mention the old parser leaks, a trailing appendix arm it keeps, and a
+    dropped ``uusi`` insert arm it keeps. (The heading-change arm is handled
+    separately by ``_section_continuation_is_kept``.)
+    """
+    return (
+        _prov_rementtion_leaks(scan)
+        or _tail_starts_with_appendix_arm(scan)
+        or _tail_starts_with_heading_arm(scan)
+    )
+
 
 def _section_continuation_is_kept(scan: _Scan, has_jolloin: bool = False) -> bool:
     """True if a separator-led continuation the old parser keeps follows.
@@ -396,6 +630,20 @@ def _try_recognize_target(
         return emit_section_nodes(parsed, chapter=chapter, part=part), "section"
 
     scan.goto(start)
+    # ``uusi väliotsikko N §:n edelle`` heading placement at a target position
+    # (the old ``_target`` consumes ``uusi`` then calls
+    # ``_heading_placement_after_uusi``). The recognizer entry is the OTSIKKO, so
+    # the driver consumes the leading ``uusi`` first; on no match the cursor is
+    # rewound and the ``uusi``-anchor bail below still applies.
+    t = scan.peek()
+    if t is not None and t.cat == "UUSI":
+        after_uusi = scan.pos + 1
+        scan.goto(after_uusi)
+        parsed_hp = recognize_heading_after_uusi(scan, chapter, part)
+        if parsed_hp is not None:
+            return emit_headings_nodes(parsed_hp, chapter=chapter, part=part), "heading"
+        scan.goto(start)
+
     # Nothing parsed here. If an ``uusi`` anchors this very target (an
     # out-of-scope insertion shape the recognizer declined), reject loudly
     # rather than let the driver swallow it as benign residue and silently
@@ -448,6 +696,46 @@ def _try_valiotsikko(scan: _Scan, sep_saved: int) -> Optional[list[SurfaceNode]]
 
     parsed = _replace(parsed, span=Span(sep_saved, parsed.span.end))
     return emit_headings_nodes(parsed)
+
+
+def _try_heading_placement(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """Recognize a heading-PLACEMENT continuation arm (target-first / window).
+
+    The three target-first heading-placement shapes the old ``_target_list``
+    folds into a running target list, tried in old-parser order:
+
+      * ``mukaanluettuna <num_list> §:n edellä olevan väliotsikon`` — an explicit
+        preceding-heading facet on a section range (emits SECTION/HEADING refs).
+      * ``<num_list> §:n edelle [uusi] väliotsikko`` — a target-first heading
+        placement (one ``SurfaceHeadingPlacement`` per target section).
+      * the NUM-led ``<N> §:n edelle uusi [<M>] luvun otsikko`` window arm.
+
+    Each recognizer inherits the batch ``chapter`` / ``part`` and rewinds itself
+    on no match; returns the emitted nodes or None (cursor untouched on None).
+    The ``uusi``-first ``väliotsikko N §:n edelle`` placement is NOT here — it is
+    dispatched at a target position by the insertion path (the driver consumes
+    the leading ``uusi`` first), mirroring the old ``_heading_placement_after_uusi``.
+    """
+    saved = scan.pos
+    # ``luvun otsikko`` window arm BEFORE the bare-väliotsikko target-list arm:
+    # both open on ``<num> §:n edelle [uusi]``, but the old parser routes a
+    # ``… edelle uusi [<M>] luvun otsikko`` payload through the window
+    # (``fi.heading_edelle_luvun_otsikko``), and only a bare ``väliotsikko``
+    # payload through the target-list arm (``fi.heading_edelle_otsikko_target_list``).
+    # The luvun-otsikko recognizer is strict (requires the ``luvun otsikko``
+    # payload), so trying it first never steals a bare-väliotsikko arm.
+    for recognize in (
+        recognize_including_preceding_heading_target,
+        recognize_heading_edelle_luvun_otsikko,
+        recognize_trailing_heading_placement,
+    ):
+        parsed = recognize(scan, chapter, part)
+        if parsed is not None:
+            return emit_headings_nodes(parsed, chapter=chapter, part=part)
+        scan.goto(saved)
+    return None
 
 
 def _consume_inline_move_tails(
@@ -658,6 +946,8 @@ def _parse_verb_group(
                 raise OutOfScope("undecodable insertion tail (no separator)")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
                 raise OutOfScope("container näistä/niistä provenance continuation")
+            if kind in ("section", "container") and _section_tail_carries_kept_content(scan):
+                raise OutOfScope("dropped section/container tail keeps old nodes")
             break
         after_sep = scan.peek()
         if after_sep is None or after_sep.cat == "VERB":
@@ -672,6 +962,16 @@ def _parse_verb_group(
         if val_nodes is not None:
             nodes.extend(val_nodes)
             last_batch = list(val_nodes)
+            continue
+        # A target-first heading-PLACEMENT arm folded into the running list
+        # (``<num_list> §:n edelle uusi väliotsikko`` / the ``luvun otsikko``
+        # window / ``mukaanluettuna … edellä olevan väliotsikon``). The old
+        # ``_target_list`` recognizes these as continuation targets; the scope
+        # is the batch chapter/part already threaded.
+        hp_nodes = _try_heading_placement(scan, chapter, part)
+        if hp_nodes is not None:
+            nodes.extend(hp_nodes)
+            last_batch = list(hp_nodes)
             continue
         # A ``, jolloin …`` consequence-renumber sentinel after the separator:
         # record it (context from the just-parsed batch) and continue. The
@@ -741,6 +1041,8 @@ def _parse_verb_group(
                 scan, jolloin_renumber_pairs is not None
             ):
                 raise OutOfScope("undecodable heading-change continuation")
+            if kind in ("section", "container") and _section_tail_carries_kept_content(scan):
+                raise OutOfScope("dropped section/container tail keeps old nodes")
             break
         # Mixing insertion and non-insertion batches inside one verb group is an
         # out-of-scope shape: the old parser threads scope/anaphora across them
