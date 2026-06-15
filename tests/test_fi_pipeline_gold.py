@@ -10,10 +10,10 @@ Functions under test (all are pure — no apply-layer side effects):
     _extract_kumotaan_section_refs(johto) -> List[str]
 
 Run fast subset (first 50 captures):
-    uv run pytest tests/test_pipeline_gold.py -x -q
+    uv run pytest tests/test_fi_pipeline_gold.py -x -q
 
 Run full corpus (404 captures, ~30 s):
-    uv run pytest tests/test_pipeline_gold.py -x -q -m slow
+    uv run pytest tests/test_fi_pipeline_gold.py -x -q -m slow
 """
 from __future__ import annotations
 

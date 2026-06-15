@@ -279,12 +279,12 @@ Optional tail candidates:
 
 Existing executable anchors:
 
-- `tests/test_payload_normalize.py::test_build_subsection_slot_assignment_shares_plain_and_item_ops_on_same_moment`
+- `tests/test_fi_payload_normalize.py::test_build_subsection_slot_assignment_shares_plain_and_item_ops_on_same_moment`
 - `tests/test_timeline_properties.py::test_sparse_suffix_subsection_replaces_keep_source_order_in_2000_252`
-- `tests/test_materialization_invariants.py::Test1981_555Section11Split::test_1981_555_section_11_materializes_fourth_moment`
-- `tests/test_merge.py::test_merge_section_with_nested_subsection_omission_preserves_master_tail`
-- `tests/test_replay_products.py::test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006_766`
-- `tests/test_replay_products.py::test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429`
+- `tests/test_fi_materialization_invariants.py::Test1981_555Section11Split::test_1981_555_section_11_materializes_fourth_moment`
+- `tests/test_fi_merge.py::test_merge_section_with_nested_subsection_omission_preserves_master_tail`
+- `tests/test_fi_replay_products.py::test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006_766`
+- `tests/test_fi_replay_products.py::test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429`
 
 Use this set as the default replay-regression micro-suite when triaging the
 current Finland bench tail.

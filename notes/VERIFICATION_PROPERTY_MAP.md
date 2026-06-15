@@ -29,10 +29,10 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | ProvisionVersion dates valid | __post_init__ | ProvisionVersion | Construction | Yes (ValueError) | Temporary without expiry, expiry before effective |
 | StrictProfile named | __post_init__ | StrictProfile | Construction | Yes (ValueError) | Anonymous profile |
 | Tree ops under random mutation | Hypothesis PBT (23 tests) | tests/test_kernel_properties.py | CI | Yes | find/replace/insert corner cases |
-| Sparse item preservation / omission safety | Hypothesis PBT (2 tests) | tests/test_apply_properties.py | CI | Yes | Sparse item merge corruption, undeclared deletion under omission |
-| Sparse slot monotonicity | Hypothesis PBT | tests/test_payload_normalize_properties.py | CI | Yes | Payload slot order drift, slot reuse across moments |
-| Sparse ambiguity degrades | Hypothesis PBT | tests/test_payload_normalize_properties.py | CI | Yes | Silent guessing on ambiguous sparse slot bindings |
-| Sparse coverage partition | Hypothesis PBT | tests/test_payload_normalize_properties.py | CI | Yes | Silent payload slot drops or double-claiming |
+| Sparse item preservation / omission safety | Hypothesis PBT (2 tests) | tests/test_fi_apply_properties.py | CI | Yes | Sparse item merge corruption, undeclared deletion under omission |
+| Sparse slot monotonicity | Hypothesis PBT | tests/test_fi_payload_normalize_properties.py | CI | Yes | Payload slot order drift, slot reuse across moments |
+| Sparse ambiguity degrades | Hypothesis PBT | tests/test_fi_payload_normalize_properties.py | CI | Yes | Silent guessing on ambiguous sparse slot bindings |
+| Sparse coverage partition | Hypothesis PBT | tests/test_fi_payload_normalize_properties.py | CI | Yes | Silent payload slot drops or double-claiming |
 | Tree/timeline/phase state machines | Hypothesis stateful (3 machines) | tests/test_stateful_properties.py | CI | Yes | Multi-step sequence bugs |
 | Temporary version expiry inheritance | Hypothesis PBT | tests/test_timeline_properties.py | CI | Yes | Temporary content becoming permanent by accident |
 | Disjoint temporal stability | Hypothesis PBT | tests/test_timeline_properties.py | CI | Yes | Unrelated versions perturb active selection for another address |
@@ -42,8 +42,8 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | Code path coverage (SMT) | CrossHair (10 tests) | tests/test_crosshair_kernels.py | Nightly (--run-slow) | No | Unreachable branches, path-dependent bugs |
 | Evidence rule isolation | Unit tests (91 in test_proof_algebra) | tests/test_proof_algebra.py | CI | Yes | Rule interaction bugs, parity with legacy |
 | Section claim parity | Dual-run (30 parity tests) | tests/test_proof_algebra.py | CI | Yes | A1 typed path diverges from legacy |
-| Slot binding admissibility | C2 certificates + tests | tests/test_admissible_binding.py | CI | Yes | Ambiguous bindings undetected |
-| Section-local strict lineage | C1 tests (12) | tests/test_section_strict_lineage.py | CI | Yes | Statute-wide barriers misattributed |
+| Slot binding admissibility | C2 certificates + tests | tests/test_fi_admissible_binding.py | CI | Yes | Ambiguous bindings undetected |
+| Section-local strict lineage | C1 tests (12) | tests/test_fi_section_strict_lineage.py | CI | Yes | Statute-wide barriers misattributed |
 | Invariant → evidence | C3 tests (5) | tests/test_section_invariant_evidence.py | CI | Yes | Timeline violations ignored by evidence |
 | Publication guarantees | D1-D3 tests (5) | tests/test_publication_guarantees.py | CI | Yes | PROVED claim without rule_id or section scope |
 | Worker pool cleanup | Signal handling tests (5) | tests/test_worker_pool.py | CI | Yes | Zombie worker processes |

@@ -6,8 +6,8 @@ generates one parametrized test per case.
 Uses peg3 directly — no Stanza/NLP dependency required.
 
 Run:
-    cd LawVM && uv run pytest tests/test_peg_curated.py -v
-    cd LawVM && uv run pytest tests/test_peg_curated.py -v --co   # collect only
+    cd LawVM && uv run pytest tests/test_fi_peg_curated.py -v
+    cd LawVM && uv run pytest tests/test_fi_peg_curated.py -v --co   # collect only
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ Verifies that:
   4. ObservationSpec descriptions match expected kind strings
 
 Run:
-    uv run pytest tests/test_frontend_observations.py -v
+    uv run pytest tests/test_fi_frontend_observations.py -v
 """
 
 from __future__ import annotations

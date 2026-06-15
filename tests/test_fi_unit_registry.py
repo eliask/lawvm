@@ -12,7 +12,7 @@ Covers:
   - Wiring: _build_canonical_intent calls validate_intent_target (via log capture)
 
 Run:
-    uv run python -m pytest tests/test_unit_registry.py -v --override-ini="addopts="
+    uv run python -m pytest tests/test_fi_unit_registry.py -v --override-ini="addopts="
 """
 
 from __future__ import annotations

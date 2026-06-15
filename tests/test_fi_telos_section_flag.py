@@ -51,7 +51,7 @@ from lawvm.finland.telos_section_flag import (
 
 
 # ---------------------------------------------------------------------------
-# IR node construction helpers (mirrors test_conformance.py)
+# IR node construction helpers (mirrors test_fi_conformance.py)
 # ---------------------------------------------------------------------------
 
 

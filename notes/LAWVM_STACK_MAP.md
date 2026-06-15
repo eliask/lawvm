@@ -16,7 +16,7 @@ Amendment XML (Finlex Open Data API / Farchive)
   ├── PEG3 parser ─── tokenize → filter → parse ──→ ParsedOp
   │     file: finland/johtolause/peg3.py (~2200 lines)
   │     types: finland/johtolause/types.py (ParsedOp, LegalAddress)
-  │     tests: tests/test_peg_curated.py (91 cases)
+  │     tests: tests/test_fi_peg_curated.py (91 cases)
   │
   ├── Lowering ─── ParsedOp.to_legal_operation() ──→ LegalOperation
   │     file: core/ir.py (LegalOperation, IRNode, xml_to_ir_node)

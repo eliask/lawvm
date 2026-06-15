@@ -14,7 +14,7 @@ the rule-id's emission site — the johtolause surface recognizer
 (``johtolause/rule_registry.py``, whose ``ParseRule.description``/``shape`` fields
 seed this prose), or the compile orchestrator (``frontend_compile.py``).
 
-The anti-drift guard ``tests/test_spec_ledger_fi_catalog.py`` discovers the FI
+The anti-drift guard ``tests/test_fi_spec_ledger_catalog.py`` discovers the FI
 parse-witness rule-id surface by AST and asserts ``_FI_RULE_SPECS`` ∪
 ``_FI_RULE_SPECS_SUPPLEMENT`` covers it with no dead supplement entries.
 """

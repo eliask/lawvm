@@ -10,7 +10,7 @@ Feature coverage (25 tags):
     Former xfail (law-level range insert) now passes in peg3.
 
 Usage:
-    Imported as fixture data by `tests/test_peg_curated.py` and related tests.
+    Imported as fixture data by `tests/test_fi_peg_curated.py` and related tests.
 """
 from __future__ import annotations
 

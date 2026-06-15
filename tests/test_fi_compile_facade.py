@@ -4,7 +4,7 @@ CompileFacade is the clean output facade over PhaseResult/EffectIntent surfaces
 defined in lawvm.core.compile_facade.
 
 Run:
-    uv run pytest tests/test_compile_facade.py -v
+    uv run pytest tests/test_fi_compile_facade.py -v
 """
 from __future__ import annotations
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, ProvisionVersion, ScopePredicate, StructuralAction

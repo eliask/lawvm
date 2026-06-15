@@ -5,7 +5,7 @@ Covers:
 - freshness check: cached PIT is returned without re-fetching
 - oracle_path_index: reports PIT URLs for cached statutes
 - Smoke tests (network) for known statutes: marked with pytest.mark.network
-  Run with: pytest -m network tests/test_transparent_store.py
+  Run with: pytest -m network tests/test_fi_transparent_store.py
 
 The non-network tests use monkeypatching to avoid any HTTP traffic.
 """
@@ -607,7 +607,7 @@ class TestFreshnessReport:
 class TestNetworkSmoke:
     """Live network tests. Require internet access and Finlex availability.
 
-    Run with: pytest -m network tests/test_transparent_store.py -v
+    Run with: pytest -m network tests/test_fi_transparent_store.py -v
     """
 
     KNOWN_HAS_PIT = "2002/738"         # sähköinen asiointi — has PIT versions

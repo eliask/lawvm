@@ -258,7 +258,7 @@ NOT GUARANTEED:
   change that populated `enacted` for base versions). Consumers MUST pin
   `spec_version` and MUST NOT assume hash stability across engine versions.
 - The change detector is the corpus-backed **consumer-contract regression suite**
-  (`tests/test_provision_state_consumer_contract.py`): it re-runs pinned
+  (`tests/test_fi_provision_state_consumer_contract.py`): it re-runs pinned
   `(address, as_of) → derived_state_hash` corpus against the live seam. Any
   semantic hash change surfaces there before reaching consumers.
 
@@ -359,7 +359,7 @@ models this as a statute-level validity bound:
   jona X tulee voimaan") is NOT yet resolved; when it is, the cutoff is
   exclusive at the resolver date (`expires_on = resolver_commencement_date`,
   not + 1) — a deliberate asymmetry pinned by fixtures in
-  `tests/test_temporal_fixed_term_expiry.py`.
+  `tests/test_fi_temporal_fixed_term_expiry.py`.
 
 Rollback: setting `LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS=0` restores the 0.1
 flag-OFF behavior (no `expired`/`expiry_unverified`; a lapsed fixed-term law
@@ -394,7 +394,7 @@ bump `spec_version` — iff it changes any of:
 Non-breaking clarifications (added prose, new excluded provenance fields) MAY
 ship under the same `spec_version`. Breaking changes are announced via a
 `spec_version` bump AND will manifest as divergence in the consumer-contract
-regression suite (`tests/test_provision_state_consumer_contract.py`), which
+regression suite (`tests/test_fi_provision_state_consumer_contract.py`), which
 consumers SHOULD also run in their own CI. Consumers MUST pin the
 `spec_version` they validated against.
 
@@ -610,7 +610,7 @@ a. The fixed-term-expiry example specifics (statute 482/2024 valid to
    consistent with timeline_selection.py:155 and provision_state.py:332.
 
 b. The original "21 pins" count and live change-detector claim. The current
-   in-repo contract suite is `tests/test_provision_state_consumer_contract.py`;
+   in-repo contract suite is `tests/test_fi_provision_state_consumer_contract.py`;
    the initial fixture provenance was MeVM's fact-pack pins.
 
 c. The enacted-date semantics-change precedent (commit b09e0003 populating

@@ -11,7 +11,7 @@ so that failures isolate to the function under test.  No corpus access; no
 network; no LLM calls.
 
 Run:
-    uv run pytest tests/test_decomposition.py -v
+    uv run pytest tests/test_fi_decomposition.py -v
 """
 
 from __future__ import annotations

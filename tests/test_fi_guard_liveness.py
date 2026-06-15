@@ -736,7 +736,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
     code reaches the frontend ``PhaseResult`` ledger with ``has_blocking`` set.
 
     The frontend-boundary correctness is also asserted by
-    ``test_decomposition.py::test_blocking_parse_violation_carries_through_frontend``;
+    ``test_fi_decomposition.py::test_blocking_parse_violation_carries_through_frontend``;
     this drill is the guard-liveness surface assertion for the same lane.
     """
     import copy
@@ -865,14 +865,14 @@ def _is_blocking_code(spec: FindingSpec) -> bool:
 # direction of travel.
 NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     # Fixed-term expiry blocking diagnostics surface at the provision-state
-    # seam (flag-gated; exercised in test_temporal_fixed_term_expiry.py), not
+    # seam (flag-gated; exercised in test_fi_temporal_fixed_term_expiry.py), not
     # through the replay PhaseResult lanes this harness drills. Drill when the
     # semantics flag goes default-on.
     "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS",
     "TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS",
     "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
     # Typed residue subclasses of the same seam-surfaced blocking family
-    # (governing_unparseable); exercised in test_temporal_fixed_term_expiry.py.
+    # (governing_unparseable); exercised in test_fi_temporal_fixed_term_expiry.py.
     "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING",
     "TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED",
     "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING",

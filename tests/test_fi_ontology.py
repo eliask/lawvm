@@ -13,7 +13,7 @@ Covers:
   - Edge cases
 
 Run:
-    uv run python -m pytest tests/test_finland_ontology.py -v --override-ini="addopts="
+    uv run python -m pytest tests/test_fi_ontology.py -v --override-ini="addopts="
 """
 from __future__ import annotations
 

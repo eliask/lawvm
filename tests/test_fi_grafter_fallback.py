@@ -11353,7 +11353,7 @@ def test_uncovered_body_allows_sections_from_uusi_chapter_range() -> None:
 
 def test_subsection_replace_uses_label_not_position_current_apply_path() -> None:
     """Current subsection replace helper must still resolve by label, not index."""
-    # Coverage lives primarily in tests/test_apply.py; keep one fallback-era
+    # Coverage lives primarily in tests/test_fi_apply.py; keep one fallback-era
     # assertion here so the older grafter regression family still points at the
     # current executor path instead of the deleted grafter_simple module.
     from lawvm.core.tree_ops import resolve as tree_resolve

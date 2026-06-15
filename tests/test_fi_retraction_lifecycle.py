@@ -10,7 +10,7 @@ retract` / `taint-report` CLI. Commit 7d0eb1df migrated those CLI commands
 to the v3 GraphStore / ProvenanceAssertion substrate (they no longer read
 ClaimStore), so those four tests — which seeded a ClaimStore and then drove
 the migrated CLI — became incoherent and are now covered against the current
-substrate by tests/test_cmd_claim_v3.py
+substrate by tests/test_fi_cmd_claim_v3.py
 (test_cmd_claim_retract_emits_retracted_and_renders_taint,
 test_cmd_claim_taint_report_computed_at_query_time, and the claim_id
 variants). They were deleted rather than ported to avoid duplicating the v3

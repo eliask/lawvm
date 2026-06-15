@@ -22,7 +22,7 @@ Return-value protocol (new):
 All fixtures are self-contained (no corpus access, no network, no LLM calls).
 
 Run:
-    uv run pytest tests/test_apply.py -v
+    uv run pytest tests/test_fi_apply.py -v
 """
 
 from __future__ import annotations

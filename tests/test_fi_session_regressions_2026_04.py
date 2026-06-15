@@ -30,7 +30,7 @@ Guards six specific fixes that must not regress silently:
    "sekä asetukseen uusi 18 a §" continues as part of the same insert group.
 
 Run:
-    cd LawVM && uv run pytest tests/test_session_regressions_2026_04.py -v
+    cd LawVM && uv run pytest tests/test_fi_session_regressions_2026_04.py -v
 """
 
 from __future__ import annotations
@@ -1272,7 +1272,7 @@ class TestPegSektHeadingContinuation:
         )
 
     def test_curated_seka_docill_continuation_numbered_chapter_heading(self):
-        """This is the actual curated test case from test_peg_curated.py.
+        """This is the actual curated test case from test_fi_peg_curated.py.
 
         Source: seka_docill_continuation_numbered_chapter_heading
         Text includes provenance span residue pattern that triggers

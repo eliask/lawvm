@@ -4,7 +4,7 @@ Verifies that _build_facade_from_replay correctly packages replay out-params
 into a CompileFacade, and that _print_facade_summary writes expected lines.
 
 Run:
-    uv run pytest tests/test_explain_facade.py -v
+    uv run pytest tests/test_fi_explain_facade.py -v
 """
 
 from __future__ import annotations

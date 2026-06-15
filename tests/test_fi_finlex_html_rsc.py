@@ -1,4 +1,4 @@
-"""test_finlex_html_rsc.py — Unit tests for Finlex RSC JSON parsing.
+"""test_fi_finlex_html_rsc.py — Unit tests for Finlex RSC JSON parsing.
 
 Tests the new JSON-based parsing path in finlex_html.py, including:
 - _escape_ctrl_in_strings: re-escaping literal control chars inside strings

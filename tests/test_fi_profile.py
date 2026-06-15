@@ -10,7 +10,7 @@ Covers:
   - Profile method delegation to underlying ontology/labels modules
 
 Run:
-    uv run python -m pytest tests/test_finland_profile.py -v --override-ini="addopts="
+    uv run python -m pytest tests/test_fi_profile.py -v --override-ini="addopts="
 """
 from __future__ import annotations
 

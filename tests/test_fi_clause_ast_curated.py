@@ -14,14 +14,14 @@ cases that exercise features ParsedOp.code() is blind to:
   - Scope block cases (chapter/part context preserved as ScopedBlock)
   - Meta-only clauses (MetaClause nodes)
   - Exception (lukuun ottamatta) presence in parse result
-  - Exception cases already covered in test_parse_clause.py are not
+  - Exception cases already covered in test_fi_parse_clause.py are not
     duplicated here — this file focuses on ClauseAST node semantics.
 
-Existing ParsedOp assertions in test_peg_curated.py are NOT removed.
+Existing ParsedOp assertions in test_fi_peg_curated.py are NOT removed.
 These tests are additive.
 
 Run:
-    cd LawVM && uv run pytest tests/test_clause_ast_curated.py -v
+    cd LawVM && uv run pytest tests/test_fi_clause_ast_curated.py -v
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Property-based tests for tree_ops primitives, check_invariants, and omission merge.
 
 Run:
-    uv run pytest tests/test_tree_ops_properties.py -v
+    uv run pytest tests/test_fi_tree_ops_properties.py -v
 
 Tests cover three groups:
 

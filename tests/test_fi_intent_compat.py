@@ -10,7 +10,7 @@ Covers:
   - Fine-grained unit_kinds (subsection, item) still pass when target_unit_kind is section
 
 Run:
-    uv run python -m pytest tests/test_intent_compat.py -v --override-ini="addopts="
+    uv run python -m pytest tests/test_fi_intent_compat.py -v --override-ini="addopts="
 """
 
 from __future__ import annotations

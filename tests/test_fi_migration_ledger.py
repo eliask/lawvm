@@ -6,7 +6,7 @@ Covers:
   - Edge cases: no ledger (None), skipped relabels, cycle guard
 
 Run:
-    uv run pytest tests/test_migration_ledger.py -v
+    uv run pytest tests/test_fi_migration_ledger.py -v
 """
 from __future__ import annotations
 from lawvm.core.ir import LegalAddress

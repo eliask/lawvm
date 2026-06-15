@@ -278,7 +278,7 @@ _FI_RULE_SPECS: Dict[str, str] = {
 # Fold the FI catalog supplement (firing parse-witness rules + the fallback-extraction
 # lane id, authored in a sibling module) into a SEPARATE merged catalog used by the
 # ledger, leaving the seed ``_FI_RULE_SPECS`` literal pure (the anti-drift test in
-# tests/test_spec_ledger_fi_catalog.py checks base and supplement separately). Mirrors
+# tests/test_fi_spec_ledger_catalog.py checks base and supplement separately). Mirrors
 # the UK split.
 def _load_fi_rule_specs() -> Dict[str, str]:
     specs = dict(_FI_RULE_SPECS)

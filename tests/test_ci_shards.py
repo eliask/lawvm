@@ -147,8 +147,8 @@ def test_test_shard_keeps_known_expensive_files_explicitly_excluded() -> None:
     module = _load_test_shard_module()
 
     assert module.EXCLUDED_TESTS == {
-        "test_citation_routing.py": "large skip-heavy/gold-style corpus route inventory",
-        "test_pipeline_gold.py": "gold corpus suite; intentionally outside bounded non-network CI",
+        "test_fi_citation_routing.py": "large skip-heavy/gold-style corpus route inventory",
+        "test_fi_pipeline_gold.py": "gold corpus suite; intentionally outside bounded non-network CI",
     }
 
 
@@ -169,11 +169,11 @@ def test_test_shard_plan_is_jsonable_and_filterable() -> None:
     ]
     assert plan["excluded_tests"] == [
         {
-            "file": "tests/test_citation_routing.py",
+            "file": "tests/test_fi_citation_routing.py",
             "reason": "large skip-heavy/gold-style corpus route inventory",
         },
         {
-            "file": "tests/test_pipeline_gold.py",
+            "file": "tests/test_fi_pipeline_gold.py",
             "reason": "gold corpus suite; intentionally outside bounded non-network CI",
         },
     ]
@@ -271,7 +271,7 @@ def test_test_shard_evidence_group_expands_to_subshards() -> None:
     assert module.expand_shard_names(["evidence"]) == EVIDENCE_EXECUTION_SHARDS
     assert module.shard_plan("evidence")["assigned_file_count"] == 17
     assert module.affected_shards(["tests/test_evidence.py"]) == ["evidence_claims"]
-    assert module.affected_shards(["tests/test_explain_facade.py"]) == ["evidence_reports"]
+    assert module.affected_shards(["tests/test_fi_explain_facade.py"]) == ["evidence_reports"]
 
 
 def test_test_shard_group_plan_is_jsonable() -> None:
@@ -528,7 +528,7 @@ def test_test_shard_timing_balance_report_profiles_known_single_file_hotspot(
     assert report["single_file_hotspot_profiles"] == [
         {
             "shard": "tools_cli_debug_hotspot",
-            "file": "tests/test_cli_debug_tools.py",
+            "file": "tests/test_fi_cli_debug_tools.py",
             "command": (
                 "LAWVM_PYTEST_WORKERS=0 ./scripts/test_shard.sh run "
                 "tools_cli_debug_hotspot -- --durations=25"
@@ -979,19 +979,19 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
     assert module.affected_shards(
         [
             "src/lawvm/finland/frontend_compile.py",
-            "tests/test_pipeline_gold.py",
+            "tests/test_fi_pipeline_gold.py",
         ]
     ) == ["all"]
     assert _without_path_expanded_shards(module.affected_plan(
         [
             "notes/ARCHITECTURE.md",
-            "tests/test_pipeline_gold.py",
+            "tests/test_fi_pipeline_gold.py",
         ]
     )) == {
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": [
             "notes/ARCHITECTURE.md",
-            "tests/test_pipeline_gold.py",
+            "tests/test_fi_pipeline_gold.py",
         ],
         "shards": ["all"],
         "paths": [
@@ -1001,7 +1001,7 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
                 "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
             },
             {
-                "path": "tests/test_pipeline_gold.py",
+                "path": "tests/test_fi_pipeline_gold.py",
                 "shards": ["all"],
                 "reason": "excluded test: gold corpus suite; intentionally outside bounded non-network CI; run all affected shards",
             },

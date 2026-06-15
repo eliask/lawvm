@@ -170,9 +170,9 @@ tests_dir = [
     "tests/test_stateful_properties.py",
     "tests/test_exhaustive_enumeration.py",
     "tests/test_timeline_invariants.py",
-    "tests/test_tree_ops_properties.py",
-    "tests/test_materialization_invariants.py",
-    "tests/test_decomposition.py",
+    "tests/test_fi_tree_ops_properties.py",
+    "tests/test_fi_materialization_invariants.py",
+    "tests/test_fi_decomposition.py",
     "tests/test_mutation_gaps.py",
 ]
 also_copy = ["conftest.py", "data/"]
@@ -186,8 +186,8 @@ pytest_add_cli_args = ["-o", "addopts=", "-p", "no:xdist", "--tb=line"]
 #   single-core: ~83s for real tests alone, ~129s full suite
 #   -n 4:        ~62s for real tests alone, ~175s full suite
 #   -n 8:        ~50s for real tests alone
-# The full-suite regression vs single-core is caused by test_pipeline_gold.py
-# and test_citation_routing.py distributing 100k skip evaluations across workers.
+# The full-suite regression vs single-core is caused by test_fi_pipeline_gold.py
+# and test_fi_citation_routing.py distributing 100k skip evaluations across workers.
 # For targeted runs (uv run pytest tests/ -k "...") the speedup is ~1.5-2x.
 # Override with -n 0 (or -p no:xdist) to disable: uv run pytest -n 0 tests/
 addopts = "-n 4 --tb=short"

@@ -12,10 +12,10 @@ Section layout
    Skipped automatically when .cache/pipeline_gold.db is absent or empty.
 
 Run fast (unit tests only):
-    uv run pytest tests/test_citation_routing.py -x -q
+    uv run pytest tests/test_fi_citation_routing.py -x -q
 
 Run including gold-DB tests (requires populated .cache/pipeline_gold.db):
-    uv run pytest tests/test_citation_routing.py -x -q -m slow
+    uv run pytest tests/test_fi_citation_routing.py -x -q -m slow
 """
 from __future__ import annotations
 

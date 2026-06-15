@@ -18,7 +18,7 @@ Three hard waists (LAWVM_CONSTITUTION.md §2):
   Waist 3 : ResolvedOp / CanonicalOps (src/lawvm/finland/ops.py)
 
 Run:
-    cd LawVM && uv run pytest tests/test_conformance.py tests/test_peg_curated.py tests/test_grafter_fallback.py -q
+    cd LawVM && uv run pytest tests/test_fi_conformance.py tests/test_fi_peg_curated.py tests/test_fi_grafter_fallback.py -q
 """
 
 from __future__ import annotations
@@ -512,7 +512,7 @@ class TestElaborationSnapshotVocabulary:
 #
 # Because the full elaboration pipeline is deep, Stage 2 pins the
 # snapshot-purity invariant via TargetContext construction and the
-# subsection slot model.  Full elaboration integration is in test_grafter_fallback.py.
+# subsection slot model.  Full elaboration integration is in test_fi_grafter_fallback.py.
 # ===========================================================================
 
 
