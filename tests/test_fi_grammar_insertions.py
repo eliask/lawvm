@@ -168,6 +168,63 @@ def test_bare_number_after_nojalla_lead_in_is_declined() -> None:
         new_parser.parse(tokens)
 
 
+# Archaic ``näin kuuluva`` lead-ins (and the glued ``näin. kuuluva`` variant)
+# between the insertion anchor and the structural target. The old parser skips
+# them at every arm; the recogniser reproduces that skip so each clause is the
+# same clean insertion as its non-archaic counterpart. Each must round-trip
+# 0-delta against the old parser.
+NAIN_KUULUVA_EXAMPLES = [
+    # Whole-section insert, DOC:ILL anchor.
+    "lisätään valtiopäiväjärjestykseen uusi näin kuuluva 37 a §:",
+    # Whole-section insert, chapter-scoped (LUKU:ILL anchor).
+    "lisätään oikeudenkäymiskaaren 15 lukuun uusi näin kuuluva 4 a §:",
+    # Momentti sub-target insert behind a §:ILL host (skip sits before uusi).
+    "lisätään 27 §:ään uusi näin kuuluva 3 momentti:",
+]
+
+
+@pytest.mark.parametrize("text", NAIN_KUULUVA_EXAMPLES)
+def test_nain_kuuluva_lead_in_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_nain_kuuluva_whole_section_label_and_witness() -> None:
+    model = parse_text_with(
+        "lisätään valtiopäiväjärjestykseen uusi näin kuuluva 37 a §:", new_parser.parse
+    )
+    (vg,) = model.verb_groups
+    node = _as_insertion(vg.nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "37a"
+    assert node.sub_target is None
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_section"
+
+
+def test_gen_momentti_sub_target_after_uusi_is_zero_delta() -> None:
+    # ``uusi N §:GEN M momentti`` — a §:GEN sub-target insert reached via the
+    # whole-target dispatch (the genitive §:n carries a momentti/kohta sub-target).
+    report = compare_surface_parsers(
+        "lisätään lakiin uusi 5 §:n 2 momentti seuraavasti:",
+        surface_parse.parse,
+        new_parser.parse,
+    )
+    assert report.equal
+
+
+def test_gen_plain_whole_section_is_declined() -> None:
+    # ``uuden N §:n seuraavasti`` with no momentti/kohta — the plain genitive
+    # whole-section stylistic variant. The old parser threads its witness span in
+    # a way this context-free recogniser cannot reproduce without risking a
+    # divergent per-batch span (and exposing latent deltas in preceding verb
+    # groups), so it stays out of scope: the driver must DECLINE (fail-loud).
+    text = "lisätään päätökseen uuden 6 a §:n seuraavasti:"
+    tokens, _ = _tokenize(text)
+    with pytest.raises(OutOfScope):
+        new_parser.parse(tokens)
+
+
 def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
     # "12 §:n 2 momentin 3 kohta" (no "uusi") is a plain section reference, not an
     # insertion — the new parser must reproduce the old parser's SurfaceTargetRef.

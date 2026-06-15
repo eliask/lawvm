@@ -31,14 +31,21 @@ node shape exactly as ``_stamp_default_witness`` does):
 ``fi.insertion_section``, ``fi.insertion_sub_target``, ``fi.insertion_chapter``,
 ``fi.insertion_heading`` (only when an ``uusi otsikko`` heading is co-emitted).
 
+The archaic ``näin kuuluva`` / ``näin kuluva`` lead-in between the insertion
+anchor and the structural target is skipped (faithful to the old parser's
+``_skip_archaic_nain_kuuluva`` at every arm), so a ``lisätään lakiin uusi näin
+kuuluva N §`` is the same clean insertion as ``lisätään lakiin uusi N §``.
+
 Out of scope for slice 2 (the recognizer returns None / the driver raises
 ``OutOfScope`` for these): heading-placement inserts (``§:n edelle uusi
 väliotsikko``), reinstatement (``kumotun N §:n tilalle uusi``), the
 enumeration-truncation continuation arms, postfix-chapter ``§ lukuun N`` lists,
-appendix inserts, malformed ``§ luku`` chapter inserts, archaic ``näin kuuluva``
-lead-ins, backref/anaphora, move/renumber tails, jolloin, and meta/text-amend.
-Whenever a clause needs any of those, the recognizer declines so the driver
-treats the clause as out of scope rather than miscompiling it.
+appendix inserts, malformed ``§ luku`` chapter inserts, the plain genitive
+whole-section stylistic variant as a continuation arm (``uuden N §:n`` whose
+shared batch witness span is not reproducible here), backref/anaphora,
+move/renumber tails, jolloin, and meta/text-amend. Whenever a clause needs any of
+those, the recognizer declines so the driver treats the clause as out of scope
+rather than miscompiling it.
 """
 
 from __future__ import annotations
@@ -53,6 +60,7 @@ from lawvm.finland.johtolause.grammar.sections import (
     _Scan,
     _chapter_ctx,
     _expand_range_single,
+    _letter,
     _number_list,
     _part_ctx,
 )
@@ -172,6 +180,32 @@ def _optional_comma(scan: _Scan) -> None:
         scan.advance()
 
 
+# Archaic ``näin kuuluva`` / ``näin kuluva`` insert lead-ins (including the glued
+# ``näinkuuluva`` / ``näinkuluva`` spelling) sit between the insertion anchor and
+# the structural target in historical statutes. The old parser skips them at
+# every insertion arm (``_skip_archaic_nain_kuuluva``); we reproduce that skip so
+# a ``lisätään lakiin uusi näin kuuluva N §`` is the same clean insertion as
+# ``lisätään lakiin uusi N §``.
+_NAIN_KUULUVA_TAIL = frozenset({"kuuluva", "kuulua", "kuluva"})
+_NAIN_KUULUVA_GLUED = frozenset({"näinkuuluva", "näinkuluva"})
+
+
+def _skip_nain_kuuluva(scan: _Scan) -> None:
+    """Skip an archaic ``näin kuuluva`` lead-in (faithful to the old parser)."""
+    t0 = scan.peek()
+    if t0 is None:
+        return
+    t0_lemma = (t0.lemma or "").lower()
+    t0_text = (t0.text or "").lower()
+    if t0_lemma == "näin":
+        t1 = scan.peek(1)
+        if t1 is not None and (t1.lemma or "").lower() in _NAIN_KUULUVA_TAIL:
+            scan.advance(2)
+            return
+    if t0_lemma in _NAIN_KUULUVA_GLUED or t0_text in _NAIN_KUULUVA_GLUED:
+        scan.advance()
+
+
 # Reinstatement / citation / provenance sentinel spans skipped between a §:ILL
 # target and ``uusi`` (the old parser's ``_TILALLE_OR_REINST | {PROVENANCE_SPAN}``;
 # the ``§:ILL`` arm DOES skip a bare ``tilalle`` token here).
@@ -273,15 +307,34 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
       * ``uusi N momentti``          (nominative momentti insert)
       * ``uusi N kohta``             (kohta insert, defaulting momentti to ctx or 1)
 
-    Heading (``uusi otsikko``), letter-only (``uusi b kohta``), and any reading
-    that needs ``näin kuuluva`` / reinstatement is declined (returns None).
+    Heading (``uusi otsikko``) and any reading that needs reinstatement is
+    declined (returns None). An archaic ``näin kuuluva`` lead-in between ``uusi``
+    and the sub-target is skipped (faithful to the old parser, line 1891).
     """
+    _skip_nain_kuuluva(scan)
+
     if _at(scan, "OTSIKKO"):
         # Heading insertion is out of scope for this slice.
         return None
 
     nums = _number_list(scan)
     if not nums:
+        # Letter-only item: ``uusi b kohta`` (old _insertion_sub_target 1931-1944).
+        saved_let = scan.pos
+        let = _letter(scan)
+        if let is not None and _at(scan, "KOHTA"):
+            scan.advance()
+            eff_mom = mom_ctx or 1
+            return [
+                InsNode(
+                    kind=TargetKind.SECTION,
+                    label=sec,
+                    chapter=chapter,
+                    part=part,
+                    sub_target=InsSubTarget(momentti=eff_mom, item=let),
+                )
+            ]
+        scan.goto(saved_let)
         return None
 
     # ``uusi N momentin M kohta`` — genitive momentti is a container qualifier
@@ -354,9 +407,17 @@ def _recognize_whole_target_list(
 ) -> Optional[list[InsNode]]:
     """Recognize ``numlist (§ | luku | osa)`` after ``uusi`` (whole-target inserts).
 
-    Declines (returns None) for the GEN §/luku stylistic and sub-target variants
-    handled elsewhere, and for any malformed ``§ luku`` chapter form. A single
-    clean nominative/illative-cased structural noun is required.
+    Faithful to the old Pattern D structural-noun dispatch (lines 2910-2960):
+
+      * ``numlist OSA``                    → whole-part inserts.
+      * ``numlist §:GEN M momentti/kohta`` → a sub-target insert into ``§``.
+      * ``numlist §`` / ``numlist luku`` (nominative/illative) → plain
+        whole-section / whole-chapter inserts.
+
+    Declines (returns None) for the malformed ``§ luku`` chapter-repair form and
+    the plain genitive whole-section *stylistic* variant (``uuden N §:n`` with no
+    momentti/kohta): the old parser threads that into a shared batch witness span
+    this context-free recogniser cannot reproduce, so it stays out of scope.
     """
     nums = _number_list(scan)
     if not nums:
@@ -367,17 +428,50 @@ def _recognize_whole_target_list(
     if t.cat == "OSA":
         scan.advance()
         return [InsNode(kind=TargetKind.PART, label=n + sf, chapter=chapter, part=part) for n, sf in nums]
-    if t.cat in ("PYKALA", "LUKU") and t.case != "GEN":
-        # Malformed ``§ luku`` (PYKALA immediately followed by a NOM LUKU) is an
-        # old-parser repair path — out of scope here.
-        if t.cat == "PYKALA":
-            t1 = scan.peek(1)
-            if t1 is not None and t1.cat == "LUKU" and t1.case == "NOM":
-                return None
-        kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
-        scan.advance()
-        return [InsNode(kind=kind, label=n + sf, chapter=chapter, part=part) for n, sf in nums]
-    return None
+    if t.cat not in ("PYKALA", "LUKU"):
+        return None
+
+    # ``numlist §:GEN M momentti/kohta`` — a sub-target insert into the single
+    # section (old Pattern D, lines 2916-2947). Only the §:GEN form carries this.
+    if t.cat == "PYKALA" and t.case == "GEN":
+        saved_gen = scan.pos
+        scan.advance()  # consume §:GEN
+        sub_nums = _number_list(scan)
+        st = scan.peek()
+        if sub_nums and st is not None and st.cat in ("MOMENTTI", "KOHTA"):
+            is_kohta = st.cat == "KOHTA"
+            scan.advance()
+            sec_num = nums[0][0] + nums[0][1]
+            out: list[InsNode] = []
+            for n, sf in sub_nums:
+                for rn in _expand_range_single(n):
+                    if is_kohta:
+                        st_sub = InsSubTarget(momentti=1, item=rn + sf)
+                    else:
+                        st_sub = InsSubTarget(momentti=int(rn) if rn.isdigit() else 0)
+                    out.append(
+                        InsNode(
+                            kind=TargetKind.SECTION,
+                            label=sec_num,
+                            chapter=chapter,
+                            part=part,
+                            sub_target=st_sub,
+                        )
+                    )
+            return out
+        # Plain genitive whole-section stylistic variant → out of scope.
+        scan.goto(saved_gen)
+        return None
+
+    # Malformed ``§ luku`` (PYKALA immediately followed by a NOM LUKU) is an
+    # old-parser chapter-repair path — out of scope here.
+    if t.cat == "PYKALA":
+        t1 = scan.peek(1)
+        if t1 is not None and t1.cat == "LUKU" and t1.case == "NOM":
+            return None
+    kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
+    scan.advance()
+    return [InsNode(kind=kind, label=n + sf, chapter=chapter, part=part) for n, sf in nums]
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +503,7 @@ def recognize_insertion(
     saved_auth = scan.pos
     if _skip_authority_nojalla_lead_in(scan) and _at(scan, "UUSI"):
         scan.advance()
+        _skip_nain_kuuluva(scan)
         post_uusi = scan.pos
         auth_nodes = _recognize_whole_target_list(scan, chapter, part)
         if auth_nodes:
@@ -600,6 +695,7 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
     # ── Bare ``uusi numlist (§ | luku | osa)`` (citation-stripped) ──────────
     if _at(scan, "UUSI"):
         scan.advance()
+        _skip_nain_kuuluva(scan)
         whole = _recognize_whole_target_list(scan, effective_chapter, effective_part)
         if whole is not None:
             return whole
@@ -638,6 +734,7 @@ def _try_osa_scoped(scan: _Scan, effective_part: str) -> Optional[list[InsNode]]
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
+    _skip_nain_kuuluva(scan)
     ins_nums = _number_list(scan)
     t = scan.peek()
     if ins_nums and t is not None and t.cat in ("PYKALA", "LUKU") and t.case != "GEN":
@@ -711,6 +808,9 @@ def _try_section_ill_sub_target(
     saved = scan.pos
     scan.advance()  # consume §:ILL
     _skip_ill_reinst_preamble(scan)
+    # An archaic ``näin kuuluva`` lead-in can sit between the §:ään target (and
+    # its skipped provenance) and ``uusi`` (old _insertion line 2421).
+    _skip_nain_kuuluva(scan)
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
@@ -788,6 +888,7 @@ def _try_luku_scoped(
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
+    _skip_nain_kuuluva(scan)
     ins_nums = _number_list(scan)
     t = scan.peek()
     if ins_nums and t is not None and t.cat in ("PYKALA", "LUKU"):
@@ -821,6 +922,7 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
         scan.advance()
         _optional_comma(scan)
         if _consume_uusi(scan):
+            _skip_nain_kuuluva(scan)
             pc2 = _number_list(scan)
             t = scan.peek()
             if pc2 and t is not None and t.cat == "PYKALA" and t.case != "GEN":
@@ -836,6 +938,7 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
+    _skip_nain_kuuluva(scan)
 
     nums2 = _number_list(scan)
     if not nums2:
@@ -866,7 +969,34 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
             scan.goto(saved)
             return None
         return [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in nums2]
-    # GEN §:n sub-target / stylistic variants → out of scope for this slice.
+
+    # ``DOC:ILL uusi numlist §:GEN M momentti/kohta`` (old Pattern C, lines
+    # 2766-2795): the genitive §:n is a sub-target insert into the single section.
+    # The plain stylistic ``uuden N §:n`` variant (no momentti/kohta) is left out
+    # of scope (its shared batch witness span is not reproducible here).
+    if t.cat == "PYKALA" and t.case == "GEN":
+        saved_gen = scan.pos
+        scan.advance()  # consume §:GEN
+        sec_num = nums2[0][0] + nums2[0][1]
+        sub_nums = _number_list(scan)
+        st = scan.peek()
+        if sub_nums and st is not None and st.cat in ("MOMENTTI", "KOHTA"):
+            is_kohta = st.cat == "KOHTA"
+            scan.advance()
+            out: list[InsNode] = []
+            for n, sf in sub_nums:
+                for rn in _expand_range_single(n):
+                    if is_kohta:
+                        st_sub = InsSubTarget(momentti=1, item=rn + sf)
+                    else:
+                        st_sub = InsSubTarget(momentti=int(rn) if rn.isdigit() else 0)
+                    out.append(
+                        InsNode(kind=TargetKind.SECTION, label=sec_num, chapter="", sub_target=st_sub)
+                    )
+            return out
+        scan.goto(saved_gen)
+
+    # Other GEN §/luku stylistic variants → out of scope for this slice.
     scan.goto(saved)
     return None
 
