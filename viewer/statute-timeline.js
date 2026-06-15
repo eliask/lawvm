@@ -1199,9 +1199,22 @@ function addrCompare(a, b) {
 //  * a covering key equals addr → that blob;
 //  * a covering key is an ANCESTOR of addr (coarse certification) → walk down
 //    inside the blob via label-derived child addresses;
-//  * covering keys are DESCENDANTS of addr (fine certification) → synthesize a
-//    container node holding the units under the prefix, in address order.
-function nodeAtAddress(live, addr) {
+//  * covering keys are DESCENDANTS of addr (fine certification) → synthesize
+//    the missing address-tree ancestors under the prefix, in address order.
+function syntheticNodeForAddress(addr, date) {
+  const [kind, label = ''] = (addr.split('/').pop() || '').split(':');
+  const display = displayNodeFor(addr, date);
+  const node = {
+    kind: display && display.kind ? display.kind : kind,
+    label: display && display.label ? display.label : label,
+    children: [],
+  };
+  if (display && display.num) node.children.push({ kind: 'num', text: display.num });
+  if (display && display.heading) node.children.push({ kind: 'heading', text: display.heading });
+  return node;
+}
+
+function nodeAtAddress(live, addr, date) {
   if (live.has(addr)) return getBlob(live.get(addr));
   const segs = addr.split('/');
   for (let i = segs.length - 1; i >= 1; i--) {
@@ -1218,11 +1231,24 @@ function nodeAtAddress(live, addr) {
   }
   const subKeys = [...live.keys()].filter(k => k.startsWith(addr + '/')).sort(addrCompare);
   if (subKeys.length) {
-    const lastSeg = segs[segs.length - 1].split(':');
-    return {
-      kind: lastSeg[0], label: lastSeg[1] || '',
-      children: subKeys.map(k => getBlob(live.get(k))).filter(Boolean),
-    };
+    const root = syntheticNodeForAddress(addr, date);
+    const syntheticByAddr = new Map([[addr, root]]);
+    for (const key of subKeys) {
+      const parts = key.split('/');
+      let parent = root;
+      for (let i = segs.length; i < parts.length; i++) {
+        const childAddr = parts.slice(0, i + 1).join('/');
+        const isLeaf = i === parts.length - 1;
+        let child = isLeaf ? getBlob(live.get(key)) : syntheticByAddr.get(childAddr);
+        if (!child) {
+          child = syntheticNodeForAddress(childAddr, date);
+          syntheticByAddr.set(childAddr, child);
+        }
+        if (!parent.children.includes(child)) parent.children.push(child);
+        parent = child;
+      }
+    }
+    return root;
   }
   return null;
 }
@@ -1251,9 +1277,9 @@ function renderLaw(opts) {
           </div>
         </div>
         <div class="tree-legend">
-          <span class="leg-changed">▍</span> ${escHtml(tr('legendChanged'))}
-          <span class="leg-tomb">${escHtml(tr('tombstone'))}</span> ${escHtml(tr('legendTomb'))}
-          ${evidenceEvents.length ? `<span class="leg-evidence">!</span> ${escHtml(tr('legendEvidence'))}` : ''}
+          <span class="legend-item"><span class="leg-changed">▍</span><span>${escHtml(tr('legendChanged'))}</span></span>
+          <span class="legend-item"><span class="leg-tomb">${escHtml(tr('tombstone'))}</span><span>${escHtml(tr('legendTomb'))}</span></span>
+          ${evidenceEvents.length ? `<span class="legend-item"><span class="leg-evidence">!</span><span>${escHtml(tr('legendEvidence'))}</span></span>` : ''}
         </div>
         <div class="doc" id="doc"></div>
       </section>
@@ -1329,12 +1355,35 @@ function renderTreeEntry(entry, depth, focusAddrs) {
   const changeKind = changeKindAtSelectedDate(entry.addr);
   const changed = !!changeKind || [...entry.children.values()].some(c => changedAddrs.has(c.addr));
   const collapsed = collapsedAddrs.has(entry.addr);
-  let html = `<div class="node scaffold kind-${escAttr(displayKind)}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
-  html += rowHtml(entry.addr, label, heading, changed, true, collapsed, changeKind);
+  const derivedTomb = derivedScaffoldTombstoneInfo(entry);
+  const disposition = derivedTomb ? tombstoneDisposition(entry.addr, derivedTomb) : null;
+  let html = `<div class="node scaffold kind-${escAttr(displayKind)}${derivedTomb ? ' tombstone derived-tombstone' : ''}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${disposition ? disposition.activeClass : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
+  html += rowHtml(entry.addr, label, heading, changed, true, collapsed, changeKind, derivedTomb);
   html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
   for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1, focusAddrs);
   html += `</div></div>`;
   return html;
+}
+
+function derivedScaffoldTombstoneInfo(entry) {
+  if (!entry || entry.hash || entry.tomb || !ROW_KINDS.has(addrKind(entry.addr))) return null;
+  const tombs = [];
+  let hasLive = false;
+  const visit = (e) => {
+    if (e.hash) { hasLive = true; return; }
+    if (e.tomb) tombs.push(e.tomb);
+    for (const child of e.children.values()) visit(child);
+  };
+  visit(entry);
+  if (hasLive || !tombs.length) return null;
+  const dates = [...new Set(tombs.map(t => t.date).filter(Boolean))].sort();
+  const sources = [...new Set(tombs.map(t => t.source_id).filter(Boolean))];
+  const reasons = [...new Set(tombs.map(t => t.reason || 'repeal'))];
+  return {
+    date: dates[dates.length - 1] || '',
+    source_id: sources.length === 1 ? sources[0] : '',
+    reason: reasons.length === 1 ? reasons[0] : 'repeal',
+  };
 }
 
 // Per-root map of address -> node at the PREVIOUS change date (change marking).
@@ -1355,12 +1404,23 @@ function prevNodeMap(rootAddr) {
   return map;
 }
 
-function rowHtml(addr, label, heading, changed, collapsible, collapsed, changeKind) {
+function rowHtml(addr, label, heading, changed, collapsible, collapsed, changeKind, derivedTomb) {
   const kind = (addr.split('/').pop() || '').split(':')[0];
+  const derivedDisposition = derivedTomb ? tombstoneDisposition(addr, derivedTomb) : null;
+  const src = derivedTomb && derivedTomb.source_id ? sourceById[derivedTomb.source_id] : null;
+  const srcLabel = src ? (src.canonical_id || src.title || derivedTomb.source_id) : (derivedTomb ? derivedTomb.source_id : '');
   let html = `<div class="node-row${collapsible ? ' clk' : ''} spyable" data-addr="${escAttr(addr)}">`;
   html += `<span class="node-toggle${collapsible ? '' : ' leaf'}">${collapsible ? (collapsed ? '▸' : '▾') : ''}</span>`;
   html += `<span class="node-label">${escHtml(label)}</span>`;
   if (heading) html += `<span class="node-heading">${escHtml(heading)}</span>`;
+  if (derivedDisposition) {
+    html += `<span class="tomb-label derived-tomb-label"><em class="${escAttr(derivedDisposition.reason)}">${escHtml(derivedDisposition.label)}</em></span>`;
+    if (derivedTomb.date) {
+      html += `<span class="tomb-meta">${refLink('date', { date: derivedTomb.date, addr })}`
+        + (derivedTomb.source_id ? ' · ' + refLink('source', { id: derivedTomb.source_id }, srcLabel) : '')
+        + `</span>`;
+    }
+  }
   if (changed) {
     const tagKind = changeKind || 'changed';
     html += `<span class="changed-tag changed-tag-${escAttr(tagKind)}">${escHtml(changeKindLabel(tagKind))}</span>`;
@@ -1673,11 +1733,6 @@ function focusChangedContext() {
     const addr = n.dataset.addr || '';
     toggleCollapse(n, !addressVisibleInFocus(addr, changed));
   });
-  const firstChanged = [...changed].sort(addrCompare)[0];
-  if (firstChanged) {
-    const el = document.querySelector(`#doc [data-addr="${cssEsc(firstChanged)}"]`);
-    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
 }
 
 // Find-in-page reveal of hidden="until-found" content: expand ancestors.
@@ -1885,7 +1940,7 @@ function versionTrail(addr) {
   let prevFp = null;
   for (let i = 0; i < changeDates.length; i++) {
     const d = changeDates[i];
-    const node = nodeAtAddress(folds[d].live, addr);
+    const node = nodeAtAddress(folds[d].live, addr, d);
     const fp = node ? subtreeFingerprint(node) : '';
     if (i === 0 || fp !== prevFp) {
       versions.push({ startIdx: i, endIdx: i, node, fp, present: !!node });
@@ -2173,14 +2228,29 @@ function nodeProseHtml(node, addr) {
   if (!node) return '';
   const kids = structChildren(node, addr);
   const own = inlineContent(node).map(s => escHtml(s.text)).join(' ');
-  if (!kids.length) return own || escHtml(nodeToText(node));
+  const isRow = ROW_KINDS.has(node.kind);
+  if (!kids.length && !isRow) return own || escHtml(nodeToText(node));
   const heading = nodeHeading(node);
   let html = '';
-  if (heading) html += `<div class="dp-head">${escHtml(kindLabel(node, 0))} ${escHtml(heading)}</div>`;
-  if (own) html += `<p class="dp-text">${own}</p>`;
-  for (const { child, childAddr } of kids) {
-    html += `<div class="dp-block"><span class="dp-lbl">${escHtml(kindLabel(child, 0))}</span> ${nodeProseHtml(child, childAddr)}</div>`;
+  if (isRow) {
+    const label = kindLabel(node, 0);
+    html += `<div class="dp-node kind-${escAttr(node.kind)}" data-addr="${escAttr(addr)}">`
+      + `<div class="dp-row"><span class="dp-node-label">${escHtml(label)}</span>`;
+    if (heading) html += `<span class="dp-node-heading">${escHtml(heading)}</span>`;
+    html += `</div>`;
+    if (own) html += `<p class="dp-text">${own}</p>`;
+  } else {
+    if (heading) html += `<div class="dp-head">${escHtml(kindLabel(node, 0))} ${escHtml(heading)}</div>`;
+    if (own) html += `<p class="dp-text">${own}</p>`;
   }
+  for (const { child, ordinal, childAddr } of kids) {
+    if (ROW_KINDS.has(child.kind)) {
+      html += nodeProseHtml(child, childAddr);
+    } else {
+      html += `<div class="dp-block"><span class="dp-lbl">${escHtml(kindLabel(child, ordinal))}</span> ${nodeProseHtml(child, childAddr)}</div>`;
+    }
+  }
+  if (isRow) html += `</div>`;
   return html;
 }
 

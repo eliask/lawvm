@@ -148,6 +148,16 @@ with sync_playwright() as p:
         " if (!el) return 'missing'; const r = el.getBoundingClientRect();"
         " return r.top > -120 && r.top < 700 ? 'visible' : 'offscreen ' + r.top; })()")
     check("§ jump to repealed 54 a shows ghost", near_54a == "visible", near_54a)
+    derived_section_tomb = page.evaluate(
+        "(() => { const el = document.querySelector('#doc .node[data-addr=\"chapter:4/section:47a\"]');"
+        " return !!(el && el.classList.contains('derived-tombstone') && el.textContent.includes('[kumottu]')); })()")
+    check("section with only repealed subsections is marked at row level", derived_section_tomb)
+    evidence_legend_nowrap = page.evaluate(
+        "(() => { const el = document.querySelector('.tree-legend .legend-item .leg-evidence');"
+        " if (!el) return true;"
+        " const item = el.closest('.legend-item');"
+        " return !!(item && getComputedStyle(item).whiteSpace === 'nowrap'); })()")
+    check("evidence legend marker stays with label", evidence_legend_nowrap)
     # Lifecycle strip on the ghost shows an expiry/repeal segment somewhere
     n_seg = page.locator("#doc .chg-strip .seg-rep, #doc .chg-strip .seg-exp").count()
     check("lifecycle strips show repeal/expiry segments", n_seg >= 1, f"{n_seg} segments")
@@ -170,9 +180,11 @@ with sync_playwright() as p:
 
     # Contextual focus keeps the full law available, but collapses unchanged
     # outline branches around selected-date changes.
+    page.select_option("#date-jump", label="2011-04-05")
+    page.wait_for_timeout(700)
     full_addr_count = page.locator("#doc [data-addr]").count()
     page.click("#focus-changes-context")
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(900)
     context_addr_count = page.locator("#doc [data-addr]").count()
     context_collapsed = page.locator("#doc .node.collapsed").count()
     check("context focus keeps full document",
@@ -345,6 +357,21 @@ with sync_playwright() as p:
         return { ok: true, hasAddr: t.includes('152'), hasFooter: t.includes('#') && t.includes('s='), len: t.length };
     }""")
     check("copy-text writes provision + provenance", bool(copied.get("ok")) and copied.get("hasFooter"), str(copied))
+    page.locator(".inline-history .hist-close").click()
+
+    # Whole-chapter initial content must keep section/chapter structure in the
+    # diff box. A regression here flattened chapter 15 into duplicate bare
+    # "1 mom." blocks with no section context.
+    page.select_option("#date-jump", "0")
+    page.wait_for_timeout(700)
+    chap15 = page.locator("#doc .node[data-addr='chapter:15'] .hist-btn").first
+    chap15.scroll_into_view_if_needed()
+    chap15.click()
+    page.wait_for_selector(".inline-history", timeout=10000)
+    n_diff_sections = page.locator(".inline-history .diff-box .dp-node.kind-section").count()
+    check("inserted chapter history keeps section structure",
+          n_diff_sections >= 2,
+          f"{n_diff_sections} section rows")
     page.locator(".inline-history .hist-close").click()
 
     # Copy UX (4a): provision number labels are selectable (no user-select:none),
