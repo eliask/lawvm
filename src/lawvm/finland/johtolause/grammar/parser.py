@@ -238,6 +238,27 @@ def _container_truncates_section_descendant(scan: _Scan) -> bool:
 # container path re-recognizes into additional kept appendix / table arms.
 _PROV_ANAPHOR_WORDS = frozenset({"näistä", "niistä"})
 
+# Anaphoric determiners that point at the last-mentioned structural unit for an
+# INSERT target (``sanottuun lakiin uusi 4 §`` / ``mainittuun pykälään uusi 5
+# momentti``). The old parser routes these through
+# ``_parse_anaphoric_determiner_insert`` with a distinct
+# ``fi.anaphoric_determiner_insert`` witness, so the generic inline-statute-name
+# WORD-skip must NOT consume them. Faithful to
+# ``surface_parse._ANAPHORIC_INSERT_DETERMINERS``.
+_ANAPHORIC_INSERT_DETERMINERS = frozenset(
+    {
+        "sanottuun",
+        "sanottu",
+        "sanottua",
+        "mainittuun",
+        "mainittua",
+        "samaan",
+        "saman",
+        "tähän",
+        "tuohon",
+    }
+)
+
 
 def _has_prov_anaphor_continuation(scan: _Scan) -> bool:
     """True iff a ``näistä/niistä …`` provenance back-ref follows the cursor.
@@ -1498,6 +1519,30 @@ def _parse_verb_group(
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
         except OutOfScope:
+            # The arm may open with an inline statute-name WORD run the old
+            # ``_target_list`` skips before retrying ``_target`` (sp:4679-4697):
+            # ``…, työjärjestykseen uusi 52 d §`` / ``…, itse lakiin uusi 63 a §``.
+            # The leading document WORD lexes as a bare WORD mid-list (only the
+            # FIRST target of a group folds it into a STATUTE_NAME_SPAN), so skip
+            # the WORD run and re-attempt the target at the structural noun. The
+            # retry's batch witness anchors past the skipped WORDs, matching the
+            # old parser (whose witness starts at ``uusi``).
+            #
+            # The old WORD-skip is the LAST continuation fallback (after the
+            # determiner-insert / pykälään-anaphora / heading / backref handlers),
+            # so it is only safe when the skipped run leads STRAIGHT into a clean
+            # ``uusi <whole-section>`` insert: ``_retry_target_after_word_skip``
+            # self-restricts to that shape, declining anything an earlier old
+            # handler would have owned.
+            retry = _retry_target_after_word_skip(scan, more_batch_start, chapter, part)
+            if retry is not None:
+                more, more_kind = retry
+                nodes.extend(more)
+                last_batch = list(more)
+                chapter = _chapter_after_batch(scan, more_batch_start, more, chapter, verb)
+                part = _extract_part(more, part)
+                _consume_inline_move_tails(scan, nodes, last_batch)
+                continue
             # The separator led into a continuation this driver cannot parse.
             # For an INSERTION verb group the old parser keeps folding the
             # residue into the same target list (chained ``sekä uusi …`` /
@@ -1589,6 +1634,81 @@ def _mixed_continuation_is_foldable(
         else:
             # A scope block / standalone coordination arm carries cross-batch
             # scope; keep those out of scope for now.
+            return False
+    return True
+
+
+def _retry_target_after_word_skip(
+    scan: _Scan, arm_start: int, chapter: str, part: str
+) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
+    """Skip a leading inline statute-name WORD run, then re-attempt the target.
+
+    Faithful to ``surface_parse._target_list`` sp:4679-4697: a continuation arm
+    can open with a document/determiner WORD run the lexer leaves un-annotated
+    mid-list (``…, työjärjestykseen uusi 52 d §`` / ``…, itse lakiin uusi 63 a
+    §``). The old loop, when ``_target`` declines at the WORD, skips the whole
+    WORD run and re-runs ``_target`` at the following structural noun; the batch
+    witness then anchors past the skipped WORDs (the old witness starts at
+    ``uusi``, NOT at the WORD).
+
+    The cursor is at ``arm_start`` (post-separator). Sentinel spans are skipped
+    first (a citation may sit between the separator and the WORD). On no leading
+    WORD, or when the re-attempt still declines, the cursor is restored to
+    ``arm_start`` and ``None`` is returned so the caller's decline path runs.
+    """
+    scan.goto(arm_start)
+    _skip_sentinels(scan)
+    t = scan.peek()
+    if t is None or t.cat != "WORD":
+        scan.goto(arm_start)
+        return None
+    # An anaphoric-insert determiner (``sanottuun lakiin uusi …``) is NOT a plain
+    # statute-name WORD: the old parser routes it through
+    # ``_parse_anaphoric_determiner_insert`` FIRST (sp:4212, before the generic
+    # WORD-skip at sp:4680), stamping a distinct ``fi.anaphoric_determiner_insert``
+    # witness. Skipping it here would emit the wrong rule_id, so leave it for the
+    # dedicated determiner handler / decline path.
+    if (t.text or "").lower() in _ANAPHORIC_INSERT_DETERMINERS:
+        scan.goto(arm_start)
+        return None
+    while (t := scan.peek()) is not None and t.cat == "WORD":
+        scan.advance()
+    # The old WORD-skip fallback sits AFTER every other continuation handler, so
+    # it is only safe to fire on the exact shape those handlers do NOT own: a
+    # clean ``uusi <whole-section list> §`` insert (``työjärjestykseen uusi 52 d
+    # §``). Require the WORD run to lead straight into ``uusi`` and the recognized
+    # batch to be pure whole-section insertions (no sub-target, no scope). Any
+    # other shape (a bare section ref, a §:ILL/§:GEN sub-target, a chapter/heading
+    # arm) is restored and left to decline, mirroring the old precedence.
+    t = scan.peek()
+    if t is None or t.cat != "UUSI" or t.case != "NOM":
+        # Only the nominative ``uusi N §`` whole-section insert is in scope here.
+        # The genitive ``uuden N §:n`` past-tense form (``päätökseen uuden 2 a
+        # §:n``) is a different shape the old parser folds via its own arm, so
+        # leave it to decline rather than recover a divergent grouping.
+        scan.goto(arm_start)
+        return None
+    try:
+        more, more_kind = _recognize_one_target(scan, chapter, part)
+    except OutOfScope:
+        scan.goto(arm_start)
+        return None
+    if more_kind != "insertion" or not _is_clean_whole_section_insert_batch(more):
+        scan.goto(arm_start)
+        return None
+    return more, more_kind
+
+
+def _is_clean_whole_section_insert_batch(nodes: list[SurfaceNode]) -> bool:
+    """True iff every node is a plain whole-section SurfaceInsertion (no scope)."""
+    if not nodes:
+        return False
+    for node in nodes:
+        if not isinstance(node, SurfaceInsertion):
+            return False
+        if node.kind != TargetKind.SECTION:
+            return False
+        if node.sub_target is not None or node.chapter or node.part:
             return False
     return True
 

@@ -215,6 +215,24 @@ def test_insertion_then_plain_section_arm_folds_in_one_group(text: str) -> None:
     assert report.equal, f"delta on {text!r}:\n{report.summary()}"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A continuation arm opening with an inline document/statute-name WORD
+        # (``työjärjestykseen`` / ``ohjesääntöön``) that the lexer leaves
+        # un-annotated mid-list (only the FIRST target of a group folds it into a
+        # STATUTE_NAME_SPAN). The old parser skips the WORD run and recovers the
+        # ``uusi N §`` whole-section insert; the witness anchors at ``uusi``.
+        "muutetaan 33 §:n 3 momentti, 37 § sekä lisätään työjärjestykseen "
+        "uusi 52 d § seuraavasti:",
+        "muutetaan 5 § ja 6 § sekä lisätään ohjesääntöön uusi 14 a § seuraavasti:",
+    ],
+)
+def test_inline_statute_name_word_before_insert_arm_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
 def test_scoped_section_arm_after_insert_still_declines() -> None:
     # A chapter-SCOPED continuation arm (``3 luvun 5 §:n 2 momentti``) after an
     # insertion batch is NOT folded: the new per-separator split establishes the
