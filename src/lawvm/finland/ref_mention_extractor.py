@@ -161,6 +161,28 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
         (\d{1,6}[a-zA-Z\xe4\xf6\xc4\xd6]?)   # group 3 = section label (optional)
         \s{0,5}
         \xa7                                    # § character (U+00A7)
+        (?:
+            # §:n / §:ssä clitic between the § and the momentti number, bounded.
+            :[a-z\xe4\xf6]{1,4}
+        )?
+        (?:
+            # group 4 = momentti (subsection) number, followed by the inflected
+            # "moment-" head word in any case form (momentti / momentin /
+            # momentissa / momentista / momenttiin / momenttia). Bounded suffix.
+            \s{0,5}
+            (\d{1,3})
+            \s{0,5}
+            moment[a-z\xe4\xf6]{0,6}
+            (?:
+                # group 5 = kohta (item) label, optional, following the momentti.
+                # The stem gradates t->d in inflected forms (kohta / kohdan /
+                # kohdassa / kohdasta / kohtaan), so accept koht- or kohd-.
+                \s{0,5}
+                (\d{1,3}[a-z\xe4\xf6]?)
+                \s{0,5}
+                koh[td][a-z\xe4\xf6]{0,6}
+            )?
+        )?
     )?
     """,
     re.VERBOSE | re.IGNORECASE,
@@ -172,6 +194,27 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
 # Both must be present; if either is absent, skip the full regex scan.
 _PLAIN_TEXT_GUARD_SECTION = "\xa7"  # §
 _PLAIN_TEXT_GUARD_PAREN = "("
+
+
+@dataclass(frozen=True)
+class PlainTextStatuteHit:
+    """A single plain-text statute citation hit with provision precision.
+
+    Carries the sub-section precision (momentti, kohta) the citation names so a
+    deeplink consumer can target the exact provision, not just the §.
+
+    Attributes:
+        statute_id:     "NUMBER/YEAR" canonical form.
+        section_label:  e.g. "7", "7a", or "" if not present.
+        subsection_num: Momentti number (int) or None when the citation stops
+                        at the §.
+        item_label:     Kohta label (e.g. "3", "3a") or None.
+    """
+
+    statute_id: str
+    section_label: str = ""
+    subsection_num: Optional[int] = None
+    item_label: Optional[str] = None
 
 
 class PlainTextStatuteCitationRecognizer:
@@ -250,6 +293,24 @@ class PlainTextStatuteCitationRecognizer:
           - statute_id:    "NUMBER/YEAR" canonical form
           - section_label: e.g. "7", "7a", or "" if not present
 
+        This is the statute+section view. For sub-section (momentti / kohta)
+        precision used by deeplink consumers, use :meth:`scan_precise`.
+
+        Per AGENTS.md §1.11: substring guards applied before regex scan.
+        """
+        return [(hit.statute_id, hit.section_label) for hit in self.scan_precise(p_el)]
+
+    def scan_precise(
+        self,
+        p_el: ET.Element[str],
+    ) -> List[PlainTextStatuteHit]:
+        """Scan a <p> element returning provision-precise statute citation hits.
+
+        Each hit carries the momentti (subsection) and kohta (item) precision
+        the citation names, so a deeplink consumer can target the exact
+        provision rather than only the §. Citations that stop at the § yield a
+        hit with ``subsection_num=None`` (section-level fallback).
+
         Per AGENTS.md §1.11: substring guards applied before regex scan.
         """
         text = self._collect_non_ref_text(p_el)
@@ -262,13 +323,15 @@ class PlainTextStatuteCitationRecognizer:
         if _PLAIN_TEXT_GUARD_SECTION not in text:
             return []
 
-        results: List[Tuple[str, str]] = []
+        results: List[PlainTextStatuteHit] = []
         seen_ids: set[str] = set()
 
         for m in _PLAIN_TEXT_FI_STATUTE_RE.finditer(text):
             num_raw = m.group(1)
             year = m.group(2)
             section_raw = m.group(3) or ""
+            momentti_raw = m.group(4)
+            kohta_raw = m.group(5)
 
             # Sanity: year must be plausible
             year_int = int(year)
@@ -282,13 +345,32 @@ class PlainTextStatuteCitationRecognizer:
 
             statute_id = f"{num_int}/{year}"
 
-            # Deduplicate same statute_id within this <p>
-            key = statute_id + "/" + section_raw
+            subsection_num = int(momentti_raw) if momentti_raw else None
+            # A bare § with no momentti carries no item; only emit kohta when a
+            # momentti anchors it (the grammar nests kohta under momentti).
+            item_label = kohta_raw if (kohta_raw and subsection_num is not None) else None
+
+            # Deduplicate same provision within this <p>. The key includes the
+            # sub-section precision so distinct momentit/kohdat of one statute
+            # are not collapsed into one hit.
+            key = "/".join(
+                part for part in (
+                    statute_id,
+                    section_raw,
+                    str(subsection_num) if subsection_num is not None else "",
+                    item_label or "",
+                )
+            )
             if key in seen_ids:
                 continue
             seen_ids.add(key)
 
-            results.append((statute_id, section_raw))
+            results.append(PlainTextStatuteHit(
+                statute_id=statute_id,
+                section_label=section_raw,
+                subsection_num=subsection_num,
+                item_label=item_label,
+            ))
 
         return results
 
@@ -697,8 +779,9 @@ def extract_plain_text_statute_mentions(
             p_elements.append(el)
 
     for p_el in p_elements:
-        hits = _PLAIN_TEXT_RECOGNIZER.scan(p_el)
-        for target_statute_id, section_label in hits:
+        hits = _PLAIN_TEXT_RECOGNIZER.scan_precise(p_el)
+        for hit in hits:
+            target_statute_id = hit.statute_id
             # Skip if this target is already covered by a <ref>-element mention
             if target_statute_id in covered:
                 continue
@@ -715,7 +798,9 @@ def extract_plain_text_statute_mentions(
             tgt_ref = ProvisionRef(
                 statute_id=target_statute_id,
                 provision_path="",
-                section_label=section_label,
+                section_label=hit.section_label,
+                subsection_num=hit.subsection_num,
+                item_label=hit.item_label,
             )
             mention = ReferenceMention(
                 source_provision_ref=src_ref,

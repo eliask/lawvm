@@ -37,6 +37,7 @@ from lawvm.core.reference_mention import (
 from lawvm.finland.ref_mention_extractor import (
     ExtractionResult,
     PlainTextStatuteCitationRecognizer,
+    PlainTextStatuteHit,
     extract_all_reference_mentions,
     extract_eu_reference_mentions,
     extract_plain_text_statute_mentions,
@@ -1168,3 +1169,150 @@ class TestPlainTextStatuteCitations:
         # plain_text from terveydenhuoltolain citation (different statute ID, so not deduped)
         plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         assert len(plain) >= 1, f"Expected plain_text mention, got lemmas={lemmas}"
+
+
+# ===========================================================================
+# Task 23: momentti/kohta sub-section precision for deeplink consumers
+# ===========================================================================
+
+
+class TestPlainTextMomenttiPrecision:
+    """The plain-text recognizer must surface momentti (subsection) and kohta
+    (item) precision so a deeplink consumer can target the exact provision,
+    not just the §. Section-level precision is the fallback when the citation
+    stops at the §.
+    """
+
+    @staticmethod
+    def _p(text: str):
+        import xml.etree.ElementTree as ET
+
+        return ET.fromstring(f"<p>{text}</p>")
+
+    # ── Recognizer scan_precise unit tests ───────────────────────────────────
+
+    def test_momentti_captured(self) -> None:
+        """'7 §:n 2 momentissa' yields subsection_num=2."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(
+            self._p("lannoitelain (711/2022) 7 \xa7:n 2 momentissa tarkoitettu.")
+        )
+        assert hits == [
+            PlainTextStatuteHit(
+                statute_id="711/2022", section_label="7", subsection_num=2, item_label=None
+            )
+        ], hits
+
+    def test_momentti_and_kohta_captured(self) -> None:
+        """'5 §:n 2 momentin 3 kohdan' yields subsection_num=2, item_label='3'."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(
+            self._p("lain (250/1966) 5 \xa7:n 2 momentin 3 kohdan mukaan.")
+        )
+        assert hits == [
+            PlainTextStatuteHit(
+                statute_id="250/1966", section_label="5", subsection_num=2, item_label="3"
+            )
+        ], hits
+
+    def test_section_only_falls_back(self) -> None:
+        """A bare '5 §' citation yields subsection_num=None (section-level)."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(
+            self._p("elintarvikelain (297/2021) 5 \xa7 nojalla.")
+        )
+        assert hits == [
+            PlainTextStatuteHit(
+                statute_id="297/2021", section_label="5", subsection_num=None, item_label=None
+            )
+        ], hits
+
+    def test_distinct_momentit_not_collapsed(self) -> None:
+        """Two distinct momentit of one statute (each a full citation) produce
+        two precise hits — the dedup key includes the sub-section precision.
+        """
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(
+            self._p(
+                "lain (12/2000) 3 \xa7:n 4 momentti ja "
+                "lain (12/2000) 3 \xa7:n 5 momentti."
+            )
+        )
+        subsections = sorted(h.subsection_num for h in hits if h.subsection_num is not None)
+        assert subsections == [4, 5], hits
+
+    def test_scan_stays_backward_compatible(self) -> None:
+        """The legacy scan() 2-tuple contract is unchanged by momentti capture."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(
+            self._p("lannoitelain (711/2022) 7 \xa7:n 2 momentissa tarkoitettu.")
+        )
+        assert hits == [("711/2022", "7")], hits
+
+    def test_name_internal_relative_clause_not_a_target(self) -> None:
+        """A '§:n M momentissa tarkoitettu' relative clause with no statute id
+        of its own does not fabricate a citation target. This guards the
+        adversarial reversal that blocked promoting `momentissa` into the
+        shared johtolause lexicon — the body-citation pass must not perturb
+        amendment grammar.
+        """
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(
+            self._p("8 \xa7:n 2 momentissa tarkoitettu menettely.")
+        )
+        assert hits == [], hits
+
+    # ── End-to-end: ProvisionRef threading ───────────────────────────────────
+
+    def test_mention_target_provision_ref_carries_subsection(self) -> None:
+        """extract_plain_text_statute_mentions threads momentti+kohta into the
+        target ProvisionRef so the interlink consumer can build a subsection
+        deeplink.
+        """
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body>"
+            b"<section><num>5 \xc2\xa7</num>"
+            b"<paragraph><content>"
+            b"<p>Noudatetaan lannoitelain (711/2022) 7 \xc2\xa7:n 2 "
+            b"momentin 3 kohdan mukaan.</p>"
+            b"</content></paragraph>"
+            b"</section>"
+            b"</body></act></akomaNtoso>"
+        )
+        result = extract_plain_text_statute_mentions(xml, "2003/314")
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        assert len(plain) == 1, result.mentions
+        tgt = plain[0].target_provision_ref
+        assert tgt is not None
+        assert tgt.statute_id == "711/2022"
+        assert tgt.section_label == "7"
+        assert tgt.subsection_num == 2
+        assert tgt.item_label == "3"
+        assert tgt.serialized() == "711/2022/7/2/3"
+
+    def test_interlink_target_locator_has_subsection_segment(self) -> None:
+        """The neutral interlink built from a momentti citation carries a
+        subsection LocatorSegment — the deeplink precision the consumer needs.
+        """
+        from lawvm.finland.interlinks import fi_interlink_from_reference_mention
+
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body>"
+            b"<section><num>5 \xc2\xa7</num>"
+            b"<paragraph><content>"
+            b"<p>Sovelletaan lannoitelain (711/2022) 7 \xc2\xa7:n 2 momentissa.</p>"
+            b"</content></paragraph>"
+            b"</section>"
+            b"</body></act></akomaNtoso>"
+        )
+        result = extract_plain_text_statute_mentions(xml, "2003/314")
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        assert len(plain) == 1
+        interlink = fi_interlink_from_reference_mention(plain[0], interlink_id="t23")
+        assert interlink.target.locator is not None
+        kinds = [seg.kind for seg in interlink.target.locator.locator.segments]
+        labels = [seg.label for seg in interlink.target.locator.locator.segments]
+        assert kinds == ["section", "subsection"], (kinds, labels)
+        assert labels == ["7", "2"], (kinds, labels)
