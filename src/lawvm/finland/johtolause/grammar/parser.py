@@ -584,8 +584,12 @@ def _tail_starts_with_appendix_arm(scan: _Scan) -> bool:
         i += 1
     if not saw_sep:
         return False
-    # An optional ``päätöksen`` / ``asetuksen`` / ``lain`` genitive WORD anchor.
-    if i < n and toks[i].cat == "WORD":
+    # An optional document genitive WORD anchor run (``valtioneuvoston
+    # päätökseen`` — one or more genitive WORDs), but NOT a provenance opener.
+    while i < n and toks[i].cat == "WORD":
+        low = (toks[i].text or "").lower()
+        if low in _PROV_REMENTTION_WORDS or low.startswith("sella"):
+            return False
         i += 1
     return i < n and toks[i].cat == "LIITE"
 
@@ -612,6 +616,11 @@ def _tail_starts_with_heading_arm(scan: _Scan) -> bool:
         i += 1
     if not saw_sep:
         return False
+    # An optional anaphoric ``sen`` / ``sitä`` ("its") chapter back-reference WORD
+    # before the section heading arm: ``10 luvun ja sen 1 §:n otsikko`` — the old
+    # parser keeps the ``1 §:n otsikko`` heading scoped to the resumed chapter.
+    if i < n and toks[i].cat == "WORD" and (toks[i].text or "").lower() in ("sen", "sitä"):
+        i += 1
     if i >= n or toks[i].cat != "NUM":
         return False
     # Walk the leading number(/letter/range) run.
@@ -640,6 +649,283 @@ def _tail_starts_with_heading_arm(scan: _Scan) -> bool:
             toks[m].cat in ("OTSIKKO", "VALIOTSIKKO")
             for m in range(k, min(k + 5, n))
         )
+    return False
+
+
+# Number/scope run cats that a section/insert continuation arm threads before its
+# operative noun (``6 §:n 4 kohtaan …``, ``14 ja 15 §:ään …``). Used to walk a
+# leading section-address run looking for a kept insertion (``UUSI``) payload.
+_INSERT_ARM_RUN_CATS = frozenset(
+    {
+        "NUM",
+        "LETTER",
+        "DASH",
+        "CONJ",
+        "COMMA",
+        "SEKA",
+        "PYKALA",
+        "MOMENTTI",
+        "KOHTA",
+        "JOHD",
+        "LUKU",
+        "OSA",
+    }
+)
+
+
+def _tail_starts_with_insertion_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a kept ``uusi …`` insert arm.
+
+    The catastrophic ``insert_list_truncated`` shape: a ``lisätään`` group whose
+    first arm parsed as a plain SECTION ref (``6 §:n 4 kohtaan uusi d ja e
+    alakohta`` — the section path greedily ate ``6 §:n 4 kohtaan`` and stopped at
+    ``uusi``), so the group ran in ``kind="section"`` mode; every following
+    ``N §:ään uusi M kohta`` / archaic ``N §:ään uuden M momentin`` insertion arm
+    then declines and the loop silently swallows the tail. The old parser keeps
+    every one of them.
+
+    The kept tail is a LIST of two or more separator-joined ``uusi …`` insert
+    arms (``6 §:ään uusi 6 kohta, 11 §:n 2 momenttiin uusi 6 kohta, …``): the
+    old parser folds them all; the section-mode loop, having declined the second
+    arm, swallows the whole list. The two-arm requirement is what separates a real
+    dropped list from the benign SINGLE trailing ``uusi`` payload of the already-
+    captured first arm (``3 §:ään uusi, näin kuuluva 2 momentti`` / ``… uusi``
+    run-to-END) that the old parser also drops — those carry no SECOND arm, so the
+    guard does not fire and the new parse stays 0-delta.
+
+    Walks ``UUSI``-led / section-address-run-then-``UUSI`` arms separated by list
+    separators, counting distinct insert arms up to the next VERB / END. Returns
+    True only when at least two are present. A provenance re-mention WORD
+    (``sellaisena kuin …`` / ``näistä …``) before the second arm means the tail is
+    amendment history the old parser drops — bail.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    arms = 0
+    while i < n:
+        cat = toks[i].cat
+        if cat == "VERB":
+            break
+        if cat in ("COMMA", "CONJ", "SEKA", "DASH", "TEMPORAL"):
+            i += 1
+            continue
+        if cat in _SENTINEL_SPAN_CATS:
+            i += 1
+            continue
+        if cat == "WORD":
+            low = (toks[i].text or "").lower()
+            if low in _PROV_REMENTTION_WORDS or low.startswith("sella"):
+                break
+            i += 1
+            continue
+        # An insert arm: a leading ``UUSI`` or a section-address run reaching
+        # ``UUSI`` (``N §:ään … uusi``).
+        if cat == "UUSI":
+            arms += 1
+            i += 1
+            continue
+        if cat == "NUM":
+            j = i
+            while j < n and toks[j].cat in _INSERT_ARM_RUN_CATS:
+                j += 1
+            if j < n and toks[j].cat == "UUSI":
+                arms += 1
+                i = j + 1
+                continue
+            # A NUM run not closing on ``UUSI`` — a fresh non-insert target the old
+            # parser handles separately; stop scanning the insert list here.
+            break
+        # Any other token ends the insert-list scan.
+        break
+    if arms >= 2:
+        return True
+    # A SINGLE arm is benign (the trailing payload of an already-captured first
+    # arm) EXCEPT a whole-section insert into a named document: ``lakiin uusi 15 a
+    # ja 27 a §`` — a fresh ``<doc-WORD(illative)> uusi <num> §`` the old parser
+    # keeps and that carries no preceding section address, so it cannot be a
+    # trailing payload of a prior arm. Detect that one kept single-arm shape.
+    return _tail_starts_with_document_whole_section_insert(scan)
+
+
+# Illative-case document anchor WORDs that introduce a whole-section insert into a
+# named document (``lakiin uusi 15 a §`` / ``asetukseen uusi 25 a §``).
+_DOC_ILLATIVE_INSERT_WORDS = frozenset(
+    {
+        "lakiin",
+        "asetukseen",
+        "päätökseen",
+        "työjärjestykseen",
+        "johtosääntöön",
+        "ohjesääntöön",
+    }
+)
+
+
+def _tail_starts_with_document_whole_section_insert(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a ``<doc-WORD> uusi <num> §``
+    whole-section insert into a named document the old parser keeps.
+
+    The cue must be IMMEDIATE: separators, then a document illative WORD, then
+    ``UUSI``, then a section-address run closing on ``PYKALA``. A preceding
+    section-address run (``N §:ään uusi …``) is NOT this shape — that is handled
+    by the multi-arm path (and a single such arm is the benign trailing payload).
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    # A stranded ``uusi`` payload of the already-captured first arm may lead the
+    # tail (``14 §:n 1 momenttiin`` was emitted as a section, leaving its ``uusi``
+    # [+ kohta/momentti run] unconsumed) — skip it to reach the separator before
+    # the kept ``lakiin uusi N §`` arm.
+    if i < n and toks[i].cat == "UUSI":
+        i += 1
+        while i < n and toks[i].cat in ("NUM", "LETTER", "DASH", "KOHTA", "MOMENTTI"):
+            i += 1
+    while i < n and toks[i].cat in ("COMMA", "CONJ", "SEKA", "DASH", "TEMPORAL"):
+        i += 1
+    # The document anchor lexes as a DOC token (``lakiin``/``asetukseen``) or, for
+    # less-common documents, a bare illative WORD.
+    if i >= n:
+        return False
+    if toks[i].cat == "DOC":
+        i += 1
+    elif toks[i].cat == "WORD" and (toks[i].text or "").lower() in _DOC_ILLATIVE_INSERT_WORDS:
+        i += 1
+    else:
+        return False
+    if i >= n or toks[i].cat != "UUSI":
+        return False
+    i += 1
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH", "CONJ", "COMMA", "SEKA"):
+        j += 1
+    return j < n and toks[j].cat == "PYKALA"
+
+
+# Anaphoric re-mention determiners that re-introduce a kept operative target in a
+# dropped tail (``…, sanottu 10 § edelleen …`` / ``näiden ohella 3 §:n …``). The
+# old parser keeps the re-mentioned section as a fresh operative ref; the new
+# section path cannot reach past the WORD lead-in, so it would silently drop it.
+_REMENTION_LEADIN_WORDS = frozenset({"sanottu", "sanotut", "näiden", "niiden"})
+
+# Separators + sentinel spans skipped before a re-mention determiner in a dropped
+# tail (the ``, [CITE] ja sanottu 10 §`` shape interposes a citation span).
+_REMENTION_LEADIN_SKIP_CATS = frozenset(
+    {"COMMA", "CONJ", "SEKA", "DASH"}
+) | _SENTINEL_SPAN_CATS
+
+
+def _tail_starts_with_rementioned_section_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a ``<determiner> <sec> …`` arm
+    the old parser keeps as an operative section ref.
+
+    Covers the ``mid_list_sanottu`` re-mention (``…, ja sanottu 10 § edelleen
+    osittain muutettuna …`` — the old parser re-emits the ``10 §`` as a second
+    operative target) and the ``näiden ohella <sec> …`` connective. The lead-in
+    determiner WORD(s) lead straight into a structural ``<num> … §`` ref the
+    section continuation cannot skip the WORD prefix to reach.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    while i < n and toks[i].cat in _REMENTION_LEADIN_SKIP_CATS:
+        i += 1
+    if i >= n or toks[i].cat != "WORD":
+        return False
+    if (toks[i].text or "").lower() not in _REMENTION_LEADIN_WORDS:
+        return False
+    # The determiner must lead (within a short window of WORD/NUM/LETTER/DASH) into
+    # a structural section ref — the kept operative target.
+    for k in range(i + 1, min(i + 5, n)):
+        if toks[k].cat == "PYKALA":
+            return True
+        if toks[k].cat not in ("NUM", "LETTER", "DASH", "WORD"):
+            break
+    return False
+
+
+def _tail_starts_with_part_scoped_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a part-scope resumption arm
+    (``…, II A osan 1 luvun 1 §, …``) the old parser keeps.
+
+    A mid-list explicit PART switch (``<num> [letter] osan …``) re-anchors the
+    following chapter/section descendants under the new part; the new section
+    continuation stops before the OSA-scoped arm, silently dropping the resumed
+    targets. The cue is separator-led ``<num> [letter] osa`` immediately leading
+    into a structural ``luku`` / ``§`` descendant before any provenance opener.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    saw_sep = False
+    while i < n and toks[i].cat in ("COMMA", "CONJ", "SEKA", "DASH"):
+        saw_sep = True
+        i += 1
+    if not saw_sep or i >= n or toks[i].cat != "NUM":
+        return False
+    j = i + 1
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH"):
+        j += 1
+    if j >= n or toks[j].cat != "OSA":
+        return False
+    # The part anchor must lead into a structural descendant (a chapter or
+    # section), not a bare trailing ``osa`` the old parser also drops.
+    k = j + 1
+    while k < n and toks[k].cat in ("NUM", "LETTER", "DASH"):
+        k += 1
+    return k < n and toks[k].cat in ("LUKU", "PYKALA")
+
+
+def _tail_starts_with_second_statute_arm(scan: _Scan) -> bool:
+    """True iff the dropped tail's FIRST content is a second named statute's
+    target the old parser keeps (``multi_statute_target``).
+
+    A multi-statute repeal/amend (``kumotaan … asetuksen 29 §, oikeudenkäymis-
+    kaaren 4 luvun 2 §, niinkuin …``): the first statute's target is reproduced,
+    then a fresh ``<statute-name WORD …> N luvun N §`` arm for a SECOND statute
+    follows. The new section path stops at the inline statute-name WORD run; the
+    old parser skips it and keeps the ``N luvun N §``. The cue is a separator-led
+    ``STATUTE_NAME_SPAN`` (or a WORD run) immediately leading into a ``<num>
+    luvun <num> §`` chapter-scoped section before any provenance opener.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    saw_sep = False
+    while i < n and toks[i].cat in ("COMMA", "CONJ", "SEKA", "DASH"):
+        saw_sep = True
+        i += 1
+    if not saw_sep:
+        return False
+    # A statute-name span or an inline statute-name WORD run (``oikeudenkäymis-
+    # kaaren``) introduces the second statute.
+    if i < n and toks[i].cat == "STATUTE_NAME_SPAN":
+        i += 1
+    else:
+        seen_word = False
+        while i < n and toks[i].cat == "WORD":
+            low = (toks[i].text or "").lower()
+            if low in _PROV_REMENTTION_WORDS or low.startswith("sella"):
+                return False
+            seen_word = True
+            i += 1
+        if not seen_word:
+            return False
+    # Skip an optional sentinel span lead-in.
+    while i < n and toks[i].cat in _SENTINEL_SPAN_CATS:
+        i += 1
+    # A chapter-scoped ``<num> luvun <num> §`` section of the second statute.
+    if i >= n or toks[i].cat != "NUM":
+        return False
+    j = i + 1
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH"):
+        j += 1
+    if j < n and toks[j].cat == "LUKU":
+        k = j + 1
+        while k < n and toks[k].cat in ("NUM", "LETTER", "DASH"):
+            k += 1
+        return k < n and toks[k].cat == "PYKALA"
     return False
 
 
@@ -720,7 +1006,9 @@ def _skip_minka_ohella_leadin(scan: _Scan) -> bool:
     return True
 
 
-def _section_tail_carries_kept_content(scan: _Scan) -> bool:
+def _section_tail_carries_kept_content(
+    scan: _Scan, verb: Optional[SourceVerb] = None
+) -> bool:
     """True iff the dropped SECTION/CONTAINER tail holds nodes the old parser
     keeps or leaks — so the driver must decline rather than silently truncate.
 
@@ -729,12 +1017,26 @@ def _section_tail_carries_kept_content(scan: _Scan) -> bool:
     ``uusi`` insert arm it keeps, and a ``minkä ohella <sec> … muutetaan`` arm it
     keeps. (The heading-change arm is handled separately by
     ``_section_continuation_is_kept``.)
+
+    ``verb`` is the verb-group verb. The ``uusi``-insert-arm detector fires ONLY
+    under a ``lisätään`` (LISATA) verb: there every ``N §:ään uusi …`` arm is a
+    kept operative insert the old parser folds in, whereas under ``muutetaan`` a
+    trailing ``uusi …`` arm is benign residue the old section path also drops
+    (gating on the verb avoids over-declining ~110 such MUUTTAA clauses).
     """
+    if (
+        verb == SourceVerb.LISATA
+        and _tail_starts_with_insertion_arm(scan)
+    ):
+        return True
     return (
         _prov_rementtion_leaks(scan)
         or _tail_starts_with_appendix_arm(scan)
         or _tail_starts_with_heading_arm(scan)
         or _tail_starts_with_minka_ohella_arm(scan)
+        or _tail_starts_with_rementioned_section_arm(scan)
+        or _tail_starts_with_second_statute_arm(scan)
+        or _tail_starts_with_part_scoped_arm(scan)
     )
 
 
@@ -1671,6 +1973,21 @@ def _parse_verb_group(
     if batch_kind is None:
         return verb, [], ctx
     batch, kind = batch_kind
+    # An authority-basis citation mis-read as the first target: ``muutetaan …
+    # kielilain 25 §:n nojalla, … asetuksen 1, 2, 5, 8 ja 9 §`` — the ``25 §:n
+    # nojalla`` ("by virtue of §25") is the LEGAL BASIS for the amendment, not an
+    # operative target; the real targets follow the comma. The section recognizer
+    # reads ``25 §`` and stops at ``nojalla``, then the group breaks and the real
+    # targets are silently dropped. When the first batch stops immediately before a
+    # ``nojalla`` authority WORD and operative structural content follows before
+    # the next VERB, decline loudly so the old parser handles the basis correctly.
+    if (
+        (nojalla := scan.peek()) is not None
+        and nojalla.cat == "WORD"
+        and (nojalla.text or "").lower() == "nojalla"
+        and _has_operative_target_before_verb(scan, scan.pos + 1)
+    ):
+        raise OutOfScope("authority-basis nojalla citation mis-read as target")
     nodes = list(batch)
     last_batch: list[SurfaceNode] = list(batch)
     # Intra-group scope carry-forward: a later bare section list inherits the
@@ -1743,7 +2060,7 @@ def _parse_verb_group(
                 raise OutOfScope("undecodable insertion tail (no separator)")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
                 raise OutOfScope("container näistä/niistä provenance continuation")
-            if kind in ("section", "container") and _section_tail_carries_kept_content(scan):
+            if kind in ("section", "container") and _section_tail_carries_kept_content(scan, verb):
                 raise OutOfScope("dropped section/container tail keeps old nodes")
             break
         after_sep = scan.peek()
@@ -1950,7 +2267,7 @@ def _parse_verb_group(
                 scan, jolloin_renumber_pairs is not None
             ):
                 raise OutOfScope("undecodable heading-change continuation")
-            if kind in ("section", "container") and _section_tail_carries_kept_content(scan):
+            if kind in ("section", "container") and _section_tail_carries_kept_content(scan, verb):
                 raise OutOfScope("dropped section/container tail keeps old nodes")
             break
         # An insertion batch followed by a plain section/container continuation
@@ -2289,6 +2606,91 @@ def _has_later_verb(scan: _Scan) -> bool:
     return any(toks[i].cat == "VERB" for i in range(scan.pos, len(toks)))
 
 
+def _has_operative_target_before_verb(scan: _Scan, start: int) -> bool:
+    """True iff a structural target (``§`` / ``luku`` / ``liite``) appears from
+    ``start`` before the next VERB / end.
+
+    Used to confirm that real operative targets follow a ``nojalla`` authority
+    basis before declining (a bare authority-basis clause with no following target
+    is not a silent-drop). Stops at a provenance opener (``sellaisena kuin``) so a
+    pure amendment-history span does not count as an operative target.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    for i in range(start, n):
+        cat = toks[i].cat
+        if cat == "VERB":
+            return False
+        if cat == "WORD" and (toks[i].text or "").lower().startswith("sella"):
+            return False
+        if cat in ("PYKALA", "LUKU", "LIITE"):
+            return True
+    return False
+
+
+# Infinitive amendment-verb WORDs the lexer does NOT lex as a VERB token (archaic
+# drafting: ``… muutetaan 1 §:n …, sekä lisätä 4 §:ään uuden 4 momentin``). The
+# old parser recognizes the infinitive ``lisätä`` as a second amendment verb and
+# keeps its insert list; the new lexer leaves it as a bare WORD, so the outer loop
+# would swallow the whole second clause as residue. When such a WORD leads a
+# trailing residue that still carries operative insert content (a ``UUSI`` token),
+# the dropped tail keeps old nodes — decline loudly so the old parser handles it.
+_INFINITIVE_VERB_WORDS = frozenset(
+    {
+        "lisätä",
+        "lisättävä",
+        "muuttaa",
+        "muutettava",
+        "kumota",
+        "kumottava",
+        "siirtää",
+        "siirrettävä",
+    }
+)
+
+
+# Prefixes of finite amendment verbs the lexer may leave as a bare WORD when
+# misspelled (``muutetaaan`` with four a's instead of ``muutetaan``). A verb-like
+# WORD immediately leading a bare structural section is a kept second amendment
+# clause the old parser parses; the new lexer dropped it.
+_AMEND_VERB_WORD_PREFIXES = ("muuteta", "lisät", "kumot", "siirre", "muutet")
+
+
+def _residue_carries_infinitive_verb_insert(scan: _Scan) -> bool:
+    """True iff a no-further-VERB residue holds an amendment verb the lexer left as
+    a bare WORD, leading into kept operative content.
+
+    Two shapes the old parser keeps but the new lexer drops as residue:
+
+      * an infinitive amendment verb (``… sekä lisätä 4 §:ään uuden 4 momentin``)
+        followed by a ``UUSI`` insert arm, and
+      * a MISSPELLED finite verb (``… sekä muutetaaan 2 §``) the lexer failed to
+        recognise, immediately followed by a bare structural section (``§``).
+
+    Requires the verb WORD AND following operative content (``UUSI`` / a ``PYKALA``
+    within a short window) so a pure benign WORD run (a misspelled END marker,
+    discourse trivia) does not trip it.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    for i in range(scan.pos, n):
+        if toks[i].cat != "WORD":
+            continue
+        low = (toks[i].text or "").lower()
+        if low in _INFINITIVE_VERB_WORDS:
+            if any(toks[k].cat == "UUSI" for k in range(i + 1, n)):
+                return True
+            continue
+        # A misspelled finite amendment verb immediately leading a bare section.
+        if any(low.startswith(p) for p in _AMEND_VERB_WORD_PREFIXES):
+            for k in range(i + 1, min(i + 4, n)):
+                if toks[k].cat == "PYKALA":
+                    return True
+                if toks[k].cat not in ("NUM", "LETTER", "DASH", "WORD"):
+                    break
+    return False
+
+
 # Token categories that may benignly trail an insertion batch (separators and
 # sentinel spans the old parser also swallows without emitting a node).
 _BENIGN_TAIL_CATS = frozenset(
@@ -2435,8 +2837,16 @@ def parse(
                     break
             else:
                 # No further verb: the trailing non-verb run is residue the old
-                # outer loop swallows by advancing to end. Consume it so
-                # consumed_count matches, then stop.
+                # outer loop swallows by advancing to end. But an infinitive
+                # amendment verb (``… sekä lisätä 4 §:ään uuden 4 momentin``) the
+                # lexer left as a bare WORD carries a kept insert list the old
+                # parser keeps — silently swallowing it would drop those inserts,
+                # so decline loudly instead.
+                if _residue_carries_infinitive_verb_insert(scan):
+                    raise OutOfScope(
+                        "infinitive amendment-verb residue keeps insert list"
+                    )
+                # Consume the benign residue so consumed_count matches, then stop.
                 while not scan.cur.at_end:
                     scan.advance()
                 break
