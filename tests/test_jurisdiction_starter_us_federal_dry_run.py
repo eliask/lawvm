@@ -46,6 +46,7 @@ from lawvm.us_federal.dry_run import (
     USDryRunWindowError,
     _materialize_one,
     _norm_editorial,
+    _running_node_text,
     build_us_dry_run,
 )
 from lawvm.us_federal.source_tree import UscSection, parse_usc_title_document
@@ -1339,3 +1340,210 @@ def test_whole_section_replace_keeps_payload_when_catchline_not_delimitable() ->
     assert signal_rule_id == ""
     # Kept verbatim (no curly-quote body marker to delimit the catchline at).
     assert materialized == "§ 3084. Chief of Veterinary Corps"
+
+
+# ---------------------------------------------------------------------------
+# Composite ops on ONE sub-section node: running-node threading + dual-identical
+# patch handling (the §130i canary). Two ops against the same node must compose on
+# the running node text, and two SAME-anchor patches must each consume their own
+# occurrence left-to-right — never collapse onto one occurrence.
+# ---------------------------------------------------------------------------
+
+
+def _section79_dual_anchor_htm() -> bytes:
+    # §79: paragraph (a)(1) carries the anchor phrase "sections 4173(i)" TWICE, while
+    # subsection (a)'s own line carries it ZERO times (the node scope must confine the
+    # edit). Used to prove two SAME-anchor patches on one node consume their own
+    # (distinct) occurrences in source order, and that a same-anchor patch with no
+    # remaining occurrence is refused (the §130i single-occurrence shape).
+    return (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T10</title><!-- AUTHORITIES-USC-TITLE-ENUM:10 --></head><body><div>"
+        "<!-- expcite:TITLE 10!@!CHAPTER 1!@!Sec. 79 -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;79. Dual anchor demo</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">(a) The agency shall report as follows—</p>'
+        '<p class="statutory-body-1em">(1) a base (as defined in sections 4173(i) of '
+        "this title) and another base (as defined in sections 4173(i) of this title).</p>"
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+
+
+_DUAL_ANCHOR_SEGMENTS = (("subsection", "a"), ("paragraph", "1"))
+
+
+def _dual_anchor_op(op_id: str, sequence: int) -> LegalOperation:
+    return LegalOperation(
+        op_id=op_id,
+        sequence=sequence,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(
+                ("title", "10"),
+                ("section", "79"),
+                ("subsection", "a"),
+                ("paragraph", "1"),
+            )
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="sections 4173(i)", occurrence=0),
+            replacement="section 4173",
+        ),
+    )
+
+
+def test_two_identical_patches_on_one_node_consume_distinct_occurrences_left_to_right() -> None:
+    # The dual-identical-patch case: TWO ops with the SAME match_text
+    # ("sections 4173(i)" -> "section 4173") target the SAME node, which carries the
+    # anchor TWICE. Threaded on the running node text, patch 0 rewrites the LEFTMOST
+    # occurrence and records the result; patch 1 then operates on the post-patch node
+    # and rewrites the SECOND occurrence. They must NOT collapse onto one occurrence.
+    doc = parse_usc_title_document(_section79_dual_anchor_htm(), title=10, year="2023")
+    section = doc.section_by_number("79")
+    assert section is not None
+    before_text = section.statutory_text
+    assert before_text.count("sections 4173(i)") == 2
+
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    running = before_text
+    for op_id, seq in (("dual-0", 1), ("dual-1", 2)):
+        op = _dual_anchor_op(op_id, seq)
+        outcome = _materialize_one(
+            op, running, before_section=section, node_overrides=node_overrides
+        )
+        assert not isinstance(outcome, USDryRunRefusal), outcome
+        running, signal_rule_id, _disp = outcome
+        assert signal_rule_id == ""
+
+    # Both occurrences are consumed; neither survives, and no third edit happened.
+    assert running.count("sections 4173(i)") == 0
+    assert running.count("section 4173") == 2
+    assert "(a) The agency shall report as follows" in running
+
+
+def test_third_identical_patch_with_no_remaining_occurrence_is_refused_not_collapsed() -> None:
+    # §130i canary shape: the node carries the anchor TWICE but THREE identical
+    # same-anchor patches target it. The first two consume the two occurrences; the
+    # THIRD finds no remaining anchor in the running node and is REFUSED as an absent
+    # anchor — never collapsed onto a prior patch's edit, never a wrong materialization.
+    doc = parse_usc_title_document(_section79_dual_anchor_htm(), title=10, year="2023")
+    section = doc.section_by_number("79")
+    assert section is not None
+    before_text = section.statutory_text
+
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    running = before_text
+    outcomes = []
+    for op_id, seq in (("dual-0", 1), ("dual-1", 2), ("dual-2", 3)):
+        op = _dual_anchor_op(op_id, seq)
+        outcome = _materialize_one(
+            op, running, before_section=section, node_overrides=node_overrides
+        )
+        outcomes.append(outcome)
+        if isinstance(outcome, USDryRunRefusal):
+            continue
+        running, _rule, _disp = outcome
+
+    # First two composed; the third is a typed absent-anchor refusal (no collapse).
+    assert not isinstance(outcomes[0], USDryRunRefusal)
+    assert not isinstance(outcomes[1], USDryRunRefusal)
+    assert isinstance(outcomes[2], USDryRunRefusal)
+    assert outcomes[2].rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID
+    # The two genuine occurrences are still both consumed; the refusal added nothing.
+    assert running.count("section 4173") == 2
+    assert running.count("sections 4173(i)") == 0
+
+
+def test_single_occurrence_node_with_two_identical_patches_keeps_one_edit_and_refuses_the_rest() -> None:
+    # The exact §130i mechanism in miniature: a prior op rewrote the node so only ONE
+    # occurrence of the dual anchor exists when the identical patches run. Patch 0
+    # consumes it; patch 1 (identical) finds the anchor gone in the running node and
+    # is refused — NOT a lawvm_wrong residual that would tank the section. The single
+    # edit survives and the section can still compose to an agreement downstream.
+    doc = parse_usc_title_document(_section79_dual_anchor_htm(), title=10, year="2023")
+    section = doc.section_by_number("79")
+    assert section is not None
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+
+    # Pre-rewrite the node so only ONE "sections 4173(i)" remains (simulating an
+    # earlier sibling patch). We do this by applying a single each-place-style strike
+    # of the SECOND occurrence via a direct running-text edit, then run the patches.
+    running = section.statutory_text.replace("sections 4173(i)", "section 4173", 1)
+    assert running.count("sections 4173(i)") == 1
+
+    # Seed the override to the post-edit node text so the threading sees the live node.
+    located = _running_node_text(
+        section,
+        _dual_anchor_op("seed", 0).target,
+        section.statutory_text,
+        None,
+    )
+    assert located is not None
+    node_overrides[_DUAL_ANCHOR_SEGMENTS] = located.replace(
+        "sections 4173(i)", "section 4173", 1
+    )
+
+    op0 = _dual_anchor_op("p0", 1)
+    out0 = _materialize_one(op0, running, before_section=section, node_overrides=node_overrides)
+    assert not isinstance(out0, USDryRunRefusal)
+    running, rule0, _d0 = out0
+    assert rule0 == ""
+    assert running.count("sections 4173(i)") == 0
+    assert running.count("section 4173") == 2
+
+    op1 = _dual_anchor_op("p1", 2)
+    out1 = _materialize_one(op1, running, before_section=section, node_overrides=node_overrides)
+    # The identical second patch finds no anchor in the running node: refused, not a
+    # section-tanking residual, not a collapse onto patch 0's edit.
+    assert isinstance(out1, USDryRunRefusal)
+    assert out1.rule_id == US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID
+
+
+def test_basic_composite_two_ops_on_one_node_compose_on_running_node_text() -> None:
+    # A plain composite case: two DIFFERENT patches on the same node. The second must
+    # act on the text the first produced (running-node threading), not the pristine
+    # before node. "15-year" -> "16-year" then "16-year" -> "17-year" must reach
+    # "17-year"; without threading the second patch's "16-year" anchor would be absent
+    # from the pristine node and the op would wrongly refuse.
+    section = _section77_before()
+    node_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    target = LegalAddress(
+        path=(("title", "11"), ("section", "77"), ("subsection", "b"), ("paragraph", "1"))
+    )
+
+    def _patch_op(op_id: str, seq: int, struck: str, inserted: str) -> LegalOperation:
+        return LegalOperation(
+            op_id=op_id,
+            sequence=seq,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text=struck, occurrence=0),
+                replacement=inserted,
+            ),
+        )
+
+    running = section.statutory_text
+    out0 = _materialize_one(
+        _patch_op("c0", 1, "15-year", "16-year"),
+        running,
+        before_section=section,
+        node_overrides=node_overrides,
+    )
+    assert not isinstance(out0, USDryRunRefusal)
+    running, _r0, _d0 = out0
+    out1 = _materialize_one(
+        _patch_op("c1", 2, "16-year", "17-year"),
+        running,
+        before_section=section,
+        node_overrides=node_overrides,
+    )
+    assert not isinstance(out1, USDryRunRefusal), out1
+    running, rule1, _d1 = out1
+    assert rule1 == ""
+    # The second patch composed on the running node: (b)(1) is now "17-year".
+    assert "the first paragraph mentions a 17-year window" in running
+    # Subsection (a)'s identical "15-year" was never in the (b)(1) node, so untouched.
+    assert "first subsection mentions a 15-year" in running

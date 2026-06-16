@@ -661,11 +661,49 @@ def _refuse_absent_text_target(
     )
 
 
+NodeOverrides = dict[tuple[tuple[str, str], ...], str]
+
+
+def _running_node_text(
+    before_section: UscSection | None,
+    address: LegalAddress,
+    running: str,
+    node_overrides: NodeOverrides | None,
+) -> str | None:
+    """Return the targeted node's text AS IT CURRENTLY STANDS in ``running``.
+
+    A single section is often amended by SEVERAL ops against ONE sub-section node —
+    a multi-patch instruction ("in clause (ix), by striking 'X' and inserting 'Y',
+    and by striking 'Z'") lowered to one op per patch, applied in source order. Each
+    op must act on the node text the PRIOR op produced, not on the pristine before-
+    edition node :func:`_locate_subsection_text` re-splits every call: once an earlier
+    patch rewrote the node, its pristine located span is no longer present in
+    ``running`` and a later patch would (wrongly) fail to locate.
+
+    ``node_overrides`` records, per located node (keyed by its sub-section segments),
+    the CURRENT text of that node inside ``running``. We consult it first: if a prior
+    op already rewrote this node, the override IS the live node span; otherwise we
+    locate the pristine node via the split. Either way we only return a span that is
+    actually present in ``running`` (``None`` when the node is unexposed/absent, or a
+    sibling mutation desynchronized the tracked span from the running text — the
+    caller then takes its absent/residual path, never a guess).
+    """
+    segments = _subsection_segments(address)
+    if node_overrides is not None and segments in node_overrides:
+        current = node_overrides[segments]
+        return current if current in running else None
+    located = _locate_subsection_text(before_section, address)
+    if located is None:
+        return None
+    return located if located in running else None
+
+
 def _materialize_one(
     operation: LegalOperation,
     before_text: str,
     *,
     before_section: UscSection | None = None,
+    node_overrides: NodeOverrides | None = None,
 ) -> tuple[str, str, str] | USDryRunRefusal:
     """Apply one op to a section's before-text -> (materialized, rule_id, disposition).
 
@@ -680,6 +718,18 @@ def _materialize_one(
     confined to that node's span inside the running section text, then recomposed.
     This applies a sub-section payload to the right node instead of refusing it or
     string-replacing in the wrong place.
+
+    ``node_overrides`` (mutated in place) carries the CURRENT text of each sub-section
+    node a PRIOR op in this section's composition already rewrote, so several ops
+    against the SAME node act on the running node text instead of re-locating the
+    pristine (now-stale) before-edition node. Two SAME-anchor patches on one node
+    each consume their OWN occurrence in source (left-to-right) order: patch 0 rewrites
+    the leftmost match and records the result; patch 1 then operates on the post-patch
+    node and rewrites the NEXT match. When the running node no longer carries the
+    anchor (the prior identical patch already consumed the only/last occurrence, or a
+    sibling op mutated it away), the op is REFUSED as an absent anchor — never composed
+    as a wrong materialization, never collapsed into the prior patch's edit. See
+    :func:`_running_node_text`.
     """
     action = operation.action
     op_id = operation.op_id
@@ -703,15 +753,40 @@ def _materialize_one(
             # Sub-section-scoped text patch: confine the match/replace to the
             # targeted node's text. This prevents striking an occurrence of the
             # anchor in the WRONG sub-section (a whole-section string replace would
-            # hit the first occurrence anywhere).
-            node_text = _locate_subsection_text(before_section, operation.target)
-            if node_text is not None and node_text in before_text:
+            # hit the first occurrence anywhere). The node text is taken from the
+            # RUNNING composition (via node_overrides) so a later patch against the
+            # SAME node acts on the text a prior patch produced, not the now-stale
+            # pristine before-edition node.
+            node_text = _running_node_text(
+                before_section, operation.target, before_text, node_overrides
+            )
+            if node_text is not None:
                 if match_text not in node_text:
-                    return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+                    # The anchor is not in the running node. Either a prior IDENTICAL
+                    # patch on this node already consumed the only/last occurrence
+                    # (the dual-identical-patch tail), or a sibling op rewrote the node
+                    # away from this anchor. Striking an anchor the running node no
+                    # longer carries is a NO-OP against the live text, not a wrong
+                    # materialization: REFUSE it (mirroring the absent-anchor refusal)
+                    # so the section's already-applied sibling patches keep their
+                    # correct composition instead of being tanked into a section-wide
+                    # residual. Refusing (not collapsing onto the prior edit) is what
+                    # keeps two identical patches from colliding on one occurrence.
+                    return _refuse_absent_text_target(
+                        operation, absent_kind="match anchor", absent_text=match_text
+                    )
+                # First-occurrence (count==1) or each-place (count==-1) replace inside
+                # the RUNNING node text. First-occurrence always takes the LEFTMOST
+                # remaining match: for two SAME-anchor patches on one node, patch 0
+                # rewrites the leftmost match here and records the result in
+                # node_overrides; patch 1 then sees the post-patch node and rewrites
+                # the NEXT match — each consumes its own occurrence in source order.
                 new_node_text = node_text.replace(match_text, replacement or "", count)
                 # Substitute the patched node text back into the running section text
                 # (first occurrence — the node text is unique enough to anchor on).
                 materialized = before_text.replace(node_text, new_node_text, 1)
+                if node_overrides is not None:
+                    node_overrides[_subsection_segments(operation.target)] = new_node_text
                 return (materialized, "", "")
             # Sub-section node not locatable (the split did not expose it cleanly).
             # Fall back to a section-level string replace when the anchor is
@@ -765,16 +840,23 @@ def _materialize_one(
                 message=f"insert-node-after op ({str(operation.anchor)}) has no payload",
                 target_address=str(operation.anchor),
             )
-        anchor_text = _locate_subsection_text(before_section, operation.anchor)
-        if anchor_text is None or anchor_text not in before_text:
+        # Resolve against the RUNNING anchor node (via node_overrides) so an append
+        # that follows an earlier text patch on the SAME node splices onto the text
+        # that patch produced. Appending is non-destructive at the node boundary, so
+        # composing on the running node is the faithful source order.
+        anchor_text = _running_node_text(
+            before_section, operation.anchor, before_text, node_overrides
+        )
+        if anchor_text is None:
             return (
                 "",
                 US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
                 DISPOSITION_LAWVM_WRONG,
             )
-        materialized = before_text.replace(
-            anchor_text, f"{anchor_text} {payload_text}".strip(), 1
-        )
+        new_anchor_text = f"{anchor_text} {payload_text}".strip()
+        materialized = before_text.replace(anchor_text, new_anchor_text, 1)
+        if node_overrides is not None:
+            node_overrides[_subsection_segments(operation.anchor)] = new_anchor_text
         return (materialized, "", "")
 
     if action is StructuralAction.REPEAL and is_subsection:
@@ -821,9 +903,19 @@ def _materialize_one(
                     ),
                     target_address=str(operation.target),
                 )
-            node_text = _locate_subsection_text(before_section, operation.target)
-            if node_text is None or node_text not in before_text:
-                # We could not locate the targeted node in the before section (the
+            # Resolve against the RUNNING node (via node_overrides): a node-scoped
+            # REPLACE (amend-to-read) or INSERT (append) following an earlier patch on
+            # the SAME node must act on the text that patch produced. Both are
+            # non-destructive at the node boundary (the node is substituted or
+            # appended-to, never deleted), so composing on the running node is the
+            # faithful order. (The whole-node REPEAL strike and RENUMBER relabel stay
+            # pristine-anchored and refuse a sibling-mutated node — deleting/relabelling
+            # a node a prior patch transformed would be a wrong materialization.)
+            node_text = _running_node_text(
+                before_section, operation.target, before_text, node_overrides
+            )
+            if node_text is None:
+                # We could not locate the targeted node in the running section (the
                 # split did not expose it cleanly, or an earlier op moved it): a
                 # sub-section payload cannot be applied blindly. Typed residual.
                 return (
@@ -834,11 +926,12 @@ def _materialize_one(
             if action is StructuralAction.REPLACE:
                 # amend-to-read of the sub-section node: the payload IS the node's
                 # new body. Substitute it for the located node text.
-                materialized = before_text.replace(node_text, payload_text, 1)
+                new_node_text = payload_text
             else:  # INSERT after a sub-section node -> append the payload to the node.
-                materialized = before_text.replace(
-                    node_text, f"{node_text} {payload_text}".strip(), 1
-                )
+                new_node_text = f"{node_text} {payload_text}".strip()
+            materialized = before_text.replace(node_text, new_node_text, 1)
+            if node_overrides is not None:
+                node_overrides[_subsection_segments(operation.target)] = new_node_text
             return (materialized, "", "")
         if operation.payload is None or not operation.payload.text:
             return USDryRunRefusal(
@@ -1034,9 +1127,18 @@ def build_us_dry_run(
         replacements: list[str] = []
         composed_refused = False
         residual_signal: tuple[str, str] | None = None
+        # Tracks the CURRENT text of each sub-section node a prior op in this
+        # section's composition rewrote, so several ops against the SAME node (a
+        # multi-patch instruction, or two SAME-anchor patches on different
+        # occurrences) act on the running node text, each consuming its own
+        # occurrence in source order. See _running_node_text / _materialize_one.
+        node_overrides: NodeOverrides = {}
         for operation in operations:
             outcome = _materialize_one(
-                operation, running, before_section=before_section
+                operation,
+                running,
+                before_section=before_section,
+                node_overrides=node_overrides,
             )
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
