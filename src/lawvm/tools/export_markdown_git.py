@@ -531,13 +531,11 @@ def build_markdown_git_commits(
     commits: list[FastImportCommit] = []
     for effective_date in effective_dates:
         files: dict[str, bytes] = {}
-        active_count = 0
         changed_statutes: list[tuple[PreparedStatute, MaterializedSnapshot]] = []
         for statute in prepared:
             snapshot = statute.snapshot_at_or_before(effective_date)
             if snapshot is None:
                 continue
-            active_count += 1
             if snapshot.effective_date == effective_date:
                 changed_statutes.append((statute, snapshot))
             markdown = render_act_markdown(
@@ -554,7 +552,7 @@ def build_markdown_git_commits(
                 _ensure_lf(markdown).encode("utf-8")
             )
         files["README.md"] = _ensure_lf(
-            _render_readme(effective_date, prepared, active_count, jurisdiction=jurisdiction)
+            _render_readme(effective_date, prepared, jurisdiction=jurisdiction)
         ).encode("utf-8")
         author_timestamp, author_offset = _raw_git_date_for_effective_date(effective_date, zone)
         commits.append(
@@ -716,7 +714,6 @@ def iter_spooled_fast_import_stream(
                     _render_spool_readme(
                         effective_date,
                         statutes,
-                        _spool_active_count(conn, effective_date),
                         jurisdiction=jurisdiction,
                     )
                 ).encode("utf-8"),
@@ -1126,7 +1123,6 @@ def _safe_path_component(value: str) -> str:
 def _render_readme(
     effective_date: str,
     statutes: tuple[PreparedStatute, ...],
-    active_count: int,
     *,
     jurisdiction: str,
 ) -> str:
@@ -1134,13 +1130,14 @@ def _render_readme(
         f"# {jurisdiction.upper()} LawVM Markdown Projection",
         "",
         f"- Repository snapshot date: `{effective_date}`",
-        f"- Active sample statutes: `{active_count}`",
-        f"- Configured statutes: `{len(statutes)}`",
         "",
         "## Statutes",
         "",
     ]
-    for statute in sorted(statutes, key=lambda item: item.statute_id):
+    for statute in sorted(
+        statutes,
+        key=lambda item: _statute_markdown_path(item.statute_id, jurisdiction=jurisdiction),
+    ):
         lines.append(
             f"- [{_escape_markdown(statute.title)}]("
             f"{_statute_markdown_path(statute.statute_id, jurisdiction=jurisdiction)}) "
@@ -1152,7 +1149,6 @@ def _render_readme(
 def _render_spool_readme(
     effective_date: str,
     statutes: tuple[SpoolStatuteRow, ...],
-    active_count: int,
     *,
     jurisdiction: str,
 ) -> str:
@@ -1160,13 +1156,11 @@ def _render_spool_readme(
         f"# {jurisdiction.upper()} LawVM Markdown Projection",
         "",
         f"- Repository snapshot date: `{effective_date}`",
-        f"- Active sample statutes: `{active_count}`",
-        f"- Configured statutes: `{len(statutes)}`",
         "",
         "## Statutes",
         "",
     ]
-    for statute in statutes:
+    for statute in sorted(statutes, key=lambda item: item.path):
         lines.append(
             f"- [{_escape_markdown(statute.title)}]({statute.path}) "
             f"`{statute.statute_id}`"
@@ -1378,14 +1372,6 @@ def _spool_versions_for_date(conn: sqlite3.Connection, effective_date: str) -> t
             (effective_date,),
         )
     )
-
-
-def _spool_active_count(conn: sqlite3.Connection, effective_date: str) -> int:
-    value = conn.execute(
-        "SELECT COUNT(DISTINCT statute_id) FROM versions WHERE effective_date <= ?",
-        (effective_date,),
-    ).fetchone()[0]
-    return int(value)
 
 
 def _spool_commit_message_for_date(

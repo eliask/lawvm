@@ -339,6 +339,45 @@ def test_build_commits_keeps_unchanged_statute_file_bytes_stable() -> None:
     assert b"Version: `2020-01-01`" in commits[0].files["acts/2020/100.md"]
 
 
+def test_build_commits_readme_is_path_ordered_without_sample_counts() -> None:
+    root = _body_with_link_text("Stable text.")
+    newer = PreparedStatute(
+        statute_id="9/2023",
+        engine_id="2023/9",
+        title="Newer Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=root,
+                tree_hash="hash-one",
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+    )
+    older = PreparedStatute(
+        statute_id="1093/1996",
+        engine_id="1996/1093",
+        title="Older Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=root,
+                tree_hash="hash-two",
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+    )
+
+    commits = build_markdown_git_commits((newer, older), jurisdiction="fi")
+    readme = commits[0].files["README.md"].decode("utf-8")
+
+    assert "Active sample statutes" not in readme
+    assert "Configured statutes" not in readme
+    assert readme.index("(acts/1996/1093.md)") < readme.index("(acts/2023/9.md)")
+
+
 def test_build_commits_records_changed_statutes_and_causes_in_commit_message() -> None:
     prepared = PreparedStatute(
         statute_id="100/2020",
@@ -499,6 +538,10 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/200.md"],
         text=True,
     )
+    readme = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "show", "in-force:README.md"],
+        text=True,
+    )
     log_subjects = subprocess.check_output(
         ["git", "--git-dir", str(repo), "log", "--format=%s", "in-force"],
         text=True,
@@ -513,6 +556,9 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
     assert export_stats.commit_count == 2
     assert "Beta text" in latest_first
     assert "Second act" in latest_second
+    assert "Active sample statutes" not in readme
+    assert "Configured statutes" not in readme
+    assert readme.index("(acts/2020/100.md)") < readme.index("(acts/2020/200.md)")
     assert "As of 2021-01-01" in log_subjects
     assert "As of 2020-01-01" in log_subjects
     assert " +0200 " in raw_dates
