@@ -6177,11 +6177,13 @@ def test_fallback_recovers_complex_lakiin_uusi_section_inserts() -> None:
 
 
 def test_parse_ops_fallback_heuristic_keeps_explicit_targets_in_mixed_container_clause() -> None:
+    # The container-insert regex fallback was retired (the PEG owns ``lakiin uusi
+    # N luku`` inserts when they follow a verb); this fallback path now only
+    # recovers the explicit REPLACE targets from the ``muutetaan`` tail.
     johto = "lakiin uusi 25 a luku, muutetaan 3 §:n 1 momentti ja 4 §:n 2 momentti, sekä 5 § seuraavasti:"
 
     ops = parse_ops_fallback_heuristic(johto)
 
-    assert any(op.op_type == "INSERT" and op.target_unit_kind == "chapter" and op.target_section == "25a" for op in ops)
     assert any(op.op_type == "REPLACE" and op.target_section == "3" and op.target_paragraph == 1 for op in ops)
     assert any(op.op_type == "REPLACE" and op.target_section == "4" and op.target_paragraph == 2 for op in ops)
 
@@ -7086,93 +7088,30 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     assert coverage["required_proofs"] == []
 
 
-def test_combined_container_insert_fallback_coverage_marks_connectors_classified() -> None:
+def test_combined_chapter_and_section_insert_owned_by_parser() -> None:
+    # The container-insert regex fallback was retired; the PEG owns the combined
+    # ``lakiin uusi N luku ja M, … §`` chapter+section insert natively.
     johto = "lisätään lakiin uusi 2 luku ja 15, 16 ja 17 § seuraavasti:"
 
-    result = parse_ops_fallback_heuristic_with_coverage(johto)
+    ops = parse_clause(johto).parsed_ops
 
-    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
+    got = {(op.verb, op.kind, op.number) for op in ops}
     assert {
-        ("INSERT", "chapter", "2"),
-        ("INSERT", "section", "15"),
-        ("INSERT", "section", "16"),
-        ("INSERT", "section", "17"),
+        ("L", "L", "2"),
+        ("L", "P", "15"),
+        ("L", "P", "16"),
+        ("L", "P", "17"),
     } <= got
-    assert len(result.regex_recognition_coverage) == 1
-    coverage = result.regex_recognition_coverage[0].to_dict()
-    assert coverage["recognizer_id"] == "fi_insert_combined_chapter_section_fallback"
-    assert coverage["coverage_status"] == "fully_classified"
-    assert coverage["semantic_slots"] == {
-        "action": "INSERT",
-        "target_unit_kind": "chapter_and_section",
-        "target_chapters": ["2"],
-        "target_sections": ["15", "16", "17"],
-    }
-    assert coverage["ignored_spans"] == [
-        {
-            "span": [37, 41],
-            "classification": "drafting_connector",
-            "text_preview": " ja ",
-            "could_alter_meaning": False,
-        }
-    ]
-    assert coverage["required_proofs"] == []
 
 
-def test_chapter_scoped_section_insert_fallback_coverage_surfaces_unclassified_gap() -> None:
-    johto = "lisätään 4 lukuun uusi 1, kuitenkin 2 § seuraavasti:"
-
-    result = parse_ops_fallback_heuristic_with_coverage(
-        johto,
-        source_artifact_id="2020/4",
-    )
-
-    got = {
-        (op.op_type, op.target_unit_kind, op.target_chapter, op.target_section)
-        for op in result.ops
-    }
-    assert ("INSERT", "section", "4", "1") in got
-    assert ("INSERT", "section", "4", "2") in got
-    assert len(result.regex_recognition_coverage) == 1
-    coverage = result.regex_recognition_coverage[0].to_dict()
-    assert coverage["recognizer_id"] == "fi_insert_chapter_scoped_section_fallback"
-    assert coverage["coverage_status"] == "unclassified_gap"
-    assert coverage["semantic_slots"] == {
-        "action": "INSERT",
-        "target_unit_kind": "section",
-        "target_chapter": "4",
-        "target_sections": ["1", "2"],
-    }
-    assert coverage["ignored_spans"] == [
-        {
-            "span": [24, 36],
-            "classification": "unclassified",
-            "text_preview": ", kuitenkin ",
-            "could_alter_meaning": True,
-        }
-    ]
-    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
-
-
-def test_chapter_insert_fallback_coverage_marks_whole_match_classified() -> None:
+def test_chapter_insert_owned_by_parser() -> None:
+    # The container-insert regex fallback was retired; the PEG owns the bare
+    # ``lakiin uusi N luku`` chapter insert natively.
     johto = "lisätään lakiin uusi 3 luku"
 
-    result = parse_ops_fallback_heuristic_with_coverage(johto)
+    ops = parse_clause(johto).parsed_ops
 
-    assert [(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops] == [
-        ("INSERT", "chapter", "3"),
-    ]
-    assert len(result.regex_recognition_coverage) == 1
-    coverage = result.regex_recognition_coverage[0].to_dict()
-    assert coverage["recognizer_id"] == "fi_insert_chapter_fallback"
-    assert coverage["coverage_status"] == "fully_classified"
-    assert coverage["semantic_slots"] == {
-        "action": "INSERT",
-        "target_unit_kind": "chapter",
-        "target_chapters": ["3"],
-    }
-    assert coverage["ignored_spans"] == []
-    assert coverage["required_proofs"] == []
+    assert [(op.verb, op.kind, op.number) for op in ops] == [("L", "L", "3")]
 
 
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:
@@ -7274,7 +7213,10 @@ def test_extract_replace_ops_from_muutetaan_tail_recovers_mixed_section_and_mome
     }
 
 
-def test_fallback_recovers_chapter_and_chapter_scoped_inserts() -> None:
+def test_parser_recovers_chapter_and_chapter_scoped_inserts() -> None:
+    # The container-insert regex fallback was retired; the PEG owns the chapter
+    # inserts (``lakiin uusi 25 a luku`` / ``uusi 30 a luku``) and the
+    # chapter-scoped section insert (``26 lukuun uusi 14 a §``) natively.
     johto = (
         "kumotaan oikeudenkäymiskaaren 26 luvun 1 a §, 1 b § ja 2 a §, muutetaan "
         "2 luvun 8 §:n 2 momentin 1 kohta, 25 luvun 14 b §, 26 luvun otsikko sekä 2, 3 ja 13-16 §, "
@@ -7282,12 +7224,12 @@ def test_fallback_recovers_chapter_and_chapter_scoped_inserts() -> None:
         "26 lukuun uusi 14 a § sekä lakiin uusi 30 a luku seuraavasti:"
     )
 
-    ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_kind, op.target_chapter, op.target_section) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    got = {(op.verb, op.kind, op.chapter, op.number) for op in ops}
 
-    assert ("INSERT", "L", None, "25a") in got
-    assert ("INSERT", "L", None, "30a") in got
-    assert ("INSERT", "P", "26", "14a") in got
+    assert ("L", "L", "", "25a") in got
+    assert ("L", "L", "", "30a") in got
+    assert ("L", "P", "26", "14a") in got
 
 
 def test_fallback_recovers_explicit_item_insert_and_prunes_shadowed_parent_subsection() -> None:

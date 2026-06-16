@@ -284,6 +284,33 @@ def _skip_ill_reinst_preamble(scan: _Scan) -> None:
         else:
             scan.goto(saved)
 
+    # Coordinating ``ja`` / ``sekä`` directly before ``uusi`` — the
+    # ``§:ään, [provenance/citation], ja uusi N momentti`` continuation form
+    # (``18 a §:ään, sellaisena kuin se on laeissa 744/2004 ja 636/2006, ja uusi 4
+    # momentti``). The old parser's ``_skip_sentinel`` absorbed the
+    # ``[sentinel] [,] [CONJ]`` cluster as one separator, leaving the §:ään arm to
+    # read ``uusi`` cleanly; that absorption happens here because the new parser
+    # consumes the citation span as a reinstatement span above rather than as a
+    # separator-level sentinel. Position-gated on a DIRECTLY following ``uusi`` so
+    # a genuine coordinated target (``ja 50 §:ään``) is never swallowed.
+    _skip_conj_before_uusi(scan)
+
+
+def _skip_conj_before_uusi(scan: _Scan) -> None:
+    """Skip a ``ja`` / ``sekä`` that directly precedes ``uusi`` (continuation form).
+
+    Only fires when the conjunction is IMMEDIATELY followed by ``uusi`` (allowing
+    duplicated conjunction residue such as ``ja sekä``); otherwise the cursor is
+    left untouched so a coordinated separate target keeps its separator.
+    """
+    saved = scan.pos
+    if not _at(scan, "CONJ", "SEKA"):
+        return
+    while _at(scan, "CONJ", "SEKA"):
+        scan.advance()
+    if not _at(scan, "UUSI"):
+        scan.goto(saved)
+
 
 def _skip_gen_reinst_preamble(scan: _Scan) -> None:
     """Skip the §:GEN momentti reinstatement preamble (old Pattern B2, 2502-2519).
@@ -298,6 +325,11 @@ def _skip_gen_reinst_preamble(scan: _Scan) -> None:
     _optional_comma(scan)
     while _at(scan, *_GEN_REINST_SPANS):
         scan.advance()
+
+    # ``§:n M momenttiin, [provenance], ja uusi K kohta`` continuation form (the
+    # GEN sibling of the §:ILL ``ja uusi`` skip). Position-gated on a directly
+    # following ``uusi`` so a coordinated separate target keeps its separator.
+    _skip_conj_before_uusi(scan)
 
     saved = scan.pos
     if not _at(scan, "NUM", "LETTER"):
@@ -331,6 +363,9 @@ def _skip_doc_reinst_preamble(scan: _Scan) -> None:
     """
     while _at(scan, *_DOC_REINST_SPANS):
         scan.advance()
+    # ``lakiin, [provenance], ja uusi N §`` continuation form (the DOC sibling of
+    # the §:ILL ``ja uusi`` skip). Position-gated on a directly following ``uusi``.
+    _skip_conj_before_uusi(scan)
 
 
 # ---------------------------------------------------------------------------

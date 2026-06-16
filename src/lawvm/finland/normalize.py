@@ -65,18 +65,6 @@ _RE_NEW_ITEM = re.compile(
     r"\s+kohta\b"
 )
 _RE_STATUTE_CREATION_CHAPTER = re.compile(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b")
-_INSERT_CONTAINER_COMBINED_FALLBACK_RE = re.compile(
-    r"\blakiin\s+uusi\s+(.{1,80}?)\s+luku\s+ja\s+(.{1,140}?)\s*§",
-    flags=re.I,
-)
-_INSERT_CHAPTER_FALLBACK_RE = re.compile(
-    r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b",
-    flags=re.I,
-)
-_INSERT_PART_FALLBACK_RE = re.compile(
-    r"\blakiin\s+uusi\s+([ivxlcdm]+\s*[a-z]?)\s+osa\b",
-    flags=re.I,
-)
 _INSERT_CHAPTER_SECTION_FALLBACK_RE = re.compile(
     r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§",
     flags=re.I,
@@ -568,71 +556,18 @@ def _regex_label_clause_ignored_spans(
 
 
 def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
-    """Recover chapter inserts, combined root inserts, and chapter-scoped section inserts.
+    """Recover chapter-scoped section inserts (``N lukuun uusi M §``).
 
-    FALLBACK: Compensates for PEG3 missing ``lakiin uusi N luku`` and
-    ``N lukuun uusi M §`` patterns.  Remove when PEG3 handles all
-    chapter-level insert forms — verify with bench.
+    FALLBACK: Compensates for the new parser dropping chapter-scoped section
+    inserts that sit inside long heterogeneous insertion lists (where a mid-list
+    anomaly halts the native continuation loop). The root-level chapter / part /
+    combined ``lakiin uusi N luku [ja M §]`` / ``lakiin uusi N osa`` lanes were
+    retired (the new parser owns those natively). Remove when the parser's
+    insertion continuation loop owns the chapter-scoped form inside mixed lists
+    too — verify with bench.
     """
     ops: List[AmendmentOp] = []
-    seen_chapters: Set[str] = set()
     seen_sections: Set[Tuple[str, str]] = set()
-
-    for m in _INSERT_CONTAINER_COMBINED_FALLBACK_RE.finditer(cleaned):
-        chapter_clause = m.group(1)
-        section_clause = m.group(2)
-        for chapter in _expand_spaced_insert_label_list_ir(chapter_clause):
-            if chapter in seen_chapters:
-                continue
-            seen_chapters.add(chapter)
-            ops.append(
-                AmendmentOp(
-                    op_id="",
-                    op_type="INSERT",
-                    target_section=chapter,
-                    target_unit_kind="chapter",
-                )
-            )
-        for sec in _expand_spaced_insert_label_list_ir(section_clause):
-            key = ("", sec)
-            if key in seen_sections:
-                continue
-            seen_sections.add(key)
-            ops.append(
-                AmendmentOp(
-                    op_id="",
-                    op_type="INSERT",
-                    target_section=sec,
-                    target_unit_kind="section",
-                )
-            )
-
-    for m in _INSERT_CHAPTER_FALLBACK_RE.finditer(cleaned):
-        chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
-        if not chapter or chapter in seen_chapters:
-            continue
-        seen_chapters.add(chapter)
-        ops.append(
-            AmendmentOp(
-                op_id="",
-                op_type="INSERT",
-                target_section=chapter,
-                target_unit_kind="chapter",
-            )
-        )
-
-    for m in _INSERT_PART_FALLBACK_RE.finditer(cleaned):
-        part = _norm_num_token(m.group(1))
-        if not part:
-            continue
-        ops.append(
-            AmendmentOp(
-                op_id="",
-                op_type="INSERT",
-                target_section=part,
-                target_unit_kind="part",
-            )
-        )
 
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
@@ -663,96 +598,7 @@ def _extract_insert_container_ops_fallback_with_coverage(
     ops = _extract_insert_container_ops_fallback(cleaned)
     coverage_rows: list[RegexRecognitionCoverage] = []
     source_hash = regex_source_text_hash(cleaned)
-    seen_chapters: Set[str] = set()
     seen_sections: Set[Tuple[str, str]] = set()
-
-    for m in _INSERT_CONTAINER_COMBINED_FALLBACK_RE.finditer(cleaned):
-        chapter_clause = m.group(1)
-        section_clause = m.group(2)
-        target_chapters: list[str] = []
-        target_sections: list[str] = []
-        for chapter in _expand_spaced_insert_label_list_ir(chapter_clause):
-            if chapter in seen_chapters:
-                continue
-            seen_chapters.add(chapter)
-            target_chapters.append(chapter)
-        for sec in _expand_spaced_insert_label_list_ir(section_clause):
-            key = ("", sec)
-            if key in seen_sections:
-                continue
-            seen_sections.add(key)
-            target_sections.append(sec)
-        if not target_chapters and not target_sections:
-            continue
-        ignored_spans = [
-            *_regex_label_clause_ignored_spans(
-                cleaned,
-                base_offset=m.start(1),
-                clause=chapter_clause,
-            ),
-            *_regex_label_clause_ignored_spans(
-                cleaned,
-                base_offset=m.start(2),
-                clause=section_clause,
-            ),
-        ]
-        coverage_rows.append(
-            _regex_recognition_coverage_row(
-                recognizer_id="fi_insert_combined_chapter_section_fallback",
-                source_hash=source_hash,
-                source_artifact_id=source_artifact_id,
-                matched_span=(m.start(), m.end()),
-                semantic_slots={
-                    "action": "INSERT",
-                    "target_unit_kind": "chapter_and_section",
-                    "target_chapters": tuple(target_chapters),
-                    "target_sections": tuple(target_sections),
-                },
-                ignored_spans=ignored_spans,
-                matched_text=cleaned[m.start():m.end()],
-            )
-        )
-
-    for m in _INSERT_CHAPTER_FALLBACK_RE.finditer(cleaned):
-        chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
-        if not chapter or chapter in seen_chapters:
-            continue
-        seen_chapters.add(chapter)
-        coverage_rows.append(
-            _regex_recognition_coverage_row(
-                recognizer_id="fi_insert_chapter_fallback",
-                source_hash=source_hash,
-                source_artifact_id=source_artifact_id,
-                matched_span=(m.start(), m.end()),
-                semantic_slots={
-                    "action": "INSERT",
-                    "target_unit_kind": "chapter",
-                    "target_chapters": (chapter,),
-                },
-                ignored_spans=[],
-                matched_text=cleaned[m.start():m.end()],
-            )
-        )
-
-    for m in _INSERT_PART_FALLBACK_RE.finditer(cleaned):
-        part = _norm_num_token(m.group(1))
-        if not part:
-            continue
-        coverage_rows.append(
-            _regex_recognition_coverage_row(
-                recognizer_id="fi_insert_part_fallback",
-                source_hash=source_hash,
-                source_artifact_id=source_artifact_id,
-                matched_span=(m.start(), m.end()),
-                semantic_slots={
-                    "action": "INSERT",
-                    "target_unit_kind": "part",
-                    "target_parts": (part,),
-                },
-                ignored_spans=[],
-                matched_text=cleaned[m.start():m.end()],
-            )
-        )
 
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()

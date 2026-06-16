@@ -84,6 +84,36 @@ def test_kohta_into_momentti_emits_sub_target_insertion() -> None:
     assert node.witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_conj_before_uusi_after_citation_is_owned() -> None:
+    # ``N §:ään, [citation], ja uusi M momentti`` — a coordinating ``ja`` sits
+    # between the §:ään target's citation provenance and ``uusi``. The old parser
+    # absorbed the ``[citation] , ja`` cluster as a separator and dropped the arm
+    # when it opened a clause; the new parser owns it natively so the insert is not
+    # lost (this shape was previously only recovered by the retired
+    # subsection/regex fallback). Single-arm and chained forms both recover.
+    single = parse_text_with(
+        "lisätään 18 a §:ään, sellaisena kuin se on mainituissa laeissa 744/2004 ja "
+        "636/2006, ja uusi 4 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = single.verb_groups
+    node = _as_insertion(vg.nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "18a"
+    assert node.sub_target is not None
+    assert node.sub_target.momentti == 4
+
+    chained = parse_text_with(
+        "lisätään 10 §:ään, sellaisena kuin se on viimeksi mainitussa laissa, uusi 3 "
+        "momentti ja 18 a §:ään, sellaisena kuin se on mainituissa laeissa 744/2004 "
+        "ja 636/2006, ja uusi 4 momentti seuraavasti:",
+        new_parser.parse,
+    )
+    (vg2,) = chained.verb_groups
+    labels = {(_as_insertion(n).label, _as_insertion(n).sub_target.momentti) for n in vg2.nodes}
+    assert labels == {("10", 3), ("18a", 4)}
+
+
 def test_whole_section_insert_carries_section_witness() -> None:
     model = parse_text_with("lisätään lakiin uusi 5 a § seuraavasti:", new_parser.parse)
     (vg,) = model.verb_groups
