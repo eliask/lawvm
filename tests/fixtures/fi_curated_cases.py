@@ -469,6 +469,18 @@ CURATED_CASES = [
         "features": {"verb_muuttaa", "chapter_ref", "sub_ref_otsikko", "chapter_ctx_propagation"},
     },
     {
+        # A letter-labelled intra-chapter subheading (``N luvun C väliotsikko``)
+        # names a cross-heading WITHIN the chapter, not the chapter title — but it
+        # still scopes the following section list to the chapter. The old parser
+        # stopped at the unconsumed letter and dropped the whole chapter-scoped
+        # list; the new parser recognizes it as a chapter HEADING (label-
+        # discriminated) and the scope carries into the section list.
+        "name": "chapter_ref labelled subheading carries scope into section list",
+        "text": "muutetaan 6 luvun C väliotsikko, 14 §",
+        "expected": ["M L 6 o", "M P L:6 14"],
+        "features": {"verb_muuttaa", "chapter_ref", "sub_ref_otsikko", "chapter_ctx_propagation"},
+    },
+    {
         "name": "chapter_ctx_propagation",
         "text": "muutetaan 3 luvun 12 §:n 2 momentti",
         "expected": ["M P L:3 12 2"],

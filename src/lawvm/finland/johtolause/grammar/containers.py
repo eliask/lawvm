@@ -82,6 +82,96 @@ from lawvm.finland.johtolause.surface_model import (
 # ---------------------------------------------------------------------------
 _DOC_GEN = cat_case("DOC", "GEN")
 
+# Stem of the ``alaluku`` ("sub-chapter") drafting word that, before/after a
+# letter label, marks an intra-chapter subheading rather than a section. Matched
+# on the lower-cased token text stem so every inflection (``alaluvun`` GEN,
+# ``alalukujen`` plural GEN, …) is covered without enumerating cases.
+_ALALUKU_STEM = "alalu"
+
+
+def _is_subheading_letter(tok: Optional[object]) -> bool:
+    """True iff ``tok`` is an UPPERCASE single-letter subheading label (``C``/``B``).
+
+    Such a label lexes inconsistently across the corpus: a lone ``C``/``D`` is a
+    bare ``NUM`` (the lexer treats a lone uppercase letter as a number-like
+    token), while inside a ``B ja C`` coordination the first letter lexes as a
+    ``LETTER``. Both are accepted — the check is the SURFACE shape (exactly one
+    uppercase ASCII letter), not the token category. It deliberately does NOT
+    match a LOWERCASE section-letter token (``4 a §`` → ``a:LETTER``), which is
+    the disambiguation against a real section suffix.
+    """
+    if tok is None or getattr(tok, "cat", None) not in ("NUM", "LETTER"):
+        return False
+    text = getattr(tok, "text", "") or ""
+    return len(text) == 1 and text.isalpha() and text.isupper()
+
+
+def _is_alaluku_word(tok: Optional[object]) -> bool:
+    """True iff ``tok`` is an ``alaluku`` ("sub-chapter") WORD in any inflection."""
+    if tok is None or getattr(tok, "cat", None) != "WORD":
+        return False
+    return (getattr(tok, "text", "") or "").lower().startswith(_ALALUKU_STEM)
+
+
+def _consume_labelled_subheading(scan: _Scan) -> Optional[str]:
+    """Consume a letter-labelled intra-chapter subheading after the chapter scope.
+
+    Called with the cursor positioned right after a ``N luvun`` chapter scope was
+    consumed (where ``recognize_chapter_ref`` looks for the chapter's own
+    ``OTSIKKO`` / ``NIMIKE``). Recognizes the labelled-subheading drafting forms
+    and, on a match, advances the cursor past the closing ``OTSIKKO`` and returns
+    the subheading label string (the joined letters, e.g. ``"C"`` or ``"B,C"``);
+    otherwise leaves the cursor untouched and returns ``None``.
+
+    The accepted shapes (all closing on a single shared ``OTSIKKO``):
+
+      * ``<L> OTSIKKO``                        — ``C väliotsikko``
+      * ``<L> alaluku-WORD OTSIKKO``           — ``C alaluvun otsikko``
+      * ``alaluku-WORD <L> OTSIKKO``           — ``alaluvun D väliotsikko``
+      * ``alaluku-WORD <L> [ja <L>]* OTSIKKO`` — ``alalukujen B ja C väliotsikko``
+
+    where ``<L>`` is an uppercase single-letter subheading label. The shape MUST
+    close on an ``OTSIKKO``; a letter NOT followed (directly or through the
+    ``alaluku`` marker / a ``ja``-joined sibling) by an ``OTSIKKO`` is left for
+    the other arms (e.g. ``N luvun C §`` is a chapter-scoped section, not a
+    subheading), so the recognizer never grabs a section.
+    """
+    start = scan.pos
+    labels: list[str] = []
+
+    # Optional leading ``alaluku`` marker (``alaluvun D …`` / ``alalukujen B ja C``).
+    if _is_alaluku_word(scan.peek()):
+        scan.advance()
+
+    # At least one uppercase single-letter label, optionally ``ja``-joined.
+    lab = scan.peek()
+    if not _is_subheading_letter(lab):
+        scan.goto(start)
+        return None
+    assert lab is not None  # narrowed by _is_subheading_letter
+    labels.append(lab.text or "")
+    scan.advance()
+    while (
+        (t := scan.peek())
+        and t.cat in {"JA", "CONJ"}
+        and (nxt := scan.peek(1)) is not None
+        and _is_subheading_letter(nxt)
+    ):
+        scan.advance()  # consume the conjunction
+        labels.append(nxt.text or "")
+        scan.advance()
+
+    # Optional trailing ``alaluku`` marker (``C alaluvun otsikko``).
+    if _is_alaluku_word(scan.peek()):
+        scan.advance()
+
+    # The shape must close on the shared OTSIKKO heading noun.
+    if not ((t := scan.peek()) and t.cat == "OTSIKKO"):
+        scan.goto(start)
+        return None
+    scan.advance()
+    return ",".join(labels)
+
 
 # ---------------------------------------------------------------------------
 # Recognized container reference (the intermediate the emitter consumes).
@@ -129,6 +219,9 @@ class ParsedContainer:
     # liitteen``) the base appendix ref would otherwise drop. Empty when no
     # sub-edit tail follows. Carried only on APPENDIX forms.
     tail_parts: tuple[NumSuffix, ...] = ()
+    # Labelled-subheading item letter (``C/D väliotsikko``) riding the HEADING
+    # facet so distinct subheadings of one chapter stay distinct nodes.
+    sub_label: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +275,28 @@ def recognize_chapter_ref(scan: _Scan, part: str = "") -> Optional[ParsedContain
         scan.advance()  # consume LUKU
 
     facet: Optional[FacetKind] = None
+    sub_label = ""
     if (t := scan.peek()) and t.cat == "OTSIKKO":
         scan.advance()
         facet = FacetKind.HEADING
+    elif (sub := _consume_labelled_subheading(scan)) is not None:
+        # A letter-labelled intra-chapter subheading drafted after the chapter
+        # scope: ``N luvun C väliotsikko`` / ``N luvun C alaluvun otsikko`` /
+        # ``N luvun alaluvun D väliotsikko`` / ``N luvun alalukujen B ja C
+        # väliotsikko``. These name a sub-section heading WITHIN the chapter (a
+        # cross-heading), not the chapter's own title — but they still scope the
+        # following section list to the chapter, exactly like the chapter's own
+        # heading. The old parser had no production for this shape and stopped at
+        # the unconsumed letter, collapsing the whole chapter-scoped list to the
+        # bare chapter and silently dropping the subheading plus every following
+        # section. Recognizing it as a chapter HEADING facet (label-discriminated
+        # by ``sub_label``) lets the chapter scope carry forward into the rest of
+        # the list. The letter never collides with a section letter (``4 a §``):
+        # the recognizer only fires when an uppercase single-letter / ``alaluku``
+        # marker IMMEDIATELY precedes (or leads through) an OTSIKKO, whereas a
+        # section letter is a lowercase LETTER bound to a following ``§`` (PYKALA).
+        facet = FacetKind.HEADING
+        sub_label = sub
     elif (t := scan.peek()) and t.cat == "NIMIKE":
         # A chapter's own heading can be drafted as ``N luvun nimike`` instead of
         # ``N luvun otsikko`` — both name the chapter's title (HEADING facet). The
@@ -228,6 +340,36 @@ def recognize_chapter_ref(scan: _Scan, part: str = "") -> Optional[ParsedContain
         nums=tuple(nums),
         explicit_part=pt,
         facet=facet,
+        sub_label=sub_label,
+    )
+
+
+def recognize_chapter_scoped_subheading(
+    scan: _Scan, chapter: str
+) -> Optional[ParsedContainer]:
+    """Recognize a chapter-scope-INHERITING labelled subheading (mid-list arm).
+
+    A mid-list continuation arm with no chapter prefix of its own — the chapter
+    scope is inherited from the running list (``6 luvun C väliotsikko, 14–18 §,
+    D väliotsikko, …``: the ``D väliotsikko`` inherits chapter 6). Consumes the
+    bare labelled-subheading shape (``[alaluku] <L> [ja <L>]* [alaluku]
+    OTSIKKO``) and returns a CHAPTER container carrying the inherited chapter
+    label + a HEADING facet + the subheading letter. Returns ``None`` (rewinding)
+    when no inherited chapter scope is active or the shape does not match, so the
+    driver only folds it inside an established chapter-scoped list.
+    """
+    if not chapter:
+        return None
+    start = scan.pos
+    sub = _consume_labelled_subheading(scan)
+    if sub is None:
+        return None
+    return ParsedContainer(
+        form=ContainerForm.CHAPTER,
+        span=Span(start, scan.pos),
+        nums=((chapter, ""),),
+        facet=FacetKind.HEADING,
+        sub_label=sub,
     )
 
 
@@ -499,8 +641,16 @@ def recognize_containers(
 # ---------------------------------------------------------------------------
 
 
-def _facet_sub_refs(facet: Optional[FacetKind]) -> tuple[SurfaceSubRef, ...]:
-    return (SurfaceSubRef(facet=facet),) if facet else ()
+def _facet_sub_refs(
+    facet: Optional[FacetKind], sub_label: str = ""
+) -> tuple[SurfaceSubRef, ...]:
+    if not facet:
+        return ()
+    # A letter-labelled intra-chapter subheading carries its label in ``item`` so
+    # two distinct subheadings of the same chapter (``6 luvun C väliotsikko`` vs
+    # ``6 luvun D väliotsikko``) stay distinct targets rather than collapsing to
+    # the same facet-only chapter-heading op.
+    return (SurfaceSubRef(facet=facet, item=sub_label),)
 
 
 def _emit_chapter(parsed: ParsedContainer) -> list[SurfaceNode]:
@@ -512,7 +662,7 @@ def _emit_chapter(parsed: ParsedContainer) -> list[SurfaceNode]:
     )
     w = SurfaceWitness(rule_id=rid, source_span=(parsed.span.start, parsed.span.end))
     pt = parsed.explicit_part or ""
-    sub_refs = _facet_sub_refs(parsed.facet)
+    sub_refs = _facet_sub_refs(parsed.facet, parsed.sub_label)
     nodes: list[SurfaceNode] = []
     for n, sf in parsed.nums:
         for rn in _expand_range_single(n):

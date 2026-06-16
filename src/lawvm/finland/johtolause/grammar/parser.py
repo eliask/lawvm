@@ -51,6 +51,7 @@ from lawvm.finland.johtolause.grammar.combinators import Cursor, Span
 from lawvm.finland.johtolause.grammar.containers import (
     ContainerForm,
     emit_containers_nodes,
+    recognize_chapter_scoped_subheading,
     recognize_containers,
 )
 from lawvm.finland.johtolause.grammar.jolloin import build_jolloin_group
@@ -1479,6 +1480,24 @@ def _try_valiotsikko(scan: _Scan, sep_saved: int) -> Optional[list[SurfaceNode]]
     return emit_headings_nodes(parsed)
 
 
+def _try_chapter_subheading(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """Recognize a mid-list chapter-scoped labelled subheading continuation arm.
+
+    A ``, D väliotsikko,`` / ``, alaluvun C otsikko,`` arm inside an established
+    chapter-scoped list inherits the running ``chapter`` scope (``6 luvun C
+    väliotsikko, 14–18 §, D väliotsikko, …``). Emits a CHAPTER HEADING node for
+    the inherited chapter, label-discriminated by the subheading letter, so the
+    chapter scope continues into the following section arms. Returns ``None``
+    when no inherited chapter scope is active or the shape does not match.
+    """
+    parsed = recognize_chapter_scoped_subheading(scan, chapter)
+    if parsed is None:
+        return None
+    return emit_containers_nodes(parsed, chapter=chapter, part=part)
+
+
 def _try_heading_placement(
     scan: _Scan, chapter: str, part: str
 ) -> Optional[list[SurfaceNode]]:
@@ -2261,6 +2280,17 @@ def _parse_verb_group(
             nodes.extend(val_nodes)
             last_batch = list(val_nodes)
             continue
+        # A mid-list chapter-scoped labelled subheading (``…, D väliotsikko, …``)
+        # inheriting the running chapter scope. Tried only when a chapter scope is
+        # active; emits a CHAPTER HEADING node and keeps the chapter scope so the
+        # following section arms continue to resolve under it.
+        csh_nodes = _try_chapter_subheading(scan, chapter, part)
+        if csh_nodes is not None:
+            nodes.extend(csh_nodes)
+            last_batch = list(csh_nodes)
+            chapter = _extract_chapter(csh_nodes, chapter, verb)
+            part = _extract_part(csh_nodes, part)
+            continue
         # A target-first heading-PLACEMENT arm folded into the running list
         # (``<num_list> §:n edelle uusi väliotsikko`` / the ``luvun otsikko``
         # window / ``mukaanluettuna … edellä olevan väliotsikon``). The old
@@ -2671,7 +2701,10 @@ def _extract_chapter(
                 if verb not in (SourceVerb.KUMOTA, SourceVerb.LISATA):
                     return node.label
                 return current
-            if all(sr.facet and not sr.momentti and not sr.item for sr in node.sub_refs):
+            if all(sr.facet and not sr.momentti for sr in node.sub_refs):
+                # Facet-only chapter heading OR a letter-labelled intra-chapter
+                # subheading (HEADING facet carrying its letter in ``item``):
+                # both scope the following bare section list to this chapter.
                 return node.label
             return current
     return extract_chapter(nodes, current)
