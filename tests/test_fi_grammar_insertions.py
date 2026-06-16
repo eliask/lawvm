@@ -480,6 +480,85 @@ def test_naista_single_closed_arm_is_not_over_declined() -> None:
     assert report.equal, f"delta on {text!r}:\n{report.summary()}"
 
 
+# Appendix (liite) inserts: the old parser's ``DOC:ILL uusi liite [numlist]`` arm
+# emits a whole-appendix SurfaceInsertion (APPENDIX target, ``fi.insertion_other``
+# witness). Each form must round-trip 0-delta. An unlabelled ``uusi liite`` is the
+# whole appendix (label ""); a trailing number list gives one node per appendix.
+LIITE_INSERT_EXAMPLES = [
+    "muutetaan lain 10 § ja lisätään lakiin uusi liite seuraavasti:",
+    "muutetaan asetuksen 6 § ja lisätään asetukseen uusi liite 9 seuraavasti:",
+    "muutetaan asetuksen liitteet 3 ja 6, sekä lisätään asetukseen uusi liite 9 "
+    "seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", LIITE_INSERT_EXAMPLES)
+def test_appendix_insert_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_unlabelled_appendix_insert_carries_other_witness() -> None:
+    # ``lakiin uusi liite`` (no number) — the whole appendix, label "".
+    model = parse_text_with(
+        "muutetaan lain 10 § ja lisätään lakiin uusi liite seuraavasti:",
+        new_parser.parse,
+    )
+    lisata = model.verb_groups[-1]
+    node = _as_insertion(lisata.nodes[0])
+    assert node.kind == TargetKind.APPENDIX
+    assert node.label == ""
+    assert node.sub_target is None
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_other"
+
+
+def test_numbered_appendix_insert_carries_label() -> None:
+    # ``asetukseen uusi liite 9`` — a numbered appendix insert.
+    model = parse_text_with(
+        "muutetaan asetuksen 6 § ja lisätään asetukseen uusi liite 9 seuraavasti:",
+        new_parser.parse,
+    )
+    lisata = model.verb_groups[-1]
+    node = _as_insertion(lisata.nodes[0])
+    assert node.kind == TargetKind.APPENDIX
+    assert node.label == "9"
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_other"
+
+
+# Real corpus johtolauses whose DOC:ILL appendix insert the old parser keeps as a
+# whole-appendix SurfaceInsertion. Each must round-trip 0-delta.
+LIITE_CORPUS_REGRESSIONS = [
+    # 2007/1311 — ``lisätään lakiin uusi liite`` (unlabelled whole appendix).
+    "muutetaan 30 päivänä joulukuuta 2003 annetun ajoneuvoverolain ( 1281/2003 ) "
+    "10 § ja lisätään lakiin uusi liite seuraavasti:",
+    # 2011/278 — appendix modify list + numbered ``uusi liite 9`` insert.
+    "muutetaan ulkomaanedustuksen korvauksista annetun asetuksen ( 1048/2010 ) "
+    "liitteet 3 ja 6, sekä lisätään asetukseen uusi liite 9 seuraavasti:",
+    # 2016/767 — ``lisätään asetukseen uusi liite 3``.
+    "muutetaan (1015/2013) 1 §, sekä lisätään asetukseen uusi liite 3 seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", LIITE_CORPUS_REGRESSIONS)
+def test_appendix_insert_corpus_regressions_are_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_appendix_reinstatement_insert_still_declines() -> None:
+    # ``kumotun C liitteen tilalle uusi C liite`` — a reinstatement appendix
+    # insert needs the old parser's residue handling; it stays out of scope so the
+    # driver declines rather than mis-compile it as a clean appendix insert.
+    text = (
+        "muutetaan asetuksen 1 §, sekä korvataan asetuksella kumotun C liitteen "
+        "tilalle uusi C liite seuraavasti:"
+    )
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)
+
+
 def _tokenize(text: str):
     from lawvm.finland.johtolause.lexer import tokenize
     from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs

@@ -809,6 +809,19 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
         # into the batch — fall through to the broad guard so it declines loudly
         # rather than silently. The arm rewound the cursor on its None return.
 
+    # ── DOC:ILL appendix insert: ``DOC:ILL uusi liite [numlist]`` ──────────
+    #
+    # Tried before the structural out-of-scope guard (which lists LIITE) so a
+    # clean appendix insert is recognized rather than declined. The arm only
+    # fires on the exact ``DOC:ILL [,] uusi liite [numlist]`` shape — anything
+    # carrying a reinstatement / citation / provenance / heading-anchor before
+    # the ``uusi liite`` falls through and the LIITE guard below still declines
+    # it (faithful: those forms need the old parser's residue handling).
+    if _at_cat_case(scan, "DOC", "ILL"):
+        liite = _try_doc_ill_liite(scan)
+        if liite is not None:
+            return liite
+
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #
     #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
@@ -1183,6 +1196,42 @@ def _arm_has_oos_marker(scan: _Scan, start: int, end: int) -> bool:
         ):
             return True
     return False
+
+
+def _try_doc_ill_liite(scan: _Scan) -> Optional[list[InsNode]]:
+    """``DOC:ILL [,] uusi liite [numlist]`` — appendix (liite) insertion.
+
+    Faithful to the old appendix arm (surface_parse lines 2664-2670): after the
+    DOC:ILL anchor and ``uusi``, a ``liite`` closes a whole-appendix insert.
+    A trailing number list gives one APPENDIX node per appendix number; with no
+    number the appendix is unlabelled (``label=""``). All appendix inserts return
+    to statute level, so ``chapter`` / ``part`` are empty.
+
+    Only the clean shape fires: a comma is the sole element tolerated between the
+    DOC:ILL anchor and ``uusi`` (mirroring the old optional comma). Any
+    reinstatement / citation / provenance / named-heading-anchor between the
+    anchor and ``uusi liite`` leaves the cursor rewound (returns None) so the
+    broad LIITE out-of-scope guard still declines the clause — those forms need
+    the old parser's residue handling this recogniser does not reproduce.
+    """
+    saved = scan.pos
+    scan.advance()  # consume DOC:ILL
+    _optional_comma(scan)
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    _skip_nain_kuuluva(scan)
+    if not _at(scan, "LIITE"):
+        scan.goto(saved)
+        return None
+    scan.advance()  # consume LIITE
+    post_nums = _number_list(scan)
+    if post_nums:
+        return [
+            InsNode(kind=TargetKind.APPENDIX, label=n + sf, chapter="", part="")
+            for n, sf in post_nums
+        ]
+    return [InsNode(kind=TargetKind.APPENDIX, label="", chapter="", part="")]
 
 
 def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
