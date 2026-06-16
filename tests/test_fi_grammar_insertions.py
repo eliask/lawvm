@@ -672,3 +672,80 @@ def _tokenize(text: str):
 
     raw = tokenize(text)
     return apply_annotations_with_jolloin_pairs(raw)
+
+
+# Cross-verb-group anaphoric inserts (#29 sub-problem 1): a LISATA group whose
+# host section is established in a PRECEDING verb group. The determiner that names
+# it (``sanottuun/mainittuun pykälään``) is lexed into a sentinel span, so the
+# group opens on a bare ``uusi N momentti``; the host section is the cross-group
+# anchor (``ctx.last_section``), not a node in this group. The old parser resolves
+# it via its ``_verb_group`` anaphoric fallback (``fi.cross_verb_bare_uusi`` /
+# ``fi.cross_verb_momentti``). Each must now round-trip byte-identical.
+CROSS_VERB_ANAPHORIC = [
+    # The briefing exemplar.
+    "muutetaan lain 5 §:n 1 momentti sekä lisätään sanottuun pykälään uusi 3 "
+    "momentti seuraavasti:",
+    # 1948/954 — "viimeksi mainittuun pykälään" anchors §67 (the SECOND muutetaan
+    # target), the WORD "viimeksi" preceding the determiner.
+    "Eduskunnan päätöksen mukaisesti muutetaan elokuun 20 päivänä 1948 annetun "
+    "tapaturmavakuutuslain (608/48) 11 § sekä 67 §:n 2 momentti sekä lisätään "
+    "viimeksi mainittuun pykälään uusi 3 momentti seuraavasti:",
+    # 1965/590 — "mainittuun pykälään" anchors §7 (a descendant-coordination base).
+    "Sosiaaliministeriön toimialaan kuuluvia asioita käsittelemään määrätyn "
+    "ministerin esittelystä muutetaan 17 päivänä heinäkuuta 1959 annetun "
+    "liikennevakuutusasetuksen (324/ 59) 7 §:n 2 ja 3 momentti sekä lisätään "
+    "mainittuun pykälään uusi 5 momentti seuraavasti:",
+    # 1967/591 — "sanottuun pykälään" anchors §59 across a trailing provenance span.
+    "Eduskunnan päätöksen mukaisesti muutetaan 4 päivänä heinäkuuta 1963 annetun "
+    "sairausvakuutuslain 59 §:n 1 momentti, sellaisena kuin se on 16 päivänä "
+    "joulukuuta 1966 annetussa laissa (646/66), sekä lisätään sanottuun pykälään "
+    "uusi 3 momentti seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", CROSS_VERB_ANAPHORIC)
+def test_cross_verb_anaphoric_insert_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_cross_verb_anaphoric_insert_resolves_prior_section() -> None:
+    # The recovered LISATA group inserts §5's new momentti 3 with the cross-verb
+    # witness — the host section comes from the *prior* muutetaan group, not this
+    # group's (empty) own targets.
+    model = parse_text_with(
+        "muutetaan lain 5 §:n 1 momentti sekä lisätään sanottuun pykälään uusi 3 "
+        "momentti seuraavasti:",
+        new_parser.parse,
+    )
+    lisata_vg = model.verb_groups[1]
+    node = _as_insertion(lisata_vg.nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "5"
+    assert node.sub_target is not None
+    assert node.sub_target.momentti == 3
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.cross_verb_bare_uusi"
+
+
+def test_cross_verb_whole_section_insert_is_not_claimed_as_anaphora() -> None:
+    # Control: ``… sekä lisätään … uusi 50 a §`` is a WHOLE-section insert, NOT a
+    # cross-group sub-target anaphora. The cross-verb fallback must NOT claim it
+    # (which would stamp the wrong ``fi.cross_verb_*`` witness in place of the old
+    # parser's ``fi.insertion_section``); the clause stays declined (2017/290).
+    text = (
+        "muutetaan maa- ja metsätalousministeriön työjärjestyksestä annetun maa- "
+        "ja metsätalousministeriön asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
+        "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
+    )
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)
+
+
+def test_cross_verb_anaphora_without_prior_section_declines() -> None:
+    # Control: the same bare ``uusi N momentti`` arm with NO resolvable prior
+    # section (the first and only verb group is the LISATA group) has no cross-group
+    # anchor, so the fallback does not fire and the clause declines.
+    text = "lisätään sanottuun pykälään uusi 3 momentti seuraavasti:"
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)

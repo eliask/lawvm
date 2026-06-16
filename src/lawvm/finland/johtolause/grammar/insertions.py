@@ -680,6 +680,107 @@ def recognize_bare_anaphoric_chapter_insert(
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedCrossVerbAnaphoricInsert:
+    """A cross-verb-group anaphoric insert resolved against a *prior* group.
+
+    A pure narrowing of the old ``surface_parse._verb_group`` anaphoric fallback
+    (sp:4942-5028): a LISATA verb group whose target is named only by reference to
+    a section established in an EARLIER verb group::
+
+        muutetaan … 5 §:n 1 momentti sekä lisätään sanottuun pykälään uusi 3 momentti
+
+    The ``sanottuun pykälään`` determiner is lexed away into a sentinel span (or a
+    bare WORD run), leaving the group opening on a bare ``uusi N momentti`` (or
+    ``mainittuun momenttiin uusi N kohta``). The host section is NOT in this
+    group's nodes — it is the last section the *discourse* mentioned, which only
+    the cross-group :class:`VerbGroupContext` knows. The recognizer is therefore
+    PURE: it consumes the arm and emits placeholder-section ``InsNode``s; the
+    driver fills the resolved ``(prev_sec, prev_ch)`` and the host momentti.
+
+    Two shapes, faithful to the old fallback's two patterns:
+
+      * ``[words] MOMENTTI:ILL [reinst] uusi <sub>`` — the old ``fi.cross_verb_momentti``
+        arm (sp:4945-4987); ``host_from_momentti`` is True.
+      * ``[words] uusi <sub>``                       — the old ``fi.cross_verb_bare_uusi``
+        arm (sp:4989-5028); ``host_from_momentti`` is False.
+
+    The kohta sub-target's host momentti is always the prior-momentti context
+    (``mom_ctx or 1`` inside ``_recognize_sub_target``), so both patterns supply
+    the context momentti identically; ``host_from_momentti`` only selects the
+    witness rule_id the driver stamps.
+    """
+
+    span: Span
+    nodes: tuple[InsNode, ...]
+    host_from_momentti: bool
+
+
+def recognize_cross_verb_anaphoric_insert(
+    scan: _Scan, prev_mom: int
+) -> Optional[ParsedCrossVerbAnaphoricInsert]:
+    """Recognize a cross-verb-group anaphoric insert at a verb-group's first target.
+
+    The cursor sits at the group's post-sentinel first-target position. ``prev_mom``
+    is the last-mentioned momentti from the cross-group context (used as the kohta
+    host, ``prev_mom or 1``). Faithful port of the old ``_verb_group`` anaphoric
+    fallback (surface_parse 4942-5028): it skips a leading bare-WORD run (a
+    determiner the lexer did not absorb into a sentinel span), then tries the two
+    patterns in old order — ``MOMENTTI:ILL uusi <sub>`` first, then bare
+    ``uusi <sub>``. Emits placeholder-section/chapter nodes for the driver to fill.
+
+    Returns None (cursor fully restored) for any other shape.
+
+    Only a SUB-TARGET insert (a momentti / kohta INTO the prior section) is owned
+    here: a bare whole-section / whole-chapter insert (``lisätään … uusi N §`` /
+    ``uusi N luku``) is NOT cross-group anaphora — the old parser keeps it via the
+    normal ``_target_list`` insertion path (``fi.insertion_section``), never the
+    anaphoric fallback (which only fires after ``_target_list`` returns ``[]``). So
+    a parse whose nodes carry no ``sub_target`` is declined here, leaving such a
+    clause to the (separately-wired) insertion family / decline path.
+    """
+    saved = scan.pos
+
+    def _all_sub_targeted(nodes: list[InsNode]) -> bool:
+        return bool(nodes) and all(n.sub_target is not None for n in nodes)
+
+    # Pattern 1: ``[words] MOMENTTI:ILL [reinst] uusi <sub>`` (fi.cross_verb_momentti).
+    while _at(scan, "WORD"):
+        scan.advance()
+    if _at_cat_case(scan, "MOMENTTI", "ILL"):
+        scan.advance()  # consume MOMENTTI:ILL
+        if _at(scan, *_ILL_REINST_SPANS):
+            scan.advance()
+        if _consume_uusi(scan):
+            nodes = _recognize_sub_target(
+                scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", prev_mom or 1
+            )
+            if nodes and _all_sub_targeted(nodes):
+                return ParsedCrossVerbAnaphoricInsert(
+                    span=Span(saved, scan.pos),
+                    nodes=tuple(nodes),
+                    host_from_momentti=True,
+                )
+
+    # Pattern 2: ``[words] uusi <sub>`` (fi.cross_verb_bare_uusi).
+    scan.goto(saved)
+    while _at(scan, "WORD"):
+        scan.advance()
+    if _consume_uusi(scan):
+        nodes = _recognize_sub_target(
+            scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", prev_mom or 1
+        )
+        if nodes and _all_sub_targeted(nodes):
+            return ParsedCrossVerbAnaphoricInsert(
+                span=Span(saved, scan.pos),
+                nodes=tuple(nodes),
+                host_from_momentti=False,
+            )
+
+    scan.goto(saved)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Whole-target insertion list: ``uusi numlist (§ | luku | osa)``.
 # ---------------------------------------------------------------------------

@@ -70,6 +70,7 @@ from lawvm.finland.johtolause.grammar.insertions import (
     insertion_rule_id,
     recognize_bare_anaphoric_chapter_insert,
     recognize_bare_anaphoric_sub_target,
+    recognize_cross_verb_anaphoric_insert,
     recognize_insertion,
 )
 from lawvm.finland.johtolause.grammar.moves import (
@@ -1823,6 +1824,60 @@ def _try_anaphoric_determiner_insert(
     return _stamp_anaphoric_determiner_witness(sub_nodes, sep_saved, scan.pos)
 
 
+def _try_cross_verb_anaphoric_insert(
+    scan: _Scan, ctx: VerbGroupContext, verb: Optional[SourceVerb]
+) -> Optional[list[SurfaceNode]]:
+    """Resolve a cross-verb-group anaphoric insert against the DISCOURSE context.
+
+    Faithful port of the old ``_verb_group`` anaphoric fallback (sp:4942-5028):
+    when a LISATA group's first target is named only by reference to a section a
+    *prior* verb group established (``muutetaan … 5 § … sekä lisätään sanottuun
+    pykälään uusi 3 momentti`` — the determiner lexed away into a sentinel span),
+    the host section is ``ctx.last_section`` (the cross-group anchor), NOT a node
+    in this group. The intra-group ``_try_anaphoric_determiner_insert`` cannot
+    reach it (it resolves against THIS group's accumulated nodes).
+
+    Only fires under LISATA with a non-empty ``ctx.last_section`` (the old fallback
+    guard ``if not nodes and ctx.last_section``). The cursor sits at the group's
+    post-sentinel first-target position. Stamps the old fallback's witness
+    (``fi.cross_verb_momentti`` / ``fi.cross_verb_bare_uusi``) spanning the arm.
+    Returns the emitted nodes (cursor past the arm) or None (cursor restored).
+    """
+    if verb != SourceVerb.LISATA or not ctx.last_section:
+        return None
+    saved = scan.pos
+    parsed = recognize_cross_verb_anaphoric_insert(scan, ctx.last_momentti)
+    if parsed is None:
+        scan.goto(saved)
+        return None
+    rule_id = (
+        "fi.cross_verb_momentti"
+        if parsed.host_from_momentti
+        else "fi.cross_verb_bare_uusi"
+    )
+    span = (parsed.span.start, parsed.span.end)
+    out: list[SurfaceNode] = []
+    for node in parsed.nodes:
+        # The recognizer only returns SUB-TARGET inserts (momentti / kohta into the
+        # prior section), so every node carries the resolved section / chapter.
+        assert node.sub_target is not None
+        out.append(
+            SurfaceInsertion(
+                kind=node.kind,
+                label=ctx.last_section,
+                chapter=ctx.last_section_chapter,
+                part=node.part,
+                sub_target=SurfaceSubRef(
+                    momentti=node.sub_target.momentti,
+                    item=node.sub_target.item,
+                    facet=node.sub_target.facet,
+                ),
+                witness=SurfaceWitness(rule_id=rule_id, source_span=span),
+            )
+        )
+    return out
+
+
 # Structural-anchor token categories: their presence in a verb group's span means
 # the old ``_target_list`` would anchor a target there, so the group is NOT
 # genuinely empty even when the wired families decline its first target.
@@ -2025,8 +2080,36 @@ def _parse_verb_group(
     # separator and re-attempt the first target so the group is recognized, not
     # spuriously dropped.
     first_batch_start = scan.pos
-    batch_kind = _recognize_first_target_or_empty(scan, verb)
+    try:
+        batch_kind = _recognize_first_target_or_empty(scan, verb)
+    except OutOfScope:
+        # The wired families declined this group's first target. Before propagating
+        # the decline, try the cross-verb-group anaphoric fallback: a LISATA group
+        # whose host section is established in a PRIOR verb group (``… 5 § … sekä
+        # lisätään sanottuun pykälään uusi 3 momentti``). The old ``_verb_group``
+        # reaches this only after ``_target_list`` returns ``[]`` (it never raises),
+        # so this driver must recover here rather than fall through to the decline.
+        scan.goto(first_batch_start)
+        cross_nodes = _try_cross_verb_anaphoric_insert(scan, ctx, verb)
+        if cross_nodes is None:
+            raise
+        new_ctx = _update_context_from_nodes(cross_nodes, ctx, verb)
+        return verb, cross_nodes, new_ctx
     if batch_kind is None:
+        # An empty group: the wired families found no target. The old ``_verb_group``
+        # likewise reaches the anaphoric fallback here (``if not nodes and
+        # ctx.last_section``) — try the cross-verb anaphoric insert before dropping
+        # the group as empty.
+        empty_pos = scan.pos
+        scan.goto(first_batch_start)
+        cross_nodes = _try_cross_verb_anaphoric_insert(scan, ctx, verb)
+        if cross_nodes is not None:
+            new_ctx = _update_context_from_nodes(cross_nodes, ctx, verb)
+            return verb, cross_nodes, new_ctx
+        # No cross-verb arm: leave the cursor where ``_recognize_first_target_or_empty``
+        # left it (the post-sentinel un-modelled-target position ``parse()`` resumes
+        # the verb-seeking skip from), exactly as before.
+        scan.goto(empty_pos)
         return verb, [], ctx
     batch, kind = batch_kind
     # An authority-basis citation mis-read as the first target: ``muutetaan …
