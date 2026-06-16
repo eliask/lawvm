@@ -243,13 +243,22 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
         ),
         summary=(
             "Resolution that requires reading context across verb groups (relabel "
-            "or move-retarget from a prior verb group); declined pending the "
-            "cross-verb-group discourse layer."
+            "or move-retarget from a prior verb group); deliberately deferred to "
+            "legacy. The cross-verb frontier is spent: the recoverable slice (the "
+            "'lisätään sanottuun pykälään uusi N momentti' anaphora, +23) has been "
+            "harvested into the grammar, and the 97.8% of declines that look like "
+            "later-group failures reproduce identically in isolation — they are "
+            "intra-group complex-enumeration residue, not cross-verb. The 2 "
+            "residual clauses are distinct one-off discourse shapes (an "
+            "exception-clause relabel that renumbers an excepted section, and a "
+            "move that retargets an already-amended section into a new chapter) "
+            "with no shared recognizer pattern; owning them is negative-EV."
         ),
-        future_path="own",
+        future_path="keep_legacy",
         strict_disposition=(
-            "record as cross-verb anaphora; discourse layer (#29) is the open "
-            "ownership lane"
+            "record as cross-verb anaphora; cross-verb frontier spent, recoverable "
+            "anaphora slice already harvested, residual 2 are one-off discourse "
+            "shapes deliberately deferred to legacy (not expected to own)"
         ),
         baseline_count=2,
     ),
