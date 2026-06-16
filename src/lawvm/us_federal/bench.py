@@ -146,19 +146,72 @@ class BenchReport:
         ev = self.evaluated()
         denom = sum(r.oracle_changed for r in ev)
         numer = sum(r.agreements for r in ev)
+        # Structurally-unwitnessable sections: oracle changes for which no Public Law
+        # amendment source can ever account.
+        #
+        # - ``oracle_suspect``: the oracle itself has an editorial pathology (the OLRC
+        #   consolidated text diverges from the enacted text for non-amendment reasons —
+        #   the generalized F1 class). Our materialization is faithful to the enacted
+        #   instruction; the oracle-side gap is editorial. No amendment source explains
+        #   this change, so it is not a lowering-yield residual.
+        # - ``sunset_reversion``: a temporary provision expired and the section reverted
+        #   to its prior permanent form (F2, temporal layer). The change is driven by
+        #   time, not by a Public Law amendatory instruction, so no amendment source can
+        #   account for it.
+        #
+        # ``source_present_denom`` is the denominator restricted to oracle-changed
+        # sections for which an amendment source plausibly exists.  Excludes only what
+        # can be defended as structurally sourceless; ``missing_source`` (lowering gap)
+        # stays IN the denominator — those are genuine amendments we haven't lowered yet.
+        #
+        # Honest limit: ``lawvm_wrong`` sections are NOT excluded because a wrong
+        # materialization still has an underlying amendment source — we just got the
+        # lowering wrong. Only the no-source-possible buckets are subtracted.
+        n_oracle_suspect = sum(r.oracle_suspect for r in ev)
+        n_sunset_reversion = sum(r.sunset_reversion for r in ev)
+        n_structurally_unwitnessable = n_oracle_suspect + n_sunset_reversion
+        source_present_denom = denom - n_structurally_unwitnessable
         return {
             "windows_evaluated": len(ev),
             "windows_skipped": len(self.skipped()),
             "oracle_changed_section_total": denom,
             "agreements_total": numer,
-            # Witness-anchored, monotone: agreements / oracle-changed sections.
+            # coverage_all: agreements / ALL oracle-changed sections (the monotone
+            # north-star denominator — a fact of the two USC editions).
             "coverage_fraction": (numer / denom) if denom else None,
+            "coverage_all": {
+                "numerator": numer,
+                "denominator": denom,
+                "fraction": (numer / denom) if denom else None,
+                "denominator_note": (
+                    "all oracle-changed sections regardless of source availability"
+                ),
+            },
+            # coverage_source_present: agreements / (oracle-changed − structurally-
+            # unwitnessable).  Excluded: oracle_suspect (OLRC editorial pathology, F1)
+            # + sunset_reversion (temporal reversion, F2).  Included: missing_source
+            # (genuine lowering gap — amendment exists, we haven't lowered it yet) and
+            # lawvm_wrong (amendment exists, our lowering is wrong).
+            "coverage_source_present": {
+                "numerator": numer,
+                "denominator": source_present_denom,
+                "fraction": (numer / source_present_denom) if source_present_denom else None,
+                "excluded_oracle_suspect": n_oracle_suspect,
+                "excluded_sunset_reversion": n_sunset_reversion,
+                "excluded_total": n_structurally_unwitnessable,
+                "denominator_note": (
+                    "oracle-changed sections minus structurally-unwitnessable buckets "
+                    "(oracle_suspect = OLRC editorial pathology F1; "
+                    "sunset_reversion = temporal reversion F2); "
+                    "missing_source and lawvm_wrong remain in denominator"
+                ),
+            },
             "disposition_breakdown": {
                 "agreement": numer,
                 "lawvm_wrong": sum(r.lawvm_wrong for r in ev),
-                "oracle_suspect": sum(r.oracle_suspect for r in ev),
+                "oracle_suspect": n_oracle_suspect,
                 "missing_source": sum(r.missing_source for r in ev),
-                "sunset_reversion": sum(r.sunset_reversion for r in ev),
+                "sunset_reversion": n_sunset_reversion,
             },
             "refusals_total": sum(r.refusals for r in ev),
         }
@@ -595,9 +648,27 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(
         f"AGGREGATE  windows={agg['windows_evaluated']} "
-        f"(skipped {agg['windows_skipped']})  "
-        f"witness-anchored coverage={agg['agreements_total']}/"
-        f"{agg['oracle_changed_section_total']} = {cov_str}"
+        f"(skipped {agg['windows_skipped']})"
+    )
+    # coverage_all: the monotone north-star, full oracle-changed denominator.
+    ca = agg["coverage_all"]
+    ca_str = "-" if ca["fraction"] is None else f"{ca['fraction']:.4f}"
+    print(
+        f"  coverage_all (agreements / all oracle-changed):  "
+        f"{ca['numerator']}/{ca['denominator']} = {ca_str}"
+    )
+    # coverage_source_present: same numerator, denominator minus structurally-
+    # unwitnessable buckets (oracle_suspect F1 + sunset_reversion F2).
+    sp = agg["coverage_source_present"]
+    sp_str = "-" if sp["fraction"] is None else f"{sp['fraction']:.4f}"
+    excluded = sp["excluded_total"]
+    print(
+        f"  coverage_source_present (excl. {excluded} structurally-unwitnessable):  "
+        f"{sp['numerator']}/{sp['denominator']} = {sp_str}"
+    )
+    print(
+        f"    excluded: oracle_suspect(F1)={sp['excluded_oracle_suspect']}  "
+        f"sunset_reversion(F2)={sp['excluded_sunset_reversion']}"
     )
     print(f"  disposition breakdown: {agg['disposition_breakdown']}")
     print(f"  refusals total: {agg['refusals_total']}")

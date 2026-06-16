@@ -235,6 +235,75 @@ def test_empty_bench_report_aggregate_is_none_coverage_not_a_crash() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Source-present aggregate (coverage_source_present)
+# ---------------------------------------------------------------------------
+
+
+def test_source_present_aggregate_present_and_correctly_labelled() -> None:
+    """Both coverage aggregates are present, labelled, and self-consistent."""
+    report = run_bench(_synthetic_archive(), [_synthetic_window()], corpus_path="fixture")
+    agg = report.aggregate()
+    # Both aggregate keys must be present.
+    assert "coverage_all" in agg, "coverage_all missing from aggregate"
+    assert "coverage_source_present" in agg, "coverage_source_present missing from aggregate"
+    # coverage_all must carry numerator / denominator / fraction + a note.
+    ca = agg["coverage_all"]
+    assert {"numerator", "denominator", "fraction", "denominator_note"} <= set(ca)
+    # coverage_source_present must carry its own fields including exclusion counts.
+    sp = agg["coverage_source_present"]
+    assert {
+        "numerator", "denominator", "fraction",
+        "excluded_oracle_suspect", "excluded_sunset_reversion",
+        "excluded_total", "denominator_note",
+    } <= set(sp)
+    # The same numerator (agreements) must appear in both aggregates.
+    assert ca["numerator"] == agg["agreements_total"]
+    assert sp["numerator"] == agg["agreements_total"]
+    # coverage_source_present denominator <= coverage_all denominator (we exclude,
+    # never add sections).
+    assert sp["denominator"] <= ca["denominator"]
+    # excluded_total = oracle_suspect + sunset_reversion.
+    assert sp["excluded_total"] == sp["excluded_oracle_suspect"] + sp["excluded_sunset_reversion"]
+    # coverage_source_present >= coverage_all: subtracting a non-negative count of
+    # structurally-unwitnessable deltas from the denominator cannot increase the denominator,
+    # so the fraction can only stay the same or increase.
+    if ca["fraction"] is not None and sp["fraction"] is not None:
+        assert sp["fraction"] >= ca["fraction"] - 1e-9, (
+            f"coverage_source_present ({sp['fraction']:.4f}) must be >= "
+            f"coverage_all ({ca['fraction']:.4f})"
+        )
+
+
+def test_source_present_aggregate_no_structural_exclusion_when_no_pathology() -> None:
+    """When no oracle_suspect/sunset_reversion sections exist both fractions coincide.
+
+    The synthetic fixture has 2 oracle-changed sections: section 10 (agrees) and
+    section 30 (missing_source gap, no oracle pathology, no sunset).  The excluded
+    count must be 0 and the two fractions must be equal.
+    """
+    report = run_bench(_synthetic_archive(), [_synthetic_window()], corpus_path="fixture")
+    agg = report.aggregate()
+    sp = agg["coverage_source_present"]
+    ca = agg["coverage_all"]
+    # The synthetic fixture has no oracle_suspect or sunset_reversion sections.
+    assert sp["excluded_oracle_suspect"] == 0
+    assert sp["excluded_sunset_reversion"] == 0
+    assert sp["excluded_total"] == 0
+    # When nothing is excluded both denominators (and fractions) must be equal.
+    assert sp["denominator"] == ca["denominator"]
+    assert sp["fraction"] == pytest.approx(ca["fraction"])
+
+
+def test_aggregate_shape_includes_coverage_source_present_in_json() -> None:
+    """``to_jsonable()`` serialises both aggregate keys so downstream consumers see them."""
+    report = run_bench(_synthetic_archive(), [_synthetic_window()], corpus_path="fixture")
+    payload = report.to_jsonable()
+    agg = payload["aggregate"]
+    assert "coverage_all" in agg
+    assert "coverage_source_present" in agg
+
+
+# ---------------------------------------------------------------------------
 # Real committed corpus over the canonical archive (archive-gated, no network)
 # ---------------------------------------------------------------------------
 
