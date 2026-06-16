@@ -223,6 +223,33 @@ def _relabel_subsection_ir(subsection: IRNode, new_label: str) -> IRNode:
     )
 
 
+def _relabel_item_ir(item: IRNode, new_label: str) -> IRNode:
+    """Return an item (paragraph) with an updated label and visible number marker.
+
+    An ``item`` (kohta) is a :data:`IRNodeKind.PARAGRAPH` node carrying a visible
+    ``N)`` marker, so this delegates to :func:`_relabel_paragraph_ir`, which
+    rewrites that marker. Named separately to mirror the relabel-helper family
+    (``_relabel_subsection_ir`` / ``_relabel_section_ir``) at the item leaf kind.
+    """
+    return _relabel_paragraph_ir(item, new_label)
+
+
+def _rebuild_subsection_with_items_ir(sub: IRNode, new_items: List[IRNode]) -> IRNode:
+    """Replace a subsection's item (paragraph) sequence, preserving other children."""
+    rebuilt_children: List[IRNode] = []
+    item_idx = 0
+    for child in sub.children:
+        if child.kind == IRNodeKind.PARAGRAPH:
+            if item_idx < len(new_items):
+                rebuilt_children.append(new_items[item_idx])
+                item_idx += 1
+            continue
+        rebuilt_children.append(child)
+    if item_idx < len(new_items):
+        rebuilt_children.extend(new_items[item_idx:])
+    return _tops._with_children(sub, rebuilt_children)
+
+
 def _rebuild_section_with_subsections_ir(sec: IRNode, new_subsections: List[IRNode]) -> IRNode:
     """Replace a section's subsection sequence while preserving non-subsection children."""
     rebuilt_children: List[IRNode] = []

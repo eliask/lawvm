@@ -108,7 +108,11 @@ from lawvm.finland.apply_typed_dispatch import (
     _whole_section_move_rebind_allowances,
 )
 from lawvm.finland.migration_ledger import MigrationLedger
-from lawvm.finland.apply_ir_ops import _relabel_paragraph_ir
+from lawvm.finland.apply_ir_ops import (
+    _rebuild_subsection_with_items_ir,
+    _relabel_item_ir,
+    _relabel_paragraph_ir,
+)
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from tests.corpus_pin_helpers import pinned_replay
@@ -356,6 +360,44 @@ def test_relabel_paragraph_ir_preserves_letter_suffix_item_spacing() -> None:
     assert relabelled.label == "4a"
     assert relabelled.children[0].kind == IRNodeKind.NUM
     assert relabelled.children[0].text == "4 a)"
+
+
+def test_relabel_item_ir_updates_label_and_visible_marker() -> None:
+    item = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4)"),
+            IRNode(kind=IRNodeKind.CONTENT, text="tieto liikkeestä"),
+        ),
+    )
+
+    relabelled = _relabel_item_ir(item, "9")
+
+    assert relabelled.kind is IRNodeKind.PARAGRAPH
+    assert relabelled.label == "9"
+    assert relabelled.children[0].kind == IRNodeKind.NUM
+    assert relabelled.children[0].text == "9)"
+    assert relabelled.children[1].text == "tieto liikkeestä"
+
+
+def test_rebuild_subsection_with_items_ir_preserves_non_paragraph_children() -> None:
+    subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="intro"),
+            _para("1", "one"),
+            _para("2", "two"),
+        ),
+    )
+    new_items = [_para("1", "one"), _para("9", "two")]
+
+    rebuilt = _rebuild_subsection_with_items_ir(subsection, new_items)
+
+    assert rebuilt.children[0].kind is IRNodeKind.INTRO
+    paragraphs = [c for c in rebuilt.children if c.kind is IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paragraphs] == ["1", "9"]
 
 
 def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() -> None:
@@ -728,6 +770,132 @@ def test_apply_op_typed_subsection_relabel_relabels_and_resorts_within_section()
                 (("chapter", "3"), ("section", "3"), ("subsection", "2")),
             ),
             rule_id="subsection_relabel_renumber",
+        ),
+    )
+
+
+def test_apply_op_typed_item_relabel_relabels_and_resorts_within_subsection() -> None:
+    from lawvm.core.canonical_intent import (
+        CoverageMode,
+        ExecutionContract,
+        IntentKind,
+        NodeTarget,
+        Relabel,
+    )
+    from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                    _sec(
+                        "9",
+                        _sub(
+                            "1",
+                            _para("1", "first item"),
+                            _para("4", "fourth item"),
+                            _para("5", "fifth item"),
+                        ),
+                    ),
+                ),
+            )
+        )
+    )
+    lo = LegalOperation(
+        op_id="renumber_item_4_to_9",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(
+            path=(("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "4"))
+        ),
+        destination=LegalAddress(
+            path=(("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "9"))
+        ),
+        source=OperationSource(statute_id="1981/133"),
+    )
+    op = AmendmentOp(
+        op_id="renumber_item_4_to_9",
+        op_type="RENUMBER",
+        target_section="9",
+        target_unit_kind="section",
+        target_chapter="2",
+        source_statute="1981/133",
+        lo=lo,
+    )
+    intent = Relabel(
+        kind=IntentKind.RELABEL,
+        source=NodeTarget(
+            address=LegalAddress(
+                path=(("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "4"))
+            )
+        ),
+        destination=NodeTarget(
+            address=LegalAddress(
+                path=(("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "9"))
+            )
+        ),
+        contract=ExecutionContract(
+            occupancy=_compat_upsert_policy(),
+            coverage=CoverageMode.EXACT,
+        ),
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="9",
+        target_chapter="2",
+    )
+    rop.intent = intent
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = apply_op(
+        state,
+        op,
+        _ctx(state.ir),
+        None,
+        replay_mode="legal_pit",
+        mutation_events_out=mutation_events,
+        rop=rop,
+    )
+
+    section = result.find_section("9", "2")
+    assert section is not None
+    subsection = next(c for c in section.children if c.kind is IRNodeKind.SUBSECTION)
+    items = [child for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH]
+    assert [child.label for child in items] == ["1", "5", "9"]
+    relabelled = next(item for item in items if item.label == "9")
+    assert "fourth item" in " ".join(irnode_to_text(relabelled).split())
+    assert relabelled.children[0].kind is IRNodeKind.NUM
+    assert relabelled.children[0].text == "9)"
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.helper == "_apply_intent_relabel"
+    assert event.outcome == "applied"
+    assert event.resolved_target_path == (
+        ("chapter", "2"),
+        ("section", "9"),
+        ("subsection", "1"),
+        ("item", "9"),
+    )
+    assert event.renumbered_paths == (
+        (
+            (("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "4")),
+            (("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "9")),
+        ),
+    )
+    assert event.declared_allowances == (
+        DeclaredMutationAllowance(
+            kind="migration_path",
+            paths=(
+                (("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "4")),
+                (("chapter", "2"), ("section", "9"), ("subsection", "1"), ("item", "9")),
+            ),
+            rule_id="item_relabel_renumber",
         ),
     )
 

@@ -342,6 +342,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_apply_ir_ops.py",
         "test_observed_write_audit.py",
         "test_fi_apply.py",
+        "test_fi_item_relabel_replay.py",
         "test_fi_chapter_seed.py",
         "test_fi_constraints.py",
         "test_destructive_repair_ledger.py",

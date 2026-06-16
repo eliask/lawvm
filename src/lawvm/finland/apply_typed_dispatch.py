@@ -64,7 +64,9 @@ from lawvm.finland.apply_events import (
 )
 from lawvm.finland.apply_ir_ops import (
     _rebuild_section_with_subsections_ir,
+    _rebuild_subsection_with_items_ir,
     _relabel_chapter_ir,
+    _relabel_item_ir,
     _relabel_section_ir,
     _relabel_subsection_ir,
 )
@@ -90,6 +92,7 @@ _MOVE_SKIP_REASON_CODES = {
 
 _SECTION_RELABEL_MIGRATION_RULE_ID = "section_relabel_renumber"
 _SUBSECTION_RELABEL_MIGRATION_RULE_ID = "subsection_relabel_renumber"
+_ITEM_RELABEL_MIGRATION_RULE_ID = "item_relabel_renumber"
 _CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
 _PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
 _MOVE_REPARENT_MIGRATION_RULE_ID = "move_reparent"
@@ -1655,6 +1658,136 @@ def _apply_intent_relabel(
             source_node=source_subsection_node,
             landed_node=landed_subsection_node,
             migration_rule_id=_SUBSECTION_RELABEL_MIGRATION_RULE_ID,
+        )
+        new_ir = _tops.replace_at(state.ir, section_path, rebuilt_section)
+        _append_observed_write_audit(
+            write_audits_out,
+            before_ir=state.ir,
+            after_ir=new_ir,
+            receipt=receipt,
+        )
+        _emit_apply_mutation_event_from_receipt(
+            mutation_events_out,
+            receipt=receipt,
+            rop=rop,
+            outcome="applied",
+        )
+        if migration_ledger is not None:
+            from_addr = intent.source.address
+            to_addr = intent.destination.address
+            source = rop.resolved_op_source
+            effective = source.effective if source is not None else ""
+            migration_ledger.record_renumber(
+                from_addr,
+                to_addr,
+                effective=effective,
+                source_statute=rop.resolved_source_statute,
+            )
+        return state.with_ir(new_ir)
+
+    if dest_label and source_unit_kind == "item":
+        source_path = intent.source.address.path
+        source_section = next((lbl for kind, lbl in source_path if kind == "section"), None)
+        source_chapter = next((lbl for kind, lbl in source_path if kind == "chapter"), None)
+        source_part = next((lbl for kind, lbl in source_path if kind == "part"), None)
+        source_subsection = next((lbl for kind, lbl in source_path if kind == "subsection"), None)
+        source_item = intent.source.address.leaf_label()
+
+        dest_path = intent.destination.address.path if intent.destination is not None else ()
+        dest_section = next((lbl for kind, lbl in dest_path if kind == "section"), None) or source_section
+        dest_chapter = next((lbl for kind, lbl in dest_path if kind == "chapter"), None) or source_chapter
+        dest_part = next((lbl for kind, lbl in dest_path if kind == "part"), None) or source_part
+        dest_subsection = next((lbl for kind, lbl in dest_path if kind == "subsection"), None) or source_subsection
+
+        if (
+            source_section is None
+            or source_subsection is None
+            or dest_section != source_section
+            or dest_chapter != source_chapter
+            or dest_part != source_part
+            or dest_subsection != source_subsection
+        ):
+            logger.warning(
+                "RELABEL_UNHANDLED: %s %s — item relabel across parent boundaries not yet implemented",
+                rop.resolved_action_type,
+                rop.target_norm,
+            )
+            _emit_relabel_skip(
+                reason_tag="cross_parent_unimplemented",
+                failure_reason="item relabel across parent boundaries not yet implemented",
+                resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
+            )
+            return state
+
+        section_path = state.find_section_path(source_section, source_chapter, source_part)
+        if section_path is None:
+            _emit_relabel_skip(
+                reason_tag="source_section_missing",
+                failure_reason=f"source section {source_section} not found for item relabel",
+                resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
+            )
+            return state
+        section_node = _tops.resolve(state.ir, section_path)
+        if section_node is None:
+            return state
+
+        subsections = [child for child in section_node.children if child.kind is IRNodeKind.SUBSECTION]
+        sub_idx = next(
+            (idx for idx, child in enumerate(subsections) if child.label == source_subsection),
+            None,
+        )
+        if sub_idx is None:
+            _emit_relabel_skip(
+                reason_tag="source_subsection_missing",
+                failure_reason=f"source subsection {source_subsection} not found for item relabel",
+                resolved_target_path=cast(TreePath, _path_to_tuple(section_path)),
+            )
+            return state
+        subsection_node = subsections[sub_idx]
+        subsection_path = section_path + (("subsection", source_subsection),)
+
+        items = [child for child in subsection_node.children if child.kind is IRNodeKind.PARAGRAPH]
+        source_item_idx = next(
+            (idx for idx, child in enumerate(items) if child.label == source_item),
+            None,
+        )
+        if source_item_idx is None:
+            _emit_relabel_skip(
+                reason_tag="source_item_missing",
+                failure_reason=f"source item {source_item} not found",
+                resolved_target_path=cast(TreePath, _path_to_tuple(subsection_path)),
+            )
+            return state
+        if any(child.label == dest_label for idx, child in enumerate(items) if idx != source_item_idx):
+            _emit_relabel_skip(
+                reason_tag="destination_exists",
+                failure_reason=f"destination item {dest_label} already exists",
+                resolved_target_path=cast(TreePath, _path_to_tuple(subsection_path)),
+            )
+            return state
+
+        rebuilt_items = list(items)
+        source_item_node = rebuilt_items[source_item_idx]
+        rebuilt_items[source_item_idx] = _relabel_item_ir(source_item_node, dest_label)
+        rebuilt_items.sort(key=lambda child: default_label_sort_key(child.label))
+        rebuilt_subsection = _rebuild_subsection_with_items_ir(subsection_node, rebuilt_items)
+
+        rebuilt_subsections = list(subsections)
+        rebuilt_subsections[sub_idx] = rebuilt_subsection
+        rebuilt_section = _rebuild_section_with_subsections_ir(section_node, rebuilt_subsections)
+
+        source_item_path = subsection_path + (("item", source_item),)
+        landed_item_path = subsection_path + (("item", dest_label),)
+        landed_item_node = next(
+            child for child in rebuilt_items if child.kind is IRNodeKind.PARAGRAPH and child.label == dest_label
+        )
+        receipt = _build_relabel_write_receipt(
+            rop=rop,
+            src_path=source_item_path,
+            landed_path=landed_item_path,
+            source_node=source_item_node,
+            landed_node=landed_item_node,
+            migration_rule_id=_ITEM_RELABEL_MIGRATION_RULE_ID,
         )
         new_ir = _tops.replace_at(state.ir, section_path, rebuilt_section)
         _append_observed_write_audit(
