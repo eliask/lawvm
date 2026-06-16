@@ -459,6 +459,192 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
     return None
 
 
+# A placeholder label/chapter the bare-anaphoric recognizer stamps on its
+# InsNodes; the driver overwrites it with the resolved anaphoric section /
+# chapter (the recognizer is pure and never sees the prior-batch context).
+_ANAPHORIC_PLACEHOLDER = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedAnaphoricSubTarget:
+    """A bare anaphoric ``[§:ILL|§:GEN M momenttiin|momenttiin] uusi <sub>`` arm.
+
+    The recognizer (``recognize_bare_anaphoric_sub_target``) is PURE: it consumes
+    the structural-noun anaphor + reinstatement skip + ``uusi`` + the inserted
+    momentti/kohta sub-target, and emits ``InsNode``s carrying the parsed
+    momentti/item but PLACEHOLDER section/chapter. The driver fills the resolved
+    anaphoric ``(section, chapter)`` (and, for the ``momenttiin`` reading, the
+    context momentti) from its :class:`VerbGroupContext`.
+
+    ``momentti_from_context`` is True for the bare ``[mainittuun] momenttiin uusi
+    K kohta`` reading: the kohta's host momentti is the LAST-mentioned momentti,
+    which only the driver knows — it stamps it onto every emitted node. For the
+    ``§:ään`` and ``§:n M momenttiin`` readings the momentti is explicit in the
+    text (or defaulted to 1 by ``_recognize_sub_target``), so the flag is False.
+    """
+
+    span: Span
+    nodes: tuple[InsNode, ...]
+    momentti_from_context: bool
+
+
+def recognize_bare_anaphoric_sub_target(
+    scan: _Scan,
+) -> Optional[ParsedAnaphoricSubTarget]:
+    """Recognize ``[§:ILL | §:GEN M momenttiin | momenttiin] uusi <sub>`` at cursor.
+
+    The anaphoric determiner (``sanottuun`` / ``mainittuun`` / …) has ALREADY been
+    consumed by the driver; the cursor sits on the structural-noun anaphor. A pure
+    narrowing of the PYKALA / MOMENTTI branches of the old
+    ``_parse_anaphoric_determiner_insert`` (surface_parse 3965-4009):
+
+      * ``§:ILL [reinst] uusi <sub>``      — section anaphora (``sanottuun
+        pykälään uusi 5 momentti``); host = prior section, momentti from the text.
+      * ``§:GEN M MOMENTTI:ILL uusi <sub>`` — section-genitive then momentti
+        (``saman pykälän 2 momenttiin uusi 4 kohta``); the explicit ``M`` is the
+        kohta's host momentti.
+      * ``MOMENTTI:ILL uusi <sub>``         — momentti anaphora (``mainittuun
+        momenttiin uusi 5 kohta``); the kohta's host momentti is the prior
+        momentti (``momentti_from_context``).
+
+    Emits ``InsNode``s with placeholder section/chapter for the driver to fill.
+    Returns None (cursor restored) for any other shape. The recognizer stays PURE:
+    it never reads the prior-batch context, so it cannot itself decide the bare
+    ``momenttiin`` reading is valid (the driver declines if no prior momentti).
+    """
+    saved = scan.pos
+    t = scan.peek()
+    if t is None:
+        return None
+
+    # ``§:ään [reinst/prov] uusi <sub>`` — section anaphora.
+    if t.cat == "PYKALA" and t.case == "ILL":
+        scan.advance()  # consume §:ILL
+        _optional_comma(scan)
+        while _at(scan, *_ILL_REINST_SPANS):
+            scan.advance()
+        _optional_comma(scan)
+        if not _consume_uusi(scan):
+            scan.goto(saved)
+            return None
+        nodes = _recognize_sub_target(
+            scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", 0
+        )
+        if nodes:
+            return ParsedAnaphoricSubTarget(
+                span=Span(saved, scan.pos),
+                nodes=tuple(nodes),
+                momentti_from_context=False,
+            )
+        scan.goto(saved)
+        return None
+
+    # ``§:n M momenttiin uusi <sub>`` — section-genitive then explicit momentti.
+    if t.cat == "PYKALA" and t.case == "GEN":
+        scan.advance()  # consume §:GEN
+        mom_nums = _number_list(scan)
+        if mom_nums and _at_cat_case(scan, "MOMENTTI", "ILL"):
+            mom_num = int(mom_nums[0][0]) if mom_nums[0][0].isdigit() else 0
+            scan.advance()  # consume MOMENTTI:ILL
+            _optional_comma(scan)
+            if _consume_uusi(scan):
+                nodes = _recognize_sub_target(
+                    scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", mom_num
+                )
+                if nodes:
+                    return ParsedAnaphoricSubTarget(
+                        span=Span(saved, scan.pos),
+                        nodes=tuple(nodes),
+                        momentti_from_context=False,
+                    )
+        scan.goto(saved)
+        return None
+
+    # ``momenttiin uusi <sub>`` — momentti anaphora (host momentti from context).
+    if t.cat == "MOMENTTI" and t.case == "ILL":
+        scan.advance()  # consume MOMENTTI:ILL
+        _optional_comma(scan)
+        if _consume_uusi(scan):
+            # The host momentti is supplied by the driver; recognize the kohta
+            # sub-target with a zero placeholder, which the driver overwrites.
+            nodes = _recognize_sub_target(
+                scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", 0
+            )
+            if nodes:
+                return ParsedAnaphoricSubTarget(
+                    span=Span(saved, scan.pos),
+                    nodes=tuple(nodes),
+                    momentti_from_context=True,
+                )
+        scan.goto(saved)
+        return None
+
+    return None
+
+
+def recognize_bare_anaphoric_chapter_insert(
+    scan: _Scan, verb: Optional[SourceVerb]
+) -> Optional[list[InsNode]]:
+    """Recognize a bare ``lukuun [reinst] uusi numlist (§ | luku)`` chapter insert.
+
+    The anaphoric determiner (``mainittuun`` / ``samaan`` / …) has ALREADY been
+    consumed by the driver; the cursor sits on a NUMBER-less ``LUKU:ILL`` — the
+    ``said chapter``, whose number is the inherited running chapter. A pure
+    narrowing of the old Pattern E (surface_parse 2841-2877): an optional
+    reinstatement span and a ``<nums> §:GEN tilalle`` partial-reinstatement clause
+    (taken only when tilalle-closed), then ``uusi numlist (§ | luku)`` — or, under
+    ``LISATA``, the same number-list with the ``uusi`` left implicit.
+
+    The emitted ``InsNode``s carry a PLACEHOLDER chapter the driver fills with the
+    inherited chapter. Returns None (cursor restored) for any other shape.
+    """
+    saved = scan.pos
+    if not _at_cat_case(scan, "LUKU", "ILL"):
+        return None
+    scan.advance()  # consume bare LUKU:ILL
+    if _at(scan, *_TILALLE_OR_REINST):
+        scan.advance()
+
+    # Residual ``<nums> §:GEN tilalle`` partial-reinstatement clause.
+    saved_rf = scan.pos
+    rf_nums = _number_list(scan)
+    if rf_nums and _at_cat_case(scan, "PYKALA", "GEN"):
+        scan.advance()
+        if _at(scan, *_TILALLE_OR_REINST):
+            scan.advance()
+        else:
+            scan.goto(saved_rf)
+    elif rf_nums:
+        scan.goto(saved_rf)
+
+    if _consume_uusi(scan):
+        nums2 = _number_list(scan)
+        if nums2 and _at(scan, "PYKALA"):
+            scan.advance()
+            return [
+                InsNode(kind=TargetKind.SECTION, label=n + sf, chapter=_ANAPHORIC_PLACEHOLDER)
+                for n, sf in nums2
+            ]
+        scan.goto(saved)
+        return None
+
+    # No-``uusi`` LISATA fallback: ``lukuun numlist (§ | luku)`` (uusi implicit).
+    if verb == SourceVerb.LISATA:
+        scan.goto(saved)
+        scan.advance()  # re-consume bare LUKU:ILL
+        nums2 = _number_list(scan)
+        t = scan.peek()
+        if nums2 and t is not None and t.cat in ("PYKALA", "LUKU") and t.case != "GEN":
+            kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
+            scan.advance()
+            return [
+                InsNode(kind=kind, label=n + sf, chapter=_ANAPHORIC_PLACEHOLDER)
+                for n, sf in nums2
+            ]
+    scan.goto(saved)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Whole-target insertion list: ``uusi numlist (§ | luku | osa)``.
 # ---------------------------------------------------------------------------

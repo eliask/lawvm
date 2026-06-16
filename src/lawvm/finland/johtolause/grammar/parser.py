@@ -35,6 +35,7 @@ recognizer; the container family declines bare-section shapes itself.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Optional
 
@@ -58,9 +59,13 @@ from lawvm.finland.johtolause.grammar.headings import (
     recognize_valiotsikko_ref,
 )
 from lawvm.finland.johtolause.grammar.insertions import (
+    InsNode,
     OutOfScopeInsertion,
+    ParsedAnaphoricSubTarget,
     emit_insertion_nodes,
     insertion_rule_id,
+    recognize_bare_anaphoric_chapter_insert,
+    recognize_bare_anaphoric_sub_target,
     recognize_insertion,
 )
 from lawvm.finland.johtolause.grammar.moves import (
@@ -98,6 +103,7 @@ from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
     SurfaceScopeBlock,
+    SurfaceSubRef,
     SurfaceTargetRef,
     SurfaceVerbGroup,
     SurfaceWitness,
@@ -1184,6 +1190,171 @@ def _try_postfix_insert(scan: _Scan, part: str) -> Optional[list[SurfaceNode]]:
     return emit_postfix_insert_nodes(parsed, part)
 
 
+# Structural nouns an anaphoric determiner may point at (old sp:3929): a section /
+# momentti for an intra-group sub-target anaphora, or a document / chapter / part
+# for a (re)anchored root / chapter-scoped insert.
+_ANAPHORIC_DETERMINER_NOUNS = frozenset({"PYKALA", "MOMENTTI", "DOC", "LUKU", "OSA"})
+
+
+def _stamp_anaphoric_determiner_witness(
+    nodes: Sequence[SurfaceNode], start: int, end: int
+) -> list[SurfaceNode]:
+    """Stamp the ``fi.anaphoric_determiner_insert`` witness across the arm.
+
+    Faithful to the old dispatch (sp:4217-4227): one shared witness spanning the
+    whole arm (``start`` = the loop-iteration separator, ``end`` = the cursor),
+    rule_id ``fi.anaphoric_determiner_insert`` for every emitted insertion — NOT
+    the per-shape ``fi.insertion_*`` the insertion batch witness would infer.
+    """
+    out: list[SurfaceNode] = []
+    for node in nodes:
+        assert isinstance(node, SurfaceInsertion)
+        out.append(
+            SurfaceInsertion(
+                kind=node.kind,
+                label=node.label,
+                chapter=node.chapter,
+                part=node.part,
+                sub_target=node.sub_target,
+                witness=SurfaceWitness(
+                    rule_id="fi.anaphoric_determiner_insert", source_span=(start, end)
+                ),
+            )
+        )
+    return out
+
+
+def _resolve_anaphoric_sub_nodes(
+    parsed: ParsedAnaphoricSubTarget, prev_sec: str, prev_ch: str, prev_mom: int
+) -> list[SurfaceNode]:
+    """Fill the placeholder section/chapter/momentti on a bare-anaphoric arm.
+
+    The recognizer emitted ``InsNode``s with placeholder section/chapter (and, for
+    the ``momenttiin`` reading, a placeholder host momentti). Resolve them against
+    the intra-group anchor ``(prev_sec, prev_ch, prev_mom)``: every node takes the
+    prior section / chapter; a ``momentti_from_context`` arm's kohta inserts (the
+    item-bearing nodes) take the prior momentti as their host (``prev_mom or 1``,
+    mirroring the old ``_insertion_sub_target`` ``eff_mom = mom_ctx or 1``).
+    """
+    out: list[SurfaceNode] = []
+    for node in parsed.nodes:
+        assert isinstance(node, InsNode)
+        sub_target = None
+        if node.sub_target is not None:
+            st = node.sub_target
+            momentti = st.momentti
+            if parsed.momentti_from_context and st.item:
+                momentti = prev_mom or 1
+            sub_target = SurfaceSubRef(momentti=momentti, item=st.item, facet=st.facet)
+        out.append(
+            SurfaceInsertion(
+                kind=node.kind,
+                label=prev_sec,
+                chapter=prev_ch,
+                part=node.part,
+                sub_target=sub_target,
+            )
+        )
+    return out
+
+
+def _try_anaphoric_determiner_insert(
+    scan: _Scan,
+    sep_saved: int,
+    chapter: str,
+    part: str,
+    verb: Optional[SourceVerb],
+    group_nodes: list[SurfaceNode],
+) -> Optional[list[SurfaceNode]]:
+    """Resolve a ``sanottuun/mainittuun/samaan …`` anaphoric-determiner insert arm.
+
+    Faithful port of the old ``_parse_anaphoric_determiner_insert`` (sp:3897-4012),
+    dispatched at sp:4212 only under a ``LISATA`` verb. The arm's target is named
+    only by an anaphoric determiner pointing at a previously-mentioned unit:
+
+      * ``sanottuun/samaan lakiin uusi N §`` (DOC) / ``… osaan …`` (OSA) → a root
+        insert re-dispatched through ``recognize_insertion`` with NO inherited
+        chapter (the ``lakiin`` re-anchors to statute level);
+      * ``saman lain N lukuun uusi M §`` (LUKU) → a chapter-scoped insert, the
+        chapter supplied by the ``N lukuun`` itself;
+      * ``sanottuun pykälään …`` (PYKALA) / ``mainittuun momenttiin …`` (MOMENTTI)
+        → an intra-group sub-target anaphora resolved against the last section /
+        momentti mentioned in THIS group's accumulated nodes.
+
+    The cursor sits on the determiner WORD. Stamps the distinct
+    ``fi.anaphoric_determiner_insert`` witness across the arm. Returns the emitted
+    nodes (cursor past the arm) or None (cursor restored) on any non-clean shape.
+    """
+    if verb != SourceVerb.LISATA:
+        return None
+    saved = scan.pos
+    t = scan.peek()
+    if t is None or t.cat != "WORD" or (t.text or "").lower() not in _ANAPHORIC_INSERT_DETERMINERS:
+        return None
+    nxt = scan.peek(1)
+    if nxt is None or nxt.cat not in _ANAPHORIC_DETERMINER_NOUNS:
+        return None
+
+    # ``DOC`` / ``OSA`` → consume the determiner, re-dispatch through the insertion
+    # recognizer. The determiner only needs consuming; a root insert must NOT
+    # inherit the prior arm's chapter (the ``lakiin`` re-anchors to statute level),
+    # so the inherited chapter is dropped (the ``OSA:ILL`` arm still threads the
+    # inherited part).
+    if nxt.cat in ("DOC", "OSA"):
+        scan.advance()  # consume the determiner WORD
+        try:
+            parsed_ins = recognize_insertion(scan, "", part, verb)
+        except OutOfScopeInsertion:
+            scan.goto(saved)
+            return None
+        if parsed_ins is None:
+            scan.goto(saved)
+            return None
+        ins_nodes = emit_insertion_nodes(parsed_ins)
+        return _stamp_anaphoric_determiner_witness(ins_nodes, sep_saved, scan.pos)
+
+    # ``LUKU`` → a bare ``[said] lukuun uusi M §`` chapter-scoped insert: the
+    # number-less chapter is the inherited running chapter (old Pattern E). The
+    # determiner is consumed, then the dedicated bare-chapter recognizer emits
+    # placeholder-chapter nodes the driver fills with the inherited chapter.
+    if nxt.cat == "LUKU":
+        scan.advance()  # consume the determiner WORD
+        bare_nodes = recognize_bare_anaphoric_chapter_insert(scan, verb)
+        if bare_nodes is None:
+            scan.goto(saved)
+            return None
+        ins_nodes = [
+            SurfaceInsertion(
+                kind=n.kind, label=n.label, chapter=chapter, part=part, sub_target=None
+            )
+            for n in bare_nodes
+        ]
+        return _stamp_anaphoric_determiner_witness(ins_nodes, sep_saved, scan.pos)
+
+    # ``PYKALA`` / ``MOMENTTI`` → intra-group sub-target anaphora. Resolve the
+    # anchor against THIS group's accumulated nodes (a fresh context carrying only
+    # the running chapter, exactly as old sp:3933 passes ``VerbGroupContext(
+    # chapter=chapter)`` — the determiner anaphora is intra-group, not cross-group).
+    res = _update_context_from_nodes(group_nodes, VerbGroupContext(chapter=chapter), verb)
+    prev_sec = res.last_section
+    prev_ch = res.last_section_chapter or chapter
+    prev_mom = res.last_momentti
+    if not prev_sec:
+        return None
+
+    scan.advance()  # consume the determiner WORD
+    parsed_sub = recognize_bare_anaphoric_sub_target(scan)
+    if parsed_sub is None:
+        scan.goto(saved)
+        return None
+    # The bare ``momenttiin`` reading needs a prior momentti to host the kohta.
+    if parsed_sub.momentti_from_context and not prev_mom:
+        scan.goto(saved)
+        return None
+    sub_nodes = _resolve_anaphoric_sub_nodes(parsed_sub, prev_sec, prev_ch, prev_mom)
+    return _stamp_anaphoric_determiner_witness(sub_nodes, sep_saved, scan.pos)
+
+
 # Structural-anchor token categories: their presence in a verb group's span means
 # the old ``_target_list`` would anchor a target there, so the group is NOT
 # genuinely empty even when the wired families decline its first target.
@@ -1558,6 +1729,28 @@ def _parse_verb_group(
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
         except OutOfScope:
+            # An anaphoric-determiner insert arm (``sanottuun pykälään uusi 5
+            # momentti`` / ``sanottuun lakiin uusi 4 §`` / ``mainittuun lukuun uusi
+            # 7 b §``): the determiner names the target by pointing at a
+            # previously-mentioned unit. The old parser routes these FIRST
+            # (sp:4212, before the generic statute-name WORD-skip at sp:4680) with a
+            # distinct ``fi.anaphoric_determiner_insert`` witness, so they are tried
+            # here ahead of ``_retry_target_after_word_skip`` (which self-bails on
+            # these determiners). The arm folds into the same verb group; scope
+            # carry-forward follows the resolved insert.
+            scan.goto(more_batch_start)
+            det_nodes = _try_anaphoric_determiner_insert(
+                scan, saved, chapter, part, verb, nodes
+            )
+            if det_nodes is not None:
+                det_nodes = _normalize_intrabatch_explicit_part_scope(det_nodes, part)
+                nodes.extend(det_nodes)
+                last_batch = list(det_nodes)
+                chapter = _extract_chapter(det_nodes, chapter, verb)
+                part = _extract_part(det_nodes, part)
+                _consume_inline_move_tails(scan, nodes, last_batch)
+                continue
+            scan.goto(more_batch_start)
             # The arm may open with an inline statute-name WORD run the old
             # ``_target_list`` skips before retrying ``_target`` (sp:4679-4697):
             # ``…, työjärjestykseen uusi 52 d §`` / ``…, itse lakiin uusi 63 a §``.
