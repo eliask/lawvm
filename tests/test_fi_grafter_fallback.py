@@ -85,7 +85,6 @@ from lawvm.finland.normalize import (
     _dedupe_fallback_ops_ir,
     _extract_insert_subsection_ops_fallback,
     _extract_replace_ops_from_muutetaan_tail,
-    _extract_root_insert_ops_fallback,
     _extract_root_replace_ops_from_body_fallback,
     parse_ops_fallback_heuristic,
     parse_ops_fallback_heuristic_with_coverage,
@@ -187,12 +186,6 @@ from lawvm.finland.apply import apply_op
 from lawvm.finland.constraints import _find_muutos_node
 from lawvm.finland.group_ops import append_compiled_group_ops, normalize_group_ops_for_repeal_reenact
 from lawvm.finland.group_plan import GroupTargetKey
-from lawvm.finland.normalize import (
-    _extract_insert_section_ops_fallback,
-    _merge_missing_insert_supplements,
-    _merge_missing_replace_supplements,
-    _merge_root_insert_supplements,
-)
 from lawvm.finland.scope import assign_scope_from_renumber_destinations
 from lawvm.finland.source_pathology import build_container_replace_target_absent_pathology
 from lawvm.finland.statute import ReplayState, StatuteContext
@@ -6174,12 +6167,13 @@ def test_fallback_recovers_complex_lakiin_uusi_section_inserts() -> None:
         "jolloin nykyinen 4 ja 5 momentti siirtyvät 5 ja 6 momentiksi, lakiin uusi 10 b§ seuraavasti:"
     )
 
-    ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    # Root (whole-§) section inserts the PEG now owns natively (verb 'L', kind 'P').
+    got = {op.number for op in ops if op.verb == "L" and op.kind == "P" and op.momentti == 0}
 
-    assert ("INSERT", "9c", None) in got
-    assert ("INSERT", "9d", None) in got
-    assert ("INSERT", "10b", None) in got
+    assert "9c" in got
+    assert "9d" in got
+    assert "10b" in got
 
 
 def test_parse_ops_fallback_heuristic_keeps_explicit_targets_in_mixed_container_clause() -> None:
@@ -7092,68 +7086,6 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     assert coverage["required_proofs"] == []
 
 
-def test_section_insert_fallback_coverage_surfaces_unclassified_bounded_gap() -> None:
-    johto = "lisätään lakiin uusi 5, kuitenkin 6 § seuraavasti:"
-
-    result = parse_ops_fallback_heuristic_with_coverage(
-        johto,
-        source_artifact_id="2020/3",
-    )
-
-    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
-    assert ("INSERT", "section", "5") in got
-    assert len(result.regex_recognition_coverage) == 1
-    coverage = result.regex_recognition_coverage[0].to_dict()
-    assert coverage["recognizer_id"] == "fi_insert_section_root_fallback"
-    assert coverage["coverage_status"] == "unclassified_gap"
-    assert coverage["semantic_slots"] == {
-        "action": "INSERT",
-        "target_unit_kind": "section",
-        "target_sections": ["5"],
-    }
-    assert coverage["ignored_spans"] == [
-        {
-            "span": [22, 34],
-            "classification": "unclassified",
-            "text_preview": ", kuitenkin ",
-            "could_alter_meaning": True,
-        }
-    ]
-    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
-
-
-def test_section_insert_fallback_coverage_marks_list_connector_classified() -> None:
-    johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
-
-    result = parse_ops_fallback_heuristic_with_coverage(johto)
-
-    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
-    assert {
-        ("INSERT", "section", "149a"),
-        ("INSERT", "section", "149b"),
-        ("INSERT", "section", "149c"),
-        ("INSERT", "section", "211b"),
-    } <= got
-    assert len(result.regex_recognition_coverage) == 1
-    coverage = result.regex_recognition_coverage[0].to_dict()
-    assert coverage["recognizer_id"] == "fi_insert_section_root_fallback"
-    assert coverage["coverage_status"] == "fully_classified"
-    assert coverage["semantic_slots"] == {
-        "action": "INSERT",
-        "target_unit_kind": "section",
-        "target_sections": ["149a", "149b", "149c", "211b"],
-    }
-    assert coverage["ignored_spans"] == [
-        {
-            "span": [32, 36],
-            "classification": "drafting_connector",
-            "text_preview": " ja ",
-            "could_alter_meaning": False,
-        }
-    ]
-    assert coverage["required_proofs"] == []
-
-
 def test_combined_container_insert_fallback_coverage_marks_connectors_classified() -> None:
     johto = "lisätään lakiin uusi 2 luku ja 15, 16 ja 17 § seuraavasti:"
 
@@ -7246,13 +7178,14 @@ def test_chapter_insert_fallback_coverage_marks_whole_match_classified() -> None
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:
     johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
 
-    ops = _extract_insert_section_ops_fallback(johto)
+    ops = parse_clause(johto).parsed_ops
 
-    assert [op.description() for op in ops] == [
-        "INSERT 149a §",
-        "INSERT 149b §",
-        "INSERT 149c §",
-        "INSERT 211b §",
+    # verb 'L' = lisätään (INSERT), kind 'P' = pykälä (§/section).
+    assert [(op.verb, op.kind, op.number) for op in ops] == [
+        ("L", "P", "149a"),
+        ("L", "P", "149b"),
+        ("L", "P", "149c"),
+        ("L", "P", "211b"),
     ]
 
 
@@ -7262,14 +7195,15 @@ def test_insert_section_fallback_keeps_law_level_reinstatement_before_range_clau
         "sekä lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
     )
 
-    ops = _extract_insert_section_ops_fallback(johto)
+    ops = parse_clause(johto).parsed_ops
 
-    assert [op.description() for op in ops] == [
-        "INSERT 149 §",
-        "INSERT 149a §",
-        "INSERT 149b §",
-        "INSERT 149c §",
-        "INSERT 211b §",
+    # The reinstated 149 § (kumotun ... tilalle uusi) must precede the new range.
+    assert [(op.verb, op.kind, op.number) for op in ops] == [
+        ("L", "P", "149"),
+        ("L", "P", "149a"),
+        ("L", "P", "149b"),
+        ("L", "P", "149c"),
+        ("L", "P", "211b"),
     ]
 
 
@@ -7376,94 +7310,15 @@ def test_fallback_preserves_explicit_subsection_and_section_inserts_in_mixed_cla
         "sekä lakiin uusi 83 a § seuraavasti:"
     )
 
-    ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    # verb 'M' = muutetaan (REPLACE), verb 'L' = lisätään (INSERT).
+    got = {(op.verb, op.number, op.momentti) for op in ops}
 
-    assert ("REPLACE", "127", None) in got
-    assert ("INSERT", "1a", 5) in got
-    assert ("INSERT", "83a", None) in got
-    assert ("REPLACE", "83a", None) not in got
-
-
-def test_root_insert_supplement_ignores_subsection_insert_clauses() -> None:
-    johto = (
-        "lisätään Uudenmaan maakunnan luonnonsuojelualueista annetun asetuksen "
-        "(332/2021) 3 §:ään uusi 3 momentti seuraavasti:"
-    )
-
-    ops = _extract_root_insert_ops_fallback(johto)
-
-    assert ops == []
-
-
-def test_root_insert_supplement_uses_typed_provenance_without_hint() -> None:
-    got = _merge_root_insert_supplements(
-        [],
-        [AmendmentOp(op_id="fb", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="14b")],
-    )
-
-    assert len(got) == 1
-    assert got[0].extraction_provenance_tags == ("root_insert_supplement",)
-
-
-def test_missing_insert_supplement_uses_typed_provenance_without_hint() -> None:
-    got = _merge_missing_insert_supplements(
-        [AmendmentOp(op_id="base", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3")],
-        [AmendmentOp(op_id="fb", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=2)],
-    )
-
-    op = got[-1]
-    assert op.fallback_provenance is True
-    assert op.extraction_provenance_tags == ("fallback_insert_supplement",)
-
-
-def test_missing_insert_supplement_marks_scoped_winner_when_unscoped_fallback_is_shadowed() -> None:
-    scoped = AmendmentOp(
-        op_id="base",
-        op_type="INSERT",
-        target_kind=TargetKind.SECTION,
-        target_section="3",
-        target_paragraph=2,
-        target_chapter="4",
-    )
-    got = _merge_missing_insert_supplements(
-        [scoped],
-        [AmendmentOp(op_id="fb", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=2)],
-    )
-
-    assert len(got) == 1
-    assert got[0].target_chapter == "4"
-    assert got[0].extraction_provenance_tags == ("fallback_insert_supplement_shadowed",)
-
-
-def test_missing_replace_supplement_uses_typed_provenance_without_hint() -> None:
-    got = _merge_missing_replace_supplements(
-        [],
-        [AmendmentOp(op_id="fb", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7")],
-    )
-
-    assert len(got) == 1
-    assert got[0].fallback_provenance is True
-    assert got[0].extraction_provenance_tags == ("fallback_replace_supplement",)
-
-
-def test_missing_replace_supplement_marks_scoped_winner_when_unscoped_fallback_is_shadowed() -> None:
-    scoped = AmendmentOp(
-        op_id="base",
-        op_type="REPLACE",
-        target_kind=TargetKind.SECTION,
-        target_section="7",
-        target_paragraph=2,
-        target_chapter="4",
-    )
-    got = _merge_missing_replace_supplements(
-        [scoped],
-        [AmendmentOp(op_id="fb", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7", target_paragraph=2)],
-    )
-
-    assert len(got) == 1
-    assert got[0].target_chapter == "4"
-    assert got[0].extraction_provenance_tags == ("fallback_replace_supplement_shadowed",)
+    assert ("M", "127", 0) in got
+    assert ("L", "1a", 5) in got
+    assert ("L", "83a", 0) in got
+    # 83 a § must be a fresh INSERT, never a REPLACE of an existing §.
+    assert ("M", "83a", 0) not in got
 
 
 def test_repeal_reenact_normalization_uses_typed_provenance_without_hint() -> None:
@@ -8138,8 +7993,8 @@ def test_root_insert_fallback_does_not_consume_conjunction_as_suffix() -> None:
         "seuraavasti:"
     )
 
-    ops = _extract_root_insert_ops_fallback(johto)
-    got = [(op.target_chapter, op.target_section) for op in ops]
+    ops = parse_clause(johto).parsed_ops
+    got = [(op.chapter, op.number) for op in ops if op.verb == "L"]
 
     assert ("1", "3") in got
     assert ("1", "4") in got
@@ -8154,11 +8009,13 @@ def test_root_insert_fallback_recovers_decree_scoped_new_section() -> None:
         "lisätään 32 §:ään uusi 4 momentti ja asetuksen uusi 46 c § seuraavasti:"
     )
 
-    ops = _extract_root_insert_ops_fallback(johto)
-    got = {(op.target_chapter, op.target_section) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    # Root (whole-§) section inserts only: kind 'P', no momentti scope.
+    got = {op.number for op in ops if op.verb == "L" and op.kind == "P" and op.momentti == 0}
 
-    assert (None, "46c") in got
-    assert (None, "32") not in got
+    assert "46c" in got
+    # 32 § takes a new momentti insert (32 §:ään uusi 4 momentti), not a root §.
+    assert "32" not in got
 
 
 def test_root_insert_fallback_recovers_combined_root_chapter_and_section_ranges() -> None:
@@ -8167,15 +8024,17 @@ def test_root_insert_fallback_recovers_combined_root_chapter_and_section_ranges(
         "sekä lakiin uusi 5 a—5 c luku ja 20 a—20 h § seuraavasti:"
     )
 
-    ops = _extract_root_insert_ops_fallback(johto)
-    got = {(op.target_kind, op.target_chapter, op.target_section) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    # kind 'L' = luku (chapter), kind 'P' = pykälä (§). Root inserts: no momentti scope.
+    got = {(op.kind, op.number) for op in ops if op.verb == "L" and op.momentti == 0}
 
-    assert ("L", None, "5a") in got
-    assert ("L", None, "5b") in got
-    assert ("L", None, "5c") in got
-    assert ("P", None, "20a") in got
-    assert ("P", None, "20h") in got
-    assert ("P", None, "16") not in got
+    assert ("L", "5a") in got
+    assert ("L", "5b") in got
+    assert ("L", "5c") in got
+    assert ("P", "20a") in got
+    assert ("P", "20h") in got
+    # 16 § takes a new momentti insert (16 §:ään uusi 5 momentti), not a root §.
+    assert ("P", "16") not in got
 
 
 def test_root_insert_fallback_recovers_decision_scoped_secondary_section_range() -> None:
@@ -8185,13 +8044,13 @@ def test_root_insert_fallback_recovers_decision_scoped_secondary_section_range()
         "sekä uuden 14b―14d §:n seuraavasti:"
     )
 
-    ops = _extract_root_insert_ops_fallback(johto)
-    got = {(op.target_kind, op.target_chapter, op.target_section) for op in ops}
+    ops = parse_clause(johto).parsed_ops
+    got = {(op.kind, op.number) for op in ops if op.verb == "L"}
 
-    assert ("P", None, "14a") in got
-    assert ("P", None, "14b") in got
-    assert ("P", None, "14c") in got
-    assert ("P", None, "14d") in got
+    assert ("P", "14a") in got
+    assert ("P", "14b") in got
+    assert ("P", "14c") in got
+    assert ("P", "14d") in got
 
 
 def test_combined_root_insert_ranges_place_trailing_sections_under_following_chapter() -> None:

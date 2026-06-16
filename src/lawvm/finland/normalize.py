@@ -65,15 +65,6 @@ _RE_NEW_ITEM = re.compile(
     r"\s+kohta\b"
 )
 _RE_STATUTE_CREATION_CHAPTER = re.compile(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b")
-_INSERT_SECTION_ROOT_FALLBACK_RE = re.compile(
-    r"\b(?:lakiin|asetuksen)\s+uusi\s+([^§]{1,120})§",
-    flags=re.I,
-)
-_INSERT_SECTION_UUDEN_FALLBACK_RE = re.compile(
-    r"\buuden\s+((?:\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?"
-    r"(?:\s*(?:,|ja)\s*\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)*)?)\s*§",
-    flags=re.I,
-)
 _INSERT_CONTAINER_COMBINED_FALLBACK_RE = re.compile(
     r"\blakiin\s+uusi\s+(.{1,80}?)\s+luku\s+ja\s+(.{1,140}?)\s*§",
     flags=re.I,
@@ -224,162 +215,6 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
     if has_subprovision_targets:
         return False
     return not has_non_repeal_ops
-
-
-def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
-    """Recover law-level whole-section inserts from complex johtolause text.
-
-    FALLBACK: Compensates for the residual PEG3 undercounting of law-level
-    section inserts that are buried in dense multi-member coordination lists.
-
-    Closed natively by PEG3 (no longer recovered here on net):
-      * comma-separated new-section lists, e.g. ``lakiin uusi 14 a, 14 b, 14 c §``
-      * a trailing ``ja lakiin uusi N §`` coordinated after sub-target inserts
-        such as ``N §:ään uusi M momentin K kohta ja P momentti`` — see
-        ``surface_parse._insertion_sub_target`` (genitive ``momentin`` qualifier
-        and the bare ``uusi``-sharing momentti continuation).
-
-    Status as of 2026-06-14 (verified via ``parse_clause(...).parsed_ops``):
-    the PEG3 grammar now natively owns every shape this fallback once uniquely
-    caught — provenance-trailing inserts, em-dash section ranges
-    (``134 a–134 r §``), ``kumotun N §:n tilalle uusi N §`` reinstatements, and
-    ``päätökseen uuden N §`` decision-text inserts. On the 690-statute bench,
-    disabling this fallback (``LAWVM_DISABLE_INSERT_SECTION_FALLBACK=1``) is
-    byte-identical for 689 statutes and regresses exactly ONE section in ONE
-    statute: ``1993/1501`` gains one ``REPLAY_MISSING`` (4 -> 5) on the
-    official_consolidation PIT path (the legal_pit/dump path is unaffected).
-
-    The residual regression is NOT a PEG3 grammar gap: ``parse_clause`` on the
-    full 1993/1501 amendment johtolause produces the ``138 §`` insert op
-    natively (verified). It is an op-routing gap: the legal_pit/dump path
-    consumes the PEG op (unaffected), but the official_consolidation
-    LO-timeline materialization consumes this fallback's regex op for the
-    ``sekä``-coordinated ``kumotun N §:n tilalle uusi N §`` reinstatement
-    (section 138, part:2 / 13 luku), not the PEG op.
-
-    Removal criterion: route the PEG-parsed insert ops (including this
-    reinstatement) into the official_consolidation LO-timeline emission so the
-    PEG op is consumed, then delete this function and its call sites
-    (``_extract_root_insert_ops_fallback`` and the insert family in
-    ``parse_ops_fallback_heuristic``) plus the grafter re-export, and confirm
-    ``bench --compare`` shows 0 regressions. This is apply-side LO-emission
-    work, not a grammar change.
-    """
-    import os as _os
-    if _os.environ.get("LAWVM_DISABLE_INSERT_SECTION_FALLBACK"):
-        return []
-    ops: List[AmendmentOp] = []
-    seen: Set[str] = set()
-    for m in re.finditer(
-        r"\b(?:lakiin|asetuksen)\s+(?:siitä\s+lailla\s+\d+/\d+\s+kumotun\s+)?"
-        r"(\d+\s*[a-z]?)\s*§:n\s+tilalle\s+uusi\s+(\d+\s*[a-z]?)\s*§",
-        cleaned,
-        flags=re.I,
-    ):
-        reinstated = _RE_WHITESPACE.sub("", m.group(2)).lower()
-        if not reinstated or reinstated in seen:
-            continue
-        seen.add(reinstated)
-        ops.append(
-            AmendmentOp(
-                op_id="",
-                op_type="INSERT",
-                target_section=reinstated,
-                target_unit_kind="section",
-            )
-        )
-    for m in _INSERT_SECTION_ROOT_FALLBACK_RE.finditer(cleaned):
-        clause = m.group(1)
-        if _RE_CONTAINER_NOUN.search(clause):
-            continue
-        for sec in _expand_spaced_insert_label_list_ir(clause):
-            norm = _RE_WHITESPACE.sub("", sec).lower()
-            if not norm or norm in seen:
-                continue
-            seen.add(norm)
-            ops.append(
-                AmendmentOp(
-                    op_id="",
-                    op_type="INSERT",
-                    target_section=norm,
-                    target_unit_kind="section",
-                )
-            )
-    for m in _INSERT_SECTION_UUDEN_FALLBACK_RE.finditer(cleaned):
-        clause = m.group(1)
-        for sec in _expand_spaced_insert_label_list_ir(clause):
-            norm = _RE_WHITESPACE.sub("", sec).lower()
-            if not norm or norm in seen:
-                continue
-            seen.add(norm)
-            ops.append(
-                AmendmentOp(
-                    op_id="",
-                    op_type="INSERT",
-                    target_section=norm,
-                    target_unit_kind="section",
-                )
-            )
-    return ops
-
-
-def _extract_insert_section_ops_fallback_with_coverage(
-    cleaned: str,
-    *,
-    source_artifact_id: str = "",
-) -> FallbackParseResult:
-    ops = _extract_insert_section_ops_fallback(cleaned)
-    coverage_rows: list[RegexRecognitionCoverage] = []
-    source_hash = regex_source_text_hash(cleaned)
-    for recognizer_id, pattern in (
-        ("fi_insert_section_root_fallback", _INSERT_SECTION_ROOT_FALLBACK_RE),
-        ("fi_insert_section_uuden_fallback", _INSERT_SECTION_UUDEN_FALLBACK_RE),
-    ):
-        for m in pattern.finditer(cleaned):
-            clause = m.group(1)
-            if recognizer_id == "fi_insert_section_root_fallback" and _RE_CONTAINER_NOUN.search(clause):
-                continue
-            target_sections = tuple(_expand_spaced_insert_label_list_ir(clause))
-            if not target_sections:
-                continue
-            ignored_spans: list[dict[str, object]] = []
-            cursor = 0
-            for section_match in _SECTION_TOKEN_RE.finditer(clause):
-                ignored_spans.extend(
-                    _regex_ignored_span_rows(
-                        cleaned,
-                        base_offset=m.start(1),
-                        clause=clause,
-                        start=cursor,
-                        end=section_match.start(),
-                    )
-                )
-                cursor = section_match.end()
-            ignored_spans.extend(
-                _regex_ignored_span_rows(
-                    cleaned,
-                    base_offset=m.start(1),
-                    clause=clause,
-                    start=cursor,
-                    end=len(clause),
-                )
-            )
-            coverage_rows.append(
-                _regex_recognition_coverage_row(
-                    recognizer_id=recognizer_id,
-                    source_hash=source_hash,
-                    source_artifact_id=source_artifact_id,
-                    matched_span=(m.start(), m.end()),
-                    semantic_slots={
-                        "action": "INSERT",
-                        "target_unit_kind": "section",
-                        "target_sections": target_sections,
-                    },
-                    ignored_spans=ignored_spans,
-                    matched_text=cleaned[m.start():m.end()],
-                )
-            )
-    return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
 
 
 def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
@@ -955,16 +790,6 @@ def _extract_insert_container_ops_fallback_with_coverage(
     return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
 
 
-def _extract_root_insert_ops_fallback(johto: str) -> List[AmendmentOp]:
-    """Recover only whole-object insert roots that PEG commonly undercounts.
-
-    FALLBACK: Delegates to section + container fallbacks.  Remove when both
-    sub-functions are removed (i.e. PEG3 covers all insert patterns).
-    """
-    cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
-    return _extract_insert_section_ops_fallback(cleaned) + _extract_insert_container_ops_fallback(cleaned)
-
-
 def _extract_root_replace_ops_from_body_fallback(
     johto: str,
     muutos_tree: etree._Element,
@@ -1046,52 +871,6 @@ def _same_root_insert_target(lhs: AmendmentOp, rhs: AmendmentOp) -> bool:
     )
 
 
-def _merge_root_insert_supplements(
-    existing_ops: List[AmendmentOp],
-    fallback_insert_ops: List[AmendmentOp],
-) -> List[AmendmentOp]:
-    """Add only root inserts that are still missing from the compiled op stream.
-
-    The fallback root extractor is intentionally less precise than PEG: it can
-    recover that a section root exists without preserving chapter scope. If PEG
-    already emitted an insert for the same section root under a chapter, keep the
-    PEG version and skip the weaker fallback duplicate.
-
-    Also skips when PEG has ANY op targeting the same section (even at subsection
-    level) — a section-level INSERT would overwrite the master section including
-    subsections that PEG correctly left unchanged.
-
-    FEATURE FLAG: Restored behind LAWVM_FALLBACK_MERGES=1 to test against
-    regressors. See notes/PRO_RESPONSE3_4_regression_hunting.md §1.
-    """
-    existing = {_op_signature(op) for op in existing_ops}
-    existing_root_inserts = [op for op in existing_ops if _is_root_insert_op(op)]
-    # Sections already targeted by PEG at any granularity
-    peg_targeted_sections: Set[str] = set()
-    for op in existing_ops:
-        if op.target_unit_kind == "section" and op.target_section:
-            peg_targeted_sections.add(_norm_num_token(op.target_section))
-    supplemented: List[AmendmentOp] = []
-    for op in fallback_insert_ops:
-        sig = _op_signature(op)
-        if sig in existing:
-            continue
-        if any(_same_root_insert_target(op, prev) for prev in existing_root_inserts):
-            continue
-        # Don't supplement if PEG already targets this section at any level
-        if op.target_unit_kind == "section" and op.target_section:
-            if _norm_num_token(op.target_section) in peg_targeted_sections:
-                continue
-        op = dc_replace(
-            op,
-            extraction_provenance_tags=tuple(dict.fromkeys((*op.extraction_provenance_tags, "root_insert_supplement"))),
-        )
-        existing.add(sig)
-        existing_root_inserts.append(op)
-        supplemented.append(op)
-    return existing_ops + supplemented
-
-
 def _dedupe_fallback_ops_ir(ops: List[AmendmentOp]) -> List[AmendmentOp]:
     deduped: List[AmendmentOp] = []
     seen: Set[
@@ -1129,171 +908,6 @@ def _dedupe_fallback_ops_ir(ops: List[AmendmentOp]) -> List[AmendmentOp]:
         seen.add(key)
         deduped.append(op)
     return deduped
-
-
-def _merge_missing_insert_supplements(
-    ops: List[AmendmentOp],
-    fallback_ops: List[AmendmentOp],
-) -> List[AmendmentOp]:
-    """Merge narrow fallback-only INSERT ops that PEG missed.
-
-    FEATURE FLAG: Restored behind LAWVM_FALLBACK_MERGES=1 to test against
-    regressors. See notes/PRO_RESPONSE3_4_regression_hunting.md §1.
-    """
-    merged = list(ops)
-    seen = {
-        (
-            op.op_type,
-            op.target_unit_kind,
-            op.target_section,
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-            op.target_chapter,
-        )
-        for op in ops
-    }
-    def _mark_scoped_winner(weaker_key: tuple[str, str, str, int | None, str | None, str | None]) -> None:
-        for idx, existing in enumerate(merged):
-            existing_key = (
-                existing.op_type,
-                existing.target_unit_kind,
-                _norm_num_token(existing.target_section) if existing.target_section else "",
-                existing.target_paragraph,
-                existing.target_item,
-                existing.target_special,
-            )
-            if existing_key != weaker_key or existing.op_type != "INSERT" or not existing.target_chapter:
-                continue
-            merged[idx] = dc_replace(
-                existing,
-                extraction_provenance_tags=tuple(
-                    dict.fromkeys((*existing.extraction_provenance_tags, "fallback_insert_supplement_shadowed"))
-                ),
-            )
-            return
-    scoped_insert_targets = {
-        (
-            op.op_type,
-            op.target_unit_kind,
-            _norm_num_token(op.target_section) if op.target_section else "",
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-        )
-        for op in ops
-        if op.op_type == "INSERT" and op.target_chapter
-    }
-    for op in fallback_ops:
-        if op.op_type != "INSERT":
-            continue
-        key = (
-            op.op_type,
-            op.target_unit_kind,
-            op.target_section,
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-            op.target_chapter,
-        )
-        if key in seen:
-            continue
-        if op.target_chapter is None:
-            weaker_key = (
-                op.op_type,
-                op.target_unit_kind,
-                _norm_num_token(op.target_section) if op.target_section else "",
-                op.target_paragraph,
-                op.target_item,
-                op.target_special,
-            )
-            if weaker_key in scoped_insert_targets:
-                _mark_scoped_winner(weaker_key)
-                continue
-        op = dc_replace(
-            op,
-            fallback_provenance=True,
-            extraction_provenance_tags=tuple(
-                dict.fromkeys((*op.extraction_provenance_tags, "fallback_insert_supplement"))
-            ),
-        )
-        merged.append(op)
-        seen.add(key)
-    return merged
-
-
-def _merge_missing_replace_supplements(
-    ops: List[AmendmentOp],
-    fallback_ops: List[AmendmentOp],
-) -> List[AmendmentOp]:
-    """Merge narrow fallback-only REPLACE ops that PEG missed.
-
-    FEATURE FLAG: Restored behind LAWVM_FALLBACK_MERGES=1 to test against
-    regressors. See notes/PRO_RESPONSE3_4_regression_hunting.md §1.
-    """
-    merged = list(ops)
-    seen = {_op_signature(op) for op in ops}
-
-    def _mark_scoped_winner(weaker_key: tuple[str, str, str, int | None, str | None, str | None]) -> None:
-        for idx, existing in enumerate(merged):
-            existing_key = (
-                existing.op_type,
-                existing.target_unit_kind,
-                _norm_num_token(existing.target_section) if existing.target_section else "",
-                existing.target_paragraph,
-                existing.target_item,
-                existing.target_special,
-            )
-            if existing_key != weaker_key or existing.op_type != "REPLACE" or not existing.target_chapter:
-                continue
-            merged[idx] = dc_replace(
-                existing,
-                extraction_provenance_tags=tuple(
-                    dict.fromkeys((*existing.extraction_provenance_tags, "fallback_replace_supplement_shadowed"))
-                ),
-            )
-            return
-
-    scoped_replace_targets = {
-        (
-            op.op_type,
-            op.target_unit_kind,
-            _norm_num_token(op.target_section) if op.target_section else "",
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-        )
-        for op in ops
-        if op.op_type == "REPLACE" and op.target_chapter
-    }
-    for op in fallback_ops:
-        if op.op_type != "REPLACE":
-            continue
-        sig = _op_signature(op)
-        if sig in seen:
-            continue
-        if op.target_chapter is None:
-            weaker_key = (
-                op.op_type,
-                op.target_unit_kind,
-                _norm_num_token(op.target_section) if op.target_section else "",
-                op.target_paragraph,
-                op.target_item,
-                op.target_special,
-            )
-            if weaker_key in scoped_replace_targets:
-                _mark_scoped_winner(weaker_key)
-                continue
-        op = dc_replace(
-            op,
-            fallback_provenance=True,
-            extraction_provenance_tags=tuple(
-                dict.fromkeys((*op.extraction_provenance_tags, "fallback_replace_supplement"))
-            ),
-        )
-        merged.append(op)
-        seen.add(sig)
-    return merged
 
 
 def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
@@ -1403,12 +1017,11 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             split_ops.extend(parse_ops_fallback_heuristic(chunk))
         if split_ops:
             return _dedupe_fallback_ops_ir(split_ops)
-    insert_section_ops = _extract_insert_section_ops_fallback(cleaned)
     insert_subsection_ops = _extract_insert_subsection_ops_fallback(cleaned)
     insert_item_ops = _extract_insert_item_ops_fallback(cleaned)
     insert_container_ops = _extract_insert_container_ops_fallback(cleaned)
     fallback_insert_ops = _prune_shadowed_parent_subsection_insert_fallbacks(
-        insert_section_ops + insert_subsection_ops + insert_item_ops + insert_container_ops
+        insert_subsection_ops + insert_item_ops + insert_container_ops
     )
 
     repeal_range_ops: List[AmendmentOp] = []
@@ -1577,10 +1190,6 @@ def parse_ops_fallback_heuristic_with_coverage(
 
     ops = parse_ops_fallback_heuristic(johto)
     cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
-    section_coverage = _extract_insert_section_ops_fallback_with_coverage(
-        cleaned,
-        source_artifact_id=source_artifact_id,
-    ).regex_recognition_coverage
     container_coverage = _extract_insert_container_ops_fallback_with_coverage(
         cleaned,
         source_artifact_id=source_artifact_id,
@@ -1596,7 +1205,6 @@ def parse_ops_fallback_heuristic_with_coverage(
     return FallbackParseResult(
         ops=ops,
         regex_recognition_coverage=(
-            *section_coverage,
             *container_coverage,
             *subsection_coverage,
             *item_coverage,
