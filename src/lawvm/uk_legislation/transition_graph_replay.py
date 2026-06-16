@@ -136,7 +136,13 @@ def materialize_uk_transition_graph_tree(bundle: ReplayBundle, as_of: str) -> IR
 
     state = bundle.result
     assert isinstance(state, _UKTransitionGraphReplayState)
-    ops_in_force = [op for op in state.ops if _op_effective(op) <= as_of]
+    # Only ops with a RESOLVED effective date are placed on the timeline. An op
+    # with no effective date cannot be honestly materialised at any point — and
+    # the change-date axis (built from non-empty effective dates) already ignores
+    # them, so including them here would mis-place an undated amendment at every
+    # date (e.g. an undated whole-schedule text_repeal would flatten the
+    # structured schedule from date 0 onward). Drop them rather than guess.
+    ops_in_force = [op for op in state.ops if (eff := _op_effective(op)) and eff <= as_of]
     pipeline = uk_replay_module.UKReplayPipeline(_REPO_ROOT)
     replayed = pipeline.apply_ops(
         state.base_ir,

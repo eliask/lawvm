@@ -67,6 +67,39 @@ def _text_content(el: Optional[ET._Element]) -> str:
     return "".join(str(_t) for _t in el.itertext()).strip()
 
 
+_PROVISION_NUM_TAGS: frozenset[str] = frozenset({"pnumber", "number"})
+
+
+def _leaf_provision_text(el: Optional[ET._Element]) -> str:
+    """Collect a leaf provision's text without its own ``Pnumber``/``Number``.
+
+    Mirrors ``_text_content`` (``itertext`` traversal, edge-stripped) but drops
+    the text of the direct-child ``Pnumber``/``Number`` element — the visible
+    provision number — which is already captured as the node ``label``.  Without
+    this, leaf provisions (``P1``/``P2``/``P3``/``P4`` with no structural
+    children) embed ``"<num>\n\n<body>"`` in the body text, duplicating the
+    label that the rewrite/amended parse path already keeps clean.  Only the
+    provision's OWN number is dropped (a direct child), never numbers that are
+    genuine body content deeper in the subtree.
+    """
+    if el is None:
+        return ""
+    parts: list[str] = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        if _tag(child).lower() in _PROVISION_NUM_TAGS:
+            # Skip the number element subtree, but keep its tail (live body text
+            # that follows the number in source order).
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        parts.append("".join(str(_t) for _t in child.itertext()))
+        if child.tail:
+            parts.append(child.tail)
+    return "".join(parts).strip()
+
+
 # ---------------------------------------------------------------------------
 # Oracle presentation-cleanup: RetainText="true" repeal elision
 # ---------------------------------------------------------------------------
@@ -1179,6 +1212,12 @@ def _parse_chapter(el, context, force_active=False, pit_date=None, is_eur=False)
     return node
 
 
+_P1GROUP_SECTIONLIKE_HEADING_KINDS = frozenset(
+    {"section", "article", "rule", "regulation", "paragraph"}
+)
+_UK_P1GROUP_HEADING_CARRIER_RULE_ID = "uk_p1group_title_heading_carrier"
+
+
 def _parse_p1group(el, context, force_active=False, pit_date=None, is_eur=False):
     if _is_zombie(el, force_active, pit_date):
         return None
@@ -1187,7 +1226,48 @@ def _parse_p1group(el, context, force_active=False, pit_date=None, is_eur=False)
     node = UKMutableNode(kind=IRNodeKind.P1GROUP, label=None, text=title)
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
+    _attach_p1group_title_to_sole_section(node, title)
     return node
+
+
+def _attach_p1group_title_to_sole_section(node: UKMutableNode, title: str) -> None:
+    """Carry a ``P1group/Title`` as a ``heading`` child on its sole section.
+
+    The CLML wraps each enacted section as
+    ``P1group/Title + P1(/Pnumber + P1para)``.  Originally the title was kept
+    only on the transparent ``P1group`` wrapper, so the enacted ``section`` node
+    had no ``heading`` child — unlike inserted/amended sections (which get one
+    via ``uk_inserted_section_p1group_heading_carrier``) and unlike Finland.
+    When the group owns exactly one section-like provision we move the title
+    down onto that provision as an explicit ``HEADING`` child and clear the
+    wrapper text, mirroring the inserted/rewrite carrier shape so heading
+    rendering and heading-facet replay resolution are consistent across the
+    enacted and amended paths.  Multi-section / heading-less groups are left
+    untouched.
+    """
+    if not title:
+        return
+    section_children = [
+        child
+        for child in node.children
+        if child.kind.value in _P1GROUP_SECTIONLIKE_HEADING_KINDS
+    ]
+    if len(section_children) != 1:
+        return
+    section = section_children[0]
+    if any(child.kind is IRNodeKind.HEADING for child in section.children):
+        return
+    heading_child = UKMutableNode(
+        kind=IRNodeKind.HEADING,
+        label=None,
+        text=title,
+        attrs={
+            "source_tag": "P1group",
+            "source_rule_id": _UK_P1GROUP_HEADING_CARRIER_RULE_ID,
+        },
+    )
+    section.children.insert(0, heading_child)
+    node.text = ""
 
 
 def _parse_pgroup(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1219,7 +1299,7 @@ def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False)
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
-        node.text = _text_content(el)
+        node.text = _leaf_provision_text(el)
     else:
         node.text = _local_structural_text(el)
         post_child_tail = _post_child_local_text_tail(el)
@@ -1237,7 +1317,7 @@ def _parse_p2(el, context, force_active=False, pit_date=None, is_eur=False):
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
-        node.text = _text_content(el)
+        node.text = _leaf_provision_text(el)
     else:
         node.text = _local_structural_text(el)
         post_child_tail = _post_child_local_text_tail(el)
@@ -1255,7 +1335,7 @@ def _parse_p3(el, context, force_active=False, pit_date=None, is_eur=False):
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
-        node.text = _text_content(el)
+        node.text = _leaf_provision_text(el)
     else:
         node.text = _local_structural_text(el)
         post_child_tail = _post_child_local_text_tail(el)
@@ -1273,7 +1353,7 @@ def _parse_p4(el, context, force_active=False, pit_date=None, is_eur=False):
     _add_attrs(node, el)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
-        node.text = _text_content(el)
+        node.text = _leaf_provision_text(el)
     else:
         node.text = _local_structural_text(el)
         post_child_tail = _post_child_local_text_tail(el)

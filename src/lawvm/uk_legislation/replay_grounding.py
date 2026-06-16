@@ -70,16 +70,56 @@ def _slugify_grounding_heading(text: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
 
 
-def _grounding_node_full_text(node: UKMutableNode) -> str:
-    """Collect normalized full-subtree text for a node, matching oracle text_map."""
-    parts = []
+_GROUNDING_TEXT_EXCLUDED_CHILD_KINDS = frozenset({"heading", "num", "title"})
+
+
+def _grounding_full_text_parts(node: UKMutableNode) -> list[str]:
+    """Collect raw subtree text parts mirroring the oracle ``_text_content`` shape.
+
+    The oracle ``text_map`` hashes ``_text_content`` of the source provision,
+    which includes each provision's own visible ``Pnumber``/``Number`` (the
+    leading number) but NOT the ``P1group`` ``Title`` (a separate sibling
+    element).  The replay IR now keeps that leading number only as the node
+    ``label`` (see ``_leaf_provision_text``) and carries the group title as a
+    ``heading`` child (see ``_attach_p1group_title_to_sole_section``).  To keep
+    grounding hashes commensurable with the oracle we re-prepend each node's own
+    visible number here and skip the heading/number carrier children.
+    """
+    parts: list[str] = []
+    label = str(node.label or "").strip()
+    if label and _uk_kind_value(node.kind).lower() not in _GROUNDING_TEXT_EXCLUDED_CHILD_KINDS:
+        parts.append(label)
     if node.text:
         parts.append(node.text.strip())
     for child in node.children:
-        text = _grounding_node_full_text(child)
-        if text:
-            parts.append(text)
-    return _normalize_text_for_grounding(" ".join(parts))
+        if _uk_kind_value(child.kind).lower() in _GROUNDING_TEXT_EXCLUDED_CHILD_KINDS:
+            continue
+        parts.extend(_grounding_full_text_parts(child))
+    return parts
+
+
+def _grounding_node_full_text(node: UKMutableNode) -> str:
+    """Collect normalized full-subtree text for a node, matching oracle text_map."""
+    return _normalize_text_for_grounding(" ".join(_grounding_full_text_parts(node)))
+
+
+def _grounding_direct_text(node: UKMutableNode) -> str:
+    """Return a node's own visible-number-prefixed direct text for grounding.
+
+    The oracle ``text_map``/``hash:`` keys hash ``_text_content`` of the source
+    provision, which begins with the provision's own visible ``Pnumber`` (e.g.
+    ``"1 A person who…"``).  The replay IR now keeps that number only as the
+    node ``label`` (``_leaf_provision_text``), so the bare ``node.text`` is the
+    body alone.  Re-prepend the label so the hash/fuzzy passes stay
+    commensurable with the oracle.  Number/heading carriers contribute no body
+    text of their own and are not direct-text nodes, so no exclusion is needed
+    here.
+    """
+    label = str(node.label or "").strip()
+    body = node.text or ""
+    if label:
+        return f"{label} {body}".strip()
+    return body.strip()
 
 
 def _grounding_length_window_text_candidates(
@@ -388,7 +428,7 @@ class UKReplayGroundingMixin:
                 and not _has_structural_path
                 and kind_name not in _structural_kinds
             ):
-                h = _semantic_hash(node.text)
+                h = _semantic_hash(_grounding_direct_text(node))
                 hash_key = f"hash:{h}"
                 if hash_key in self.eid_map:
                     candidate_id = self.eid_map[hash_key]
@@ -421,7 +461,7 @@ class UKReplayGroundingMixin:
                 and kind_name not in _structural_kinds
                 and kind_name not in _fuzzy_skip_kinds
             ):
-                node_norm = _normalize_text_for_grounding(node.text)
+                node_norm = _normalize_text_for_grounding(_grounding_direct_text(node))
                 if len(node_norm) > 30:
                     best_score = 0
                     best_id = None

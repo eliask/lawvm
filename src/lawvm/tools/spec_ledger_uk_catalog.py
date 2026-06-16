@@ -648,6 +648,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A non-schedule list entry that LawVM cannot lower is preserved verbatim rather than dropped.",
     "uk_schedule_list_entry_preserved":
         "A schedule list entry that LawVM cannot lower is preserved verbatim rather than dropped.",
+    "uk_p1group_title_heading_carrier":
+        "An enacted P1group Title wrapping a single section-like provision is carried down onto that provision as an explicit heading child (clearing the transparent wrapper text), mirroring the inserted/rewrite heading-carrier shape so the enacted parse path no longer drops section headings.",
 
     # -- Manual-frontier classification family (OPC ambiguity lane) -------------
     # These ``uk_manual_frontier_*`` ids classify effects/rows that the automatic
