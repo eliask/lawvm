@@ -8,6 +8,7 @@ amendment verb group lists after its verb — clauses that ADD new structure:
     [N osan] [N luvun] N LUKU:ILL           uusi numlist (§ | luku)
     [N osan]           N OSA:ILL            uusi numlist (§ | luku)
                        DOC:ILL N LUKU:ILL   uusi numlist §        (prefix-chapter)
+                       DOC:ILL (NUM/YY)     uusi N [letter]       (bare-section)
                        numlist §:ILL        uusi sub_target       (momentti / kohta)
                        numlist §:GEN        uusi sub_target
                        numlist §:GEN  M MOMENTTI:ILL/GEN  uusi sub_target
@@ -77,6 +78,7 @@ from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
     SurfaceSubRef,
+    SurfaceWitness,
     TargetKind,
 )
 
@@ -126,6 +128,7 @@ class InsNode:
     chapter: str = ""
     part: str = ""
     sub_target: Optional[InsSubTarget] = None
+    witness_rule_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -1776,15 +1779,55 @@ def _try_doc_ill_no_uusi(
     return [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in nums2]
 
 
+def _skip_doc_citation_residue(scan: _Scan) -> None:
+    """Skip a parenthetical target citation that annotation left after DOC:ILL.
+
+    Some historical source clauses spell the affected statute citation with
+    spacing inside the slash, e.g. ``asetukseen (1546 /2011)``. The sentence-level
+    annotation can leave that citation as ``NUM`` + ``WORD('/2011')`` after the
+    document noun instead of folding it into the statute-name span. This is still
+    target-statute identity evidence, not an inserted section label. Consume only
+    this exact citation residue shape; ordinary ``DOC:ILL N lukuun`` prefix
+    chapters and ``DOC:ILL N §`` no-``uusi`` inserts are left untouched.
+    """
+    saved = scan.pos
+    nums = _number_list(scan) or []
+    if len(nums) != 1 or nums[0][1]:
+        scan.goto(saved)
+        return
+    tail = scan.peek()
+    tail_text = (tail.text or "") if tail is not None else ""
+    if tail is not None and tail.cat == "WORD" and tail_text.startswith("/"):
+        year = tail_text[1:]
+        if year.isdigit() and len(year) in (2, 4):
+            scan.advance()
+            return
+    scan.goto(saved)
+
+
+def _bare_doc_section_insert_is_closed(scan: _Scan) -> bool:
+    """True when a bare ``uusi N [letter]`` arm is closed immediately.
+
+    This owns the old-parser historical family documented in ``surface_parse``:
+    ``päätökseen ... uusi 8 b seuraavasti:``. Without a closing structural noun
+    (``§``), accept only the singular whole-section form and only when the next
+    token is an end marker. We do not infer multi-target lists or sub-targets.
+    """
+    next_token = scan.peek()
+    return next_token is None or next_token.cat in ("END", "END_SENTINEL_SPAN")
+
+
 def _try_doc_ill(
     scan: _Scan, part: str, verb: Optional[SourceVerb] = None
 ) -> Optional[list[InsNode]]:
     """``DOC:ILL [N LUKU:ILL] uusi numlist (§ | luku | osa)`` — doc-level insert.
 
     Covers the dominant ``lakiin uusi N §`` form, the whole-part/whole-chapter
-    variants, and the prefix-chapter ``DOC:ILL N lukuun uusi M §``. Declines the
-    GEN §/luku sub-target variant, the appendix/heading/postfix/continuation
-    tails, and any chained ``sekä/ja uusi …`` enumeration (out of scope).
+    variants, the prefix-chapter ``DOC:ILL N lukuun uusi M §``, and the narrow
+    historical bare-section form ``DOC:ILL (parent) uusi N [letter] seuraavasti``.
+    Declines the GEN §/luku sub-target variant, the appendix/heading/postfix/
+    continuation tails, and any chained ``sekä/ja uusi …`` enumeration (out of
+    scope).
 
     When ``verb`` is ``LISATA`` and no clean ``uusi``-anchored shape matches, a
     final no-``uusi`` fallback (old parser line 2828) accepts ``DOC:ILL numlist
@@ -1807,6 +1850,7 @@ def _try_doc_ill(
     # ``tilalle`` left after the span run leaves ``uusi`` unreachable and the arm
     # declines, exactly as the old parser does.
     _skip_doc_reinst_preamble(scan)
+    _skip_doc_citation_residue(scan)
 
     # Prefix-chapter: ``DOC:ILL N lukuun [,] uusi M §``.
     saved_pc = scan.pos
@@ -1866,6 +1910,19 @@ def _try_doc_ill(
         break
 
     t = scan.peek()
+    if _bare_doc_section_insert_is_closed(scan):
+        if len(all_nums) == 1:
+            n, sf = all_nums[0]
+            return [
+                InsNode(
+                    kind=TargetKind.SECTION,
+                    label=n + sf,
+                    chapter="",
+                    witness_rule_id="fi.insertion_law_level_bare_section",
+                )
+            ]
+        scan.goto(saved)
+        return None
     if t is None:
         scan.goto(saved)
         return None
@@ -1965,6 +2022,11 @@ def emit_insertion_nodes(parsed: ParsedInsertion) -> list[SurfaceNode]:
                 chapter=node.chapter,
                 part=node.part,
                 sub_target=sub_target,
+                witness=(
+                    SurfaceWitness(rule_id=node.witness_rule_id, source_span=(0, 0))
+                    if node.witness_rule_id
+                    else None
+                ),
             )
         )
     return out

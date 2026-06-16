@@ -248,6 +248,7 @@ _REGISTER_TIERS: dict[str, Register] = {
     # Catch-all buckets: a witness signalling a shape that matched no precise
     # rule — by definition off the recommended subset.
     "fi.insertion_section": "discouraged",
+    "fi.insertion_law_level_bare_section": "discouraged",
     "fi.insertion_chapter": "discouraged",
     "fi.insertion_heading": "discouraged",
     "fi.insertion_sub_target": "discouraged",
@@ -571,6 +572,24 @@ def _build_registry() -> RuleRegistry:
                     expected_node_kind="SurfaceInsertion",
                     expected_fields={"kind": "CHAPTER", "label": "3"},
                     description="law-level chapter insert",
+                ),
+            ),
+        )
+    )
+
+    reg.register(
+        ParseRule(
+            rule_id="fi.insertion_law_level_bare_section",
+            description="Historical law-level section insert with omitted § after uusi number",
+            node_kind="SurfaceInsertion",
+            category="insertion",
+            shape="DOC:ILL [target citation residue] UUSI NUM [LETTER] END",
+            examples=(
+                RuleExample(
+                    input_text="lisätään asetukseen (1546 /2011) uusi 1 a seuraavasti:",
+                    expected_node_kind="SurfaceInsertion",
+                    expected_fields={"kind": "SECTION", "label": "1a"},
+                    description="bare section insert with spaced parent citation residue",
                 ),
             ),
         )

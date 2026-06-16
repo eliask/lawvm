@@ -2300,6 +2300,28 @@ def test_parse_clause_doc_ill_prefix_chapter_keeps_section_insert() -> None:
     assert [op.code() for op in chapter_result.parsed_ops] == ["L L 3"]
 
 
+def test_parse_clause_doc_ill_spaced_citation_bare_section_insert() -> None:
+    """A target-statute citation after DOC:ILL is not the inserted section label.
+
+    Real witness: 2016/1540 inserts 1 a § into 2011/1546, but its johtolause
+    spells the parent citation as ``(1546 /2011)`` and omits the ``§`` after
+    ``uusi 1 a``. The citation residue is source identity evidence; the only
+    owned insertion target is the immediately closed bare section label.
+    """
+    result = parse_clause(
+        "lisätään julkisesti tuetuista vienti- ja alusluotoista sekä "
+        "korontasauksesta annetun valtioneuvoston asetukseen (1546 /2011) "
+        "uusi 1 a seuraavasti:",
+        statute_id="2011/1546",
+    )
+
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == ["L P 1a"]
+    node = result.surface_clause.verb_groups[0].nodes[0]
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_law_level_bare_section"
+
+
 def test_parse_clause_provenance_then_ja_momentti_continuation_not_dropped() -> None:
     """A provenance/citation span between a target and a following ``ja N
     momentti`` continuation must not drop the continuation or the rest of the

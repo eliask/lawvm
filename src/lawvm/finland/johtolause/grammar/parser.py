@@ -177,6 +177,7 @@ def _stamp_insertion_batch(
     out: list[SurfaceNode] = []
     for node in nodes:
         assert isinstance(node, SurfaceInsertion)
+        rule_id = node.witness.rule_id if node.witness is not None else insertion_rule_id(node)
         out.append(
             SurfaceInsertion(
                 kind=node.kind,
@@ -184,7 +185,7 @@ def _stamp_insertion_batch(
                 chapter=node.chapter,
                 part=node.part,
                 sub_target=node.sub_target,
-                witness=SurfaceWitness(rule_id=insertion_rule_id(node), source_span=(start, end)),
+                witness=SurfaceWitness(rule_id=rule_id, source_span=(start, end)),
             )
         )
     return out

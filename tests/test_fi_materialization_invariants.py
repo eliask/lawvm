@@ -164,6 +164,18 @@ def test_2017_519_2019_979_official_johtolause_corrigendum_updates_section_15(
     assert "Ministerille ja kansliapäällikölle tiedottaminen" not in section_text
 
 
+def test_2011_1546_2016_1540_bare_section_insert_materializes_section_1a() -> None:
+    """2016/1540's ``uusi 1 a`` johtolause inserts §1a despite omitted ``§``."""
+
+    replay = pinned_replay("2011/1546", quiet=True, build_full_products=False)
+    section_node = replay.find_section("1a", None, None)
+    assert section_node is not None
+    section_text = " ".join(irnode_to_text(section_node).split())
+
+    assert "Suomalainen intressi" in section_text
+    assert "Vienti- ja alusluoton sekä korontasauksen myöntämisen edellytyksenä" in section_text
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 
