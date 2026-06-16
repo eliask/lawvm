@@ -76,11 +76,12 @@ CENSUS_ACCOUNTING_BUCKETS: tuple[str, ...] = (
 # effect, with Finlex/oracle supporting-only. Each entry carries its systematic
 # class + a one-line evidence note so the accounting ledger is self-documenting.
 #
-# NOT included (still ``genuine_delta_unclassified`` = 4): the 3 ``parity_bug``
-# verdicts {1995/551, 1991/1055, 1989/117} (E_lukuun_tilalle_collapse — NEW
-# drops a real inserted entity; a CONCURRENT lane owns the fix) and the 1
+# NOT included (``genuine_delta_unclassified`` = 1): the 1
 # ``needs_source_verification`` {2002/723} (G_witness_span_only — replay-neutral
-# span-attribution, undecidable now).
+# span-attribution, undecidable now). The 3 former ``parity_bug`` verdicts
+# {1995/551, 1991/1055, 1989/117} (E_lukuun_tilalle_collapse — NEW dropped a real
+# inserted entity behind a scope-anchor-before-``uusi`` preamble) are now FIXED
+# grammar-side (byte-identical to OLD) and are no longer genuine deltas.
 #
 # Systematic classes (mechanism -> why NEW is right):
 #   A_kohta_special        named sub-qualifier ('X koskeva kohta', 'N ryhmän M
@@ -150,8 +151,10 @@ FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0: frozenset[str] = frozenset(
 # Measured live on the full canonical corpus at base 8aa37aee.
 # ---------------------------------------------------------------------------
 #: Floor on owned-and-byte-identical clauses. Ownership regression fails CI if
-#: the live count drops below this.
-FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32922
+#: the live count drops below this. Ratcheted up as ownership grows: the
+#: corrigendum authorialNote strip + the E_lukuun_tilalle parity recovery raised
+#: the live count from 32922 to 32974.
+FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32974
 
 #: Ceiling on un-adjudicated owned genuine deltas. A NEW parity miss (an owned
 #: clause that diverges from the legacy parser and is not adjudicated) pushes
@@ -159,13 +162,12 @@ FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32922
 #: wired into the accounting partition.
 #:
 #: After the 2026-06-16 adjudication round, 33 of the 37 genuine deltas were
-#: moved to ``genuine_delta_adjudicated_fix`` (see the ledger above), leaving 4
-#: unclassified: the 3 ``parity_bug`` verdicts {1995/551, 1991/1055, 1989/117}
-#: + the 1 ``needs_source_verification`` {2002/723}. The concurrent parity-bug
-#: lane will drop these 3 once it lands, taking the live count to 1; this
-#: ``<=`` ceiling of 4 stays GREEN through that drop (1 <= 4). Tighten 4 -> 1
-#: after that lane merges.
-FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 4
+#: moved to ``genuine_delta_adjudicated_fix`` (see the ledger above). The 3
+#: ``parity_bug`` verdicts {1995/551, 1991/1055, 1989/117} were then FIXED
+#: grammar-side (E_lukuun_tilalle recovery), leaving exactly 1 unclassified: the
+#: ``needs_source_verification`` {2002/723}. Any NEW parity miss pushes this back
+#: above 1 and fails CI.
+FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 1
 
 
 def _generalize_delta_path(path: str) -> str:
