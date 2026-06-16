@@ -225,25 +225,20 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # when the parser encounters a JOLLOIN_MOVE sentinel with renumber data,
     # it emits SurfaceTargetRef + SurfaceRenumberTail nodes directly in a
     # SIIRTAA verb group, prepended to the clause's verb groups.
-    # Swap-readiness wiring: the rewritten grammar parser can serve as the
-    # production PRIMARY when LAWVM_FI_NEW_PARSER is enabled. It returns the same
-    # SurfaceClause shape as the old surface_parse for the in-scope subset and
-    # raises OutOfScope for any clause outside its wired families; on OutOfScope
-    # we fall back to the old surface_parse so declined clauses stay
-    # byte-identical to today's behaviour.
+    # Swap wiring: the rewritten grammar parser is the production PRIMARY. It
+    # returns the same SurfaceClause shape as the old surface_parse for the
+    # in-scope subset and raises OutOfScope for any clause outside its wired
+    # families; on OutOfScope we fall back to the old surface_parse so declined
+    # clauses stay byte-identical to the legacy behaviour.
     #
-    # Default is OFF (old parser primary): the full FI replay bench shows the
-    # new-parser primary+fallback path is replay-preserving — net structural
-    # +0.011% (95.172% -> 95.183%) and Levenshtein -0.005% (99.016% -> 99.011%),
-    # both within noise / slight net improvement. BUT enabling it as primary
-    # breaks 13 curated unit tests (2 stale-mock artifacts that patch
-    # surface_parse.parse, which the new primary bypasses; 11 genuine surface
-    # deltas on complex multi-target / part-scope / move-destination clauses).
-    # Replay tolerates those deltas; the curated contract suite does not. Until
-    # those are reconciled, the committed default stays OFF so the tree is green
-    # and behaviour-preserving. Set LAWVM_FI_NEW_PARSER=1 to run the new parser
-    # as primary (the swap-readiness configuration proven against replay).
-    _new_parser_enabled = _os.environ.get("LAWVM_FI_NEW_PARSER", "0") not in ("0", "false", "off", "")
+    # Default is ON (new parser primary). Over the full corpus the new parser is
+    # byte-identical to the old on ~97% of amendment johtolauses and declines the
+    # remainder to the fallback; the new parser has no remaining silent drops
+    # (every shape it cannot model declines loudly rather than dropping content),
+    # the curated contract suite is green under both settings, and the FI replay
+    # bench is net-positive (smoke structural 96.18% -> 96.24%, Levenshtein flat).
+    # Set LAWVM_FI_NEW_PARSER=0 to force the old surface_parse as primary.
+    _new_parser_enabled = _os.environ.get("LAWVM_FI_NEW_PARSER", "1") not in ("0", "false", "off", "")
     _jolloin_arg = _jolloin_pairs if _jolloin_pairs else None
     if _new_parser_enabled:
         try:
