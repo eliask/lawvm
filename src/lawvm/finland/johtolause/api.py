@@ -168,6 +168,15 @@ class ClauseParseResult:
     compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...] = ()
     findings: tuple[Finding, ...] = ()
     typed_diagnostics: tuple[FrontendDiagnostic, ...] = ()
+    parser_lane: str = "grammar_owned"
+    grammar_decline_reason: str | None = None
+
+    @property
+    def used_legacy_fallback(self) -> bool:
+        """True when the new grammar parser declined and the OLD parser produced
+        this clause. Such output carries NONE of the new parser's no-silent-drop
+        guarantee — consumers must not treat it as grammar-owned."""
+        return self.parser_lane != "grammar_owned"
 
     @property
     def is_failed(self) -> bool:
@@ -240,13 +249,25 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # Set LAWVM_FI_NEW_PARSER=0 to force the old surface_parse as primary.
     _new_parser_enabled = _os.environ.get("LAWVM_FI_NEW_PARSER", "1") not in ("0", "false", "off", "")
     _jolloin_arg = _jolloin_pairs if _jolloin_pairs else None
+    # Parser-lane provenance: which parser actually produced this clause, and —
+    # when the new grammar parser declined — WHY. Recorded on the result + emitted
+    # as a governed finding so consumers cannot mistake a legacy-reference fallback
+    # for new-parser-owned output (the invisible-fallback / guard-liveness
+    # anti-pattern). A legacy_reference_fallback clause carries NONE of the new
+    # parser's no-silent-drop guarantee.
+    parser_lane: str
+    grammar_decline_reason: str | None = None
     if _new_parser_enabled:
         try:
             _parsed = _grammar_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
-        except _GrammarOutOfScope:
+            parser_lane = "grammar_owned"
+        except _GrammarOutOfScope as _decline:
+            grammar_decline_reason = str(_decline) or "OutOfScope"
             _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
+            parser_lane = "legacy_reference_fallback"
     else:
         _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
+        parser_lane = "old_parser_forced"
     if _parsed.source_text != text:
         original_surface_clause = SurfaceClauseModel(
             verb_groups=_parsed.verb_groups,
@@ -493,6 +514,8 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         compatibility_artifacts=compatibility_artifacts,
         findings=findings,
         typed_diagnostics=phase_surface.diagnostics,
+        parser_lane=parser_lane,
+        grammar_decline_reason=grammar_decline_reason,
     )
 
 
