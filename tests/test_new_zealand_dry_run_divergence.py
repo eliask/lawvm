@@ -22,6 +22,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_WINDOW_UNPROVABLE_SNAPSHOT_PREDATES_OP,
     NZ_WINDOW_UNPROVABLE_STRUCTURAL_DRIFT,
     _NON_COMMENSURABLE_DESCENDANT_THRESHOLD,
+    _NON_COMMENSURABLE_LOCALIZED_MAX,
     NZMutationBoundaryProof,
     NZNodeDivergence,
     _amend_provision_composes_target,
@@ -76,20 +77,61 @@ def _doc(nodes: tuple[NZSourceNode, ...]) -> NZSourceDocument:
 # --- _is_non_commensurable_whole_node predicate. ------------------------------
 
 
-def test_non_commensurable_predicate_types_container_kinds() -> None:
-    # Every structural container kind is non-commensurable regardless of size.
+def test_non_commensurable_predicate_container_pervasive_vs_localized_label_aware() -> None:
+    # With label-aware alignment (the INSERT family,
+    # ``allow_localized_container=True``) a structural container is
+    # non-commensurable only when the divergence is PERVASIVE
+    # (> _NON_COMMENSURABLE_LOCALIZED_MAX diverging leaves). A localized
+    # divergence (<= the max diverging leaves) in an aligned container is a
+    # candidate, not a non-commensurable whole-node comparison.
     for kind in ("part", "subpart", "crossheading", "prov"):
-        assert _is_non_commensurable_whole_node(kind, 0) is True
-        assert _is_non_commensurable_whole_node(kind, 500) is True
+        # Localized (1 or 2 diverging leaves) -> commensurable (a candidate).
+        assert _is_non_commensurable_whole_node(kind, 5, 1, allow_localized_container=True) is False
+        assert (
+            _is_non_commensurable_whole_node(kind, 5, _NON_COMMENSURABLE_LOCALIZED_MAX, allow_localized_container=True)
+            is False
+        )
+        # Pervasive (> the localized max) -> non-commensurable.
+        assert (
+            _is_non_commensurable_whole_node(
+                kind, 5, _NON_COMMENSURABLE_LOCALIZED_MAX + 1, allow_localized_container=True
+            )
+            is True
+        )
+
+
+def test_non_commensurable_predicate_container_always_gated_without_label_alignment() -> None:
+    # Without label-aware alignment (the REPLACE family, default
+    # allow_localized_container=False) a structural container is ALWAYS
+    # non-commensurable regardless of how localized the divergence is — a
+    # whole-provision replace compared against a possibly-further-amended
+    # container cannot be localized safely.
+    for kind in ("part", "subpart", "crossheading", "prov"):
+        assert _is_non_commensurable_whole_node(kind, 5, 1) is True
+        assert _is_non_commensurable_whole_node(kind, 5, 99) is True
+
+
+def test_non_commensurable_predicate_descendant_backstop_fires_for_any_kind() -> None:
+    # The descendant-count backstop fires for ANY kind (container or leaf) whose
+    # subtree has ballooned past the threshold, regardless of how localized the
+    # divergence is or whether label-aware alignment was used.
+    assert _is_non_commensurable_whole_node("prov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD + 1, 1) is True
+    assert (
+        _is_non_commensurable_whole_node(
+            "subprov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD + 1, 1, allow_localized_container=True
+        )
+        is True
+    )
 
 
 def test_non_commensurable_predicate_leaf_kinds_gated_by_descendant_backstop() -> None:
-    # A non-container leaf is commensurable until its subtree balloons past the
-    # data-justified backstop (strictly greater than 2x the genuine-leaf ceiling).
-    assert _is_non_commensurable_whole_node("subprov", 0) is False
-    assert _is_non_commensurable_whole_node("label-para", 11) is False
-    assert _is_non_commensurable_whole_node("subprov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD) is False
-    assert _is_non_commensurable_whole_node("subprov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD + 1) is True
+    # A non-container leaf is commensurable (whatever its diverging-leaf count)
+    # until its subtree balloons past the data-justified backstop (strictly
+    # greater than 2x the genuine-leaf ceiling).
+    assert _is_non_commensurable_whole_node("subprov", 0, 1) is False
+    assert _is_non_commensurable_whole_node("label-para", 11, 1) is False
+    assert _is_non_commensurable_whole_node("subprov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD, 1) is False
+    assert _is_non_commensurable_whole_node("subprov", _NON_COMMENSURABLE_DESCENDANT_THRESHOLD + 1, 1) is True
 
 
 # --- _classify_oracle_target_divergence (structural REPLACE/INSERT). ----------
@@ -136,23 +178,99 @@ def test_substantive_divergence_on_leaf_is_substantive_and_commensurable() -> No
     assert result.node_pairs[0].oracle_text
 
 
-def test_substantive_divergence_on_whole_part_is_non_commensurable() -> None:
-    # A whole-Part target the oracle further amended: substantive by text but a
-    # non-commensurable single-amendment-vs-container comparison -> typed out.
+def test_substantive_divergence_on_whole_part_pervasive_is_non_commensurable() -> None:
+    # A whole-Part target the oracle PERVASIVELY further amended (more than the
+    # localized max of its child provisions diverge): substantive by text but a
+    # non-commensurable single-amendment-vs-reworked-container comparison ->
+    # typed out. The non-commensurable gate now keys on divergence pervasiveness,
+    # not container kind alone, so the divergence must span several leaves.
+    n_diverging = _NON_COMMENSURABLE_LOCALIZED_MAX + 1
+    prov_labels = tuple(str(108 + k) for k in range(n_diverging))
     candidate_root = _node("part", ("amend", "part:10"), "Part 10 our single-amendment payload heading", label="10")
-    candidate_descendants = (_node("prov", ("amend", "part:10", "prov:108"), "our section 108 body", label="108"),)
+    candidate_descendants = tuple(
+        _node("prov", ("amend", "part:10", f"prov:{lbl}"), f"our section {lbl} body", label=lbl)
+        for lbl in prov_labels
+    )
     oracle = _doc(
         (
             _node("part", ("part:10",), "Part 10 the fully consolidated heading", label="10"),
-            _node("prov", ("part:10", "prov:108"), "a fully consolidated section 108 body", label="108"),
+            *(
+                _node("prov", ("part:10", f"prov:{lbl}"), f"a fully consolidated section {lbl} body", label=lbl)
+                for lbl in prov_labels
+            ),
         )
     )
     result = _classify_oracle_target_divergence(
-        oracle, ("part:10",), candidate_root=candidate_root, candidate_descendants=candidate_descendants
+        oracle, ("part:10",), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=True,
     )
     assert result.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
     assert result.non_commensurable_whole_node is True
-    assert result.oracle_descendant_count == 1
+    assert result.oracle_descendant_count == n_diverging
+
+
+def test_localized_substantive_divergence_in_aligned_container_is_commensurable() -> None:
+    # A section (container kind ``prov``) whose subsections align node-for-node
+    # under label-preserving keys and where only ONE subsection diverges
+    # substantively (a wrong cross-reference) is a LOCALIZED divergence: a genuine
+    # candidate, NOT typed non-commensurable. This is the s296A class.
+    candidate_root = _node("prov", ("amend", "prov:296A"), "296A heading 1 intro 2 cross-ref to 283(ja)", label="296A")
+    candidate_descendants = (
+        _node("subprov", ("amend", "prov:296A", "subprov:1"), "1 the orders are listed here", label="1"),
+        _node("subprov", ("amend", "prov:296A", "subprov:2"), "2 applies to an order under section 283(ja)", label="2"),
+    )
+    oracle = _doc(
+        (
+            _node("prov", ("part:4", "prov:296A"), "296A heading 1 intro 2 cross-ref to 298(ja)", label="296A"),
+            _node("subprov", ("part:4", "prov:296A", "subprov:1"), "1 the orders are listed here", label="1"),
+            _node("subprov", ("part:4", "prov:296A", "subprov:2"), "2 applies to an order under section 298(ja)", label="2"),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle,
+        ("part:4", "prov:296A"),
+        candidate_root=candidate_root,
+        candidate_descendants=candidate_descendants,
+        preserve_labels=True,
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+    assert result.non_commensurable_whole_node is False
+    # The diverging leaf is subprov:2 (the wrong cross-reference); the root also
+    # "diverges" only because it aggregates its descendants' text.
+    diverging_leaves = {p.relative_path for p in result.node_pairs if p.relative_path != ""}
+    assert diverging_leaves == {"subprov:2"}
+
+
+def test_label_preserving_aligns_same_kind_siblings_label_stripped_collapses() -> None:
+    # With label-stripped keys (REPLACE) two same-kind siblings collapse to one
+    # ambiguous key and the residual bails to structural_nodeset. With
+    # label-preserving keys (INSERT) the siblings get distinct keys and the
+    # per-leaf substantive divergence is surfaced.
+    candidate_root = _node("prov", ("amend", "prov:9"), "9 head 1 a 2 wrong-ref", label="9")
+    candidate_descendants = (
+        _node("subprov", ("amend", "prov:9", "subprov:1"), "1 unchanged subsection", label="1"),
+        _node("subprov", ("amend", "prov:9", "subprov:2"), "2 a reference to section 283", label="2"),
+    )
+    oracle = _doc(
+        (
+            _node("prov", ("prov:9",), "9 head 1 a 2 wrong-ref", label="9"),
+            _node("subprov", ("prov:9", "subprov:1"), "1 unchanged subsection", label="1"),
+            _node("subprov", ("prov:9", "subprov:2"), "2 a reference to section 298", label="2"),
+        )
+    )
+    # Label-stripped: subprov:1 and subprov:2 collapse to one key -> ambiguous.
+    stripped = _classify_oracle_target_divergence(
+        oracle, ("prov:9",), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=False,
+    )
+    assert stripped.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    # Label-preserving: siblings align; the subprov:2 divergence is surfaced.
+    preserved = _classify_oracle_target_divergence(
+        oracle, ("prov:9",), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=True,
+    )
+    assert preserved.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+    assert preserved.non_commensurable_whole_node is False
 
 
 def test_node_set_difference_is_structural_nodeset() -> None:
@@ -225,6 +343,123 @@ def test_duplicate_aligned_keys_block_per_node_alignment() -> None:
     )
     result = _classify_oracle_target_divergence(
         oracle, ("prov:2", "subprov:1"), candidate_root=candidate_root, candidate_descendants=candidate_descendants
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    assert result.node_pairs == ()
+
+
+def test_insert_further_amended_aligns_common_keys_localized_is_candidate() -> None:
+    # An inserted section the oracle FURTHER-amended (added a later subsection):
+    # node sets differ, but with label-preserving keys the common subsections
+    # align. A localized substantive divergence in a COMMON node (subprov:2's
+    # cross-reference) is surfaced as a candidate; the added-only subprov:3 is a
+    # structural note, not a blocker.
+    candidate_root = _node("prov", ("amend", "prov:7"), "7 head 1 a 2 ref-283", label="7")
+    candidate_descendants = (
+        _node("subprov", ("amend", "prov:7", "subprov:1"), "1 the listed orders", label="1"),
+        _node("subprov", ("amend", "prov:7", "subprov:2"), "2 order under section 283(ja)", label="2"),
+    )
+    oracle = _doc(
+        (
+            _node("prov", ("prov:7",), "7 head 1 a 2 ref-298 3 later", label="7"),
+            _node("subprov", ("prov:7", "subprov:1"), "1 the listed orders", label="1"),
+            _node("subprov", ("prov:7", "subprov:2"), "2 order under section 298(ja)", label="2"),
+            _node("subprov", ("prov:7", "subprov:3"), "3 a later inserted subsection", label="3"),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("prov:7",), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=True,
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_SUBSTANTIVE
+    assert result.non_commensurable_whole_node is False
+    # The structural note records the added-only node without blocking the find.
+    assert "structural_nodeset_partial" in result.sub_families
+    diverging_leaves = {p.relative_path for p in result.node_pairs if p.relative_path != ""}
+    assert diverging_leaves == {"subprov:2"}
+
+
+def test_insert_further_amended_no_common_divergence_is_structural_nodeset() -> None:
+    # An inserted section the oracle further-amended where every COMMON node
+    # agrees and the only difference is an added-only node: pure structural note,
+    # no in-common content divergence -> structural_nodeset (not a candidate).
+    # The root text is equal on both sides (every common node agrees); the only
+    # difference is the oracle's added-only subprov:2.
+    candidate_root = _node("prov", ("amend", "prov:7"), "7 head and listed orders", label="7")
+    candidate_descendants = (
+        _node("subprov", ("amend", "prov:7", "subprov:1"), "1 the listed orders", label="1"),
+    )
+    oracle = _doc(
+        (
+            _node("prov", ("prov:7",), "7 head and listed orders", label="7"),
+            _node("subprov", ("prov:7", "subprov:1"), "1 the listed orders", label="1"),
+            _node("subprov", ("prov:7", "subprov:2"), "2 a later inserted subsection", label="2"),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("prov:7",), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=True,
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    assert result.node_pairs == ()
+
+
+def test_insert_further_amended_contaminated_ancestor_is_structural_nodeset() -> None:
+    # The further-amended case (the prov:20A class): the oracle DROPPED a trailing
+    # paragraph, so the candidate carries label-para:c that the oracle lacks
+    # (added/removed-only). The enclosing subprov is a COMMON node whose
+    # aggregated text diverges ONLY because of the missing paragraph — a
+    # structural artifact, not a content error. The contamination guard skips the
+    # ancestor subprov (it is a path-prefix of the dropped label-para:c), leaving
+    # no clean leaf divergence, so the residual is typed structural_nodeset (not a
+    # false candidate from a further-amended container). The surviving paragraphs
+    # a and b are byte-identical (no re-lettering), as in the real 20A case where
+    # the only diverging common node was the unlabeled subprov aggregate.
+    candidate_root = _node("prov", ("amend", "prov:20A"), "20A heading a x b y c z", label="20A")
+    candidate_descendants = (
+        _node("subprov", ("amend", "prov:20A", "subprov"), "intro a x b y c z"),
+        _node("label-para", ("amend", "prov:20A", "subprov", "label-para:a"), "a x", label="a"),
+        _node("label-para", ("amend", "prov:20A", "subprov", "label-para:b"), "b y", label="b"),
+        _node("label-para", ("amend", "prov:20A", "subprov", "label-para:c"), "c z", label="c"),
+    )
+    oracle = _doc(
+        (
+            _node("prov", ("part:3", "prov:20A"), "20A heading a x b y", label="20A"),
+            _node("subprov", ("part:3", "prov:20A", "subprov"), "intro a x b y"),
+            _node("label-para", ("part:3", "prov:20A", "subprov", "label-para:a"), "a x", label="a"),
+            _node("label-para", ("part:3", "prov:20A", "subprov", "label-para:b"), "b y", label="b"),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("part:3", "prov:20A"), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=True,
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    assert result.node_pairs == ()
+
+
+def test_replace_node_set_difference_stays_structural_nodeset() -> None:
+    # The REPLACE family keeps label-stripped alignment: an oracle that added a
+    # later same-kind paragraph (the c<->d renumber guard) stays structural_nodeset
+    # and never aligns the wrong sibling, even with the new common-key path which
+    # is INSERT-only.
+    candidate_root = _node("subprov", ("amend", "subprov:8D"), "intro", label="8D")
+    candidate_descendants = tuple(
+        _node("label-para", ("amend", "subprov:8D", f"label-para:{c}"), f"paragraph {c}", label=c)
+        for c in ("a", "b", "c")
+    )
+    oracle = _doc(
+        (
+            _node("subprov", ("prov:11", "subprov:8D"), "intro", label="8D"),
+            *(
+                _node("label-para", ("prov:11", "subprov:8D", f"label-para:{c}"), f"paragraph {c}", label=c)
+                for c in ("a", "b", "c", "d")
+            ),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("prov:11", "subprov:8D"), candidate_root=candidate_root, candidate_descendants=candidate_descendants,
+        preserve_labels=False,
     )
     assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
     assert result.node_pairs == ()

@@ -359,6 +359,21 @@ NZ_DIVERGENCE_CLASS_SUBSTANTIVE = "substantive"
 _NON_COMMENSURABLE_CONTAINER_KINDS = frozenset({"part", "subpart", "crossheading", "prov"})
 _NON_COMMENSURABLE_DESCENDANT_THRESHOLD = 24
 
+# Pervasiveness gate for an ALIGNED container residual. When the candidate and
+# oracle subtrees align node-for-node (same label-keyed node set, INSERT family)
+# and the divergence is confined to at most this many descendant leaves, the
+# residual is a LOCALIZED substantive divergence (e.g. a single wrong
+# cross-reference in one subsection of a freshly-inserted section) — a genuine
+# candidate, NOT a non-commensurable whole-node comparison. When more than this
+# many distinct descendant leaves diverge, the container was pervasively
+# reworked (a later consolidation rewrote the body), so it stays
+# non-commensurable. The root container node is never counted on its own: the
+# source parser folds every descendant's text into the container's ``text``, so
+# the root pair always "diverges" whenever any descendant does — counting it
+# would double-count the localized leaf. A pure-leaf target (no descendants) is
+# its own diverging unit and counts as one.
+_NON_COMMENSURABLE_LOCALIZED_MAX = 2
+
 # --- Temporal-window-fit proof. -----------------------------------------------
 #
 # The oracle is the earliest archived snapshot dated on-or-after the op's
@@ -2273,6 +2288,10 @@ def _dry_run_one_replace(
             resolved_path,
             candidate_root=replacement_root,
             candidate_descendants=replacement.descendants,
+            # REPLACE keeps label-STRIPPED alignment: a renumber-on-replace
+            # (candidate paragraph (c) where the oracle now reads (d)) must not
+            # align the wrong sibling pair.
+            preserve_labels=False,
         )
         divergence_fields = _divergence_proof_fields(oracle_match, neighbors_unchanged, divergence)
         # Whole-node replace: the snapshot-predates proof compares the oracle
@@ -3154,6 +3173,12 @@ def _dry_run_one_insert(
             new_node_source_path,
             candidate_root=payload.root,
             candidate_descendants=payload.descendants,
+            # INSERT uses label-PRESERVING alignment: a freshly-inserted
+            # provision's subsection labels are stable (new content, no
+            # renumbering), so same-kind siblings align to their counterparts and
+            # a per-leaf substantive divergence (e.g. a wrong cross-reference in
+            # one subsection) is surfaced instead of collapsing the siblings.
+            preserve_labels=True,
         )
         divergence_fields = _divergence_proof_fields(
             oracle_match, insert_neighbors_unchanged, divergence
@@ -3757,6 +3782,7 @@ def _normalized_subtree_signature(
     descendants: tuple[NZSourceNode, ...],
     *,
     root_path: tuple[str, ...],
+    preserve_labels: bool = False,
 ) -> tuple[tuple[str, str, str], ...]:
     """A path-relative, normalized signature of a node-subtree for comparison.
 
@@ -3766,12 +3792,32 @@ def _normalized_subtree_signature(
     comparison-normalized so incidental whitespace/markup differences do not
     create false mismatches. Heading is folded into the leaf text by the source
     parser's ``_legal_text`` already, so the per-node text captures it.
+
+    By default (``preserve_labels=False``) the LABEL is dropped off each path
+    step, leaving a kind-only relative path. This is required for the REPLACE
+    family, where a renumber-on-replace inside the subtree (a candidate paragraph
+    (c) landing where the oracle now reads (d)) must not defeat structural
+    comparison — label-stripping is exactly what keeps a renumbered replace from
+    aligning the wrong sibling pair.
+
+    When ``preserve_labels=True`` the full label is kept on each step (so
+    ``subprov:1`` and ``subprov:2`` are DISTINCT keys). This is for the INSERT
+    family: a freshly-inserted provision's subsection labels are stable (it is new
+    content, no renumbering), so label-preserving alignment lets two same-kind
+    siblings be aligned to their counterparts and a per-leaf substantive
+    divergence (e.g. a wrong cross-reference in one subsection) be surfaced
+    instead of collapsing the siblings to one ambiguous key.
     """
 
     depth = len(root_path)
 
     def relative(path: tuple[str, ...]) -> str:
         rel = path[depth:]
+        if preserve_labels:
+            # Keep the label-bearing segment as-is so same-kind siblings get
+            # distinct keys. Drop only the addressing-suffix decorations
+            # (``@``/``#``) that are never part of the label identity.
+            return "/".join(segment.split("@", 1)[0].split("#", 1)[0] for segment in rel)
         # Drop the label off each step so a renumber-on-replace inside the
         # subtree does not defeat structural comparison; kind is kept.
         return "/".join(segment.split(":", 1)[0].split("@", 1)[0].split("#", 1)[0] for segment in rel)
@@ -3818,23 +3864,46 @@ def _divergence_proof_fields(
     }
 
 
-def _is_non_commensurable_whole_node(leaf_kind: str, oracle_descendant_count: int) -> bool:
+def _is_non_commensurable_whole_node(
+    leaf_kind: str,
+    oracle_descendant_count: int,
+    diverging_leaf_count: int,
+    *,
+    allow_localized_container: bool = False,
+) -> bool:
     """Whether a substantive residual is a non-commensurable whole-node compare.
 
-    True when the resolved target leaf is a structural CONTAINER kind (a whole
-    Part / subpart / crossheading / section) — our single-amendment payload is
-    then being compared against a container the oracle has independently further
-    amended — OR when the oracle subtree carries more descendants than the
-    backstop threshold (a non-container leaf whose subtree has ballooned far past
-    any genuine single-amendment leaf). See the module-level threshold note for
-    the data justification. Conservative by design: an uncertain container is
-    typed non-commensurable (kept OUT of the candidate set) rather than emitted
-    as a false oracle-error candidate.
+    The oracle-descendant backstop fires for ANY kind whose subtree has ballooned
+    past the threshold (a far-larger-than-single-amendment subtree), regardless of
+    how the divergence is distributed.
+
+    A structural CONTAINER (a whole Part / subpart / crossheading / section) is
+    otherwise gated by ``allow_localized_container``:
+
+    - When False (the REPLACE family, and any caller without label-aware
+      alignment), a container is ALWAYS non-commensurable: a whole-provision
+      payload compared against a container the oracle may have independently
+      further amended is not a commensurable comparison, and without stable
+      per-leaf alignment we cannot localize the divergence safely.
+    - When True (the INSERT family, which aligns by stable labels), the container
+      is non-commensurable only when the divergence is PERVASIVE — more than
+      ``_NON_COMMENSURABLE_LOCALIZED_MAX`` distinct descendant leaves diverge.
+      A LOCALIZED substantive divergence (at most that many diverging leaves) in
+      a label-aligned container is a genuine candidate (e.g. a single wrong
+      cross-reference in one subsection of a freshly-inserted section).
+
+    Conservative by design: a pervasively-diverging or unlocalizable container is
+    typed non-commensurable (kept OUT of the candidate set) rather than emitted as
+    a false oracle-error candidate.
     """
 
-    if leaf_kind in _NON_COMMENSURABLE_CONTAINER_KINDS:
+    if oracle_descendant_count > _NON_COMMENSURABLE_DESCENDANT_THRESHOLD:
         return True
-    return oracle_descendant_count > _NON_COMMENSURABLE_DESCENDANT_THRESHOLD
+    if leaf_kind in _NON_COMMENSURABLE_CONTAINER_KINDS:
+        if not allow_localized_container:
+            return True
+        return diverging_leaf_count > _NON_COMMENSURABLE_LOCALIZED_MAX
+    return False
 
 
 def _classify_oracle_target_divergence(
@@ -3843,6 +3912,7 @@ def _classify_oracle_target_divergence(
     *,
     candidate_root: NZSourceNode,
     candidate_descendants: tuple[NZSourceNode, ...],
+    preserve_labels: bool = False,
 ) -> NZTargetDivergence:
     """Reconstruct + classify the candidate-vs-oracle subtree divergence.
 
@@ -3856,12 +3926,23 @@ def _classify_oracle_target_divergence(
     - oracle target ABSENT -> ``divergence_class = None`` (no subtree pair to
       align; the residual is target-missing/not-present, already typed by the
       partition function and never a content candidate);
-    - node SETS differ -> ``structural_nodeset``;
+    - node SETS differ -> ``structural_nodeset`` (REPLACE), or, for the INSERT
+      family (``preserve_labels=True``), align the COMMON label-keys and surface
+      a LOCALIZED substantive divergence in a common node as a candidate while
+      treating the added/removed-only nodes as a structural note (not a blocker);
     - all diverging nodes ``is_editorial`` -> ``editorial``;
     - otherwise -> ``substantive``.
 
+    ``preserve_labels`` selects the alignment key (see
+    :func:`_normalized_subtree_signature`): the INSERT family keys by the full
+    label (stable for new content) so two same-kind siblings can be aligned to
+    their counterparts and a per-leaf substantive divergence surfaced; the
+    REPLACE family keeps label-stripped keys so a renumber-on-replace does not
+    align the wrong sibling pair.
+
     For a ``substantive`` divergence the non-commensurable-whole-node gate is
-    evaluated against the resolved oracle leaf kind + descendant count. The
+    evaluated against the resolved oracle leaf kind, descendant count, and the
+    PERVASIVENESS of the divergence (number of diverging descendant leaves). The
     diverging node-text pairs are returned in full (the caller retains them only
     for candidates). Pure functional reconstruction: no mutation, no I/O.
     """
@@ -3881,33 +3962,60 @@ def _classify_oracle_target_divergence(
     oracle_root = oracle_matches[0]
     oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
     candidate_sig = _normalized_subtree_signature(
-        candidate_root, candidate_descendants, root_path=candidate_root.path
+        candidate_root, candidate_descendants, root_path=candidate_root.path, preserve_labels=preserve_labels
     )
     oracle_sig = _normalized_subtree_signature(
-        oracle_root, oracle_descendants, root_path=oracle_root.path
+        oracle_root, oracle_descendants, root_path=oracle_root.path, preserve_labels=preserve_labels
     )
-    # The signature drops labels off each path step so a renumber-on-replace does
-    # not defeat structural agreement. A side effect is that sibling nodes of the
-    # same kind at the same depth share one ``(relative_path, kind)`` key. A dict
-    # keyed on that would silently collapse such siblings (overwriting all but
-    # one), hiding a node-COUNT difference and then aligning two unrelated
-    # siblings for a per-node text compare (e.g. candidate paragraph (c) vs an
-    # oracle that added a later paragraph (d) — the dict aligned (c) against (d)).
-    # Compare the key MULTISET first: a count difference is a node-set divergence,
-    # not a per-node content error.
+    # The signature key is ``(relative_path, kind)``. With label-stripped keys
+    # (REPLACE) sibling nodes of the same kind at the same depth share one key; a
+    # dict keyed on that would silently collapse such siblings, hiding a
+    # node-COUNT difference and aligning two unrelated siblings (candidate (c) vs
+    # an oracle (d) added later). Compare the key MULTISET first.
     candidate_keys = Counter((rel, kind) for rel, kind, _text in candidate_sig)
     oracle_keys = Counter((rel, kind) for rel, kind, _text in oracle_sig)
 
     if candidate_keys != oracle_keys:
-        # The node sets (counts included) differ: the divergence is topological
-        # (oracle added / dropped / re-kinded / renumbered-and-resized nodes), not
-        # a per-node text difference.
-        return NZTargetDivergence(
-            divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
-            sub_families=(),
-            non_commensurable_whole_node=False,
+        # The node sets (counts included) differ. For the REPLACE family this is
+        # topological (oracle added / dropped / re-kinded / renumbered nodes) and
+        # is typed structural_nodeset, conservatively. For the INSERT family the
+        # labels are stable, so a node-set difference means the inserted section
+        # was independently FURTHER-AMENDED (the oracle added or removed nodes
+        # after the insert): instead of a blanket bail, align the COMMON
+        # label-keys present on both sides and surface a localized substantive
+        # divergence in a common node as a candidate. The added/removed-only keys
+        # are recorded as a structural note (the residual is not "clean") but do
+        # not block a localized in-common substantive finding.
+        if not preserve_labels:
+            return NZTargetDivergence(
+                divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
+                sub_families=(),
+                non_commensurable_whole_node=False,
+                oracle_descendant_count=len(oracle_descendants),
+                node_pairs=(),
+            )
+        # Any repeated key on either side is still ambiguous (cannot pair the
+        # duplicated siblings); bail to structural_nodeset for those.
+        if any(count > 1 for count in candidate_keys.values()) or any(
+            count > 1 for count in oracle_keys.values()
+        ):
+            return NZTargetDivergence(
+                divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
+                sub_families=(),
+                non_commensurable_whole_node=False,
+                oracle_descendant_count=len(oracle_descendants),
+                node_pairs=(),
+            )
+        common_keys = set(candidate_keys) & set(oracle_keys)
+        added_or_removed = (set(candidate_keys) ^ set(oracle_keys))
+        return _classify_aligned_keys(
+            candidate_sig=candidate_sig,
+            oracle_sig=oracle_sig,
+            oracle_root_kind=oracle_root.kind,
             oracle_descendant_count=len(oracle_descendants),
-            node_pairs=(),
+            restrict_to_keys=common_keys,
+            structural_note_keys=added_or_removed,
+            allow_localized_container=preserve_labels,
         )
 
     # Per-node text alignment is only well-defined when every ``(relative_path,
@@ -3915,7 +4023,9 @@ def _classify_oracle_target_divergence(
     # at the same label-stripped depth) cannot be aligned to its counterpart
     # without guessing which sibling pairs with which. When any key repeats, type
     # the residual as a node-set divergence (conservative: leaves the candidate
-    # set) rather than align ambiguous siblings.
+    # set) rather than align ambiguous siblings. Label-preserving keys (INSERT)
+    # make same-kind siblings distinct, so this guard practically only fires for
+    # label-stripped REPLACE comparisons.
     if any(count > 1 for count in candidate_keys.values()):
         return NZTargetDivergence(
             divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
@@ -3925,19 +4035,86 @@ def _classify_oracle_target_divergence(
             node_pairs=(),
         )
 
+    return _classify_aligned_keys(
+        candidate_sig=candidate_sig,
+        oracle_sig=oracle_sig,
+        oracle_root_kind=oracle_root.kind,
+        oracle_descendant_count=len(oracle_descendants),
+        restrict_to_keys=None,
+        structural_note_keys=frozenset(),
+        allow_localized_container=preserve_labels,
+    )
+
+
+def _classify_aligned_keys(
+    *,
+    candidate_sig: tuple[tuple[str, str, str], ...],
+    oracle_sig: tuple[tuple[str, str, str], ...],
+    oracle_root_kind: str,
+    oracle_descendant_count: int,
+    restrict_to_keys: set[tuple[str, str]] | None,
+    structural_note_keys: set[tuple[str, str]] | frozenset[tuple[str, str]],
+    allow_localized_container: bool,
+) -> NZTargetDivergence:
+    """Per-node text alignment + folding over uniquely-keyed signatures.
+
+    ``restrict_to_keys`` (when not None) limits the alignment to the COMMON keys
+    present on both sides (the INSERT further-amended path); ``None`` aligns the
+    full key set (node sets already equal). ``structural_note_keys`` are the
+    added/removed-only keys recorded as a structural note: their presence is
+    folded into ``sub_families`` (so the residual is visibly not a clean
+    node-for-node match) but never blocks a localized in-common substantive
+    finding. The non-commensurable gate is keyed on the count of diverging
+    DESCENDANT leaves (root excluded — its text aggregates its descendants); a
+    pure-leaf target with no descendant divergence counts as one diverging unit.
+
+    Contamination guard for the further-amended path: a common node whose
+    relative-path is an ANCESTOR (path prefix) of any added/removed-only
+    structural-note key has its aggregated text contaminated by the structural
+    change (the source parser folds descendant text into the ancestor), so its
+    divergence is a structural artifact, not a reliable content-error signal.
+    Such contaminated common nodes are SKIPPED. When the only common divergences
+    are contaminated (no clean leaf content divergence survives), the residual is
+    conservatively typed structural_nodeset (refuse-don't-guess) rather than
+    emitted as a false candidate from a re-lettered / further-amended container.
+    """
+
     candidate_index = {(rel, kind): text for rel, kind, text in candidate_sig}
     oracle_index = {(rel, kind): text for rel, kind, text in oracle_sig}
+    keys = restrict_to_keys if restrict_to_keys is not None else set(candidate_index)
+
+    # Relative paths of the added/removed-only nodes. A common node is
+    # "contaminated" when it is the root ("") or a path-prefix ancestor of any of
+    # these — its folded text reflects the structural change, not a content edit.
+    note_rel_paths = tuple(rel for rel, _kind in structural_note_keys)
+
+    def _is_contaminated_by_structural_note(rel: str) -> bool:
+        if not note_rel_paths:
+            return False
+        if rel == "":
+            # The root aggregates every descendant; any added/removed node
+            # contaminates it.
+            return True
+        for note_rel in note_rel_paths:
+            if note_rel == rel or note_rel.startswith(rel + "/"):
+                return True
+        return False
 
     node_pairs: list[NZNodeDivergence] = []
     sub_families: list[str] = []
     all_editorial = True
-    for key in candidate_index:
+    diverging_descendant_leaves = 0
+    for key in keys:
         candidate_text = candidate_index[key]
         oracle_text = oracle_index[key]
         if candidate_text == oracle_text:
             continue
-        divergence = classify_oracle_divergence(candidate_text, oracle_text)
         rel, kind = key
+        if _is_contaminated_by_structural_note(rel):
+            # Skip a common node whose text difference is explained by the
+            # added/removed descendant (structural artifact, not a content error).
+            continue
+        divergence = classify_oracle_divergence(candidate_text, oracle_text)
         node_pairs.append(
             NZNodeDivergence(
                 relative_path=rel,
@@ -3951,17 +4128,37 @@ def _classify_oracle_target_divergence(
         sub_families.append(divergence.sub_family.value)
         if not divergence.is_editorial:
             all_editorial = False
+        # The root node (relative_path == "") aggregates every descendant's text,
+        # so it always "diverges" whenever any descendant does. Count only
+        # descendant leaves for the pervasiveness gate.
+        if rel != "":
+            diverging_descendant_leaves += 1
+
+    has_structural_note = bool(structural_note_keys)
+    if has_structural_note:
+        # Record the structural difference as a typed sub-family so the residual
+        # is never silently presented as a clean node-for-node match.
+        sub_families.append("structural_nodeset_partial")
 
     if not node_pairs:
-        # The signatures agree node-for-node after normalization even though the
-        # partition function reported a residual (e.g. the residual is keyed on a
-        # signal the signature folds out). Type it editorial (no surviving
-        # content divergence), never a substantive candidate.
+        # Either the signatures agree node-for-node after normalization (a
+        # residual keyed on a signal the signature folds out) or the only
+        # difference was added/removed-only nodes (a pure structural note with no
+        # in-common content divergence). In the latter case the residual is
+        # topological; type it structural_nodeset. Otherwise editorial.
+        if has_structural_note:
+            return NZTargetDivergence(
+                divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
+                sub_families=tuple(sorted(sub_families)),
+                non_commensurable_whole_node=False,
+                oracle_descendant_count=oracle_descendant_count,
+                node_pairs=(),
+            )
         return NZTargetDivergence(
             divergence_class=NZ_DIVERGENCE_CLASS_EDITORIAL,
             sub_families=(),
             non_commensurable_whole_node=False,
-            oracle_descendant_count=len(oracle_descendants),
+            oracle_descendant_count=oracle_descendant_count,
             node_pairs=(),
         )
 
@@ -3970,18 +4167,25 @@ def _classify_oracle_target_divergence(
             divergence_class=NZ_DIVERGENCE_CLASS_EDITORIAL,
             sub_families=tuple(sorted(sub_families)),
             non_commensurable_whole_node=False,
-            oracle_descendant_count=len(oracle_descendants),
+            oracle_descendant_count=oracle_descendant_count,
             node_pairs=tuple(node_pairs),
         )
 
+    # A pure-leaf target (no descendant diverged, only the root pair) is its own
+    # diverging unit: count it as one so the pervasiveness gate treats a single
+    # diverging leaf consistently whether or not the node has descendants.
+    diverging_leaf_count = diverging_descendant_leaves or 1
     non_commensurable = _is_non_commensurable_whole_node(
-        oracle_root.kind, len(oracle_descendants)
+        oracle_root_kind,
+        oracle_descendant_count,
+        diverging_leaf_count,
+        allow_localized_container=allow_localized_container,
     )
     return NZTargetDivergence(
         divergence_class=NZ_DIVERGENCE_CLASS_SUBSTANTIVE,
         sub_families=tuple(sorted(sub_families)),
         non_commensurable_whole_node=non_commensurable,
-        oracle_descendant_count=len(oracle_descendants),
+        oracle_descendant_count=oracle_descendant_count,
         node_pairs=tuple(node_pairs),
     )
 
