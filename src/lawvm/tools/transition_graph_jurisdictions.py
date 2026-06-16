@@ -38,6 +38,21 @@ def transition_graph_adapter_for_jurisdiction(
             tree_materializer=materialize_fi_transition_graph_tree,
             interlink_provider=fi_transition_graph_interlink_provider(),
         )
+    if code == "uk":
+        from lawvm.uk_legislation.transition_graph_profile import (
+            uk_transition_graph_export_profile,
+        )
+        from lawvm.uk_legislation.transition_graph_replay import (
+            materialize_uk_transition_graph_tree,
+            run_uk_transition_graph_replay,
+        )
+
+        return TransitionGraphJurisdictionAdapter(
+            profile=uk_transition_graph_export_profile(),
+            replay_runner=run_uk_transition_graph_replay,
+            tree_materializer=materialize_uk_transition_graph_tree,
+            interlink_provider=None,
+        )
     supported = ", ".join(supported_transition_graph_jurisdictions())
     raise ValueError(
         f"transition graph export is not implemented for jurisdiction {jurisdiction!r}; "
@@ -46,4 +61,4 @@ def transition_graph_adapter_for_jurisdiction(
 
 
 def supported_transition_graph_jurisdictions() -> tuple[str, ...]:
-    return ("fi",)
+    return ("fi", "uk")

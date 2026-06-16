@@ -18,6 +18,26 @@ python3 -m http.server 8000
 comes from `statute-timeline-manifest.json`; each entry points at a per-statute
 `.db` (exported by `lawvm export-transition-graph`).
 
+A different manifest can be selected with a `?manifest=<file.json>` query param
+(only a bare same-directory `.json` filename is accepted). A UK sample set ships
+as `statute-timeline-manifest-uk.json`:
+
+```sh
+# open http://localhost:8000/statute-timeline.html?manifest=statute-timeline-manifest-uk.json
+```
+
+The UK sample is five heavily-amended, well-replaying acts (Road Traffic Act
+1988, Police Act 1997, Education Act 2002, New Roads and Street Works Act 1991,
+Food Safety Act 1990). Regenerate any entry with the jurisdiction flag:
+
+```sh
+uv run lawvm export-transition-graph -j uk --statute ukpga/1988/52 \
+  --out viewer/data/ukpga-1988-52.db
+```
+
+`.db` artifacts under `viewer/data/` are gitignored; only the manifests and
+viewer source are tracked. Re-run the exports locally to populate the data dir.
+
 ## Layout & interaction model
 
 Two columns, no detail sidebar: a sticky **TOC minimap** on the left and the

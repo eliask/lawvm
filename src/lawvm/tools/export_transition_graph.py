@@ -225,6 +225,28 @@ def _node_address_string(path: Tuple[Tuple[str, str], ...]) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 
+def _unique_child_label(child: IRNode, kind: str, label: str, used: Dict[Tuple[str, str], int]) -> str:
+    """Disambiguate a child's address label against earlier same-kind/label siblings.
+
+    Covering/display addresses are keyed by ``kind:label``; that is unique under a
+    well-formed tree but NOT under source anomalies — some enacted UK XML carries
+    two siblings with the same printed number (e.g. RTA 1988 s.113 has two
+    ``<Pnumber>2</Pnumber>`` subsections, ids ``section-113-2n1``/``-2n2``, and no
+    (1)). Those are faithful source data that must round-trip, not be deduped. The
+    first occurrence keeps the bare label (so ordinary trees — all of Finland — are
+    unchanged); a colliding sibling is suffixed with its stable source id (eId/id)
+    or, failing that, its occurrence ordinal, so each node gets a distinct address
+    and the covering set tiles without overlap.
+    """
+    key = (kind, label)
+    seen = used.get(key, 0)
+    used[key] = seen + 1
+    if seen == 0:
+        return label
+    source_key = str(child.attrs.get("eId") or child.attrs.get("id") or "").strip()
+    return f"{label}#{source_key or seen + 1}"
+
+
 def _iter_addressed_nodes(
     root: IRNode,
     prefix: Tuple[Tuple[str, str], ...] = (),
@@ -233,14 +255,17 @@ def _iter_addressed_nodes(
 
     The root body itself is unlabeled and skipped; labeled structural nodes
     (chapters, sections, subsections, ...) become addressable rows. Returned in
-    document order.
+    document order. Colliding same-kind/label siblings are disambiguated (see
+    :func:`_unique_child_label`) so addresses stay unique even over anomalous
+    source.
     """
     out: List[Tuple[str, IRNode]] = []
+    used: Dict[Tuple[str, str], int] = {}
     for child in root.children:
         kind = str(child.kind)
         label = child.label or ""
         if label:
-            path = prefix + ((kind, label),)
+            path = prefix + ((kind, _unique_child_label(child, kind, label, used)),)
             out.append((_node_address_string(path), child))
             out.extend(_iter_addressed_nodes(child, path))
         else:
@@ -326,11 +351,12 @@ def covering_units(
         _walk(node, path)
 
     def _walk(node: IRNode, prefix: Tuple[Tuple[str, str], ...]) -> None:
+        used: Dict[Tuple[str, str], int] = {}
         for child in node.children:
             kind = str(child.kind)
             label = child.label or ""
             if label:
-                path = prefix + ((kind, label),)
+                path = prefix + ((kind, _unique_child_label(child, kind, label, used)),)
                 addr = _node_address_string(path)
                 if not slice_prefix:
                     _emit_or_descend(child, path, addr)
@@ -535,6 +561,34 @@ def _index_ops_by_expiry_date(lo_ops: List[Any]) -> Dict[str, List[Any]]:
     return index
 
 
+def _address_top_kind(address: str) -> str:
+    """Return the kind of an address's first segment (e.g. 'section' from 'section:40')."""
+    if not address:
+        return ""
+    return address.split("/", 1)[0].split(":", 1)[0]
+
+
+def _align_address_to_kind(covering_address: str, target_kind: str) -> str:
+    """Drop leading container segments from ``covering_address`` above ``target_kind``.
+
+    UK op targets are addressed from the section/schedule level (``section:40``,
+    ``schedule:24/paragraph:1``) while covering-unit addresses are the full tree
+    path and carry leading container segments (``part:Part I/section:40``). To
+    attribute an op to a covering unit we realign the covering address at the
+    op-target's top kind. Returns "" when that kind is absent. FI op targets are
+    already container-qualified to the same depth as their covering addresses, so
+    this realignment is a no-op there (the first segment is already the target's
+    kind).
+    """
+    if not target_kind:
+        return ""
+    segments = covering_address.split("/")
+    for i, seg in enumerate(segments):
+        if seg.split(":", 1)[0] == target_kind:
+            return "/".join(segments[i:])
+    return ""
+
+
 def _ops_for_covering(ops_on_date: List[Any], covering_address: str) -> List[Any]:
     """Return ops on a date that provenance-attribute to ``covering_address``.
 
@@ -551,6 +605,12 @@ def _ops_for_covering(ops_on_date: List[Any], covering_address: str) -> List[Any
     subsection/paragraph transitions: when only the whole section is the op
     target but the diff materialized at subsection granularity, every changed
     subsection of that section is attributed to the amending säädös.
+
+    The same three relations are retried after realigning the covering address
+    at the op-target's top kind (see :func:`_align_address_to_kind`), so ops
+    addressed from a shallower level than the covering path — UK section/schedule
+    targets under part-qualified covering addresses — still attribute. FI targets
+    align at the first segment already, so the retry is a no-op there.
     """
     out: List[Any] = []
     for op in ops_on_date:
@@ -561,6 +621,14 @@ def _ops_for_covering(ops_on_date: List[Any], covering_address: str) -> List[Any
             target == covering_address
             or target.startswith(covering_address + "/")
             or covering_address.startswith(target + "/")
+        ):
+            out.append(op)
+            continue
+        aligned = _align_address_to_kind(covering_address, _address_top_kind(target))
+        if aligned and (
+            target == aligned
+            or target.startswith(aligned + "/")
+            or aligned.startswith(target + "/")
         ):
             out.append(op)
     return out
@@ -612,6 +680,36 @@ def _op_variant_kind(op: Any) -> str:
     return "permanent"
 
 
+def _sidecar_base_body(result: Any) -> IRNode:
+    """Return the unamended-statute root IRNode from an adapter replay state.
+
+    Finnish replay states expose ``result.ctx.base_ir`` (already an IRNode body).
+    Generic IRStatute-shaped states (e.g. UK) expose ``result.base_ir`` with a
+    ``body`` + ``supplements`` split; both are wrapped under one addressable root
+    so the browser-side L2 folder sees the same covering surface the certified
+    transitions tile.
+    """
+    ctx = getattr(result, "ctx", None)
+    if ctx is not None and getattr(ctx, "base_ir", None) is not None:
+        return ctx.base_ir
+    base_ir = getattr(result, "base_ir", None)
+    if base_ir is not None and getattr(base_ir, "body", None) is not None:
+        children = (*base_ir.body.children, *getattr(base_ir, "supplements", ()))
+        return IRNode(kind=base_ir.body.kind, label=None, text="", children=tuple(children))
+    raise AttributeError(
+        "replay state exposes neither ctx.base_ir nor an IRStatute-shaped base_ir "
+        "for the L2 sidecar base body"
+    )
+
+
+def _sidecar_migration_events(result: Any) -> List[Any]:
+    """Return the replay state's migration events, or [] when none are tracked."""
+    products = getattr(result, "products", None)
+    if products is None:
+        return []
+    return list(getattr(products, "migration_events", ()) or [])
+
+
 def emit_l2_sidecar(
     bundle: ReplayBundle,
     checkpoints: List[CheckpointRow],
@@ -628,7 +726,7 @@ def emit_l2_sidecar(
     """
     result = bundle.result
     export_profile = profile or _default_export_profile()
-    base_body = result.ctx.base_ir  # IRNode body of the unamended statute
+    base_body = _sidecar_base_body(result)  # IRNode root of the unamended statute
     ops_json: List[Dict[str, Any]] = []
     for op in bundle.lo_ops:
         src = op.source
@@ -668,7 +766,7 @@ def emit_l2_sidecar(
             "effective": me.effective or "",
             "source_statute": export_profile.canonical_statute_id(me.source_statute) if me.source_statute else "",
         }
-        for me in bundle.result.products.migration_events
+        for me in _sidecar_migration_events(result)
     ]
     return {
         "statute_id": bundle.statute_id,
@@ -1187,6 +1285,14 @@ def export_transition_graph(
         display_rows: List[DisplayNodeRow] = []
         transition_rows: List[TransitionRow] = []
         segments_by_date: dict[str, list[RenderedTextSegment]] = {}
+        # Covering addresses are meant to be unique within a date's covering set.
+        # When two distinct nodes tile to the same address (a structural pathology
+        # seen in some UK acts, e.g. a duplicated subsection number), the verifiable
+        # surfaces — transitions, active_at, and the browser fold — all dedupe by
+        # address (last-in-document-order wins). The certified checkpoint MUST hash
+        # that same deduped set or it could never match a fold; we collect the
+        # colliding addresses so the silent dedup is surfaced, never hidden.
+        address_collisions: set[str] = set()
         seq = 0
 
         for date in bundle.change_dates:
@@ -1199,16 +1305,20 @@ def export_transition_graph(
             )
             cur_state = {}
             cur_order = []
-            ordered_unit_hashes: List[Tuple[str, str]] = []
             for addr, node in units:
                 h = _store_blob(node)
+                if addr in cur_state:
+                    address_collisions.add(addr)
                 cur_state[addr] = h
                 cur_order.append(addr)
-                ordered_unit_hashes.append((addr, h))
                 active_rows.append(ActiveAtRow(date=date, address=addr, content_hash=h))
 
-            # certified checkpoint hash over the document-ordered covering set
-            tree_hash = reproducible_tree_hash(ordered_unit_hashes)
+            # Certified checkpoint hash over the deduped covering set (keyed by
+            # address), matching exactly what the transition stream reconstructs
+            # and the browser folds — reproducible_tree_hash sorts by address, so
+            # document order is irrelevant to the hash and preserved separately
+            # via active_at rowid order.
+            tree_hash = reproducible_tree_hash(list(cur_state.items()))
             checkpoint_rows.append(
                 CheckpointRow(
                     date=date,
@@ -1292,6 +1402,18 @@ def export_transition_graph(
                 )
 
             prev_state = cur_state
+
+        if address_collisions and not quiet:
+            sample = ", ".join(sorted(address_collisions)[:8])
+            print(
+                f"[export] WARNING: {len(address_collisions)} covering address(es) "
+                f"collided (two distinct nodes tiled to the same address); the "
+                f"certified checkpoint and all verifiable surfaces keep the "
+                f"last-in-document-order node and drop the earlier one. This is a "
+                f"structural pathology in the materialized tree, not a clean "
+                f"covering. Colliding: {sample}",
+                flush=True,
+            )
 
         # --- source_artifacts: statute + every amendment referenced by ops ---
         corpus = export_profile.corpus()

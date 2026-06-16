@@ -81,19 +81,26 @@ const JURIS = {
     },
   },
   uk: {
+    // UK structural labels often already embed the kind word (e.g. a part node
+    // is labelled "Part I", a schedule "SCHEDULE 2"); strip a redundant leading
+    // kind word so we render "Part I", not "Part Part I".
     lang: 'en',
     kindLabel(kind, num, lbl, ordinal) {
       if (num) return num;
-      if (kind === 'part') return lbl ? `Part ${lbl}` : 'Part';
-      if (kind === 'chapter') return lbl ? `Chapter ${lbl}` : 'Chapter';
+      const bare = (s, word) => String(s || '').replace(new RegExp('^' + word + '\\s+', 'i'), '');
+      if (kind === 'part') { const n = bare(lbl, 'Part'); return n ? `Part ${n}` : 'Part'; }
+      if (kind === 'chapter') { const n = bare(lbl, 'Chapter'); return n ? `Chapter ${n}` : 'Chapter'; }
+      if (kind === 'schedule') { const n = bare(lbl, 'Schedule'); return n ? `Schedule ${n}` : 'Schedule'; }
       if (kind === 'section') return lbl ? `${lbl}` : 'Section';
       if (kind === 'subsection') return `(${lbl || ordinal})`;
       if (kind === 'paragraph' || kind === 'subparagraph') return `(${lbl || ordinal})`;
       return lbl || kind;
     },
     addrSeg(kind, n) {
-      if (kind === 'part') return `Part ${n}`;
-      if (kind === 'chapter') return `Chapter ${n}`;
+      const bare = (s, word) => String(s || '').replace(new RegExp('^' + word + '\\s+', 'i'), '');
+      if (kind === 'part') return `Part ${bare(n, 'Part')}`;
+      if (kind === 'chapter') return `Chapter ${bare(n, 'Chapter')}`;
+      if (kind === 'schedule') return `Schedule ${bare(n, 'Schedule')}`;
       if (kind === 'section') return `s ${n}`;
       if (kind === 'subsection') return `(${n})`;
       if (kind === 'paragraph') return `(${n})`;
@@ -808,8 +815,25 @@ let manifest = [];
 
 applyLocale('en', 'generic'); // boot locale before DB/manifest jurisdiction metadata loads
 
-fetch('statute-timeline-manifest.json').then(r => r.json()).then(m => {
+// The statute list defaults to statute-timeline-manifest.json; a different
+// manifest (e.g. a UK sample set) can be selected with ?manifest=<file.json>.
+// Only a bare same-directory .json filename is accepted (no path traversal).
+const MANIFEST_URL = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get('manifest');
+    if (q && /^[A-Za-z0-9._-]+\.json$/.test(q)) return q;
+  } catch (e) { /* ignore malformed query */ }
+  return 'statute-timeline-manifest.json';
+})();
+
+fetch(MANIFEST_URL).then(r => r.json()).then(m => {
   manifest = m;
+  // Default the UI language to the manifest's own language (first entry's lang)
+  // so each sample boots in its own language — FI manifest → fi, UK manifest →
+  // en — before/while the first statute's DB loads. A manual toggle still wins
+  // (uiLangOverride), and a manifest with no lang falls back to the en default.
+  const def = (manifest && manifest[0]) || {};
+  applyLocale(def.lang || 'en', def.jurisdiction || 'generic');
   rebuildStatuteOptions();
   const initial = parseHash();
   const wanted = initial && manifest.find(s => s.statute_id === initial.statute) ? initial.statute

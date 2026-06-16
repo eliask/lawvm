@@ -1,0 +1,42 @@
+[
+  {
+    "statute_id": "ukpga/1988/52",
+    "title": "Road Traffic Act 1988",
+    "db": "data/ukpga-1988-52.db",
+    "change_count": 102,
+    "lang": "en",
+    "jurisdiction": "uk"
+  },
+  {
+    "statute_id": "ukpga/1997/50",
+    "title": "Police Act 1997",
+    "db": "data/ukpga-1997-50.db",
+    "change_count": 96,
+    "lang": "en",
+    "jurisdiction": "uk"
+  },
+  {
+    "statute_id": "ukpga/2002/32",
+    "title": "Education Act 2002",
+    "db": "data/ukpga-2002-32.db",
+    "change_count": 83,
+    "lang": "en",
+    "jurisdiction": "uk"
+  },
+  {
+    "statute_id": "ukpga/1991/22",
+    "title": "New Roads and Street Works Act 1991",
+    "db": "data/ukpga-1991-22.db",
+    "change_count": 28,
+    "lang": "en",
+    "jurisdiction": "uk"
+  },
+  {
+    "statute_id": "ukpga/1990/16",
+    "title": "Food Safety Act 1990",
+    "db": "data/ukpga-1990-16.db",
+    "change_count": 22,
+    "lang": "en",
+    "jurisdiction": "uk"
+  }
+]
