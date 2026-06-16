@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
@@ -22,6 +22,9 @@ from lawvm.finland.ops import ResolvedOp
 from lawvm.finland.replay_history_emission import emit_granular_subsection_timeline_ops
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
+
+if TYPE_CHECKING:
+    from lawvm.core.compile_result import SourcePathology
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,7 @@ class ApplyGroupSnapshotSinks:
     """Mutable output channels for apply-group snapshot emission."""
 
     lo_ops_out: Optional[list[LegalOperation]] = None
+    source_pathologies_out: Optional[list["SourcePathology"]] = None
 
 
 def emit_apply_group_snapshot_if_allowed(
@@ -54,6 +58,7 @@ def emit_apply_group_snapshot_if_allowed(
     state = request.state
     group = request.group
     lo_ops_out = sinks.lo_ops_out if sinks is not None else None
+    source_pathologies_out = sinks.source_pathologies_out if sinks is not None else None
     amendment_id = request.amendment_id
     source_title = request.source_title
     amendment_issue_date = request.amendment_issue_date
@@ -95,6 +100,7 @@ def emit_apply_group_snapshot_if_allowed(
             path_hint=group.group_path_hint,
             migration_ledger=migration_ledger,
             standalone_section_targets=standalone_section_targets,
+            source_pathologies_out=source_pathologies_out,
         )
 
 

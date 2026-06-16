@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional, cast
 
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import _kind_str, irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
@@ -55,6 +56,14 @@ class SectionSnapshotIdentity:
     section: str
 
 
+_SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
+    r"\b(?P<section>\d+[a-z]?)\s*§:n\b.{0,240}?\b"
+    r"(?:moment[a-zåäö]{0,20}|koht[a-zåäö]{0,20}|alakoht[a-zåäö]{0,20})\b",
+    re.IGNORECASE,
+    classifier_id="fi.section_source_descendant_scope",
+)
+
+
 def _normalize_snapshot_item_label(label: str | None) -> str:
     """Normalize FI item labels without Roman-to-Arabic conversion.
 
@@ -63,6 +72,19 @@ def _normalize_snapshot_item_label(label: str | None) -> str:
     and silently retarget ``i`` to ``1``.
     """
     return normalized_label_key(label or "")
+
+
+def _section_source_names_descendant_scope(rop: "ResolvedOp", target_norm: str) -> bool:
+    """Return whether the parsed source formula names descendant scope below a section."""
+    source = rop.resolved_op_source
+    raw_text = source.raw_text if source is not None else ""
+    if not raw_text or "§:n" not in raw_text:
+        return False
+    target_label = _norm_num_token(target_norm)
+    for match in _SECTION_SOURCE_DESCENDANT_SCOPE_RE.finditer(raw_text):
+        if _norm_num_token(match.group("section")) == target_label:
+            return True
+    return False
 
 
 def _legacy_target_section_for_scope(scope: "ResolvedTargetScopeView", unit_kind: TargetUnitKind) -> str:
@@ -878,6 +900,7 @@ def _emit_section_snapshot(
         if target_unit_kind != "section" or _whole_target_repeal():
             return None
         candidates: list[IRNode] = []
+        descendant_scoped_candidates = 0
         for rop in group_rops:
             if not rop.is_replace_action or not rop.targets_whole_unit("section"):
                 continue
@@ -891,7 +914,27 @@ def _emit_section_snapshot(
                 continue
             if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
                 continue
+            if _section_source_names_descendant_scope(rop, normalized_target_norm):
+                descendant_scoped_candidates += 1
             candidates.append(_stamp_exact_section_snapshot_payload(source_payload))
+        if len(candidates) == 1 and descendant_scoped_candidates == 1:
+            if source_pathologies_out is not None:
+                live_child_count = 0
+                live_path = state.find_section_path(normalized_target_norm, target_chapter, target_part)
+                live_node = _tops.resolve(state.ir, live_path) if live_path is not None else None
+                if live_node is not None:
+                    live_child_count = len(live_node.children)
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=op_source.statute_id,
+                        target_unit_kind="section",
+                        target_label=f"{target_norm} §",
+                        recovery_kind="section_snapshot_preserve_fold_for_descendant_scoped_source",
+                        live_sibling_count=live_child_count,
+                        payload_sibling_count=len(candidates[0].children),
+                    )
+                )
+            return None
         return candidates[0] if len(candidates) == 1 else None
 
     def _complete_whole_chapter_source_child_labels() -> Optional[set[str]]:

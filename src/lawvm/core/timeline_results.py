@@ -93,6 +93,7 @@ TimelineIssueKind = Literal[
     "duplicate_normalized_sibling_override",
     "duplicate_base_address_descendant_overlay",
     "duplicate_selected_address_descendant_overlay",
+    "duplicate_selected_child_replaced_by_exact_child_overlay",
     "duplicate_same_label_child_valid_temporal_overlay",
     "duplicate_same_label_child_migration_collision",
     "duplicate_same_label_child_carried_continuity",

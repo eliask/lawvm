@@ -96,6 +96,14 @@ def _node_has_duplicate_raw_children(node: IRNode) -> bool:
     return False
 
 
+def _node_is_complete_snapshot_owner(node: IRNode) -> bool:
+    """Return whether a selected node proves ownership of its full child surface."""
+    return (
+        node.attrs.get("lawvm_tail_policy") == "replace_if_target_scope_requires"
+        and node.attrs.get("lawvm_payload_completeness_kind") == "complete"
+    )
+
+
 def _record_duplicate_child_classifications(
     issue_sink: Any,
     *,
@@ -264,6 +272,7 @@ def apply_overlays(
 
     new_children: list[IRNode] = []
     seen_overrides: set[tuple[str, str]] = set()
+    duplicate_replaced_keys: set[tuple[str, str]] = set()
     dup_norm_keys: set[tuple[str, str]] = set()
     duplicate_raw_counts: dict[tuple[str, str], int] = {}
     for child in content.children:
@@ -300,6 +309,37 @@ def apply_overlays(
         if duplicate_raw_counts.get(exact_key, 0) > 1 and (
             key in child_overrides or exact_key in child_overrides
         ):
+            override_key = key if key in child_overrides else exact_key
+            override = child_overrides[override_key]
+            if override is not None and _node_is_complete_snapshot_owner(override):
+                seen_overrides.add(key)
+                seen_overrides.add(exact_key)
+                if override_key in duplicate_replaced_keys:
+                    continue
+                duplicate_replaced_keys.add(override_key)
+                record_issue(
+                    issue_sink,
+                    kind="duplicate_selected_child_replaced_by_exact_child_overlay",
+                    message=(
+                        "apply_overlays: replaced duplicate selected children "
+                        f"at {child_addr} with a complete direct child overlay"
+                    ),
+                    address=child_addr,
+                    emit_warnings=emit_warnings,
+                )
+                new_children.append(
+                    apply_overlays(
+                        override,
+                        child_addr,
+                        active,
+                        label_norm,
+                        active_prefixes,
+                        issue_sink=issue_sink,
+                        emit_warnings=emit_warnings,
+                        record_issue=record_issue,
+                    )
+                )
+                continue
             seen_overrides.add(key)
             seen_overrides.add(exact_key)
             record_issue(

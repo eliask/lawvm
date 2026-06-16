@@ -2510,6 +2510,71 @@ def test_materialize_body_preserves_descendant_override_under_inserted_root() ->
     assert subsection.text == "new subsection 1"
 
 
+def test_materialize_body_child_replacement_overrides_duplicate_carried_snapshot_children() -> None:
+    base = IRStatute(
+        statute_id="test/materialize-duplicate-carried-child-replacement",
+        title="Duplicate carried child replacement",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="6",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="85", text="base section 85"),),
+                ),
+            ),
+        ),
+    )
+    chapter_addr = LegalAddress(path=(("chapter", "6"),))
+    section_addr = LegalAddress(path=(("chapter", "6"), ("section", "85")))
+    active: dict[LegalAddress, IRNode | None] = {
+        chapter_addr: IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="6",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                IRNode(kind=IRNodeKind.SECTION, label="85", text="older carried section 85"),
+                IRNode(kind=IRNodeKind.SECTION, label="85", text="duplicate carried section 85"),
+            ),
+        ),
+        section_addr: IRNode(
+            kind=IRNodeKind.SECTION,
+            label="85",
+            text="new exact section 85",
+            attrs={
+                "lawvm_tail_policy": "replace_if_target_scope_requires",
+                "lawvm_payload_completeness_kind": "complete",
+            },
+        ),
+    }
+    issues: list[TimelineIssue] = []
+
+    def _record_issue(sink: list[TimelineIssue] | None, **kwargs: object) -> None:
+        if sink is None:
+            return
+        kwargs.pop("emit_warnings", None)
+        sink.append(TimelineIssue(**cast(Any, kwargs)))
+
+    body = materialize_body(
+        active,
+        {},
+        base,
+        issue_sink=issues,
+        emit_warnings=False,
+        record_issue=_record_issue,
+    )
+
+    chapter = _find_node_by_label(body, IRNodeKind.CHAPTER, "6")
+    assert chapter is not None
+    sections = [child for child in chapter.children if child.kind is IRNodeKind.SECTION]
+    assert [(section.label, section.text) for section in sections] == [("85", "new exact section 85")]
+    assert any(
+        issue.kind == "duplicate_selected_child_replaced_by_exact_child_overlay"
+        and issue.address == section_addr
+        for issue in issues
+    )
+
+
 def test_materialize_body_preserves_duplicate_base_siblings_with_descendant_owned_overlay() -> None:
     base = IRStatute(
         statute_id="test/materialize-duplicate-base-siblings",

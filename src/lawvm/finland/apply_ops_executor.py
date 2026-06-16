@@ -214,7 +214,10 @@ def _apply_ops_to_tree_typed(
                     migration_ledger=migration_ledger,
                     standalone_section_targets=_standalone_section_targets,
                 ),
-                _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+                _ApplyGroupSnapshotSinks(
+                    lo_ops_out=lo_ops_out,
+                    source_pathologies_out=source_pathologies_out,
+                ),
             )
             grp.start_group(group_key)
         # Apply. One typed disposition per op records whether it was applied,
@@ -278,7 +281,10 @@ def _apply_ops_to_tree_typed(
             migration_ledger=migration_ledger,
             standalone_section_targets=_standalone_section_targets,
         ),
-        _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+        _ApplyGroupSnapshotSinks(
+            lo_ops_out=lo_ops_out,
+            source_pathologies_out=source_pathologies_out,
+        ),
     )
 
     supplemental_result = run_apply_supplemental_recovery(

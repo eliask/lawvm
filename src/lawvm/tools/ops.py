@@ -216,7 +216,7 @@ def _ops_sync(
         src = op.get("source_statute", "?")
         action = op.get("action", "?").upper()
         addr = _fmt_compiled_target(op)
-        title = op.get("source_title", "")[:50]
+        title = str(op.get("source_title") or "")[:50]
         seq = op.get("sequence", "?")
 
         if src != current_source:

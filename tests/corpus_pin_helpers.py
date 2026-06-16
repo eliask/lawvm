@@ -117,6 +117,7 @@ ORACLE_VERSIONS: dict[str, str] = {
     # orphaned UUSI body marker fix: 2022/958 multi-item lisätään with qualifier removal
     "1996/1260":"20260186",
     # Pins added to keep older Finland corpus regression tests off moving latest-oracle selection.
+    "1868/31-000": "20030692",
     "1901/15-001": "19940390",
     "1920/26": "20230773",
     "1922/312": "19930869",
@@ -144,6 +145,7 @@ ORACLE_VERSIONS: dict[str, str] = {
     "1987/1203": "20251258",
     "1987/322": "20250583",
     "1987/693": "20251439",
+    "1988/1347": "20030252",
     "1990/1341": "20250378",
     "1991/1144": "20200911",
     "1992/110": "20221130",

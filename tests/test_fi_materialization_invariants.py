@@ -270,6 +270,62 @@ class TestNoOmissionsInPIT:
 class TestNoDuplicatesInPIT:
     """Sparse merge duplicate children must be deduped before materialization."""
 
+    def test_1868_31_section_85_complete_child_overlay_replaces_duplicate_snapshot(self) -> None:
+        """1993/1027 complete §85 must override duplicate carried chapter snapshot children.
+
+        1990/820 leaves duplicate chapter:6/section:85 children in a selected
+        chapter snapshot.  A later complete 1993/1027 replacement owns the exact
+        child address; PIT materialization must render that complete child once,
+        not preserve the stale duplicate selected children.
+        """
+        ir = _replay("1868/31-000")
+        chapter_6 = next(
+            child
+            for child in ir.children
+            if child.kind is IRNodeKind.CHAPTER and child.label == "6"
+        )
+        sections_85 = [
+            child
+            for child in chapter_6.children
+            if child.kind is IRNodeKind.SECTION and child.label == "85"
+        ]
+        assert len(sections_85) == 1
+        section_text = " ".join(irnode_to_text(sections_85[0]).split())
+        assert section_text == (
+            "85 § Velallinen vastaa ennen konkurssin alkua syntyneestä saatavasta "
+            "myös sillä omaisuudella, jonka velallinen vastaisuudessa saa, jollei "
+            "velkojan kanssa ole toisin sovittu."
+        )
+
+    def test_1988_1347_sparse_descendant_scoped_section_snapshot_keeps_fold(self) -> None:
+        """2003/252 descendant-scoped §3 source shell must not truncate folded §3.
+
+        The source formula names selected chemical and biological ``kohta`` rows
+        under §3.  Its XML section wrapper is sparse and contains omission
+        markers, so timeline export must preserve the replay fold rather than
+        promote that wrapper as an exact complete section owner.
+        """
+        source_pathologies: list[object] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay("1988/1347", quiet=True, source_pathologies_out=source_pathologies),
+        )
+        section_3 = next(
+            child
+            for child in replay.materialized_state.ir.children
+            if child.kind is IRNodeKind.SECTION and child.label == "3"
+        )
+        section_text = " ".join(irnode_to_text(section_3).split())
+        assert len(section_text) > 10_000
+        assert "Alifaattiset, aromaattiset ja alisykliset hiilivedyt" in section_text
+        assert "Tuberkuloosibasilli" in section_text
+        assert any(
+            getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+            and getattr(pathology, "detail", {}).get("recovery_kind")
+            == "section_snapshot_preserve_fold_for_descendant_scoped_source"
+            for pathology in source_pathologies
+        )
+
     def test_2014_917_section_265_no_duplicate_subsection(self) -> None:
         """Tietoyhteiskuntakaari § 265 had duplicate subsection:1."""
         ir = _replay("2014/917")
