@@ -72,3 +72,140 @@
   correction_type: body_text
   notes: "SD body for §4 mom 1 truncated (1 sentence); sd-cons fin@20180541 has full 4-sentence text. Finlex publication error."
   verified: "2026-04-09"
+
+# ---------------------------------------------------------------------------
+# LawVM-editorial source-defect corrections (no official corrigendum exists).
+#
+# These amendment johtolauses are MALFORMED in the Finlex source XML: a token is
+# glued where the legal grammar requires a separating space. The new johtolause
+# grammar parser correctly DECLINES the malformed shape (it is genuinely
+# ill-formed input, not an unhandled-but-valid shape). No official Finlex
+# corrigendum (oikaisu) was harvested for any of these — verified absent from
+# corrigendum_official_fi.jsonl. Each correction below is the MINIMAL edit that
+# unglues the token, is NON-DESTRUCTIVE (the original source XML is untouched on
+# disk; this patch is applied only in the compile path, before PEG parsing, so
+# the official_consolidation snapshot is not contaminated), carries the offending
+# source text verbatim as the record, and was verified before==decline /
+# after==parse against grammar.parser.parse through patch_source_xml.
+#
+# Family A — "kumotun NN§:n tilalle uusi näin kuuluva NN§:" glued-§ shape.
+# The pykälä symbol § is glued to the section number with no space ("18§"); the
+# canonical drafting form is "18 §". Each johtolause has two occurrences (the
+# "§:n" reference and the trailing "§:" anchor), both corrected.
+# Rationale tag: no_official_corrigendum_found.
+
+# 383/1988 (Asetus ulosottoasetuksen muuttamisesta) — "18§" → "18 §"
+- amendment_id: "383/1988"
+  wrong_text: "kumotun 18§:n"
+  correct_text: "kumotun 18 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '18§' → '18 §' in the section reference; offending source text 'kumotun 18§:n tilalle'. New grammar parser declines the glued shape (out-of-scope insertion shape); minimal unglue restores parse."
+  verified: "2026-06-16"
+
+- amendment_id: "383/1988"
+  wrong_text: "kuuluva 18§:"
+  correct_text: "kuuluva 18 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '18§' → '18 §' in the trailing insertion anchor 'uusi näin kuuluva 18§:'."
+  verified: "2026-06-16"
+
+# 990/1988 (Asetus lapsen hoitotuesta annetun asetuksen muuttamisesta) — "5§" → "5 §"
+- amendment_id: "990/1988"
+  wrong_text: "kumotun 5§:n"
+  correct_text: "kumotun 5 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '5§' → '5 §' in the section reference 'kumotun 5§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "990/1988"
+  wrong_text: "kuuluva 5§:"
+  correct_text: "kuuluva 5 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '5§' → '5 §' in the trailing insertion anchor 'uusi näin kuuluva 5§:'."
+  verified: "2026-06-16"
+
+# 1027/1989 (Laki tapaturmavirastosta annetun lain muuttamisesta) — "2§" → "2 §"
+- amendment_id: "1027/1989"
+  wrong_text: "kumotun 2§:n"
+  correct_text: "kumotun 2 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the section reference 'kumotun 2§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "1027/1989"
+  wrong_text: "kuuluva 2§:"
+  correct_text: "kuuluva 2 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the trailing insertion anchor 'uusi näin kuuluva 2§:'."
+  verified: "2026-06-16"
+
+# 23/1989 (Laki valtion maatalouskemian laitoksesta annetun lain muuttamisesta) — "2§" → "2 §"
+- amendment_id: "23/1989"
+  wrong_text: "kumotun 2§:n"
+  correct_text: "kumotun 2 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the section reference 'kumotun 2§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "23/1989"
+  wrong_text: "kuuluva 2§:"
+  correct_text: "kuuluva 2 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the trailing insertion anchor 'uusi näin kuuluva 2§:'."
+  verified: "2026-06-16"
+
+# 24/1989 (Laki valtion siementarkastuslaitoksesta annetun lain muuttamisesta) — "2§" → "2 §"
+- amendment_id: "24/1989"
+  wrong_text: "kumotun 2§:n"
+  correct_text: "kumotun 2 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the section reference 'kumotun 2§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "24/1989"
+  wrong_text: "kuuluva 2§:"
+  correct_text: "kuuluva 2 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the trailing insertion anchor 'uusi näin kuuluva 2§:'."
+  verified: "2026-06-16"
+
+# 25/1989 (Laki valtion maitovalmisteiden tarkastuslaitoksesta annetun lain muuttamisesta) — "2§" → "2 §"
+- amendment_id: "25/1989"
+  wrong_text: "kumotun 2§:n"
+  correct_text: "kumotun 2 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the section reference 'kumotun 2§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "25/1989"
+  wrong_text: "kuuluva 2§:"
+  correct_text: "kuuluva 2 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '2§' → '2 §' in the trailing insertion anchor 'uusi näin kuuluva 2§:'."
+  verified: "2026-06-16"
+
+# 703/1989 (Asetus ammatinvalinnanohjauksesta annetun asetuksen muuttamisesta) — "20§" → "20 §"
+- amendment_id: "703/1989"
+  wrong_text: "kumotun 20§:n"
+  correct_text: "kumotun 20 §:n"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '20§' → '20 §' in the section reference 'kumotun 20§:n tilalle'."
+  verified: "2026-06-16"
+
+- amendment_id: "703/1989"
+  wrong_text: "kuuluva 20§:"
+  correct_text: "kuuluva 20 §:"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token '20§' → '20 §' in the trailing insertion anchor 'uusi näin kuuluva 20§:'."
+  verified: "2026-06-16"
+
+# Family B — glued period inside an insertion target.
+# 268/1978 (Asetus rakennusasetuksen muuttamisesta) — "uusi.3 momentti" → "uusi 3 momentti"
+# The word "uusi" is glued to the momentti number by a stray period ("uusi.3"),
+# breaking the "78 §:ään uusi N momentti" insertion shape.
+- amendment_id: "268/1978"
+  wrong_text: "uusi.3 momentti"
+  correct_text: "uusi 3 momentti"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued period 'uusi.3' → 'uusi 3' in '78 §:ään uusi.3 momentti'. New grammar parser declines (undecodable insertion continuation); minimal unglue restores parse."
+  verified: "2026-06-16"
