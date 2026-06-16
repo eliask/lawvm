@@ -169,15 +169,43 @@ FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0: frozenset[str] = frozens
 
 
 # ---------------------------------------------------------------------------
+# Drop recovery (class H_both_parser_drop_recovery). These clauses were
+# previously dropped by BOTH parsers (a shared silent-drop): NEW and OLD agreed
+# on a lossy parse (typically a bare-chapter collapse or a dropped target behind
+# an authority/heading anchor), so the clause sat in ``grammar_owned_0delta``
+# (or in a registered decline). A targeted recognizer recovery now makes NEW
+# capture the previously-dropped targets, so NEW diverges from the lossy OLD
+# parse — NEW is strictly better (the recovered targets are named in the source
+# and the totality predicate's drop flag clears). The clause is therefore an
+# adjudicated correction and lands in ``genuine_delta_adjudicated_fix``, not in
+# ``unclassified``. Evidence per sid: the recovery lane's regression test pins
+# the dropped->recovered targets and the totality flag delta.
+# ---------------------------------------------------------------------------
+FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0: frozenset[str] = frozenset(
+    {
+        # nimike chapter-heading recovery (`N luvun nimike` consumed as HEADING facet)
+        "1937/249", "1948/626", "1958/150", "1960/362", "1969/323", "2004/1410",
+        # labelled-subheading interspersed chapter list (`N luvun C väliotsikko, M-P §, ...`)
+        "2003/1278", "2013/798", "2013/799", "2014/415",
+        # bare-statute-name targets behind a leading `nojalla` authority basis
+        "1957/230",  # legacy grabbed authority 99 §, dropped real 80/81 §
+        "1987/1046",  # legacy grabbed authority 14 §, dropped real insert 4 a §
+    }
+)
+
+
+# ---------------------------------------------------------------------------
 # Pinned baselines. A human bumps these deliberately when the split legitimately
 # changes; the CI test fails on any un-bumped drift in the wrong direction.
 # Measured live on the full canonical corpus at base 8aa37aee.
 # ---------------------------------------------------------------------------
 #: Floor on owned-and-byte-identical clauses. Ownership regression fails CI if
-#: the live count drops below this. Ratcheted up as ownership grows: the
-#: corrigendum authorialNote strip + the E_lukuun_tilalle parity recovery raised
-#: the live count from 32922 to 32974.
-FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32974
+#: the live count drops below this. Moves with ownership: the corrigendum
+#: authorialNote strip + E_lukuun_tilalle parity recovery raised it to 32974;
+#: the both-parser drop-recovery round then moved 10 clauses out of byte-identical
+#: ownership into adjudicated drop-recovery (NEW now better than the lossy OLD),
+#: net landing at 32966.
+FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32966
 
 #: Ceiling on un-adjudicated owned genuine deltas. A NEW parity miss (an owned
 #: clause that diverges from the legacy parser and is not adjudicated) pushes
@@ -309,7 +337,11 @@ def census_accounting(
             # produce a comparable model), not a clean fallback.
             shape = f"<crash:{type(exc).__name__}>"
             delta_shape_counts[shape] += 1
-            if sid in adjudicated_fixes:
+            if (
+                sid in adjudicated_fixes
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
+            ):
                 counts["genuine_delta_adjudicated_fix"] += 1
             else:
                 counts["genuine_delta_unclassified"] += 1
@@ -323,7 +355,11 @@ def census_accounting(
         else:
             shape = _generalize_delta_path(report.deltas[0].split(":", 1)[0])
             delta_shape_counts[shape] += 1
-            if sid in adjudicated_fixes or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0:
+            if (
+                sid in adjudicated_fixes
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
+            ):
                 counts["genuine_delta_adjudicated_fix"] += 1
             else:
                 counts["genuine_delta_unclassified"] += 1

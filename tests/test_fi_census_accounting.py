@@ -32,6 +32,7 @@ import pytest
 from lawvm.finland.johtolause.census_accounting import (
     CENSUS_ACCOUNTING_BUCKETS,
     FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
+    FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE,
     FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
     FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR,
@@ -68,6 +69,16 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # 2002/723 is witness-span-normalized, NOT a parser-correction.
     assert FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0 == {"2002/723"}
     assert "2002/723" not in FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
+    # The both-parser drop-recovery round added 12 NEW-better recoveries (6 nimike
+    # + 4 labelled-subheading + 2 nojalla-authority), a class of its own.
+    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0) == 12
+    # The three adjudication sets are mutually disjoint (no sid double-counted).
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
+        FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
+    )
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
+        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+    )
 
 
 def test_baselines_are_sane() -> None:
@@ -147,15 +158,20 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
 def test_genuine_delta_adjudicated_fix_count(_result) -> None:
-    """The 34 adjudicated genuine deltas land in the adjudicated bucket: 33
-    parser corrections + 1 witness-span normalization (2002/723)."""
-    expected = len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0) + len(
-        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+    """The adjudicated bucket holds the corrections + witness-span + drop-recovery
+    sets that still diverge. Live = 45: 32 of the 33 parser corrections (2002/375
+    converged to byte-identical via the appendix recovery's OLD-side fix, so it no
+    longer diverges) + 1 witness-span (2002/723) + 12 both-parser drop recoveries.
+    """
+    set_total = (
+        len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0)
+        + len(FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0)
+        + len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0)
     )
-    assert expected == 34
-    assert _result.buckets["genuine_delta_adjudicated_fix"] == expected, (
-        "genuine_delta_adjudicated_fix should equal the 33 adjudicated "
-        "corrections + 1 witness-span normalization (2002/723). Got "
+    assert set_total == 46  # 33 + 1 + 12
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == 45, (
+        "genuine_delta_adjudicated_fix should be 45 (set total 46 minus 2002/375, "
+        "which converged to byte-identical). Got "
         f"{_result.buckets['genuine_delta_adjudicated_fix']}."
     )
 

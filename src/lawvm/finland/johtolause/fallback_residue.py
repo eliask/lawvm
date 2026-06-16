@@ -149,7 +149,10 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
             "record as dropped-tail; recovery requires the continuation recognizer "
             "to consume the tail natively"
         ),
-        baseline_count=49,
+        # 49 -> 50: the both-parser drop-recovery round shifted one clause's
+        # decline reason into this class (total registered declines still fell
+        # 907 -> 904; benign redistribution).
+        baseline_count=50,
     ),
     FallbackResidueClass(
         class_id="single_verb_bare_number_insert",
