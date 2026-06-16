@@ -172,6 +172,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_peg_curated.py",
         "test_fi_peg_rule_registry.py",
         "test_fi_qualified_jolloin_renumber.py",
+        "test_fi_totality_predicate.py",
     ),
     "finland_replay_compile": (
         "test_fi_compile.py",

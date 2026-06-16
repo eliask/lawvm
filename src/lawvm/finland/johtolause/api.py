@@ -378,49 +378,38 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # without producing a node (the skip-to-next-verb loop, or a partially
     # matched verb group that fails and continues), so consumed_count reaches the
     # end and the check above never fires even though a real target was dropped.
-    # The token-coverage audit detects those by NODE coverage instead, and emits
-    # one self-evidencing residual per interior/trailing real-drop span (a span
-    # naming a section LABEL no produced op targets).
+    # The raw-tape totality predicate detects those by NODE coverage instead, and
+    # emits one self-evidencing residual per uncovered, non-benign operative
+    # label (a label naming a structural unit no produced op targets).
+    #
+    # WARN-ONLY: a flag appends a `silent_drop` residual; it never raises and never
+    # breaks a parse.  The predicate runs on the RAW token tape (so an annotation
+    # that hides a real operative span cannot mask the drop) and projects produced
+    # op-coverage back to raw coordinates -- it does not consult the filtered-stream
+    # classifier.
     #
     # This is an observability overlay, not a parse step, and it roughly doubles
-    # per-parse cost (a full coverage walk + label regex), so it is OFF by
-    # default — the replay hot path calls parse_clause thousands of times.  Turn
-    # it on with LAWVM_PARSE_TOTALITY=1 for parse-bench / characterization /
-    # loud-fail inspection.  Never let the audit break a parse.
+    # per-parse cost (a full second annotate+parse pass), so it is OFF by default
+    # — the replay hot path calls parse_clause thousands of times.  Turn it on with
+    # LAWVM_PARSE_TOTALITY=1 for parse-bench / characterization / loud-fail
+    # inspection.  Never let the predicate break a parse.
     if _os.environ.get("LAWVM_PARSE_TOTALITY"):
         try:
-            from lawvm.finland.johtolause.coverage_audit import (
-                classify_spans_from_parsed,
-                op_label_keys,
-            )
+            from lawvm.finland.johtolause.totality import predicate as _totality_predicate
 
-            # Unit-qualified op labels ("6§" vs "6luku") so the unit-agnostic
-            # drop predicate cannot mask a dropped "N luku" with a produced
-            # "N §"; bare numbers are included for backward-compatible matching.
-            _op_labels: set[str] = set()
-            for op in ops:
-                _op_labels |= op_label_keys(op)
-            for _cs in classify_spans_from_parsed(
-                text, tokens, original_surface_clause, _op_labels
-            ):
-                # interior/trailing = mid-stream drops; no_ops = whole-clause
-                # drop (parser produced nothing yet the clause names units).
-                if _cs.position in ("interior", "trailing", "no_ops") and _cs.tier in (
-                    "verb_no_op",
-                    "unmatched_section",
-                ):
-                    residuals.append(
-                        {
-                            "kind": "silent_drop",
-                            "tier": _cs.tier,
-                            "position": _cs.position,
-                            "unmatched_labels": list(
-                                lb for lb in _cs.labels if lb not in _op_labels
-                            ),
-                            "source_text": _cs.span.source_text,
-                            "char_span": (_cs.span.char_start, _cs.span.char_end),
-                        }
-                    )
+            _flagged, _ = _totality_predicate(text)
+            for _drop in _flagged:
+                residuals.append(
+                    {
+                        "kind": "silent_drop",
+                        "tier": _drop.reason,
+                        "position": (_drop.label.num_idx, _drop.label.end),
+                        "unmatched_labels": [
+                            f"{_drop.label.label}|{_drop.label.struct_cat}"
+                        ],
+                        "source_text": _drop.source_text,
+                    }
+                )
         except Exception:
             pass
 
