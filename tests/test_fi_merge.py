@@ -1,10 +1,13 @@
 """Unit tests for lawvm.finland.merge — IRNode-level merge functions."""
 from typing import Literal
 
+import pytest
+
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.merge import (
+    MergeContainerContext,
     _has_section_omissions_ir,
     _heading_intro_replace_preserve_items_ir,
     _merge_sparse_item_subsection_ir,
@@ -1058,6 +1061,57 @@ def test_merge_same_numbered_container_insert_fails_closed_on_duplicate_section_
     result = _merge_same_numbered_container_insert_ir(master, amend)
 
     assert result is None
+
+
+def test_merge_duplicate_section_labels_diagnostic_carries_source_op_and_classification(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The abort diagnostic must self-evidence source, op, container, label, origin."""
+    import logging
+
+    # Live container ALREADY repeats section "2" before any merge; the
+    # amendment cleanly inserts "3" and introduces no collision of its own.
+    master = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9",
+        children=(
+            _sec("1", _sub("1", _content("section 1"))),
+            _sec("2", _sub("1", _content("section 2a"))),
+            _sec("2", _sub("1", _content("section 2b"))),
+        ),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9",
+        children=(_sec("3", _sub("1", _content("section 3"))),),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="lawvm.finland.merge"):
+        result = _merge_same_numbered_container_insert_ir(
+            master,
+            amend,
+            context=MergeContainerContext(
+                source_statute="1986/309",
+                op_target="INSERT chapter:9/section:3",
+                container_label="9",
+            ),
+        )
+
+    assert result is None
+    records = [r for r in caplog.records if "MERGE_DUPLICATE_SECTION_LABELS" in r.getMessage()]
+    assert len(records) == 1
+    msg = records[0].getMessage()
+    # Source / op / container threaded through.
+    assert "source=1986/309" in msg
+    assert "op=INSERT chapter:9/section:3" in msg
+    assert "container=9" in msg
+    # The specific duplicate label and its child-vs-sibling classification.
+    assert "duplicate_label=2" in msg
+    assert "origin=preexisting_live_duplicate" in msg
+    # The pre-existing live duplication is named as the actual cause.
+    assert "live_preexisting_duplicates=['2']" in msg
+    # The amendment child itself ('3') introduced no collision.
+    assert "amend_labels=['3']" in msg
 
 
 # ---------------------------------------------------------------------------

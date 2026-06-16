@@ -61,6 +61,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class MergeContainerContext:
+    """Audit context for a same-numbered container insert-merge.
+
+    Threaded into ``_merge_same_numbered_container_insert_ir`` so the
+    ``MERGE_DUPLICATE_SECTION_LABELS`` diagnostic can name the source statute,
+    the op/target address, and the container that aborted the merge. Callers
+    that lack any field leave it empty; the diagnostic degrades gracefully but
+    always embeds the offending labels and the child-vs-sibling classification.
+    """
+
+    source_statute: str = ""
+    op_target: str = ""
+    container_label: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Typed merge operator — ReplaceMode, MergeEvent, invariant checks
 # ---------------------------------------------------------------------------
@@ -373,7 +389,15 @@ def merge_container_with_invariants(
     Wraps ``_merge_same_numbered_container_insert_ir`` with structured event
     emission and post-merge invariant validation.
     """
-    result = _merge_same_numbered_container_insert_ir(master_node, amend_node)
+    result = _merge_same_numbered_container_insert_ir(
+        master_node,
+        amend_node,
+        context=MergeContainerContext(
+            source_statute=source_statute,
+            op_target=op_id,
+            container_label=master_node.label or "",
+        ),
+    )
     if result is None:
         violation = MergeInvariantViolation(
             code="DUPLICATE_SECTION_LABELS",
@@ -1031,10 +1055,32 @@ def _merge_section_with_omission_ir(
     return _tops._with_children(amend_sec, new_children)
 
 
-def _merge_same_numbered_container_insert_ir(master_node: IRNode, amend_node: IRNode) -> Optional[IRNode]:
+def _merge_same_numbered_container_insert_ir(
+    master_node: IRNode,
+    amend_node: IRNode,
+    *,
+    context: Optional[MergeContainerContext] = None,
+) -> Optional[IRNode]:
     """IRNode version: overlay partial container onto live container."""
     # Start from master, update heading if provided
     new_children = list(master_node.children)
+    # Section labels the amendment payload itself carries, used to classify a
+    # duplicate as an amendment child vs. a pre-existing live sibling.
+    amend_section_labels: Set[str] = {
+        c.label for c in amend_node.children if c.kind is IRNodeKind.SECTION and c.label
+    }
+    master_section_labels: Set[str] = {
+        c.label for c in master_node.children if c.kind is IRNodeKind.SECTION and c.label
+    }
+    # Section labels that the live container ALREADY repeats before any merge.
+    # When the colliding label is one of these, the abort is over-eager: the
+    # amendment did not create the duplicate, it was inherited from a live
+    # container that was already malformed.
+    master_label_counts: Dict[str, int] = {}
+    for c in master_node.children:
+        if c.kind is IRNodeKind.SECTION and c.label:
+            master_label_counts[c.label] = master_label_counts.get(c.label, 0) + 1
+    master_preexisting_duplicates: Set[str] = {lbl for lbl, n in master_label_counts.items() if n > 1}
     amend_heading = next((c for c in amend_node.children if c.kind is IRNodeKind.HEADING), None)
     if amend_heading is not None:
         heading_idx = next((i for i, c in enumerate(new_children) if c.kind is IRNodeKind.HEADING), None)
@@ -1081,7 +1127,41 @@ def _merge_same_numbered_container_insert_ir(master_node: IRNode, amend_node: IR
         if child.kind is not IRNodeKind.SECTION or not child.label:
             continue
         if child.label in seen_section_labels:
-            logger.warning("MERGE_DUPLICATE_SECTION_LABELS [%s]", child.label)
+            dup_label = child.label
+            # Classify which side the colliding label came from. A label that
+            # the live container ALREADY repeated before the merge is a
+            # "preexisting_live_duplicate" abort (over-eager: the amendment did
+            # not introduce it). Otherwise distinguish an amendment-introduced
+            # label from a pre-existing single live sibling that the amendment
+            # re-supplied.
+            if dup_label in master_preexisting_duplicates:
+                origin = "preexisting_live_duplicate"
+            elif dup_label in amend_section_labels and dup_label not in master_section_labels:
+                origin = "amendment_child"
+            elif dup_label in amend_section_labels and dup_label in master_section_labels:
+                origin = "amendment_child_over_existing_sibling"
+            elif dup_label in master_section_labels and dup_label not in amend_section_labels:
+                origin = "preexisting_sibling"
+            else:
+                origin = "synthesized"
+            ctx = context or MergeContainerContext()
+            container_label = ctx.container_label or (master_node.label or "")
+            ordered_live_labels = [
+                c.label for c in master_node.children if c.kind is IRNodeKind.SECTION and c.label
+            ]
+            logger.warning(
+                "MERGE_DUPLICATE_SECTION_LABELS source=%s op=%s container=%s "
+                "duplicate_label=%s origin=%s amend_labels=%s live_labels=%s "
+                "live_preexisting_duplicates=%s",
+                ctx.source_statute or "?",
+                ctx.op_target or "?",
+                container_label or "?",
+                dup_label,
+                origin,
+                sorted(amend_section_labels),
+                ordered_live_labels,
+                sorted(master_preexisting_duplicates),
+            )
             return None
         seen_section_labels.add(child.label)
     return _tops._with_children(master_node, new_children)
@@ -2544,7 +2624,14 @@ def _pre_resolve_omissions(
         if target_unit_kind in {"chapter", "part"} and _has_whole_op("REPLACE"):
             # For container targets (L/O), ctx.live_node IS the container
             if ctx.live_node is not None:
-                merged = _merge_same_numbered_container_insert_ir(ctx.live_node, muutos_ir)
+                merged = _merge_same_numbered_container_insert_ir(
+                    ctx.live_node,
+                    muutos_ir,
+                    context=MergeContainerContext(
+                        op_target=f"REPLACE {ctx.target_unit_kind}:{ctx.target_norm}",
+                        container_label=ctx.live_node.label or "",
+                    ),
+                )
                 return merged if merged is not None else ctx.live_node
 
     return muutos_ir

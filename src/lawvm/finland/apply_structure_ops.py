@@ -76,6 +76,7 @@ if TYPE_CHECKING:
     from lawvm.finland.payload_normalize import PayloadCompletenessWitness
     from lawvm.finland.statute import ReplayState
 from lawvm.finland.merge import (
+    MergeContainerContext,
     _has_section_omissions_ir,
     _heading_intro_replace_preserve_items_ir,
     _mixed_sparse_intro_replace_preserve_first_subsection_items_ir,
@@ -1153,7 +1154,15 @@ def _apply_container_op(
                     and len(payload_section_labels) < len(live_section_labels)
                     and set(payload_section_labels).issubset(set(live_section_labels))
                 ):
-                    merged = _merge_same_numbered_container_insert_ir(node, muutos_ir)
+                    merged = _merge_same_numbered_container_insert_ir(
+                        node,
+                        muutos_ir,
+                        context=MergeContainerContext(
+                            source_statute=view.source_statute or "",
+                            op_target=f"REPLACE {_target_unit_kind}:{_target_section} {kind}",
+                            container_label=node.label or "",
+                        ),
+                    )
                     if merged is None:
                         merged = _preserve_live_container_on_merge_duplicate(
                             source_pathologies_out=source_pathologies_out,
@@ -1276,7 +1285,15 @@ def _apply_container_op(
                 if same_label:
                     return _with_preserved_provision_index(state, new_ir)
                 return state.with_ir(new_ir)
-            merged = _merge_same_numbered_container_insert_ir(node, muutos_ir)
+            merged = _merge_same_numbered_container_insert_ir(
+                node,
+                muutos_ir,
+                context=MergeContainerContext(
+                    source_statute=view.source_statute or "",
+                    op_target=f"INSERT {_target_unit_kind}:{_target_section} {kind}",
+                    container_label=node.label or "",
+                ),
+            )
             merge_rule = "container_insert_base_chapter_merge"
             if merged is None:
                 merge_rule = "container_insert_base_chapter_merge_duplicate_labels"
@@ -1357,7 +1374,15 @@ def _apply_container_op(
                 # instead.  This handles old amendments titled "muuttamisesta
                 # X luvun" where the compiler emits INSERT rather than REPLACE
                 # because the whole-chapter form is used.
-                merged = _merge_same_numbered_container_insert_ir(existing_node, muutos_ir)
+                merged = _merge_same_numbered_container_insert_ir(
+                    existing_node,
+                    muutos_ir,
+                    context=MergeContainerContext(
+                        source_statute=view.source_statute or "",
+                        op_target=f"INSERT {_target_unit_kind}:{_target_section} {kind}",
+                        container_label=existing_node.label or "",
+                    ),
+                )
                 merge_rule = "container_insert_base_chapter_merge"
                 if merged is None:
                     merge_rule = "container_insert_base_chapter_merge_duplicate_labels"
@@ -2273,7 +2298,15 @@ def _apply_whole_section_op(
                             ),
                         )
                 )
-                merged = _merge_same_numbered_container_insert_ir(ch_node, temp_ch)
+                merged = _merge_same_numbered_container_insert_ir(
+                    ch_node,
+                    temp_ch,
+                    context=MergeContainerContext(
+                        source_statute=_source_statute or "",
+                        op_target=f"INSERT chapter:{_target_chapter}/section:{_ts}",
+                        container_label=ch_node.label or "",
+                    ),
+                )
                 if merged is None:
                     merged = _merge_unique_payload_sections_after_live_duplicate_skip(ch_node, temp_ch)
                     if merged is not None:
