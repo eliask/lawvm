@@ -391,9 +391,36 @@ def _prov_rementtion_leaks(scan: _Scan) -> bool:
                 if toks[j].cat == "PYKALA":
                     saw_pykala = True
                 j += 1
-            if saw_pykala and j < n and toks[j].cat in _PROV_CLOSER_CATS:
+            # The second arm leaks when it carries a re-parseable ``§`` (the old
+            # target loop mints it into a fresh duplicate node before stopping at
+            # its attribution). It is recognized as an attribution arm — rather
+            # than the operative target list the old parser keeps — when the ``§``
+            # is closed by a PROV / CITATION_SPAN trigger OR by an UNCOLLAPSED
+            # ``sellaisena/sellaisina kuin …`` provenance WORD run (the lexer did
+            # not fold the appositive into a span). Both forms terminate the old
+            # target loop right after the leaked ``§``, so the new section path
+            # drops exactly that one node → leak.
+            if saw_pykala and j < n and (
+                toks[j].cat in _PROV_CLOSER_CATS or _is_provenance_lead_word(toks[j])
+            ):
                 return True
     return False
+
+
+# Lead-words of an uncollapsed ``sellaisena / sellaisina kuin …`` provenance
+# appositive (including the glued ``sellaisenakuin`` / ``sellaisinakuin``).
+_PROV_LEAD_WORDS = frozenset(
+    {"sellaisena", "sellaisina", "sellaisenakuin", "sellaisinakuin"}
+)
+
+
+def _is_provenance_lead_word(tok) -> bool:
+    """True iff ``tok`` opens an uncollapsed ``sellaisena kuin …`` provenance run."""
+    if tok.cat != "WORD":
+        return False
+    return (tok.text or "").lower() in _PROV_LEAD_WORDS or (
+        tok.lemma or ""
+    ).lower() in _PROV_LEAD_WORDS
 
 
 # Separator / sentinel cats that may sit between the dropped-tail cursor and a

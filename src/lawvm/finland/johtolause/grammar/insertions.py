@@ -313,6 +313,25 @@ def _skip_gen_reinst_preamble(scan: _Scan) -> None:
     scan.goto(saved)
 
 
+# Reinstatement / citation / provenance spans skipped between a DOC:ILL anchor
+# (``lakiin`` / ``asetukseen``) and ``uusi`` (the old Pattern C's
+# ``_REINST_OR_CITE | {PROVENANCE_SPAN}`` — notably this does NOT include a bare
+# ``tilalle`` token, so a residual ``tilalle`` after the run leaves ``uusi``
+# unreachable and the arm declines, exactly as the old parser does).
+_DOC_REINST_SPANS = frozenset({"REINST_SPAN", "CITATION_SPAN", "PROVENANCE_SPAN"})
+
+
+def _skip_doc_reinst_preamble(scan: _Scan) -> None:
+    """Skip the DOC:ILL reinstatement preamble (old Pattern C, line 2651).
+
+    A run of reinstatement / citation / provenance SPANS between the
+    ``lakiin`` / ``asetukseen`` anchor and ``uusi``. A bare ``TILALLE`` token is
+    deliberately NOT skipped (the old skip-set excludes it).
+    """
+    while _at(scan, *_DOC_REINST_SPANS):
+        scan.advance()
+
+
 # ---------------------------------------------------------------------------
 # Sub-target recognition (faithful narrowing of _insertion_sub_target).
 #
@@ -770,6 +789,26 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
         else:
             scan.goto(pre_nums_pos)
 
+    # ── DOC:ILL arms ───────────────────────────────────────────────────────
+    #
+    # Dispatched BEFORE the broad provenance guard (like the LUKU:ILL arm), because
+    # the old Pattern C skips a reinstatement preamble between the ``lakiin`` /
+    # ``asetukseen`` anchor and ``uusi`` (``lakiin siitä lailla X kumotun K §:n
+    # tilalle uusi M §`` — the whole reinstatement clause collapses to a single
+    # REINST_SPAN / CITATION_SPAN / PROVENANCE_SPAN run). That preamble is consumed
+    # by this arm itself, not an out-of-scope feature, so letting the guard see it
+    # would wrongly decline. The arm self-validates (it returns None for any
+    # non-clean shape, including the heading / appendix / postfix folds), so
+    # out-of-scope DOC:ILL forms still fall through to the guard + section-ref path.
+    if _at_cat_case(scan, "DOC", "ILL"):
+        doc = _try_doc_ill(scan, effective_part)
+        if doc is not None:
+            return doc
+        # A DOC:ILL anchor that the arm could not reproduce as a clean insertion
+        # may still carry a downstream heading / appendix fold the old parser folds
+        # into the batch — fall through to the broad guard so it declines loudly
+        # rather than silently. The arm rewound the cursor on its None return.
+
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #
     #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
@@ -793,13 +832,6 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
 
     # (The LUKU:ILL-scoped insert arm is dispatched above, before the broad
     # provenance guard, so its reinstatement preamble is consumed faithfully.)
-
-    # ── DOC:ILL arms ───────────────────────────────────────────────────────
-    if _at_cat_case(scan, "DOC", "ILL"):
-        doc = _try_doc_ill(scan, effective_part)
-        if doc is not None:
-            return doc
-        return None
 
     # ── Bare ``uusi numlist (§ | luku | osa)`` (citation-stripped) ──────────
     if _at(scan, "UUSI"):
@@ -1164,6 +1196,18 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
     saved = scan.pos
     scan.advance()  # consume DOC:ILL
     _optional_comma(scan)
+
+    # Reinstatement preamble between the ``lakiin`` / ``asetukseen`` anchor and
+    # ``uusi`` (old Pattern C, surface_parse line 2651:
+    # ``s.skip_cats(_REINST_OR_CITE | {PROVENANCE_SPAN})``). The whole
+    # ``siitä lailla X kumotun K §:n tilalle`` reinstatement clause collapses to a
+    # single REINST_SPAN / CITATION_SPAN / PROVENANCE_SPAN run; the inserted
+    # section's scope is the statute (chapter='') — the consumed reinstatement
+    # slot does NOT propagate onto the inserted node. A bare ``TILALLE`` token is
+    # NOT skipped here (the old parser's skip-set excludes it), so a residual
+    # ``tilalle`` left after the span run leaves ``uusi`` unreachable and the arm
+    # declines, exactly as the old parser does.
+    _skip_doc_reinst_preamble(scan)
 
     # Prefix-chapter: ``DOC:ILL N lukuun [,] uusi M §``.
     saved_pc = scan.pos

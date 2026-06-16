@@ -1117,10 +1117,37 @@ def extract_chapter(nodes: list[SurfaceNode], current: str) -> str:
     return current
 
 
+def _is_heading_only_target(node: SurfaceTargetRef) -> bool:
+    """True if a target amends only the target heading facet (old sp:1145)."""
+    return bool(node.sub_refs) and all(
+        sr.facet == FacetKind.HEADING and sr.momentti == 0 and not sr.item
+        for sr in node.sub_refs
+    )
+
+
 def extract_part(nodes: list[SurfaceNode], current: str) -> str:
-    """The part scope carried forward from a section-family target batch."""
+    """The part scope carried forward from a target batch.
+
+    A faithful narrowing of ``surface_parse._extract_part_from_nodes`` for the
+    node types the wired families pass through here: scope blocks, descendant
+    coordinations, and SurfaceTargetRefs — including the whole-PART target a
+    container batch emits (``III ja V osa``), whose *label* is the carried part
+    scope just as a whole-chapter target's label is the carried chapter scope.
+
+    A part's OWN heading (``II osan otsikko``, kind=PART, heading-only sub-refs)
+    names a target, not a scope, so it does not leak its label forward. A chapter
+    heading under an explicit part prefix (``II osan 4 luvun otsikko``) carries
+    that part forward — but only when the batch does not ALSO amend a part heading
+    (then the part label is a target, not a scope).
+    """
     if _is_coordinated_part_heading_batch(nodes):
         return current
+    batch_amends_part_heading = any(
+        isinstance(node, SurfaceTargetRef)
+        and node.kind == TargetKind.PART
+        and _is_heading_only_target(node)
+        for node in nodes
+    )
     for node in reversed(nodes):
         if isinstance(node, SurfaceScopeBlock):
             if node.scope_kind == ScopeKind.PART and node.scope_label:
@@ -1129,6 +1156,20 @@ def extract_part(nodes: list[SurfaceNode], current: str) -> str:
             if node.base.part:
                 return node.base.part
         elif isinstance(node, SurfaceTargetRef):
+            if _is_heading_only_target(node):
+                # A part's own heading must not leak its label forward; a chapter
+                # heading under a part prefix carries that part forward unless the
+                # batch also amends a part heading.
+                if (
+                    node.kind != TargetKind.PART
+                    and node.part
+                    and not batch_amends_part_heading
+                ):
+                    return node.part
+                continue
+            # A whole-PART target (``V osa``) carries its label forward as scope.
+            if node.kind == TargetKind.PART and node.label:
+                return node.label
             if node.part:
                 return node.part
     return current

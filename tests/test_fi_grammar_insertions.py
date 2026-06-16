@@ -395,6 +395,91 @@ def test_doc_ill_reanchor_resets_inherited_chapter_scope() -> None:
     assert report.equal, f"delta on {text!r}:\n{report.summary()}"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # ``DOC:ILL [reinstatement] uusi N §`` — the whole ``siitä lailla X kumotun
+        # K §:n tilalle`` reinstatement clause collapses to a single REINST_SPAN
+        # between the ``lakiin`` / ``asetukseen`` anchor and ``uusi``. The DOC:ILL
+        # arm consumes that preamble and scopes the inserted section to the statute
+        # (chapter=''), byte-identical to the old Pattern C.
+        "lisätään lakiin siitä lailla 694/1985 kumotun 32 §:n tilalle uusi 32 § "
+        "seuraavasti:",
+        "lisätään asetukseen siitä lailla 123/1990 kumotun 5 §:n tilalle uusi 5 § "
+        "seuraavasti:",
+        # With a trailing ``sekä uusi …`` whole-section continuation (the chained
+        # arms share one batch span; only the leading slot is reinstated).
+        "lisätään lakiin siitä lailla 739/1966 kumotun 21 §:n tilalle uusi 21 § "
+        "sekä uusi 26 a ja 28 a § seuraavasti:",
+    ],
+)
+def test_doc_ill_reinstatement_preamble_is_recovered(text: str) -> None:
+    # Previously declined ("out-of-scope insertion shape (uusi anchor present)"):
+    # the broad provenance guard caught the leading REINST_SPAN before the DOC:ILL
+    # arm. Now the arm is dispatched ahead of the guard and consumes the preamble.
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_doc_ill_reinstatement_insert_is_statute_scoped_section() -> None:
+    # The reinstated slot's consumed ``K §:n tilalle`` preamble does NOT propagate
+    # onto the inserted node: it is a plain whole-section insert at statute scope
+    # (chapter=''), not a chapter_ref. (The old miscompile this also fixes.)
+    model = parse_text_with(
+        "lisätään lakiin siitä lailla 694/1985 kumotun 32 §:n tilalle uusi 32 § "
+        "seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    node = _as_insertion(vg.nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "32"
+    assert node.chapter == ""
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_section"
+
+
+def test_trailing_whole_part_carries_label_as_scope() -> None:
+    # ``III ja V osa`` ends a batch with whole-PART target refs; the last part's
+    # LABEL (``V``) is the carried part scope onto the following bare section list
+    # (``86 § ja 97 §``), exactly as a whole-chapter target's label carries the
+    # chapter scope. The new ``extract_part`` was missing this branch.
+    text = "kumotaan III ja V osa sekä 86 § ja 97 §"
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    (vg,) = model.verb_groups
+    by_label = {n.label: n for n in vg.nodes}
+    assert by_label["86"].part == "V"
+    assert by_label["97"].part == "V"
+
+
+def test_naista_second_arm_with_glued_provenance_word_is_declined() -> None:
+    # ``näistä N § [CITE], M § sellaisenakuin se on … laissa`` — the first arm is
+    # closed by a collapsed provenance span (the old anaphor-skip consumes it), but
+    # the second arm's ``§`` is closed by an UNCOLLAPSED glued ``sellaisenakuin``
+    # provenance word run. The old target loop re-parses that second ``§`` as a
+    # fresh duplicate node before stopping at the word run, so the new section path
+    # would silently drop it — the driver must DECLINE instead.
+    text = (
+        "muutetaan 15 a, 15 b ja 16 §, näistä 15 a § sellaisena kuin se on laissa "
+        "303/1961, 15 b § sellaisenakuin se on 9 päivänä kesäkuuta 1961 annetussa "
+        "laissa"
+    )
+    tokens, _ = _tokenize(text)
+    with pytest.raises(OutOfScope):
+        new_parser.parse(tokens)
+
+
+def test_naista_single_closed_arm_is_not_over_declined() -> None:
+    # Control for the leak detector: a single ``näistä N § sellaisena kuin …``
+    # arm closed by a collapsed provenance span is amendment-history the old
+    # section path DROPS (byte-identical to the new), so it must NOT be declined.
+    text = "muutetaan 15 a, 15 b ja 16 §, näistä 15 a § sellaisena kuin se on laissa 303/1961"
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
 def _tokenize(text: str):
     from lawvm.finland.johtolause.lexer import tokenize
     from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
