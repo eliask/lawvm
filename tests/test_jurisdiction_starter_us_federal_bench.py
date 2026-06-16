@@ -304,6 +304,45 @@ def test_aggregate_shape_includes_coverage_source_present_in_json() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Title-class aggregate (positive-law vs non-positive)
+# ---------------------------------------------------------------------------
+
+
+def test_positive_law_title_set_is_the_canonical_olrc_enumeration() -> None:
+    """Guard the positive-law title set against accidental edits.
+
+    27 titles are positive law; representative members/non-members are pinned so a
+    silent change to the set fails loudly rather than silently re-bucketing coverage.
+    """
+    from lawvm.us_federal.bench import POSITIVE_LAW_TITLES
+
+    assert len(POSITIVE_LAW_TITLES) == 27
+    # Positive law (title is the law): Bankruptcy(11), Crimes(18), Armed Forces(10), Patents(35).
+    assert {10, 11, 18, 35} <= POSITIVE_LAW_TITLES
+    # Non-positive (editorial compilations): Agriculture(7), Public Health(42), IRC(26), Commerce(15).
+    assert not ({7, 42, 26, 15} & POSITIVE_LAW_TITLES)
+
+
+def test_coverage_by_title_class_partitions_the_denominator_exactly() -> None:
+    """The two class buckets partition the evaluated population with no overlap or loss."""
+    report = run_bench(_synthetic_archive(), [_synthetic_window()], corpus_path="fixture")
+    agg = report.aggregate()
+    tc = agg["coverage_by_title_class"]
+    assert set(tc) == {"positive_law", "non_positive"}
+    pos, non = tc["positive_law"], tc["non_positive"]
+    for b in (pos, non):
+        assert {"numerator", "denominator", "fraction", "titles"} <= set(b)
+    # Partition completeness: the two classes sum to the whole evaluated aggregate.
+    assert pos["numerator"] + non["numerator"] == agg["agreements_total"]
+    assert pos["denominator"] + non["denominator"] == agg["oracle_changed_section_total"]
+    # The synthetic fixture is title 99 (non-positive); positive-law class is empty.
+    assert pos["denominator"] == 0
+    assert pos["fraction"] is None
+    assert non["denominator"] == agg["oracle_changed_section_total"]
+    assert 99 in non["titles"]
+
+
+# ---------------------------------------------------------------------------
 # Real committed corpus over the canonical archive (archive-gated, no network)
 # ---------------------------------------------------------------------------
 

@@ -63,6 +63,19 @@ US_BENCH_WINDOW_EDITION_MISSING_RULE_ID = "us_bench_window_edition_not_in_archiv
 # so an "empty" window is never mistaken for "ran and found nothing".
 US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID = "us_bench_window_witness_delta_empty"
 
+# The titles of the U.S. Code that Congress has enacted into POSITIVE LAW (the
+# title itself is the law; amendments hit the USC tree directly). The remaining
+# titles are NON-POSITIVE editorial compilations (the underlying Statutes at Large
+# are the law; OLRC classifies amendments into them, producing a large editorial
+# reclassification/renumbering tail with no one-to-one amendment behind each delta).
+# Partitioning the bench by this class is the honest way to show replay accuracy
+# where the amendment->USC structure is clean, without conflating populations.
+# Canonical enumeration per the OLRC (uscode.house.gov, positive-law table); stable.
+POSITIVE_LAW_TITLES = frozenset(
+    {1, 3, 4, 5, 9, 10, 11, 13, 14, 17, 18, 23, 28, 31, 32, 35, 36, 37, 38, 39,
+     40, 41, 44, 46, 49, 51, 54}
+)
+
 
 @dataclass(frozen=True)
 class BenchWindow:
@@ -127,6 +140,31 @@ class WindowResult:
             }
         )
         return payload
+
+
+def _coverage_by_title_class(ev: list["WindowResult"]) -> dict[str, Any]:
+    """Partition agreements/oracle-changed by positive-law vs non-positive title.
+
+    Each class fraction divides only within its own title class, so neither number
+    is diluted by the other class's denominator. Non-positive titles carry the
+    OLRC editorial-reclassification tail; positive-law titles do not.
+    """
+
+    def _bucket(predicate) -> dict[str, Any]:
+        rows = [r for r in ev if predicate(r.window.title)]
+        denom = sum(r.oracle_changed for r in rows)
+        numer = sum(r.agreements for r in rows)
+        return {
+            "numerator": numer,
+            "denominator": denom,
+            "fraction": (numer / denom) if denom else None,
+            "titles": sorted({r.window.title for r in rows}),
+        }
+
+    return {
+        "positive_law": _bucket(lambda t: t in POSITIVE_LAW_TITLES),
+        "non_positive": _bucket(lambda t: t not in POSITIVE_LAW_TITLES),
+    }
 
 
 @dataclass
@@ -206,6 +244,13 @@ class BenchReport:
                     "missing_source and lawvm_wrong remain in denominator"
                 ),
             },
+            # coverage_by_title_class: the same numerator/denominator partitioned by
+            # whether the title is positive law (amendments hit the USC tree directly,
+            # clean structure) or non-positive (editorial classification tail dominates
+            # the denominator). This splits the denominator's OWN population — no
+            # cross-population conflation — so each fraction is an honest coverage of
+            # that class's oracle-changed sections.
+            "coverage_by_title_class": _coverage_by_title_class(ev),
             "disposition_breakdown": {
                 "agreement": numer,
                 "lawvm_wrong": sum(r.lawvm_wrong for r in ev),
@@ -670,6 +715,16 @@ def main(argv: list[str] | None = None) -> int:
         f"    excluded: oracle_suspect(F1)={sp['excluded_oracle_suspect']}  "
         f"sunset_reversion(F2)={sp['excluded_sunset_reversion']}"
     )
+    # coverage_by_title_class: positive-law (clean amendment->USC structure) vs
+    # non-positive (editorial-reclassification tail), each within its own population.
+    tc = agg["coverage_by_title_class"]
+    for label, key in (("positive_law", "positive_law"), ("non_positive", "non_positive")):
+        b = tc[key]
+        b_str = "-" if b["fraction"] is None else f"{b['fraction']:.4f}"
+        print(
+            f"  coverage[{label}] ({len(b['titles'])} titles):  "
+            f"{b['numerator']}/{b['denominator']} = {b_str}"
+        )
     print(f"  disposition breakdown: {agg['disposition_breakdown']}")
     print(f"  refusals total: {agg['refusals_total']}")
     print("  replay_authorized: False (dry-run gate)")
