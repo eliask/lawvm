@@ -59,7 +59,6 @@ from lawvm.finland.johtolause.grammar.sections import (
 from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.surface_model import (
     SurfaceCrossVerbMoveTail,
-    SurfaceMoveTail,
     SurfaceNode,
     SurfaceRelabelFromContext,
     SurfaceTargetRef,
@@ -447,29 +446,6 @@ def emit_relabel_nodes(parsed: ParsedMove) -> list[SurfaceNode]:
             witness=w,
         )
     ]
-
-
-def emit_move_tail_node(parsed: ParsedMove) -> SurfaceMoveTail:
-    """Build a standalone ``SurfaceMoveTail`` for an inline-tail destination.
-
-    Note: the OLD parser does NOT emit a standalone ``SurfaceMoveTail`` — it
-    realizes a move-to-chapter/part by retagging the preceding section batch's
-    ``SurfaceTargetRef`` nodes via :func:`retag_moved_targets`. This builder is
-    provided for callers (e.g. the future discourse transducer) that want the
-    move destination as an explicit node; it is NOT used to reproduce the old
-    output's byte form.
-    """
-    kind: Optional[TargetUnitKind] = (
-        "chapter" if parsed.destination_chapter else "part" if parsed.destination_part else None
-    )
-    return SurfaceMoveTail(
-        destination_chapter=parsed.destination_chapter,
-        destination_part=parsed.destination_part,
-        witness=SurfaceWitness(
-            rule_id="fi.move_tail", source_span=(parsed.span.start, parsed.span.end)
-        ),
-        move_clause_target_unit_kind=kind,
-    )
 
 
 def _is_whole_section_target(node: SurfaceTargetRef) -> bool:

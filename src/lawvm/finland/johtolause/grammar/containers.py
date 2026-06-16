@@ -563,22 +563,3 @@ def emit_containers_nodes(
     if parsed.form is ContainerForm.NIMIKE:
         return _emit_nimike(parsed)
     return _emit_appendix(parsed)
-
-
-def containers_rule_id(parsed: ParsedContainer) -> str:
-    """The witness rule_id this family stamps for a given recognized form."""
-    if parsed.form is ContainerForm.CHAPTER:
-        return "fi.chapter_ref"
-    if parsed.form is ContainerForm.CHAPTER_REVERSED:
-        return "fi.chapter_ref_reversed"
-    if parsed.form is ContainerForm.CHAPTER_RENUMBER:
-        return "fi.chapter_renumber"
-    if parsed.form is ContainerForm.PART:
-        return "fi.part_ref"
-    if parsed.form is ContainerForm.PART_RENUMBER:
-        return "fi.part_renumber"
-    if parsed.form is ContainerForm.COORDINATED_HEADING:
-        return "fi.coordinated_part_chapter_heading_ref"
-    if parsed.form is ContainerForm.NIMIKE:
-        return "fi.nimike_ref"
-    return "fi.appendix_ref"
