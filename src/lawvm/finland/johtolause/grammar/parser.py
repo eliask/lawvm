@@ -41,7 +41,11 @@ from typing import Literal, Optional
 
 from lawvm.finland.johtolause.grammar.backrefs import (
     emit_backref_nodes,
+    emit_chapter_backref_nodes,
+    emit_part_backref_nodes,
     recognize_backref,
+    recognize_chapter_backref,
+    recognize_part_backref,
 )
 from lawvm.finland.johtolause.grammar.combinators import Cursor, Span
 from lawvm.finland.johtolause.grammar.containers import (
@@ -1167,6 +1171,48 @@ def _try_backref(scan: _Scan) -> Optional[list[SurfaceNode]]:
     return emit_backref_nodes(parsed)
 
 
+def _try_part_backref(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """Recognize a ``mainitun osan <section_ref | chapter_ref>`` resumption arm.
+
+    Faithful to the old ``_parse_part_backref_target``: only legal once a part has
+    been named (the ``if not part`` guard), it resumes that part and names new
+    scoped section (or part-scoped chapter) targets under it. The inner reference
+    carries its own witness id; the BACKREF + OSA prefix carries no node. Returns
+    None (rewinding) on no match or no resumed part.
+    """
+    if not part:
+        return None
+    saved = scan.pos
+    parsed = recognize_part_backref(scan, part=part)
+    if parsed is None:
+        scan.goto(saved)
+        return None
+    return emit_part_backref_nodes(parsed, chapter=chapter, part=part)
+
+
+def _try_chapter_backref(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[SurfaceNode]]:
+    """Recognize a ``mainitun luvun <section_ref>`` resumption arm.
+
+    Faithful to the old ``_parse_chapter_backref_target``: only legal once a
+    chapter has been named (the ``if not chapter`` guard), it resumes that chapter
+    and names new scoped section targets under it (inheriting the part context).
+    The inner section carries its own witness id; the BACKREF + LUKU prefix
+    carries no node. Returns None (rewinding) on no match or no resumed chapter.
+    """
+    if not chapter:
+        return None
+    saved = scan.pos
+    parsed = recognize_chapter_backref(scan)
+    if parsed is None:
+        scan.goto(saved)
+        return None
+    return emit_chapter_backref_nodes(parsed, chapter=chapter, part=part)
+
+
 def _try_postfix_insert(scan: _Scan, part: str) -> Optional[list[SurfaceNode]]:
     """Recognize a ``[lakiin] [uusi] <num> § lukuun <chap> …`` postfix arm.
 
@@ -1702,6 +1748,28 @@ def _parse_verb_group(
         if br_nodes is not None:
             nodes.extend(br_nodes)
             last_batch = list(br_nodes)
+            continue
+        # A ``mainitun osan <section|chapter>`` / ``mainitun luvun <section>``
+        # resumption arm: after a whole-part / chapter target, these introduce new
+        # scoped targets under the resumed part / chapter rather than an anaphor.
+        # The old continuation tries them (in this order) under the same BACKREF
+        # token after the pure backref-continuation declines. The resumed scope is
+        # the threaded batch part / chapter; the inner ref carries its own witness.
+        pbr_nodes = _try_part_backref(scan, chapter, part)
+        if pbr_nodes is not None:
+            nodes.extend(pbr_nodes)
+            last_batch = list(pbr_nodes)
+            chapter = _extract_chapter(pbr_nodes, chapter, verb)
+            part = _extract_part(pbr_nodes, part)
+            _consume_inline_move_tails(scan, nodes, last_batch)
+            continue
+        cbr_nodes = _try_chapter_backref(scan, chapter, part)
+        if cbr_nodes is not None:
+            nodes.extend(cbr_nodes)
+            last_batch = list(cbr_nodes)
+            chapter = _extract_chapter(cbr_nodes, chapter, verb)
+            part = _extract_part(cbr_nodes, part)
+            _consume_inline_move_tails(scan, nodes, last_batch)
             continue
         # A trailing ``[lakiin] [uusi] <num> § lukuun <chap>`` postfix-chapter
         # insert arm folded into a SECTION-insert continuation (the old route-2

@@ -48,7 +48,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from lawvm.finland.johtolause.grammar.containers import ParsedContainer
 
 from lawvm.finland.johtolause.grammar.combinators import Span, cat
 from lawvm.finland.johtolause.grammar.sections import (
@@ -75,6 +78,7 @@ from lawvm.finland.johtolause.surface_model import (
 _BACKREF = cat("BACKREF")
 _PYKALA = cat("PYKALA")
 _LUKU = cat("LUKU")
+_OSA = cat("OSA")
 
 # The singular anaphoric determiners (faithful to the old driver's
 # ``t2.text.lower() in ("mainitun", "mainittu")`` arity test).  Every other
@@ -271,6 +275,94 @@ def emit_chapter_backref_nodes(
 
 
 # ---------------------------------------------------------------------------
+# Part-backref resumption: "mainitun osan <section_ref | chapter_ref>".
+#
+# After a whole-part target, a ``mainitun osan 1 luvun 1 §:n numero 136:ksi``
+# clause introduces new scoped section (or part-scoped chapter) targets under the
+# same source part — faithful to the old ``_parse_part_backref_target``, which
+# delegates to ``_section_ref(s, verb, chapter, part=part)`` and, on no section,
+# ``_chapter_ref(s, verb, part=part)``. The BACKREF + OSA prefix is consumed but
+# carries no node; the inner reference's own witness id stands.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedPartBackref:
+    """A recognized ``mainitun osan <section_ref | chapter_ref>`` resumption.
+
+    Carries the consumed prefix span (BACKREF + OSA) and the inner reference —
+    either a ``ParsedSection`` (the section form) or a ``ParsedContainer`` (the
+    part-scoped chapter form); the emitter scopes it to the resumed part.
+    """
+
+    prefix_span: Span
+    inner_section: Optional[ParsedSection]
+    inner_chapter: Optional["ParsedContainer"]
+
+
+def recognize_part_backref(scan: _Scan, part: str = "") -> Optional[ParsedPartBackref]:
+    """Recognize ``BACKREF OSA <section_ref | chapter_ref>`` — a part resumption.
+
+    Faithful to ``surface_parse._parse_part_backref_target``: consume the
+    anaphoric determiner (``mainitun``) and ``osan``, then a section reference; on
+    no section, a chapter reference. The resumed ``part`` is the inherited
+    (last-named) part the driver supplies. It is applied to the *section* form at
+    EMIT time (the section emitter accepts inherited part); the *chapter* fallback
+    captures it during recognition (``_chapter_ref(... part=part)``), so it is
+    threaded here for that arm. The old parser declines ``mainitun osan`` when no
+    prior part was named (``if not part``), so the driver only dispatches this arm
+    with a non-empty part context. Returns ``None`` (rewinding ``scan``) if the
+    prefix or both inner forms fail.
+    """
+    from lawvm.finland.johtolause.grammar.containers import (
+        ContainerForm,
+        recognize_chapter_ref,
+    )
+
+    start = scan.pos
+    if _read(scan, _BACKREF) is None:
+        return None
+    if _read(scan, _OSA) is None:
+        scan.goto(start)
+        return None
+    prefix_end = scan.pos
+    inner_section = recognize_section_ref(scan)
+    if inner_section is not None:
+        return ParsedPartBackref(
+            prefix_span=Span(start, prefix_end),
+            inner_section=inner_section,
+            inner_chapter=None,
+        )
+    inner_chapter = recognize_chapter_ref(scan, part=part)
+    if inner_chapter is not None and inner_chapter.form is ContainerForm.CHAPTER:
+        return ParsedPartBackref(
+            prefix_span=Span(start, prefix_end),
+            inner_section=None,
+            inner_chapter=inner_chapter,
+        )
+    scan.goto(start)
+    return None
+
+
+def emit_part_backref_nodes(
+    parsed: ParsedPartBackref, chapter: str = "", part: str = ""
+) -> list[SurfaceNode]:
+    """Emit the resumed target(s) scoped to the named part.
+
+    ``part`` is the resumed (last-named) part the driver carries forward; the
+    section / chapter family emitter applies it as inherited context, byte-
+    identically to the old parser's ``_section_ref(... part=part)`` /
+    ``_chapter_ref(... part=part)`` delegation.
+    """
+    if parsed.inner_section is not None:
+        return emit_section_nodes(parsed.inner_section, chapter=chapter, part=part)
+    from lawvm.finland.johtolause.grammar.containers import emit_containers_nodes
+
+    assert parsed.inner_chapter is not None
+    return emit_containers_nodes(parsed.inner_chapter, part=part)
+
+
+# ---------------------------------------------------------------------------
 # Emitter — ParsedBackRef -> the frozen SurfaceBackRef node.
 # ---------------------------------------------------------------------------
 
@@ -300,9 +392,12 @@ __all__ = [
     "BackRefForm",
     "ParsedBackRef",
     "ParsedChapterBackref",
+    "ParsedPartBackref",
     "backref_rule_id",
     "emit_backref_nodes",
     "emit_chapter_backref_nodes",
+    "emit_part_backref_nodes",
     "recognize_backref",
     "recognize_chapter_backref",
+    "recognize_part_backref",
 ]

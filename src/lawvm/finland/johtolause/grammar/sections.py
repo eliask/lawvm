@@ -104,6 +104,18 @@ class ParsedSection:
     explicit_part: Optional[str] = None
     subs: tuple[SubRef, ...] = ()
     renumber_targets: tuple[NumSuffix, ...] = ()
+    # A renumber arm may carry a trailing ``(ja|,) mainitun pykälän …`` anaphoric
+    # back-reference (``§:n numero N:ksi ja mainitun pykälän 1 momentti``). The
+    # old ``_section_ref`` consumes it inline and re-emits the renumber source
+    # sections a second time, scoped to these sub-refs, with the extra
+    # ``renumber_backref_clause`` note. Empty when no such continuation was read.
+    renumber_backref_subs: tuple[SubRef, ...] = ()
+    # The renumber span END *before* any back-reference tail was consumed. The
+    # old parser emits the base renumber nodes with the pre-backref witness span
+    # and the back-reference nodes with the full (post-backref) span; this records
+    # the split point so the emitter reproduces both byte-identically. ``None``
+    # when there is no back-reference tail (base span == ``span``).
+    renumber_base_span_end: Optional[int] = None
     # For a 2-number suffix list: whether the last separator before § is a
     # conjunction (a "parallel pair", both numbers scoped) rather than a comma
     # (leading number is whole-section). Computed at recognition time from the
@@ -193,6 +205,7 @@ _COMMA = cat("COMMA")
 _CONJ = cat("CONJ")
 _DASH = cat("DASH")
 _NUMERO = cat("NUMERO")
+_BACKREF = cat("BACKREF")
 _LUKU_GEN = cat_case("LUKU", "GEN")
 _OSA_GEN = cat_case("OSA", "GEN")
 
@@ -698,6 +711,11 @@ def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
     if (t := scan.peek()) and t.cat == "NUMERO":
         scan.advance()
         renumber_targets = _renumber_target_list(scan) or []
+        base_span_end = scan.pos
+        # An optional ``(ja|,) mainitun pykälän …`` anaphoric back-reference
+        # tail: the old ``_section_ref`` consumes it inline and re-emits the same
+        # renumber sources a second time with a ``renumber_backref_clause`` note.
+        renumber_backref_subs = _parse_renumber_backref_continuation(scan) or []
         return ParsedSection(
             form=SectionForm.RENUMBER,
             span=Span(start, scan.pos),
@@ -705,6 +723,10 @@ def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
             explicit_chapter=explicit_ch,
             explicit_part=explicit_pt,
             renumber_targets=tuple(renumber_targets),
+            renumber_backref_subs=tuple(renumber_backref_subs),
+            renumber_base_span_end=(
+                base_span_end if renumber_backref_subs else None
+            ),
         )
 
     # ── Suffix arm: sub-refs ────────────────────────────────────────────────
@@ -837,6 +859,52 @@ def _renumber_target_list(scan: _Scan) -> Optional[list[NumSuffix]]:
     return results
 
 
+def _parse_renumber_backref_continuation(scan: _Scan) -> Optional[list[SubRef]]:
+    """Consume a trailing ``[sep] mainitun pykälän [sub_ref …]`` after a renumber.
+
+    Faithful to ``surface_parse._parse_backref_continuation`` as invoked inline by
+    ``_section_ref``'s NUMERO branch: an optional list separator, then a BACKREF
+    determiner, ``pykälä``/``pykälän``/``pykälien``/``pykälät``, then the trailing
+    sub-references (an absent sub-ref becomes one whole-section ``SubRef()``).  The
+    leading separator is consumed here (not by the driver) so the renumber arm's
+    span extends across the back-reference, byte-identically to the old parser.
+    Returns the sub-refs, or ``None`` (rewinding ``scan``) on no match.
+    """
+    saved = scan.pos
+    _sep(scan)
+    if _read(scan, _BACKREF) is None:
+        scan.goto(saved)
+        return None
+    if _read(scan, _PYKALA) is None:
+        scan.goto(saved)
+        return None
+    subs = _sub_ref(scan)
+    if subs:
+        while True:
+            saved2 = scan.pos
+            if _sep(scan) is None:
+                break
+            more = _sub_ref(scan)
+            if more:
+                subs.extend(more)
+            else:
+                scan.goto(saved2)
+                break
+    if not subs:
+        subs = [SubRef()]  # whole section ("mainittu pykälä")
+    # Trailing kohta-level facet distribution (same as the section-suffix path).
+    if len(subs) > 1 and subs[-1].facet is not None and subs[-1].item:
+        trailing_facet = subs[-1].facet
+        for i in range(len(subs) - 1):
+            if subs[i].facet is None and subs[i].item:
+                subs[i] = SubRef(
+                    momentti=subs[i].momentti,
+                    item=subs[i].item,
+                    facet=trailing_facet,
+                )
+    return subs
+
+
 def recognize_pykala_prefix_section_ref(scan: _Scan) -> Optional[ParsedSection]:
     """Recognize ``pykälien <numlist>`` (genitive-plural prefix form).
 
@@ -943,7 +1011,15 @@ def _emit_renumber(parsed: ParsedSection, chapter: str, part: str) -> list[Surfa
     target_ch = "" if (scope_ch and not scope_pt) else ch
     target_pt = "" if scope_pt else pt
 
-    w = SurfaceWitness(rule_id="fi.section_renumber", source_span=(parsed.span.start, parsed.span.end))
+    # The old parser stamps the base renumber nodes with the renumber span as it
+    # stood BEFORE consuming any ``mainitun pykälän …`` tail; the back-reference
+    # nodes get the full (post-tail) span.
+    base_end = (
+        parsed.renumber_base_span_end
+        if parsed.renumber_base_span_end is not None
+        else parsed.span.end
+    )
+    w = SurfaceWitness(rule_id="fi.section_renumber", source_span=(parsed.span.start, base_end))
     nodes: list[SurfaceNode] = []
     for n, sf in nums:
         for rn in _expand_range_single(n):
@@ -961,6 +1037,30 @@ def _emit_renumber(parsed: ParsedSection, chapter: str, part: str) -> list[Surfa
                     witness=w,
                 )
             )
+    # Re-emit each renumber source a second time, scoped to the trailing
+    # ``mainitun pykälän …`` back-reference sub-refs, with the extra
+    # ``renumber_backref_clause`` note (faithful to _section_ref's NUMERO branch).
+    if parsed.renumber_backref_subs:
+        backref_w = SurfaceWitness(
+            rule_id="fi.section_renumber", source_span=(parsed.span.start, parsed.span.end)
+        )
+        backref_sub_refs = _to_surface_sub_refs(list(parsed.renumber_backref_subs))
+        for n, sf in nums:
+            for rn in _expand_range_single(n):
+                full = rn + (sf if len(_expand_range_single(n)) == 1 else "")
+                dest_label = destination_by_source.get(full, "")
+                nodes.append(
+                    SurfaceTargetRef(
+                        kind=TargetKind.SECTION,
+                        label=full,
+                        chapter=target_ch,
+                        part=target_pt,
+                        sub_refs=backref_sub_refs,
+                        notes=("renumber_clause", "renumber_backref_clause"),
+                        renumber_dest=dest_label,
+                        witness=backref_w,
+                    )
+                )
     return _maybe_wrap_scope_block(nodes, scope_ch, scope_pt, parsed.span)
 
 
