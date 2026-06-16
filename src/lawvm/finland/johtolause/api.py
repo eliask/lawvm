@@ -483,6 +483,8 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         meta_clause_count=len(meta_nodes),
         text_amend_clause_count=len(text_amend_nodes),
         supplementary_clause_count=len(supplementary_nodes),
+        parser_lane=parser_lane,
+        grammar_decline_reason=grammar_decline_reason,
     )
     surface_result = _build_finland_surface_parse_result(
         source_hash=core_token_tape.source_hash,
@@ -541,6 +543,8 @@ def _build_finland_clause_phase_surface(
     meta_clause_count: int,
     text_amend_clause_count: int,
     supplementary_clause_count: int,
+    parser_lane: str,
+    grammar_decline_reason: str | None,
 ) -> FrontendPhaseSurface:
     typed_diagnostics = _build_finland_frontend_diagnostics(
         diagnostics=diagnostics,
@@ -548,6 +552,8 @@ def _build_finland_clause_phase_surface(
         parse_error=parse_error,
         internal_error_phase=internal_error_phase,
         lowering_diagnostics=lowering_diagnostics,
+        parser_lane=parser_lane,
+        grammar_decline_reason=grammar_decline_reason,
     )
     diagnostic_ids_by_phase: dict[str, list[str]] = {}
     for diagnostic in typed_diagnostics:
@@ -838,8 +844,49 @@ def _build_finland_frontend_diagnostics(
     parse_error: str | None,
     internal_error_phase: str | None,
     lowering_diagnostics: tuple[Any, ...],
+    parser_lane: str,
+    grammar_decline_reason: str | None,
 ) -> tuple[FrontendDiagnostic, ...]:
     out: list[FrontendDiagnostic] = []
+    # Parser-lane provenance: when the new grammar parser DECLINED and the old
+    # surface_parse produced this clause, surface a governed, non-blocking record
+    # so consumers cannot mistake a legacy-reference fallback for new-parser-owned
+    # output. Such output carries NONE of the new parser's no-silent-drop
+    # guarantee; the safe default is to NOT claim new-parser totality. The decline
+    # reason (the OutOfScope message) is carried in the payload so the record is
+    # self-evidencing. Only the legacy-reference fallback is a SILENT dependence —
+    # grammar_owned needs no record, and old_parser_forced is an explicit,
+    # operator-selected mode (LAWVM_FI_NEW_PARSER=0), not a silent fallback.
+    if parser_lane == "legacy_reference_fallback":
+        _decline = grammar_decline_reason or "OutOfScope"
+        out.append(
+            FrontendDiagnostic(
+                diagnostic_id="fi-johtolause-legacy-reference-fallback-used",
+                jurisdiction="fi",
+                frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
+                phase="surface_parse",
+                severity="warning",
+                rule_id="fi.johtolause.legacy_reference_fallback_used.v1",
+                message=(
+                    "New grammar parser declined; the legacy reference parser "
+                    f"produced this clause (decline reason: {_decline}). This "
+                    "output carries none of the new parser's no-silent-drop "
+                    "guarantee."
+                ),
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition="record",
+                safe_default="do_not_claim_new_parser_totality_for_legacy_fallback",
+                forbidden_shortcuts=(
+                    "treat_legacy_reference_fallback_as_grammar_owned",
+                    "claim_no_silent_drop_guarantee_for_legacy_fallback",
+                ),
+                detail={
+                    "parser_lane": parser_lane,
+                    "grammar_decline_reason": _decline,
+                },
+            )
+        )
     if parse_error and internal_error_phase:
         out.append(
             FrontendDiagnostic(

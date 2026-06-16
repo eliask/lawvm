@@ -693,3 +693,94 @@ def test_extract_legal_ops_move_rider_flows_into_amendment_op() -> None:
 
     (am_op,) = AmendmentOp.from_lo(moved_lo, 0)
     assert am_op.move_clause_target_unit_kind == "chapter"
+
+
+# ---------------------------------------------------------------------------
+# Parser-lane provenance: legacy-reference-fallback governed finding
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_reference_fallback_is_a_governed_finding() -> None:
+    """A clause the new grammar parser DECLINES surfaces a governed,
+    self-evidencing legacy-fallback finding (not just an internal lane field).
+
+    The decline reason must be carried into the typed diagnostic / finding so
+    consumers are forced to see the legacy-reference dependence and cannot treat
+    the output as new-parser-owned (no-silent-drop) material.
+    """
+    # An anaphoric ``sanottuun pykälään`` insert with NO preceding verb group:
+    # there is no antecedent section to resolve against, so the new parser
+    # correctly declines (it owns this shape only when a prior group supplies the
+    # antecedent) and falls back to the old parser.
+    text = "lisätään sanottuun pykälään uusi 3 momentti seuraavasti:"
+    result = parse_clause(text)
+
+    # The internal lane field still records the dependence.
+    assert result.parser_lane == "legacy_reference_fallback"
+    assert result.used_legacy_fallback is True
+    assert result.grammar_decline_reason
+
+    # And it is now VISIBLE on the typed proof surface as a non-blocking,
+    # self-evidencing diagnostic carrying the decline reason.
+    typed = [
+        d
+        for d in result.typed_diagnostics
+        if d.diagnostic_id == "fi-johtolause-legacy-reference-fallback-used"
+    ]
+    assert len(typed) == 1, "exactly one legacy-fallback diagnostic expected"
+    diag = typed[0]
+    assert diag.severity == "warning"
+    assert diag.blocking is False
+    assert diag.strict_disposition == "record"
+    assert diag.rule_id == "fi.johtolause.legacy_reference_fallback_used.v1"
+    assert diag.phase == "surface_parse"
+    assert diag.detail["grammar_decline_reason"] == result.grammar_decline_reason
+    assert result.grammar_decline_reason in diag.message
+
+    # It projects into the governed Finding ledger.
+    finding_hits = [
+        f
+        for f in result.findings
+        if f.detail.get("diagnostic_id") == "fi-johtolause-legacy-reference-fallback-used"
+    ]
+    assert len(finding_hits) == 1
+    finding = finding_hits[0]
+    assert finding.kind == "PARSE.FRONTEND_DIAGNOSTIC"
+    assert finding.role == "observation"
+    assert finding.blocking is False
+    assert (
+        finding.detail["diagnostic_detail"]["grammar_decline_reason"]
+        == result.grammar_decline_reason
+    )
+
+    # The diagnostic id attaches to the surface_parse phase row.
+    assert result.phase_surface is not None
+    surface_parse_rows = [
+        r for r in result.phase_surface.phase_rows if r.phase == "surface_parse"
+    ]
+    assert surface_parse_rows
+    assert (
+        "fi-johtolause-legacy-reference-fallback-used"
+        in surface_parse_rows[0].diagnostic_ids
+    )
+
+
+def test_grammar_owned_clause_has_no_legacy_fallback_finding() -> None:
+    """A clause the new grammar parser OWNS does not emit the legacy-fallback
+    finding — the record is reserved for genuine silent legacy dependence."""
+    result = parse_clause("lisätään lakiin uusi 5 a § seuraavasti:")
+
+    assert result.parser_lane == "grammar_owned"
+    assert result.used_legacy_fallback is False
+    assert result.grammar_decline_reason is None
+
+    assert not [
+        d
+        for d in result.typed_diagnostics
+        if d.diagnostic_id == "fi-johtolause-legacy-reference-fallback-used"
+    ]
+    assert not [
+        f
+        for f in result.findings
+        if f.detail.get("diagnostic_id") == "fi-johtolause-legacy-reference-fallback-used"
+    ]
