@@ -740,6 +740,68 @@ CURATED_CASES = [
         },
     },
     # ------------------------------------------------------------------
+    # Discourse determiner-anaphora inserts.  An anaphoric determiner
+    # ("sanottuun lakiin", "mainittuun lukuun", "sanottuun pykälään") refers
+    # back to an earlier-mentioned scope.  These must not abort the target
+    # list, and must resolve to the right scope.  Simplified forms of real
+    # corpus johtolauses (1957/77, 2008/547, 1982/106).
+    # ------------------------------------------------------------------
+    {
+        # 1957/77: "... 2 §:ään uusi 2 momentti ja sanottuun lakiin uusi 4 §".
+        # "sanottuun lakiin" is a root-level (law) anaphor: the new 4 § is a
+        # fresh root insert, not scoped to §2.
+        "name": "discourse_anaphora sanottuun lakiin root section insert",
+        "text": "lisätään 2 §:ään uusi 2 momentti ja sanottuun lakiin uusi 4 §",
+        "expected": ["L P 2 2", "L P 4"],
+        "features": {
+            "verb_lisata", "insertion_pykala_ill", "insertion_law_level",
+            "insertion_anaphoric_pykala", "conj_target_list",
+        },
+    },
+    {
+        # 2008/547: "... 2 luvun 7 §:ään uusi 3 ja 4 momentti sekä mainittuun
+        # lukuun uusi 7 b §".  "mainittuun lukuun" carries the last-mentioned
+        # chapter (luku 2), so the new 7 b § inserts into chapter 2.
+        "name": "discourse_anaphora mainittuun lukuun carries chapter",
+        "text": "lisätään 2 luvun 7 §:ään uusi 3 ja 4 momentti sekä mainittuun lukuun uusi 7 b §",
+        "expected": ["L P L:2 7 3", "L P L:2 7 4", "L P L:2 7b"],
+        "features": {
+            "verb_lisata", "insertion_pykala_ill", "insertion_chapter_illative",
+            "chapter_ctx_propagation", "conj_target_list", "letter_suffix",
+        },
+    },
+    {
+        # 1982/106: "... 8 §:n 3 momenttiin uusi 10 ja 11 kohta ja sanottuun
+        # pykälään uusi 5 ja 6 momentti".  "sanottuun pykälään" resolves to the
+        # last-mentioned section (§8); the new momentit attach there.
+        "name": "discourse_anaphora sanottuun pykalaan resolves last section",
+        "text": "lisätään 8 §:n 3 momenttiin uusi 10 ja 11 kohta ja sanottuun pykälään uusi 5 ja 6 momentti",
+        "expected": ["L P 8 3 10", "L P 8 3 11", "L P 8 5", "L P 8 6"],
+        "features": {
+            "verb_lisata", "insertion_momentti_ill", "insertion_pykala_ill",
+            "insertion_anaphoric_pykala", "conj_target_list",
+        },
+    },
+    # ------------------------------------------------------------------
+    # No-"uusi" insertion fallback.  Under "lisätään" the "uusi" determiner is
+    # implicit; a DOC:ILL ("lakiin N §") or LUKU:ILL ("N lukuun N §") insertion
+    # target without an explicit "uusi" still routes to a section insert.
+    # ------------------------------------------------------------------
+    {
+        "name": "no_uusi insertion law-level section",
+        "text": "lisätään lakiin 5 a §",
+        "expected": ["L P 5a"],
+        "features": {"verb_lisata", "insertion_law_level", "letter_suffix"},
+    },
+    {
+        "name": "no_uusi insertion chapter-level section",
+        "text": "lisätään 5 lukuun 10 §",
+        "expected": ["L P L:5 10"],
+        "features": {
+            "verb_lisata", "insertion_chapter_illative", "chapter_ref",
+        },
+    },
+    # ------------------------------------------------------------------
     # Split citation (filter-stage feature)
     # ------------------------------------------------------------------
     {
