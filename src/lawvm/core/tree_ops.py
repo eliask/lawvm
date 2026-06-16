@@ -50,6 +50,9 @@ _LETTER_SUFFIX_SORT_LABEL_RE = re.compile(r"^(\d+)([a-z]*)$")
 _RANGE_LABEL_SPLIT_RE = re.compile(r"\s*[–-]\s*")
 _NON_DIGIT_RE = re.compile(r"\D+")
 _TEXT_LINT_TOKEN_RE = re.compile(r"\w+", re.IGNORECASE)
+_PURE_DIGIT_LABEL_RE = re.compile(r"^\d+$")
+_PURE_ALPHA_LABEL_RE = re.compile(r"^[A-Za-z]+$")
+_PURE_ROMAN_LABEL_RE = re.compile(r"^[IVXLCDMivxlcdm]+$")
 
 
 def _match_label(node_label: Optional[str], target: str) -> bool:
@@ -1603,6 +1606,173 @@ def find_flattened_sublist_warnings(
                         })
                         break
                     max_so_far = max(max_so_far, ordinal)
+
+        for child in node.children:
+            _walk(child, f"{path}/{_kind_str(child.kind)}:{child.label or '?'}")
+
+    _walk(tree, _kind_str(tree.kind))
+    return warnings
+
+
+# ---------------------------------------------------------------------------
+# Label-sequence-gap detection (lint-level heuristic)
+# ---------------------------------------------------------------------------
+
+_LOCAL_SEQUENCE_START_KINDS = frozenset(
+    {
+        "subsection",
+        "paragraph",
+        "subparagraph",
+        "item",
+        "sentence",
+    }
+)
+
+
+def _is_tombstone_or_scaffold_node(node: IRNode) -> bool:
+    attrs = node.attrs
+    return bool(
+        attrs.get("lawvm_repeal_placeholder")
+        or attrs.get("lawvm_tombstone")
+        or attrs.get("lawvm_scaffold")
+        or attrs.get("content_state") in {"tombstone", "scaffold"}
+    )
+
+
+def _alpha_ordinal(label: str) -> int:
+    value = 0
+    for char in label.lower():
+        if not ("a" <= char <= "z"):
+            return 0
+        value = value * 26 + (ord(char) - ord("a") + 1)
+    return value
+
+
+def _roman_ordinal(label: str) -> int:
+    roman_map = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
+    result, previous = 0, 0
+    for char in reversed(label.lower()):
+        value = roman_map.get(char, 0)
+        if value == 0:
+            return 0
+        result += value if value >= previous else -value
+        previous = value
+    return result
+
+
+def _label_sequence_family_and_ordinal(label: str) -> tuple[str, int] | None:
+    normalized = normalized_label_key(label)
+    if not normalized:
+        return None
+    if _PURE_DIGIT_LABEL_RE.fullmatch(normalized):
+        return ("digit", int(normalized))
+    if _PURE_ALPHA_LABEL_RE.fullmatch(normalized):
+        # Single-letter legal labels are almost always alphabetic subitems.  Treat
+        # multi-letter roman-looking labels such as "iv" as roman only when they
+        # are not an alphabetic continuation token such as "aa" or "ab".
+        if len(normalized) > 1 and _PURE_ROMAN_LABEL_RE.fullmatch(normalized) and normalized not in {"aa", "ab"}:
+            ordinal = _roman_ordinal(normalized)
+            if ordinal > 0:
+                return ("roman", ordinal)
+        return ("alpha", _alpha_ordinal(normalized))
+    return None
+
+
+def _render_sequence_label(family: str, ordinal: int) -> str:
+    if family == "digit":
+        return str(ordinal)
+    if family == "alpha":
+        chars: list[str] = []
+        n = ordinal
+        while n > 0:
+            n -= 1
+            chars.append(chr(ord("a") + (n % 26)))
+            n //= 26
+        return "".join(reversed(chars))
+    return str(ordinal)
+
+
+def find_label_sequence_gap_warnings(
+    tree: IRNode,
+    *,
+    max_missing_labels: int = 12,
+) -> List[Dict[str, object]]:
+    """Return warnings for suspicious gaps in same-kind sibling label sequences.
+
+    This is a lint, not a hard invariant.  It catches shapes like a local list
+    that starts at ``g`` with no ``a``-``f`` siblings, or a sibling run
+    ``1, 3, 4`` with no visible ``2``.  Existing tombstone/scaffold children
+    count as occupied labels, so a repealed slot represented in the tree does
+    not trigger a gap warning.
+    """
+    warnings: List[Dict[str, object]] = []
+
+    def _missing_labels(family: str, start: int, end: int) -> list[str]:
+        return [_render_sequence_label(family, ordinal) for ordinal in range(start, min(end, start + max_missing_labels))]
+
+    def _walk(node: IRNode, path: str) -> None:
+        by_kind: Dict[str, List[tuple[IRNode, str, str, int]]] = {}
+        tombstone_labels_by_kind: Dict[str, List[str]] = {}
+        for child in node.children:
+            if not child.label:
+                continue
+            child_kind = _kind_str(child.kind)
+            parsed = _label_sequence_family_and_ordinal(child.label)
+            if parsed is None:
+                continue
+            family, ordinal = parsed
+            by_kind.setdefault(child_kind, []).append((child, family, child.label, ordinal))
+            if _is_tombstone_or_scaffold_node(child):
+                tombstone_labels_by_kind.setdefault(child_kind, []).append(child.label)
+
+        for child_kind, entries in by_kind.items():
+            if len({family for _child, family, _label, _ordinal in entries}) != 1:
+                continue
+            family = entries[0][1]
+            labels = [label for _child, _family, label, _ordinal in entries]
+            ordinals = [ordinal for _child, _family, _label, ordinal in entries]
+            present_ordinals = set(ordinals)
+            tombstone_labels = tombstone_labels_by_kind.get(child_kind, [])
+
+            first = ordinals[0]
+            if child_kind in _LOCAL_SEQUENCE_START_KINDS and first > 1:
+                missing_ordinals = [ordinal for ordinal in range(1, first) if ordinal not in present_ordinals]
+                if missing_ordinals:
+                    warnings.append(
+                        {
+                            "kind": "label_sequence_starts_late",
+                            "path": path,
+                            "node_kind": child_kind,
+                            "family": family,
+                            "previous_label": None,
+                            "next_label": labels[0],
+                            "missing_labels": _missing_labels(family, missing_ordinals[0], first),
+                            "missing_label_count": len(missing_ordinals),
+                            "label_sample": labels[:14],
+                            "tombstone_labels_present": tombstone_labels,
+                        }
+                    )
+
+            for index, (left, right) in enumerate(pairwise(ordinals)):
+                if right <= left + 1:
+                    continue
+                missing_ordinals = [ordinal for ordinal in range(left + 1, right) if ordinal not in present_ordinals]
+                if not missing_ordinals:
+                    continue
+                warnings.append(
+                    {
+                        "kind": "label_sequence_internal_gap",
+                        "path": path,
+                        "node_kind": child_kind,
+                        "family": family,
+                        "previous_label": labels[index],
+                        "next_label": labels[index + 1],
+                        "missing_labels": _missing_labels(family, missing_ordinals[0], right),
+                        "missing_label_count": len(missing_ordinals),
+                        "label_sample": labels[:14],
+                        "tombstone_labels_present": tombstone_labels,
+                    }
+                )
 
         for child in node.children:
             _walk(child, f"{path}/{_kind_str(child.kind)}:{child.label or '?'}")

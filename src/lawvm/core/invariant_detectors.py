@@ -9,7 +9,7 @@ from typing import Any, Literal, Mapping
 from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.core.ir_helpers import _kind_str, irnode_content_hash
-from lawvm.core.replay_lints import build_flattened_sublist_findings
+from lawvm.core.replay_lints import build_flattened_sublist_findings, build_label_sequence_gap_findings
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.tree_ops import (
     TreeInvariantKind,
@@ -29,6 +29,7 @@ InvariantDetectorName = Literal[
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
+    "label_sequence_gap",
     "descendant_sibling_loss",
     "same_source_descendant_snapshot_shadow",
 ]
@@ -41,6 +42,7 @@ SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
+    "label_sequence_gap",
     "descendant_sibling_loss",
     "same_source_descendant_snapshot_shadow",
 )
@@ -593,6 +595,32 @@ def run_invariant_detector(
                 )
             else:
                 message = f"{path}: {kind} {node_kind} [{sample_str}]"
+            if path_matches_target(path, target_path):
+                results.append(
+                    InvariantDetectorResult(
+                        detector=detector,
+                        kind=kind,
+                        path_text=path,
+                        message=message,
+                        detail=dict(warning),
+                    )
+                )
+        return results
+
+    if detector == "label_sequence_gap":
+        results = []
+        for finding in build_label_sequence_gap_findings(ir, phase="diagnose_phase"):
+            warning = finding.detail
+            kind = str(warning.get("kind") or "?")
+            path = str(warning.get("path") or "?")
+            node_kind = str(warning.get("node_kind") or "?")
+            previous_label = warning.get("previous_label")
+            next_label = warning.get("next_label")
+            missing = ", ".join(str(item) for item in _detail_sequence(warning.get("missing_labels"))[:8])
+            if previous_label is None:
+                message = f"{path}: {node_kind} sequence starts at {next_label!r}; missing {missing}"
+            else:
+                message = f"{path}: {node_kind} sequence gap {previous_label!r} -> {next_label!r}; missing {missing}"
             if path_matches_target(path, target_path):
                 results.append(
                     InvariantDetectorResult(

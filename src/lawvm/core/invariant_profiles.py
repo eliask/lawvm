@@ -41,6 +41,7 @@ TimelineInvariantFamily = Literal[
 ReplayWarningFamily = Literal[
     "text_duplication",
     "flattened_sublist_family",
+    "label_sequence_gap",
 ]
 LocalPolicyMode = Literal["none", "frontend_required"]
 
@@ -225,7 +226,7 @@ def core_replay_strict_profile(surface: str) -> ReplayInvariantProfile:
             "expiry_chain",
             "replay_timeline",
         ),
-        warnings=("text_duplication", "flattened_sublist_family"),
+        warnings=("text_duplication", "flattened_sublist_family", "label_sequence_gap"),
         local_allowance_policy="frontend_required",
         local_classifier_policy="frontend_required",
     )

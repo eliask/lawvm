@@ -20,10 +20,16 @@ Currently handled corrections
    The node kind is changed from SUBSECTION to PARAGRAPH, and letter-labeled
    paragraph children are demoted to SUBPARAGRAPH (alakohta).
 
-1b. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
-    ``<subsection num="9)">`` is preserved as a subsection container rather
-    than reclassified into paragraph, and a typed witness is emitted. This
-    keeps the suspicious source shape visible while avoiding an illegal
+1b. **TAG_RECLASSIFY / IMPOSSIBLE_NUMBERING** -- a section-scoped item-style
+    ``<subsection num="2)">`` may be folded into the immediately preceding
+    subsection as a paragraph when its label continues that subsection's item
+    sequence.  This handles base XML that split one momentti's kohdat across
+    two sibling ``subsection`` elements.
+
+1c. **SUSPICIOUS_SHAPE / PROFILE_INVALID** -- a section-scoped item-style
+    ``<subsection num="9)">`` that cannot be safely folded is preserved as a
+    subsection container, and a typed witness is emitted. This keeps the
+    suspicious source shape visible while avoiding an illegal
     ``section -> paragraph`` edge.
 
 2. **EDITORIAL_STRIP / EDITORIAL_CONTAMINATION** -- ``<block name="image">``
@@ -246,6 +252,132 @@ def _reclassify_item_style_subsection(
         attrs=node.attrs,
         children=tuple(new_children),
     )
+
+
+def _numeric_label_value(label: str | None) -> int | None:
+    if label is None:
+        return None
+    normalized = _norm_num_token(str(label))
+    return int(normalized) if normalized.isdigit() else None
+
+
+def _section_item_style_subsection_continues_previous(
+    previous_subsection: IRNode,
+    item_subsection: IRNode,
+) -> bool:
+    item_value = _numeric_label_value(item_subsection.label)
+    if item_value is None:
+        return False
+    paragraph_values = [
+        value
+        for child in previous_subsection.children
+        if child.kind == IRNodeKind.PARAGRAPH
+        for value in (_numeric_label_value(child.label),)
+        if value is not None
+    ]
+    return bool(paragraph_values) and max(paragraph_values) + 1 == item_value
+
+
+def _section_item_style_subsection_payload_nodes(node: IRNode) -> Tuple[IRNode, ...]:
+    """Convert a section-scoped item-style subsection into paragraph siblings.
+
+    The leading ``NUM``/``INTRO`` plus letter-labelled paragraphs become one
+    paragraph with subparagraph children.  Later digit-labelled paragraphs in
+    the same malformed source block are trailing sibling kohdat, not children
+    of the converted paragraph.
+    """
+    item_children: List[IRNode] = []
+    trailing_siblings: List[IRNode] = []
+    in_trailing_siblings = False
+
+    for child in node.children:
+        if child.kind == IRNodeKind.PARAGRAPH and child.label is not None:
+            if _LETTER_LABEL_RE.match(child.label) and not in_trailing_siblings:
+                item_children.append(
+                    IRNode(
+                        kind=IRNodeKind.SUBPARAGRAPH,
+                        label=child.label,
+                        text=child.text,
+                        attrs=child.attrs,
+                        children=child.children,
+                    )
+                )
+                continue
+            if _ARABIC_LABEL_RE.match(child.label):
+                in_trailing_siblings = True
+                trailing_siblings.append(child)
+                continue
+        if in_trailing_siblings:
+            trailing_siblings.append(child)
+        else:
+            item_children.append(child)
+
+    converted = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=node.label,
+        text=node.text,
+        attrs=node.attrs,
+        children=tuple(item_children),
+    )
+    return (converted, *trailing_siblings)
+
+
+def _fold_section_scoped_item_style_subsections(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold section-scoped item-style subsection continuations into prior momentti."""
+    if len(children) < 2:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    for child in children:
+        if (
+            child.kind != IRNodeKind.SUBSECTION
+            or not rewritten
+            or rewritten[-1].kind != IRNodeKind.SUBSECTION
+            or not _is_item_style_subsection(child)
+            or not _section_item_style_subsection_continues_previous(rewritten[-1], child)
+        ):
+            rewritten.append(child)
+            continue
+
+        previous = rewritten[-1]
+        payload_nodes = _section_item_style_subsection_payload_nodes(child)
+        rewritten[-1] = IRNode(
+            kind=previous.kind,
+            label=previous.label,
+            text=previous.text,
+            attrs=previous.attrs,
+            children=tuple(previous.children) + payload_nodes,
+        )
+        num_child = next((c for c in child.children if c.kind == IRNodeKind.NUM), None)
+        raw_num = (num_child.text or "").strip() if num_child else f"{child.label})"
+        node_path = parent_path + (_node_path_label(child),)
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=SourceNormalizationKind.TAG_RECLASSIFY,
+                basis=SourceNormalizationBasis.IMPOSSIBLE_NUMBERING,
+                before=f"section-scoped subsection continuation with item-style num {raw_num!r}",
+                after="folded into previous subsection as paragraph continuation",
+                explanation=(
+                    "The source encoded a kohta continuation as a sibling subsection. "
+                    "Because its item label continues the preceding subsection's "
+                    "paragraph sequence, it is folded into that preceding momentti; "
+                    "letter-labelled children become alakohta children and trailing "
+                    "digit-labelled children remain sibling kohdat."
+                ),
+                path=node_path,
+                confidence=0.96,
+            )
+        )
+        changed = True
+
+    return rewritten if changed else children
 
 
 def _split_digit_reset_subparagraph_runs(
@@ -1720,6 +1852,9 @@ def normalize_source_ir(
     initial_children: List[IRNode] = list(ir.children)
     if ir.kind == IRNodeKind.SECTION:
         initial_children = _split_intro_then_numbered_list_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_section_scoped_item_style_subsections(
             initial_children, statute_id, current_path, facts
         )
 

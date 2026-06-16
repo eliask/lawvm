@@ -168,7 +168,7 @@ class TestTagReclassify:
         assert tag_facts == []
 
     def test_keeps_section_scoped_item_style_subsection_as_subsection(self) -> None:
-        """A section-scoped item-style subsection should remain a subsection container."""
+        """A standalone section-scoped item-style subsection remains a visible suspicious shape."""
         xml = etree.fromstring(
             """
             <section>
@@ -200,6 +200,45 @@ class TestTagReclassify:
         assert fact.basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
         assert "section-scoped subsection" in fact.before
         assert "illegal section -> paragraph edge" in fact.after
+
+    def test_folds_section_scoped_item_style_continuation_into_previous_subsection(self) -> None:
+        """A malformed sibling subsection that continues kohdat is folded into the prior momentti."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>107 §</num>
+              <subsection>
+                <intro><p>Lain 108-110 §:ää ei kuitenkaan sovelleta:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+              </subsection>
+              <subsection>
+                <num>2)</num>
+                <intro><p>laitokseen, jossa poltetaan seuraavia jätteitä:</p></intro>
+                <paragraph><num>a)</num><content><p>maa- ja metsätalousjäte;</p></content></paragraph>
+                <paragraph><num>b)</num><content><p>elintarviketeollisuuden jäte;</p></content></paragraph>
+                <paragraph><num>3)</num><content><p>koelaitos.</p></content></paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2014/527")
+
+        assert normalized.kind == IRNodeKind.SECTION
+        subsections = [c for c in normalized.children if c.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        paragraphs = [c for c in subsections[0].children if c.kind == IRNodeKind.PARAGRAPH]
+        assert [p.label for p in paragraphs] == ["1", "2", "3"]
+        para2 = paragraphs[1]
+        assert [c.label for c in para2.children if c.kind == IRNodeKind.SUBPARAGRAPH] == ["a", "b"]
+        assert check_invariants(normalized) == []
+
+        tag_facts = [f for f in facts if f.kind_value == SourceNormalizationKind.TAG_RECLASSIFY.value]
+        assert len(tag_facts) == 1
+        assert tag_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
+        assert "section-scoped subsection continuation" in tag_facts[0].before
+        assert "folded into previous subsection" in tag_facts[0].after
 
 
 # ---------------------------------------------------------------------------

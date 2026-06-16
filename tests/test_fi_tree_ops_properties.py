@@ -43,6 +43,7 @@ from lawvm.core.tree_ops import (
     check_invariants,
     default_label_sort_key,
     find_flattened_sublist_warnings,
+    find_label_sequence_gap_warnings,
     find_text_duplication_warnings,
     find,
     format_invariant_path,
@@ -168,6 +169,116 @@ def test_find_flattened_sublist_warnings_ignores_monotonic_family() -> None:
     )
 
     assert find_flattened_sublist_warnings(body) == []
+
+
+def test_find_label_sequence_gap_warnings_detects_alakohta_starting_at_g() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="107",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="2",
+                                children=(
+                                    IRNode(kind=IRNodeKind.CONTENT, text="laitokseen, jossa poltetaan:"),
+                                    IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="g", text="eläinten ruhot;"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_label_sequence_gap_warnings(body)
+
+    assert {
+        "kind": "label_sequence_starts_late",
+        "path": "body/section:107/subsection:2/paragraph:2",
+        "node_kind": "subparagraph",
+        "family": "alpha",
+        "previous_label": None,
+        "next_label": "g",
+        "missing_labels": ["a", "b", "c", "d", "e", "f"],
+        "missing_label_count": 6,
+        "label_sample": ["g"],
+        "tombstone_labels_present": [],
+    } in warnings
+
+
+def test_find_label_sequence_gap_warnings_counts_tombstone_slots_as_present() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="one"),
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="2",
+                                attrs={"lawvm_repeal_placeholder": "1"},
+                            ),
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="three"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert find_label_sequence_gap_warnings(body) == []
+
+
+def test_find_label_sequence_gap_warnings_detects_internal_section_gap() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="10",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="107"),
+                    IRNode(kind=IRNodeKind.SECTION, label="109"),
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_label_sequence_gap_warnings(body)
+
+    assert warnings[0]["kind"] == "label_sequence_internal_gap"
+    assert warnings[0]["path"] == "body/chapter:10"
+    assert warnings[0]["node_kind"] == "section"
+    assert warnings[0]["missing_labels"] == ["108"]
+
+
+def test_find_label_sequence_gap_warnings_does_not_require_chapter_section_start_at_one() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="10",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="107"),),
+            ),
+        ),
+    )
+
+    assert find_label_sequence_gap_warnings(body) == []
 
 
 @st.composite
@@ -1444,6 +1555,8 @@ def test_tree_invariant_violation_dict_projection_is_stable() -> None:
         "child_kind": "section",
         "label": None,
         "normalized_label": None,
+        "container_kind": None,
+        "container_label": None,
         "count": None,
         "previous_label": "5",
         "next_label": "2",

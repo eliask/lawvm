@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional, cast
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
 from lawvm.core.phase_result import Finding
-from lawvm.core.replay_lints import build_text_duplication_findings
+from lawvm.core.replay_lints import build_label_sequence_gap_findings, build_text_duplication_findings
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
@@ -147,5 +147,55 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
             if key not in seen_text_warnings:
                 request.replay_findings.append(finding)
                 seen_text_warnings.add(key)
+
+    materialized_label_gap_findings = build_label_sequence_gap_findings(
+        deduped_materialized_ir,
+        phase="materialized",
+        source_statute=request.parent_id,
+    )
+    if request.replay_meta_out is not None and materialized_label_gap_findings:
+        warnings = request.replay_meta_out.setdefault("label_sequence_gap_warnings", [])
+        cast(list[dict[str, object]], warnings).extend(
+            {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            for finding in materialized_label_gap_findings
+        )
+    if materialized_label_gap_findings:
+        seen_label_gap_warnings = {
+            (
+                finding.kind,
+                str(finding.detail.get("phase") or ""),
+                str(finding.detail.get("kind") or ""),
+                str(finding.detail.get("path") or ""),
+                str(finding.detail.get("node_kind") or ""),
+                str(finding.detail.get("next_label") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "label_sequence_gap_warning"
+        }
+        for finding in materialized_label_gap_findings:
+            warning = {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            missing = ", ".join(str(item) for item in warning.get("missing_labels", [])[:8])
+            request.replay_print(
+                f"WARNING label sequence gap: {warning['path']} {warning['node_kind']} missing {missing}"
+            )
+            key = (
+                "label_sequence_gap_warning",
+                "materialized",
+                str(warning.get("kind") or ""),
+                str(warning.get("path") or ""),
+                str(warning.get("node_kind") or ""),
+                str(warning.get("next_label") or ""),
+            )
+            if key not in seen_label_gap_warnings:
+                request.replay_findings.append(finding)
+                seen_label_gap_warnings.add(key)
 
     return products

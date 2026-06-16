@@ -12,7 +12,11 @@ from typing import List
 
 from lawvm.core.ir import IRNode
 from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
-from lawvm.core.tree_ops import find_flattened_sublist_warnings, find_text_duplication_warnings
+from lawvm.core.tree_ops import (
+    find_flattened_sublist_warnings,
+    find_label_sequence_gap_warnings,
+    find_text_duplication_warnings,
+)
 
 
 def build_text_duplication_findings(
@@ -86,4 +90,39 @@ def build_flattened_sublist_findings(
     ]
 
 
-__all__ = ["build_flattened_sublist_findings", "build_text_duplication_findings"]
+def build_label_sequence_gap_findings(
+    tree: IRNode,
+    *,
+    phase: str,
+    source_statute: str = "",
+) -> List[Finding]:
+    """Convert suspicious label sequence gaps into finding-ledger observations.
+
+    These warnings are structural diagnostics only.  Existing tombstone/scaffold
+    children count as occupied labels in the detector, so represented repeals do
+    not become false gaps.
+    """
+
+    message = (
+        "Replay output contains a suspicious legal-unit label sequence gap."
+        if phase == "replay_fold"
+        else "Materialized output contains a suspicious legal-unit label sequence gap."
+    )
+    return [
+        Finding(
+            kind="label_sequence_gap_warning",
+            role=OBSERVATION_ROLE,
+            stage="replay_lints",
+            blocking=False,
+            source_statute=source_statute,
+            detail={"message": message, "phase": phase, **warning},
+        )
+        for warning in find_label_sequence_gap_warnings(tree)
+    ]
+
+
+__all__ = [
+    "build_flattened_sublist_findings",
+    "build_label_sequence_gap_findings",
+    "build_text_duplication_findings",
+]

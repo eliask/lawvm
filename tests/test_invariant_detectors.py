@@ -82,7 +82,7 @@ def test_core_replay_invariant_profile_is_declarative_and_opt_in() -> None:
         "expiry_chain",
         "replay_timeline",
     )
-    assert data["warnings"] == ("text_duplication", "flattened_sublist_family")
+    assert data["warnings"] == ("text_duplication", "flattened_sublist_family", "label_sequence_gap")
     assert data["local_allowance_policy"] == "frontend_required"
     assert data["local_classifier_policy"] == "frontend_required"
     assert data["replay_authorization_claims"] is False
@@ -330,6 +330,47 @@ def test_run_invariant_detector_filters_by_typed_path_before_message_projection(
     messages = run_invariant_detector_messages(tree, "duplicate_label", target_path="section:2")
 
     assert messages == ["body/section:2: duplicate subsection:1 (2 times)"]
+
+
+def test_run_label_sequence_gap_detector_projects_message_and_detail() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="107",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="2",
+                                children=(IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="g"),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    results = run_invariant_detector(tree, "label_sequence_gap", target_path="section:107")
+
+    result = next(
+        item
+        for item in results
+        if item.path_text == "body/section:107/subsection:2/paragraph:2"
+        and item.detail["node_kind"] == "subparagraph"
+    )
+    assert result.detector == "label_sequence_gap"
+    assert result.kind == "label_sequence_starts_late"
+    assert result.message == (
+        "body/section:107/subsection:2/paragraph:2: "
+        "subparagraph sequence starts at 'g'; missing a, b, c, d, e, f"
+    )
+    assert result.detail["missing_labels"] == ("a", "b", "c", "d", "e", "f")
 
 
 def test_run_invariant_detector_rejects_unknown_detector() -> None:
