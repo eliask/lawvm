@@ -101,6 +101,70 @@ def test_enactment_preamble_is_demoted_not_flagged_as_a_drop() -> None:
     assert all(pos == "leading_preamble" for _tier, pos in tiers) or tiers == []
 
 
+def test_drop_predicate_is_unit_agnostic_not_section_only() -> None:
+    """A dropped ``N luku`` / ``N momentti`` is visible, not just ``N §``.
+
+    Predicate fix (coverage_audit.py): the old drop predicate regexed only
+    ``(\\d+)\\s*§`` against the span text, so a dropped chapter / moment / item /
+    appendix / heading was structurally invisible.  The classifier now reads
+    UNIT-QUALIFIED labels from the span TOKENS (NUM + structural-noun cat), so
+    every addressable unit kind surfaces.  Here ``2 momentti`` is a trailing
+    drop the parser produced no op for, and it must classify as a real drop with
+    a unit-qualified label carrying the unit word ("2momentti", not "2").
+    """
+    tiers = classify_uncovered_spans("Muutetaan 5 § ja lisätään 2 momentti")
+    real = [
+        c for c in tiers
+        if c.tier in ("verb_no_op", "unmatched_section")
+        and c.position in ("interior", "trailing", "no_ops")
+    ]
+    assert real, tiers
+    assert any("2momentti" in c.labels for c in real), [c.labels for c in real]
+
+
+def test_unit_qualified_op_label_keys_separate_section_from_chapter() -> None:
+    """``op_label_keys`` unit-qualifies so a dropped ``N luku`` is not masked by ``N §``.
+
+    ``op.number`` is the bare ordinal regardless of unit; matching a span's
+    ``6luku`` against a produced ``6 §`` op (bare "6") would falsely mark the
+    chapter drop as covered.  The unit-qualified key ("6§" vs "6luku") prevents
+    that masking while keeping the bare number for backward-compatible matching.
+    """
+    from lawvm.finland.johtolause.api import parse_clause
+    from lawvm.finland.johtolause.coverage_audit import op_label_keys
+
+    parsed = parse_clause("Muutetaan 6 § seuraavasti:", statute_id="K")
+    keys: set[str] = set()
+    for op in parsed.parsed_ops or []:
+        keys |= op_label_keys(op)
+    assert "6§" in keys  # unit-qualified
+    assert "6" in keys  # bare-number fallback
+    assert "6luku" not in keys  # a chapter drop is NOT masked by the § op
+
+
+def test_classify_mirrors_production_filtered_token_path() -> None:
+    """The standalone classifier audits the FILTERED stream, not a raw re-parse.
+
+    Alignment fix (coverage_audit.py): ``classify_uncovered_spans`` previously
+    re-parsed the RAW token tape (``tokenize`` -> ``surface_parse.parse``), while
+    the production silent-drop path in ``api.py`` classifies the FILTERED stream
+    (``apply_annotations_with_jolloin_pairs`` -> ``parse``).  The witness
+    token-indices were therefore offset, so real drops were mislabelled
+    ``no_ops``/``other`` and excluded.  The wrapper now mirrors ``api.py``: a
+    clean clause leaves no false interior/trailing real-drop, and a clause with
+    annotation spans is classified on the same indices the audit walks.
+    """
+    # A clause with a citation/provenance span: on the filtered stream the audit
+    # indices align, so a clean op leaves no false real-drop.
+    text = "Muutetaan lain (123/2020) 5 § ja 9 §"
+    tiers = classify_uncovered_spans(text)
+    assert all(
+        c.tier not in ("verb_no_op", "unmatched_section")
+        or c.position == "leading_preamble"
+        for c in tiers
+    ), [(c.tier, c.position, c.labels) for c in tiers]
+
+
 def test_reinstatement_preamble_around_produced_op_is_low_signal() -> None:
     """When the op IS produced, its narrow witness must not raise a real-drop tier.
 

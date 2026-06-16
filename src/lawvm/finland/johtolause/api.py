@@ -394,19 +394,23 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # loud-fail inspection.  Never let the audit break a parse.
     if _os.environ.get("LAWVM_PARSE_TOTALITY"):
         try:
-            import re as _re_audit
+            from lawvm.finland.johtolause.coverage_audit import (
+                classify_spans_from_parsed,
+                op_label_keys,
+            )
 
-            from lawvm.finland.johtolause.coverage_audit import classify_spans_from_parsed
-
-            _op_labels = {
-                _re_audit.sub(r"\s+", "", (op.number or "")).lower()
-                for op in ops
-                if getattr(op, "number", "")
-            }
+            # Unit-qualified op labels ("6§" vs "6luku") so the unit-agnostic
+            # drop predicate cannot mask a dropped "N luku" with a produced
+            # "N §"; bare numbers are included for backward-compatible matching.
+            _op_labels: set[str] = set()
+            for op in ops:
+                _op_labels |= op_label_keys(op)
             for _cs in classify_spans_from_parsed(
                 text, tokens, original_surface_clause, _op_labels
             ):
-                if _cs.position in ("interior", "trailing") and _cs.tier in (
+                # interior/trailing = mid-stream drops; no_ops = whole-clause
+                # drop (parser produced nothing yet the clause names units).
+                if _cs.position in ("interior", "trailing", "no_ops") and _cs.tier in (
                     "verb_no_op",
                     "unmatched_section",
                 ):
