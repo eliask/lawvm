@@ -35,6 +35,7 @@ recognizer; the container family declines bare-section shapes itself.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal, Optional
 
 from lawvm.finland.johtolause.grammar.backrefs import (
@@ -111,6 +112,25 @@ from lawvm.finland.source_verb import SourceVerb
 # than emit a divergent grouping when families mix in ways this driver does not
 # reproduce.
 FamilyKind = Literal["section", "insertion", "container", "heading", "move"]
+
+
+@dataclass(frozen=True, slots=True)
+class VerbGroupContext:
+    """The intra-/cross-verb-group discourse state the driver threads.
+
+    A faithful narrowing of the old ``surface_parse.VerbGroupContext``: the
+    anchors a later anaphoric arm (``sanottuun pykälään …`` / a ``jolloin``
+    momentti renumber) resolves against. ``last_section`` / ``last_momentti`` are
+    the last-mentioned section label and momentti number; ``last_section_chapter``
+    is that section's effective chapter; ``chapter`` / ``part`` are the running
+    scope carried between target batches.
+    """
+
+    last_section: str = ""
+    last_section_chapter: str = ""
+    last_momentti: int = 0
+    chapter: str = ""
+    part: str = ""
 
 
 class OutOfScope(Exception):
@@ -1294,14 +1314,22 @@ def _recognize_first_target_or_empty(
 
 def _parse_verb_group(
     scan: _Scan,
+    ctx: VerbGroupContext,
     jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
     consumed_jolloin_positions: list[int] | None = None,
     consumed_jolloin_contexts: dict[int, tuple[str, str]] | None = None,
-) -> tuple[Optional[SourceVerb], list[SurfaceNode]]:
+) -> tuple[Optional[SourceVerb], list[SurfaceNode], VerbGroupContext]:
     """Parse one verb group: VERB then a separator-joined structural-target list.
 
-    Returns (verb_code, nodes). Raises :class:`OutOfScope` on any shape inside
-    the group this driver does not reproduce.
+    Returns ``(verb_code, nodes, ctx)`` where ``ctx`` is the incoming discourse
+    state advanced over this group's nodes (the anchors a later group's anaphoric
+    arm resolves against). Raises :class:`OutOfScope` on any shape inside the
+    group this driver does not reproduce.
+
+    The incoming ``ctx`` carries the cross-verb-group last-section / last-momentti
+    anchors plus the running chapter/part scope; intra-group scope is threaded via
+    the local ``chapter`` / ``part`` exactly as before (behaviour-neutral) and the
+    returned ``ctx`` is computed from the group's accumulated nodes.
 
     When ``jolloin_renumber_pairs`` is supplied, a ``JOLLOIN_MOVE`` token whose
     position keys the map is consumed in-list (recording its position + the
@@ -1360,7 +1388,7 @@ def _parse_verb_group(
     first_batch_start = scan.pos
     batch_kind = _recognize_first_target_or_empty(scan, verb)
     if batch_kind is None:
-        return verb, []
+        return verb, [], ctx
     batch, kind = batch_kind
     nodes = list(batch)
     last_batch: list[SurfaceNode] = list(batch)
@@ -1606,7 +1634,12 @@ def _parse_verb_group(
     nodes = _normalize_intrabatch_explicit_part_scope(nodes, "")
     if move_dest_part:
         nodes = apply_leading_move_destination_part(nodes, move_dest_part)
-    return verb, nodes
+    # Advance the discourse context over this group's accumulated nodes (the
+    # anchors a following group's anaphoric arm resolves against). Computed as a
+    # single whole-group pass — the equivalent fixed point of the per-batch
+    # threading, mirroring the part-switch retarget above.
+    out_ctx = _update_context_from_nodes(nodes, ctx, verb)
+    return verb, nodes, out_ctx
 
 
 def _mixed_continuation_is_foldable(
@@ -1794,6 +1827,95 @@ def _extract_part(nodes: list[SurfaceNode], current: str) -> str:
     return extract_part(nodes, current)
 
 
+def _update_context_from_nodes(
+    nodes: list[SurfaceNode],
+    prior: VerbGroupContext,
+    verb: Optional[SourceVerb],
+) -> VerbGroupContext:
+    """Update the running :class:`VerbGroupContext` from a parsed batch.
+
+    A faithful narrowing of ``surface_parse._extract_section_context_from_nodes``
+    to the node types the wired families emit. The running ``chapter`` / ``part``
+    advance via the family extractors (``_extract_chapter`` / ``_extract_part``);
+    the last-mentioned section anchor (``last_section`` / ``last_section_chapter``
+    / ``last_momentti``) is taken from the first SECTION-bearing node walking the
+    batch in reverse — a plain section ref, an insertion section, a scope block
+    (whose effective chapter is the block's CHAPTER scope label), or a
+    descendant-coordination base — each contributing its momentti from the first
+    sub-ref / sub-target / coordination arm that carries one. A heading placement
+    breaks the walk and contributes only its chapter (no section / momentti).
+    When no batch node carries a section, the prior anchor persists unchanged.
+    """
+    new_chapter = _extract_chapter(nodes, prior.chapter, verb)
+    new_part = _extract_part(nodes, prior.part)
+    last_section = prior.last_section
+    last_section_chapter = prior.last_section_chapter
+    last_momentti = prior.last_momentti
+    for node in reversed(nodes):
+        if isinstance(node, SurfaceHeadingPlacement):
+            if node.chapter:
+                last_section_chapter = node.chapter
+            break
+        if isinstance(node, SurfaceScopeBlock) and node.targets:
+            last_t = node.targets[-1]
+            if not isinstance(last_t, SurfaceTargetRef):
+                continue
+            if last_t.kind == TargetKind.SECTION and last_t.label:
+                last_section = last_t.label
+                last_section_chapter = (
+                    node.scope_label
+                    if node.scope_kind == ScopeKind.CHAPTER
+                    else last_t.chapter
+                ) or ""
+                for sr in last_t.sub_refs:
+                    if sr.momentti:
+                        last_momentti = sr.momentti
+                        break
+            break
+        if (
+            isinstance(node, SurfaceInsertion)
+            and node.kind == TargetKind.SECTION
+            and node.label
+        ):
+            last_section = node.label
+            last_section_chapter = node.chapter or ""
+            if node.sub_target and node.sub_target.momentti:
+                last_momentti = node.sub_target.momentti
+            break
+        if (
+            isinstance(node, SurfaceDescendantCoordination)
+            and node.base.kind == TargetKind.SECTION
+            and node.base.label
+        ):
+            last_section = node.base.label
+            last_section_chapter = node.base.chapter or ""
+            for sr in node.arms:
+                if sr.momentti:
+                    last_momentti = sr.momentti
+                    break
+            break
+        if (
+            isinstance(node, SurfaceTargetRef)
+            and node.kind == TargetKind.SECTION
+            and node.label
+        ):
+            last_section = node.label
+            last_section_chapter = node.chapter or ""
+            if node.sub_refs:
+                for sr in node.sub_refs:
+                    if sr.momentti:
+                        last_momentti = sr.momentti
+                        break
+            break
+    return VerbGroupContext(
+        last_section=last_section,
+        last_section_chapter=last_section_chapter,
+        last_momentti=last_momentti,
+        chapter=new_chapter,
+        part=new_part,
+    )
+
+
 def _extract_jolloin_section_context(nodes: list[SurfaceNode]) -> tuple[str, str]:
     """The anchor ``(section, chapter)`` for a JOLLOIN_MOVE momentti renumber.
 
@@ -1805,41 +1927,13 @@ def _extract_jolloin_section_context(nodes: list[SurfaceNode]) -> tuple[str, str
     heading placement breaks the walk and contributes only its chapter (no
     section). The empty context ``("", "")`` (no anchor) drops the momentti
     renumber pair, exactly as the old parser does.
+
+    Implemented as a thin projection over :func:`_update_context_from_nodes` from
+    an empty prior — the JOLLOIN_MOVE anchor is exactly the batch's last-mentioned
+    section (no carry-forward), so only the section / chapter fields are read.
     """
-    for node in reversed(nodes):
-        if isinstance(node, SurfaceHeadingPlacement):
-            return "", node.chapter or ""
-        if isinstance(node, SurfaceScopeBlock) and node.targets:
-            last_t = node.targets[-1]
-            if not isinstance(last_t, SurfaceTargetRef):
-                continue
-            if last_t.kind == TargetKind.SECTION and last_t.label:
-                eff_chapter = (
-                    node.scope_label
-                    if node.scope_kind == ScopeKind.CHAPTER
-                    else last_t.chapter
-                )
-                return last_t.label, eff_chapter or ""
-            break
-        if (
-            isinstance(node, SurfaceInsertion)
-            and node.kind == TargetKind.SECTION
-            and node.label
-        ):
-            return node.label, node.chapter or ""
-        if (
-            isinstance(node, SurfaceDescendantCoordination)
-            and node.base.kind == TargetKind.SECTION
-            and node.base.label
-        ):
-            return node.base.label, node.base.chapter or ""
-        if (
-            isinstance(node, SurfaceTargetRef)
-            and node.kind == TargetKind.SECTION
-            and node.label
-        ):
-            return node.label, node.chapter or ""
-    return "", ""
+    ctx = _update_context_from_nodes(nodes, VerbGroupContext(), None)
+    return ctx.last_section, ctx.last_section_chapter
 
 
 def _has_later_verb(scan: _Scan) -> bool:
@@ -1944,8 +2038,13 @@ def parse(
 
     verb_groups: list[SurfaceVerbGroup] = []
 
-    verb, nodes = _parse_verb_group(
+    # The discourse context threaded across verb groups (the anchors a later
+    # group's anaphoric arm resolves against). Initialised empty.
+    ctx = VerbGroupContext()
+
+    verb, nodes, ctx = _parse_verb_group(
         scan,
+        ctx,
         jolloin_renumber_pairs,
         consumed_jolloin_positions,
         consumed_jolloin_contexts,
@@ -1993,8 +2092,9 @@ def parse(
                 while not scan.cur.at_end:
                     scan.advance()
                 break
-        verb2, nodes2 = _parse_verb_group(
+        verb2, nodes2, ctx = _parse_verb_group(
             scan,
+            ctx,
             jolloin_renumber_pairs,
             consumed_jolloin_positions,
             consumed_jolloin_contexts,
