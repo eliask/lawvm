@@ -63,13 +63,85 @@ CENSUS_ACCOUNTING_BUCKETS: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Adjudication ledger (v0: empty). A future ledger keyed by statute id moves an
-# owned genuine-delta clause from ``genuine_delta_unclassified`` into
-# ``genuine_delta_adjudicated_fix`` by adding its sid here — no code change in
-# the classifier. ``census_accounting`` accepts an override so a test or a real
-# ledger can inject its own set without mutating this module-level default.
+# Adjudication ledger. Keyed by statute id; moves an owned genuine-delta clause
+# from ``genuine_delta_unclassified`` into ``genuine_delta_adjudicated_fix`` —
+# no code change in the classifier. ``census_accounting`` accepts an override so
+# a test or a real ledger can inject its own set without mutating this default.
+#
+# These 33 sids are the ``adjudicated_parser_correction`` verdicts from the
+# genuine-delta adjudication round (ledger:
+# ``notes_internal/FI_GENUINE_DELTA_LEDGER_2026_06_16.md``). In each, the NEW
+# johtolause parser is CORRECT and the OLD parser silently dropped content; the
+# verdict authority (Pro ruling) is source-language reading + downstream replay
+# effect, with Finlex/oracle supporting-only. Each entry carries its systematic
+# class + a one-line evidence note so the accounting ledger is self-documenting.
+#
+# NOT included (still ``genuine_delta_unclassified`` = 4): the 3 ``parity_bug``
+# verdicts {1995/551, 1991/1055, 1989/117} (E_lukuun_tilalle_collapse — NEW
+# drops a real inserted entity; a CONCURRENT lane owns the fix) and the 1
+# ``needs_source_verification`` {2002/723} (G_witness_span_only — replay-neutral
+# span-attribution, undecidable now).
+#
+# Systematic classes (mechanism -> why NEW is right):
+#   A_kohta_special        named sub-qualifier ('X koskeva kohta', 'N ryhmän M
+#                          kohta', 'M.N kohta', ...) NEW captures in
+#                          sub_refs[0].special; OLD dropped it to '' (whole-§).
+#   B_target_list_extend   coordinated target-list extension; OLD stopped early /
+#                          merged, NEW keeps the full coordinated MUUTTAA/LISATA
+#                          list.
+#   C_desccoord_promote    '4 §:n A-C kohdat, D kohdan ...'; OLD flattened to
+#                          bare 4 §, NEW promotes to SurfaceDescendantCoordination
+#                          (residual deep kappale-tail still unmodelled, still
+#                          strictly better than OLD).
+#   D_provenance_overrun_old  OLD overran the 'sellaisina/näistä kuin ne ovat'
+#                          provenance boundary, emitting spurious DUPLICATE
+#                          targets re-derived from the tail; NEW stops at the
+#                          boundary (duplicates would double-apply on replay).
+#   F_phantom_node_old     OLD emitted a phantom empty-label trailing node; NEW
+#                          emits the correct count.
 # ---------------------------------------------------------------------------
-FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0: frozenset[str] = frozenset()
+FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0: frozenset[str] = frozenset(
+    {
+        # --- A_kohta_special (16): named sub-qualifier NEW captures, OLD dropped to ''
+        "1955/7",  # '8 §:n 1 ryhmän f kohta' — OLD whole-§, NEW special='1 ryhmän f kohta'.
+        "1989/1204",  # '15 §:n ... kohta' qualifier + MUUTTAA list 4->8 (A+B); OLD truncated.
+        "1989/659",  # '10§:n Moottoriajoneuvorekisteriotetta koskeva kohta' — OLD dropped.
+        "1989/754",  # '1§:n ... lääniä koskevan kohdan ... alakohdan' — OLD dropped.
+        "1992/1397",  # three groups each name a 'X koskevan kohdan' sub-item; OLD dropped all.
+        "2000/1040",  # '1 §:n Iisalmen käräjäoikeutta koskevan kohdan' — OLD dropped.
+        "2000/684",  # '76 §:n I ryhmän 3 kohta' — OLD dropped sub-qualifier on 76 §.
+        "2000/70",  # '2 §:n ... koskevat kohdat' (both groups) — OLD dropped both.
+        "2001/1172",  # '1 §:n Tornion käräjäoikeutta koskeva kohta' — OLD dropped.
+        "2002/543",  # '1 §:n 4.4 kohta' — OLD dropped, NEW special='4.4 kohta'.
+        "2004/1133",  # '1 §:n Kauhavan käräjäoikeutta koskeva kohta' — OLD dropped.
+        "2005/296",  # LISATA '3 §:n 11. kohta' — OLD dropped, NEW special='11. kohta'.
+        "2008/618",  # '1 §:n Lahden käräjäoikeutta koskeva kohta' — OLD dropped.
+        "2008/962",  # '22 §:n merkkejä 671―684 koskeva kohta' — OLD dropped.
+        "2010/1385",  # '1 §:n Etelä-Savon käräjäoikeutta koskeva kohta' — OLD dropped.
+        "2011/789",  # '1 §:n Ylivieska-Raahen käräjäoikeutta koskeva kohta' — OLD dropped.
+        # --- B_target_list_extend (10): full coordinated target list NEW keeps, OLD stopped early
+        "1957/299",  # '14 §:n vekseliä koskeva kohta, sekä 38, 45 ja 47 §'; OLD only 14 § (A+B).
+        "1991/462",  # '1§:n ... koskevan kohdan ja 3§:n'; OLD only 1 § bare (A+B).
+        "1992/316",  # MUUTTAA '17 §:n ... kohta, 18 §, 23 §'; OLD only 17 § bare (A+B).
+        "1995/1282",  # MUUTTAA '13,14 §:n ... kohta, 15 §, 20 §...'; OLD only 13,14 bare (A+B).
+        "2003/75",  # MUUTTAA list of 7; OLD only first 3 (A+B+C).
+        "2003/917",  # '13,14 §:n ... koskevat kohdat ja 15 §'; OLD 13,14 bare (A+B).
+        "2004/958",  # '13,14 §:n ... koskevat kohdat ja 15 §'; OLD 13,14 bare (A+B).
+        "2006/908",  # LISATA 3 insertions; OLD captured 2, dropped 18 a § insertion.
+        "2011/302",  # '16 §:n taulukon a kohta ja 18 §:n c kohta'; OLD stopped at 16 § bare (A+B).
+        "2018/1311",  # '16 §:n merkkiä 317 ... ja 18 §:n merkkejä ...'; OLD only 16 § bare (A+B).
+        # --- C_desccoord_promote (3): DescCoord(base, arms) NEW promotes, OLD flattened to bare §
+        "1987/299",  # '4 §:n A-C kohdat, D kohdan ...'; OLD bare 4 §, NEW DescCoord.
+        "1988/1073",  # same drafting pattern as 1987/299; OLD bare 4 §, NEW DescCoord.
+        "1991/533",  # '4§:n A-C kohdat, D kohdan ...'; OLD bare 4 §, NEW DescCoord.
+        # --- D_provenance_overrun_old (3): OLD emitted spurious DUPLICATEs past provenance boundary
+        "1979/980",  # OLD nodes[5:7] = dup 44 §/DescCoord(45) re-derived from provenance tail.
+        "1988/4",  # OLD 4th node = dup ScopeBlock CHAPTER 6 from 'näistä ...' provenance tail.
+        "2008/559",  # OLD KUMOTA 4th node = dup 3 § from 'sellaisin kuin ne ovat ...' tail.
+        # --- F_phantom_node_old (1): OLD emitted a phantom empty-label trailing node
+        "2002/375",  # 'liitteet 1,5,6 ja 7' = 4 appendices; OLD emitted 5 (phantom empty-label).
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +157,15 @@ FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32922
 #: clause that diverges from the legacy parser and is not adjudicated) pushes
 #: this up and fails CI — the same parity guard the coarse census enforces, now
 #: wired into the accounting partition.
-FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 37
+#:
+#: After the 2026-06-16 adjudication round, 33 of the 37 genuine deltas were
+#: moved to ``genuine_delta_adjudicated_fix`` (see the ledger above), leaving 4
+#: unclassified: the 3 ``parity_bug`` verdicts {1995/551, 1991/1055, 1989/117}
+#: + the 1 ``needs_source_verification`` {2002/723}. The concurrent parity-bug
+#: lane will drop these 3 once it lands, taking the live count to 1; this
+#: ``<=`` ceiling of 4 stays GREEN through that drop (1 <= 4). Tighten 4 -> 1
+#: after that lane merges.
+FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 4
 
 
 def _generalize_delta_path(path: str) -> str:

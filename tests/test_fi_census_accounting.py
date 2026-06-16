@@ -53,9 +53,15 @@ def test_bucket_ids_are_the_closed_five() -> None:
     assert len(set(CENSUS_ACCOUNTING_BUCKETS)) == 5
 
 
-def test_v0_adjudication_ledger_is_empty() -> None:
-    # v0 has no adjudication ledger, so every genuine delta is unclassified.
-    assert FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0 == frozenset()
+def test_adjudication_ledger_holds_the_33_corrections() -> None:
+    # The 2026-06-16 adjudication round moved 33 of the 37 genuine deltas into
+    # the ledger as ``adjudicated_parser_correction`` (NEW right, OLD silently
+    # dropped content). The 4 NOT in the ledger are the 3 parity_bugs (owned by
+    # a concurrent lane) + the 1 needs_source_verification.
+    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0) == 33
+    # The deliberately-excluded sids must stay out of the ledger.
+    excluded = {"1995/551", "1991/1055", "1989/117", "2002/723"}
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0.isdisjoint(excluded)
 
 
 def test_baselines_are_sane() -> None:
@@ -127,6 +133,20 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
         "parity regression, adjudicate it (add its sid to the ledger), or bump "
         "the baseline deliberately. New unclassified sids include:\n  "
         + "\n  ".join(_result.unclassified_delta_sids[:20])
+    )
+
+
+@pytest.mark.skipif(
+    not _canonical_corpus_available(),
+    reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_genuine_delta_adjudicated_fix_count(_result) -> None:
+    """The 33 adjudicated parser corrections land in the adjudicated bucket."""
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == 33, (
+        "genuine_delta_adjudicated_fix should equal the 33 sids in the "
+        "adjudication ledger (the 2026-06-16 adjudicated_parser_correction "
+        "verdicts). Got "
+        f"{_result.buckets['genuine_delta_adjudicated_fix']}."
     )
 
 
