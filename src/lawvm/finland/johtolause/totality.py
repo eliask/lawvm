@@ -280,6 +280,95 @@ def _luku_governs_covered_section(
     return False
 
 
+# Container-context guard tuning.
+_CONTAINER_LOCATIVE_PREFIXES: tuple[str, ...] = (
+    "luvu",   # luvun / luvulle / luvussa
+    "lukuu",  # lukuun
+    "luvuks",  # luvuksi
+    "osan",
+    "osaan",
+    "osaks",  # osaksi
+)
+# Tokens that END the locative noun phrase: past these the following ``N §`` is a
+# coordinated SIBLING target or a different container, not a section CONTAINED by
+# this LUKU/OSA. A comma / coordinating conjunction (sekä/ja) / range dash breaks
+# the genitive-locative chain.
+_CONTAINER_BARRIER_CATS: frozenset[str] = frozenset(
+    {"VERB", "END", "COMMA", "CONJ", "DASH"}
+)
+# Struct nouns that, when seen before the target PYKALA, mean this label is NOT a
+# direct §-container (a nested NIMIKE/OTSIKKO/MOMENTTI/KOHTA target, or a second
+# container of a different kind). A single nested ``N luvun`` hop IS allowed for an
+# OSA (``II osan 5 luvun 6 §:ään``), handled explicitly below.
+_CONTAINER_BLOCKING_STRUCTS: frozenset[str] = frozenset(
+    {"OSA", "MOMENTTI", "KOHTA", "ALAKOHTA", "LIITE", "NIMIKE", "OTSIKKO"}
+)
+_CONTAINER_WINDOW = 10
+
+
+def _container_governs_covered_section(
+    label: OperativeLabel, tokens: list[Token], op_labels: set[str]
+) -> bool:
+    """True when a LUKU/OSA is the structural CONTAINER of a covered ``N §`` target.
+
+    Generalizes :func:`_luku_governs_covered_section` to the locative-chain shapes
+    the immediate-adjacency form misses: ``N luvun [sellaisena kuin se on laissa X]
+    M §:ään``, ``N lukuun väliaikaisesti uusi M [a] § ... ja K §`` and the appendix
+    part-container ``II osan [P luvun] M §:ään``. The LUKU/OSA is benign container
+    context (not a dropped operative target) iff a covered section op is reached
+    through a TIGHT locative chain: no ``COMMA``/``CONJ``/``DASH`` barrier (which
+    would make the ``N §`` a coordinated sibling, e.g. ``7 luvun otsikko sekä
+    50―55 §`` where ``7 luku`` is itself a heading target), no intervening nested
+    target struct (``NIMIKE``/``OTSIKKO``/``KOHTA``/...), within a bounded window.
+    One nested ``P luvun`` hop is allowed for an OSA part-container.
+
+    Conservative by construction: a genuinely dropped whole-chapter/part op (no
+    contained covered ``§``, or one separated by a coordinator) stays flagged.
+    """
+    n = len(tokens)
+    if not tokens[label.struct_idx].text.lower().startswith(
+        _CONTAINER_LOCATIVE_PREFIXES
+    ):
+        # Only a genitive/illative locative container (``luvun``/``osan``/...) binds
+        # a following section; a bare nominative ``N luku`` is a standalone target.
+        return False
+    k = label.struct_idx + 1
+    seen = 0
+    luku_hops = 0
+    while k < n and seen < _CONTAINER_WINDOW:
+        cat = tokens[k].cat
+        if cat in _CONTAINER_BARRIER_CATS:
+            return False
+        if cat == "NUM":
+            num = tokens[k].text
+            m = k + 1
+            if m < n and tokens[m].cat == "LETTER":
+                num = num + tokens[m].text
+                m += 1
+            if m < n and tokens[m].cat == "PYKALA":
+                return _normalize(num) in op_labels
+            # ``OSA ... P luvun ... §`` -> allow a single nested genitive luku hop.
+            if (
+                m < n
+                and tokens[m].cat == "LUKU"
+                and luku_hops == 0
+                and tokens[m].text.lower().startswith(("luvu", "lukuu"))
+            ):
+                luku_hops += 1
+                k = m + 1
+                seen += 1
+                continue
+            # A bare number that is neither a section nor an allowed luku-hop (an
+            # appendix ``kohta`` list under the part) -> not a §-container.
+            return False
+        if cat in _CONTAINER_BLOCKING_STRUCTS:
+            return False
+        # A LETTER here is the roman-numeral part label tail (``II``); skip it.
+        k += 1
+        seen += 1
+    return False
+
+
 def _is_move_destination(label: OperativeLabel, tokens: list[Token]) -> bool:
     """True when the label is the destination of a move/renumber.
 
@@ -383,10 +472,15 @@ def predicate(text: str) -> tuple[list[FlaggedDrop], int]:
             gov = _governing_section_label(lab, raw_tokens)
             if gov is not None and gov in op_labels:
                 continue
-        # Chapter-context guard: a LUKU directly followed by a produced `N §` is
-        # container context, not a dropped operative target.
-        if lab.struct_cat == "LUKU" and _luku_governs_covered_section(
-            lab, raw_tokens, op_labels
+        # Container-context guard: a LUKU/OSA that is the structural container of a
+        # produced `N §` (chapter context `N luvun M §`, appendix part `II osan M §`,
+        # `N lukuun uusi M §`) is container context, not a dropped operative target.
+        # Reached through a tight locative chain only (a coordinated sibling `N §`
+        # past a comma/conjunction does NOT shield, so a dropped whole-chapter/part
+        # target stays flagged).
+        if lab.struct_cat in ("LUKU", "OSA") and (
+            _luku_governs_covered_section(lab, raw_tokens, op_labels)
+            or _container_governs_covered_section(lab, raw_tokens, op_labels)
         ):
             continue
         # Move-destination guard: a LUKU preceded by a move verb is the DESTINATION

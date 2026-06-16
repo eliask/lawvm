@@ -118,6 +118,49 @@ def test_2009_749_title_suffix_decline_not_a_silent_drop() -> None:
     assert n_ops == 0
 
 
+# --- (d) container-context guard: LUKU/OSA container of a covered section --------
+#
+# A LUKU/OSA that is the structural CONTAINER of a covered `N §` target (chapter
+# context `N luvun M §`, appendix part `II osan [P luvun] M §`, `N lukuun uusi
+# M §`) is benign container context, NOT a dropped operative target -- but only
+# when the covered `§` is reached through a tight locative chain (a coordinated
+# sibling `§` past a comma/conjunction does not shield). These sids were
+# adjudicated FALSE POSITIVES of the prototype run; the guard must now leave them
+# with ZERO flags.
+
+
+@pytest.mark.parametrize(
+    "sid",
+    [
+        "2018/539",   # II osan 3 luvun 1 §:ään (1 § covered) -> osa = part-container
+        "2018/579",   # I osan 1 luvun 2 §:ään (2 § covered) + uusi II A osa
+        "2018/1303",  # II osan 5/6 luvun 6/8 §:ään (both covered)
+        "2019/173",   # II osan 10 luvun 1/2 §:ään (covered)
+        "2020/1068",  # 3 lukuun uusi 7 § (7 § covered)
+        "2022/491",   # 18 lukuun uusi 19 a § (19a covered)
+        "2023/205",   # 5 lukuun uusi 13 a § (13a covered)
+    ],
+)
+def test_container_context_luku_osa_not_flagged(sid: str) -> None:
+    flagged, n_ops = _run(sid)
+    assert n_ops > 0
+    assert flagged == [], [
+        (f.label.label, f.label.struct_cat) for f in flagged
+    ]
+
+
+def test_container_guard_keeps_coordinated_sibling_chapter_flagged() -> None:
+    # 1996/473: `7 luvun otsikko sekä 50―55 §` -- the `7 luku` (heading target) is
+    # separated from any covered `§` by `otsikko` and `sekä`, so it is NOT a
+    # §-container and MUST stay flagged (a genuine dropped chapter-heading target),
+    # even though a *different* `7 lukuun uusi 52 a §` instance later in the clause
+    # IS a covered container. The dropped target survives.
+    flagged, n_ops = _run("1996/473")
+    assert n_ops > 0
+    pairs = {(f.label.struct_cat, f.label.label) for f in flagged}
+    assert ("LUKU", "7") in pairs, pairs
+
+
 # --- warn-only wiring: LAWVM_PARSE_TOTALITY surfaces residuals, never raises -----
 
 
