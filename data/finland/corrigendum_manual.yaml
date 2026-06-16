@@ -209,3 +209,16 @@
   correction_type: johtolause
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): glued period 'uusi.3' → 'uusi 3' in '78 §:ään uusi.3 momentti'. New grammar parser declines (undecodable insertion continuation); minimal unglue restores parse."
   verified: "2026-06-16"
+
+# Family C — dittographic "momentti" word inside an insertion target.
+# 1998/1195 (Asetus erikoislääkärin tutkinnosta annetun asetuksen muuttamisesta) —
+# "uusi momentti 3 momentti" → "uusi 3 momentti". The word "momentti" is duplicated
+# around the number; the jolloin renumber clause "nykyinen 3 momentti siirtyy 4
+# momentiksi" confirms the intent is to insert a new 3rd momentti, so the faithful
+# text is "uusi 3 momentti".
+- amendment_id: "1998/1195"
+  wrong_text: "uusi momentti 3 momentti"
+  correct_text: "uusi 3 momentti"
+  correction_type: johtolause
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): dittographic 'momentti' in '10 §:ään uusi momentti 3 momentti' → 'uusi 3 momentti'; disambiguated by the jolloin renumber clause 'nykyinen 3 momentti siirtyy 4 momentiksi' (insert a new 3rd momentti, current 3rd shifts to 4th)."
+  verified: "2026-06-16"
