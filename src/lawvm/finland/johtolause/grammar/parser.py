@@ -561,6 +561,50 @@ def _tail_starts_with_minka_ohella_arm(scan: _Scan) -> bool:
     return False
 
 
+def _skip_minka_ohella_leadin(scan: _Scan) -> bool:
+    """Consume a ``minkä ohella`` connective leading into a section ref.
+
+    The ``minkä ohella`` ("in addition to which") connective introduces a further
+    amendment target the old ``_target`` reaches past the two-WORD lead-in and
+    keeps as a section ref (``… sekä 93 §, minkä ohella 48 §:n 1 momentti
+    muutetaan``). The section continuation cannot skip the bare-WORD lead-in
+    itself, so the driver consumes exactly ``WORD("minkä") WORD("ohella")`` here —
+    ONLY when it is immediately followed (within a few tokens) by a structural
+    section ref — and re-enters target recognition at the section.
+
+    Called with the cursor at the position the separator already advanced past
+    (``after_sep``). Returns True (cursor left on the section ref's first token)
+    iff the ``minkä ohella`` lead-in was present and consumed; otherwise leaves
+    the cursor untouched. Reuses ``_tail_starts_with_minka_ohella_arm``'s shape
+    test (run from the current cursor) so the consume and the decline guard agree
+    by construction.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    if not (
+        i + 1 < n
+        and toks[i].cat == "WORD"
+        and (toks[i].text or "").lower() == "minkä"
+        and toks[i + 1].cat == "WORD"
+        and (toks[i + 1].text or "").lower() == "ohella"
+    ):
+        return False
+    # Require the connective to lead into a structural section ref (the kept
+    # target) — the same cue ``_tail_starts_with_minka_ohella_arm`` gates on.
+    leads_to_section = False
+    for k in range(i + 2, min(i + 6, n)):
+        if toks[k].cat == "PYKALA":
+            leads_to_section = True
+            break
+        if toks[k].cat not in ("NUM", "LETTER", "DASH", "WORD"):
+            break
+    if not leads_to_section:
+        return False
+    scan.goto(i + 2)
+    return True
+
+
 def _section_tail_carries_kept_content(scan: _Scan) -> bool:
     """True iff the dropped SECTION/CONTAINER tail holds nodes the old parser
     keeps or leaks — so the driver must decline rather than silently truncate.
@@ -1113,6 +1157,54 @@ def _group_span_has_structural_anchor(scan: _Scan) -> bool:
     return False
 
 
+# Lead-in cats the old ``_target`` skips before its first structural target (the
+# sentinel-span skip + an optional DOC re-anchor) — walked past when testing
+# whether a verb group OPENS on an un-modellable named provision.
+_NAMED_PROV_LEADIN_CATS = frozenset(
+    {"TEMPORAL", "DOC"}
+) | _SENTINEL_SPAN_CATS
+
+
+def _group_opens_on_named_provision(scan: _Scan) -> bool:
+    """True iff the verb group OPENS on a ``N §[:n/:ään] <word> …`` named provision.
+
+    The old ``_target_list`` calls ``_target`` once at the first position and, on
+    failure, returns ``[]`` (sp:4093) — it never scans ahead for a later ``§``.
+    So a verb group whose FIRST target is an un-modellable named sub-provision
+    (``N §:ään sisältyvä … ryhmä``, ``N §:n … koskeva nimike``, ``N § näin
+    kuuluvaksi``) is dropped WHOLE by the old parser, even though a structural
+    ``§`` from a later (also-dropped) arm sits in its span. The generic
+    structural-anchor safety net over-declines those: this narrows it.
+
+    The cue is a section anchor ``[NUM/LETTER/DASH]* PYKALA`` immediately followed
+    by a bare ``WORD`` (the named-provision descriptor) before any list separator
+    or structural sub-noun — a shape the old ``_target`` cannot anchor (the
+    section recognizer needs a structural sub-ref, a sentinel, or a separator
+    after the ``§``, never a bare descriptive WORD). A ``PYKALA`` followed by an
+    ``EDELLA`` (``N §:n edellä oleva väliotsikko``) or by a structural sub-noun
+    (``§:n N momentti``) is NOT matched — those the old parser keeps.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    while i < n and toks[i].cat in _NAMED_PROV_LEADIN_CATS:
+        i += 1
+    # An optional leading list separator (the old first-target leading-sep retry).
+    if i < n and toks[i].cat in ("COMMA", "CONJ", "SEKA", "DASH"):
+        i += 1
+        while i < n and toks[i].cat in _NAMED_PROV_LEADIN_CATS:
+            i += 1
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH"):
+        j += 1
+    # Require a real number run before the section (a bare ``§`` with no number is
+    # not a section anchor the old parser keys a named provision on).
+    if j == i or j >= n or toks[j].cat != "PYKALA":
+        return False
+    k = j + 1
+    return k < n and toks[k].cat == "WORD"
+
+
 def _recognize_first_target_or_empty(
     scan: _Scan,
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
@@ -1155,6 +1247,14 @@ def _recognize_first_target_or_empty(
     # before-section, …). Dropping that group would silently lose a verb group
     # the old parser keeps — so DECLINE loudly instead.
     scan.goto(after_decline)
+    # A group that OPENS on an un-modellable named provision (``N §:ään sisältyvä
+    # … ryhmä``, ``N §:n … koskeva nimike``, ``N § näin kuuluvaksi``) is dropped
+    # WHOLE by the old ``_target_list`` (its ``_target`` fails at the first
+    # position and it returns ``[]`` without scanning ahead). The generic
+    # structural-anchor net would over-decline it on a later ``§`` in its span —
+    # drop the group instead, mirroring the old parser.
+    if _group_opens_on_named_provision(scan):
+        return None
     if _group_span_has_structural_anchor(scan):
         raise OutOfScope("not a target at target position")
     return None
@@ -1385,6 +1485,15 @@ def _parse_verb_group(
                 chapter = _extract_chapter(pf_nodes, chapter, verb)
                 part = _extract_part(pf_nodes, part)
                 continue
+        # A ``minkä ohella <sec> …`` connective continuation: the old ``_target``
+        # reaches past the two-WORD lead-in and keeps the following section ref.
+        # Consume the lead-in (only when it leads into a structural section ref)
+        # and fall through to ``_recognize_one_target`` at the section, mirroring
+        # the old parser. The shape decline guard
+        # (``_tail_starts_with_minka_ohella_arm``) is now unreachable for this
+        # cue — recognition succeeds instead of declining.
+        if kind == "section":
+            _skip_minka_ohella_leadin(scan)
         more_batch_start = scan.pos
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
