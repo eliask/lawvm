@@ -33,6 +33,7 @@ from lawvm.finland.johtolause.census_accounting import (
     CENSUS_ACCOUNTING_BUCKETS,
     FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE,
+    FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
     FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR,
     census_accounting,
     format_accounting_report,
@@ -56,14 +57,17 @@ def test_bucket_ids_are_the_closed_five() -> None:
 def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # The 2026-06-16 adjudication round moved 33 of the 37 genuine deltas into
     # the ledger as ``adjudicated_parser_correction`` (NEW right, OLD silently
-    # dropped content). Of the other 4, the 3 parity_bugs {1995/551, 1991/1055,
-    # 1989/117} were subsequently FIXED grammar-side (now byte-identical, no
-    # longer genuine deltas), leaving 1 needs_source_verification {2002/723}.
-    # None of these 4 belong in the corrections ledger.
+    # dropped content). Of the other 4: the 3 parity_bugs {1995/551, 1991/1055,
+    # 1989/117} were FIXED grammar-side (now byte-identical), and 2002/723 was
+    # adjudicated as a replay-neutral witness-span normalization (its own class).
     assert len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0) == 33
-    # The deliberately-excluded sids must stay out of the ledger.
-    excluded = {"1995/551", "1991/1055", "1989/117", "2002/723"}
-    assert FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0.isdisjoint(excluded)
+    # The 3 fixed parity_bugs belong in NO classification set (they are 0-delta).
+    fixed_parity = {"1995/551", "1991/1055", "1989/117"}
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0.isdisjoint(fixed_parity)
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0.isdisjoint(fixed_parity)
+    # 2002/723 is witness-span-normalized, NOT a parser-correction.
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0 == {"2002/723"}
+    assert "2002/723" not in FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
 
 
 def test_baselines_are_sane() -> None:
@@ -143,11 +147,15 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
 def test_genuine_delta_adjudicated_fix_count(_result) -> None:
-    """The 33 adjudicated parser corrections land in the adjudicated bucket."""
-    assert _result.buckets["genuine_delta_adjudicated_fix"] == 33, (
-        "genuine_delta_adjudicated_fix should equal the 33 sids in the "
-        "adjudication ledger (the 2026-06-16 adjudicated_parser_correction "
-        "verdicts). Got "
+    """The 34 adjudicated genuine deltas land in the adjudicated bucket: 33
+    parser corrections + 1 witness-span normalization (2002/723)."""
+    expected = len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0) + len(
+        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+    )
+    assert expected == 34
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == expected, (
+        "genuine_delta_adjudicated_fix should equal the 33 adjudicated "
+        "corrections + 1 witness-span normalization (2002/723). Got "
         f"{_result.buckets['genuine_delta_adjudicated_fix']}."
     )
 
@@ -175,3 +183,43 @@ def test_report_renders(_result) -> None:
     report = format_accounting_report(_result)
     assert "FULL-ACCOUNTING CENSUS" in report
     assert "partition sum" in report
+
+
+@pytest.mark.skipif(
+    not _canonical_corpus_available(),
+    reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
+)
+def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
+    """Evidence + regression guard for the witness_span_normalized class.
+
+    2002/723 differs OLD-vs-NEW only in witness ``source_span`` endpoints: the
+    exact comparator reports a delta, but the structural comparator (which
+    tolerates witness-span-only deltas) reports equal. If a future change makes
+    it STRUCTURALLY diverge, this fails and the witness-span classification must
+    be re-examined.
+    """
+    from farchive import Farchive
+
+    from lawvm.finland.johtolause import surface_parse
+    from lawvm.finland.johtolause.grammar import parser as new_parser
+    from lawvm.finland.johtolause.grammar.diff import (
+        compare_surface_models,
+        compare_surface_models_structural,
+        parse_text_with,
+    )
+    from lawvm.finland.metadata import get_johtolause
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+    from lawvm.tools.parse_bench import _archive_path
+
+    store = TransparentCorpusStore(Farchive(_archive_path()))
+    xb = store.read_source("2002/723") or store.read_amendment("2002/723")
+    johto = get_johtolause(xb)
+    old = parse_text_with(johto, surface_parse.parse)
+    new = parse_text_with(johto, new_parser.parse)
+
+    exact = compare_surface_models(old, new)
+    assert not exact.equal, "expected a witness-span delta; got byte-identical"
+    assert all(".witness.source_span" in d for d in exact.deltas), (
+        f"2002/723 has a NON-witness-span delta: {exact.deltas}"
+    )
+    assert compare_surface_models_structural(old, new).equal

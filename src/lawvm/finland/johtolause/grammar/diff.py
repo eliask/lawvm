@@ -117,6 +117,35 @@ def compare_surface_models(a: SurfaceClause, b: SurfaceClause) -> ParserDeltaRep
     return compare_canonical(canonicalize_surface_model(a), canonicalize_surface_model(b))
 
 
+def _is_witness_span_delta(delta: str) -> bool:
+    """True iff a delta line is *only* a differing witness ``source_span`` endpoint.
+
+    Shape: ``model.verb_groups[2].nodes[5].witness.source_span[1]: 115 != 109``.
+    Such a delta means the two models attribute the same text to nodes with a
+    different per-node span boundary — replay-neutral when every other field
+    (labels, kinds, sub_targets, rule_ids, verb-group structure, consumed_count,
+    source_text) is identical.
+    """
+    return ".witness.source_span" in delta and " != " in delta
+
+
+def compare_surface_models_structural(a: SurfaceClause, b: SurfaceClause) -> ParserDeltaReport:
+    """Like :func:`compare_surface_models` but tolerant of *purely* witness
+    ``source_span`` endpoint differences.
+
+    Returns a report whose ``deltas`` exclude witness-span-only lines; if the two
+    models differ ONLY in witness spans, the returned report has ``equal == True``.
+    Use this to certify replay-neutral span-attribution differences as owned (see
+    the ``witness_span_normalized`` census class). All structural fields must
+    still match exactly for the result to be equal.
+    """
+    full = compare_surface_models(a, b)
+    if full.equal:
+        return full
+    structural = [d for d in full.deltas if not _is_witness_span_delta(d)]
+    return ParserDeltaReport(deltas=structural)
+
+
 # ---------------------------------------------------------------------------
 # Running a candidate parser on equal footing with the authority.
 # ---------------------------------------------------------------------------

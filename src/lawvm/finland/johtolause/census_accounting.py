@@ -146,6 +146,29 @@ FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Witness-span normalization (class G_witness_span_only). Distinct from the
+# parser-correction ledger above: here NEW and OLD are STRUCTURALLY IDENTICAL
+# (same labels/kinds/sub_targets/rule_ids/verb-group structure/ops) and replay is
+# byte-identical — the ONLY difference is the per-node witness ``source_span``
+# endpoint where one insertion node ends and the next begins. That is a
+# replay-neutral span-attribution detail, so the clause is OWNED for swap
+# purposes; it lands in ``genuine_delta_adjudicated_fix`` (bucket 5), not in
+# ``unclassified``. A corpus-wide sweep (``compare_surface_models_structural``
+# over every amendment johtolause) found EXACTLY ONE such clause, so this is a
+# tight, audited allow-list — not a blanket tolerance. The diff harness'
+# ``compare_surface_models_structural`` + its test pin the witness-span-only
+# property, so a future STRUCTURAL divergence on this sid re-opens it.
+# ---------------------------------------------------------------------------
+FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0: frozenset[str] = frozenset(
+    {
+        "2002/723",  # two adjacent LISATA insertion nodes' span boundaries differ
+        #             (node[5].source_span[1] / node[6].source_span[0]); ops + replay
+        #             identical. Only witness-span-only clause in the corpus.
+    }
+)
+
+
+# ---------------------------------------------------------------------------
 # Pinned baselines. A human bumps these deliberately when the split legitimately
 # changes; the CI test fails on any un-bumped drift in the wrong direction.
 # Measured live on the full canonical corpus at base 8aa37aee.
@@ -164,10 +187,12 @@ FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32974
 #: After the 2026-06-16 adjudication round, 33 of the 37 genuine deltas were
 #: moved to ``genuine_delta_adjudicated_fix`` (see the ledger above). The 3
 #: ``parity_bug`` verdicts {1995/551, 1991/1055, 1989/117} were then FIXED
-#: grammar-side (E_lukuun_tilalle recovery), leaving exactly 1 unclassified: the
-#: ``needs_source_verification`` {2002/723}. Any NEW parity miss pushes this back
-#: above 1 and fails CI.
-FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 1
+#: grammar-side (E_lukuun_tilalle recovery), and the last one, 2002/723, was
+#: adjudicated as a replay-neutral witness-span normalization (see
+#: ``FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0``). Unclassified is
+#: now 0: every genuine delta is accounted. Any NEW parity miss pushes this
+#: above 0 and fails CI.
+FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 0
 
 
 def _generalize_delta_path(path: str) -> str:
@@ -298,7 +323,7 @@ def census_accounting(
         else:
             shape = _generalize_delta_path(report.deltas[0].split(":", 1)[0])
             delta_shape_counts[shape] += 1
-            if sid in adjudicated_fixes:
+            if sid in adjudicated_fixes or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0:
                 counts["genuine_delta_adjudicated_fix"] += 1
             else:
                 counts["genuine_delta_unclassified"] += 1
