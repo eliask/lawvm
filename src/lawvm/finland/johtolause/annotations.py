@@ -59,7 +59,7 @@ def _token_to_lexeme(tok: Token) -> Lexeme:
 
 
 def tape_from_tokens(tokens: list[Token], source_text: str = "") -> TokenTape:
-    """Build a TokenTape from a list of peg3 Tokens.
+    """Build a TokenTape from a list of lexicon Tokens.
 
     Args:
         tokens: Raw token list from tokenize().

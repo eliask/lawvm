@@ -539,7 +539,7 @@ def annotate_provenance(
 ) -> list[Annotation]:
     """Produce provenance annotations — annotation equivalent of strip_provenance.
 
-    Reuses the existing _skip_prov_span helper from peg3 for span boundary
+    Reuses the existing _skip_prov_span helper for span boundary
     computation.  The detection logic mirrors strip_provenance exactly.
 
     In the legacy pipeline, provenance runs AFTER citation stripping.
