@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 archive=archive,
                 effect_diagnostics_out=diags,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             errors += 1
             continue
         for row in diags:

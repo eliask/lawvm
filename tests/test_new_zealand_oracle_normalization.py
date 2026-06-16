@@ -6,6 +6,8 @@ NZ_CONSOLIDATION_ERROR_SCOPE.md §4, edge cases, and fail-loud behaviour.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from lawvm.new_zealand.nz_oracle_normalization import (
@@ -339,7 +341,7 @@ class TestReturnTypeContracts:
         result = _cls("hello", "world")
         assert isinstance(result, NZDivergenceClass)
         # frozen: mutation must raise
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             result.sub_family = NZDivergenceSubFamily.substantive  # type: ignore[misc]
 
     def test_is_editorial_consistent_with_sub_family(self) -> None:

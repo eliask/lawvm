@@ -96,19 +96,34 @@ def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
         source_span_byte_len=None,
     )
 
-    setattr(ref_module, "extract_all_reference_mentions", lambda _xml, _sid: SimpleNamespace(
-        mentions=[ref_mention],
-        diagnostics=[],
-    ))
-    setattr(prep_module, "extract_preparatory_refs", lambda _xml, _sid: SimpleNamespace(
-        refs=[prep_ref],
-        rejected=[],
-        lifecycle_observations=[],
-    ))
-    setattr(inline_module, "extract_inline_citations", lambda *args, **kwargs: SimpleNamespace(
-        citations=[inline_citation],
-        pattern_matches=[],
-    ))
+    monkeypatch.setattr(
+        ref_module,
+        "extract_all_reference_mentions",
+        lambda _xml, _sid: SimpleNamespace(
+            mentions=[ref_mention],
+            diagnostics=[],
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        prep_module,
+        "extract_preparatory_refs",
+        lambda _xml, _sid: SimpleNamespace(
+            refs=[prep_ref],
+            rejected=[],
+            lifecycle_observations=[],
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        inline_module,
+        "extract_inline_citations",
+        lambda *args, **kwargs: SimpleNamespace(
+            citations=[inline_citation],
+            pattern_matches=[],
+        ),
+        raising=False,
+    )
     monkeypatch.setitem(sys.modules, "lawvm.finland.ref_mention_extractor", ref_module)
     monkeypatch.setitem(sys.modules, "lawvm.finland.preparatory_reference_extractor", prep_module)
     monkeypatch.setitem(sys.modules, "lawvm.finland.inline_citation_extractor", inline_module)

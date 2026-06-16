@@ -6,6 +6,8 @@ boundary is still ``ApplyOpsRequest``/``ApplyOpsSinks``; ``grafter.py`` re-expor
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from lawvm.core import tree_ops as _tops
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_chapter_precreate import (
@@ -46,6 +48,9 @@ from lawvm.finland.restructure_plan_replay import (
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
 )
+
+if TYPE_CHECKING:
+    from lawvm.finland.statute import ReplayState
 
 
 def _apply_ops_to_tree_typed(
