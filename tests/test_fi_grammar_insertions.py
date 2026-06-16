@@ -195,6 +195,37 @@ def test_section_ill_sub_target_folds_trailing_whole_section() -> None:
     assert len(spans) == 1, f"expected one shared batch span, got {spans}"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # ``uusi 22 a §`` (an insertion node) folded with a plain ``88 §:n 3 ja 4
+        # momentti`` arm: under ``lisätään`` the old parser keeps the second arm
+        # as a plain SECTION node (a momentti add recognised by ``_section_ref``),
+        # NOT a SurfaceInsertion — both stay in one LISATA group.
+        "lisätään lakiin uusi 22 a § ja 88 §:n 3 ja 4 momentti seuraavasti:",
+        "lisätään lakiin uusi 5 a § ja 7 §:n 2 momentti seuraavasti:",
+        # The same fold appearing in the SECOND verb group of a clause that opens
+        # with a ``muutetaan`` section group (the corpus's dominant shape).
+        "muutetaan 6 § sekä lisätään lakiin uusi 22 a § ja 88 §:n 3 momentti "
+        "seuraavasti:",
+    ],
+)
+def test_insertion_then_plain_section_arm_folds_in_one_group(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_scoped_section_arm_after_insert_still_declines() -> None:
+    # A chapter-SCOPED continuation arm (``3 luvun 5 §:n 2 momentti``) after an
+    # insertion batch is NOT folded: the new per-separator split establishes the
+    # inherited chapter scope at a different point than the old whole-list pass,
+    # so the driver declines rather than risk a divergent grouping.
+    text = "lisätään lakiin uusi 22 a § ja 3 luvun 5 §:n 2 momentti seuraavasti:"
+    tokens, _ = _tokenize(text)
+    with pytest.raises(OutOfScope):
+        new_parser.parse(tokens)
+
+
 def test_momentin_tilalle_uusi_momentti_stays_section_ref() -> None:
     # A §:GEN momentti GENITIVE reinstatement ("N §:n M momentin tilalle uusi M
     # momentti") is NOT a Pattern B2 insertion (the old parser does not skip the

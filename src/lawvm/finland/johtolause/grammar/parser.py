@@ -1521,13 +1521,19 @@ def _parse_verb_group(
             if kind in ("section", "container") and _section_tail_carries_kept_content(scan):
                 raise OutOfScope("dropped section/container tail keeps old nodes")
             break
-        # Mixing insertion and non-insertion batches inside one verb group is an
-        # out-of-scope shape: the old parser threads scope/anaphora across them
-        # in ways this driver does not reproduce. Reject loudly rather than
-        # emit a divergent grouping. (Section / container / heading batches DO
-        # coexist in one list in the old parser, so those are allowed.)
+        # An insertion batch followed by a plain section/container continuation
+        # arm (``lisätään … uusi 22 a § ja 88 §:n 3 ja 4 momentti``): the old
+        # ``_target_list`` folds EVERY continuation arm into the same verb group
+        # regardless of node family — under a ``lisätään`` verb a bare ``N §:n M
+        # momentti`` arm is recognised by ``_section_ref`` and kept as a plain
+        # SECTION node, NOT a SurfaceInsertion. The new section recogniser emits
+        # that node identically, so fold it in rather than declining — see the
+        # ``_mixed_continuation_is_foldable`` guard below for the cases that are
+        # still out of scope (a SCOPED chapter/part section arm that would inherit
+        # cross-batch scope this driver threads differently).
         if (kind == "insertion") != (more_kind == "insertion"):
-            raise OutOfScope("mixed insertion/non-insertion continuation in verb group")
+            if not _mixed_continuation_is_foldable(kind, more_kind, more):
+                raise OutOfScope("mixed insertion/non-insertion continuation in verb group")
         nodes.extend(more)
         last_batch = list(more)
         chapter = _chapter_after_batch(scan, more_batch_start, more, chapter, verb)
@@ -1545,6 +1551,46 @@ def _parse_verb_group(
     if move_dest_part:
         nodes = apply_leading_move_destination_part(nodes, move_dest_part)
     return verb, nodes
+
+
+def _mixed_continuation_is_foldable(
+    kind: FamilyKind, more_kind: FamilyKind, more: list[SurfaceNode]
+) -> bool:
+    """Whether a family-switching continuation arm may be folded in faithfully.
+
+    The old ``_target_list`` folds EVERY continuation arm into the same verb
+    group regardless of node family — its loop just re-runs ``_target`` per
+    separator. So an ``lisätään … uusi 22 a § ja 88 §:n 3 ja 4 momentti`` keeps
+    BOTH the insertion node and the plain ``88 §:n …`` SECTION node in one LISATA
+    group (the second arm is a momentti add recognised by ``_section_ref``, NOT a
+    SurfaceInsertion). The reverse (a plain section/replace batch followed by a
+    bare ``uusi …`` insertion arm under the SAME verb) folds the same way.
+
+    Fold only when neither side relies on cross-batch scope this driver threads
+    differently from the old parser: the continuation arm must carry no inherited
+    chapter/part scope on its emitted nodes (a SCOPED arm — ``3 luvun 12 §`` —
+    can pick up a chapter the new per-separator split establishes at a different
+    point than the old whole-list pass, so those stay out of scope and decline).
+    """
+    if more_kind == "heading":
+        # Heading batches already coexist with section/container/insertion lists
+        # in the old parser; the caller never routes them here.
+        return False
+    for node in more:
+        if isinstance(node, SurfaceInsertion):
+            if node.chapter or node.part:
+                return False
+        elif isinstance(node, SurfaceTargetRef):
+            if node.chapter or node.part:
+                return False
+        elif isinstance(node, SurfaceDescendantCoordination):
+            if node.base.chapter or node.base.part:
+                return False
+        else:
+            # A scope block / standalone coordination arm carries cross-batch
+            # scope; keep those out of scope for now.
+            return False
+    return True
 
 
 def _batch_has_doc_ill(scan: _Scan, start: int, end: int) -> bool:
