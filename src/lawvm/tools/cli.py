@@ -242,11 +242,13 @@ lawvm — point-in-time legal state + citation graph + amendment history across 
   TRACE  bisect · explain · evidence
   recipes: `lawvm recipes`     ·     full command list below
 
-examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
+examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga/...):
   lawvm refs --to 2007/571          # what provisions cite this statute (reverse citation graph)
   lawvm cite 2009/738               # outgoing refs of a statute
   lawvm topic --topic kadmium       # full-text search across in-force sections
   lawvm oracle-text 1992/734 --section section:7a    # consolidated section text at current version
+  lawvm uk-replay ukpga/2020/17     # UK: replay effects, compare vs published revised text
+  lawvm uk-effects ukpga/2020/17    # UK: list/triage the effects recorded against a statute
 """
 
     _EPILOG = (

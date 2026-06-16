@@ -87,6 +87,22 @@ RECIPES: list[dict[str, Any]] = [
             "lawvm oracle-text 2009/738 --section section:10",
         ],
     },
+    {
+        "task": "UK: replay a statute's effects and find divergences vs the published revised text",
+        "commands": ["uk-acquire", "uk-replay", "uk-effects", "uk-effect", "uk-misses"],
+        "examples": [
+            "# Step 1: fetch the statute's sources (enacted + current + effects + affecting acts)",
+            "lawvm uk-acquire ukpga/2020/17 --affecting",
+            "# Step 2: replay effects and compare against the published revised text",
+            "lawvm uk-replay ukpga/2020/17            # add -v for the full compile breakdown",
+            "# Step 3: list/triage the effects; --candidate-only for rows still in play",
+            "lawvm uk-effects ukpga/2020/17 --candidate-only",
+            "# Step 4: inspect one effect end to end (feed row -> source node -> compiled ops)",
+            "lawvm uk-effect ukpga/2020/17 <effect_id> --show-text",
+            "# Step 5: full bucketed replay-vs-oracle miss worklist",
+            "lawvm uk-misses ukpga/2020/17",
+        ],
+    },
 ]
 
 

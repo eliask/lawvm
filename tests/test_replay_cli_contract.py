@@ -1164,16 +1164,14 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
         "Compile rejections: source_parse=0 feed_parse=0 effect_source_pathology=0 "
         "manual_compile_frontier=0 source_acquisition=0 lowering=1 authority=0 blocking=1"
     ) in out
-    assert "feed_parse rules: uk_effect_feed_xml_parse_rejected=1" in out
-    assert "lowering observation rules: uk_effect_lowering_no_ops_rejected=1" in out
-    assert "authority rules: uk_effect_authority_filter_rejected=1" in out
-    assert (
-        "Compile blocking rejections: source_parse=0 feed_parse=0 "
-        "effect_source_pathology=0 manual_compile_frontier=0 "
-        "source_acquisition=0 lowering=1 authority=0"
-    ) in out
-    assert "blocking rules: uk_effect_lowering_no_ops_rejected=1" in out
-    assert "blocking lowering rules: uk_effect_lowering_no_ops_rejected=1" in out
+    # Per-rule compile histograms are verbose-only; the default text view keeps
+    # just the two compact recap lines asserted above (verbose pass below).
+    assert "feed_parse rules: uk_effect_feed_xml_parse_rejected=1" not in out
+    assert "lowering observation rules: uk_effect_lowering_no_ops_rejected=1" not in out
+    assert "authority rules: uk_effect_authority_filter_rejected=1" not in out
+    assert "Compile blocking rejections:" not in out
+    assert "blocking rules: uk_effect_lowering_no_ops_rejected=1" not in out
+    assert "blocking lowering rules: uk_effect_lowering_no_ops_rejected=1" not in out
     assert "Replay adjudications: 1" in out
     assert "Replay adjudication buckets: replay_bug=1" in out
     assert "Replay adjudication owner phases: replay_invariants=1" in out
@@ -1184,6 +1182,30 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
         "transparent_wrapper_cleared=None samples=0 "
         "reason=oracle_xml_unavailable"
     ) in out
+
+    # Verbose mode restores the full per-rule compile histograms.
+    uk_replay.main(
+        Namespace(
+            statute_id="ukpga/1998/42",
+            pit_date=None,
+            enacted_only=False,
+            verbose=True,
+            fetch_missing=True,
+            json=False,
+            db=str(db_path),
+            timeline=False,
+            uk_allow_metadata_backfill=None,
+            uk_allow_oracle_alignment=None,
+            uk_respect_feed_applied=None,
+            uk_applicability_mode=None,
+            uk_source_first_candidate=False,
+            uk_authority_mode=None,
+        )
+    )
+    vout = capsys.readouterr().out
+    assert "feed_parse rules: uk_effect_feed_xml_parse_rejected=1" in vout
+    assert "lowering observation rules: uk_effect_lowering_no_ops_rejected=1" in vout
+    assert "blocking rules: uk_effect_lowering_no_ops_rejected=1" in vout
 
 
 def test_uk_replay_adjudication_text_formatter_prints_requested_samples() -> None:

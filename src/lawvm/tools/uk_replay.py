@@ -365,6 +365,7 @@ def _uk_compile_rejection_text_lines(
     source_acquisition_rejections: Sequence[dict[str, object]] = (),
     lowering_rejections: Sequence[dict[str, object]],
     authority_rejections: Sequence[dict[str, object]],
+    summary_only: bool = False,
 ) -> list[str]:
     def _counts(rows: Sequence[dict[str, object]]) -> dict[str, int]:
         counts: Counter[str] = Counter()
@@ -437,6 +438,10 @@ def _uk_compile_rejection_text_lines(
         f"authority={len(blocking_by_lane['authority'])} "
         f"blocking={len(blocking_rejections)}"
     ]
+    if summary_only:
+        # Default text view: keep the two compact totals lines; the per-rule
+        # histograms below are verbose-only (see uk-replay -v).
+        return lines
     for label, rows in (
         ("source_parse", source_parse_rejections),
         ("feed_parse", effect_feed_parse_rejections),
@@ -830,7 +835,11 @@ def main(args: "argparse.Namespace") -> None:
         oracle_source_status, oracle_source_size = _source_state(oracle_bytes)
         oracle_source_sha256 = _source_sha256(oracle_bytes)
         if enacted_source_status != "available":
-            error = f"enacted XML missing from archive for {enacted_url}"
+            error = (
+                f"enacted XML missing from archive for {enacted_url}; "
+                f"run `lawvm uk-acquire {statute_id}` to fetch it "
+                f"(or check the statute id)"
+            )
             if as_json:
                 payload = build_uk_replay_payload(
                     statute_id=statute_id,
@@ -1091,15 +1100,18 @@ def main(args: "argparse.Namespace") -> None:
             ]
             n_ops = len(ops)
             _out(f"Compiled {n_ops} operations")
-            for line in _uk_compile_rejection_text_lines(
-                effect_feed_parse_rejections=effect_feed_parse_rejections,
-                effect_source_pathology_observations=effect_source_pathology_observations,
-                manual_compile_frontier_observations=manual_compile_frontier_observations,
-                source_acquisition_rejections=source_acquisition_rejections,
-                lowering_rejections=lowering_rejections,
-                authority_rejections=authority_rejections,
-            ):
-                _out(line)
+            if verbose:
+                # The full per-rule compile histograms are verbose-only; the
+                # default view gets a compact recap in the summary block below.
+                for line in _uk_compile_rejection_text_lines(
+                    effect_feed_parse_rejections=effect_feed_parse_rejections,
+                    effect_source_pathology_observations=effect_source_pathology_observations,
+                    manual_compile_frontier_observations=manual_compile_frontier_observations,
+                    source_acquisition_rejections=source_acquisition_rejections,
+                    lowering_rejections=lowering_rejections,
+                    authority_rejections=authority_rejections,
+                ):
+                    _out(line)
             if verbose:
                 for op in ops:
                     kind = op.payload.kind if op.payload is not None else "none"
@@ -1416,6 +1428,7 @@ def main(args: "argparse.Namespace") -> None:
         source_acquisition_rejections=source_acquisition_rejections,
         lowering_rejections=lowering_rejections,
         authority_rejections=authority_rejections,
+        summary_only=not verbose,
     ):
         print(line)
     for line in _uk_replay_adjudication_text_lines(
