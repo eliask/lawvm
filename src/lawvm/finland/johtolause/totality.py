@@ -30,6 +30,20 @@ never raises a parse-affecting error.
 separate true silent-DROPs (``n_ops > 0``: an op was produced but a sibling target
 was lost) from whole-clause DECLINES (``n_ops == 0``: a different, already-loud
 failure mode).
+
+ENFORCING-POSTCONDITION STATUS (hard-raise, NO-GO as of this measurement). The
+predicate stays WARN-ONLY. The contested benign FALSE-POSITIVE class --
+corrigendum-footnote section labels leaking out of ``<authorialNote>`` spans -- is
+now CLEARED at the extraction layer (``get_johtolause`` strips authorialNote
+footnotes; 78 flags / 17 sids cleared). With that gone, the predicate's residual is
+FP-clean on its known classes (corrigendum cleared; container / appendix-table-part
+/ sub-ref / nojalla / move-destination all guarded). BUT the candidate-drop corpus
+still carries ~1.6k flags across ~440 sids that are GENUINE silent drops (the
+both-parser drop tail), NOT false positives. Promoting to an enforced postcondition
+(raise / fail on any fire) would therefore reject ~440 real-drop statutes -- the
+blocker is the unfixed TP drop set, which must be RECOVERED in the parser (not
+guarded away; suppressing a real drop is forbidden), not a residual FP class.
+Hard-raise becomes GO only once that drop tail is driven to ~0.
 """
 
 from __future__ import annotations

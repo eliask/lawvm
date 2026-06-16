@@ -191,6 +191,39 @@ def test_appendix_table_part_selector_not_flagged(sid: str) -> None:
     assert flagged == [], [(f.label.label, f.label.struct_cat) for f in flagged]
 
 
+# --- (f) corrigendum-footnote FP class: cleared at the extraction layer ----------
+#
+# `get_johtolause` strips `<authorialNote>` corrigendum footnotes (which wrap the
+# SUPERSEDED original wording, "alkuperaeinen sanamuoto kului: ...") before
+# extracting the clause text. Before that strip, the superseded section labels
+# inside those notes leaked into the johtolause and the predicate flagged them as
+# uncovered operative drops -- a benign FALSE-POSITIVE class (the labels are
+# historical noise, not live targets). Isolating the strip over the candidate-drop
+# corpus showed it clears 78 flags across 17 sids (16 fully to zero).
+#
+# These sids each carry an authorialNote corrigendum footnote and previously
+# flagged (1..26 spurious drops); with the extraction strip in place the predicate
+# must now see ZERO flags over the (live) op set. This pins the cleared FP class so
+# a regression in the strip (re-leaking footnote labels) is caught here.
+
+
+@pytest.mark.parametrize(
+    ("sid", "expect_n_ops"),
+    [
+        ("1991/176", 134),  # was 26 footnote-leaked flags -> 0
+        ("2000/886", 27),   # was 16 -> 0
+        ("1997/638", 25),   # was 7 -> 0
+        ("1992/1519", 26),  # 1992/15xx cluster, was 2 -> 0
+    ],
+)
+def test_corrigendum_footnote_labels_not_flagged(sid: str, expect_n_ops: int) -> None:
+    flagged, n_ops = _run(sid)
+    assert n_ops == expect_n_ops
+    assert flagged == [], [
+        (f.label.label, f.label.struct_cat, f.source_text[:60]) for f in flagged
+    ]
+
+
 def test_appendix_guard_keeps_coordinated_sibling_part_flagged() -> None:
     # 2010/883: `maksutaulukon I osan ... kohta ja III osan ... kohta` produces a
     # single number-less `kind == "A"` op. The PRIMARY selector `I osa` (glued to
