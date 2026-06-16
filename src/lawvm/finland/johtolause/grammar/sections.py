@@ -64,11 +64,19 @@ from lawvm.finland.johtolause.surface_model import (
 
 @dataclass(frozen=True, slots=True)
 class SubRef:
-    """A parsed sub-reference: momentti, item, or facet (pre-emit form)."""
+    """A parsed sub-reference: momentti, item, facet, or named descriptor.
+
+    ``special`` carries a free-text named-sub-provision descriptor for the
+    content-named ``kohta`` forms the numeric/letter coordination cannot model
+    (``vekseliä koskeva kohta``, ``1 ryhmän f kohta``, ``Hämeen lääniä koskeva
+    kohta``). It mirrors the legacy ``SurfaceSubRef.special`` slot. The known
+    facet markers still map onto ``special`` at emit time ("otsikko" / "johd").
+    """
 
     momentti: int = 0  # 0 = whole section
     item: str = ""
     facet: Optional[FacetKind] = None
+    special: str = ""  # free-text named-sub-provision descriptor
 
 
 # A (number, letter-suffix) pair, e.g. ("5", "a") or ("12", "").
@@ -535,6 +543,100 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
     return None
 
 
+# Anaphora / scope cue WORDs that introduce a *different* continuation arm
+# (``saman lain``, ``mainitun pykälän``, ``näistä``…) — a descriptor run must not
+# start with one of these, else this arm would steal an anaphoric continuation
+# the verb-group loop owns.
+_DESCRIPTOR_STOPWORDS = frozenset(
+    {
+        "saman",
+        "samaa",
+        "mainitun",
+        "mainitussa",
+        "mainituissa",
+        "mainittujen",
+        "sanotun",
+        "sanotussa",
+        "näistä",
+        "niistä",
+        "nojalla",
+        "edellä",
+        "oleva",
+        "olevan",
+        "olevien",
+        "kumpikin",
+    }
+)
+
+
+def _named_descriptor_subref(scan: _Scan) -> Optional[list[SubRef]]:
+    """Recognize a content-named ``<descriptor> kohta`` sub-provision.
+
+    Some ``kohta`` sub-provisions are named by their CONTENT rather than a
+    number: ``8 §:n 1 ryhmän f kohta``, ``14 §:n vekseliä koskeva kohta``,
+    ``1 §:n Hämeen lääniä koskeva kohta``, ``20 §:n merkkiä 662 a koskeva
+    kohta``. Neither the numeric/letter coordination nor the bare ``letter
+    kohta`` arm recognizes these (an out-of-vocabulary WORD descriptor sits
+    before the terminal ``kohta``), so the section recognizer used to stop at the
+    descriptor and the verb-group continuation loop dropped every coordinated
+    target after it.
+
+    This arm recognizes the descriptor as a single named sub-provision carried in
+    ``SubRef.special`` (a best-effort free-text label, mirroring the legacy
+    ``SurfaceSubRef.special`` slot), consuming the whole ``<descriptor> kohta``
+    run so the loop continues to the next ``, / ja / sekä <target>``. The
+    descriptor is a contiguous run of WORD / NUM / LETTER tokens (with internal
+    ``ja`` / ``–`` joiners for compound names such as ``Turun ja Porin lääniä``),
+    containing at least one WORD, terminated by a ``KOHTA`` token. It is the LAST
+    sub-ref arm tried, so numeric/letter/facet sub-refs are never stolen.
+    """
+    saved = scan.pos
+    tokens = scan.cur.tokens
+    n = len(tokens)
+    i = scan.pos
+
+    saw_word = False
+    desc_parts: list[str] = []
+    while i < n:
+        tk = tokens[i]
+        if tk.cat == "WORD":
+            w = (tk.text or "").lower()
+            if not saw_word and w in _DESCRIPTOR_STOPWORDS:
+                # The run opens with an anaphora/scope cue — not a content name.
+                scan.goto(saved)
+                return None
+            saw_word = True
+            desc_parts.append(tk.text or "")
+            i += 1
+            continue
+        if tk.cat in ("NUM", "LETTER"):
+            desc_parts.append(tk.text or "")
+            i += 1
+            continue
+        if (
+            tk.cat in ("CONJ", "DASH")
+            and saw_word
+            and i + 1 < n
+            and tokens[i + 1].cat in ("WORD", "NUM", "LETTER")
+        ):
+            # Internal joiner inside a compound name (``Turun ja Porin``,
+            # ``kansi- ja konemiehistöä``); keep the run going.
+            desc_parts.append(tk.text or "")
+            i += 1
+            continue
+        break
+
+    # Require a content WORD and a terminal KOHTA noun (the descriptor names a
+    # ``kohta``). Anything else is not this form — back out cleanly.
+    if not saw_word or i >= n or tokens[i].cat != "KOHTA":
+        scan.goto(saved)
+        return None
+    desc_parts.append(tokens[i].text or "")
+    scan.goto(i + 1)  # consume through the KOHTA token
+    descriptor = " ".join(p for p in desc_parts if p)
+    return [SubRef(special=descriptor)]
+
+
 def _clause_has_multi_section_heading_insert(scan: _Scan) -> bool:
     """True iff the clause carries a ``N [letter] (ja|,|–) M [letter] §:n edelle
     uusi (väli)otsikko`` heading-INSERT spanning two or more sections.
@@ -578,7 +680,7 @@ def _clause_has_multi_section_heading_insert(scan: _Scan) -> bool:
     return False
 
 
-def _sub_ref(scan: _Scan) -> Optional[list[SubRef]]:
+def _sub_ref(scan: _Scan, allow_descriptor: bool = False) -> Optional[list[SubRef]]:
     """Parse a sub-reference after a § token (slice-1 subset).
 
     Recognizes the section-level facets (otsikko / johdantokappale), the
@@ -587,6 +689,11 @@ def _sub_ref(scan: _Scan) -> Optional[list[SubRef]]:
     ``N §:n edelle uusi väliotsikko`` (allative ``edelle`` + ``uusi``) is NOT
     recognized here — that is a heading placement, not a section ref, and the
     caller backs out of the whole section ref on a bare 'edelle' lookahead.
+
+    ``allow_descriptor`` enables the content-named ``<descriptor> kohta`` arm
+    (``vekseliä koskeva kohta``). It is offered only at the immediate post-``§:n``
+    position; elsewhere a WORD-led ``kohta`` run is a coordinated separate target,
+    not a sub-ref of this section.
     """
     saved = scan.pos
 
@@ -676,6 +783,16 @@ def _sub_ref(scan: _Scan) -> Optional[list[SubRef]]:
         scan.goto(saved)
         return None
 
+    # Content-named ``<descriptor> kohta`` sub-provision (last resort): a WORD
+    # descriptor naming a kohta by content (``vekseliä koskeva kohta``, ``1
+    # ryhmän f kohta``). Recognized so the section recognizer consumes the named
+    # sub-provision and the verb-group loop continues to the next coordinated
+    # target instead of dropping it. Only at the immediate post-``§:n`` position.
+    if allow_descriptor:
+        named = _named_descriptor_subref(scan)
+        if named is not None:
+            return named
+
     return None
 
 
@@ -702,6 +819,7 @@ def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
     if not (t and t.cat == "PYKALA" and t.case != "ILL"):
         scan.goto(start)
         return None
+    pyk_is_gen = t.case == "GEN"  # "§:n" — a sub-provision may follow
     pyk_pos = scan.pos  # § position, for the parallel-pair backward scan
     scan.advance()  # consume §
 
@@ -730,7 +848,13 @@ def recognize_section_ref(scan: _Scan) -> Optional[ParsedSection]:
         )
 
     # ── Suffix arm: sub-refs ────────────────────────────────────────────────
-    subs = _sub_ref(scan)
+    # The content-named ``<descriptor> kohta`` arm is offered ONLY at this
+    # immediate post-``§:n`` position (and only when the § was genitive, i.e. a
+    # sub-provision genuinely follows). It is NOT offered inside the same-section
+    # separator loop below or after a nominative ``§``: there a ``ja <WORD> …
+    # kohta`` run is a *coordinated separate target* (``2 § ja liitteessä 1
+    # olevan … kohta``), not a sub-ref of this section.
+    subs = _sub_ref(scan, allow_descriptor=pyk_is_gen)
     if not subs:
         # "N §:n edelle uusi … otsikko" is a heading placement, not a section
         # ref — back out so the driver treats the clause as out of scope.
@@ -941,7 +1065,7 @@ def _to_surface_sub_refs(subs: list[SubRef]) -> tuple[SurfaceSubRef, ...]:
     """Convert recognizer SubRefs to frozen SurfaceSubRefs (legacy special)."""
     out: list[SurfaceSubRef] = []
     for sr in subs:
-        special = ""
+        special = sr.special
         if sr.facet == FacetKind.HEADING:
             special = "otsikko"
         elif sr.facet == FacetKind.INTRO:
@@ -1071,7 +1195,7 @@ def _emit_suffix(parsed: ParsedSection, chapter: str, part: str) -> list[Surface
     ch = explicit_ch if explicit_ch is not None else chapter
     pt = explicit_pt if explicit_pt is not None else part
     nums = list(parsed.nums)
-    subs = [SubRef(sr.momentti, sr.item, sr.facet) for sr in parsed.subs]
+    subs = [SubRef(sr.momentti, sr.item, sr.facet, sr.special) for sr in parsed.subs]
 
     # Trailing facet distribution (kohta level).
     if len(subs) > 1 and subs[-1].facet is not None and subs[-1].item:
@@ -1095,10 +1219,15 @@ def _emit_suffix(parsed: ParsedSection, chapter: str, part: str) -> list[Surface
         if sr.momentti != 0:
             last_mom = sr.momentti
         elif sr.item and last_mom != 0:
-            subs[i] = SubRef(momentti=last_mom, item=sr.item, facet=sr.facet)
+            subs[i] = SubRef(momentti=last_mom, item=sr.item, facet=sr.facet, special=sr.special)
     # Default bare items to momentti=1.
     subs = [
-        SubRef(momentti=m if m != 0 or not sr.item else 1, item=sr.item, facet=sr.facet)
+        SubRef(
+            momentti=m if m != 0 or not sr.item else 1,
+            item=sr.item,
+            facet=sr.facet,
+            special=sr.special,
+        )
         for sr in subs
         for m in [sr.momentti]
     ]
