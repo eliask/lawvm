@@ -24,6 +24,10 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_REPLACE_RESIDUAL_MISMATCH_RULE_ID,
     NZ_DRY_RUN_REPLACE_RESIDUAL_TARGET_MISSING_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    _amend_provision_overlaps_target_in_other_step,
+    _instruction_target_label_path,
+    _node_label_path,
+    _paths_overlap,
     build_dry_run_replace,
     scope_from_arg,
 )
@@ -974,3 +978,90 @@ def test_replace_substantive_whole_section_residual_is_non_commensurable() -> No
     # Non-commensurable residuals retain no adjudication texts (kept out of set).
     assert proof.divergence_node_pairs == ()
     assert report.consolidation_error_candidates() == ()
+
+
+# --- Intra-provision composition window-fit (target-citation overlap). --------
+
+
+def test_instruction_target_label_path_parses_section_and_brackets() -> None:
+    assert _instruction_target_label_path("Replace section 6(1)(a) with:") == ("6", "1", "a")
+    assert _instruction_target_label_path("Section 358(1) is amended") == ("358", "1")
+    assert _instruction_target_label_path("In section 6, after smoking, insert") == ("6",)
+    # No section citation -> None (cannot be located, so not counted).
+    assert _instruction_target_label_path("delete the second paragraph") is None
+
+
+def test_paths_overlap_equal_ancestor_but_not_sibling() -> None:
+    assert _paths_overlap(("6", "1", "a"), ("6", "1", "a")) is True  # equal
+    assert _paths_overlap(("6", "1"), ("6", "1", "a")) is True  # ancestor reaches paragraph
+    assert _paths_overlap(("6", "1", "a"), ("6", "1")) is True  # descendant
+    assert _paths_overlap(("6", "1", "a"), ("6", "1", "c")) is False  # siblings
+    assert _paths_overlap(("6", "1"), ("6", "2")) is False  # cousins
+
+
+def test_node_label_path_drops_containers_keeps_provision_chain() -> None:
+    assert _node_label_path(("part:1", "prov:6", "subprov:1", "label-para:a")) == ("6", "1", "a")
+    assert _node_label_path(("part:14", "prov:358", "subprov:1")) == ("358", "1")
+
+
+# An amending provision whose later each-place step inserts into an enclosing
+# scope ("In section 6(1), after smoking, insert or vaping in each place") that
+# reaches the paragraph this op replaces ("Replace section 6(1)(a) with:") — the
+# oracle reflects the composed net effect, so the residual must be typed out.
+_COMPOSED_EACH_PLACE_XML = b"""\
+<act><body>
+  <prov id="OP"><label>9</label><heading>Section 6 amended</heading><prov.body>
+    <subprov><label>1</label><para><text>Replace <citation jurisdiction="nz"><extref href="x">section 6(1)(a)</extref></citation> with:</text>
+      <amend><label-para><label denominator="yes">a</label><para><text>the smoking takes place only in dedicated rooms; and</text></para></label-para></amend>
+    </para></subprov>
+    <subprov><label>2</label><para><text>In <citation jurisdiction="nz"><extref href="y">section 6(1)</extref></citation>, after smoking, insert or vaping in each place.</text></para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+# A control: the provision's only other step targets a SIBLING paragraph
+# (6(1)(c)), which does NOT overlap 6(1)(a), so the op's replace is the sole
+# effect on 6(1)(a) and composition must NOT be detected.
+_NON_OVERLAPPING_SIBLING_XML = b"""\
+<act><body>
+  <prov id="OP"><label>9</label><heading>Section 6 amended</heading><prov.body>
+    <subprov><label>1</label><para><text>Replace <citation jurisdiction="nz"><extref href="x">section 6(1)(a)</extref></citation> with:</text>
+      <amend><label-para><label denominator="yes">a</label><para><text>paragraph a body</text></para></label-para></amend>
+    </para></subprov>
+    <subprov><label>2</label><para><text>In <citation jurisdiction="nz"><extref href="z">section 6(1)(c)</extref></citation>, replace smoke with emissions.</text></para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+
+def test_overlap_detects_each_place_ancestor_step_composing_target() -> None:
+    node = _amending_node(_COMPOSED_EACH_PLACE_XML, "OP")
+    assert _amend_provision_overlaps_target_in_other_step(
+        node, ("part:1", "prov:6", "subprov:1", "label-para:a")
+    ) is True
+
+
+def test_overlap_does_not_fire_for_non_overlapping_sibling_step() -> None:
+    node = _amending_node(_NON_OVERLAPPING_SIBLING_XML, "OP")
+    assert _amend_provision_overlaps_target_in_other_step(
+        node, ("part:1", "prov:6", "subprov:1", "label-para:a")
+    ) is False
+
+
+# A later "add" step appending a sentence to the same node (s358(1)) after the
+# omit/substitute step — the same shape as 2009/31 on the RMA s358(1).
+_COMPOSED_ADD_XML = b"""\
+<act><body>
+  <prov id="OP"><label>9</label><heading>Section 358 amended</heading><prov.body>
+    <subprov><label>1</label><para><text><citation jurisdiction="nz"><extref href="x">Section 358(1)</extref></citation> is amended by omitting section 357A and substituting section 357A(1)(a).</text></para></subprov>
+    <subprov><label>2</label><para><text><citation jurisdiction="nz"><extref href="y">Section 358(1)</extref></citation> is amended by adding Appeals from objections are excluded.</text></para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+
+def test_overlap_detects_later_add_step_on_same_node() -> None:
+    node = _amending_node(_COMPOSED_ADD_XML, "OP")
+    assert _amend_provision_overlaps_target_in_other_step(
+        node, ("part:14", "prov:358", "subprov:1")
+    ) is True

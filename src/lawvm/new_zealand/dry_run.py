@@ -1730,6 +1730,23 @@ def _dry_run_one_text_replace(
             before_structural_set=before_structural_set,
             oracle_structural_set=oracle_structural_set,
         )
+        # The single text substitution we applied is the provision's net effect
+        # on this node only when no OTHER instruction step in the same amending
+        # provision also targets it. A second step (a further substitution, or a
+        # later "add"/"insert" appending content — e.g. 2009/31 omits-and-
+        # substitutes "section 357A" in s358(1) in one step and ADDS a trailing
+        # sentence to s358(1) in the next) composes additional content the oracle
+        # holds but our single-substitution payload does not. Typed out
+        # (refuse-don't-guess), never reclassified as an oracle error.
+        if not window_unprovable and oracle_present and row.amending_work_id and row.amending_provision_hrefs:
+            amending_root = _amending_act_root(archive, row.amending_work_id, {})
+            if amending_root is not None:
+                amending_node = _amending_node_by_href(amending_root, row.amending_provision_hrefs[0])
+                if amending_node is not None and _amend_provision_overlaps_target_in_other_step(
+                    amending_node, resolved_path
+                ):
+                    window_unprovable = True
+                    window_reason = NZ_WINDOW_UNPROVABLE_COMPOSED_AMEND_PROVISION
 
     return NZMutationBoundaryProof(
         op_id=op_id,
@@ -2275,11 +2292,18 @@ def _dry_run_one_replace(
             oracle_target_digest=oracle_subtree_digest,
         )
         # The structured replace step we extracted is the provision's net effect
-        # only when no LATER step in the same amending provision re-touches the
-        # target. When it does, our payload is the intermediate state and the
-        # oracle reflects the composed net effect — typed out (refuse-don't-guess).
-        if not window_unprovable and oracle_present and _amend_provision_composes_target(
-            amending_node, leaf_label
+        # only when no OTHER step in the same amending provision re-touches the
+        # target (a further substitution on the same leaf, or an each-place
+        # insert into an enclosing scope, or a later "add" step). When one does,
+        # our payload is the intermediate state and the oracle reflects the
+        # composed net effect — typed out (refuse-don't-guess).
+        if (
+            not window_unprovable
+            and oracle_present
+            and (
+                _amend_provision_composes_target(amending_node, leaf_label)
+                or _amend_provision_overlaps_target_in_other_step(amending_node, resolved_path)
+            )
         ):
             window_unprovable = True
             window_reason = NZ_WINDOW_UNPROVABLE_COMPOSED_AMEND_PROVISION
@@ -4103,6 +4127,117 @@ def _amend_provision_composes_target(amending_node: Any, target_leaf_label: str)
         if label in text and any(kw in text for kw in replace_keywords)
     ]
     return len(composing) >= 2
+
+
+# A target-citation as it appears at the head of an amending instruction step:
+# "section 6(1)(a)", "Section 358(1)", "section 6(1)(c) and (2)(a)". We parse the
+# LEADING citation's section number plus its bracketed sub-components into a
+# label-path tuple ("6", "1", "a"). Trailing "and (2)(a)" alternatives are NOT
+# parsed — a step that lists several targets is matched on its first target only,
+# which is conservative for overlap (the first target is the primary one and any
+# overlap with it already gates; missing a secondary target can only UNDER-gate,
+# never over-gate).
+_INSTRUCTION_TARGET_SECTION_RE = re.compile(
+    r"\bsections?\s+(\d+[A-Za-z]*)((?:\s*﻿?\([0-9A-Za-z]+\))*)",
+    re.IGNORECASE,
+)
+_INSTRUCTION_TARGET_BRACKET_RE = re.compile(r"\(([0-9A-Za-z]+)\)")
+
+
+def _instruction_target_label_path(citation_text: str) -> tuple[str, ...] | None:
+    """Parse an instruction-step target citation into a label-path tuple.
+
+    "section 6(1)(a)" -> ("6", "1", "a"); "Section 358(1)" -> ("358", "1");
+    "section 6" -> ("6",). Returns ``None`` when no leading section citation
+    parses (the step's target cannot be located, so it cannot be proven to
+    overlap — conservative: it is not counted). Only the FIRST section citation in
+    the text is read (the step's primary target).
+    """
+
+    match = _INSTRUCTION_TARGET_SECTION_RE.search(citation_text)
+    if not match:
+        return None
+    section = match.group(1)
+    brackets = tuple(_INSTRUCTION_TARGET_BRACKET_RE.findall(match.group(2) or ""))
+    return (section, *brackets)
+
+
+def _paths_overlap(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """Whether two label-paths are equal or one is an ancestor of the other.
+
+    Overlap means the two instructions touch the SAME node or one touches an
+    enclosing scope of the other (an each-place insert into "section 6(1)" reaches
+    every paragraph of 6(1), including "6(1)(a)"). Sibling/cousin paths
+    ("6(1)(a)" vs "6(1)(c)") do NOT overlap.
+    """
+
+    shorter = min(len(a), len(b))
+    return a[:shorter] == b[:shorter]
+
+
+def _node_label_path(source_path: tuple[str, ...]) -> tuple[str, ...]:
+    """The prov/subprov/paragraph label chain of a resolved source path.
+
+    "part:1/prov:6/subprov:1/label-para:a" -> ("6", "1", "a"). Container segments
+    without a label and non-provision segments (``part``/``schedule``) are
+    dropped, so the result is comparable to a parsed instruction-target citation.
+    """
+
+    labels: list[str] = []
+    for segment in source_path:
+        kind, _, label = segment.partition(":")
+        if kind in {"prov", "subprov", "label-para", "def-para"} and label:
+            labels.append(normalize_inline_comparison_text(label))
+    return tuple(labels)
+
+
+def _amend_provision_overlaps_target_in_other_step(
+    amending_node: Any,
+    node_source_path: tuple[str, ...],
+) -> bool:
+    """Whether another instruction step in the provision composes this node.
+
+    A single amending provision (one history-note href) decomposes into numbered
+    instruction steps. We extract exactly ONE step as the op's payload, but when
+    ANOTHER step in the same provision targets the SAME node or an ENCLOSING scope
+    of it (a per-section each-place "after smoking, insert or vaping in section
+    6(1)" reaching paragraph 6(1)(a); a later "add" step appending a sentence to
+    section 358(1) after the omit/substitute step), the oracle snapshot reflects
+    the COMPOSED net effect while our payload is the intermediate state. The
+    residual is then a composition artifact, not an oracle error.
+
+    Detection is by target-citation OVERLAP and is conservative: we parse each
+    step's leading target citation into a label-path and count how many steps
+    overlap the replayed node's label-path (equal / ancestor / descendant). The
+    op's own step always overlaps, so MORE THAN ONE overlapping step means a
+    second instruction composes the node. Verb-agnostic (replace / omit / add /
+    insert all compose). No content is sourced; an unparseable citation is simply
+    not counted (fail toward NOT gating, never a guess). Returns False when the
+    node path has no provision labels or the node is unreadable.
+    """
+
+    node_labels = _node_label_path(node_source_path)
+    if not node_labels:
+        return False
+
+    overlapping = 0
+    try:
+        for subprov in amending_node.iter():
+            tag = getattr(subprov, "tag", "")
+            if not isinstance(tag, str) or not tag.endswith("subprov"):
+                continue
+            text = normalize_inline_comparison_text(
+                " ".join(t for t in subprov.itertext() if t and t.strip())
+            )
+            target = _instruction_target_label_path(text)
+            if target is None:
+                continue
+            if _paths_overlap(target, node_labels):
+                overlapping += 1
+    except (AttributeError, TypeError):
+        return False
+
+    return overlapping >= 2
 
 
 def _replace_payload_text(replacement: NZStructuralReplacement, row: Any) -> str:
