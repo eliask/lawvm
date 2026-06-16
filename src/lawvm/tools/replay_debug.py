@@ -304,7 +304,7 @@ def _format_text(bundle: Dict[str, Any]) -> str:
             current_source = None
             for op in bundle["compiled_ops"]:
                 src = op.get("source_statute", "?")
-                title = op.get("source_title", "")[:50]
+                title = (op.get("source_title") or "")[:50]
                 seq = op.get("sequence", "?")
                 action = str(op.get("action", "?")).upper()
                 target = op.get("target", {})

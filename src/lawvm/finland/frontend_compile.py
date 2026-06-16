@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
-from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
 from lawvm.core.statute_validity import expires_on_from_valid_until
@@ -745,6 +745,90 @@ def _part_label_for_source_element(el: etree._Element) -> str | None:
     return None
 
 
+def _source_body_carries_whole_section(
+    *,
+    muutos_tree: etree._Element,
+    section_norm: str,
+    target_part: str | None,
+) -> bool:
+    """True when the amendment body carries the whole section as new text.
+
+    Unlike :func:`_source_body_has_flat_whole_section`, the section may sit
+    under a chapter container (not only directly under body/hcontainer); the
+    amendment supplies the full section payload either way.
+    """
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return False
+    for sec in body.findall(".//{*}section"):
+        num_el = sec.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        if _normalize_source_section_num(num_el.text) != section_norm:
+            continue
+        if _part_label_for_source_element(sec) != target_part:
+            continue
+        return True
+    return False
+
+
+def _is_identity_whole_section_renumber(op: AmendmentOp) -> bool:
+    """True when a whole-section RENUMBER renames a section to its own label.
+
+    An identity renumber (destination leaf label == target leaf label, with no
+    container relabel) is semantically a no-op rename. It arises when a move
+    verb group (``... johon samalla siirretään ... §, sekä N-M §``) over-extends
+    across a ``sekä`` coordination and sweeps trailing new-section targets into
+    the SIIRTAA verb group. Such targets carry no real relabel — their true verb
+    is the outer ``lisätään`` (insert).
+    """
+    if op.op_type != "RENUMBER" or op.target_unit_kind != "section":
+        return False
+    if not op.target_section:
+        return False
+    if op.target_paragraph is not None or op.target_item or op.target_special:
+        return False
+    lo = op.lo
+    if lo is None or lo.target is None or lo.destination is None:
+        return False
+    target_leaf = lo.target.path[-1] if lo.target.path else None
+    dest_leaf = lo.destination.path[-1] if lo.destination.path else None
+    if target_leaf is None or dest_leaf is None:
+        return False
+    if target_leaf != dest_leaf:
+        return False
+    # A genuine container move encodes on the destination a chapter/part that
+    # differs from the target's. The destination is frequently un-enriched
+    # (carries no chapter/part) while the target picked up a body-inferred
+    # chapter scope; that is still an identity rename, not a move. Reject only
+    # when the destination explicitly names a container that conflicts with the
+    # target's same-kind container.
+    target_by_kind = {kind: label for kind, label in lo.target.path[:-1]}
+    for kind, label in lo.destination.path[:-1]:
+        if target_by_kind.get(kind, label) != label:
+            return False
+    return True
+
+
+def _lo_to_whole_section_insert(lo: "LegalOperation") -> "LegalOperation":
+    """Rewrite an identity-renumber LegalOperation into a whole-section INSERT.
+
+    ``destination`` must be cleared because LegalOperation only permits it on
+    RENUMBER actions.
+    """
+    return dc_replace(
+        lo,
+        action=StructuralAction.INSERT,
+        destination=None,
+        provenance_tags=tuple(lo.provenance_tags)
+        + ("identity_renumber_absent_target_to_insert",),
+    )
+
+
 def _source_body_has_flat_whole_section(
     *,
     muutos_tree: etree._Element,
@@ -1404,6 +1488,41 @@ def _enrich_ops_from_amendment_tree(
                         ),
                         lo=retargeted_lo,
                     )
+        # Identity-renumber-of-absent-section -> whole-section INSERT.
+        # A move verb group (``... siirretään ... §, sekä N-M § seuraavasti``)
+        # can over-extend across the ``sekä`` coordination and emit identity
+        # RENUMBER ops (dest leaf == target leaf) for the trailing new sections.
+        # When the section is absent from the live parent it cannot be a rename
+        # of an existing node; with the source body carrying the whole section
+        # (body_scoped from ``fi_body_chapter_scope_from_source_body``) it is a
+        # new INSERT. Replaying it as a same-label relabel otherwise raises
+        # ``RELABEL target not found`` and silently drops the section body.
+        if (
+            master is not None
+            and _is_identity_whole_section_renumber(scoped_op)
+            and master.find_section_path(
+                _norm_num_token(scoped_op.target_section),
+                scoped_op.target_chapter,
+                scoped_op.target_part,
+            )
+            is None
+            and _source_body_carries_whole_section(
+                muutos_tree=muutos_tree,
+                section_norm=_norm_num_token(scoped_op.target_section),
+                target_part=scoped_op.target_part,
+            )
+        ):
+            scoped_op = dc_replace(
+                scoped_op,
+                op_type="INSERT",
+                scope_provenance_tags=tuple(scoped_op.scope_provenance_tags)
+                + ("identity_renumber_absent_target_to_insert",),
+                lo=(
+                    _lo_to_whole_section_insert(scoped_op.lo)
+                    if scoped_op.lo is not None
+                    else scoped_op.lo
+                ),
+            )
         enriched.append(
             dc_replace(
                 scoped_op,
