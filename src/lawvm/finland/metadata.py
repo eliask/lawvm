@@ -319,6 +319,20 @@ def get_operative_body_repeal_candidate(xml_bytes: bytes) -> str:
 def get_johtolause(xml_bytes: bytes) -> str:
     """Extract the enacting clause (johtolause) from amendment XML bytes."""
     tree = etree.fromstring(xml_bytes)
+    # Strip editorial corrigendum footnotes before extracting clause text. A
+    # <span class="corrigendum"> wraps the CORRECTED (operative) wording and
+    # carries an <authorialNote> holding only the SUPERSEDED original text
+    # ("Merkitty kohta oikaistu (v. N), alkuperäinen sanamuoto kuului: ...").
+    # Flattening that note into the johtolause leaks superseded section labels
+    # (false drops) and splices noise between live tokens (e.g. "tilalle <note>
+    # uusi 6 momentti"), breaking the parse. The corrigendum history itself is
+    # captured separately by corrigendum.extract_inline_corrections (Population
+    # A); all corpus authorialNotes live inside corrigendum spans, so dropping
+    # them all is safe and equivalent.
+    for _note in cast(List[etree._Element], tree.xpath(".//*[local-name()='authorialNote']")):
+        _parent = _note.getparent()
+        if _parent is not None:
+            _parent.remove(_note)
     formula = cast(List[etree._Element], tree.xpath("//*[local-name()='formula' and @name='enactingClause']"))
     if formula:
         formula_text = _element_text(formula[0])
