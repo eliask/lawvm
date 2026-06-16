@@ -841,13 +841,14 @@ def test_nojalla_authority_lead_in_inserts_only_the_new_section() -> None:
     assert node.kind == TargetKind.SECTION
 
 
-def test_bare_nojalla_abutting_uusi_stays_old_parser_faithful() -> None:
-    # Control (1987/1046 shape): a ``14 §:n 2 momentin nojalla uusi 4 a §`` lead-in
-    # with NO citation/comma between ``nojalla`` and ``uusi`` is NOT skipped by the
-    # old parser (it reads ``14 §`` as the target). The ``nojalla`` authority skip
-    # must NOT over-fire on this shape; the new parser declines loudly (matching the
-    # old parser's filtered-stream behaviour) rather than recovering a divergent
-    # insert — a recovered insert here would be a net-new genuine census delta.
+def test_bare_nojalla_abutting_uusi_recovers_real_insert() -> None:
+    # 1987/1046 shape: a ``14 §:n 2 momentin nojalla uusi 4 a §`` lead-in. The OLD
+    # parser mis-read the enabling-statute section ``14 §`` as the insert target
+    # (dropping the real ``uusi 4 a §`` insertion — a genuine silent-drop the
+    # totality predicate flagged). The new parser now SKIPS the leading-``nojalla``
+    # authority basis to the ``uusi`` anchor and recovers the real insertion of
+    # §4 a; the mis-read ``14 §`` authority is correctly discarded. NEW is better
+    # than legacy here (expected divergence — the recovered insert clears the drop).
     text = (
         "muutetaan sosiaalipalveluista perittävistä maksuista 2 päivänä joulukuuta "
         "1983 annetun asetuksen ( 887/83 ) 2 §:n 1 momentti, 4§:n 2 momentti sekä 5§, "
@@ -855,5 +856,11 @@ def test_bare_nojalla_abutting_uusi_stays_old_parser_faithful() -> None:
         "tukitoimista 3 päivänä huhtikuuta 1987 annetun lain (380/87) 14§:n 2 "
         "momentin nojalla uusi 4 a§, seuraavasti:"
     )
-    with pytest.raises(OutOfScope):
-        parse_text_with(text, new_parser.parse)
+    model = parse_text_with(text, new_parser.parse)
+    assert len(model.verb_groups) == 2
+    lisata_vg = model.verb_groups[1]
+    insertions = [n for n in lisata_vg.nodes if isinstance(n, SurfaceInsertion)]
+    assert [n.label for n in insertions] == ["4a"]
+    # The mis-read authority section ``14`` must NOT appear as a target.
+    labels = [getattr(n, "label", None) for vg in model.verb_groups for n in vg.nodes]
+    assert "14" not in labels

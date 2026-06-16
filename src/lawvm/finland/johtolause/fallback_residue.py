@@ -209,7 +209,12 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
             "record as provenance-leak; provenance-continuation recognizer targets "
             "native ownership"
         ),
-        baseline_count=82,
+        # 83 (was 82): a leading ``N §:n nojalla`` authority basis whose real
+        # target list carries a ``niistä N § sellaisina kuin`` provenance leak now
+        # reaches this class — the authority skip recovers the bare-name target
+        # list, surfacing the provenance leak that the whole-clause authority
+        # decline previously masked.
+        baseline_count=83,
     ),
     # --- authority-basis misreads --------------------------------------------
     FallbackResidueClass(

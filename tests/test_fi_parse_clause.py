@@ -1752,6 +1752,92 @@ def test_parse_clause_skips_nojalla_authority_chain_before_real_uusi_insert_targ
 
 
 # ---------------------------------------------------------------------------
+# Bare-statute-name skip + leading-nojalla authority recovery (grammar-owned).
+#
+# A leading ``N §:n nojalla`` authority basis mis-reads the enabling-statute
+# section as the first target; the real targets sit behind a BARE statute name
+# (no parenthetical id). The grammar now SKIPS the authority lead-in to the real
+# target list and OWNS the clause (grammar_owned lane), instead of declining to a
+# legacy fallback that grabbed the authority section and dropped the targets.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_clause_recovers_bare_name_targets_behind_leading_nojalla():
+    """1957/230: ``kansaneläkelain (347/56) 99 §:n nojalla … annetun
+    kansaneläkeasetuksen 80 ja 81 §`` — the ``99 §`` authority is dropped and the
+    bare-name targets ``80`` / ``81`` recovered. Previously legacy grabbed ``99``."""
+    text = (
+        "muutetaan 8 päivänä kesäkuuta 1956 annetun kansaneläkelain ( 347/56 ) "
+        "99 §:n nojalla 7 päivänä joulukuuta 1956 annetun kansaneläkeasetuksen "
+        "80 ja 81 §, sellaisina kuin ne ovat 29 päivänä maaliskuuta 1957 annetussa "
+        "asetuksessa (138/57), näin kuuluviksi:"
+    )
+    result = parse_clause(text)
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == ["M P 80", "M P 81"]
+
+
+def test_parse_clause_recovers_bare_name_doc_targets_behind_leading_nojalla():
+    """1935/418: ``kielilain 25 §:n nojalla, mainitun lain täytäntöönpanosta …
+    annetun asetuksen 1, 2, 5, 8 ja 9 §`` — the ``25 §`` authority is dropped and
+    the bare-name section list recovered, grammar-owned."""
+    text = (
+        "muutetaan täten, 1 päivänä kesäkuuta 1922 annetun kielilain 25 §:n nojalla, "
+        "mainitun lain täytäntöönpanosta 29 päivänä joulukuuta 1922 annetun asetuksen "
+        "1, 2, 5, 8 ja 9 § näin kuuluviksi:."
+    )
+    result = parse_clause(text)
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 1",
+        "M P 2",
+        "M P 5",
+        "M P 8",
+        "M P 9",
+    ]
+
+
+def test_parse_clause_recovers_uusi_insert_behind_leading_nojalla():
+    """1987/1046: ``annetun lain (380/87) 14§:n 2 momentin nojalla uusi 4 a§`` —
+    the ``14 §`` authority is dropped and the real insertion ``uusi 4 a §``
+    recovered (the authority skip lands on the ``UUSI`` anchor)."""
+    text = (
+        "lisätään asetukseen vammaisuuden perusteella järjestettävistä palveluista "
+        "ja tukitoimista 3 päivänä huhtikuuta 1987 annetun lain (380/87) "
+        "14§:n 2 momentin nojalla uusi 4 a§, seuraavasti:"
+    )
+    result = parse_clause(text)
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == ["L P 4a"]
+
+
+def test_parse_clause_ordinary_bare_name_section_not_authority_skipped():
+    """Negative guard: an ordinary ``… annetun lain N §`` reference WITHOUT a
+    ``nojalla`` authority basis must parse its sections as targets unchanged — the
+    leading-authority skip must NOT fire on an ordinary bare statute name."""
+    text = "muutetaan kansaneläkeasetuksen 80 ja 81 § näin kuuluviksi:"
+    result = parse_clause(text)
+    assert [op.code() for op in result.parsed_ops] == ["M P 80", "M P 81"]
+
+
+def test_parse_clause_authority_skip_does_not_grab_citation_year_as_section():
+    """Negative guard: the ``_num_begins_operative_target`` test requires a PYKALA
+    to close the number-list run, so a date / citation numeral after ``nojalla``
+    (``… nojalla 7 päivänä …``) is never mistaken for a section target — the skip
+    advances past it to the real bare-name ``§`` list (1957/230 lands on ``80``,
+    not the date ``7``)."""
+    text = (
+        "muutetaan 8 päivänä kesäkuuta 1956 annetun kansaneläkelain ( 347/56 ) "
+        "99 §:n nojalla 7 päivänä joulukuuta 1956 annetun kansaneläkeasetuksen "
+        "80 ja 81 §, näin kuuluviksi:"
+    )
+    result = parse_clause(text)
+    # The date numeral ``7`` and citation year ``1956`` are skipped; only the real
+    # bare-name targets 80/81 are produced (never 7 / 99 / 1956).
+    assert [op.code() for op in result.parsed_ops] == ["M P 80", "M P 81"]
+
+
+# ---------------------------------------------------------------------------
 # Lexer normalization: §-suffix apostrophe (Finlex XML artifact)
 # ---------------------------------------------------------------------------
 

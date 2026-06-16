@@ -2168,18 +2168,38 @@ def _parse_verb_group(
     # An authority-basis citation mis-read as the first target: ``muutetaan …
     # kielilain 25 §:n nojalla, … asetuksen 1, 2, 5, 8 ja 9 §`` — the ``25 §:n
     # nojalla`` ("by virtue of §25") is the LEGAL BASIS for the amendment, not an
-    # operative target; the real targets follow the comma. The section recognizer
-    # reads ``25 §`` and stops at ``nojalla``, then the group breaks and the real
-    # targets are silently dropped. When the first batch stops immediately before a
-    # ``nojalla`` authority WORD and operative structural content follows before
-    # the next VERB, decline loudly so the old parser handles the basis correctly.
+    # operative target; the real targets follow behind a BARE statute name (``…
+    # nojalla [date] annetun kansaneläkeasetuksen 80 ja 81 §``). The section
+    # recognizer reads ``99 §`` and stops at ``nojalla``; the mis-read authority
+    # section must be DISCARDED and the real bare-name target list recovered.
+    #
+    # Recover natively: skip the leading ``nojalla`` authority lead-in to the real
+    # target start and re-recognize the operative batch there. The mis-read
+    # authority batch (``99 §``) is dropped, so the recovered nodes replace it. On
+    # a fuzzy shape the skip declines and the original decline below still fires —
+    # the old parser then owns the clause (its ``_skip_authority_nojalla_lead_in``
+    # handles the comma-jump forms ``25 §:n nojalla, … asetuksen N §`` correctly).
     if (
         (nojalla := scan.peek()) is not None
         and nojalla.cat == "WORD"
         and (nojalla.text or "").lower() == "nojalla"
         and _has_operative_target_before_verb(scan, scan.pos + 1)
     ):
-        raise OutOfScope("authority-basis nojalla citation mis-read as target")
+        recovery_start = scan.pos
+        if _skip_leading_nojalla_authority(scan):
+            target_start = scan.pos
+            try:
+                rec_batch, rec_kind = _recognize_one_target(scan, "", "", verb)
+            except OutOfScope:
+                scan.goto(recovery_start)
+            else:
+                # Drop the mis-read authority section; the recovered bare-name
+                # target list is the real batch. Re-stamp the first-batch start so
+                # downstream scope / continuation reads from the recovered targets.
+                batch, kind = rec_batch, rec_kind
+                first_batch_start = target_start
+        if scan.pos == recovery_start:
+            raise OutOfScope("authority-basis nojalla citation mis-read as target")
     nodes = list(batch)
     last_batch: list[SurfaceNode] = list(batch)
     # Intra-group scope carry-forward: a later bare section list inherits the
@@ -2851,6 +2871,99 @@ def _has_operative_target_before_verb(scan: _Scan, start: int) -> bool:
             return False
         if cat in ("PYKALA", "LUKU", "LIITE"):
             return True
+    return False
+
+
+# Lead-in token categories naming the operative statute behind a ``nojalla``
+# authority basis (``… nojalla [date] annetun asetuksen N §`` / ``mainitun lain
+# täytäntöönpanosta … annetun asetuksen N §``). The real targets sit AFTER a bare
+# statute name; the skip below crosses only this benign lead-in trivia.
+_NOJALLA_LEADIN_CATS = frozenset(
+    {"WORD", "NUM", "CITE", "PUNCT", "COMMA", "CONJ", "BACKREF", "DOC", "DASH"}
+)
+
+
+def _num_begins_operative_target(toks: Sequence[Token], i: int) -> bool:
+    """True iff the NUM at ``i`` opens an operative ``N (a) (, M …) §`` target list
+    (a structural PYKALA closes the number-list run), not a date / citation numeral.
+
+    Scans the contiguous number-list run (``NUM [LETTER] ((COMMA|CONJ) NUM …)*``)
+    and requires it to terminate in a PYKALA. A date numeral (``7 päivänä``) or a
+    citation year is followed by a WORD / CITE, so it fails this test.
+    """
+    n = len(toks)
+    j = i
+    expect_num = True
+    while j < n:
+        cat = toks[j].cat
+        if expect_num:
+            if cat != "NUM":
+                return False
+            j += 1
+            if j < n and toks[j].cat == "LETTER":
+                j += 1
+            expect_num = False
+            continue
+        if cat in ("COMMA", "CONJ"):
+            j += 1
+            expect_num = True
+            continue
+        return cat == "PYKALA"
+    return False
+
+
+def _skip_leading_nojalla_authority(scan: _Scan) -> bool:
+    """Skip a leading ``N §:n nojalla`` authority basis to the real target list.
+
+    The cursor MUST be positioned at the ``nojalla`` authority WORD (the section
+    recognizer has just mis-read the enabling-statute section ``N §`` as a first
+    target). The authority basis names the LEGAL POWER under which the amendment is
+    made — never an operative target — and the real targets follow behind a BARE
+    statute name with no parenthetical id (``… nojalla [date] annetun
+    kansaneläkeasetuksen 80 ja 81 §``). Advance over the ``nojalla`` lead-in (date
+    words, ``annetun``, the bare statute-name WORD/DOC, an optional citation) and
+    land the cursor at the first operative target token.
+
+    Returns ``True`` and leaves the cursor at the real target start on success;
+    ``False`` (cursor unchanged) when the shape is not a clean leading-authority
+    skip. Faithful narrowing of the old ``_skip_authority_nojalla_lead_in``
+    (surface_parse 2992-3063), restricted to the LEADING bare-name ``§``-list form.
+    A second ``nojalla`` (a deeper authority-INSERT shape, e.g. 1993/169 ``1, 4 ja
+    7 §:n nojalla uuden 8 §``) bails so that genuinely fuzzy shape stays declined.
+    """
+    start = scan.pos
+    toks = scan.cur.tokens
+    n = len(toks)
+    if start >= n:
+        return False
+    cur = toks[start]
+    if cur.cat != "WORD" or (cur.text or "").lower() != "nojalla":
+        return False
+    i = start + 1
+    while i < n:
+        tok = toks[i]
+        cat = tok.cat
+        if cat == "VERB":
+            return False
+        # A provenance opener (``sellaisina kuin``) before any operative target
+        # means the authority basis is the only structural content — not our shape.
+        if cat == "WORD" and (tok.text or "").lower().startswith("sella"):
+            return False
+        # A second ``nojalla`` is a deeper authority-insert shape (fuzzy): bail.
+        if cat == "WORD" and (tok.text or "").lower() == "nojalla":
+            return False
+        # An UUSI insertion anchor: a leading-authority insertion arm starts here.
+        if cat == "UUSI":
+            scan.goto(i)
+            return True
+        # The first operative section number begins the real target list (a bare
+        # NUM-list governed by a PYKALA). Land here and let the families recognize.
+        if cat == "NUM" and _num_begins_operative_target(toks, i):
+            scan.goto(i)
+            return True
+        if cat not in _NOJALLA_LEADIN_CATS:
+            return False
+        i += 1
     return False
 
 
