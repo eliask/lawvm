@@ -68,6 +68,7 @@ Subcommands:
     build-index-db                  Compose Tier 2 Parquets into a single DuckDB .db file.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
+    fi-parse-explain <sid>          Dump everything needed to diagnose one statute's johtolause parse.
     topic --topic STRING            Keyword/FTS search across statute sections and HE body atoms.
     follow-refs --start REF         Multi-hop reference traversal from a provision.
     pit-timeline --provision REF    Provision amendment history (index-backed).
@@ -10445,6 +10446,35 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON",
     )
 
+    # --- fi-parse-explain ---
+    fi_parse_explain_p = sub.add_parser(
+        "fi-parse-explain",
+        help="dump everything needed to diagnose one statute's johtolause parse",
+        description=(
+            "Fetch a statute's enacting clause (johtolause) from the corpus and "
+            "dump everything needed to diagnose how that ONE clause parses: the "
+            "normalized text, the parser_lane + grammar_decline_reason, the "
+            "OLD-vs-NEW surface-model comparison, and the no-silent-drop totality "
+            "predicate (n_ops + flagged drops). Read-only, deterministic; composes "
+            "the existing parser APIs (no re-implementation)."
+        ),
+    )
+    fi_parse_explain_p.add_argument(
+        "sid",
+        metavar="STATUTE_ID",
+        help="statute id, e.g. 2002/375",
+    )
+    fi_parse_explain_p.add_argument(
+        "--ops",
+        action="store_true",
+        help="also dump the parsed op codes",
+    )
+    fi_parse_explain_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON",
+    )
+
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
@@ -12935,6 +12965,11 @@ def _main_impl() -> None:
         from lawvm.tools.parse_johto import main as parse_johto_main
 
         parse_johto_main(args)
+
+    elif args.command == "fi-parse-explain":
+        from lawvm.tools.fi_parse_explain import main as fi_parse_explain_main
+
+        fi_parse_explain_main(args)
 
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main

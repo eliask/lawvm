@@ -166,6 +166,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_lower_*.py",
         "test_fi_normalize.py",
         "test_fi_parse_clause.py",
+        "test_fi_parse_explain.py",
         "test_fi_payload_normalize.py",
         "test_payload_surface.py",
         "test_fi_peg_audit.py",
