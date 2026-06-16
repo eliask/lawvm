@@ -161,6 +161,50 @@ def test_container_guard_keeps_coordinated_sibling_chapter_flagged() -> None:
     assert ("LUKU", "7") in pairs, pairs
 
 
+# --- (e) appendix-table-part guard: fee-table/luettelo part-selector ------------
+#
+# The appendix edit ``asetuksen liitteenä olevan maksutaulukon|luettelon <ROMAN>
+# osan ... kohta`` produces ONE number-less ``kind == "A"`` op. The roman-numeral
+# OSA part-selector glued to the appendix-content word is a coordinate into that
+# appendix, not a standalone dropped ``osa`` -> it must NOT flag. A *coordinated*
+# sibling part (``ja III osan ...``) is a second appendix part the single A-op does
+# not cover, so it stays flagged (genuine under-segmentation). These sids were
+# adjudicated FALSE POSITIVES of the prototype run.
+
+
+@pytest.mark.parametrize(
+    "sid",
+    [
+        "1993/735",  # luettelon IV osa
+        "2003/159",  # maksutaulukon VI osan 2 kohta
+        "2004/908",  # maksutaulukon IV osaan uusi kohta
+        "2006/763",  # maksutaulukon VIII osaan uusi kohta
+        "2007/862",  # maksutaulukon VII osaan uusi kohta
+        "2008/624",  # maksutaulukon VI osaan uusi kohta
+    ],
+)
+def test_appendix_table_part_selector_not_flagged(sid: str) -> None:
+    flagged, n_ops = _run(sid)
+    assert n_ops > 0
+    # The single appendix part-selector is the only operative label these clauses
+    # leave uncovered; with the guard it must clear to zero.
+    assert flagged == [], [(f.label.label, f.label.struct_cat) for f in flagged]
+
+
+def test_appendix_guard_keeps_coordinated_sibling_part_flagged() -> None:
+    # 2010/883: `maksutaulukon I osan ... kohta ja III osan ... kohta` produces a
+    # single number-less `kind == "A"` op. The PRIMARY selector `I osa` (glued to
+    # `maksutaulukon`) is suppressed, but the COORDINATED sibling `III osa` (past a
+    # `kohta`/`ja` barrier) is a second appendix part the one A-op does not cover --
+    # it MUST stay flagged. Proof that the guard suppresses only the benign primary
+    # selector adjacent to a genuine under-segmentation drop that survives.
+    flagged, n_ops = _run("2010/883")
+    assert n_ops > 0
+    pairs = {(f.label.struct_cat, f.label.label) for f in flagged}
+    assert ("OSA", "iii") in pairs, pairs
+    assert ("OSA", "i") not in pairs, pairs
+
+
 # --- warn-only wiring: LAWVM_PARSE_TOTALITY surfaces residuals, never raises -----
 
 

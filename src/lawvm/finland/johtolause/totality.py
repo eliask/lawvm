@@ -134,8 +134,8 @@ def _raw_annotations(tokens: list[Token]) -> list[RawAnnSpan]:
 
 def _filtered_to_raw_coverage(
     text: str, raw_tokens: list[Token]
-) -> tuple[set[int], int, set[str]]:
-    """Compute (raw covered indices, n_produced_ops, produced_op_labels) for ``text``.
+) -> tuple[set[int], int, set[str], bool]:
+    """Compute (raw covered, n_produced_ops, produced_op_labels, has_appendix_op) for ``text``.
 
     The parser's witness source_spans index into the FILTERED stream
     (apply_annotations output). We rebuild that filtered stream WITH its
@@ -188,7 +188,11 @@ def _filtered_to_raw_coverage(
     _ops = _parse_clause(text).parsed_ops or []
     n_ops = len(_ops)
     op_labels = {_normalize(op.number or "") for op in _ops if op.number}
-    return covered_raw, n_ops, op_labels
+    # An appendix/annex (``kind == "A"``) op is a fee-table / luettelo edit. Its
+    # part-selector (``maksutaulukon I osan ...``) carries no section number, so it
+    # never lands in ``op_labels``; the appendix-table-part guard uses this flag.
+    has_appendix_op = any(getattr(op, "kind", "") == "A" for op in _ops)
+    return covered_raw, n_ops, op_labels, has_appendix_op
 
 
 def _scan_operative_labels(tokens: list[Token]) -> list[OperativeLabel]:
@@ -369,6 +373,59 @@ def _container_governs_covered_section(
     return False
 
 
+# Appendix-table-part guard tuning. The fee-table / numbered-list appendix edit
+# ``asetuksen liitteenä olevan maksutaulukon|luettelon <ROMAN> osan ... kohta``
+# produces a single ``kind == "A"`` op whose number is EMPTY; the roman-numeral
+# OSA part-selector is a coordinate INTO that appendix, not a standalone dropped
+# ``osa`` operative. The guard suppresses the ONE primary part-selector directly
+# attached to the appendix-content word.
+_APPENDIX_PART_WORDS: tuple[str, ...] = ("maksutauluko", "luettelo")
+# Crossing any of these between the OSA number and the appendix-content word means
+# this OSA is NOT the primary selector the single A-op represents: a COMMA/CONJ
+# introduces a COORDINATED sibling part (a second appendix part the one A-op does
+# not cover -> stays flagged as genuine under-segmentation); a section/momentti/
+# kohta/heading struct or a fresh LIITE/DOC means a different scope entirely.
+_APPENDIX_PART_BARRIER_CATS: frozenset[str] = frozenset(
+    {
+        "VERB", "END", "COMMA", "CONJ", "PYKALA", "MOMENTTI", "KOHTA", "ALAKOHTA",
+        "LIITE", "DOC", "OTSIKKO", "OSA", "NIMIKE",
+    }
+)
+_APPENDIX_PART_WINDOW = 6
+
+
+def _is_appendix_table_part_selector(
+    label: OperativeLabel, tokens: list[Token], has_appendix_op: bool
+) -> bool:
+    """True when an OSA label is the PRIMARY part-selector of a produced appendix op.
+
+    Fires only for ``... maksutaulukon|luettelon <ROMAN> osa[n/an] ...`` where the
+    appendix-content word is reachable from the OSA number through a TIGHT chain
+    (no COMMA/CONJ -> a coordinated sibling part stays flagged; no section/heading
+    struct -> a different scope stays flagged), AND a ``kind == "A"`` op was in fact
+    produced (the appendix edit IS owned). At most one OSA per clause matches: the
+    selector glued to the appendix-content word. A coordinated ``ja III osan ...
+    kohta`` sibling does NOT reach the word (it is gated by the CONJ/KOHTA barrier),
+    so a genuine multi-part under-segmentation drop survives.
+
+    Conservative by construction: with no produced appendix op, or any barrier
+    between the OSA and the appendix word, the label stays flagged.
+    """
+    if not has_appendix_op:
+        return False
+    k = label.num_idx - 1
+    seen = 0
+    while k >= 0 and seen < _APPENDIX_PART_WINDOW:
+        tok = tokens[k]
+        if tok.cat == "WORD" and tok.text.lower().startswith(_APPENDIX_PART_WORDS):
+            return True
+        if tok.cat in _APPENDIX_PART_BARRIER_CATS:
+            return False
+        k -= 1
+        seen += 1
+    return False
+
+
 def _is_move_destination(label: OperativeLabel, tokens: list[Token]) -> bool:
     """True when the label is the destination of a move/renumber.
 
@@ -448,7 +505,9 @@ def predicate(text: str) -> tuple[list[FlaggedDrop], int]:
     """
     raw_tokens = tokenize(text)
     anns = _raw_annotations(raw_tokens)
-    covered, n_ops, op_labels = _filtered_to_raw_coverage(text, raw_tokens)
+    covered, n_ops, op_labels, has_appendix_op = _filtered_to_raw_coverage(
+        text, raw_tokens
+    )
     labels = _scan_operative_labels(raw_tokens)
 
     flagged: list[FlaggedDrop] = []
@@ -486,6 +545,14 @@ def predicate(text: str) -> tuple[list[FlaggedDrop], int]:
         # Move-destination guard: a LUKU preceded by a move verb is the DESTINATION
         # of a renumber/move, not a dropped operative target.
         if lab.struct_cat == "LUKU" and _is_move_destination(lab, raw_tokens):
+            continue
+        # Appendix-table-part guard: the primary roman-numeral OSA part-selector of
+        # a produced fee-table/luettelo appendix op (`maksutaulukon I osan ... kohta`
+        # -> a single number-less `kind == "A"` op) is a coordinate into the appendix,
+        # not a standalone dropped `osa`. A coordinated sibling part stays flagged.
+        if lab.struct_cat == "OSA" and _is_appendix_table_part_selector(
+            lab, raw_tokens, has_appendix_op
+        ):
             continue
         ann = _covering_ann(lab.struct_idx, anns) or _covering_ann(lab.num_idx, anns)
         if ann is not None:
