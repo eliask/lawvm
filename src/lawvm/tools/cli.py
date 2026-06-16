@@ -11302,6 +11302,18 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="manifest used when --statute is omitted (default: viewer/statute-timeline-manifest.json)",
     )
     export_md_git_p.add_argument(
+        "--all-replayable",
+        action="store_true",
+        help="[-j fi] export all farchive statutes with substantive source bodies, skipping unreplayable statutes",
+    )
+    export_md_git_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="limit selected statutes after sorting; intended for smoke tests",
+    )
+    export_md_git_p.add_argument(
         "--until",
         metavar="YYYY-MM-DD",
         default=None,

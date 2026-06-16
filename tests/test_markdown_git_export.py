@@ -342,14 +342,28 @@ def test_build_commits_keeps_unchanged_statute_file_bytes_stable() -> None:
 def test_build_commits_readme_is_path_ordered_without_sample_counts() -> None:
     root = _body_with_link_text("Stable text.")
     newer = PreparedStatute(
-        statute_id="9/2023",
-        engine_id="2023/9",
-        title="Newer Act",
+        statute_id="1000/2020",
+        engine_id="2020/1000",
+        title="Later Number Act",
         snapshots=(
             MaterializedSnapshot(
                 effective_date="2020-01-01",
                 root=root,
                 tree_hash="hash-one",
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+    )
+    earlier_number = PreparedStatute(
+        statute_id="9/2020",
+        engine_id="2020/9",
+        title="Earlier Number Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=root,
+                tree_hash="hash-three",
             ),
         ),
         interlink_rows=(),
@@ -370,12 +384,16 @@ def test_build_commits_readme_is_path_ordered_without_sample_counts() -> None:
         interlink_targets=(),
     )
 
-    commits = build_markdown_git_commits((newer, older), jurisdiction="fi")
+    commits = build_markdown_git_commits((newer, earlier_number, older), jurisdiction="fi")
     readme = commits[0].files["README.md"].decode("utf-8")
+    year_readme = commits[0].files["acts/2020/README.md"].decode("utf-8")
 
     assert "Active sample statutes" not in readme
     assert "Configured statutes" not in readme
-    assert readme.index("(acts/1996/1093.md)") < readme.index("(acts/2023/9.md)")
+    assert "[1996](acts/1996/)" in readme
+    assert "[2020](acts/2020/)" in readme
+    assert "(acts/2020/9.md)" not in readme
+    assert year_readme.index("(9.md)") < year_readme.index("(1000.md)")
 
 
 def test_build_commits_records_changed_statutes_and_causes_in_commit_message() -> None:
@@ -473,6 +491,52 @@ def test_amendment_causes_by_date_indexes_effective_and_expiry_sources() -> None
     )
 
 
+def test_source_xml_substantive_body_check_accepts_hcontainer_text_and_rejects_empty() -> None:
+    assert mdgit._source_xml_has_substantive_body(
+        b"<akomaNtoso><act><body><hcontainer><p>TAULUKKO PUUTTUU</p></hcontainer></body></act></akomaNtoso>"
+    )
+    assert not mdgit._source_xml_has_substantive_body(
+        b"<akomaNtoso><act><body><hcontainer /></body></act></akomaNtoso>"
+    )
+    assert not mdgit._source_xml_has_substantive_body(b"<akomaNtoso><act><meta /></act></akomaNtoso>")
+
+
+def test_fi_all_replayable_selector_uses_substantive_body_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Corpus:
+        def list_statute_ids(self) -> list[str]:
+            return ["2020/1000", "2020/9", "1996/1"]
+
+        def read_source(self, statute_id: str) -> bytes | None:
+            return {
+                "2020/1000": b"<akomaNtoso><act><body><section><num>1</num></section></body></act></akomaNtoso>",
+                "2020/9": b"<akomaNtoso><act><body><hcontainer /></body></act></akomaNtoso>",
+                "1996/1": b"<akomaNtoso><act><body><hcontainer><p>Body</p></hcontainer></body></act></akomaNtoso>",
+            }[statute_id]
+
+    def canonical_statute_id(value: str) -> str:
+        year, number = value.split("/", 1)
+        return f"{number}/{year}"
+
+    profile = TransitionGraphExportProfile(
+        jurisdiction="fi",
+        lang="fi",
+        canonical_statute_id=canonical_statute_id,
+        engine_statute_id=lambda value: value,
+        corpus=Corpus,
+    )
+    adapter = TransitionGraphJurisdictionAdapter(
+        profile=profile,
+        replay_runner=lambda _engine_id, *, profile: None,
+        tree_materializer=lambda _bundle, _as_of: None,
+        interlink_provider=None,
+    )
+    monkeypatch.setattr(mdgit, "transition_graph_adapter_for_jurisdiction", lambda _jurisdiction: adapter)
+
+    assert mdgit.statute_ids_from_fi_corpus() == ("1/1996", "1000/2020")
+
+
 def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     roots = {
         "100/2020": {
@@ -481,6 +545,9 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         },
         "200/2020": {
             "2020-01-01": _body_with_link_text("Second act."),
+        },
+        "9/2020": {
+            "2020-01-01": _body_with_link_text("Single digit act."),
         },
     }
 
@@ -515,7 +582,7 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
     spool = tmp_path / "spool.db"
 
     build_stats = build_markdown_git_spool(
-        ("100/2020", "200/2020"),
+        ("100/2020", "200/2020", "9/2020"),
         jurisdiction="zz",
         db_path=spool,
         workers=1,
@@ -542,6 +609,10 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         ["git", "--git-dir", str(repo), "show", "in-force:README.md"],
         text=True,
     )
+    year_readme = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/README.md"],
+        text=True,
+    )
     log_subjects = subprocess.check_output(
         ["git", "--git-dir", str(repo), "log", "--format=%s", "in-force"],
         text=True,
@@ -551,14 +622,17 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         text=True,
     )
 
-    assert build_stats.statute_count == 2
-    assert build_stats.version_count == 3
+    assert build_stats.statute_count == 3
+    assert build_stats.version_count == 4
     assert export_stats.commit_count == 2
     assert "Beta text" in latest_first
     assert "Second act" in latest_second
     assert "Active sample statutes" not in readme
     assert "Configured statutes" not in readme
-    assert readme.index("(acts/2020/100.md)") < readme.index("(acts/2020/200.md)")
+    assert "[2020](acts/2020/)" in readme
+    assert "(acts/2020/9.md)" not in readme
+    assert year_readme.index("(9.md)") < year_readme.index("(100.md)")
+    assert year_readme.index("(100.md)") < year_readme.index("(200.md)")
     assert "As of 2021-01-01" in log_subjects
     assert "As of 2020-01-01" in log_subjects
     assert " +0200 " in raw_dates

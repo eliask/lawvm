@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Iterator, Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -52,7 +53,24 @@ _SKIP_INLINE_CHILD_KINDS = _ADDRESSABLE_KINDS | {"num", "heading"}
 _MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*_{}\[\]()#+.!|<>-])")
 _ANCHOR_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
 _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
+_NUMERIC_STATUTE_ID_RE = re.compile(r"^(\d{1,6})/(\d{4})$")
+_NUMERIC_STATUTE_PATH_RE = re.compile(r"^acts/(\d{4})/(\d{1,6})\.md$")
 _DEFAULT_BRANCH = "in-force"
+_SUBSTANTIVE_BODY_KINDS = frozenset(
+    {
+        "article",
+        "chapter",
+        "clause",
+        "mainBody",
+        "paragraph",
+        "part",
+        "p",
+        "section",
+        "subchapter",
+        "subparagraph",
+        "subsection",
+    }
+)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -113,6 +131,7 @@ class MarkdownGitExportStats:
     file_count: int
     byte_count: int
     destination: str
+    skipped_count: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -134,11 +153,19 @@ class RenderedMarkdownStatute:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class SkippedMarkdownStatute:
+    statute_id: str
+    reason_kind: str
+    message: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class MarkdownGitRenderRequest:
     statute_id: str
     jurisdiction: str
     include_future: bool
     until: str | None
+    skip_failures: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -147,6 +174,7 @@ class MarkdownGitSpoolBuildStats:
     version_count: int
     byte_count: int
     spool_path: Path
+    skipped_count: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -192,6 +220,59 @@ def statute_ids_from_manifest(path: Path, *, jurisdiction: str) -> tuple[str, ..
             if statute_id and row_jurisdiction == jurisdiction:
                 ids.append(statute_id)
     return tuple(ids)
+
+
+def statute_ids_from_fi_corpus(*, substantive_body_only: bool = True) -> tuple[str, ...]:
+    adapter = transition_graph_adapter_for_jurisdiction("fi")
+    corpus = adapter.profile.corpus()
+    if corpus is None:
+        raise ValueError("Finland transition-graph profile has no corpus")
+    raw_statute_ids = tuple(corpus.list_statute_ids())
+    accepted_ids: list[str] = []
+    for raw_id in raw_statute_ids:
+        if substantive_body_only and not _corpus_source_has_substantive_body(corpus, raw_id):
+            continue
+        accepted_ids.append(adapter.profile.canonical_statute_id(raw_id))
+    return tuple(
+        sorted(
+            set(accepted_ids),
+            key=lambda item: _statute_list_sort_key_for_id(item, jurisdiction="fi"),
+        )
+    )
+
+
+def _corpus_source_has_substantive_body(corpus: object, statute_id: str) -> bool:
+    xml_bytes = corpus.read_source(statute_id)
+    if not xml_bytes:
+        return False
+    return _source_xml_has_substantive_body(xml_bytes)
+
+
+def _source_xml_has_substantive_body(xml_bytes: bytes) -> bool:
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return False
+    body = root.find(".//{*}body")
+    if body is None:
+        body = root.find(".//{*}mainBody")
+    if body is None:
+        return False
+    for element in body.iter():
+        if element is body:
+            continue
+        if _element_local_name(element.tag) in _SUBSTANTIVE_BODY_KINDS and _element_text(element):
+            return True
+    return bool(_element_text(body))
+
+
+def _element_local_name(tag: str) -> str:
+    _namespace, _sep, local_name = tag.rpartition("}")
+    return local_name or tag
+
+
+def _element_text(element: ET.Element[str]) -> str:
+    return " ".join(text.strip() for text in element.itertext() if text and text.strip())
 
 
 def prepare_markdown_git_export(
@@ -248,15 +329,30 @@ def prepare_markdown_git_export(
     return tuple(prepared)
 
 
-def render_markdown_git_statute(request: MarkdownGitRenderRequest) -> RenderedMarkdownStatute | None:
-    prepared = prepare_markdown_git_export(
-        (request.statute_id,),
-        jurisdiction=request.jurisdiction,
-        include_future=request.include_future,
-        until=request.until,
-    )
+def render_markdown_git_statute(
+    request: MarkdownGitRenderRequest,
+) -> RenderedMarkdownStatute | SkippedMarkdownStatute | None:
+    try:
+        prepared = prepare_markdown_git_export(
+            (request.statute_id,),
+            jurisdiction=request.jurisdiction,
+            include_future=request.include_future,
+            until=request.until,
+        )
+    except Exception as exc:
+        if request.skip_failures:
+            return SkippedMarkdownStatute(
+                statute_id=request.statute_id,
+                reason_kind=exc.__class__.__name__,
+                message=str(exc),
+            )
+        raise
     if not prepared:
-        return None
+        return SkippedMarkdownStatute(
+            statute_id=request.statute_id,
+            reason_kind="no_materialized_snapshots",
+            message="replay produced no exportable snapshots",
+        )
     statute = prepared[0]
     path = _statute_markdown_path(statute.statute_id, jurisdiction=request.jurisdiction)
     versions: list[RenderedMarkdownVersion] = []
@@ -297,6 +393,7 @@ def build_markdown_git_spool(
     include_future: bool = True,
     until: str | None = None,
     workers: int = 1,
+    skip_failures: bool = False,
 ) -> MarkdownGitSpoolBuildStats:
     ids = tuple(statute_ids)
     if db_path.exists():
@@ -314,11 +411,18 @@ def build_markdown_git_spool(
             jurisdiction=jurisdiction,
             include_future=include_future,
             until=until,
+            skip_failures=skip_failures,
         )
         for statute_id in ids
     )
+    skipped_count = 0
     for rendered in _iter_rendered_markdown_statutes(requests, workers=workers):
         if rendered is None:
+            continue
+        if isinstance(rendered, SkippedMarkdownStatute):
+            with conn:
+                _insert_skipped_statute(conn, rendered)
+            skipped_count += 1
             continue
         with conn:
             _insert_rendered_statute(conn, rendered)
@@ -332,6 +436,7 @@ def build_markdown_git_spool(
         version_count=version_count,
         byte_count=byte_count,
         spool_path=db_path,
+        skipped_count=skipped_count,
     )
 
 
@@ -339,7 +444,7 @@ def _iter_rendered_markdown_statutes(
     requests: tuple[MarkdownGitRenderRequest, ...],
     *,
     workers: int,
-) -> Iterator[RenderedMarkdownStatute | None]:
+) -> Iterator[RenderedMarkdownStatute | SkippedMarkdownStatute | None]:
     if workers <= 1:
         for request in requests:
             yield render_markdown_git_statute(request)
@@ -389,6 +494,12 @@ def _create_markdown_spool_schema(conn: sqlite3.Connection) -> None:
           FOREIGN KEY (statute_id) REFERENCES statutes(statute_id)
         );
 
+        CREATE TABLE skipped_statutes (
+          statute_id TEXT PRIMARY KEY,
+          reason_kind TEXT NOT NULL,
+          message TEXT NOT NULL
+        );
+
         CREATE INDEX versions_by_statute_date ON versions(statute_id, effective_date);
         CREATE INDEX causes_by_date_statute ON causes(effective_date, statute_id);
         """
@@ -430,6 +541,16 @@ def _insert_rendered_statute(conn: sqlite3.Connection, statute: RenderedMarkdown
             for effective_date, causes in statute.amendment_causes_by_date.items()
             for cause in causes
         ),
+    )
+
+
+def _insert_skipped_statute(conn: sqlite3.Connection, skipped: SkippedMarkdownStatute) -> None:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO skipped_statutes(statute_id, reason_kind, message)
+        VALUES (?, ?, ?)
+        """,
+        (skipped.statute_id, skipped.reason_kind, skipped.message),
     )
 
 
@@ -552,8 +673,9 @@ def build_markdown_git_commits(
                 _ensure_lf(markdown).encode("utf-8")
             )
         files["README.md"] = _ensure_lf(
-            _render_readme(effective_date, prepared, jurisdiction=jurisdiction)
+            _render_readme(prepared, jurisdiction=jurisdiction)
         ).encode("utf-8")
+        files.update(_render_year_readme_files(prepared, jurisdiction=jurisdiction))
         author_timestamp, author_offset = _raw_git_date_for_effective_date(effective_date, zone)
         commits.append(
             FastImportCommit(
@@ -680,12 +802,17 @@ def write_spooled_fast_import_stream(
                 generated_at=generated_at,
             )
         destination = str(out_path)
+    commit_count = _spool_commit_count(db_path)
+    file_count = 0
+    if commit_count:
+        file_count = _spool_version_count(db_path) + 1 + _spool_year_count(db_path)
     return MarkdownGitExportStats(
         statute_count=_spool_statute_count(db_path),
-        commit_count=_spool_commit_count(db_path),
-        file_count=_spool_version_count(db_path) + _spool_commit_count(db_path),
+        commit_count=commit_count,
+        file_count=file_count,
         byte_count=byte_count,
         destination=destination,
+        skipped_count=_spool_skipped_count(db_path),
     )
 
 
@@ -707,18 +834,15 @@ def iter_spooled_fast_import_stream(
     commit_mark = 1_000_000
     latest_commit_mark = 0
     for effective_date in dates:
-        blobs: list[tuple[str, bytes]] = [
-            (
-                "README.md",
-                _ensure_lf(
-                    _render_spool_readme(
-                        effective_date,
-                        statutes,
-                        jurisdiction=jurisdiction,
-                    )
-                ).encode("utf-8"),
+        blobs: list[tuple[str, bytes]] = []
+        if not latest_commit_mark:
+            blobs.append(
+                (
+                    "README.md",
+                    _ensure_lf(_render_spool_readme(statutes, jurisdiction=jurisdiction)).encode("utf-8"),
+                )
             )
-        ]
+            blobs.extend(_spool_year_readme_blobs(statutes))
         changed_versions = _spool_versions_for_date(conn, effective_date)
         blobs.extend((version.path, version.content) for version in changed_versions)
         marks_by_path: dict[str, int] = {}
@@ -1121,7 +1245,6 @@ def _safe_path_component(value: str) -> str:
 
 
 def _render_readme(
-    effective_date: str,
     statutes: tuple[PreparedStatute, ...],
     *,
     jurisdiction: str,
@@ -1129,25 +1252,64 @@ def _render_readme(
     lines = [
         f"# {jurisdiction.upper()} LawVM Markdown Projection",
         "",
-        f"- Repository snapshot date: `{effective_date}`",
+        "## Years",
+        "",
+    ]
+    for year in _years_for_prepared_statutes(statutes, jurisdiction=jurisdiction):
+        lines.append(f"- [{year}](acts/{year}/)")
+    other = _other_prepared_statutes(statutes, jurisdiction=jurisdiction)
+    if other:
+        lines.extend(["", "## Other Statutes", ""])
+        for statute in other:
+            path = _statute_markdown_path(statute.statute_id, jurisdiction=jurisdiction)
+            lines.append(f"- [{_escape_markdown(statute.title)}]({path}) `{statute.statute_id}`")
+    return "\n".join(lines)
+
+
+def _render_year_readme_files(
+    statutes: tuple[PreparedStatute, ...],
+    *,
+    jurisdiction: str,
+) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    for year in _years_for_prepared_statutes(statutes, jurisdiction=jurisdiction):
+        rows = tuple(
+            statute
+            for statute in statutes
+            if _year_for_statute_id(statute.statute_id, jurisdiction=jurisdiction) == year
+        )
+        files[f"acts/{year}/README.md"] = _ensure_lf(
+            _render_year_readme(
+                year,
+                rows,
+                jurisdiction=jurisdiction,
+            )
+        ).encode("utf-8")
+    return files
+
+
+def _render_year_readme(
+    year: str,
+    statutes: tuple[PreparedStatute, ...],
+    *,
+    jurisdiction: str,
+) -> str:
+    lines = [
+        f"# {jurisdiction.upper()} {year} Statutes",
         "",
         "## Statutes",
         "",
     ]
     for statute in sorted(
         statutes,
-        key=lambda item: _statute_markdown_path(item.statute_id, jurisdiction=jurisdiction),
+        key=lambda item: _statute_list_sort_key_for_id(item.statute_id, jurisdiction=jurisdiction),
     ):
-        lines.append(
-            f"- [{_escape_markdown(statute.title)}]("
-            f"{_statute_markdown_path(statute.statute_id, jurisdiction=jurisdiction)}) "
-            f"`{statute.statute_id}`"
-        )
+        path = Path(_statute_markdown_path(statute.statute_id, jurisdiction=jurisdiction)).name
+        lines.append(f"- [{_escape_markdown(statute.title)}]({path}) `{statute.statute_id}`")
     return "\n".join(lines)
 
 
 def _render_spool_readme(
-    effective_date: str,
     statutes: tuple[SpoolStatuteRow, ...],
     *,
     jurisdiction: str,
@@ -1155,16 +1317,45 @@ def _render_spool_readme(
     lines = [
         f"# {jurisdiction.upper()} LawVM Markdown Projection",
         "",
-        f"- Repository snapshot date: `{effective_date}`",
+        "## Years",
+        "",
+    ]
+    for year in _years_for_spool_statutes(statutes):
+        lines.append(f"- [{year}](acts/{year}/)")
+    other = _other_spool_statutes(statutes)
+    if other:
+        lines.extend(["", "## Other Statutes", ""])
+        for statute in other:
+            lines.append(f"- [{_escape_markdown(statute.title)}]({statute.path}) `{statute.statute_id}`")
+    return "\n".join(lines)
+
+
+def _spool_year_readme_blobs(statutes: tuple[SpoolStatuteRow, ...]) -> list[tuple[str, bytes]]:
+    blobs: list[tuple[str, bytes]] = []
+    for year in _years_for_spool_statutes(statutes):
+        rows = tuple(statute for statute in statutes if _year_for_statute_path(statute.path) == year)
+        blobs.append(
+            (
+                f"acts/{year}/README.md",
+                _ensure_lf(_render_spool_year_readme(year, rows)).encode("utf-8"),
+            )
+        )
+    return blobs
+
+
+def _render_spool_year_readme(
+    year: str,
+    statutes: tuple[SpoolStatuteRow, ...],
+) -> str:
+    lines = [
+        f"# {year} Statutes",
         "",
         "## Statutes",
         "",
     ]
-    for statute in sorted(statutes, key=lambda item: item.path):
-        lines.append(
-            f"- [{_escape_markdown(statute.title)}]({statute.path}) "
-            f"`{statute.statute_id}`"
-        )
+    for statute in sorted(statutes, key=lambda item: _statute_list_sort_key_for_path(item.path)):
+        filename = Path(statute.path).name
+        lines.append(f"- [{_escape_markdown(statute.title)}]({filename}) `{statute.statute_id}`")
     return "\n".join(lines)
 
 
@@ -1209,6 +1400,86 @@ def _git_timezone_offset(offset_seconds: int) -> str:
     absolute_minutes = abs(offset_seconds) // 60
     hours, minutes = divmod(absolute_minutes, 60)
     return f"{sign}{hours:02d}{minutes:02d}"
+
+
+def _statute_list_sort_key_for_id(statute_id: str, *, jurisdiction: str) -> tuple[str, str, str]:
+    match = _NUMERIC_STATUTE_ID_RE.fullmatch(statute_id.strip())
+    if match is not None:
+        number, year = match.groups()
+        return (year, f"{int(number):04d}", statute_id)
+    path = _statute_markdown_path(statute_id, jurisdiction=jurisdiction)
+    return _statute_list_sort_key_for_path(path)
+
+
+def _statute_list_sort_key_for_path(path: str) -> tuple[str, str, str]:
+    match = _NUMERIC_STATUTE_PATH_RE.fullmatch(path.strip())
+    if match is not None:
+        year, number = match.groups()
+        return (year, f"{int(number):04d}", path)
+    return ("zzzz", path, "")
+
+
+def _year_for_statute_id(statute_id: str, *, jurisdiction: str) -> str | None:
+    match = _NUMERIC_STATUTE_ID_RE.fullmatch(statute_id.strip())
+    if match is not None:
+        _number, year = match.groups()
+        return year
+    return _year_for_statute_path(_statute_markdown_path(statute_id, jurisdiction=jurisdiction))
+
+
+def _year_for_statute_path(path: str) -> str | None:
+    match = _NUMERIC_STATUTE_PATH_RE.fullmatch(path.strip())
+    if match is None:
+        return None
+    year, _number = match.groups()
+    return year
+
+
+def _years_for_prepared_statutes(
+    statutes: tuple[PreparedStatute, ...],
+    *,
+    jurisdiction: str,
+) -> tuple[str, ...]:
+    years = {
+        year
+        for statute in statutes
+        if (year := _year_for_statute_id(statute.statute_id, jurisdiction=jurisdiction)) is not None
+    }
+    return tuple(sorted(years))
+
+
+def _other_prepared_statutes(
+    statutes: tuple[PreparedStatute, ...],
+    *,
+    jurisdiction: str,
+) -> tuple[PreparedStatute, ...]:
+    return tuple(
+        sorted(
+            (
+                statute
+                for statute in statutes
+                if _year_for_statute_id(statute.statute_id, jurisdiction=jurisdiction) is None
+            ),
+            key=lambda item: _statute_markdown_path(item.statute_id, jurisdiction=jurisdiction),
+        )
+    )
+
+
+def _years_for_spool_statutes(statutes: tuple[SpoolStatuteRow, ...]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {year for statute in statutes if (year := _year_for_statute_path(statute.path)) is not None}
+        )
+    )
+
+
+def _other_spool_statutes(statutes: tuple[SpoolStatuteRow, ...]) -> tuple[SpoolStatuteRow, ...]:
+    return tuple(
+        sorted(
+            (statute for statute in statutes if _year_for_statute_path(statute.path) is None),
+            key=lambda item: item.path,
+        )
+    )
 
 
 def _validate_fast_import_path(path: str) -> None:
@@ -1325,6 +1596,23 @@ def _spool_commit_count(db_path: Path) -> int:
 
 def _spool_version_count(db_path: Path) -> int:
     return _spool_count(db_path, "SELECT COUNT(*) FROM versions")
+
+
+def _spool_year_count(db_path: Path) -> int:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        years = {
+            year
+            for (path,) in conn.execute("SELECT path FROM statutes")
+            if (year := _year_for_statute_path(str(path))) is not None
+        }
+    finally:
+        conn.close()
+    return len(years)
+
+
+def _spool_skipped_count(db_path: Path) -> int:
+    return _spool_count(db_path, "SELECT COUNT(*) FROM skipped_statutes")
 
 
 def _spool_count(db_path: Path, sql: str) -> int:
@@ -1465,6 +1753,7 @@ def export_markdown_git_with_spool(
     repo_path: Path | None,
     force: bool,
     timestamp_zone: str,
+    skip_failures: bool = False,
 ) -> MarkdownGitExportStats:
     build_markdown_git_spool(
         statute_ids,
@@ -1473,6 +1762,7 @@ def export_markdown_git_with_spool(
         include_future=include_future,
         until=until,
         workers=workers,
+        skip_failures=skip_failures,
     )
     return write_spooled_fast_import_stream(
         db_path,
@@ -1488,9 +1778,22 @@ def main(args: argparse.Namespace) -> None:
     if getattr(args, "repo", None) and getattr(args, "out", "-") not in ("-", None):
         raise SystemExit("--repo cannot be combined with --out; pipe stdout or use --repo")
     jurisdiction = str(getattr(args, "jurisdiction", "fi") or "fi")
+    all_replayable = bool(getattr(args, "all_replayable", False))
     statute_ids = tuple(getattr(args, "statute", None) or ())
-    if not statute_ids:
+    if all_replayable and statute_ids:
+        raise SystemExit("--all-replayable cannot be combined with --statute")
+    if all_replayable:
+        if jurisdiction != "fi":
+            raise SystemExit("--all-replayable is currently implemented for -j fi")
+        statute_ids = statute_ids_from_fi_corpus(substantive_body_only=True)
+    elif not statute_ids:
         statute_ids = statute_ids_from_manifest(Path(args.manifest), jurisdiction=jurisdiction)
+    limit = getattr(args, "limit", None)
+    if limit is not None:
+        limit_int = int(limit)
+        if limit_int < 1:
+            raise SystemExit("--limit must be >= 1")
+        statute_ids = statute_ids[:limit_int]
     if not statute_ids:
         raise SystemExit(f"no {jurisdiction} statutes selected")
     workers = int(getattr(args, "workers", 1) or 1)
@@ -1503,7 +1806,7 @@ def main(args: argparse.Namespace) -> None:
     repo_path = Path(args.repo) if getattr(args, "repo", None) else None
     force = bool(getattr(args, "force", False))
     spool_db = getattr(args, "spool_db", None)
-    if workers > 1 or spool_db:
+    if workers > 1 or spool_db or all_replayable:
         if spool_db:
             stats = export_markdown_git_with_spool(
                 statute_ids,
@@ -1516,6 +1819,7 @@ def main(args: argparse.Namespace) -> None:
                 repo_path=repo_path,
                 force=force,
                 timestamp_zone=timestamp_zone,
+                skip_failures=all_replayable,
             )
         else:
             with TemporaryDirectory(prefix="lawvm-markdown-git-") as tmpdir:
@@ -1530,6 +1834,7 @@ def main(args: argparse.Namespace) -> None:
                     repo_path=repo_path,
                     force=force,
                     timestamp_zone=timestamp_zone,
+                    skip_failures=all_replayable,
                 )
     else:
         prepared = prepare_markdown_git_export(
@@ -1552,6 +1857,7 @@ def main(args: argparse.Namespace) -> None:
     print(
         "export-markdown-git: "
         f"statutes={stats.statute_count} commits={stats.commit_count} "
-        f"files={stats.file_count} bytes={stats.byte_count} dest={stats.destination}",
+        f"files={stats.file_count} bytes={stats.byte_count} skipped={stats.skipped_count} "
+        f"dest={stats.destination}",
         file=sys.stderr,
     )
