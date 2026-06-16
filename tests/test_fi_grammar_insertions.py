@@ -114,6 +114,34 @@ def test_conj_before_uusi_after_citation_is_owned() -> None:
     assert labels == {("10", 3), ("18a", 4)}
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # ``uusi N § ja sen edelle uusi väliotsikko`` — a section insert trailed by
+        # an anaphoric heading-placement the old parser consumes but mints no node
+        # for. The new parser owns it natively (one SECTION node), byte-identical.
+        "lisätään lakiin uusi 29 a § ja sen edelle uusi väliotsikko seuraavasti:",
+        "lisätään asetukseen uusi 9 a § ja sen edelle uusi alaotsikko seuraavasti:",
+    ],
+)
+def test_terminal_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, report.summary()
+
+
+def test_non_terminal_anaphoric_heading_still_declines() -> None:
+    # The benign consume-and-drop applies ONLY to a TERMINAL anaphoric heading. A
+    # heading trailed by a ``, jolloin …`` renumber tail inside a cross-verb-group
+    # clause (1999/1001) must STILL decline so the old parser — which threads the
+    # renumber and the cross-group structure — owns it, preserving parity.
+    text = (
+        "muutetaan lain 9 b § sekä lisätään lakiin uusi 9 c § ja sen edelle uusi "
+        "väliotsikko, jolloin nykyinen 9 c § siirtyy 9 d §:ksi seuraavasti:"
+    )
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)
+
+
 def test_whole_section_insert_carries_section_witness() -> None:
     model = parse_text_with("lisätään lakiin uusi 5 a § seuraavasti:", new_parser.parse)
     (vg,) = model.verb_groups

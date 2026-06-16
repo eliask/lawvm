@@ -1176,6 +1176,62 @@ def _skip_heading_residue(scan: _Scan) -> bool:
     return False
 
 
+def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
+    """Consume an anaphoric heading-placement residue, minting no node.
+
+    Matches ``[<anaphor>] (edellä|edelle) uusi [N luvun] (väli|ala)otsikko`` — the
+    ``[uusi N §] ja sen edelle uusi väliotsikko`` tail. The old parser consumes
+    this arm but represents NO heading node for the anaphoric form (verified
+    byte-identical: a single SECTION insertion node with the whole clause
+    consumed), so the new outer loop swallows it the same way.
+
+    Position-gated: the ENTIRE ``[anaphor] EDELLA uusi [N luvun] OTSIKKO`` shape
+    must match or the cursor is rewound, so a stray ``WORD`` / ``EDELLA`` is never
+    swallowed. The non-anaphoric ``N §:n edelle uusi väliotsikko`` form (a §:GEN
+    target before EDELLA) does not match here.
+    """
+    saved = scan.pos
+    # Optional anaphor pronoun (``sen`` / ``niiden`` / …) directly before EDELLA.
+    if (t := scan.peek()) and t.cat == "WORD":
+        nxt = scan.peek(1)
+        if nxt is not None and nxt.cat == "EDELLA":
+            scan.advance()
+    if not ((t := scan.peek()) and t.cat == "EDELLA"):
+        scan.goto(saved)
+        return False
+    scan.advance()  # edellä / edelle
+    if not ((t := scan.peek()) and t.cat == "UUSI"):
+        scan.goto(saved)
+        return False
+    scan.advance()
+    # Optional ``N luvun`` chapter-genitive qualifier before the heading noun.
+    saved_q = scan.pos
+    if (t := scan.peek()) and t.cat == "NUM":
+        scan.advance()
+        if (t := scan.peek()) and t.cat == "LETTER":
+            scan.advance()
+        if (t := scan.peek()) and t.cat == "LUKU" and t.case == "GEN":
+            scan.advance()
+        else:
+            scan.goto(saved_q)
+    elif (t := scan.peek()) and t.cat == "LUKU" and t.case == "GEN":
+        scan.advance()
+    if (t := scan.peek()) and t.cat in ("OTSIKKO", "VALIOTSIKKO"):
+        scan.advance()
+        # Only the TERMINAL anaphoric heading (last arm, followed by the END
+        # sentinel / end-of-stream) is the benign consume-and-drop form. A heading
+        # trailed by more content (``, jolloin …`` renumber tail, further arms, a
+        # cross-verb-group continuation) belongs to a complex clause the new parser
+        # must still decline (1999/1001) — rewind so it is not silently swallowed.
+        nxt = scan.peek()
+        if nxt is None or nxt.cat == "END_SENTINEL_SPAN":
+            return True
+        scan.goto(saved)
+        return False
+    scan.goto(saved)
+    return False
+
+
 def _normalize_intrabatch_explicit_part_scope(
     nodes: list[SurfaceNode], inherited_part: str
 ) -> list[SurfaceNode]:
@@ -2048,6 +2104,17 @@ def _parse_verb_group(
                 _skip_named_row_residue(scan) or _skip_heading_residue(scan)
             ):
                 continue
+            # A trailing anaphoric heading-placement residue (``[sen] edellä uusi
+            # [N luvun] (väli|ala)otsikko``) the old parser consumes but mints no
+            # node for — e.g. ``lisätään lakiin uusi 29 a § ja sen edelle uusi
+            # väliotsikko``. The old outer loop swallows it for any batch kind, so
+            # skip it here (including for an INSERTION batch) and keep reaching
+            # later targets rather than declining. The non-anaphoric ``N §:n
+            # edelle …`` form (an explicit §:GEN target before EDELLA) is NOT
+            # matched here — it stays declined so the old parser, which emits a
+            # real heading node for it, is used, preserving parity.
+            if _skip_anaphoric_heading_residue(scan):
+                continue
             # The old parser otherwise ends the target list here and lets the
             # outer loop swallow the tail. For an INSERTION batch a structural
             # tail the old parser keeps folding into the same list (chained
@@ -2098,6 +2165,15 @@ def _parse_verb_group(
                 nodes.extend(hp_nodes)
                 last_batch = list(hp_nodes)
                 continue
+        # A trailing anaphoric heading-placement (``[sen] edellä uusi [N luvun]
+        # (väli|ala)otsikko``) after the separator — e.g. ``…uusi 29 a § ja sen
+        # edelle uusi väliotsikko``. The old parser consumes this arm but mints NO
+        # node for the anaphoric form (verified byte-identical: one SECTION node,
+        # whole clause consumed), so swallow it and continue. The non-anaphoric
+        # ``N §:n edelle …`` form is owned by _try_heading_placement above (which
+        # emits a real node), so this never shadows it — parity preserved.
+        if _skip_anaphoric_heading_residue(scan):
+            continue
         # A ``, jolloin …`` consequence-renumber sentinel after the separator:
         # record it (context from the just-parsed batch) and continue. The
         # synthetic renumber group is built + prepended after all verb groups.

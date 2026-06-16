@@ -1424,6 +1424,15 @@ def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> boo
         # loop) rewind to the separator and let the driver own the next arm.
         boundary = _doc_cont_arm_boundary(scan, arm_start)
         if _arm_has_oos_marker(scan, arm_start, boundary):
+            # An anaphoric heading-placement arm (``[sen] edellä uusi [N luvun]
+            # (väli|ala)otsikko``) is NOT folded into the insertion batch by the
+            # old parser — it mints no node and the whole clause is consumed with
+            # just the section node. End the fold cleanly (rewound to the
+            # separator) so the section batch stands and the driver's continuation
+            # loop swallows the heading, rather than declining the whole insertion.
+            if _is_anaphoric_heading_arm(scan, arm_start):
+                scan.goto(cont_saved)
+                return True
             scan.goto(cont_saved)
             return False
         scan.goto(cont_saved)
@@ -1455,6 +1464,46 @@ def _arm_has_oos_marker(scan: _Scan, start: int, end: int) -> bool:
         ):
             return True
     return False
+
+
+def _is_anaphoric_heading_arm(scan: _Scan, start: int) -> bool:
+    """True if tokens from ``start`` form ``[<anaphor>] EDELLA uusi [N luvun] OTSIKKO``.
+
+    Pure token-peek (no cursor mutation). Identifies the anaphoric
+    heading-placement arm (``ja sen edelle uusi väliotsikko``) the old parser
+    consumes but mints no node for — distinct from the non-anaphoric ``N §:n
+    edelle …`` form (a §:GEN target before EDELLA), which it DOES emit a node for.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = start
+    # Optional anaphor pronoun (``sen`` / ``niiden`` / …) directly before EDELLA.
+    if i < n and toks[i].cat == "WORD" and i + 1 < n and toks[i + 1].cat == "EDELLA":
+        i += 1
+    if not (i < n and toks[i].cat == "EDELLA"):
+        return False
+    i += 1
+    if not (i < n and toks[i].cat == "UUSI"):
+        return False
+    i += 1
+    # Optional ``N [letter] luvun`` chapter-genitive qualifier.
+    if i < n and toks[i].cat == "NUM":
+        j = i + 1
+        if j < n and toks[j].cat == "LETTER":
+            j += 1
+        if j < n and toks[j].cat == "LUKU" and toks[j].case == "GEN":
+            i = j + 1
+    elif i < n and toks[i].cat == "LUKU" and toks[i].case == "GEN":
+        i += 1
+    if not (i < n and toks[i].cat in ("OTSIKKO", "VALIOTSIKKO")):
+        return False
+    # Only a TERMINAL anaphoric heading (the last arm, followed by the END
+    # sentinel / end-of-stream) is the benign consume-and-drop form. A heading
+    # followed by more content — a ``, jolloin …`` renumber tail, further arms, or
+    # a cross-verb-group ``muutetaan … sekä lisätään …`` continuation — belongs to
+    # a complex clause the new parser must still decline (1999/1001), so leave it.
+    j = i + 1
+    return j >= n or toks[j].cat == "END_SENTINEL_SPAN"
 
 
 def _try_doc_ill_liite(scan: _Scan) -> Optional[list[InsNode]]:
