@@ -60,6 +60,11 @@ _REPEALED_THRESHOLD = 0.5  # fraction of <section> elements that are kumottu →
 _EMPTY_MAX_SECTIONS = 3  # ≤N sections AND 0 kumottu AND small body → EMPTY
 _EMPTY_MAX_BYTES = 2000  # body text (tag-stripped) shorter than this → EMPTY
 _ORACLE_STALE_DIAGNOSIS = "ORACLE_STALE"
+# Non-scored statuses that are NOT crashes: the statute simply has no oracle to
+# compare against (fully-superseded decree, missing source, oracle redirected to a
+# different successor statute). These are excluded from scoring but must NOT be
+# reported as "CRASHED" — only genuine exceptions (status == str(exception)) are.
+_NONSCORED_STATUSES = frozenset({"NO_TRUTH", "SOURCE_UNAVAILABLE", _ORACLE_STALE_DIAGNOSIS})
 _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_editorial()
 _BENCH_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.bench_comparable()
 
@@ -1344,9 +1349,15 @@ def _show_summary(
 ) -> None:
     flat = [(sid, sim, st) for _, sid, sim, st, _ in results]
     stats = _compute_stats(flat)
+    _nonscored = [(sid, st) for sid, sim, st in flat if sim < 0]
+    _crashed_n = sum(1 for _, st in _nonscored if st not in _NONSCORED_STATUSES)
+    _excluded_n = len(_nonscored) - _crashed_n
     print()
     print(f"=== BENCHMARK SUMMARY  label={label} ===")
-    print(f"  Statutes   : {stats['n']}  errors: {stats['errors']}")
+    print(
+        f"  Statutes   : {stats['n']} scored  "
+        f"crashed: {_crashed_n}  excluded(no oracle/source): {_excluded_n}"
+    )
     if oracle_stale_adjusted is not None:
         if oracle_stale_adjusted["mean"] is None:
             print(
@@ -1457,15 +1468,33 @@ def _show_worst(
 
 
 def _show_errors(results: List[Tuple[int, str, float, str, float]]) -> None:
-    """Print crashed statutes at the very end so they're visible in tail output."""
-    errors = [(sid, st) for _, sid, sim, st, _ in results if sim < 0]
-    if not errors:
+    """Print non-scored statutes at the very end so they're visible in tail output.
+
+    Splits the sim<0 population into two genuinely different categories:
+      * EXCLUDED — no oracle/source to compare against (NO_TRUTH, SOURCE_UNAVAILABLE,
+        ORACLE_STALE). Not a defect: e.g. a fully-superseded decree whose oracle
+        redirects to a successor statute. Excluded from the mean; NOT a crash.
+      * CRASHED — a real exception was raised during replay (status carries the
+        exception text). These are actionable bugs.
+    """
+    nonscored = [(sid, st) for _, sid, sim, st, _ in results if sim < 0]
+    if not nonscored:
         return
-    print(f"\n=== ERRORS ({len(errors)} statute(s) CRASHED — excluded from mean) ===")
-    for sid, status in errors:
-        print(f"  {sid:12s}  {status}")
-    print("^^^ These statutes crashed during bench and were excluded from scoring.")
-    print("    Fix the crash or investigate with: uv run lawvm diff <SID>")
+    excluded = [(sid, st) for sid, st in nonscored if st in _NONSCORED_STATUSES]
+    crashed = [(sid, st) for sid, st in nonscored if st not in _NONSCORED_STATUSES]
+    if excluded:
+        print(
+            f"\n=== EXCLUDED ({len(excluded)} statute(s), no oracle/source — "
+            f"not scored, NOT crashes) ==="
+        )
+        for sid, status in excluded:
+            print(f"  {sid:12s}  {status}")
+    if crashed:
+        print(f"\n=== ERRORS ({len(crashed)} statute(s) CRASHED — excluded from mean) ===")
+        for sid, status in crashed:
+            print(f"  {sid:12s}  {status}")
+        print("^^^ These statutes crashed during bench and were excluded from scoring.")
+        print("    Fix the crash or investigate with: uv run lawvm diff <SID>")
 
 
 def _show_history(rows: List[Dict]) -> None:
