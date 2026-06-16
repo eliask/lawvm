@@ -185,6 +185,17 @@ def recognize_chapter_ref(scan: _Scan, part: str = "") -> Optional[ParsedContain
     if (t := scan.peek()) and t.cat == "OTSIKKO":
         scan.advance()
         facet = FacetKind.HEADING
+    elif (t := scan.peek()) and t.cat == "NIMIKE":
+        # A chapter's own heading can be drafted as ``N luvun nimike`` instead of
+        # ``N luvun otsikko`` — both name the chapter's title (HEADING facet). The
+        # ``nimike`` here scopes to the preceding ``N luvun`` chapter, so it is the
+        # chapter heading, not a standalone statute-title NIMIKE target (which the
+        # bare ``_nimike_ref`` family owns). Recognizing it as a chapter HEADING
+        # facet lets the chapter scope carry forward into the rest of the list
+        # (``1 luvun nimike ja 10 §`` → chapter-1 heading + §10 scoped to ch1),
+        # which the old parser dropped on the unconsumed ``nimike``.
+        scan.advance()
+        facet = FacetKind.HEADING
     elif (t := scan.peek()) and t.cat == "JOHD":
         scan.advance()
         facet = FacetKind.INTRO

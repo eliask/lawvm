@@ -452,6 +452,23 @@ CURATED_CASES = [
         "features": {"verb_muuttaa", "chapter_ref", "sub_ref_otsikko"},
     },
     {
+        # A chapter's own heading can be drafted as ``N luvun nimike`` (vs the more
+        # common ``N luvun otsikko``); both name the chapter title (HEADING facet).
+        # The old parser stopped on the unconsumed ``nimike`` and dropped the whole
+        # rest of the chapter-scoped list; the new parser recognizes it as a
+        # chapter HEADING and the scope carries into the section list.
+        "name": "chapter_ref nimike (heading) carries scope into section list",
+        "text": "muutetaan 2 luvun nimike ja 10 §",
+        "expected": ["M L 2 o", "M P L:2 10"],
+        "features": {"verb_muuttaa", "chapter_ref", "sub_ref_otsikko", "chapter_ctx_propagation"},
+    },
+    {
+        "name": "chapter_ref nimike equals otsikko (byte-compatible)",
+        "text": "muutetaan 2 luvun otsikko ja 10 §",
+        "expected": ["M L 2 o", "M P L:2 10"],
+        "features": {"verb_muuttaa", "chapter_ref", "sub_ref_otsikko", "chapter_ctx_propagation"},
+    },
+    {
         "name": "chapter_ctx_propagation",
         "text": "muutetaan 3 luvun 12 §:n 2 momentti",
         "expected": ["M P L:3 12 2"],
