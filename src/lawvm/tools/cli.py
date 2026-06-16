@@ -11321,6 +11321,25 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="cap export at the current date when --until is not set",
     )
     export_md_git_p.add_argument(
+        "--timestamp-zone",
+        default="UTC",
+        metavar="ZONE",
+        help="IANA timezone for git author/committer raw dates (default: UTC)",
+    )
+    export_md_git_p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="render statutes in N worker processes; N > 1 uses the SQLite spool path",
+    )
+    export_md_git_p.add_argument(
+        "--spool-db",
+        default=None,
+        metavar="PATH",
+        help="write rendered Markdown blobs to a SQLite spool before fast-import",
+    )
+    export_md_git_p.add_argument(
         "--out",
         default="-",
         metavar="PATH",

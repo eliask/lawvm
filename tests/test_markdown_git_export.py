@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -9,14 +11,18 @@ from lawvm.tools import export_markdown_git as mdgit
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools.export_markdown_git import (
+    AmendmentCause,
     FastImportCommit,
     MaterializedSnapshot,
     PreparedStatute,
     build_fast_import_stream,
     build_markdown_git_commits,
+    build_markdown_git_spool,
     render_act_markdown,
+    write_spooled_fast_import_stream,
     write_fast_import_stream,
 )
+from lawvm.tools.export_transition_graph import ReplayBundle
 from lawvm.tools.transition_graph_jurisdictions import TransitionGraphJurisdictionAdapter
 from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 from lawvm.tools.transition_graph_interlinks import LawvmInterlinkRow
@@ -124,6 +130,38 @@ def _structured_body() -> IRNode:
     )
 
 
+def _part_chapter_section_body() -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="I",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="Part I"),
+                    IRNode(kind=IRNodeKind.HEADING, text="Framework"),
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1 chapter"),
+                            IRNode(kind=IRNodeKind.HEADING, text="General"),
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="1",
+                                children=(
+                                    IRNode(kind=IRNodeKind.NUM, text="1 sec"),
+                                    IRNode(kind=IRNodeKind.HEADING, text="Scope"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def test_markdown_render_adds_github_anchors_and_inline_links() -> None:
     text = "Reference to 9/2023 remains readable."
     start = text.index("9/2023")
@@ -160,8 +198,22 @@ def test_markdown_render_links_statute_source_and_preserves_stable_toc_anchors()
     assert "- Statute: [`100/2020`](<https://example.test/statute/100-2020>)" in rendered
     assert "LawVM Markdown projection. Not an authoritative publication." not in rendered
     assert "- [1 chapter General](#chapter-1)" in rendered
-    assert "- [1 sec Scope](#chapter-1-section-1)" in rendered
-    assert "\n- [2 chapter Later](#chapter-2)" in rendered
+    assert "  - [1 sec Scope](#chapter-1-section-1)" in rendered
+    assert "\n\n- [2 chapter Later](#chapter-2)" in rendered
+
+
+def test_markdown_toc_uses_actual_part_chapter_section_depth() -> None:
+    rendered = render_act_markdown(
+        statute_id="100/2020",
+        title="Test Act",
+        version_date="2020-01-01",
+        root=_part_chapter_section_body(),
+        tree_hash="abc123",
+    )
+
+    assert "- [Part I Framework](#part-i)" in rendered
+    assert "  - [1 chapter General](#part-i-chapter-1)" in rendered
+    assert "    - [1 sec Scope](#part-i-chapter-1-section-1)" in rendered
 
 
 def test_markdown_render_distinguishes_subsection_and_item_depth() -> None:
@@ -287,6 +339,186 @@ def test_build_commits_keeps_unchanged_statute_file_bytes_stable() -> None:
     assert b"Version: `2020-01-01`" in commits[0].files["acts/2020/100.md"]
 
 
+def test_build_commits_records_changed_statutes_and_causes_in_commit_message() -> None:
+    prepared = PreparedStatute(
+        statute_id="100/2020",
+        engine_id="2020/100",
+        title="Test Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=_body_with_link_text("Stable text."),
+                tree_hash="hash-one",
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+        amendment_causes_by_date={
+            "2020-01-01": (
+                AmendmentCause(
+                    source_id="200/2019",
+                    title="Change Act",
+                    source_url="https://example.test/200-2019",
+                    kind="change/repeal",
+                ),
+                AmendmentCause(
+                    source_id="300/2018",
+                    title="Temporary Act",
+                    source_url="https://example.test/300-2018",
+                    kind="expiration",
+                ),
+            ),
+        },
+    )
+
+    commits = build_markdown_git_commits(
+        (prepared,),
+        jurisdiction="fi",
+        timestamp_zone="Europe/Helsinki",
+        generated_at=datetime(2026, 6, 16, 12, 0, tzinfo=ZoneInfo("Europe/Helsinki")),
+    )
+
+    assert commits[0].message == (
+        "As of 2020-01-01\n\n"
+        "Changed statutes:\n"
+        "- 100/2020 Test Act\n\n"
+        "Causes:\n"
+        "- 100/2020 Test Act\n"
+        "  - change/repeal: 200/2019 Change Act\n"
+        "  - expiration: 300/2018 Temporary Act"
+    )
+    assert commits[0].timezone_offset == "+0200"
+    assert commits[0].committer_timezone_offset == "+0300"
+    assert "LawVM:" not in commits[0].message
+    assert "generated_at" not in commits[0].message
+    stream = build_fast_import_stream(commits)
+    assert b"author LawVM <lawvm@example.invalid> " in stream
+    assert b" +0200\ncommitter LawVM <lawvm@example.invalid> " in stream
+    assert b" +0300\ndata " in stream
+
+
+def test_amendment_causes_by_date_indexes_effective_and_expiry_sources() -> None:
+    profile = TransitionGraphExportProfile(
+        jurisdiction="zz",
+        lang="zz",
+        canonical_statute_id=lambda value: value,
+        engine_statute_id=lambda value: value,
+        amendment_url=lambda canonical, _engine: f"https://example.test/{canonical}",
+    )
+    op = SimpleNamespace(
+        source=SimpleNamespace(
+            statute_id="200/2019",
+            title="Change Act",
+            effective="2020-01-01",
+            expires="2021-01-01",
+        )
+    )
+
+    causes = mdgit._amendment_causes_by_date((op,), profile=profile)
+
+    assert causes["2020-01-01"] == (
+        AmendmentCause(
+            source_id="200/2019",
+            title="Change Act",
+            source_url="https://example.test/200/2019",
+            kind="change/repeal",
+        ),
+    )
+    assert causes["2021-01-01"] == (
+        AmendmentCause(
+            source_id="200/2019",
+            title="Change Act",
+            source_url="https://example.test/200/2019",
+            kind="expiration",
+        ),
+    )
+
+
+def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = {
+        "100/2020": {
+            "2020-01-01": _body_with_link_text("Alpha text."),
+            "2021-01-01": _body_with_link_text("Beta text."),
+        },
+        "200/2020": {
+            "2020-01-01": _body_with_link_text("Second act."),
+        },
+    }
+
+    def replay_runner(engine_id: str, *, profile: TransitionGraphExportProfile) -> ReplayBundle:
+        return ReplayBundle(
+            statute_id=profile.canonical_statute_id(engine_id),
+            engine_id=engine_id,
+            title=f"Act {engine_id}",
+            result=SimpleNamespace(),
+            lo_ops=[],
+            timelines={},
+            change_dates=list(roots[engine_id]),
+        )
+
+    def materializer(bundle: ReplayBundle, as_of: str) -> IRNode:
+        return roots[bundle.engine_id][as_of]
+
+    profile = TransitionGraphExportProfile(
+        jurisdiction="zz",
+        lang="zz",
+        canonical_statute_id=lambda value: value,
+        engine_statute_id=lambda value: value,
+        corpus=lambda: None,
+    )
+    adapter = TransitionGraphJurisdictionAdapter(
+        profile=profile,
+        replay_runner=replay_runner,
+        tree_materializer=materializer,
+        interlink_provider=None,
+    )
+    monkeypatch.setattr(mdgit, "transition_graph_adapter_for_jurisdiction", lambda _jurisdiction: adapter)
+    spool = tmp_path / "spool.db"
+
+    build_stats = build_markdown_git_spool(
+        ("100/2020", "200/2020"),
+        jurisdiction="zz",
+        db_path=spool,
+        workers=1,
+    )
+    repo = tmp_path / "spooled.git"
+    export_stats = write_spooled_fast_import_stream(
+        spool,
+        jurisdiction="zz",
+        out_path=None,
+        repo_path=repo,
+        force=False,
+        timestamp_zone="Europe/Helsinki",
+        generated_at=datetime(2026, 6, 16, 12, 0, tzinfo=ZoneInfo("Europe/Helsinki")),
+    )
+    latest_first = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/100.md"],
+        text=True,
+    )
+    latest_second = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/200.md"],
+        text=True,
+    )
+    log_subjects = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "log", "--format=%s", "in-force"],
+        text=True,
+    )
+    raw_dates = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "log", "--format=%ad %cd", "--date=raw", "in-force"],
+        text=True,
+    )
+
+    assert build_stats.statute_count == 2
+    assert build_stats.version_count == 3
+    assert export_stats.commit_count == 2
+    assert "Beta text" in latest_first
+    assert "Second act" in latest_second
+    assert "As of 2021-01-01" in log_subjects
+    assert "As of 2020-01-01" in log_subjects
+    assert " +0200 " in raw_dates
+    assert " +0300" in raw_dates
+
+
 def test_build_commits_uses_jurisdiction_fallback_for_non_num_year_ids() -> None:
     prepared = PreparedStatute(
         statute_id="ukpga/2020/1",
@@ -314,10 +546,15 @@ def test_prepare_markdown_git_export_includes_future_by_default(monkeypatch: pyt
         "2999-01-01": _body_with_link_text("Prospective text."),
     }
 
-    def replay_runner(_engine_id: str, *, profile: TransitionGraphExportProfile) -> SimpleNamespace:
-        return SimpleNamespace(
+    def replay_runner(_engine_id: str, *, profile: TransitionGraphExportProfile) -> ReplayBundle:
+        return ReplayBundle(
+            statute_id="100/2020",
+            engine_id="100/2020",
             change_dates=("2020-01-01", "2999-01-01"),
             title="Test Act",
+            result=SimpleNamespace(),
+            lo_ops=[],
+            timelines={},
         )
 
     def materializer(_bundle: SimpleNamespace, as_of: str) -> IRNode:
