@@ -688,8 +688,6 @@ def main(argv: list[str] | None = None) -> int:
 
     print(_render_table(report))
     agg = report.aggregate()
-    cov = agg["coverage_fraction"]
-    cov_str = "-" if cov is None else f"{cov:.4f}"
     print()
     print(
         f"AGGREGATE  windows={agg['windows_evaluated']} "
