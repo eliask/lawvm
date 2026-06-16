@@ -9,7 +9,8 @@ from __future__ import annotations
 import pytest
 from typing import cast
 
-from lawvm.finland.johtolause.peg3 import Token, tokenize
+from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.scan import (
     Annotation,
     AnnotatedStream,
@@ -425,7 +426,7 @@ class TestAnnotateFormalTitleSuffix:
 
     def test_produces_citation_span_for_suffix_with_prior_citation(self):
         """'N §:n kumoamisesta annetun lain' after CITATION_SPAN → CITATION_SPAN."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import (
             AnnotatedStream, annotate_statute_citations, annotate_statute_names,
         )
@@ -443,7 +444,7 @@ class TestAnnotateFormalTitleSuffix:
 
     def test_produces_citation_span_for_suffix_after_statute_name_span(self):
         """'N §:n kumoamisesta annetun lain' after STATUTE_NAME_SPAN → CITATION_SPAN."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import (
             AnnotatedStream, annotate_statute_citations, annotate_statute_names,
         )
@@ -458,7 +459,7 @@ class TestAnnotateFormalTitleSuffix:
 
     def test_produces_citation_span_for_suffix_after_verb_directly(self):
         """'N §:n kumoamisesta annetun lain' immediately after VERB → CITATION_SPAN."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         text = "kumotaan 2 §:n kumoamisesta annetun lain 5 §"
         tokens = tokenize(text)
         suffix_anns = annotate_formal_title_suffix(tokens)
@@ -467,7 +468,7 @@ class TestAnnotateFormalTitleSuffix:
 
     def test_muuttamisesta_variant_also_caught(self):
         """'N §:n muuttamisesta annetun lain' is also a formal title suffix."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         text = "kumotaan 2 §:n muuttamisesta annetun lain 5 §"
         tokens = tokenize(text)
         suffix_anns = annotate_formal_title_suffix(tokens)
@@ -475,7 +476,7 @@ class TestAnnotateFormalTitleSuffix:
 
     def test_does_not_annotate_plain_repeal_clause(self):
         """Plain 'kumotaan 5 §' produces no formal-title-suffix annotation."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         text = "kumotaan 5 §"
         tokens = tokenize(text)
         suffix_anns = annotate_formal_title_suffix(tokens)

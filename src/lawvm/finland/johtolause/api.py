@@ -40,6 +40,7 @@ from lawvm.core.clause_ast import ClauseAST
 from lawvm.core.semantic_types import FacetKind, LabelAction
 
 if TYPE_CHECKING:
+    from lawvm.finland.johtolause.lexicon import Token
     from lawvm.finland.johtolause.surface_model import (
         SurfaceClause as _SurfaceClauseType,
         SurfaceNode as _SurfaceNodeType,
@@ -1111,6 +1112,36 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             _node_to_ops(node, verb, "", "")
 
     return ops
+
+
+def parse_to_ops(tokens: list[Token]) -> list[ParsedOp]:
+    """Parse a filtered token stream into a flat ``ParsedOp`` list.
+
+    Backward-compatibility bridge for callers (chiefly the legacy-parser
+    reference tests) that already hold a token stream rather than raw text.
+    New callers should use :func:`parse_clause`, which takes text.
+
+    Path:
+        tokens -> surface_parse.parse() -> SurfaceClause
+        -> resolve_surface_clause() -> ResolvedSurfaceClause
+        -> lower_to_clause_ast() -> ClauseAST
+        -> _derive_parsed_ops_from_ast() -> list[ParsedOp]
+    """
+    from lawvm.finland.johtolause.surface_parse import parse as _parse
+    from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
+    from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast
+    from lawvm.core.clause_ast import ClauseAST as _ClauseAST
+
+    surface_clause = _parse(tokens)
+    try:
+        resolved = resolve_surface_clause(surface_clause)
+    except Exception:
+        return []
+    try:
+        clause_ast = lower_to_clause_ast(resolved)
+    except Exception:
+        clause_ast = _ClauseAST(verb_groups=(), source_text="")
+    return _derive_parsed_ops_from_ast(clause_ast)
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -34,7 +34,7 @@ from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
-from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
+from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.statute import ReplayState
 from lawvm.core.clause_ast import (

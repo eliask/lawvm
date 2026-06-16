@@ -7,7 +7,7 @@ greedy set cover + focused per-feature cases).
 Feature coverage (25 tags):
     All 25 tags covered. part_ref tested via targeted grammar case
     (absent from post-2000 corpus; all-years corpus run pending).
-    Former xfail (law-level range insert) now passes in peg3.
+    Former xfail (law-level range insert) now passes in the parser.
 
 Usage:
     Imported as fixture data by `tests/test_fi_peg_curated.py` and related tests.
@@ -1958,7 +1958,7 @@ def run_curated_tests(nlp=None, verbose: bool = False) -> bool:
     """Run curated test suite. Returns True if all non-xfail cases pass.
 
     The nlp parameter is accepted for backward compatibility but ignored.
-    peg3 has no NLP dependency.
+    The parser has no NLP dependency.
     """
     print(f"\n{'=' * 70}")
     print("PEG CURATED TEST SUITE — PHASE 1.4")

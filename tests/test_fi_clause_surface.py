@@ -335,7 +335,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_inline_same_label_move_tail_semantics(self):
         """Inline same-label move tails should be owned natively by the surface."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -351,7 +351,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_direct_same_label_move_semantics(self):
         """Standalone same-label move clauses should survive through the clause waist."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -374,7 +374,7 @@ class TestResolveMultiVerbGroup:
         must resolve to a heading-facet insert on each named section — not a
         ``otsikko_edella`` heading-before-section placement.
         """
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -394,7 +394,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_mixed_batch_move_tail_for_2014_1429(self):
         """Mixed repeal batches must retag 29e into the destination chapter."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -412,7 +412,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_leading_destination_chapter_on_same_clause_move(self):
         """'lakiin uusi 3 a luku, johon samalla siirretään muutettu 11 §' carries the chapter lead-in."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -430,7 +430,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_direct_section_relabel_semantics(self):
         """Direct section relabels should preserve full destination path at the clause waist."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -451,7 +451,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_old_move_destination_part_semantics(self):
         """Old move continuations should carry destination part natively."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -469,7 +469,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_relative_move_to_part_tail_semantics(self):
         """Relative-clause move tails to a part should retarget prior section refs."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -485,7 +485,7 @@ class TestResolveMultiVerbGroup:
 
     def test_parse_surface_keeps_provenance_heavy_relative_move_to_part_tail(self):
         """Provenance after a part ref should not swallow later moved sections."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -647,7 +647,7 @@ class TestLowerToAst:
 
     def test_all_curated_cases_legal_op_equivalence(self):
         """lower_to_ast legal ops == resolve + Finland ParsedOp bridge legal ops."""
-        from lawvm.finland.johtolause.peg3 import tokenize
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import (
             parse_surface,
@@ -703,7 +703,8 @@ class TestParseSurfaceRoundTrip:
 
     @staticmethod
     def _round_trip_check(text: str) -> tuple[bool, str]:
-        from lawvm.finland.johtolause.peg3 import tokenize, parse
+        from lawvm.finland.johtolause.api import parse_to_ops as parse
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from lawvm.finland.johtolause.clause_surface import parse_surface
 
@@ -766,7 +767,8 @@ class TestResolveRoundTrip:
         assert ops[1].code() == "M P 7 2"
 
         # Cross-check with actual parser output
-        from lawvm.finland.johtolause.peg3 import tokenize, parse
+        from lawvm.finland.johtolause.api import parse_to_ops as parse
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
 
         text = "muutetaan 7 §, sellaisena kuin se on laissa 200/2022, ja mainitun pykälän 2 momentti"

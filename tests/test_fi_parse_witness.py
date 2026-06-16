@@ -60,7 +60,8 @@ class TestParseWitnessCoverage:
     """Verify that all parsed ops get witnesses across the curated corpus."""
 
     def test_100_percent_witness_coverage(self):
-        from lawvm.finland.johtolause.peg3 import parse, tokenize
+        from lawvm.finland.johtolause.api import parse_to_ops as parse
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from tests.fixtures.fi_curated_cases import CURATED_CASES
 
@@ -80,7 +81,8 @@ class TestParseWitnessCoverage:
         )
 
     def test_witnesses_have_valid_source_spans(self):
-        from lawvm.finland.johtolause.peg3 import parse, tokenize
+        from lawvm.finland.johtolause.api import parse_to_ops as parse
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from tests.fixtures.fi_curated_cases import CURATED_CASES
 
@@ -102,7 +104,8 @@ class TestParseWitnessCoverage:
 
     def test_witnesses_reference_known_rule_ids(self):
         """Every witness rule_id should be in the rule catalog."""
-        from lawvm.finland.johtolause.peg3 import parse, tokenize
+        from lawvm.finland.johtolause.api import parse_to_ops as parse
+        from lawvm.finland.johtolause.lexer import tokenize
         from lawvm.finland.johtolause.scan import apply_annotations
         from tests.fixtures.fi_curated_cases import CURATED_CASES
 

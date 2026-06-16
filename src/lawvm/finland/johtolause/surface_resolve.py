@@ -431,11 +431,6 @@ class _ResolverCtx:
     last_section_part: str = ""
     all_resolved_vgs: list[ResolvedVerbGroup] | None = None
 
-    def update_batch(self, batch: list[ResolvedTargetRef]) -> None:
-        """Update the last target batch if non-empty."""
-        if batch:
-            self.last_target_batch = list(batch)
-
     def update_chapter(self, resolved_nodes: list[ResolvedNode]) -> None:
         """Propagate chapter context from newly resolved nodes."""
         for node in reversed(resolved_nodes):

@@ -20,7 +20,7 @@ from typing import Any, Optional, cast
 from lawvm.corpus_store import get_corpus_store
 from lawvm.finland.amendment_index import get_amendment_children
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
+from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
 from lawvm.core.clause_ast import clause_ast_to_legal_ops
 from lawvm.core.ir import LegalOperation

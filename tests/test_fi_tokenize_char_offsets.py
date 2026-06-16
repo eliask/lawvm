@@ -1,4 +1,4 @@
-"""Tests for character offset tracking in peg3.tokenize().
+"""Tests for character offset tracking in lexer.tokenize().
 
 Each Token produced by tokenize() should carry char_start and char_end
 positions into the normalized input string (after whitespace collapse).
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.finland.johtolause.peg3 import tokenize, witness_char_span
+from lawvm.finland.johtolause.lexer import tokenize, witness_char_span
 from lawvm.core.parse_witness import ParseWitness
 
 

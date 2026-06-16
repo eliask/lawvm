@@ -21,7 +21,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-from lawvm.finland.johtolause.peg3 import Token, tokenize
+from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.scan import (
     AnnotatedStream,
     annotate_statute_citations,

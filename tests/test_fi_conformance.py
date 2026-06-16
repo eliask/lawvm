@@ -39,7 +39,7 @@ from lawvm.core.semantic_types import FacetKind, StructuralAction, LabelAction, 
 from lawvm.core.ir import IRNode
 from lawvm.finland.target_kind import TargetKind
 from lawvm.core import tree_ops
-from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
+from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.statute import StatuteContext

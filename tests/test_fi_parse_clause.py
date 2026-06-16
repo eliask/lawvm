@@ -737,13 +737,13 @@ def test_surface_clause_chapter_scope_propagates_across_verb_groups():
 
 
 # ---------------------------------------------------------------------------
-# Import from peg3 facade
+# Canonical public-API import surface
 # ---------------------------------------------------------------------------
 
 
-def test_parse_clause_importable_from_peg3():
-    """parse_clause and ClauseParseResult must be importable from peg3."""
-    from lawvm.finland.johtolause.peg3 import ClauseParseResult as CPR, parse_clause as pc
+def test_parse_clause_importable_from_api():
+    """parse_clause and ClauseParseResult are the canonical public API."""
+    from lawvm.finland.johtolause.api import ClauseParseResult as CPR, parse_clause as pc
 
     r = pc("muutetaan 5 §")
     assert isinstance(r, CPR)

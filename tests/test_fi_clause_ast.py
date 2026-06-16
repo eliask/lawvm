@@ -34,7 +34,7 @@ from lawvm.core.semantic_types import FacetKind, LabelAction, MetaClauseKind, St
 from lawvm.finland.johtolause.api import infer_move_clause_target_unit_kind
 from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast, parsed_op_to_clause_node
 from lawvm.finland.johtolause.types import ParsedOp
-from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
+from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 from typing import Optional
 
 

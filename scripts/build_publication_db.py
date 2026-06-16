@@ -241,7 +241,7 @@ def _johtolause_section_char_span(
     digits = section_num.rstrip("abcdefghijklmnopqrstuvwxyzäöå")
     letter_suffix = section_num[len(digits) :]
 
-    from lawvm.finland.johtolause.peg3 import tokenize as _tokenize
+    from lawvm.finland.johtolause.lexer import tokenize as _tokenize
 
     tokens = _tokenize(johtolause_text)
     n = len(tokens)

@@ -157,39 +157,3 @@ def extract_annotations(
     tm_annotations = tuple(_convert_scan_annotation(a) for a in all_scan_anns)
 
     return tape, AnnotationSet(annotations=tm_annotations)
-
-
-def extract_annotations_with_scan(
-    tokens: list[Token],
-    source_text: str = "",
-) -> tuple[TokenTape, AnnotationSet, list[ScanAnnotation]]:
-    """Like extract_annotations but also returns the raw scan annotations.
-
-    Useful for consumers that need both the Phase 2 types AND the original
-    scan.py annotations (e.g. for jolloin renumber pair extraction).
-    """
-    tape = tape_from_tokens(tokens, source_text)
-
-    cite_anns = annotate_statute_citations(tokens)
-    name_anns = annotate_statute_names(tokens, cite_anns)
-    phase1_anns = cite_anns + name_anns
-    phase1_stream = AnnotatedStream(tokens=tokens, annotations=phase1_anns)
-    view, view_to_raw = phase1_stream.structural_view_with_map()
-
-    title_suffix_anns_v = annotate_formal_title_suffix(view)
-    prov_anns_v = annotate_provenance(view)
-    reinst_anns_v = annotate_reinstatement(view)
-    jolloin_anns_v = annotate_jolloin(view)
-    qual_anns_v = annotate_qualifiers(view)
-    end_anns_v = annotate_end_sentinels(view)
-    punct_anns_v = annotate_punct(view)
-
-    phase2_view_anns = (
-        title_suffix_anns_v + prov_anns_v + reinst_anns_v + jolloin_anns_v + qual_anns_v + end_anns_v + punct_anns_v
-    )
-    phase2_raw_anns = [_remap_annotation(a, view_to_raw) for a in phase2_view_anns]
-
-    all_scan_anns = phase1_anns + phase2_raw_anns
-    tm_annotations = tuple(_convert_scan_annotation(a) for a in all_scan_anns)
-
-    return tape, AnnotationSet(annotations=tm_annotations), all_scan_anns

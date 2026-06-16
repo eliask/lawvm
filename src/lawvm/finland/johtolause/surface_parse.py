@@ -8,7 +8,7 @@ This module owns:
   - The core parse() function that produces SurfaceClause directly
 
 Grammar rules emit SurfaceNode types from surface_model.py natively.
-The backward-compatibility path to ParsedOp lives in peg3.py (parse_to_ops).
+The backward-compatibility path to ParsedOp lives in api.py (parse_to_ops).
 New callers should use api.parse_clause() instead.
 """
 
@@ -428,11 +428,6 @@ def cat(category: str) -> Parser[Token]:
 def cat_case(category: str, case: str) -> Parser[Token]:
     """Match a token by category and grammatical case."""
     return tok(lambda t: t.cat == category and t.case == case)
-
-
-def cat_not_case(category: str, excluded_case: str) -> Parser[Token]:
-    """Match a token by category, excluding a specific case."""
-    return tok(lambda t: t.cat == category and t.case != excluded_case)
 
 
 def seq(*parsers: Parser[Any]) -> Parser[tuple[Any, ...]]:
