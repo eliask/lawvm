@@ -52,7 +52,7 @@ _QT = "in_force"
 _PINS: list[tuple[str, str, str, str, str]] = [
     # --- TRACK2_GROUNDING_FACTPACK_2026-06-10.md ---
     ("2011/805", "chapter:3/section:1", _AS_OF, _QT,
-     "72cc68ede5e24a59b2c9721770281dd9368ad24d2ebea7253ea85d2c1fe1d14c"),  # R1 esitutkintalaki 3 luku 1 §
+     "2b81edb5a80ac1d7d0da2c1a58989090760c416da8fdb36289c758b06dbe087d"),  # R1 esitutkintalaki 3 luku 1 §; re-pinned for corpus drift: amendment 805/2011 muutos 269/2026 (effective 2026-06-01, in force @2026-06-10) was added after mint, rewriting 3:1 momentti 1 and inserting a new momentti 2 (johtolause "3 luvun 1 §:ään ... uusi 2 momentti"). Prior pin captured the 222/2026 version (effective 2026-04-14).
     ("2009/273", "section:6", _AS_OF, _QT,
      "68b1110d5f48a2cf3ad40585fb220135ae697baec96fc3399c58acbd92765eed"),  # R3 vaalirahoituslaki 6 §
     ("2009/273", "section:6a", _AS_OF, _QT,

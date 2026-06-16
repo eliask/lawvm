@@ -1562,7 +1562,8 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
     """
     from lxml import etree
 
-    from lawvm.finland.corpus import get_corpus, normalize_and_compile_ops
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.frontend_compile import normalize_and_compile_ops
 
     from lawvm.tools.inspect_amendment import _working_johtolause
 
@@ -1638,7 +1639,8 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
     """Real corpus anchor for the active `1992/110 <- 2017/48` chain-drop family."""
     from lxml import etree
 
-    from lawvm.finland.corpus import get_corpus, normalize_and_compile_ops
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.frontend_compile import normalize_and_compile_ops
     from tests.corpus_pin_helpers import pinned_replay
 
     from lawvm.tools.inspect_amendment import _working_johtolause

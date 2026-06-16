@@ -22,7 +22,9 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.compile_amendment import compile_amendment_ops, get_corpus, get_johtolause
+from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.corpus import get_corpus
+from lawvm.finland.metadata import get_johtolause
 from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex

@@ -1050,7 +1050,7 @@ def _strike_structural_unit_list(
 # head. A bare "(a)"/"(1)" enumerator (a real subsection/paragraph append) does NOT
 # match, so a legitimate add-at-end of section content is never mis-held-out.
 _NEW_SECTION_PAYLOAD_HEAD_RE = re.compile(
-    r'^\s*["“]?\s*(?:§+\s*\d|CHAPTER\s+\d|SUBCHAPTER\s+[IVXLC]|PART\s+[A-Z]\b)',
+    r'^\s*(?:["“]\s*)?(?:§+\s*\d|CHAPTER\s+\d|SUBCHAPTER\s+[IVXLC]|PART\s+[A-Z]\b)',
     re.IGNORECASE,
 )
 

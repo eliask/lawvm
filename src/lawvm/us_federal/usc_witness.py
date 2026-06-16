@@ -44,7 +44,7 @@ _DATE_RE = re.compile(
 )
 
 # Statutes at Large cite: "134 Stat. 2145" (first/lead page of the segment).
-_STAT_RE = re.compile(r"(?P<vol>\d+)\s+Stat\.\s+(?P<page>\d+[0-9A-Za-z–\-]*)")
+_STAT_RE = re.compile(r"(?<!\d)(?P<vol>\d+)\s+Stat\.\s+(?P<page>\d+[0-9A-Za-z–\-]*)")
 
 
 @dataclass(frozen=True)
