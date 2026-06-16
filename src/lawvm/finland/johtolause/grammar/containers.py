@@ -58,6 +58,8 @@ from lawvm.finland.johtolause.grammar.sections import (
     NumSuffix,
     _Scan,
     _expand_range_single,
+    _letter,
+    _number,
     _number_list,
     _number_with_suffix,
     _part_ctx,
@@ -122,6 +124,11 @@ class ParsedContainer:
     facet: Optional[FacetKind] = None
     renumber_targets: tuple[NumSuffix, ...] = ()
     inner_chapter: Optional["ParsedContainer"] = None
+    # Appendix sub-edit tail: extra APPENDIX part-selector / coordinated-sibling
+    # labels (``maksutaulukon I osan ... ja III osan``, ``1 liitteen ... ja 2
+    # liitteen``) the base appendix ref would otherwise drop. Empty when no
+    # sub-edit tail follows. Carried only on APPENDIX forms.
+    tail_parts: tuple[NumSuffix, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -317,11 +324,104 @@ def recognize_nimike_ref(scan: _Scan) -> Optional[ParsedContainer]:
     return ParsedContainer(form=ContainerForm.NIMIKE, span=Span(start, scan.pos))
 
 
+# Appendix sub-edit tail tuning (mirrors surface_parse._appendix_subpart_tail).
+# A ``<num> osa`` part-selector / ``osa <letter>`` / coordinated ``<num> liitteen``
+# sibling the base appendix ref would otherwise drop. See surface_parse for the
+# full shape catalog. Measure-faithful coverage extension: one APPENDIX label per
+# selector; intervening descriptive content (``maksutaulukon``, sub-item KOHTA) is
+# absorbed; STOPS at a clause boundary / fresh operative opener.
+_APPENDIX_TAIL_SKIP_CATS: frozenset[str] = frozenset(
+    {
+        "WORD", "NUM", "LETTER", "KOHTA", "OTSIKKO", "MOMENTTI", "ALAKOHTA",
+        "PUNCT", "CITATION_SPAN", "COMMA", "CONJ", "SEKA", "DASH",
+    }
+)
+_APPENDIX_TAIL_BOUNDARY_CATS: frozenset[str] = frozenset(
+    {
+        "VERB", "UUSI", "TILALLE", "PYKALA", "LUKU", "NIMIKE",
+        "END_SENTINEL_SPAN", "PROVENANCE_SPAN", "PROV", "REINST_SPAN", "DOC",
+    }
+)
+_APPENDIX_PART_ENTRY_WINDOW = 6
+
+
+def _appendix_part_selector(scan: _Scan) -> Optional[NumSuffix]:
+    """At the cursor, match an appendix ``osa`` part-selector (both label placements).
+
+    ``<num/roman> osa[n]`` (label precedes noun) or ``osa[n] <letter>`` (label
+    follows noun). Returns the (number, suffix) label, advancing past the OSA (and
+    a post-noun letter), or None (rewound) when not on a part-selector.
+    """
+    start = scan.pos
+    num = _number(scan)
+    if num is not None:
+        suffix = _letter(scan) or ""
+        t = scan.peek()
+        if t and t.cat == "OSA":
+            scan.advance()
+            return (num, suffix)
+        scan.goto(start)
+        return None
+    t = scan.peek()
+    if t and t.cat == "OSA":
+        scan.advance()
+        letter = _letter(scan) or ""
+        return (letter, "")
+    scan.goto(start)
+    return None
+
+
+def _appendix_tail_has_selector(scan: _Scan) -> bool:
+    """True iff an appendix part-selector / coordinated sibling reachably follows."""
+    start = scan.pos
+    seen = 0
+    found = False
+    while seen < _APPENDIX_PART_ENTRY_WINDOW:
+        t = scan.peek()
+        if t is None or t.cat in _APPENDIX_TAIL_BOUNDARY_CATS:
+            break
+        if t.cat in ("OSA", "LIITE"):
+            found = True
+            break
+        scan.advance()
+        seen += 1
+    scan.goto(start)
+    return found
+
+
+def _appendix_subpart_tail(scan: _Scan) -> list[NumSuffix]:
+    """Consume the appendix sub-edit tail, returning one label per selector/sibling."""
+    parts: list[NumSuffix] = []
+    while True:
+        t = scan.peek()
+        if t is None or t.cat in _APPENDIX_TAIL_BOUNDARY_CATS:
+            break
+        sel = _appendix_part_selector(scan)
+        if sel is not None:
+            parts.append(sel)
+            continue
+        if t.cat == "LIITE":
+            scan.advance()
+            post = _number_list(scan)
+            if post:
+                parts.extend(post)
+            else:
+                parts.append(("", ""))
+            continue
+        if t.cat in _APPENDIX_TAIL_SKIP_CATS:
+            scan.advance()
+            continue
+        break
+    return parts
+
+
 def recognize_appendix_ref(scan: _Scan) -> Optional[ParsedContainer]:
     """Recognize an appendix (liite) reference, faithful to ``_appendix_ref``.
 
-    ``[number_list] LIITE [number_list]`` → APPENDIX target(s). A leading number
-    list takes precedence; otherwise a trailing one is consumed.
+    ``[number_list] LIITE [number_list] [part-selectors]`` → APPENDIX target(s). A
+    leading number list takes precedence; otherwise a trailing one is consumed. An
+    appendix sub-edit tail (``<num> osa`` part-selectors / coordinated ``<num>
+    liitteen`` siblings) is recovered when present.
     """
     start = scan.pos
     pre_nums = _number_list(scan)
@@ -332,10 +432,17 @@ def recognize_appendix_ref(scan: _Scan) -> Optional[ParsedContainer]:
     scan.advance()
     post_nums = _number_list(scan) if not pre_nums else None
     nums = pre_nums or post_nums or []
+    tail_parts: list[NumSuffix] = []
+    if _appendix_tail_has_selector(scan):
+        tail_start = scan.pos
+        tail_parts = _appendix_subpart_tail(scan)
+        if not tail_parts:
+            scan.goto(tail_start)
     return ParsedContainer(
         form=ContainerForm.APPENDIX,
         span=Span(start, scan.pos),
         nums=tuple(nums),
+        tail_parts=tuple(tail_parts),
     )
 
 
@@ -531,12 +638,21 @@ def _emit_nimike(parsed: ParsedContainer) -> list[SurfaceNode]:
 
 def _emit_appendix(parsed: ParsedContainer) -> list[SurfaceNode]:
     w = SurfaceWitness(rule_id="fi.appendix_ref", source_span=(parsed.span.start, parsed.span.end))
+    nodes: list[SurfaceNode]
     if parsed.nums:
-        return [
+        nodes = [
             SurfaceTargetRef(kind=TargetKind.APPENDIX, label=n + sf, witness=w)
             for n, sf in parsed.nums
         ]
-    return [SurfaceTargetRef(kind=TargetKind.APPENDIX, label="", witness=w)]
+    else:
+        nodes = [SurfaceTargetRef(kind=TargetKind.APPENDIX, label="", witness=w)]
+    # Appendix sub-edit tail: the recovered part-selector / sibling labels (the OSA
+    # part-selectors and coordinated ``<num> liitteen`` siblings).
+    nodes.extend(
+        SurfaceTargetRef(kind=TargetKind.APPENDIX, label=n + sf, witness=w)
+        for n, sf in parsed.tail_parts
+    )
+    return nodes
 
 
 def emit_containers_nodes(

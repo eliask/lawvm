@@ -224,17 +224,49 @@ def test_corrigendum_footnote_labels_not_flagged(sid: str, expect_n_ops: int) ->
     ]
 
 
-def test_appendix_guard_keeps_coordinated_sibling_part_flagged() -> None:
-    # 2010/883: `maksutaulukon I osan ... kohta ja III osan ... kohta` produces a
-    # single number-less `kind == "A"` op. The PRIMARY selector `I osa` (glued to
-    # `maksutaulukon`) is suppressed, but the COORDINATED sibling `III osa` (past a
-    # `kohta`/`ja` barrier) is a second appendix part the one A-op does not cover --
-    # it MUST stay flagged. Proof that the guard suppresses only the benign primary
-    # selector adjacent to a genuine under-segmentation drop that survives.
+# --- appendix sub-part tail recovery ---------------------------------------------
+#
+# The appendix sub-edit tail (surface_parse._appendix_subpart_tail /
+# containers._appendix_subpart_tail) covers the ``<num/roman/letter> osa[n]``
+# part-selectors and coordinated ``<num> liitteen`` siblings the base appendix ref
+# would otherwise drop. These sids each previously carried >= 1 uncovered OSA/LIITE
+# appendix sub-part drop; the tail recognizer must now cover every appendix
+# part-selector so NO OSA/LIITE label survives as an uncovered drop. Pins the
+# recovered slice so a regression in the tail recognizer re-leaks these.
+
+
+@pytest.mark.parametrize(
+    "sid",
+    [
+        "2010/883",   # maksutaulukon I osan ... ja III osan ... (part-selector chain)
+        "1993/736",   # luettelon I osan otsikko ja II osa (coordinated osa sibling)
+        "2002/1145",  # 1 liitteen 4.2.3 kohta ja 2 liitteen 6 kohta (liite sibling)
+        "2000/1207",  # liitteen 2 osa A ja B (post-noun letter placement)
+        "2014/219",   # liitteen 1 I osan johdanto-osa (num + roman part-selector)
+        "2006/263",   # liitteen 2 osa B (post-noun letter)
+    ],
+)
+def test_appendix_subpart_tail_no_osa_liite_drop(sid: str) -> None:
+    flagged, _n_ops = _run(sid)
+    leftover = [
+        (f.label.struct_cat, f.label.label)
+        for f in flagged
+        if f.label.struct_cat in ("OSA", "LIITE")
+    ]
+    assert leftover == [], leftover
+
+
+def test_appendix_subpart_tail_recovers_coordinated_sibling_part() -> None:
+    # 2010/883: `maksutaulukon I osan ... kohta ja III osan ... kohta`. The appendix
+    # sub-edit tail (surface_parse._appendix_subpart_tail) now COVERS both the
+    # primary `I osa` AND the coordinated sibling `III osa` part-selectors, so
+    # neither survives as an uncovered drop. (Previously the single number-less
+    # `kind == "A"` op covered only the primary selector and the sibling stayed
+    # flagged as genuine under-segmentation; the tail recognizer recovered it.)
     flagged, n_ops = _run("2010/883")
     assert n_ops > 0
     pairs = {(f.label.struct_cat, f.label.label) for f in flagged}
-    assert ("OSA", "iii") in pairs, pairs
+    assert ("OSA", "iii") not in pairs, pairs
     assert ("OSA", "i") not in pairs, pairs
 
 

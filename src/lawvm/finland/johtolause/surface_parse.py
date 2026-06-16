@@ -1838,8 +1838,137 @@ def _nimike_ref(s: Stream, verb: SourceVerb) -> Optional[list[SurfaceNode]]:
     ]
 
 
+# Appendix part-selector tail tuning. After a matched ``LIITE``, an appendix
+# sub-part edit selects a sub-component of the annex with a ``<ROMAN/LETTER/NUM>
+# osa[n]`` part-selector (``liitteenä olevan maksutaulukon I osan ... ja III osan
+# ...``, ``liitteen 1 I osan ...``) and/or a coordinated sibling appendix
+# (``1 liitteen 4 kohta ja 2 liitteen 6 kohta``). The base ``_appendix_ref``
+# consumed only the leading ``liite`` token, dropping every following part / sibling
+# selector. The tail consumer below covers them so they are not silently dropped.
+#
+# It is a measure-faithful coverage extension, not a full appendix sub-structure
+# model: it emits one ``APPENDIX`` target per part-selector / sibling so the OSA /
+# LIITE label tokens are owned, and absorbs the intervening descriptive content
+# (``maksutaulukon``, ``alusliikennettä koskeva kohta``) the appendix edit carries.
+# It only ENTERS the tail when a part-selector or coordinated sibling actually
+# follows (guarded), and STOPS at any clause boundary / fresh operative opener
+# (VERB / provenance / insertion / section / chapter), so a plain whole-appendix
+# ref and an unrelated trailing target are untouched.
+#
+# Descriptive / structural cats that may sit INSIDE the appendix sub-edit tail
+# (between or after part-selectors) without ending it. KOHTA / OTSIKKO / MOMENTTI /
+# ALAKOHTA here are appendix sub-items (``I osan ... kohta``), NOT separate
+# operative targets — in these clauses they are dropped by the base parser, so
+# absorbing them removes no produced op.
+_APPENDIX_TAIL_SKIP_CATS: frozenset[str] = frozenset(
+    {
+        "WORD", "NUM", "LETTER", "KOHTA", "OTSIKKO", "MOMENTTI", "ALAKOHTA",
+        "PUNCT", "CITATION_SPAN", "COMMA", "CONJ", "SEKA", "DASH",
+    }
+)
+# Hard boundaries: a fresh operative opener or a clause boundary ends the appendix
+# sub-edit tail (the following content is a separate target the section / insertion
+# families own, or the clause end).
+_APPENDIX_TAIL_BOUNDARY_CATS: frozenset[str] = frozenset(
+    {
+        "VERB", "UUSI", "TILALLE", "PYKALA", "LUKU", "NIMIKE",
+        "END_SENTINEL_SPAN", "PROVENANCE_SPAN", "PROV", "REINST_SPAN", "DOC",
+    }
+)
+_APPENDIX_PART_ENTRY_WINDOW = 6
+
+
+def _appendix_part_selector(s: Stream) -> Optional[tuple[str, str]]:
+    """At the cursor, match an appendix ``osa`` part-selector.
+
+    Two label placements:
+      * ``<num/roman> osa[n]`` — the part number precedes the noun (``I osan``);
+      * ``osa[n] <letter>`` — the part letter follows the noun (``osa A``), where
+        the appendix's own number was already consumed as the ``liite`` label.
+
+    Returns the (number, suffix) label of the part, advancing past the OSA token
+    (and any post-noun letter), or None (no advance) when not on a part-selector.
+    """
+    saved = s.save()
+    num = _number(s)
+    if num is not None:
+        suffix = _letter(s) or ""
+        if (t := s.peek()) and t.cat == "OSA":
+            s.pos += 1
+            return (num, suffix)
+        s.restore(saved)
+        return None
+    # Post-noun letter placement: a bare ``osa`` directly at the cursor, the part
+    # letter (``A`` / ``B``) trailing the noun.
+    if (t := s.peek()) and t.cat == "OSA":
+        s.pos += 1
+        letter = _letter(s) or ""
+        return (letter, "")
+    s.restore(saved)
+    return None
+
+
+def _appendix_tail_has_selector(s: Stream) -> bool:
+    """True iff an appendix part-selector / coordinated sibling reachably follows.
+
+    Scans a short window of descriptive content (``olevan``, ``maksutaulukon``,
+    separators) from the cursor; the tail is entered only when a ``<num> osa`` or a
+    coordinated ``<num> liitteen`` is found before any hard boundary. Pure lookahead
+    (no advance).
+    """
+    saved = s.save()
+    seen = 0
+    found = False
+    while seen < _APPENDIX_PART_ENTRY_WINDOW:
+        t = s.peek()
+        if t is None or t.cat in _APPENDIX_TAIL_BOUNDARY_CATS:
+            break
+        if t.cat in ("OSA", "LIITE"):
+            found = True
+            break
+        s.pos += 1
+        seen += 1
+    s.restore(saved)
+    return found
+
+
+def _appendix_subpart_tail(s: Stream) -> list[tuple[str, str]]:
+    """Consume the appendix sub-edit tail, returning one (number, suffix) per selector.
+
+    Called right after the base ``LIITE`` (and any attached number list) was
+    matched. Walks the descriptive tail, collecting a label for each ``<num> osa``
+    part-selector and each coordinated ``<num> liitteen`` sibling, until a hard
+    boundary. Only fires when a selector actually follows (the caller gates with
+    :func:`_appendix_tail_has_selector`).
+    """
+    parts: list[tuple[str, str]] = []
+    while True:
+        t = s.peek()
+        if t is None or t.cat in _APPENDIX_TAIL_BOUNDARY_CATS:
+            break
+        # A ``<num> osa[n]`` part-selector.
+        sel = _appendix_part_selector(s)
+        if sel is not None:
+            parts.append(sel)
+            continue
+        # A coordinated ``<num> liitteen`` sibling appendix.
+        if t.cat == "LIITE":
+            s.pos += 1
+            post = _number_list(s)
+            if post:
+                parts.extend(post)
+            else:
+                parts.append(("", ""))
+            continue
+        if t.cat in _APPENDIX_TAIL_SKIP_CATS:
+            s.pos += 1
+            continue
+        break
+    return parts
+
+
 def _appendix_ref(s: Stream, verb: SourceVerb) -> Optional[list[SurfaceNode]]:
-    """Parse appendix reference: [number_list] LIITE [number_list]."""
+    """Parse appendix reference: [number_list] LIITE [number_list] [part-selectors]."""
     saved = s.save()
     pre_nums = _number_list(s)
     if not ((t := s.peek()) and t.cat == "LIITE"):
@@ -1848,23 +1977,49 @@ def _appendix_ref(s: Stream, verb: SourceVerb) -> Optional[list[SurfaceNode]]:
     s.pos += 1
     post_nums = _number_list(s) if not pre_nums else None
     nums = pre_nums or post_nums
-    _w = _make_witness("fi.appendix_ref", saved, s.pos)
+    nodes: list[SurfaceNode]
     if nums:
-        return [
+        nodes = [
             SurfaceTargetRef(
                 kind=TargetKind.APPENDIX,
                 label=n + sf,
-                witness=_w,
+                witness=_make_witness("fi.appendix_ref", saved, s.pos),
             )
             for n, sf in nums
         ]
-    return [
-        SurfaceTargetRef(
-            kind=TargetKind.APPENDIX,
-            label="",
-            witness=_w,
-        )
-    ]
+    else:
+        nodes = [
+            SurfaceTargetRef(
+                kind=TargetKind.APPENDIX,
+                label="",
+                witness=_make_witness("fi.appendix_ref", saved, s.pos),
+            )
+        ]
+    # Appendix sub-edit tail: ``<num> osa`` part-selectors and/or coordinated
+    # ``<num> liitteen`` siblings the base ref would otherwise drop. Gated so a
+    # plain whole-appendix ref is untouched. The whole ref (base + tail) shares one
+    # witness span so the tail tokens are covered.
+    if _appendix_tail_has_selector(s):
+        tail_start = s.save()
+        tail_parts = _appendix_subpart_tail(s)
+        if tail_parts:
+            tail_w = _make_witness("fi.appendix_ref", saved, s.pos)
+            base_labels = [
+                n.label if isinstance(n, SurfaceTargetRef) else "" for n in nodes
+            ]
+            nodes = [
+                SurfaceTargetRef(kind=TargetKind.APPENDIX, label=lbl, witness=tail_w)
+                for lbl in base_labels
+            ]
+            nodes.extend(
+                SurfaceTargetRef(
+                    kind=TargetKind.APPENDIX, label=n + sf, witness=tail_w
+                )
+                for n, sf in tail_parts
+            )
+        else:
+            s.restore(tail_start)
+    return nodes
 
 
 # ---- Insertion patterns (table-driven) ----
