@@ -1122,48 +1122,61 @@ def _merge_same_numbered_container_insert_ir(
                         break
             new_children.insert(insert_idx, amend_child)
 
-    seen_section_labels: Set[str] = set()
+    # Abort ONLY when the merge INCREASES a label's repeat count beyond the
+    # master's pre-existing baseline. A collision on a label that the live
+    # container already repeated (``master_preexisting_duplicates``) is inherited
+    # malformation the merge neither caused nor worsened — discarding a clean,
+    # non-colliding amendment insert over such an inherited duplicate silently
+    # loses a valid section body. The discriminator is the final per-label count
+    # vs. the master baseline: a label is merge-caused only when it now appears
+    # MORE often than it did in the live master before the merge.
+    merged_label_counts: Dict[str, int] = {}
     for child in new_children:
         if child.kind is not IRNodeKind.SECTION or not child.label:
             continue
-        if child.label in seen_section_labels:
-            dup_label = child.label
-            # Classify which side the colliding label came from. A label that
-            # the live container ALREADY repeated before the merge is a
-            # "preexisting_live_duplicate" abort (over-eager: the amendment did
-            # not introduce it). Otherwise distinguish an amendment-introduced
-            # label from a pre-existing single live sibling that the amendment
-            # re-supplied.
-            if dup_label in master_preexisting_duplicates:
-                origin = "preexisting_live_duplicate"
-            elif dup_label in amend_section_labels and dup_label not in master_section_labels:
-                origin = "amendment_child"
-            elif dup_label in amend_section_labels and dup_label in master_section_labels:
-                origin = "amendment_child_over_existing_sibling"
-            elif dup_label in master_section_labels and dup_label not in amend_section_labels:
-                origin = "preexisting_sibling"
-            else:
-                origin = "synthesized"
-            ctx = context or MergeContainerContext()
-            container_label = ctx.container_label or (master_node.label or "")
-            ordered_live_labels = [
-                c.label for c in master_node.children if c.kind is IRNodeKind.SECTION and c.label
-            ]
-            logger.warning(
-                "MERGE_DUPLICATE_SECTION_LABELS source=%s op=%s container=%s "
-                "duplicate_label=%s origin=%s amend_labels=%s live_labels=%s "
-                "live_preexisting_duplicates=%s",
-                ctx.source_statute or "?",
-                ctx.op_target or "?",
-                container_label or "?",
-                dup_label,
-                origin,
-                sorted(amend_section_labels),
-                ordered_live_labels,
-                sorted(master_preexisting_duplicates),
-            )
-            return None
-        seen_section_labels.add(child.label)
+        merged_label_counts[child.label] = merged_label_counts.get(child.label, 0) + 1
+
+    merge_caused_duplicate: Optional[str] = None
+    for label, count in merged_label_counts.items():
+        if count > 1 and count > master_label_counts.get(label, 0):
+            merge_caused_duplicate = label
+            break
+
+    if merge_caused_duplicate is not None:
+        dup_label = merge_caused_duplicate
+        # Classify which side the colliding label came from. A label that the
+        # live container ALREADY repeated before the merge is a
+        # "preexisting_live_duplicate" (over-eager abort, now suppressed above);
+        # the cases below describe genuinely merge-introduced duplicates.
+        if dup_label in master_preexisting_duplicates:
+            origin = "preexisting_live_duplicate"
+        elif dup_label in amend_section_labels and dup_label not in master_section_labels:
+            origin = "amendment_child"
+        elif dup_label in amend_section_labels and dup_label in master_section_labels:
+            origin = "amendment_child_over_existing_sibling"
+        elif dup_label in master_section_labels and dup_label not in amend_section_labels:
+            origin = "preexisting_sibling"
+        else:
+            origin = "synthesized"
+        ctx = context or MergeContainerContext()
+        container_label = ctx.container_label or (master_node.label or "")
+        ordered_live_labels = [
+            c.label for c in master_node.children if c.kind is IRNodeKind.SECTION and c.label
+        ]
+        logger.warning(
+            "MERGE_DUPLICATE_SECTION_LABELS source=%s op=%s container=%s "
+            "duplicate_label=%s origin=%s amend_labels=%s live_labels=%s "
+            "live_preexisting_duplicates=%s",
+            ctx.source_statute or "?",
+            ctx.op_target or "?",
+            container_label or "?",
+            dup_label,
+            origin,
+            sorted(amend_section_labels),
+            ordered_live_labels,
+            sorted(master_preexisting_duplicates),
+        )
+        return None
     return _tops._with_children(master_node, new_children)
 
 

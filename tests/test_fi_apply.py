@@ -5521,7 +5521,10 @@ class TestApplyContainerInsert:
         assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
         assert pathologies[0].detail["recovery_kind"] == "container_insert_base_chapter_merge"
 
-    def test_insert_merge_duplicate_labels_preserves_live_chapter_and_emits_skip_pathology(self):
+    def test_insert_clean_section_over_preexisting_duplicate_labels_materializes(self):
+        # Live chapter ALREADY repeats "29a" before any merge. The amendment
+        # cleanly inserts a non-colliding "30": the inherited duplicate is not
+        # merge-caused, so the insert must materialize rather than be discarded.
         state = _make_state(
             _body(
                 IRNode(
@@ -5568,14 +5571,22 @@ class TestApplyContainerInsert:
         chapter = next(child for child in result.ir.children if child.kind is IRNodeKind.CHAPTER and child.label == "3a")
         section_labels = [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION]
 
-        assert section_labels == ["29a", "29a"]
-        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK", "DESTRUCTIVE_SHAPE_LOSS_RISK"]
+        # The clean insert materialized; the inherited duplicate is preserved unchanged.
+        assert section_labels == ["29a", "29a", "30"]
+        new_sec = next(c for c in chapter.children if c.kind is IRNodeKind.SECTION and c.label == "30")
+        assert "new" in irnode_to_text(new_sec)
+        # No live-preservation skip pathology fires; only the merge's own
+        # destructive-shape-loss-risk signal remains.
+        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
         assert [p.detail["recovery_kind"] for p in pathologies] == [
-            "container_insert_base_chapter_merge_duplicate_labels",
             "container_insert_base_chapter_merge",
         ]
 
-    def test_fragmentary_replace_duplicate_labels_preserves_live_chapter_and_emits_skip_pathology(self):
+    def test_fragmentary_replace_over_preexisting_duplicate_overlays_payload(self):
+        # Live chapter ALREADY repeats "1" before any merge. The fragmentary
+        # REPLACE payload overlays the heading and the existing "2" section
+        # without colliding on anything new — the inherited "1,1" duplicate is
+        # not merge-caused, so the overlay must apply rather than be discarded.
         state = _make_state(
             _body(
                 IRNode(
@@ -5624,11 +5635,14 @@ class TestApplyContainerInsert:
         heading = next(child for child in chapter.children if child.kind is IRNodeKind.HEADING)
         section_labels = [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION]
 
-        assert heading.text == "Vanha otsikko"
+        # The payload heading and "2" overlay applied; inherited duplicate kept.
+        assert heading.text == "Uusi otsikko"
         assert section_labels == ["1", "1", "2"]
-        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK", "DESTRUCTIVE_SHAPE_LOSS_RISK"]
+        sec_two = next(c for c in chapter.children if c.kind is IRNodeKind.SECTION and c.label == "2")
+        assert "new two" in irnode_to_text(sec_two)
+        # No live-preservation skip pathology; only the merge's own signal.
+        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
         assert [p.detail["recovery_kind"] for p in pathologies] == [
-            "container_replace_fragmentary_heading_merge_duplicate_labels",
             "container_replace_fragmentary_heading_merge",
         ]
 

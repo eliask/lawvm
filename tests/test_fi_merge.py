@@ -1039,8 +1039,14 @@ def test_merge_section_keeps_carried_tail_when_text_only_prefix_matches() -> Non
     assert result_labels == ["1", "2", "3"]
 
 
-def test_merge_same_numbered_container_insert_fails_closed_on_duplicate_section_labels() -> None:
-    """Container insert must not silently prune duplicate section ownership by position."""
+def test_merge_same_numbered_container_insert_admits_clean_insert_over_preexisting_duplicate() -> None:
+    """A clean non-colliding insert must not be discarded over an inherited live duplicate.
+
+    The live container already repeats section "2" before any merge. The
+    amendment inserts a clean "3" that collides with nothing. The merge must
+    not abort on the inherited "2,2" malformation it neither caused nor
+    worsened — the valid "3" body must materialize.
+    """
     master = IRNode(
         kind=IRNodeKind.CHAPTER,
         label="1",
@@ -1060,13 +1066,103 @@ def test_merge_same_numbered_container_insert_fails_closed_on_duplicate_section_
 
     result = _merge_same_numbered_container_insert_ir(master, amend)
 
-    assert result is None
+    assert result is not None
+    section_labels = [c.label for c in result.children if c.kind is IRNodeKind.SECTION]
+    # The clean insert materialized.
+    assert "3" in section_labels
+    # The inherited duplicate is neither fixed nor worsened.
+    assert section_labels.count("2") == 2
+    # The inserted body is preserved.
+    inserted = next(c for c in result.children if c.kind is IRNodeKind.SECTION and c.label == "3")
+    assert "section 3" in irnode_to_text(inserted)
 
 
-def test_merge_duplicate_section_labels_diagnostic_carries_source_op_and_classification(
+def test_merge_same_numbered_container_insert_never_raises_label_count_above_master() -> None:
+    """The merge admits inherited duplicates but never produces a NET-NEW one.
+
+    Same-label amendment sections overlay the matching live section in place
+    rather than appending, so a label's post-merge repeat count can never
+    exceed its live-master baseline. This is the discriminator the abort guard
+    relies on: an output duplicate is "merge-caused" only when its count rises
+    above the master baseline — which this construction (an amendment that
+    repeats a fresh label AND re-supplies an inherited duplicate) must not do.
+    """
+    master = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("1", _sub("1", _content("section 1"))),
+            _sec("2", _sub("1", _content("section 2a"))),
+            _sec("2", _sub("1", _content("section 2b"))),
+        ),
+    )
+    # Amendment re-supplies inherited "2" and supplies a fresh "3" twice;
+    # overlay dedups both, so no label's count rises above the master baseline.
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("2", _sub("1", _content("section 2-new"))),
+            _sec("3", _sub("1", _content("section 3a"))),
+            _sec("3", _sub("1", _content("section 3b"))),
+        ),
+    )
+
+    result = _merge_same_numbered_container_insert_ir(master, amend)
+
+    assert result is not None
+    master_counts: dict[str, int] = {}
+    for c in master.children:
+        if c.kind is IRNodeKind.SECTION and c.label:
+            master_counts[c.label] = master_counts.get(c.label, 0) + 1
+    result_counts: dict[str, int] = {}
+    for c in result.children:
+        if c.kind is IRNodeKind.SECTION and c.label:
+            result_counts[c.label] = result_counts.get(c.label, 0) + 1
+    # No label appears more often than it did in the live master.
+    for label, count in result_counts.items():
+        assert count <= max(master_counts.get(label, 0), 1), (label, count)
+    # The fresh "3" materialized; the inherited "2,2" is neither fixed nor worsened.
+    assert result_counts["3"] == 1
+    assert result_counts["2"] == 2
+
+
+def test_merge_container_insert_payload_repeats_overlay_not_a_merge_caused_duplicate() -> None:
+    """A payload that repeats a label overlays in place — never a net-new duplicate.
+
+    A genuine merge-caused duplicate is exactly what the abort guard must reject
+    (count above the master baseline). Same-label payload sections overlay the
+    matching live/inserted section rather than appending, so the count can never
+    rise. This test pins that contract: the payload supplies "3" twice, the
+    result carries "3" exactly once, and the merge does not abort.
+    """
+    master = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(_sec("2", _sub("1", _content("live two"))),),
+    )
+    amend = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        children=(
+            _sec("3", _sub("1", _content("three-a"))),
+            _sec("3", _sub("1", _content("three-b"))),
+        ),
+    )
+
+    result = _merge_same_numbered_container_insert_ir(master, amend)
+
+    assert result is not None
+    labels = [c.label for c in result.children if c.kind is IRNodeKind.SECTION]
+    assert labels.count("3") == 1
+    # The master baseline ("2" once) is never exceeded either.
+    assert labels.count("2") == 1
+
+
+def test_merge_clean_insert_over_preexisting_duplicate_does_not_warn(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The abort diagnostic must self-evidence source, op, container, label, origin."""
+    """A clean insert over an inherited live duplicate must neither abort nor warn."""
     import logging
 
     # Live container ALREADY repeats section "2" before any merge; the
@@ -1097,21 +1193,12 @@ def test_merge_duplicate_section_labels_diagnostic_carries_source_op_and_classif
             ),
         )
 
-    assert result is None
+    assert result is not None
+    section_labels = [c.label for c in result.children if c.kind is IRNodeKind.SECTION]
+    assert "3" in section_labels
+    # The inherited duplicate is not merge-caused, so no abort diagnostic fires.
     records = [r for r in caplog.records if "MERGE_DUPLICATE_SECTION_LABELS" in r.getMessage()]
-    assert len(records) == 1
-    msg = records[0].getMessage()
-    # Source / op / container threaded through.
-    assert "source=1986/309" in msg
-    assert "op=INSERT chapter:9/section:3" in msg
-    assert "container=9" in msg
-    # The specific duplicate label and its child-vs-sibling classification.
-    assert "duplicate_label=2" in msg
-    assert "origin=preexisting_live_duplicate" in msg
-    # The pre-existing live duplication is named as the actual cause.
-    assert "live_preexisting_duplicates=['2']" in msg
-    # The amendment child itself ('3') introduced no collision.
-    assert "amend_labels=['3']" in msg
+    assert records == []
 
 
 # ---------------------------------------------------------------------------
