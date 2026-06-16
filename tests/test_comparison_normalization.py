@@ -141,7 +141,7 @@ def test_current_comparison_rule_sets_validate() -> None:
     from lawvm.norway.verify import _NO_COMPARISON_NORMALIZATION_RULES
     from lawvm.open_law.audit import _TYPOGRAPHY_COMPARISON_RULES
     from lawvm.sweden.fetch import _SE_COMPARE_NORMALIZATION_RULES
-    from lawvm.tools.editorial_hygiene import _FINLEX_ORACLE_COMPARISON_RULES
+    from lawvm.finland.oracle_comparison import _FINLEX_ORACLE_COMPARISON_RULES
 
     for rules in (
         _EE_CORE_NORMALIZATION_RULES,

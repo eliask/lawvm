@@ -23,7 +23,7 @@ from lawvm.finland.consolidated_artifacts import (
 from lawvm.finland.consolidated_store import select_cached_consolidated_path_index
 from lawvm.finland.consolidated_store import select_cached_consolidated_artifact
 from lawvm.finland.helpers import _parse_iso_date
-from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
+from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
 importlib.import_module("lawvm.finland.inline_repeal_stub")
 from lawvm.finland.metadata import (
     _amendment_effective_date,
@@ -612,6 +612,35 @@ def _read_oracle_at_pit(
     return data
 
 
+def _strip_editorial_note_containers(root: "etree._Element") -> None:
+    """Strip authorial/editorial note containers and elements from an oracle tree.
+
+    Removes hcontainer/block/container with name in the usual set (noteAuthorial,
+    signatures, ...) and any <authorialNote> elements. This is the canonical
+    "strip first" for oracle XML/HTML markup that defines authorial notes etc.,
+    so comparison paths (lev, structural, semantic diff) never see the note text
+    as if it were provision content.
+
+    Called from get_ground_truth, get_ground_truth_tree, and mirrored in
+    section_keys._normalize_oracle_section for per-section clones.
+    """
+    from typing import cast, List
+    _STRIP_NAMES = (
+        'amendmentEntryIntoForceAndApplianceProvisions',
+        'noteAuthorial', 'signatures', 'conclusions', 'attachments',
+    )
+    for name in _STRIP_NAMES:
+        for tag in ("hcontainer", "block", "container"):
+            for el in cast(List["etree._Element"], root.xpath(f'//*[local-name()="{tag}" and @name="{name}"]')):
+                parent = el.getparent()
+                if parent is not None:
+                    parent.remove(el)
+    for note in cast(List["etree._Element"], root.xpath(".//*[local-name()='authorialNote']")):
+        parent = note.getparent()
+        if parent is not None:
+            parent.remove(note)
+
+
 def get_ground_truth(
     statute_id: str,
     corpus: Optional[CorpusStore] = None,
@@ -639,15 +668,7 @@ def get_ground_truth(
     tree = etree.fromstring(oracle_bytes)
     body = tree.find(".//{*}body")
     root = body if body is not None else tree
-    _STRIP_NAMES = (
-        'amendmentEntryIntoForceAndApplianceProvisions',
-        'noteAuthorial', 'signatures', 'conclusions', 'attachments',
-    )
-    for name in _STRIP_NAMES:
-        for el in cast(List[etree._Element], root.xpath(f'//*[local-name()="hcontainer" and @name="{name}"]')):
-            parent = el.getparent()
-            if parent is not None:
-                parent.remove(el)
+    _strip_editorial_note_containers(root)
     # Strip historical duplicates that Finlex keeps for version history.
     # Sections: deduplicate by <num> text. Subsections/paragraphs: by eId base
     # (strip version suffix like "v20210680").
@@ -704,10 +725,17 @@ def get_ground_truth_tree(
 
     Uses the explicit consolidated selector (or the current default latest-
     cached/editorial selector when no selector is provided).
+
+    Editorial containers (noteAuthorial/huomautus blocks, signatures, etc.) and
+    <authorialNote> elements are stripped first so that downstream structural
+    comparison, semantic projection, and section extraction never see authorial
+    notes or other non-law markup as content.
     """
     oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
     if oracle_bytes is None:
         return None
     tree = etree.fromstring(oracle_bytes)
     body = tree.find(".//{*}body")
+    root = body if body is not None else tree
+    _strip_editorial_note_containers(root)
     return body if body is not None else tree

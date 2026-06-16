@@ -66,6 +66,79 @@ def test_build_stop_before_replay_notice_ignores_empty_cutoff() -> None:
     assert build_stop_before_replay_notice("", [{"statute_id": "1994/443"}]) is None
 
 
+def test_prepare_replay_plan_carries_base_source_body_patch_ids(monkeypatch) -> None:
+    class PatchTable:
+        def patch_source_body_xml(self, xml_bytes: bytes, amendment_mid: str) -> tuple[bytes, list[str]]:
+            assert amendment_mid == "1989/354"
+            return xml_bytes, ["body_patch/1989/354/0"]
+
+    monkeypatch.setattr(
+        "lawvm.finland.corrigendum.get_patch_table",
+        lambda: PatchTable(),
+    )
+
+    plan = prepare_replay_plan(
+        "1989/354",
+        mode="legal_pit",
+        strict_profile=None,
+        corpus=cast(CorpusStore, SimpleNamespace(read_source=lambda _sid: b"<body/>")),
+        stop_before="",
+        label_postprocessor=lambda _sid, label: label,
+        get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
+        resolve_applicable_amendment_records=lambda _sid, _mode, corpus=None: ([], None, ""),
+        get_consolidated_oracle_suspect=lambda _sid, corpus=None: None,
+        extract_inline_corrections=lambda xml_bytes, _sid: ([], xml_bytes),
+    )
+
+    assert plan.base_source_correction_op_ids == ("body_patch/1989/354/0",)
+
+
+def test_execute_replay_plan_emits_base_source_correction_finding() -> None:
+    plan = ReplayPlan(
+        parent_id="1989/354",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="1989/354",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[],
+        amendment_ids=[],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+        base_source_correction_op_ids=("body_patch/1989/354/0",),
+    )
+    findings: list[Finding] = []
+
+    def fail_process_muutoslaki(
+        _request: ProcessAmendmentRequest,
+        _sinks: ProcessAmendmentSinks,
+    ) -> PhaseResult[ReplayState]:
+        raise AssertionError("no amendments should be processed")
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=fail_process_muutoslaki,
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=lambda request, sinks=None: [],
+        future_repeals_for_index=lambda schedule: [],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=lambda ir: [],
+        findings_out=findings,
+    )
+
+    assert [(finding.kind, finding.source_statute) for finding in findings] == [
+        ("APPLY.SOURCE_CORRECTED_BY_PATCH", "1989/354")
+    ]
+    assert findings[0].detail["op_id"] == "body_patch/1989/354/0"
+    assert findings[0].detail["source_role"] == "base_statute_xml"
+
+
 def test_execute_replay_plan_records_post_amendment_tree_invariant_findings() -> None:
     plan = ReplayPlan(
         parent_id="test/1",

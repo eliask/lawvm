@@ -38,7 +38,7 @@ from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
+from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
 
 
 # ---------------------------------------------------------------------------

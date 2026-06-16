@@ -1753,9 +1753,9 @@ def test_wording_presentation_artifact_variants_normalized(left: str, right: str
 ])
 def test_kumottu_whole_node_regex_matches_known_patterns(text: str) -> None:
     """Every known editorial kumottu pattern must match _KUMOTTU_WHOLE_NODE_RE."""
-    from lawvm.semantic.projection import _KUMOTTU_WHOLE_NODE_RE
+    from lawvm.semantic.projection import _get_kumottu_whole_node_re
 
-    assert _KUMOTTU_WHOLE_NODE_RE.match(text), f"Pattern not matched: {text!r}"
+    assert _get_kumottu_whole_node_re().match(text), f"Pattern not matched: {text!r}"
 
 
 # ---------------------------------------------------------------------------

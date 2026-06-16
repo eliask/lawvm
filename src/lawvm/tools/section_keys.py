@@ -175,6 +175,10 @@ def extract_ir_sections(root: Any) -> Dict[str, Any]:
 
 
 _ORACLE_SECTION_STRIP_NAMES = {"noteAuthorial", "signatures", "conclusions", "attachments"}
+# Also treat bare <block name="noteAuthorial"> (and authorialNote elems) as
+# editorial notes to strip in oracle section clones for comparison. Finlex
+# oracle XML uses block (with outline="huomautus") in addition to hcontainer.
+_ORACLE_NOTE_BLOCK_TAGS = {"hcontainer", "block"}
 _ORACLE_VERSION_SUFFIX_RE = re.compile(r"v\d{8}$")
 _INLINE_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
 
@@ -332,12 +336,22 @@ def _normalize_oracle_section(sec: etree._Element) -> etree._Element:
     # detached clone so the source cache entry stays untouched.
     clone = copy.deepcopy(sec)
 
-    for el in cast(list[etree._Element], clone.xpath('.//*[local-name()="hcontainer"]')):
-        _strip_inline_prior_wording_sibling(el)
-        if el.get("name") in _ORACLE_SECTION_STRIP_NAMES:
-            parent = el.getparent()
-            if parent is not None:
-                parent.remove(el)
+    # Strip noteAuthorial etc from hcontainer *and* block (Finlex oracle uses
+    # <block name="noteAuthorial" outline="huomautus"> for authorial notes).
+    for tag in _ORACLE_NOTE_BLOCK_TAGS:
+        for el in cast(list[etree._Element], clone.xpath(f'.//*[local-name()="{tag}"]')):
+            _strip_inline_prior_wording_sibling(el)
+            if el.get("name") in _ORACLE_SECTION_STRIP_NAMES:
+                parent = el.getparent()
+                if parent is not None:
+                    parent.remove(el)
+
+    # Strip any inline <authorialNote> elements that may be present in the
+    # oracle section content (editorial/corrigendum residue).
+    for note in cast(list[etree._Element], clone.xpath('.//*[local-name()="authorialNote"]')):
+        parent = note.getparent()
+        if parent is not None:
+            parent.remove(note)
 
     _dedup_versioned_children(clone, "subsection")
     for sub in clone.findall("{*}subsection"):

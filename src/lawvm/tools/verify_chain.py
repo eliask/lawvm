@@ -41,7 +41,7 @@ from lawvm.finland.corpus import list_cached_consolidated_pit_locators
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
+from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
 
 # ---------------------------------------------------------------------------
 # Paths

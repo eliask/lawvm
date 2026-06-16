@@ -7,7 +7,7 @@ from typing import Any, Callable, Mapping
 
 import Levenshtein
 
-from lawvm.tools.editorial_hygiene import strip_editorial_annotations
+from lawvm.finland.oracle_comparison import strip_editorial_annotations
 
 
 def _clean(text: str) -> str:

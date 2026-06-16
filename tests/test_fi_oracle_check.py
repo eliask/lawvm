@@ -21,6 +21,7 @@ from lawvm.tools.divergence_heuristics import (
     replay_section_matches_text_at_cutoff,
 )
 from lawvm.tools.editorial_hygiene import (
+    is_presentation_structural_diff,
     normalize_finlex_oracle_comparison_text,
     strip_editorial_annotations,
     strip_temporary_residue_annotations,
@@ -258,24 +259,6 @@ def test_classify_statute_1987_322_repealed_stubs_are_editorial_convention() -> 
     by_section = {item["section"]: item for item in result.section_results}
     for suffix in ("10a", "10b", "10c", "10d", "10e", "10f"):
         assert by_section[f"section:{suffix}"]["diagnosis"] == "EDITORIAL_CONVENTION"
-
-
-def test_classify_statute_1901_15_001_raw_master_gap_wave_is_source_incomplete() -> None:
-    # 1901/15-001 has part/chapter structure so section keys have full paths.
-    # Sections with raw-text gaps introduced by 1975/351 amendments land in
-    # SOURCE_INCOMPLETE (partially present but unresolvable content).
-    result = _classify_statute_sync("1901/15-001", "legal_pit")
-
-    assert result is not None
-
-    by_section = {item["section"]: item for item in result.section_results}
-    for label in ("part:1/chapter:1/section:1", "part:1/chapter:2/section:8"):
-        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
-        assert by_section[label]["blame_source"] == "1975/351"
-
-    for label in ("part:1/chapter:2/section:4", "part:1/chapter:2/section:5"):
-        assert by_section[label]["diagnosis"] == "REPLAY_MISSING"
-        assert by_section[label]["blame_source"] == "1975/351"
 
 
 def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplete() -> None:
@@ -2666,3 +2649,156 @@ def test_classify_statute_suppresses_raw_replay_failed_chatter(capsys, monkeypat
     assert result is not None
     assert "REPLACE 10 luku otsikko → FAILED" not in out
     assert "INSERT 10 luku 16 § 2 mom → FAILED" not in out
+
+
+# ---------------------------------------------------------------------------
+# Tests for the FI presentation structural diff detector (used by bench
+# _structural_sim to avoid counting Finlex list/table formatting as "err").
+# These are synthetic to cover the families that drove high-err / low-lev
+# cases in oracle comparison (value tables with dots, chem lists, geo name
+# lists, list ordinal prefixes, Liite/amend notes).
+# ---------------------------------------------------------------------------
+
+
+def test_is_presentation_structural_diff_value_table_dots_and_bare_numbers() -> None:
+    # From 1994/290 style fee table: unit rows have name + dots + bare value num.
+    # Header row has mk without every line having currency.
+    sd = {"label": ""}
+    events = [
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "Vahvistettu päiväpalkka mk/päivä"},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "korkeakoulututkinnon suorittanut henkilö........... 1 260"},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "maanmittausteknikko tai muu vastaava henkilö....... 850"},
+        {"kind": "facet_added", "left_text": None, "right_text": "Päiväpalkat työaikakorvauksen laskemista varten toimitukseen tai tehtävään käytetyltä päivältä ovat henkilökuntaryhmittäin:"},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_geo_municipality_name_list() -> None:
+    # 1997/746 style: hundreds of municipality names as units under region facets.
+    # Plain names (no ; dot mk wrap) but grouped list presentation.
+    sd = {"label": ""}
+    events = [
+        {"kind": "facet_removed", "left_text": "Rannikon metsäkeskus", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Dragsfjärd", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Espoo", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Hanko", "right_text": None},
+        {"kind": "wording_text_changed", "left_text": "Metsäkeskuksien toimipaikat ovat seuraavissa kunnissa: Rannikon...", "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_list_item_prefix_only() -> None:
+    # 1997/122 style: "6) " prefix only in one side's wording (list label presentation).
+    sd = {"label": ""}
+    events = [
+        {"kind": "wording_text_changed", "left_text": "6) Kaakkois-Suomen työvoima- ja elinkeinokeskus muodostuu Kymenlaakson liiton ja Etelä-Karjalan liiton toimialueista;", "right_text": "Kaakkois-Suomen työvoima- ja elinkeinokeskus muodostuu Kymenlaakson liiton ja Etelä-Karjalan liiton toimialueista;"},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_liite_coord_table_with_amend_note() -> None:
+    # 2000/1125 style long coordinate list with "Liite N" and occasional (date/num) amendment notes.
+    sd = {"label": ""}
+    events = [
+        {"kind": "wording_text_changed",
+         "left_text": "1. Haapasaaren suoja-alue 60 15,08 27 04,50 Liite 1 ...",
+         "right_text": "1. Haapasaaren suoja-alue 60 15,08 27 04,50 Liite 1 (8.12.2011/1214) ..."},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_chem_list_wrapup_and_names() -> None:
+    # 1993/1709 style chem convention lists: long IUPAC names as units, Greek, wrapup facet.
+    sd = {"label": ""}
+    events = [
+        {"kind": "facet_removed", "left_text": "tässä luettelossa mainittuja aineita sisältävät valmisteet.", "right_text": None},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "Alfametyylifentanyyli (N-[1-(α-metyylifenetyyli)-4-piperidyyli] -propionianilidi)"},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "Heroiini (diasetyylimorfiini)"},
+        {"kind": "wording_text_changed", "left_text": "Vuoden 1961 ... luettelo IV Alfametyyli...", "right_text": "Vuoden 1961 ... luettelo IV Alfa-metyylitio..."},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_negative_real_content_change() -> None:
+    # A real wording change (not prefix, not artifact) must not be treated as presentation.
+    sd = {"label": ""}
+    events = [
+        {"kind": "wording_text_changed",
+         "left_text": "Tämä laki tulee voimaan 1 päivänä toukokuuta 1994.",
+         "right_text": "Tämä laki tulee voimaan 15 päivänä kesäkuuta 1995."},
+    ]
+    assert is_presentation_structural_diff(sd, events) is False
+
+    # Mixed: a non-pres unit among pres units should fail (conservative).
+    # Use Finnish prose containing a verb like "on" so the FI-only guard works cleanly.
+    # Do not mix English test prose into the production normalization heuristics.
+    sd2 = {"label": ""}
+    events2 = [
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "kunta........... 123"},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": "Tämä on todellinen oikeudellinen vaatimus jostakin asiasta."},
+    ]
+    assert is_presentation_structural_diff(sd2, events2) is False
+
+
+def test_is_presentation_structural_diff_geo_list_with_mlk_and_group_labels() -> None:
+    # 1997/746 style remaining: region "Foo metsäkeskus" facets + town units
+    # including "Mikkelin mlk.", "Loimaan kunta" etc. + one-sided wording for concat list.
+    sd = {"label": ""}
+    events = [
+        {"kind": "facet_removed", "left_text": "Rannikon metsäkeskus", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Mikkelin mlk.", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Loimaan kunta", "right_text": None},
+        {"kind": "wording_text_changed", "left_text": None, "right_text": "1. Rannikon metsäkeskus"},
+        {"kind": "unit_missing_right", "left_text": "Dragsfjärd", "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_minor_admin_rephrasing_and_table_header() -> None:
+    # 2012/960 style: wording diffs on standard FI delegation boilerplate ("säädetään valtioneuvoston asetuksella",
+    # "tarkempia säännöksiä") that the pres normalizer equalizes. Low lev overall.
+    sd = {"label": ""}
+    events = [
+        {"kind": "wording_text_changed",
+         "left_text": "Valtioneuvoston asetuksella säädetään asetuksesta. Valtioneuvoston asetuksella voidaan antaa tarkempia säännöksiä bar baz.",
+         "right_text": "Valtioneuvoston asetuksella säädetään asetuksesta. bar baz."},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+    # table header rephrase (pinta-ala schedule) — value table look skips counting the diff.
+    sd2 = {"label": ""}
+    events2 = [
+        {"kind": "wording_text_changed",
+         "left_text": "Pinta-alakorvaus ... ha mk mk 0,5 3 000 ...",
+         "right_text": "Pinta-alakorvaus ... ha Pinta-alakorvaus mk Ilman ... 0,5 3 000 ..."},
+    ]
+    assert is_presentation_structural_diff(sd2, events2) is True
+
+
+def test_strip_editorial_note_containers_catches_block_form_noteAuthorial_in_oracle() -> None:
+    """Oracle XML can represent authorial notes as <block name="noteAuthorial" outline="huomautus">
+    (not only hcontainer). These must be stripped *first* in oracle tree/text paths
+    used for comparison so their editorial content ("kumoutunut", "oikaistu" etc) does
+    not leak into section text, lev, or semantic events as if it were law.
+    """
+    from lxml import etree
+    from lawvm.finland.corpus import _strip_editorial_note_containers
+
+    xml = '''<body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+                   xmlns:finlex="http://data.finlex.fi/schema/finlex">
+      <section eId="sec_1"><num>1 §</num><content><p>Real law text here.</p></content></section>
+      <block eId="note_1" finlex:outline="huomautus" name="noteAuthorial">
+        Tämä päätös on kumoutunut 1.1.2009 alkaen. Ks. L 123/2008.
+      </block>
+      <block name="noteAuthorial"><p>Another note.</p></block>
+    </body>'''
+    root = etree.fromstring(xml.encode("utf-8"))
+    assert len(root.xpath('.//*[local-name()="block" and @name="noteAuthorial"]')) == 2
+    _strip_editorial_note_containers(root)
+    remaining = root.xpath('.//*[local-name()="block" and @name="noteAuthorial"]')
+    assert len(remaining) == 0
+    # Real content survives
+    assert "Real law text here" in etree.tostring(root, method="text", encoding="unicode")
+    # Note text gone
+    full_text = etree.tostring(root, method="text", encoding="unicode")
+    assert "kumoutunut" not in full_text

@@ -505,7 +505,7 @@ def _split_digit_reset_subparagraph_runs(
 # EDITORIAL_STRIP: image, note, footnote, authorialNote blocks
 # ---------------------------------------------------------------------------
 
-_EDITORIAL_BLOCK_NAMES = frozenset({"image", "note", "footnote"})
+_EDITORIAL_BLOCK_NAMES = frozenset({"image", "note", "footnote", "noteAuthorial"})
 
 
 def _is_editorial_block(node: IRNode) -> bool:

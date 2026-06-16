@@ -41,7 +41,8 @@ from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
-from lawvm.tools.editorial_hygiene import (
+from lawvm.semantic.projection import get_oracle_text_normalizer
+from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     count_kumottu_bytes,
     normalize_finlex_oracle_comparison_text,
 )
@@ -337,6 +338,9 @@ def _runs_dir() -> Path:
 
 
 def _normalize(t: str) -> str:
+    # Broader editorial cleanup: call the concrete FI normalizer directly, since
+    # the generic registry signature is (str) -> str and does not expose the
+    # strip_editorial flag.
     return normalize_finlex_oracle_comparison_text(t, strip_editorial=True)
 
 
@@ -506,6 +510,18 @@ def _is_wording_whitespace_only_diff(sd: dict[str, Any], events: list[dict[str, 
     return True
 
 
+# Use the jurisdiction-registered presentation detector (registered by
+# the Finland module in its oracle_comparison.py). Bench itself does not
+# import any jurisdiction package.
+from lawvm.semantic.projection import is_presentation_structural_diff as _is_presentation_structural_diff
+
+
+def _is_oracle_presentation_list_or_table(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
+    # Delegation to the registered dispatcher. Default jurisdiction "fi"
+    # for current FI-centric bench usage.
+    return _is_presentation_structural_diff(sd, events, "fi")
+
+
 def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     """Structural section score — consistent with ``structural-review --dump``.
 
@@ -552,6 +568,8 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
         if _is_digit_renesting_mismatch(sd, events):
             continue
         if _is_wording_whitespace_only_diff(sd, events):
+            continue
+        if _is_oracle_presentation_list_or_table(sd, events):
             continue
         penalised += 1
     return 1.0 - penalised / len(non_editorial), event_counts
@@ -694,9 +712,12 @@ def _section_score(
                 continue
             from lawvm.core.ir_helpers import irnode_to_text
             from lawvm.xml_ingest import xml_element_to_text
+            norm = get_oracle_text_normalizer("fi")
 
             r_text = re.sub(r"[^a-z0-9äöå]", "", irnode_to_text(r_node).lower())
-            o_text = re.sub(r"[^a-z0-9äöå]", "", xml_element_to_text(o_el).lower())
+            o_raw = xml_element_to_text(o_el)
+            o_norm = norm(o_raw)
+            o_text = re.sub(r"[^a-z0-9äöå]", "", o_norm.lower())
             if not r_text and not o_text:
                 scores.append(1.0)
             elif not r_text or not o_text:
@@ -766,9 +787,12 @@ def _section_score_with_warning_summary(
                 continue
             from lawvm.core.ir_helpers import irnode_to_text
             from lawvm.xml_ingest import xml_element_to_text
+            norm = get_oracle_text_normalizer("fi")
 
             r_text = re.sub(r"[^a-z0-9äöå]", "", irnode_to_text(r_node).lower())
-            o_text = re.sub(r"[^a-z0-9äöå]", "", xml_element_to_text(o_el).lower())
+            o_raw = xml_element_to_text(o_el)
+            o_norm = norm(o_raw)
+            o_text = re.sub(r"[^a-z0-9äöå]", "", o_norm.lower())
             if not r_text and not o_text:
                 scores.append(1.0)
             elif not r_text or not o_text:

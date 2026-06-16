@@ -222,3 +222,14 @@
   correction_type: johtolause
   notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): dittographic 'momentti' in '10 §:ään uusi momentti 3 momentti' → 'uusi 3 momentti'; disambiguated by the jolloin renumber clause 'nykyinen 3 momentti siirtyy 4 momentiksi' (insert a new 3rd momentti, current 3rd shifts to 4th)."
   verified: "2026-06-16"
+
+# 354/1989 (Laki Euroopan neuvoston Suomen valtuuskunnasta) —
+# base XML has a stray escaped transport marker in the commencement text:
+# "touko&gt;kuuta" → "toukokuuta". The official consolidation/oracle carries the
+# corrected month word, and the edit is a one-character source transport defect.
+- amendment_id: "354/1989"
+  wrong_text: "Tämä laki tulee voimaan 1 päivänä touko>kuuta 1989."
+  correct_text: "Tämä laki tulee voimaan 1 päivänä toukokuuta 1989."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML section 6 contains escaped stray marker 'touko&gt;kuuta'; official consolidation has 'toukokuuta'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-17"

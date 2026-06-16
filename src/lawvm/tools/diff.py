@@ -25,7 +25,7 @@ from lawvm.xml_ingest import xml_element_to_text
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools._compile_report_record import report_record_from_facade
-from lawvm.tools.editorial_hygiene import normalize_kumottu_stubs, strip_editorial_annotations
+from lawvm.finland.oracle_comparison import normalize_kumottu_stubs, strip_editorial_annotations
 from lawvm.tools.section_keys import (
     display_section_key,
     extract_ir_sections,

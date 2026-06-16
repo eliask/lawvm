@@ -42,6 +42,7 @@ class ReplayPlan:
     cutoff_date: Any
     oracle_version_amendment_id: str
     oracle_suspect: str
+    base_source_correction_op_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,7 +293,12 @@ def prepare_replay_plan(
         # patch_source_body_xml applies to amendment bodies, but the base statute is
         # never processed by process_muutoslaki, so we must apply them here.
         from lawvm.finland.corrigendum import get_patch_table as _get_corr_patch_table
-        orig_bytes, _ = _get_corr_patch_table().patch_source_body_xml(orig_bytes, parent_id)
+        orig_bytes, base_source_correction_op_ids = _get_corr_patch_table().patch_source_body_xml(
+            orig_bytes,
+            parent_id,
+        )
+    else:
+        base_source_correction_op_ids = []
 
     ctx = StatuteContext.from_xml(orig_bytes, label_postprocessor)
     initial_state = ReplayState(ir=ctx.base_ir)
@@ -325,6 +331,7 @@ def prepare_replay_plan(
         cutoff_date=cutoff_date,
         oracle_version_amendment_id=oracle_version_amendment_id or "",
         oracle_suspect=oracle_suspect or "",
+        base_source_correction_op_ids=tuple(base_source_correction_op_ids),
     )
 
 
@@ -506,6 +513,21 @@ def execute_replay_plan(
         migration_events_out=migration_events_out,
         temporal_events_out=temporal_events_out,
         restructure_plans_out=restructure_plans_out,
+    )
+    signals.findings.extend(
+        Finding(
+            kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
+            role=OBLIGATION_ROLE,
+            stage="base_source_acquisition",
+            blocking=False,
+            source_statute=plan.parent_id,
+            detail={
+                "op_id": op_id,
+                "corrected_by": "corrigendum_patch_table",
+                "source_role": "base_statute_xml",
+            },
+        )
+        for op_id in plan.base_source_correction_op_ids
     )
 
     chapter_seed_diagnostics: list[ChapterSeedDiagnostic] = []

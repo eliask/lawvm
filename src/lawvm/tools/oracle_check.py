@@ -34,7 +34,7 @@ from lxml import etree
 
 from lawvm.core.semantic_types import IRNodeKind
 
-from lawvm.tools.editorial_hygiene import (
+from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
     strip_kumottu_attribution,

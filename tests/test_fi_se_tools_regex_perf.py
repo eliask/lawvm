@@ -426,7 +426,7 @@ def test_future_repeal_overlay_adversarial_gap_exceeds_bound_is_fast() -> None:
 # "kumottu" fast-guard in normalize_kumottu_stubs.
 # ---------------------------------------------------------------------------
 
-from lawvm.tools.editorial_hygiene import (
+from lawvm.finland.oracle_comparison import (
     _KUMOTTU_STUBS_RE,
     normalize_kumottu_stubs,
 )

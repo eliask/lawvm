@@ -22,10 +22,9 @@ from lawvm.semantic.model import (
     normalize_semantic_label,
     normalize_visible_semantic_label,
 )
-from lawvm.tools.editorial_hygiene import (
-    _EDITORIAL_RE,
-    _TEMPORARY_RESIDUE_RE,
-)
+# The concrete regexes are FI-specific and live in finland/oracle_comparison.
+# We import them lazily inside the functions that build the combined kumottu
+# regexes, to avoid top-level import cycles with the registration code.
 
 
 # ---------------------------------------------------------------------------
@@ -65,33 +64,93 @@ def _detect_inline_repeal_stub(
     return fn(node)
 
 
-_KUMOTTU_WHOLE_NODE_RE = re.compile(
-    r'^\s*(?:'
-    + _EDITORIAL_RE.pattern
-    + r'|'
-    + _TEMPORARY_RESIDUE_RE.pattern
-    + r')\s*$',
-    re.DOTALL | re.IGNORECASE,
-)
+# ---------------------------------------------------------------------------
+# Jurisdiction dispatch: oracle text normalizers and presentation diff detectors
+#
+# Each jurisdiction can register:
+# - a text normalizer for oracle comparison (used in bench, diff, explain, etc.)
+# - a detector for "this structural diff is purely presentation artifact"
+#   (used in bench _structural_sim to avoid counting editorial diffs as errors)
+#
+# Shared code never imports jurisdiction modules directly for these; it dispatches
+# via the registered table. Jurisdictions register at import time (see
+# lawvm/finland/oracle_comparison.py).
+# ---------------------------------------------------------------------------
+
+_ORACLE_TEXT_NORMALIZERS: dict[str, Callable[[str], str]] = {}
+_PRESENTATION_STRUCTURAL_DIFF_DETECTORS: dict[str, Callable[[dict[str, Any], list[dict[str, Any]]], bool]] = {}
 
 
-# Matches the leading ordinal(s) in a kumottu editorial like:
-#   "1–2 momentit on kumottu ..."   → range [1, 2]
-#   "3 momentti on kumottu ..."     → [3]
-#   "1 ja 2 momentti on kumottu ..." → [1, 2]
-#   "1, 2 ja 3 kohta on kumottu ..." → [1, 2, 3]
-# Captured groups: (first_num, optional_dash_second, optional_ja_list_tail)
-# Works for momentti/momentit/mom/kohta/kohdat/alakohta and similar ordinal units.
-_KUMOTTU_ORDINAL_PREFIX_RE = re.compile(
-    r'^\s*(\d+)'                                          # first number
-    r'(?:'
-    r'\s*[–\-—]\s*(\d+)'                                 # optional range end: "1–2"
-    r'|'
-    r'((?:\s*,\s*\d+)*(?:\s+ja\s+\d+)?)'                 # optional enumeration: ", 2 ja 3"
-    r')'
-    r'\s*(?:mome?ntti|momentit|mom\.?|kohta|kohdat|alakohta|alakohdat)',
-    re.IGNORECASE,
-)
+def register_oracle_text_normalizer(jurisdiction: str, fn: Callable[[str], str]) -> None:
+    """Register a jurisdiction-specific oracle text normalizer for comparisons.
+
+    The normalizer is applied to oracle text before Levenshtein, semantic diff,
+    etc.  Finland registers its normalize_finlex_oracle_comparison_text here.
+    """
+    _ORACLE_TEXT_NORMALIZERS[jurisdiction] = fn
+
+
+def get_oracle_text_normalizer(jurisdiction: str = "fi") -> Callable[[str], str]:
+    """Return the registered normalizer for the jurisdiction, or identity if none."""
+    return _ORACLE_TEXT_NORMALIZERS.get(jurisdiction, lambda t: t)
+
+
+def register_presentation_structural_diff_detector(
+    jurisdiction: str, fn: Callable[[dict[str, Any], list[dict[str, Any]]], bool]
+) -> None:
+    """Register a jurisdiction-specific detector for presentation-only structural diffs.
+
+    Used by bench to decide whether to penalise a section in struct_sim.
+    """
+    _PRESENTATION_STRUCTURAL_DIFF_DETECTORS[jurisdiction] = fn
+
+
+def is_presentation_structural_diff(
+    sd: dict[str, Any], events: list[dict[str, Any]], jurisdiction: str = "fi"
+) -> bool:
+    """Dispatch to the registered detector for the jurisdiction.
+
+    Returns False (i.e. treat as real diff) if no detector registered.
+    """
+    fn = _PRESENTATION_STRUCTURAL_DIFF_DETECTORS.get(jurisdiction)
+    if fn is None:
+        return False
+    return fn(sd, events)
+
+
+# These are built lazily to avoid import-time cycles with the FI oracle_comparison
+# module (which registers itself back into projection).
+_KUMOTTU_WHOLE_NODE_RE = None
+_KUMOTTU_ORDINAL_PREFIX_RE = None
+
+def _get_kumottu_whole_node_re():
+    global _KUMOTTU_WHOLE_NODE_RE
+    if _KUMOTTU_WHOLE_NODE_RE is None:
+        from lawvm.finland.oracle_comparison import _EDITORIAL_RE, _TEMPORARY_RESIDUE_RE
+        _KUMOTTU_WHOLE_NODE_RE = re.compile(
+            r'^\s*(?:'
+            + _EDITORIAL_RE.pattern
+            + r'|'
+            + _TEMPORARY_RESIDUE_RE.pattern
+            + r')\s*$',
+            re.DOTALL | re.IGNORECASE,
+        )
+    return _KUMOTTU_WHOLE_NODE_RE
+
+def _get_kumottu_ordinal_prefix_re():
+    global _KUMOTTU_ORDINAL_PREFIX_RE
+    if _KUMOTTU_ORDINAL_PREFIX_RE is None:
+        _KUMOTTU_ORDINAL_PREFIX_RE = re.compile(
+            r'^\s*(\d+)'                                          # first number
+            r'(?:'
+            r'\s*[–\-—]\s*(\d+)'                                 # optional range end: "1–2"
+            r'|'
+            r'((?:\s*,\s*\d+)*(?:\s+ja\s+\d+)?)'                 # optional enumeration: ", 2 ja 3"
+            r')'
+            r'\s*(?:mome?ntti|momentit|mom\.?|kohta|kohdat|alakohta|alakohdat)',
+            re.IGNORECASE,
+        )
+    return _KUMOTTU_ORDINAL_PREFIX_RE
 
 
 def _extract_kumottu_ordinal_range(text: str) -> list[int] | None:
@@ -103,7 +162,7 @@ def _extract_kumottu_ordinal_range(text: str) -> list[int] | None:
 
     Returns a sorted list of integers (e.g. [1, 2]) or None if no ordinals found.
     """
-    m = _KUMOTTU_ORDINAL_PREFIX_RE.match(text.strip())
+    m = _get_kumottu_ordinal_prefix_re().match(text.strip())
     if not m:
         return None
     first = int(m.group(1))
@@ -125,7 +184,7 @@ def _is_kumottu_editorial_node(text: str, kind: str) -> bool:
     if not text:
         return False
     stripped = text.strip()
-    if _KUMOTTU_WHOLE_NODE_RE.match(stripped):
+    if _get_kumottu_whole_node_re().match(stripped):
         return True
     # Finlex sometimes inserts the source-law title between "L:lla"/"A:lla"
     # and the repeal citation, e.g.:

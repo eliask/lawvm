@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from lawvm.corpus_store import get_corpus_store
-from lawvm.tools.editorial_hygiene import count_kumottu_bytes
+from lawvm.finland.oracle_comparison import count_kumottu_bytes
 
 
 _CONTENT_ABSENT_BYTES = b"contentAbsent"

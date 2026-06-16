@@ -53,7 +53,7 @@ from lawvm.tools.divergence_heuristics import replay_section_has_future_effectiv
 from lawvm.tools._compile_report_record import report_record_from_facade
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.replay_products import fi_label_norm
-from lawvm.tools.editorial_hygiene import (
+from lawvm.finland.oracle_comparison import (
     strip_editorial_annotations,
     strip_kumottu_attribution,
     strip_temporary_residue_annotations,
@@ -343,7 +343,8 @@ def _section_filter_matches(key: str, section_filter: str) -> bool:
 
 def _load_johtolause(source_amendment_id: str) -> str:
     """Load and normalize johtolause for an amendment ID."""
-    from lawvm.finland.corpus import get_corpus, get_johtolause, _normalize_johtolause_verbs
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.metadata import get_johtolause, _normalize_johtolause_verbs
 
     try:
         cs = get_corpus()
