@@ -854,6 +854,11 @@ function applyLocale(statuteLang, juris) {
   T = STR[uiLang];
   J = JURIS[juris] || JURIS.generic;
   document.documentElement.lang = uiLang;
+  document.title = tr('documentTitle');
+  const desc = document.querySelector('meta[name="description"]');
+  if (desc) desc.setAttribute('content', tr('metaDescription'));
+  const appTitle = document.getElementById('app-title');
+  if (appTitle) appTitle.textContent = tr('appTitle');
   const tg = document.getElementById('tagline');
   if (tg) tg.textContent = tr('tagline');
   const ft = document.getElementById('footer-text');

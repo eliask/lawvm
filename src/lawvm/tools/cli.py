@@ -11307,7 +11307,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     export_md_git_p.add_argument(
         "--all-replayable",
         action="store_true",
-        help="[-j fi] export all farchive statutes with substantive source bodies, skipping unreplayable statutes",
+        help="[-j fi] export all Finnish base laws active at least once in the selected timeline, skipping unreplayable statutes",
     )
     export_md_git_p.add_argument(
         "--limit",

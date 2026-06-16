@@ -21,8 +21,9 @@ from typing import Any, BinaryIO
 from zoneinfo import ZoneInfo
 
 from lawvm.core.ir import IRNode
-from lawvm.core.ir_helpers import structural_subtree_hash
+from lawvm.core.ir_helpers import is_zombie, structural_subtree_hash
 from lawvm.tools.export_transition_graph import ReplayBundle
+from lawvm.tools.export_transition_graph import covering_units
 from lawvm.tools.transition_graph_interlinks import (
     InterlinkTargetPreviewContext,
     LawvmInterlinkRow,
@@ -53,8 +54,9 @@ _SKIP_INLINE_CHILD_KINDS = _ADDRESSABLE_KINDS | {"num", "heading"}
 _MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*_{}\[\]()#+.!|<>-])")
 _ANCHOR_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
 _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
-_NUMERIC_STATUTE_ID_RE = re.compile(r"^(\d{1,6})/(\d{4})$")
-_NUMERIC_STATUTE_PATH_RE = re.compile(r"^acts/(\d{4})/(\d{1,6})\.md$")
+_NUMERIC_STATUTE_ID_RE = re.compile(r"^(\d{1,6}(?:-[A-Za-z0-9]{1,8})?)/(\d{4})$")
+_NUMERIC_STATUTE_PATH_RE = re.compile(r"^acts/(\d{4})/(\d{1,6}(?:-[A-Za-z0-9]{1,8})?)\.md$")
+_ROOT_README_YEAR_LINKS_PER_ROW = 8
 _DEFAULT_BRANCH = "in-force"
 _SUBSTANTIVE_BODY_KINDS = frozenset(
     {
@@ -78,6 +80,7 @@ class MaterializedSnapshot:
     effective_date: str
     root: IRNode
     tree_hash: str
+    in_force: bool = True
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -112,6 +115,12 @@ class PreparedStatute:
             return None
         return self.snapshots[index]
 
+    def in_force_snapshot_at_or_before(self, as_of: str) -> MaterializedSnapshot | None:
+        snapshot = self.snapshot_at_or_before(as_of)
+        if snapshot is None or not snapshot.in_force:
+            return None
+        return snapshot
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FastImportCommit:
@@ -139,6 +148,7 @@ class RenderedMarkdownVersion:
     effective_date: str
     tree_hash: str
     content: bytes
+    in_force: bool = True
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -191,6 +201,7 @@ class SpoolVersionRow:
     path: str
     effective_date: str
     content: bytes
+    in_force: bool
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -227,10 +238,10 @@ def statute_ids_from_fi_corpus(*, substantive_body_only: bool = True) -> tuple[s
     corpus = adapter.profile.corpus()
     if corpus is None:
         raise ValueError("Finland transition-graph profile has no corpus")
-    raw_statute_ids = tuple(corpus.list_statute_ids())
+    raw_statute_ids = _fi_base_law_ids_from_corpus(corpus)
     accepted_ids: list[str] = []
     for raw_id in raw_statute_ids:
-        if substantive_body_only and not _corpus_source_has_substantive_body(corpus, raw_id):
+        if substantive_body_only and not _corpus_base_law_has_substantive_body(corpus, raw_id):
             continue
         accepted_ids.append(adapter.profile.canonical_statute_id(raw_id))
     return tuple(
@@ -239,6 +250,25 @@ def statute_ids_from_fi_corpus(*, substantive_body_only: bool = True) -> tuple[s
             key=lambda item: _statute_list_sort_key_for_id(item, jurisdiction="fi"),
         )
     )
+
+
+def _fi_base_law_ids_from_corpus(corpus: object) -> tuple[str, ...]:
+    oracle_path_index = getattr(corpus, "oracle_path_index", None)
+    if callable(oracle_path_index):
+        return tuple(str(statute_id) for statute_id in oracle_path_index())
+    list_statute_ids = getattr(corpus, "list_statute_ids", None)
+    if callable(list_statute_ids):
+        return tuple(str(statute_id) for statute_id in list_statute_ids())
+    raise ValueError("Finland corpus exposes neither oracle_path_index nor list_statute_ids")
+
+
+def _corpus_base_law_has_substantive_body(corpus: object, statute_id: str) -> bool:
+    read_oracle = getattr(corpus, "read_oracle", None)
+    if callable(read_oracle):
+        xml_bytes = read_oracle(statute_id)
+        if xml_bytes:
+            return _source_xml_has_substantive_body(xml_bytes)
+    return _corpus_source_has_substantive_body(corpus, statute_id)
 
 
 def _corpus_source_has_substantive_body(corpus: object, statute_id: str) -> bool:
@@ -301,9 +331,12 @@ def prepare_markdown_git_export(
                     effective_date=effective_date,
                     root=root,
                     tree_hash=structural_subtree_hash(root),
+                    in_force=_materialized_root_in_force(root, effective_date),
                 )
             )
         if not snapshots:
+            continue
+        if not any(snapshot.in_force for snapshot in snapshots):
             continue
         rows, targets = _prepare_interlinks(
             statute_id=canonical_id,
@@ -372,7 +405,14 @@ def render_markdown_git_statute(
                 effective_date=snapshot.effective_date,
                 tree_hash=snapshot.tree_hash,
                 content=_ensure_lf(markdown).encode("utf-8"),
+                in_force=snapshot.in_force,
             )
+        )
+    if not any(version.in_force for version in versions):
+        return SkippedMarkdownStatute(
+            statute_id=request.statute_id,
+            reason_kind="no_in_force_snapshots",
+            message="replay produced no in-force statute versions",
         )
     return RenderedMarkdownStatute(
         statute_id=statute.statute_id,
@@ -383,6 +423,24 @@ def render_markdown_git_statute(
         versions=tuple(versions),
         amendment_causes_by_date=statute.amendment_causes_by_date,
     )
+
+
+def _materialized_root_in_force(root: IRNode, effective_date: str) -> bool:
+    for _address, node in covering_units(root, granularity="subsection"):
+        if _addressable_node_in_force(node, effective_date):
+            return True
+    return False
+
+
+def _addressable_node_in_force(node: IRNode, effective_date: str) -> bool:
+    attrs = node.attrs
+    if (
+        attrs.get("lawvm_repeal_placeholder") == "1"
+        or attrs.get("lawvm_tombstone")
+        or attrs.get("content_state") in {"tombstone", "scaffold"}
+    ):
+        return False
+    return not is_zombie(node, effective_date)
 
 
 def build_markdown_git_spool(
@@ -479,6 +537,7 @@ def _create_markdown_spool_schema(conn: sqlite3.Connection) -> None:
           tree_hash TEXT NOT NULL,
           path TEXT NOT NULL,
           content BLOB NOT NULL,
+          in_force INTEGER NOT NULL,
           PRIMARY KEY (effective_date, statute_id),
           FOREIGN KEY (statute_id) REFERENCES statutes(statute_id)
         );
@@ -516,11 +575,18 @@ def _insert_rendered_statute(conn: sqlite3.Connection, statute: RenderedMarkdown
     )
     conn.executemany(
         """
-        INSERT OR REPLACE INTO versions(statute_id, effective_date, tree_hash, path, content)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO versions(statute_id, effective_date, tree_hash, path, content, in_force)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
-            (statute.statute_id, version.effective_date, version.tree_hash, statute.path, version.content)
+            (
+                statute.statute_id,
+                version.effective_date,
+                version.tree_hash,
+                statute.path,
+                version.content,
+                1 if version.in_force else 0,
+            )
             for version in statute.versions
         ),
     )
@@ -653,12 +719,16 @@ def build_markdown_git_commits(
     for effective_date in effective_dates:
         files: dict[str, bytes] = {}
         changed_statutes: list[tuple[PreparedStatute, MaterializedSnapshot]] = []
+        active_statutes: list[PreparedStatute] = []
         for statute in prepared:
             snapshot = statute.snapshot_at_or_before(effective_date)
             if snapshot is None:
                 continue
             if snapshot.effective_date == effective_date:
                 changed_statutes.append((statute, snapshot))
+            if not snapshot.in_force:
+                continue
+            active_statutes.append(statute)
             markdown = render_act_markdown(
                 statute_id=statute.statute_id,
                 title=statute.title,
@@ -672,10 +742,11 @@ def build_markdown_git_commits(
             files[_statute_markdown_path(statute.statute_id, jurisdiction=jurisdiction)] = (
                 _ensure_lf(markdown).encode("utf-8")
             )
+        active_tuple = tuple(active_statutes)
         files["README.md"] = _ensure_lf(
-            _render_readme(prepared, jurisdiction=jurisdiction)
+            _render_readme(active_tuple, jurisdiction=jurisdiction)
         ).encode("utf-8")
-        files.update(_render_year_readme_files(prepared, jurisdiction=jurisdiction))
+        files.update(_render_year_readme_files(active_tuple, jurisdiction=jurisdiction))
         author_timestamp, author_offset = _raw_git_date_for_effective_date(effective_date, zone)
         commits.append(
             FastImportCommit(
@@ -805,7 +876,7 @@ def write_spooled_fast_import_stream(
     commit_count = _spool_commit_count(db_path)
     file_count = 0
     if commit_count:
-        file_count = _spool_version_count(db_path) + 1 + _spool_year_count(db_path)
+        file_count = _spool_version_count(db_path) + _spool_index_write_count(db_path)
     return MarkdownGitExportStats(
         statute_count=_spool_statute_count(db_path),
         commit_count=commit_count,
@@ -829,22 +900,26 @@ def iter_spooled_fast_import_stream(
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     dates = _spool_effective_dates(conn)
-    statutes = _spool_statutes(conn)
     blob_mark = 1
     commit_mark = 1_000_000
     latest_commit_mark = 0
+    previous_index_paths: set[str] = set()
+    previous_statute_paths: set[str] = set()
     for effective_date in dates:
         blobs: list[tuple[str, bytes]] = []
-        if not latest_commit_mark:
-            blobs.append(
-                (
-                    "README.md",
-                    _ensure_lf(_render_spool_readme(statutes, jurisdiction=jurisdiction)).encode("utf-8"),
-                )
-            )
-            blobs.extend(_spool_year_readme_blobs(statutes))
         changed_versions = _spool_versions_for_date(conn, effective_date)
-        blobs.extend((version.path, version.content) for version in changed_versions)
+        active_statutes = _spool_active_statutes_at(conn, effective_date)
+        index_blobs = _spool_index_blobs(active_statutes, jurisdiction=jurisdiction)
+        current_index_paths = {path for path, _content in index_blobs}
+        current_statute_paths = {statute.path for statute in active_statutes}
+        delete_paths = {
+            version.path
+            for version in changed_versions
+            if not version.in_force and version.path in previous_statute_paths
+        }
+        delete_paths.update(previous_index_paths - current_index_paths)
+        blobs.extend(index_blobs)
+        blobs.extend((version.path, version.content) for version in changed_versions if version.in_force)
         marks_by_path: dict[str, int] = {}
         for path, content in sorted(blobs):
             _validate_fast_import_path(path)
@@ -873,8 +948,13 @@ def iter_spooled_fast_import_stream(
         if latest_commit_mark:
             yield f"from :{latest_commit_mark}\n".encode("ascii")
         latest_commit_mark = commit_mark
+        for path in sorted(delete_paths - set(marks_by_path)):
+            _validate_fast_import_path(path)
+            yield f"D {path}\n".encode("utf-8")
         for path, mark in marks_by_path.items():
             yield f"M 100644 :{mark} {path}\n".encode("utf-8")
+        previous_index_paths = current_index_paths
+        previous_statute_paths = current_statute_paths
         yield f"reset refs/tags/as-of/{effective_date}\n".encode("ascii")
         yield f"from :{commit_mark}\n".encode("ascii")
     if latest_commit_mark:
@@ -1255,8 +1335,7 @@ def _render_readme(
         "## Years",
         "",
     ]
-    for year in _years_for_prepared_statutes(statutes, jurisdiction=jurisdiction):
-        lines.append(f"- [{year}](acts/{year}/)")
+    lines.extend(_root_readme_year_rows(_years_for_prepared_statutes(statutes, jurisdiction=jurisdiction)))
     other = _other_prepared_statutes(statutes, jurisdiction=jurisdiction)
     if other:
         lines.extend(["", "## Other Statutes", ""])
@@ -1320,8 +1399,7 @@ def _render_spool_readme(
         "## Years",
         "",
     ]
-    for year in _years_for_spool_statutes(statutes):
-        lines.append(f"- [{year}](acts/{year}/)")
+    lines.extend(_root_readme_year_rows(_years_for_spool_statutes(statutes)))
     other = _other_spool_statutes(statutes)
     if other:
         lines.extend(["", "## Other Statutes", ""])
@@ -1406,7 +1484,7 @@ def _statute_list_sort_key_for_id(statute_id: str, *, jurisdiction: str) -> tupl
     match = _NUMERIC_STATUTE_ID_RE.fullmatch(statute_id.strip())
     if match is not None:
         number, year = match.groups()
-        return (year, f"{int(number):04d}", statute_id)
+        return (year, _numeric_statute_number_sort_token(number), statute_id)
     path = _statute_markdown_path(statute_id, jurisdiction=jurisdiction)
     return _statute_list_sort_key_for_path(path)
 
@@ -1415,8 +1493,29 @@ def _statute_list_sort_key_for_path(path: str) -> tuple[str, str, str]:
     match = _NUMERIC_STATUTE_PATH_RE.fullmatch(path.strip())
     if match is not None:
         year, number = match.groups()
-        return (year, f"{int(number):04d}", path)
+        return (year, _numeric_statute_number_sort_token(number), path)
     return ("zzzz", path, "")
+
+
+def _numeric_statute_number_sort_token(number: str) -> str:
+    main, sep, suffix = number.partition("-")
+    main_token = f"{int(main):06d}" if main.isdigit() else main
+    if not sep:
+        return main_token
+    suffix_token = f"{int(suffix):06d}" if suffix.isdigit() else suffix.lower()
+    return f"{main_token}-{suffix_token}"
+
+
+def _root_readme_year_rows(years: Iterable[str]) -> list[str]:
+    sorted_years = tuple(sorted(years))
+    if not sorted_years:
+        return []
+    lines: list[str] = []
+    for start in range(0, len(sorted_years), _ROOT_README_YEAR_LINKS_PER_ROW):
+        chunk = sorted_years[start : start + _ROOT_README_YEAR_LINKS_PER_ROW]
+        links = " | ".join(f"[{year}](acts/{year}/)" for year in chunk)
+        lines.append(f"- {links}")
+    return lines
 
 
 def _year_for_statute_id(statute_id: str, *, jurisdiction: str) -> str | None:
@@ -1611,6 +1710,19 @@ def _spool_year_count(db_path: Path) -> int:
     return len(years)
 
 
+def _spool_index_write_count(db_path: Path) -> int:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        count = 0
+        for effective_date in _spool_effective_dates(conn):
+            active = _spool_active_statutes_at(conn, effective_date)
+            count += 1 + len(_years_for_spool_statutes(active))
+        return count
+    finally:
+        conn.close()
+
+
 def _spool_skipped_count(db_path: Path) -> int:
     return _spool_count(db_path, "SELECT COUNT(*) FROM skipped_statutes")
 
@@ -1648,10 +1760,11 @@ def _spool_versions_for_date(conn: sqlite3.Connection, effective_date: str) -> t
             path=str(row["path"]),
             effective_date=str(row["effective_date"]),
             content=bytes(row["content"]),
+            in_force=bool(row["in_force"]),
         )
         for row in conn.execute(
             """
-            SELECT v.statute_id, s.title, v.path, v.effective_date, v.content
+            SELECT v.statute_id, s.title, v.path, v.effective_date, v.content, v.in_force
             FROM versions v
             JOIN statutes s ON s.statute_id = v.statute_id
             WHERE v.effective_date = ?
@@ -1660,6 +1773,48 @@ def _spool_versions_for_date(conn: sqlite3.Connection, effective_date: str) -> t
             (effective_date,),
         )
     )
+
+
+def _spool_active_statutes_at(
+    conn: sqlite3.Connection,
+    effective_date: str,
+) -> tuple[SpoolStatuteRow, ...]:
+    return tuple(
+        SpoolStatuteRow(
+            statute_id=str(row["statute_id"]),
+            title=str(row["title"]),
+            path=str(row["path"]),
+        )
+        for row in conn.execute(
+            """
+            SELECT s.statute_id, s.title, s.path
+            FROM statutes s
+            JOIN versions v ON v.statute_id = s.statute_id
+            WHERE v.effective_date = (
+              SELECT MAX(v2.effective_date)
+              FROM versions v2
+              WHERE v2.statute_id = s.statute_id AND v2.effective_date <= ?
+            )
+            AND v.in_force = 1
+            ORDER BY s.path
+            """,
+            (effective_date,),
+        )
+    )
+
+
+def _spool_index_blobs(
+    statutes: tuple[SpoolStatuteRow, ...],
+    *,
+    jurisdiction: str,
+) -> list[tuple[str, bytes]]:
+    return [
+        (
+            "README.md",
+            _ensure_lf(_render_spool_readme(statutes, jurisdiction=jurisdiction)).encode("utf-8"),
+        ),
+        *_spool_year_readme_blobs(statutes),
+    ]
 
 
 def _spool_commit_message_for_date(

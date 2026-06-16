@@ -7,6 +7,9 @@
 
 const STR = {
   fi: {
+    documentTitle: 'LawVM Explorer — Lain ajantasahistoria',
+    metaDescription: 'Selaimessa toimiva LawVM Explorer moottorin varmentamalle muutosgraafille: säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.',
+    appTitle: 'LawVM Explorer',
     tagline: 'Mitä laki sanoi, milloin, ja mistä muutos tuli.',
     footer: 'Näkymä lasketaan selaimessa LawVM-moottorin varmentamista muutosaskelista ja todennetaan moottorin tarkistesummaa (SHA-256) vastaan. Todennus osoittaa: näkymä = moottorin laskema tila. Se ei väitä, että moottori vastaa virallista konsolidointia tai voimassa olevaa oikeutta. Näkymä on voimassaolon mukainen (laki sellaisena kuin se oli voimassa valittuna päivänä).',
     statuteLabel: 'Säädös',
@@ -157,6 +160,9 @@ const STR = {
     citationActs: (acts) => `Muutossäädökset: ${acts}.`,
   },
   en: {
+    documentTitle: 'LawVM Explorer — Law in force over time',
+    metaDescription: 'Browser-based LawVM Explorer for engine-verified statute transition graphs: statute structure on any in-force date, checked against the engine hash.',
+    appTitle: 'LawVM Explorer',
     tagline: 'What the law said, when, and where the change came from.',
     footer: 'The view is computed in the browser from LawVM-engine-verified change steps and checked against the engine’s checksum (SHA-256). Verification proves: view = engine-computed state. It does not claim the engine matches the official consolidation, nor that either matches the law in force. The view is as-in-force on the selected date.',
     statuteLabel: 'Statute',
@@ -310,6 +316,9 @@ const STR = {
   // statute text itself stays in its source language until sv-corpus support
   // lands engine-side).
   sv: {
+    documentTitle: 'LawVM Explorer — Gällande lydelse över tid',
+    metaDescription: 'Webbläsarbaserad LawVM Explorer för motorverifierade ändringsgrafer: författningens struktur vid valfri ikraftträdandedag, kontrollerad mot motorns hash.',
+    appTitle: 'LawVM Explorer',
     tagline: 'Vad lagen sade, när, och varifrån ändringen kom.',
     footer: 'Vyn beräknas i webbläsaren ur ändringssteg som LawVM-motorn verifierat, och kontrolleras mot motorns kontrollsumma (SHA-256). Verifieringen visar: vyn = det tillstånd motorn beräknat. Den hävdar inte att motorn motsvarar den officiella konsolideringen eller gällande rätt. Vyn visas enligt ikraftträdande (lagen sådan den gällde den valda dagen).',
     statuteLabel: 'Författning',

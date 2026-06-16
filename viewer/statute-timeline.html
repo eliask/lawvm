@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="fi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LawVM-selain — Lain ajantasahistoria | Mitä laki sanoi, milloin, ja mistä muutos tuli</title>
-<meta name="description" content="Selaimessa toimiva LawVM-selain moottorin varmentamalle muutosgraafille: säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.">
+<title>LawVM Explorer — Law in force over time</title>
+<meta name="description" content="Browser-based LawVM Explorer for engine-verified statute transition graphs: statute structure on any in-force date, checked against the engine hash.">
 <link rel="stylesheet" href="statute-timeline.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
@@ -12,19 +12,19 @@
 <body>
 <header>
   <div class="wrap">
-    <h1 class="logo">LawVM-selain</h1>
-    <p class="tagline" id="tagline">Mitä laki sanoi, milloin, ja mistä muutos tuli.</p>
+    <h1 class="logo" id="app-title">LawVM Explorer</h1>
+    <p class="tagline" id="tagline">What the law said, when, and where the change came from.</p>
   </div>
 </header>
 
 <main class="wrap">
   <div class="controls">
     <label class="ctl">
-      <span class="ctl-label" id="statute-label">Säädös</span>
-      <select id="statute-select"><option value="">Ladataan…</option></select>
+      <span class="ctl-label" id="statute-label">Statute</span>
+      <select id="statute-select"><option value="">Loading…</option></select>
     </label>
     <div class="ctl">
-      <span class="ctl-label" id="lang-label">Kieli</span>
+      <span class="ctl-label" id="lang-label">Language</span>
       <div class="lang-toggle" id="lang-toggle">
         <button type="button" data-lang="fi">FI</button>
         <button type="button" data-lang="sv">SV</button>
@@ -33,16 +33,15 @@
     </div>
   </div>
 
-  <div id="app"><p class="loading">Valitse säädös.</p></div>
+  <div id="app"><p class="loading">Choose a statute.</p></div>
 </main>
 
 <footer>
   <div class="wrap">
-    <p id="footer-text">Näkymä lasketaan selaimessa LawVM-moottorin varmentamista muutosaskelista ja todennetaan
-       moottorin tarkistesummaa (SHA-256) vastaan. Todennus osoittaa: näkymä = moottorin
-       laskema tila. Se ei väitä, että moottori vastaa virallista konsolidointia tai voimassa
-       olevaa oikeutta. Näkymä on voimassaolon mukainen (laki sellaisena kuin se oli voimassa
-       valittuna päivänä).</p>
+    <p id="footer-text">The view is computed in the browser from LawVM-engine-verified change steps and checked
+       against the engine checksum (SHA-256). Verification proves: view = engine-computed state.
+       It does not claim the engine matches the official consolidation, nor that either matches
+       the law in force. The view is as-in-force on the selected date.</p>
   </div>
 </footer>
 

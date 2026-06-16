@@ -454,6 +454,50 @@ def test_build_commits_records_changed_statutes_and_causes_in_commit_message() -
     assert b" +0300\ndata " in stream
 
 
+def test_build_commits_omits_inactive_statutes_from_point_in_time_tree() -> None:
+    active = PreparedStatute(
+        statute_id="100/2020",
+        engine_id="2020/100",
+        title="Active Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=_body_with_link_text("Live text."),
+                tree_hash="hash-one",
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+    )
+    repealed = PreparedStatute(
+        statute_id="200/2020",
+        engine_id="2020/200",
+        title="Repealed Act",
+        snapshots=(
+            MaterializedSnapshot(
+                effective_date="2020-01-01",
+                root=_body_with_link_text("Repealed later."),
+                tree_hash="hash-two",
+            ),
+            MaterializedSnapshot(
+                effective_date="2021-01-01",
+                root=IRNode(kind=IRNodeKind.BODY, children=()),
+                tree_hash="hash-empty",
+                in_force=False,
+            ),
+        ),
+        interlink_rows=(),
+        interlink_targets=(),
+    )
+
+    commits = build_markdown_git_commits((active, repealed), jurisdiction="fi")
+
+    assert "acts/2020/200.md" in commits[0].files
+    assert "acts/2020/200.md" not in commits[1].files
+    assert "200/2020 Repealed Act" in commits[1].message
+    assert "(200.md)" not in commits[1].files["acts/2020/README.md"].decode("utf-8")
+
+
 def test_amendment_causes_by_date_indexes_effective_and_expiry_sources() -> None:
     profile = TransitionGraphExportProfile(
         jurisdiction="zz",
@@ -501,18 +545,33 @@ def test_source_xml_substantive_body_check_accepts_hcontainer_text_and_rejects_e
     assert not mdgit._source_xml_has_substantive_body(b"<akomaNtoso><act><meta /></act></akomaNtoso>")
 
 
-def test_fi_all_replayable_selector_uses_substantive_body_filter(
+def test_fi_all_replayable_selector_uses_oracle_base_laws_not_source_amendments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Corpus:
+        def oracle_path_index(self) -> dict[str, str]:
+            return {
+                "2020/1000": "finlex://consolidated/2020/1000",
+                "1734/1-001": "finlex://consolidated/1734/1-001",
+                "2020/9": "finlex://consolidated/2020/9",
+            }
+
         def list_statute_ids(self) -> list[str]:
-            return ["2020/1000", "2020/9", "1996/1"]
+            return ["2020/1000", "2020/1001", "2020/9", "1734/1-001"]
+
+        def read_oracle(self, statute_id: str) -> bytes | None:
+            return {
+                "2020/1000": b"<akomaNtoso><act><body><section><num>1</num></section></body></act></akomaNtoso>",
+                "1734/1-001": b"<akomaNtoso><act><body><hcontainer><p>Body</p></hcontainer></body></act></akomaNtoso>",
+                "2020/9": b"<akomaNtoso><act><body><hcontainer /></body></act></akomaNtoso>",
+            }[statute_id]
 
         def read_source(self, statute_id: str) -> bytes | None:
             return {
                 "2020/1000": b"<akomaNtoso><act><body><section><num>1</num></section></body></act></akomaNtoso>",
+                "2020/1001": b"<akomaNtoso><act><body><section><num>1</num></section></body></act></akomaNtoso>",
                 "2020/9": b"<akomaNtoso><act><body><hcontainer /></body></act></akomaNtoso>",
-                "1996/1": b"<akomaNtoso><act><body><hcontainer><p>Body</p></hcontainer></body></act></akomaNtoso>",
+                "1734/1-001": b"<akomaNtoso><act><body><hcontainer><p>Body</p></hcontainer></body></act></akomaNtoso>",
             }[statute_id]
 
     def canonical_statute_id(value: str) -> str:
@@ -534,7 +593,41 @@ def test_fi_all_replayable_selector_uses_substantive_body_filter(
     )
     monkeypatch.setattr(mdgit, "transition_graph_adapter_for_jurisdiction", lambda _jurisdiction: adapter)
 
-    assert mdgit.statute_ids_from_fi_corpus() == ("1/1996", "1000/2020")
+    assert mdgit.statute_ids_from_fi_corpus() == ("1-001/1734", "1000/2020")
+
+
+def test_subnumbered_finnish_statute_ids_sort_and_export_under_base_year() -> None:
+    assert mdgit._statute_markdown_path("1-001/1734", jurisdiction="fi") == "acts/1734/1-001.md"
+    assert mdgit._year_for_statute_id("1-001/1734", jurisdiction="fi") == "1734"
+    assert sorted(
+        ("1000/2020", "9/2020", "1-001/1734", "1/1734"),
+        key=lambda value: mdgit._statute_list_sort_key_for_id(value, jurisdiction="fi"),
+    ) == ["1/1734", "1-001/1734", "9/2020", "1000/2020"]
+
+
+def test_root_readme_groups_year_links_for_large_finnish_exports() -> None:
+    statutes = tuple(
+        PreparedStatute(
+            statute_id=f"1/{year}",
+            engine_id=f"{year}/1",
+            title=f"Act {year}",
+            snapshots=(
+                MaterializedSnapshot(
+                    effective_date="2020-01-01",
+                    root=_body_with_link_text("Text."),
+                    tree_hash=f"hash-{year}",
+                ),
+            ),
+            interlink_rows=(),
+            interlink_targets=(),
+        )
+        for year in range(2000, 2009)
+    )
+
+    readme = mdgit._render_readme(statutes, jurisdiction="fi")
+
+    assert "- [2000](acts/2000/) | [2001](acts/2001/)" in readme
+    assert "- [2008](acts/2008/)" in readme
 
 
 def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -545,6 +638,7 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         },
         "200/2020": {
             "2020-01-01": _body_with_link_text("Second act."),
+            "2021-01-01": IRNode(kind=IRNodeKind.BODY, children=()),
         },
         "9/2020": {
             "2020-01-01": _body_with_link_text("Single digit act."),
@@ -601,8 +695,8 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
         ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/100.md"],
         text=True,
     )
-    latest_second = subprocess.check_output(
-        ["git", "--git-dir", str(repo), "show", "in-force:acts/2020/200.md"],
+    initial_second = subprocess.check_output(
+        ["git", "--git-dir", str(repo), "show", "as-of/2020-01-01:acts/2020/200.md"],
         text=True,
     )
     readme = subprocess.check_output(
@@ -623,16 +717,20 @@ def test_spooled_export_streams_incremental_repo(tmp_path, monkeypatch: pytest.M
     )
 
     assert build_stats.statute_count == 3
-    assert build_stats.version_count == 4
+    assert build_stats.version_count == 5
     assert export_stats.commit_count == 2
     assert "Beta text" in latest_first
-    assert "Second act" in latest_second
+    assert "Second act" in initial_second
+    assert subprocess.run(
+        ["git", "--git-dir", str(repo), "cat-file", "-e", "in-force:acts/2020/200.md"],
+        check=False,
+    ).returncode != 0
     assert "Active sample statutes" not in readme
     assert "Configured statutes" not in readme
     assert "[2020](acts/2020/)" in readme
     assert "(acts/2020/9.md)" not in readme
     assert year_readme.index("(9.md)") < year_readme.index("(100.md)")
-    assert year_readme.index("(100.md)") < year_readme.index("(200.md)")
+    assert "(200.md)" not in year_readme
     assert "As of 2021-01-01" in log_subjects
     assert "As of 2020-01-01" in log_subjects
     assert " +0200 " in raw_dates
