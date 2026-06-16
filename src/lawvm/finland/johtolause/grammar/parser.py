@@ -306,6 +306,70 @@ def _has_prov_anaphor_continuation(scan: _Scan) -> bool:
     return False
 
 
+def _try_skip_provenance_anaphor_backref(scan: _Scan) -> bool:
+    """Consume a ``näistä/niistä <ref> sellaisena kuin …`` provenance back-ref.
+
+    Faithful port of ``surface_parse._skip_provenance_anaphor_backref``. The old
+    ``_target_list`` calls this after each list separator, BEFORE attempting a
+    fresh target: a ``näistä/niistä <ref>`` that is *closed* by a provenance
+    trigger (a collapsed CITATION_SPAN or an uncollapsed PROV span) is an
+    anaphoric attribution of an already-listed target, not a new one — it is
+    skipped, and the loop re-enters to reach any REAL continuation that follows
+    the closing citation (``…, näistä 5 §:n 4 momentti [CITE], sekä 7 §`` keeps
+    the ``7 §``).
+
+    Returns True (cursor advanced past the closed back-ref) only for the single
+    ``näistä/niistä`` arm the old function consumes; otherwise restores the
+    cursor and returns False (``joista``, an unclosed run, or a structure-less
+    anchor falls through to the existing decline guards, exactly as the old
+    parser falls through to ``_target`` and re-parses — which the leak detector
+    already classifies). It never silently drops a following target.
+    """
+    saved = scan.pos
+    t = scan.peek()
+    if not (t and t.cat == "WORD" and (t.text or "").lower() in _PROV_ANAPHOR_WORDS):
+        return False
+    scan.advance()
+
+    saw_structural = False
+    while (t := scan.peek()) and t.cat in (
+        "NUM",
+        "LETTER",
+        "DASH",
+        "CONJ",
+        "COMMA",
+        "PYKALA",
+        "MOMENTTI",
+        "KOHTA",
+        "ALAKOHTA",
+        "JOHD",
+        "OTSIKKO",
+    ):
+        if t.cat in ("PYKALA", "MOMENTTI", "KOHTA"):
+            saw_structural = True
+        scan.advance()
+
+    # Require the run to be closed by a provenance trigger. Without it the anaphor
+    # would be a malformed fragment (or a genuine target list); bail out and leave
+    # the stream untouched so the existing target / decline path retries.
+    if saw_structural and (t := scan.peek()) and t.cat in ("PROV", "CITATION_SPAN"):
+        if t.cat == "PROV":
+            # An uncollapsed PROV span (the normal pipeline collapses provenance
+            # to CITATION_SPAN, so this branch is only reached for raw token
+            # streams); reuse the shared span-boundary helper, lazily imported to
+            # keep the new package free of a module-level surface_parse edge.
+            from lawvm.finland.johtolause.surface_parse import _skip_prov_span
+
+            toks = list(scan.cur.tokens)
+            scan.goto(_skip_prov_span(toks, scan.pos, len(toks)))
+        else:
+            _skip_sentinels(scan)
+        return True
+
+    scan.goto(saved)
+    return False
+
+
 _SENTINEL_SPAN_CATS = frozenset(
     {"CITATION_SPAN", "PROVENANCE_SPAN", "STATUTE_NAME_SPAN", "REINST_SPAN"}
 )
@@ -1793,6 +1857,29 @@ def _parse_verb_group(
         # cue — recognition succeeds instead of declining.
         if kind == "section":
             _skip_minka_ohella_leadin(scan)
+            # A ``näistä/niistä <ref> sellaisena kuin … [CITE]`` provenance
+            # back-ref re-stating which already-listed target an attribution
+            # applies to. The old ``_target_list`` skips it (when closed by a
+            # provenance trigger) and re-enters the loop to reach any REAL
+            # continuation that follows the closing citation (``…, näistä 5 §:n
+            # 4 momentti [CITE], sekä 7 §`` keeps the ``7 §``). Without this skip
+            # the section recognizer declines on the anaphor and the following
+            # ``sekä 7 §`` is silently dropped as residue.
+            #
+            # But the same ``näistä …`` tail can instead LEAK a duplicate in the
+            # old parser (a ``joista`` arm, an unclosed run, or a SECOND arm after
+            # the first closer that the old loop re-parses as a fresh node — e.g.
+            # ``näistä 15 a § [CITE], 15 b § sellaisenakuin …``). There the old
+            # parser over-claims and the new section path would silently drop the
+            # re-parsed node, so the driver DECLINES rather than skip — a clean
+            # fail-loud that falls back to the old parser is safe; a silent drop
+            # is a corruption. ``_prov_rementtion_leaks`` (faithful to the old
+            # skip + its re-parse loop) is exactly that leak/keep oracle: leak →
+            # decline; otherwise skip the single closed arm and continue.
+            if _prov_rementtion_leaks(scan):
+                raise OutOfScope("section näistä/niistä provenance leak")
+            if _try_skip_provenance_anaphor_backref(scan):
+                continue
         more_batch_start = scan.pos
         try:
             more, more_kind = _recognize_one_target(scan, chapter, part)
