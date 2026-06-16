@@ -267,6 +267,85 @@ _SCHEDULE_REPLACE_XML = b"""\
 """
 
 
+# A lettered paragraph whose inline definitions/illustration table is emitted as
+# a SEPARATE label-less ``<para><legtable>`` sibling AFTER the paragraph in the
+# amend payload. The consolidation nests that table inside the paragraph, so the
+# extractor must absorb the trailing table sibling into the paragraph's text. The
+# accessibility ``<summary>`` caption is dropped (presentational metadata).
+_TABLE_CONTINUATION_XML = b"""\
+<act><body>
+  <prov id="OP"><label>9</label><heading>Amend section 7</heading><prov.body>
+    <subprov><label></label><para><text>In section 7(1), replace paragraph (d) with:</text>
+      <amend increment="1">
+        <label-para><label denominator="yes">d</label><para><text>school boards:</text></para></label-para>
+        <para>
+          <legtable>
+            <summary>The following table is small in size and has 2 columns.</summary>
+            <table>
+              <tgroup cols="2">
+                <tbody>
+                  <row>
+                    <entry><para><text>These are boards constituted under the Education and Training Act 2020</text></para></entry>
+                    <entry><para><text>A body that is a board constituted under that Act</text></para></entry>
+                  </row>
+                </tbody>
+              </tgroup>
+            </table>
+          </legtable>
+        </para>
+      </amend>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+
+def test_extractor_absorbs_trailing_table_continuation_sibling() -> None:
+    node = _amending_node(_TABLE_CONTINUATION_XML, "OP")
+    result = extract_structural_replacement(
+        node, target_leaf_kind="label-para", target_leaf_label="d"
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "label-para"
+    assert result.root.label == "d"
+    # The trailing table sibling's body is absorbed into the paragraph's text.
+    assert "school boards:" in result.root.text
+    assert "These are boards constituted under the Education and Training Act 2020" in result.root.text
+    assert "A body that is a board constituted under that Act" in result.root.text
+    # The accessibility caption is dropped (presentational metadata).
+    assert "small in size" not in result.root.text
+
+
+# Two lettered paragraphs (d and e), each followed by its OWN table-continuation
+# sibling. Each paragraph must absorb only ITS table, never the next paragraph's.
+_TWO_TABLE_CONTINUATION_XML = b"""\
+<act><body>
+  <prov id="OP"><label>9</label><heading>Amend section 7</heading><prov.body>
+    <subprov><label></label><para><text>In section 7(1), replace paragraphs (d) and (e) with:</text>
+      <amend increment="1">
+        <label-para><label denominator="yes">d</label><para><text>school boards:</text></para></label-para>
+        <para><legtable><table><tgroup cols="1"><tbody><row><entry><para><text>boards definition</text></para></entry></row></tbody></tgroup></table></legtable></para>
+        <label-para><label denominator="yes">e</label><para><text>tertiary education institutions:</text></para></label-para>
+        <para><legtable><table><tgroup cols="1"><tbody><row><entry><para><text>institutions definition</text></para></entry></row></tbody></tgroup></table></legtable></para>
+      </amend>
+    </para></subprov>
+  </prov.body></prov>
+</body></act>
+"""
+
+
+def test_table_continuation_absorbs_only_own_paragraphs_table() -> None:
+    node = _amending_node(_TWO_TABLE_CONTINUATION_XML, "OP")
+    result_d = extract_structural_replacement(
+        node, target_leaf_kind="label-para", target_leaf_label="d"
+    )
+    assert isinstance(result_d, NZStructuralReplacement)
+    assert "boards definition" in result_d.root.text
+    # Paragraph d must NOT absorb e's content or e's table.
+    assert "tertiary education institutions" not in result_d.root.text
+    assert "institutions definition" not in result_d.root.text
+
+
 def test_schedule_indirection_resolves_replacement_for_base_work() -> None:
     node = _amending_node(_SCHEDULE_REPLACE_XML, "OP")
     result = extract_structural_replacement(

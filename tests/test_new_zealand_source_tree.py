@@ -349,6 +349,121 @@ def test_legal_text_excludes_notes_and_their_trailing_text() -> None:
     assert "amended" not in prov.text
 
 
+def test_legal_text_excludes_legtable_accessibility_summary() -> None:
+    # A ``<legtable>``'s ``<summary>`` is the auto-generated screen-reader caption
+    # ("The following table is small in size and has N columns…"), not operative
+    # legal content. The PCO consolidation does not carry it into the operative
+    # text, so it must be dropped from extraction — the table BODY is still kept.
+    xml = b"""\
+<act><body>
+  <prov id="N"><label>3</label><heading>H</heading>
+    <prov.body><subprov id="N-1"><label>1</label>
+      <para>
+        <text>School boards:</text>
+        <legtable>
+          <summary>The following table is small in size and has 2 columns, but no headings.</summary>
+          <table><tgroup cols="2"><tbody><row>
+            <entry><para><text>Te Urewera</text></para></entry>
+            <entry><para><text>Te Urewera Act 2014</text></para></entry>
+          </row></tbody></tgroup></table>
+        </legtable>
+      </para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    node = [n for n in parse_nz_source_document(xml).nodes if n.kind == "subprov"][0]
+    assert "small in size" not in node.text
+    # The table body content is still extracted.
+    assert "Te Urewera" in node.text
+    assert "Te Urewera Act 2014" in node.text
+
+
+def test_def_para_text_bounded_to_first_definition_when_two_are_packed() -> None:
+    # Some amending acts pack two distinct definitions under ONE ``<def-para>``
+    # element as a run of sibling direct ``<para>`` children, each opening with
+    # its own ``<def-term>`` (2020/62 packs "smokeless tobacco product" and
+    # "smoking cessation programme" this way). The official consolidation splits
+    # them into one def-para per definition. The extracted node text must be
+    # bounded to the FIRST (targeted) definition and not absorb the adjacent one.
+    xml = b"""\
+<act><body>
+  <prov id="S2"><label>2</label><heading>Interpretation</heading>
+    <prov.body><subprov id="S2-1"><label>1</label>
+      <def-para id="DP">
+        <para><text><def-term id="T1">smokeless tobacco product</def-term> means a tobacco product that does not involve combustion</text></para>
+        <para><text><def-term id="T2">smoking cessation programme</def-term> means a funded programme to help smokers stop</text></para>
+      </def-para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    def_paras = [n for n in parse_nz_source_document(xml).nodes if n.kind == "def-para"]
+    assert len(def_paras) == 1
+    node = def_paras[0]
+    assert node.label == "smokeless tobacco product"
+    assert node.text == (
+        "smokeless tobacco product means a tobacco product that does not involve combustion"
+    )
+    # The adjacent definition must not leak into this node's text.
+    assert "smoking cessation programme" not in node.text
+
+
+def test_def_para_text_keeps_whole_definition_that_defines_two_related_terms() -> None:
+    # A legitimate single definition may define two related terms together by
+    # carrying a SECOND ``<def-term>`` LATER in its prose ("…and <def-term>vaping
+    # </def-term> has a corresponding meaning"). The trailing term is not a
+    # leading definition opener, so the definition must stay whole — never split.
+    xml = b"""\
+<act><body>
+  <prov id="S2"><label>2</label><heading>Interpretation</heading>
+    <prov.body><subprov id="S2-1"><label>1</label>
+      <def-para id="DP">
+        <para><text><def-term id="T1">to vape</def-term> means to inhale using a vaping device, and <def-term id="T2">vaping</def-term> has a corresponding meaning</text></para>
+      </def-para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    def_paras = [n for n in parse_nz_source_document(xml).nodes if n.kind == "def-para"]
+    assert len(def_paras) == 1
+    node = def_paras[0]
+    assert node.label == "to vape"
+    assert node.text == (
+        "to vape means to inhale using a vaping device, "
+        "and vaping has a corresponding meaning"
+    )
+
+
+def test_def_para_with_leading_label_para_limbs_is_not_truncated() -> None:
+    # A single definition whose body is a leading ``<para>`` followed by nested
+    # ``<label-para>`` limbs (the common shape) must extract whole: only a
+    # NON-FIRST direct ``<para>`` that itself opens with a ``<def-term>`` bounds
+    # extraction, so label-para limbs are always retained.
+    xml = b"""\
+<act><body>
+  <prov id="S2"><label>2</label><heading>Interpretation</heading>
+    <prov.body><subprov id="S2-1"><label>1</label>
+      <def-para id="DP">
+        <para>
+          <text><def-term id="T1">dedicated room</def-term> means an internal area used solely to&#8212;</text>
+          <label-para><label denominator="yes">a</label><para><text>enable patients who smoke to smoke; or</text></para></label-para>
+          <label-para><label denominator="yes">b</label><para><text>enable patients who vape to vape</text></para></label-para>
+        </para>
+      </def-para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    node = [n for n in parse_nz_source_document(xml).nodes if n.kind == "def-para"][0]
+    assert "enable patients who smoke to smoke; or" in node.text
+    assert "enable patients who vape to vape" in node.text
+
+
 def test_nz_source_summary_cli_parse_defaults() -> None:
     parser = _build_parser()
 

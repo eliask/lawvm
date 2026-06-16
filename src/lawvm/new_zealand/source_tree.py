@@ -24,7 +24,15 @@ from lawvm.new_zealand.dependencies import latest_xml_locator_for_work, parse_pu
 
 
 _STRUCTURAL_TAGS = {"def-para", "label-para", "part", "prov", "schedule", "subprov"}
-_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note"}
+# Subtrees that contribute NO legal flow text. ``notes``/``history`` carry
+# amendment-history annotations; ``summary`` is the auto-generated accessibility
+# caption of a ``<legtable>`` ("The following table is small in size and has N
+# columns…") — screen-reader metadata, never operative legal content. The PCO
+# consolidation does not carry the caption into the operative text at the
+# amendment's snapshot, so leaving it in our extracted payload makes the amend
+# payload diverge spuriously from the oracle. Excluding it folds both sides
+# symmetrically (the caption is dropped from candidate AND oracle extraction).
+_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note", "summary"}
 
 # A ``def-para`` (a single definition in an interpretation/definitions
 # provision) is addressed by its defined term rather than a numeric label. NZ
@@ -426,10 +434,175 @@ def _history_note_defined_term(node: etree._Element) -> str:
     return ""
 
 
+def _defpara_para_starts_new_definition(para: etree._Element) -> bool:
+    """Whether a ``def-para``'s direct ``<para>`` child begins a NEW definition.
+
+    A well-formed ``def-para`` holds exactly one definition: a single leading
+    ``<para>`` whose first ``<text>`` opens with the defined ``<def-term>``,
+    optionally followed by nested ``<label-para>`` limbs. Some amending acts pack
+    several distinct definitions under ONE ``<def-para>`` element as a run of
+    sibling direct ``<para>`` children, each opening with its OWN ``<def-term>``
+    (e.g. 2020/62 LMS313899 packs "smokeless tobacco product" and "smoking
+    cessation programme"); the official consolidation splits them into one
+    ``def-para`` per definition, and each packed definition is its own insert
+    witness here. Such a sibling ``<para>`` is identified by its FIRST element
+    child being a ``<text>`` whose FIRST element child is a ``<def-term>`` — the
+    leading-term shape of a definition opener. A second ``<def-term>`` that sits
+    LATER in a definition's prose ("…and <def-term>advertising</def-term> has a
+    corresponding meaning") is NOT a leading term and so is not mistaken for a
+    new definition (that definition stays whole).
+    """
+
+    if not isinstance(para.tag, str) or _localname(para) != "para":
+        return False
+    for child in para:
+        if not isinstance(child.tag, str):
+            continue
+        if _localname(child) != "text":
+            # First element child is not a leading ``<text>`` — not a definition
+            # opener (e.g. a leading ``<label-para>`` limb of the same defn).
+            return False
+        for grandchild in child:
+            if not isinstance(grandchild.tag, str):
+                continue
+            return _localname(grandchild) == _DEF_TERM_TAG
+        return False
+    return False
+
+
+def _defpara_owned_children(defpara: etree._Element) -> list[etree._Element]:
+    """Direct children of a ``def-para`` that belong to its FIRST definition.
+
+    Returns all direct children up to (but excluding) the first non-leading
+    direct ``<para>`` child that opens a NEW definition (see
+    :func:`_defpara_para_starts_new_definition`). For a well-formed single-
+    definition ``def-para`` this is every direct child (unchanged behaviour); for
+    a multi-definition packed ``def-para`` it bounds extraction to the targeted
+    (first) definition so the adjacent definition's text is not absorbed.
+    """
+
+    owned: list[etree._Element] = []
+    seen_definition = False
+    for child in defpara:
+        if (
+            isinstance(child.tag, str)
+            and _localname(child) == "para"
+            and _defpara_para_starts_new_definition(child)
+        ):
+            if seen_definition:
+                break
+            seen_definition = True
+        owned.append(child)
+    return owned
+
+
 def _legal_text(node: etree._Element) -> str:
     texts: list[str] = []
+    if isinstance(node.tag, str) and _localname(node) == "def-para":
+        # Bound a packed multi-definition ``def-para`` to its first definition so
+        # an adjacent definition mispacked under the same element is not absorbed.
+        for child in _defpara_owned_children(node):
+            if not isinstance(child.tag, str):
+                continue
+            if _localname(child) in _TEXT_EXCLUDE_TAGS:
+                continue
+            _collect_legal_text(child, texts, is_root=False)
+            if child.tail:
+                texts.append(child.tail)
+        return _normalize_text(" ".join(texts))
     _collect_legal_text(node, texts, is_root=True)
     return _normalize_text(" ".join(texts))
+
+
+# Lettered-paragraph leaf kinds whose text may continue into a trailing
+# label-less table ``<para>`` sibling. NZ amend payloads frequently emit an
+# inline definitions/illustration table as a SEPARATE ``<para>`` sibling AFTER
+# the lettered paragraph it belongs to (e.g. 2020/38 Schedule 26's
+# "school boards:" paragraph followed by a sibling ``<para><legtable>…``), while
+# the official consolidation nests that table INSIDE the paragraph's own
+# ``<para>``. The trailing sibling carries no ``<label>`` and belongs to the
+# preceding labelled item, so absorbing it into that item's text makes the amend
+# payload match the consolidated form.
+_TABLE_CONTINUATION_LEAF_KINDS = frozenset({"label-para", "subprov"})
+
+
+def _is_table_continuation_para(element: etree._Element) -> bool:
+    """Whether a sibling ``<para>`` is a table continuation of a preceding leaf.
+
+    A table-continuation ``<para>`` carries NO ``<label>`` of its own (it is not
+    a fresh lettered/numbered item) and contains a ``<legtable>`` (or bare
+    ``<table>``). Such a para is presentational continuation of the labelled item
+    it follows, not an independent provision. A ``<para>`` that opens a new
+    labelled item (has a direct ``<label>`` child or wraps a labelled structural
+    child) is NOT a continuation and stops the absorption.
+    """
+
+    if not isinstance(element.tag, str) or _localname(element) != "para":
+        return False
+    has_table = False
+    for descendant in element.iter():
+        if not isinstance(descendant.tag, str):
+            continue
+        local = _localname(descendant)
+        if local in {"legtable", "table"}:
+            has_table = True
+        if local in _STRUCTURAL_TAGS:
+            # A nested structural (labelled) child means this para introduces a
+            # new item — not a pure table continuation of the preceding leaf.
+            return False
+    return has_table
+
+
+def _trailing_table_continuation_text(leaf_element: etree._Element) -> str:
+    """Flow text of label-less table ``<para>`` siblings trailing a leaf element.
+
+    Walks the leaf element's following siblings and collects the legal text of
+    each consecutive table-continuation ``<para>`` (see
+    :func:`_is_table_continuation_para`), stopping at the first sibling that is
+    not such a para (a new labelled item, prose, or end of parent). Returns the
+    normalized concatenation, or ``""`` when there is no trailing table sibling.
+    Only applied to lettered-paragraph leaf kinds by the caller.
+    """
+
+    parts: list[str] = []
+    sibling = leaf_element.getnext()
+    while sibling is not None:
+        if not isinstance(sibling.tag, str):
+            sibling = sibling.getnext()
+            continue
+        if not _is_table_continuation_para(sibling):
+            break
+        text = _legal_text(sibling)
+        if text:
+            parts.append(text)
+        sibling = sibling.getnext()
+    return _normalize_text(" ".join(parts))
+
+
+def _walk_payload_root_nodes(matched_element: etree._Element) -> list[NZSourceNode]:
+    """Parse an amend-payload match into nodes, absorbing trailing table siblings.
+
+    Walks ``matched_element`` with the live-body walker (placeholder ``amend``
+    path), then — when the matched leaf is a lettered-paragraph kind followed by
+    a label-less table-continuation ``<para>`` sibling — appends that table's
+    flow text to the root node's text so the payload matches the consolidated
+    form (which nests the table inside the paragraph). Returns the node list
+    (root first); an empty list signals an empty payload to the caller.
+    """
+
+    from dataclasses import replace as _dc_replace
+
+    nodes: list[NZSourceNode] = []
+    _walk_source_nodes(matched_element, path=("amend",), nodes=nodes, attached_history_note_keys=set())
+    if not nodes:
+        return nodes
+    if _localname(matched_element) in _TABLE_CONTINUATION_LEAF_KINDS:
+        continuation = _trailing_table_continuation_text(matched_element)
+        if continuation:
+            root = nodes[0]
+            combined = _normalize_text(f"{root.text} {continuation}")
+            nodes[0] = _dc_replace(root, text=combined)
+    return nodes
 
 
 def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool) -> None:
@@ -678,13 +851,7 @@ def extract_structural_replacement(
         return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
 
     replacement_element = matches[0]
-    nodes: list[NZSourceNode] = []
-    _walk_source_nodes(
-        replacement_element,
-        path=("amend",),
-        nodes=nodes,
-        attached_history_note_keys=set(),
-    )
+    nodes = _walk_payload_root_nodes(replacement_element)
     if not nodes:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
     root = nodes[0]
@@ -1072,8 +1239,7 @@ def _extract_from_schedule_amends(
     # substituted form. Refuse the raw payload rather than emit a known-wrong node.
     if _SCHEDULE_PAYLOAD_PLACEHOLDER.search(_node_text(matches[0])):
         return NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER
-    nodes: list[NZSourceNode] = []
-    _walk_source_nodes(matches[0], path=("amend",), nodes=nodes, attached_history_note_keys=set())
+    nodes = _walk_payload_root_nodes(matches[0])
     if not nodes or not nodes[0].text.strip():
         return (
             NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
@@ -1208,13 +1374,7 @@ def extract_structural_insertion(
         return NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
 
     inserted_element = matches[0]
-    nodes: list[NZSourceNode] = []
-    _walk_source_nodes(
-        inserted_element,
-        path=("amend",),
-        nodes=nodes,
-        attached_history_note_keys=set(),
-    )
+    nodes = _walk_payload_root_nodes(inserted_element)
     if not nodes:
         return NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
     root = nodes[0]
