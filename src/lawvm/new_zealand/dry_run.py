@@ -3862,12 +3862,22 @@ def _classify_oracle_target_divergence(
     oracle_sig = _normalized_subtree_signature(
         oracle_root, oracle_descendants, root_path=oracle_root.path
     )
-    candidate_index = {(rel, kind): text for rel, kind, text in candidate_sig}
-    oracle_index = {(rel, kind): text for rel, kind, text in oracle_sig}
+    # The signature drops labels off each path step so a renumber-on-replace does
+    # not defeat structural agreement. A side effect is that sibling nodes of the
+    # same kind at the same depth share one ``(relative_path, kind)`` key. A dict
+    # keyed on that would silently collapse such siblings (overwriting all but
+    # one), hiding a node-COUNT difference and then aligning two unrelated
+    # siblings for a per-node text compare (e.g. candidate paragraph (c) vs an
+    # oracle that added a later paragraph (d) — the dict aligned (c) against (d)).
+    # Compare the key MULTISET first: a count difference is a node-set divergence,
+    # not a per-node content error.
+    candidate_keys = Counter((rel, kind) for rel, kind, _text in candidate_sig)
+    oracle_keys = Counter((rel, kind) for rel, kind, _text in oracle_sig)
 
-    if set(candidate_index) != set(oracle_index):
-        # The node sets differ: the divergence is topological (oracle added /
-        # dropped / re-kinded nodes), not a per-node text difference.
+    if candidate_keys != oracle_keys:
+        # The node sets (counts included) differ: the divergence is topological
+        # (oracle added / dropped / re-kinded / renumbered-and-resized nodes), not
+        # a per-node text difference.
         return NZTargetDivergence(
             divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
             sub_families=(),
@@ -3875,6 +3885,24 @@ def _classify_oracle_target_divergence(
             oracle_descendant_count=len(oracle_descendants),
             node_pairs=(),
         )
+
+    # Per-node text alignment is only well-defined when every ``(relative_path,
+    # kind)`` key is UNIQUE on each side: a duplicated key (two same-kind siblings
+    # at the same label-stripped depth) cannot be aligned to its counterpart
+    # without guessing which sibling pairs with which. When any key repeats, type
+    # the residual as a node-set divergence (conservative: leaves the candidate
+    # set) rather than align ambiguous siblings.
+    if any(count > 1 for count in candidate_keys.values()):
+        return NZTargetDivergence(
+            divergence_class=NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET,
+            sub_families=(),
+            non_commensurable_whole_node=False,
+            oracle_descendant_count=len(oracle_descendants),
+            node_pairs=(),
+        )
+
+    candidate_index = {(rel, kind): text for rel, kind, text in candidate_sig}
+    oracle_index = {(rel, kind): text for rel, kind, text in oracle_sig}
 
     node_pairs: list[NZNodeDivergence] = []
     sub_families: list[str] = []

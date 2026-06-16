@@ -176,6 +176,60 @@ def test_node_set_difference_is_structural_nodeset() -> None:
     assert result.node_pairs == ()
 
 
+def test_extra_same_kind_sibling_is_structural_nodeset_not_aligned_content() -> None:
+    # The label-stripped signature keys same-kind siblings at the same depth
+    # identically. When the oracle adds a LATER same-kind sibling (candidate has
+    # paragraphs a, b, c; oracle has a, b, c, d), a dict keyed on the stripped
+    # path would collapse the siblings and align candidate (c) against oracle (d)
+    # for a false substantive content diff. The key MULTISET must reveal the count
+    # difference and type the residual structural_nodeset (out of the candidate
+    # set), never aligning unrelated siblings.
+    candidate_root = _node("subprov", ("amend", "subprov:8D"), "the subsection intro")
+    candidate_descendants = tuple(
+        _node("label-para", ("amend", "subprov:8D", f"label-para:{letter}"), f"paragraph {letter} body", label=letter)
+        for letter in ("a", "b", "c")
+    )
+    oracle = _doc(
+        (
+            _node("subprov", ("prov:11", "subprov:8D"), "the subsection intro"),
+            *(
+                _node("label-para", ("prov:11", "subprov:8D", f"label-para:{letter}"), f"paragraph {letter} body", label=letter)
+                for letter in ("a", "b", "c", "d")
+            ),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("prov:11", "subprov:8D"), candidate_root=candidate_root, candidate_descendants=candidate_descendants
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    assert result.node_pairs == ()
+
+
+def test_duplicate_aligned_keys_block_per_node_alignment() -> None:
+    # Same node COUNT on both sides but a same-kind sibling key repeats: the
+    # candidate and oracle each carry two label-paras at the same stripped depth.
+    # Per-node alignment cannot pair them without guessing, so even an equal-count
+    # divergence is typed structural_nodeset rather than aligning siblings by
+    # accident of sort order.
+    candidate_root = _node("subprov", ("amend", "subprov:1"), "intro")
+    candidate_descendants = (
+        _node("label-para", ("amend", "subprov:1", "label-para:a"), "candidate first paragraph", label="a"),
+        _node("label-para", ("amend", "subprov:1", "label-para:b"), "candidate second paragraph", label="b"),
+    )
+    oracle = _doc(
+        (
+            _node("subprov", ("prov:2", "subprov:1"), "intro"),
+            _node("label-para", ("prov:2", "subprov:1", "label-para:a"), "oracle first paragraph", label="a"),
+            _node("label-para", ("prov:2", "subprov:1", "label-para:b"), "oracle second paragraph", label="b"),
+        )
+    )
+    result = _classify_oracle_target_divergence(
+        oracle, ("prov:2", "subprov:1"), candidate_root=candidate_root, candidate_descendants=candidate_descendants
+    )
+    assert result.divergence_class == NZ_DIVERGENCE_CLASS_STRUCTURAL_NODESET
+    assert result.node_pairs == ()
+
+
 # --- _classify_oracle_text_divergence (TEXT_REPLACE). -------------------------
 
 

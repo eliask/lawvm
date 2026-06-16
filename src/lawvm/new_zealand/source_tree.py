@@ -32,7 +32,18 @@ _STRUCTURAL_TAGS = {"def-para", "label-para", "part", "prov", "schedule", "subpr
 # amendment's snapshot, so leaving it in our extracted payload makes the amend
 # payload diverge spuriously from the oracle. Excluding it folds both sides
 # symmetrically (the caption is dropped from candidate AND oracle extraction).
-_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note", "summary"}
+#
+# ``graphic``/``eqn-line`` are the FORMULA rendering of an ``<eqn>`` math block.
+# The PCO consolidation renders a formula as a ``<graphic>`` SVG image (no text),
+# while an amending act's payload may carry the SAME formula as a run of
+# ``<eqn-line>`` text fragments inside a layout table ("{[(1 + P1) × (1 + P2)]
+# − 1} × 100"). Comparing image-vs-text for one math block is a spurious diff,
+# not a content divergence — the canonical text-state legitimately omits the
+# inline formula (it lives as a graphic reference). The surrounding ``<eqn>``
+# prose ("where—") and ``<variable-def>`` blocks are NOT formula lines, so they
+# are retained on both sides. Excluding the formula rendering folds the math
+# block symmetrically.
+_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note", "summary", "graphic", "eqn-line"}
 
 # A ``def-para`` (a single definition in an interpretation/definitions
 # provision) is addressed by its defined term rather than a numeric label. NZ

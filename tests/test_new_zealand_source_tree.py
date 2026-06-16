@@ -380,6 +380,59 @@ def test_legal_text_excludes_legtable_accessibility_summary() -> None:
     assert "Te Urewera Act 2014" in node.text
 
 
+def test_legal_text_skips_formula_eqn_lines_and_graphic_keeps_variable_defs() -> None:
+    # An ``<eqn>`` math block renders the formula either as ``<eqn-line>`` text
+    # fragments (an amending act payload) or as a ``<graphic>`` SVG image (the PCO
+    # consolidation). Comparing image-vs-text for the same formula is a spurious
+    # diff, so the formula rendering is dropped from extraction. The surrounding
+    # ``where—`` prose and ``<variable-def>`` blocks are NOT formula and are kept.
+    payload_xml = b"""\
+<act><body>
+  <prov id="P"><label>5</label><heading>H</heading>
+    <prov.body><subprov id="P-1"><label>1C</label>
+      <para>
+        <text>calculated in accordance with the following formula:</text>
+        <eqn id="E0">
+          <table><tgroup cols="1"><tbody><row><entry>
+            <para><eqn id="E1"><eqn-line>{[(1 + P1) &#215; (1 + P2)] &#8722; 1} &#215; 100</eqn-line></eqn></para>
+          </entry></row></tbody></tgroup></table>
+          <para><text>where&#8212;</text></para>
+          <variable-def><variable>P1</variable><para><text>is the first percentage.</text></para></variable-def>
+        </eqn>
+      </para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+    graphic_xml = b"""\
+<act><body>
+  <prov id="P"><label>5</label><heading>H</heading>
+    <prov.body><subprov id="P-1"><label>1C</label>
+      <para>
+        <text>calculated in accordance with the following formula:</text>
+        <eqn id="E0">
+          <graphic alt-text="Formula" fileref="images/formula.svg"/>
+          <para><text>where&#8212;</text></para>
+          <variable-def><variable>P1</variable><para><text>is the first percentage.</text></para></variable-def>
+        </eqn>
+      </para>
+    </subprov></prov.body>
+  </prov>
+</body></act>
+"""
+
+    payload_text = [n for n in parse_nz_source_document(payload_xml).nodes if n.kind == "subprov"][0].text
+    graphic_text = [n for n in parse_nz_source_document(graphic_xml).nodes if n.kind == "subprov"][0].text
+
+    # The formula rendering (eqn-line text / graphic image) is dropped from both.
+    assert "{[(1 + P1)" not in payload_text
+    # The variable-def prose and "where—" survive on both sides.
+    assert "where—" in payload_text
+    assert "is the first percentage." in payload_text
+    # Image-vs-text formula no longer makes the two sides diverge.
+    assert payload_text == graphic_text
+
+
 def test_def_para_text_bounded_to_first_definition_when_two_are_packed() -> None:
     # Some amending acts pack two distinct definitions under ONE ``<def-para>``
     # element as a run of sibling direct ``<para>`` children, each opening with
