@@ -72,6 +72,7 @@ from lawvm.finland.johtolause.grammar.sections import (
     _part_ctx,
     _sep,
 )
+from lawvm.finland.source_verb import SourceVerb
 from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
@@ -545,7 +546,10 @@ def _recognize_whole_target_list(
 
 
 def recognize_insertion(
-    scan: _Scan, chapter: str = "", part: str = ""
+    scan: _Scan,
+    chapter: str = "",
+    part: str = "",
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[ParsedInsertion]:
     """Recognize a clean insertion batch at the cursor.
 
@@ -558,6 +562,10 @@ def recognize_insertion(
     first batch). The old parser threads ``effective_chapter = ch_pre or
     chapter`` so a later bare ``N §:ään uusi …`` arm inherits the preceding
     ``N luvun`` scope; this is reproduced here.
+
+    ``verb`` is the verb-group verb (``None`` when unknown). Only ``LISATA``
+    enables the no-``uusi`` DOC:ILL / LUKU:ILL fallback arms the old parser
+    accepts (``lisätään … lakiin N §`` with the ``uusi`` left implicit).
     """
     start = scan.pos
 
@@ -604,7 +612,7 @@ def recognize_insertion(
 
     # Any reinstatement/citation/provenance/heading token inside the phrase means
     # the clause needs the old parser's residue handling — out of scope.
-    nodes = _dispatch(scan, effective_part, effective_chapter)
+    nodes = _dispatch(scan, effective_part, effective_chapter, verb)
     if nodes is None:
         scan.goto(start)
         return None
@@ -738,11 +746,17 @@ def _skip_authority_nojalla_lead_in(scan: _Scan) -> bool:
     return False
 
 
-def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optional[list[InsNode]]:
+def _dispatch(
+    scan: _Scan,
+    effective_part: str,
+    effective_chapter: str,
+    verb: Optional[SourceVerb] = None,
+) -> Optional[list[InsNode]]:
     """Try each in-scope insertion arm in the old parser's priority order.
 
     ``effective_part`` / ``effective_chapter`` are the resolved container scope
     (``ch_pre or inherited``), already including any inherited verb-group scope.
+    ``verb`` gates the no-``uusi`` DOC:ILL / LUKU:ILL fallback arms (LISATA only).
     """
     # ── Target-prefixed sub-target arms: numlist (§:ILL | §:GEN) … ──────────
     #
@@ -782,7 +796,7 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
             # decline. The arm self-validates (it returns None for any non-clean
             # ``uusi numlist (§|luku)`` shape), so out-of-scope LUKU:ILL forms
             # (heading placement / appendix folds) still decline below.
-            luku = _try_luku_scoped(scan, nums, effective_part)
+            luku = _try_luku_scoped(scan, nums, effective_part, verb)
             if luku is not None:
                 return luku
             scan.goto(pre_nums_pos)
@@ -801,7 +815,7 @@ def _dispatch(scan: _Scan, effective_part: str, effective_chapter: str) -> Optio
     # non-clean shape, including the heading / appendix / postfix folds), so
     # out-of-scope DOC:ILL forms still fall through to the guard + section-ref path.
     if _at_cat_case(scan, "DOC", "ILL"):
-        doc = _try_doc_ill(scan, effective_part)
+        doc = _try_doc_ill(scan, effective_part, verb)
         if doc is not None:
             return doc
         # A DOC:ILL anchor that the arm could not reproduce as a clean insertion
@@ -1035,7 +1049,10 @@ def _try_section_gen_sub_target(
 
 
 def _try_luku_scoped(
-    scan: _Scan, nums: list[NumSuffix], effective_part: str
+    scan: _Scan,
+    nums: list[NumSuffix],
+    effective_part: str,
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[list[InsNode]]:
     """``N LUKU:ILL [reinst preamble] uusi numlist (§ | luku)`` — chapter-scoped insert.
 
@@ -1092,6 +1109,27 @@ def _try_luku_scoped(
         return None
 
     if not _consume_uusi(scan):
+        # No-``uusi`` fallback (old Pattern F, surface_parse line 2600): under a
+        # ``lisätään`` verb the ``uusi`` may be implicit, so ``N lukuun numlist
+        # (§ | luku)`` is still a chapter-scoped insert. Faithful to the old
+        # ``elif`` arm: the cursor is NOT restored (it continues from after the
+        # comma / reinstatement skips), and the closing structural noun must be
+        # non-genitive.
+        if verb == SourceVerb.LISATA:
+            ins_nums = _number_list(scan)
+            t = scan.peek()
+            if (
+                ins_nums
+                and t is not None
+                and t.cat in ("PYKALA", "LUKU")
+                and t.case != "GEN"
+            ):
+                kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
+                scan.advance()
+                return [
+                    InsNode(kind=kind, label=n + sf, chapter=chap_num, part=effective_part)
+                    for n, sf in ins_nums
+                ]
         scan.goto(saved)
         return None
     _skip_nain_kuuluva(scan)
@@ -1234,13 +1272,48 @@ def _try_doc_ill_liite(scan: _Scan) -> Optional[list[InsNode]]:
     return [InsNode(kind=TargetKind.APPENDIX, label="", chapter="", part="")]
 
 
-def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
+def _try_doc_ill_no_uusi(
+    scan: _Scan, saved: int, verb: Optional[SourceVerb]
+) -> Optional[list[InsNode]]:
+    """No-``uusi`` DOC:ILL insert fallback (old Pattern C, surface_parse 2828).
+
+    ``lisätään … lakiin N §`` leaves the ``uusi`` implicit. Faithful to the old
+    fallback: only under ``LISATA``; restore to the DOC:ILL anchor and re-consume
+    it fresh (NO comma / reinstatement skip), then accept a clean
+    ``numlist (§ | luku)`` whose closing structural noun is non-genitive. The
+    inserted entity is statute-level (chapter=''). Any other shape returns None
+    (the caller restores and declines).
+    """
+    if verb != SourceVerb.LISATA:
+        return None
+    scan.goto(saved)
+    scan.advance()  # re-consume DOC:ILL
+    nums2 = _number_list(scan)
+    if not nums2:
+        return None
+    t = scan.peek()
+    if t is None or t.cat not in ("PYKALA", "LUKU") or t.case == "GEN":
+        return None
+    kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
+    scan.advance()
+    return [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in nums2]
+
+
+def _try_doc_ill(
+    scan: _Scan, part: str, verb: Optional[SourceVerb] = None
+) -> Optional[list[InsNode]]:
     """``DOC:ILL [N LUKU:ILL] uusi numlist (§ | luku | osa)`` — doc-level insert.
 
     Covers the dominant ``lakiin uusi N §`` form, the whole-part/whole-chapter
     variants, and the prefix-chapter ``DOC:ILL N lukuun uusi M §``. Declines the
     GEN §/luku sub-target variant, the appendix/heading/postfix/continuation
     tails, and any chained ``sekä/ja uusi …`` enumeration (out of scope).
+
+    When ``verb`` is ``LISATA`` and no clean ``uusi``-anchored shape matches, a
+    final no-``uusi`` fallback (old parser line 2828) accepts ``DOC:ILL numlist
+    (§ | luku)`` with the ``uusi`` left implicit by ``lisätään`` — e.g. the
+    ``ja lakiin 19 a §`` second batch of ``lisätään 16 §:ään uusi … ja lakiin
+    19 a §``. The inserted entity returns to statute level (chapter='').
     """
     saved = scan.pos
     scan.advance()  # consume DOC:ILL
@@ -1280,6 +1353,16 @@ def _try_doc_ill(scan: _Scan, part: str) -> Optional[list[InsNode]]:
         scan.goto(saved_pc)
 
     if not _consume_uusi(scan):
+        # No-``uusi`` fallback (old Pattern C, surface_parse line 2828): under a
+        # ``lisätään`` verb the ``uusi`` may be left implicit, so a bare
+        # ``DOC:ILL numlist (§ | luku)`` is still an insertion. Reproduced ONLY
+        # for LISATA, re-scanning from the DOC:ILL anchor with NO comma /
+        # reinstatement skip (the old fallback restores to the arm entry and
+        # re-consumes the document fresh), so a ``DOC:ILL , …`` or any provenance
+        # form is left to decline. The inserted entity returns to statute level.
+        fb = _try_doc_ill_no_uusi(scan, saved, verb)
+        if fb is not None:
+            return fb
         scan.goto(saved)
         return None
     _skip_nain_kuuluva(scan)

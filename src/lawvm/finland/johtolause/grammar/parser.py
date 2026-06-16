@@ -862,7 +862,11 @@ def _try_including_preceding_heading(
 
 
 def _try_recognize_target(
-    scan: _Scan, batch_start: int, chapter: str, part: str
+    scan: _Scan,
+    batch_start: int,
+    chapter: str,
+    part: str,
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
     """Try the structural-target families at the cursor, in old-``_target`` order.
 
@@ -884,7 +888,7 @@ def _try_recognize_target(
     """
     start = scan.pos
     try:
-        parsed_ins = recognize_insertion(scan, chapter, part)
+        parsed_ins = recognize_insertion(scan, chapter, part, verb)
     except OutOfScopeInsertion as exc:
         # The recogniser identified an out-of-scope insertion shape (e.g. a
         # ``… nojalla uusi 8 b`` bare-section authority insert). Decline the
@@ -954,7 +958,10 @@ def _try_recognize_target(
 
 
 def _recognize_one_target(
-    scan: _Scan, chapter: str = "", part: str = ""
+    scan: _Scan,
+    chapter: str = "",
+    part: str = "",
+    verb: Optional[SourceVerb] = None,
 ) -> tuple[list[SurfaceNode], FamilyKind]:
     """Recognize a single target (any wired structural family); emit nodes.
 
@@ -963,6 +970,9 @@ def _recognize_one_target(
     lead-in and an optional DOC:GEN ("lain 6, 7 ja 18 §"), then dispatches the
     families in old-``_target`` order. Returns ``(nodes, family_kind)``. Raises
     :class:`OutOfScope` if no target is found.
+
+    ``verb`` is the verb-group verb, threaded to the insertion recognizer so its
+    LISATA-only no-``uusi`` fallback arms can fire.
     """
     batch_start = scan.pos
     _skip_sentinels(scan)
@@ -974,7 +984,7 @@ def _recognize_one_target(
         scan.advance()
         _skip_sentinels(scan)
 
-    result = _try_recognize_target(scan, batch_start, chapter, part)
+    result = _try_recognize_target(scan, batch_start, chapter, part, verb)
     if result is not None:
         return result
 
@@ -1228,6 +1238,7 @@ def _group_opens_on_named_provision(scan: _Scan) -> bool:
 
 def _recognize_first_target_or_empty(
     scan: _Scan,
+    verb: Optional[SourceVerb] = None,
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
     """Recognize a verb group's first target, or ``None`` for an empty group.
 
@@ -1244,7 +1255,7 @@ def _recognize_first_target_or_empty(
     can return an empty group and ``parse()`` resumes the verb-seeking skip.
     """
     try:
-        return _recognize_one_target(scan)
+        return _recognize_one_target(scan, verb=verb)
     except OutOfScope as exc:
         if str(exc) != "not a target at target position":
             raise
@@ -1253,7 +1264,7 @@ def _recognize_first_target_or_empty(
     after_decline = scan.pos
     if _sep(scan) is not None:
         try:
-            return _recognize_one_target(scan)
+            return _recognize_one_target(scan, verb=verb)
         except OutOfScope as exc:
             if str(exc) != "not a target at target position":
                 raise
@@ -1347,7 +1358,7 @@ def _parse_verb_group(
     # separator and re-attempt the first target so the group is recognized, not
     # spuriously dropped.
     first_batch_start = scan.pos
-    batch_kind = _recognize_first_target_or_empty(scan)
+    batch_kind = _recognize_first_target_or_empty(scan, verb)
     if batch_kind is None:
         return verb, []
     batch, kind = batch_kind
