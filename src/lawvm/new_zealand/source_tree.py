@@ -43,7 +43,14 @@ _STRUCTURAL_TAGS = {"def-para", "label-para", "part", "prov", "schedule", "subpr
 # prose ("where—") and ``<variable-def>`` blocks are NOT formula lines, so they
 # are retained on both sides. Excluding the formula rendering folds the math
 # block symmetrically.
-_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note", "summary", "graphic", "eqn-line"}
+#
+# ``cf`` is the "Compare:" source-origin footnote (e.g. ``<cf><citation>2008 No 72
+# s 79A</citation></cf>`` appended to an inserted provision) — editorial provenance
+# metadata, not legislative content. Like history/notes it must be excluded from
+# legal text, or its trailing "YYYY No N s X" annotation leaks into a provision's
+# text and shows up as a spurious substantive divergence against an amending
+# payload that (correctly) carries no such footnote.
+_TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note", "summary", "graphic", "eqn-line", "cf"}
 
 # A ``def-para`` (a single definition in an interpretation/definitions
 # provision) is addressed by its defined term rather than a numeric label. NZ

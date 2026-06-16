@@ -437,6 +437,27 @@ def test_legal_text_excludes_legtable_accessibility_summary() -> None:
     assert "Te Urewera Act 2014" in node.text
 
 
+def test_legal_text_excludes_cf_source_origin_footnote() -> None:
+    # A ``<cf>`` is the "Compare:" source-origin footnote PCO appends to a
+    # provision (e.g. ``<cf><citation>2008 No 72 s 79A</citation></cf>``) —
+    # editorial provenance metadata, not operative legal content. An amending
+    # act's payload carries no such footnote, so leaving it in a node's text
+    # produces a spurious substantive divergence. It must be excluded.
+    xml = b"""\
+<act><body>
+  <prov id="N"><label>79</label><heading>Purpose</heading>
+    <prov.body><subprov id="N-1"><label>1</label><para><text>Operative text under this Act.</text></para></subprov></prov.body>
+    <cf><citation jurisdiction="nz">2008 No 72 s 79A</citation></cf>
+  </prov>
+</body></act>
+"""
+
+    prov = [n for n in parse_nz_source_document(xml).nodes if n.kind == "prov"][0]
+    assert "Operative text under this Act." in prov.text
+    assert "2008 No 72" not in prov.text
+    assert "s 79A" not in prov.text
+
+
 def test_legal_text_skips_formula_eqn_lines_and_graphic_keeps_variable_defs() -> None:
     # An ``<eqn>`` math block renders the formula either as ``<eqn-line>`` text
     # fragments (an amending act payload) or as a ``<graphic>`` SVG image (the PCO
