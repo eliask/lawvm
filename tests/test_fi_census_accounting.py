@@ -56,8 +56,10 @@ def test_bucket_ids_are_the_closed_five() -> None:
 def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # The 2026-06-16 adjudication round moved 33 of the 37 genuine deltas into
     # the ledger as ``adjudicated_parser_correction`` (NEW right, OLD silently
-    # dropped content). The 4 NOT in the ledger are the 3 parity_bugs (owned by
-    # a concurrent lane) + the 1 needs_source_verification.
+    # dropped content). Of the other 4, the 3 parity_bugs {1995/551, 1991/1055,
+    # 1989/117} were subsequently FIXED grammar-side (now byte-identical, no
+    # longer genuine deltas), leaving 1 needs_source_verification {2002/723}.
+    # None of these 4 belong in the corrections ledger.
     assert len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0) == 33
     # The deliberately-excluded sids must stay out of the ledger.
     excluded = {"1995/551", "1991/1055", "1989/117", "2002/723"}
