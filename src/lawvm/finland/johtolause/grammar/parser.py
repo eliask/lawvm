@@ -1320,6 +1320,7 @@ def _try_recognize_target(
     chapter: str,
     part: str,
     verb: Optional[SourceVerb] = None,
+    started_with_citation_span: bool = False,
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
     """Try the structural-target families at the cursor, in old-``_target`` order.
 
@@ -1340,8 +1341,19 @@ def _try_recognize_target(
     section reference.
     """
     start = scan.pos
+    # The old ``_target`` records whether this batch OPENED on a CITATION_SPAN —
+    # the ``started_with_citation_span`` hint that lets the ``nojalla`` authority
+    # skip fire on a citation-stamped authority list. The flag may be supplied by
+    # the verb-group level (the leading citation was consumed before this call) OR
+    # detected at this batch's own first token (a continuation arm opening on one).
+    started_with_citation_span = started_with_citation_span or (
+        batch_start < len(scan.cur.tokens)
+        and scan.cur.tokens[batch_start].cat == "CITATION_SPAN"
+    )
     try:
-        parsed_ins = recognize_insertion(scan, chapter, part, verb)
+        parsed_ins = recognize_insertion(
+            scan, chapter, part, verb, started_with_citation_span=started_with_citation_span
+        )
     except OutOfScopeInsertion as exc:
         # The recogniser identified an out-of-scope insertion shape (e.g. a
         # ``… nojalla uusi 8 b`` bare-section authority insert). Decline the
@@ -1415,6 +1427,8 @@ def _recognize_one_target(
     chapter: str = "",
     part: str = "",
     verb: Optional[SourceVerb] = None,
+    *,
+    started_with_citation_span: bool = False,
 ) -> tuple[list[SurfaceNode], FamilyKind]:
     """Recognize a single target (any wired structural family); emit nodes.
 
@@ -1425,7 +1439,9 @@ def _recognize_one_target(
     :class:`OutOfScope` if no target is found.
 
     ``verb`` is the verb-group verb, threaded to the insertion recognizer so its
-    LISATA-only no-``uusi`` fallback arms can fire.
+    LISATA-only no-``uusi`` fallback arms can fire. ``started_with_citation_span``
+    is the verb-group-level hint (the leading CITATION_SPAN was consumed before
+    this call), threaded to the insertion recogniser's ``nojalla`` authority skip.
     """
     batch_start = scan.pos
     _skip_sentinels(scan)
@@ -1437,7 +1453,9 @@ def _recognize_one_target(
         scan.advance()
         _skip_sentinels(scan)
 
-    result = _try_recognize_target(scan, batch_start, chapter, part, verb)
+    result = _try_recognize_target(
+        scan, batch_start, chapter, part, verb, started_with_citation_span
+    )
     if result is not None:
         return result
 
@@ -1953,6 +1971,8 @@ def _group_opens_on_named_provision(scan: _Scan) -> bool:
 def _recognize_first_target_or_empty(
     scan: _Scan,
     verb: Optional[SourceVerb] = None,
+    *,
+    started_with_citation_span: bool = False,
 ) -> Optional[tuple[list[SurfaceNode], FamilyKind]]:
     """Recognize a verb group's first target, or ``None`` for an empty group.
 
@@ -1969,7 +1989,9 @@ def _recognize_first_target_or_empty(
     can return an empty group and ``parse()`` resumes the verb-seeking skip.
     """
     try:
-        return _recognize_one_target(scan, verb=verb)
+        return _recognize_one_target(
+            scan, verb=verb, started_with_citation_span=started_with_citation_span
+        )
     except OutOfScope as exc:
         if str(exc) != "not a target at target position":
             raise
@@ -1978,7 +2000,9 @@ def _recognize_first_target_or_empty(
     after_decline = scan.pos
     if _sep(scan) is not None:
         try:
-            return _recognize_one_target(scan, verb=verb)
+            return _recognize_one_target(
+                scan, verb=verb, started_with_citation_span=started_with_citation_span
+            )
         except OutOfScope as exc:
             if str(exc) != "not a target at target position":
                 raise
@@ -2036,6 +2060,14 @@ def _parse_verb_group(
     verb = t.verb_code
     scan.advance()
 
+    # Old ``_target_list`` hint: did this verb group OPEN on a CITATION_SPAN (one
+    # the sentinel skip is about to consume)? It enables the first target's
+    # ``nojalla`` authority-basis skip on a citation-stamped authority list.
+    group_started_with_citation_span = (
+        scan.pos < len(scan.cur.tokens)
+        and scan.cur.tokens[scan.pos].cat == "CITATION_SPAN"
+    )
+
     _skip_sentinels(scan)
     _skip_cat(scan, "TEMPORAL")
 
@@ -2081,7 +2113,9 @@ def _parse_verb_group(
     # spuriously dropped.
     first_batch_start = scan.pos
     try:
-        batch_kind = _recognize_first_target_or_empty(scan, verb)
+        batch_kind = _recognize_first_target_or_empty(
+            scan, verb, started_with_citation_span=group_started_with_citation_span
+        )
     except OutOfScope:
         # The wired families declined this group's first target. Before propagating
         # the decline, try the cross-verb-group anaphoric fallback: a LISATA group

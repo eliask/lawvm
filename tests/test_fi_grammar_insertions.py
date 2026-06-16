@@ -416,17 +416,22 @@ def test_luku_scoped_reinstatement_preamble_is_recovered(text: str) -> None:
 
 def test_luku_scoped_citation_provenance_does_not_misscope() -> None:
     # ``DOC … N lukuun, sellaisena kuin se on laissa X, uusi M §`` — a CITATION_SPAN
-    # provenance attribution between ``lukuun`` and ``uusi``. In the corpus shape
-    # (a leading statute-name citation present) the old parser declines the
-    # chapter-scoped insert (chapter=''), so the chapter-scoped arm must NOT fire
-    # and mis-scope the inserted section to the chapter. The arm declines on the
-    # CITATION_SPAN preamble; here we assert it does not emit a chapter-scoped node.
-    tokens, _ = _tokenize(
+    # provenance attribution between ``lukuun`` and ``uusi``. The old parser captures
+    # a chapter-LESS whole-section insert here (the leading reinstatement/citation
+    # preamble is skipped before the bare ``uusi 96 a §`` arm), NOT a chapter-scoped
+    # node. The new parser must reproduce that exactly: a single SurfaceInsertion for
+    # §96 a with ``chapter == ''`` (the inserted section is NOT mis-scoped to the
+    # chapter), byte-identical to the old authority.
+    text = (
         "lisätään lain (610/2014) 3 lukuun, sellaisena kuin se on laissa 679/2003, "
         "uusi 96 a § seuraavasti:"
     )
-    with pytest.raises(OutOfScope):
-        new_parser.parse(tokens)
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    node = _as_insertion(model.verb_groups[0].nodes[0])
+    assert node.label == "96a"
+    assert node.chapter == ""
 
 
 def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
@@ -747,5 +752,108 @@ def test_cross_verb_anaphora_without_prior_section_declines() -> None:
     # section (the first and only verb group is the LISATA group) has no cross-group
     # anchor, so the fallback does not fire and the clause declines.
     text = "lisätään sanottuun pykälään uusi 3 momentti seuraavasti:"
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)
+
+
+# Scope-anchor-before-``uusi`` insertion collapse (task #41 parity bugs): a
+# CHAPTER or CITATION authority/reinstatement preamble between the scope anchor
+# and ``uusi`` made the new parser collapse the whole insert group to a bare
+# chapter/section ref, DROPPING the inserted entity the old parser captures. The
+# three shapes (chapter-scoped reinstatement ``N luvun [REINST] uusi M §``,
+# bare ``lukuun uusi …`` continuation, and ``§:n nojalla uusi …`` citation-stamped
+# authority lead-in) all reduce to that one root cause.
+SCOPE_ANCHOR_BEFORE_UUSI = [
+    # 1991/1055 — single ``4 luvun [REINST] uusi 22 §`` reinstatement insert. The
+    # chapter pre-parse + leading REINST_SPAN must not collapse to a bare CHAPTER 4.
+    "kumotaan 3 päivänä joulukuuta 1895 annetun ulosottolain 2 luku siihen "
+    "myöhemmin tehtyine muutoksineen, muutetaan 3 luvun 23 § sekä 4 luvun 23 §:n 1 "
+    "momentti, 24 §:n 2 momentti, 28 §:n 4 momentti ja 30 §:n 2 momentti, lisätään "
+    "mainitulla 14 päivänä joulukuuta 1984 annetulla lailla kumotun 4 luvun 22 §:n "
+    "tilalle uusi 22 § seuraavasti:",
+    # 1995/551 — 12-insertion batch: ``4 luvun [REINST] uusi 27 §`` then §:ILL
+    # sub-targets, a bare ``lukuun uusi 31 a … §`` inheriting chapter 5, and trailing
+    # §:ILL momentti inserts. The whole batch must reproduce, not collapse to CHAPTER 4.
+    "kumotaan 3 päivänä joulukuuta 1895 annetun ulosottolain 5 luvun 54 § ja 7 "
+    "luvun 8 §:n 4 momentti, muutetaan 4 luvun 26 §, 30 §:n 1 ja 2 momentti ja 32 §, "
+    "5 luvun 7 §:n 2 momentti, 21 ja 26 §, 27 §:n 2 momentti, 29, 31, 36, 37, 42, "
+    "43, 50 ja 51 §, 6 luvun 12 ja 13 § sekä 7 luvun 3 §:n 2 momentti, lisätään "
+    "laista mainitulla 14 päivänä joulukuuta 1984 annetulla lailla kumotun 4 luvun "
+    "27 §:n tilalle uusi 27 § sekä 5 luvun 8 §:ään, sellaisena kuin se on mainitussa "
+    "18 päivänä toukokuuta 1973 annetussa laissa, uusi 2 momentti, 17 §:ään, "
+    "sellaisena kuin se on mainitussa 14 päivänä joulukuuta 1984 annetussa laissa, "
+    "uusi 2 momentti, lukuun uusi 31 a, 32 a, 36 a ja 37 a―37 d §, 41 §:ään uusi 3 "
+    "momentti ja 48 §:ään, sellaisena kuin se on 27 päivänä lokakuuta 1933 annetussa "
+    "laissa ( 267/33 ), uusi 3 momentti seuraavasti:",
+    # 1989/117 — ``[CITE] 4§:n ja [CITE] 4§:n nojalla uusi 3 a§`` citation-stamped
+    # authority lead-in: the two ``4 §`` authority sections are the basis, not targets;
+    # only ``3 a §`` is inserted. The leading citation must not be mis-read as a target.
+    "muutetaan eräistä valtion omistamille alueille perustetuista "
+    "kansallispuistoista ja luonnonpuistoista 18 päivänä joulukuuta 1981 annetun "
+    "asetuksen ( 932/81 ) 4§:n 2 momentti sekä lisätään asetukseen Oulangan "
+    "kansallispuiston laajentamisesta 3 päivänä helmikuuta 1989 annetun lain "
+    "(115/89) 4§:n ja Seitsemisen kansallispuiston laajentamisesta 3 päivänä "
+    "helmikuuta 1989 annetun lain (116/89) 4§:n nojalla uusi 3 a§ seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", SCOPE_ANCHOR_BEFORE_UUSI)
+def test_scope_anchor_before_uusi_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_chapter_scoped_reinstatement_insert_captures_section() -> None:
+    # 1991/1055: the LISATA group is a SurfaceInsertion for §22 (chapter-less, as the
+    # old Pattern D whole-section insert leaves it), NOT a bare CHAPTER 4 ref.
+    model = parse_text_with(SCOPE_ANCHOR_BEFORE_UUSI[0], new_parser.parse)
+    lisata = model.verb_groups[2]
+    assert len(lisata.nodes) == 1
+    node = _as_insertion(lisata.nodes[0])
+    assert node.label == "22"
+    assert node.kind == TargetKind.SECTION
+    assert node.chapter == ""
+
+
+def test_multi_arm_chapter_reinstatement_batch_keeps_all_insertions() -> None:
+    # 1995/551: all 12 insertions are captured, including the bare ``lukuun uusi …``
+    # arm that inherits chapter 5 from the preceding ``5 luvun 8 §:ään`` arm.
+    model = parse_text_with(SCOPE_ANCHOR_BEFORE_UUSI[1], new_parser.parse)
+    lisata = model.verb_groups[2]
+    labels = [_as_insertion(n).label for n in lisata.nodes]
+    assert labels == [
+        "27", "8", "17", "31a", "32a", "36a", "37a", "37b", "37c", "37d", "41", "48"
+    ]
+    # The bare ``lukuun uusi 31 a … §`` arm inherits chapter 5.
+    by_label = {_as_insertion(n).label: _as_insertion(n) for n in lisata.nodes}
+    assert by_label["31a"].chapter == "5"
+    assert by_label["27"].chapter == ""  # the ``4 luvun … uusi 27 §`` whole-section insert is chapter-less
+
+
+def test_nojalla_authority_lead_in_inserts_only_the_new_section() -> None:
+    # 1989/117: only ``3 a §`` is inserted; the two ``4 §`` authority sections behind
+    # the ``nojalla`` citation lead-in are NOT operative targets.
+    model = parse_text_with(SCOPE_ANCHOR_BEFORE_UUSI[2], new_parser.parse)
+    lisata = model.verb_groups[1]
+    assert len(lisata.nodes) == 1
+    node = _as_insertion(lisata.nodes[0])
+    assert node.label == "3a"
+    assert node.kind == TargetKind.SECTION
+
+
+def test_bare_nojalla_abutting_uusi_stays_old_parser_faithful() -> None:
+    # Control (1987/1046 shape): a ``14 §:n 2 momentin nojalla uusi 4 a §`` lead-in
+    # with NO citation/comma between ``nojalla`` and ``uusi`` is NOT skipped by the
+    # old parser (it reads ``14 §`` as the target). The ``nojalla`` authority skip
+    # must NOT over-fire on this shape; the new parser declines loudly (matching the
+    # old parser's filtered-stream behaviour) rather than recovering a divergent
+    # insert — a recovered insert here would be a net-new genuine census delta.
+    text = (
+        "muutetaan sosiaalipalveluista perittävistä maksuista 2 päivänä joulukuuta "
+        "1983 annetun asetuksen ( 887/83 ) 2 §:n 1 momentti, 4§:n 2 momentti sekä 5§, "
+        "lisätään asetukseen vammaisuuden perusteella järjestettävistä palveluista ja "
+        "tukitoimista 3 päivänä huhtikuuta 1987 annetun lain (380/87) 14§:n 2 "
+        "momentin nojalla uusi 4 a§, seuraavasti:"
+    )
     with pytest.raises(OutOfScope):
         parse_text_with(text, new_parser.parse)

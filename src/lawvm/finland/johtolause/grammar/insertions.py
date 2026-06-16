@@ -872,6 +872,8 @@ def recognize_insertion(
     chapter: str = "",
     part: str = "",
     verb: Optional[SourceVerb] = None,
+    *,
+    started_with_citation_span: bool = False,
 ) -> Optional[ParsedInsertion]:
     """Recognize a clean insertion batch at the cursor.
 
@@ -888,6 +890,11 @@ def recognize_insertion(
     ``verb`` is the verb-group verb (``None`` when unknown). Only ``LISATA``
     enables the no-``uusi`` DOC:ILL / LUKU:ILL fallback arms the old parser
     accepts (``lisätään … lakiin N §`` with the ``uusi`` left implicit).
+
+    ``started_with_citation_span`` reproduces the old ``_target`` hint that this
+    batch OPENED on a CITATION_SPAN (already consumed by the driver's sentinel
+    skip) — it enables the ``nojalla`` authority lead-in skip on a citation-stamped
+    authority list (``[CITE] N §:n nojalla uusi …``).
     """
     start = scan.pos
 
@@ -896,7 +903,7 @@ def recognize_insertion(
     # anchors at ``uusi``. Probed before container context so the authority's own
     # chapter/part is not mistaken for the inserted entity's scope.
     saved_auth = scan.pos
-    if _skip_authority_nojalla_lead_in(scan) and _at(scan, "UUSI"):
+    if _skip_authority_nojalla_lead_in(scan, started_with_citation_span) and _at(scan, "UUSI"):
         scan.advance()
         _skip_nain_kuuluva(scan)
         post_uusi = scan.pos
@@ -932,9 +939,28 @@ def recognize_insertion(
     effective_part = part_pre or part
     effective_chapter = ch_pre or chapter
 
+    # Leading reinstatement / citation preamble between the chapter / part scope
+    # anchor and ``uusi`` (old ``_insertion`` lines 2320-2323: ``s.skip_cats(
+    # _REINST_OR_CITE)``). A ``N luvun [siitä lailla X kumotun K §:n tilalle ―
+    # REINST_SPAN] uusi M §`` collapses the whole reinstatement clause to one
+    # leading span the old parser skips before dispatch. Only fired when a
+    # chapter / part scope was actually pre-parsed, so a bare leading
+    # CITATION_SPAN (an authority ``nojalla`` lead-in or chapter-provenance the
+    # downstream arms scope themselves) is left untouched — the narrow shape that
+    # reproduces the old skip without over-consuming a span another arm owns.
+    if (ch_pre or part_pre) and _at(scan, "REINST_SPAN", "CITATION_SPAN"):
+        while _at(scan, "REINST_SPAN", "CITATION_SPAN"):
+            scan.advance()
+
     # Any reinstatement/citation/provenance/heading token inside the phrase means
     # the clause needs the old parser's residue handling — out of scope.
-    nodes = _dispatch(scan, effective_part, effective_chapter, verb)
+    #
+    # The inherited ``chapter`` / ``part`` (NOT ``ch_pre`` / ``part_pre``) is also
+    # threaded: the old parser's whole-target arms (Pattern D ``uusi N §`` and
+    # Pattern E ``lukuun uusi N §``) emit with the INHERITED scope, ignoring a
+    # ``N luvun`` pre-parse on the current arm — so a ``N luvun [reinst] uusi M §``
+    # whole-section insert is chapter-LESS, matching the old parser.
+    nodes = _dispatch(scan, effective_part, effective_chapter, chapter, part, verb)
     if nodes is None:
         scan.goto(start)
         return None
@@ -1021,7 +1047,9 @@ _AUTHORITY_CATS = frozenset(
 )
 
 
-def _skip_authority_nojalla_lead_in(scan: _Scan) -> bool:
+def _skip_authority_nojalla_lead_in(
+    scan: _Scan, started_with_citation_span: bool = False
+) -> bool:
     """Skip a ``<GEN authority> [CITE] uusi`` lead-in to the ``uusi``.
 
     A faithful narrowing of ``_target._skip_authority_nojalla_lead_in`` for the
@@ -1036,34 +1064,70 @@ def _skip_authority_nojalla_lead_in(scan: _Scan) -> bool:
     the authority phrase): an ``N §:n M momenttiin uusi …`` (illative insertion
     target, no citation before ``uusi``) is a genuine sub-target insert, not an
     authority lead-in, and must NOT be skipped.
+
+    The closer that reaches the ``uusi`` is a CITATION_SPAN or a COMMA that
+    follows the authority list — faithful to the old
+    ``_target._skip_authority_nojalla_lead_in`` (surface_parse 2997-3068). The
+    citation/comma fires only once the authority has been seen (an explicit
+    ``nojalla`` WORD, or — when the group OPENS on a CITATION_SPAN, the old
+    ``started_with_citation_span`` hint — any structural authority token). The old
+    parser does NOT skip on a bare ``nojalla`` directly abutting ``uusi`` with no
+    citation/comma between (``14 §:n 2 momentin nojalla uusi 4 a §``): there it
+    reads the authority §:GEN as the operative target, so this recogniser must
+    leave that shape untouched to stay byte-identical.
     """
     toks = scan.cur.tokens
     i = scan.pos
     n = len(toks)
-    saw_authority_gen = False
+
+    # If already positioned AT a UUSI, the leading CITATION_SPAN was a
+    # reinstatement annotation of THIS insertion arm, not an authority lead-in
+    # (``[CITE] uusi 16 a § ja [CITE][REINST] uusi 17 §``). Skipping ahead would
+    # jump over the current arm to the next ``uusi`` and silently drop it — the old
+    # parser's first guard (surface_parse 3013-3014). Bail.
+    if i < n and toks[i].cat == "UUSI":
+        return False
+
+    saw_nojalla = False
+    saw_structural_authority = False
+    # The batch may OPEN on a CITATION_SPAN that the driver's sentinel skip already
+    # consumed (the ``started_with_citation_span`` hint, threaded from the driver),
+    # OR one still sitting at the cursor here — either counts.
+    started_with_citation_span = started_with_citation_span or (
+        i < n and toks[i].cat == "CITATION_SPAN"
+    )
+
+    def _scan_forward_to_uusi(j: int) -> bool:
+        """Scan ``[j, …)`` for the next UUSI (stopping at VERB/END); skip there."""
+        while j < n:
+            look = toks[j].cat
+            if look in ("VERB", "END", "END_SENTINEL_SPAN"):
+                return False
+            if look == "UUSI":
+                scan.goto(j)
+                return True
+            j += 1
+        return False
+
     while i < n:
         cat = toks[i].cat
-        if cat in ("VERB", "END", "END_SENTINEL_SPAN", "UUSI"):
+        if cat == "VERB":
             return False
-        if cat == "CITATION_SPAN":
-            # The citation must close the authority (GEN seen) and directly
-            # precede ``uusi``.
-            if saw_authority_gen and (i + 1) < n and toks[i + 1].cat == "UUSI":
-                scan.goto(i + 1)
-                return True
+        if cat in ("NUM", "LETTER", "DASH", "CONJ", "PYKALA", "MOMENTTI"):
+            saw_structural_authority = True
+        if (
+            (saw_nojalla or started_with_citation_span)
+            and saw_structural_authority
+            and cat == "CITATION_SPAN"
+            and _scan_forward_to_uusi(i + 1)
+        ):
+            return True
+        if cat == "WORD" and (toks[i].text or "").lower() == "nojalla":
+            saw_nojalla = True
             i += 1
             continue
-        if cat in _AUTHORITY_CATS:
-            if cat in ("PYKALA", "MOMENTTI", "LUKU", "OSA") and toks[i].case == "GEN":
-                saw_authority_gen = True
-            elif cat in ("PYKALA", "MOMENTTI", "LUKU", "OSA"):
-                # A non-genitive structural noun (illative insertion target,
-                # nominative) means this is not an authority lead-in.
-                return False
-        elif cat in ("STATUTE_NAME_SPAN", "COMMA"):
-            pass
-        else:
-            return False
+        if saw_nojalla and cat == "COMMA" and _scan_forward_to_uusi(i + 1):
+            return True
         i += 1
     return False
 
@@ -1072,12 +1136,19 @@ def _dispatch(
     scan: _Scan,
     effective_part: str,
     effective_chapter: str,
+    inherited_chapter: str = "",
+    inherited_part: str = "",
     verb: Optional[SourceVerb] = None,
 ) -> Optional[list[InsNode]]:
     """Try each in-scope insertion arm in the old parser's priority order.
 
     ``effective_part`` / ``effective_chapter`` are the resolved container scope
     (``ch_pre or inherited``), already including any inherited verb-group scope.
+    ``inherited_chapter`` / ``inherited_part`` are the inherited scope WITHOUT the
+    current arm's ``N luvun`` / ``N osan`` pre-parse — the old parser's whole-target
+    arms (Pattern D ``uusi N §``, Pattern E ``lukuun uusi N §``) emit with these,
+    NOT ``effective_*``, so a ``N luvun [reinst] uusi M §`` whole-section insert is
+    chapter-less just as the old parser leaves it.
     ``verb`` gates the no-``uusi`` DOC:ILL / LUKU:ILL fallback arms (LISATA only).
     """
     # ── Target-prefixed sub-target arms: numlist (§:ILL | §:GEN) … ──────────
@@ -1179,14 +1250,49 @@ def _dispatch(
     if osa_nodes is not None:
         return osa_nodes
 
+    # ── Bare ``LUKU:ILL [reinst] uusi numlist (§ | luku)`` (old Pattern E) ──
+    #
+    # A NUMBER-less ``lukuun`` (the ``said chapter``) whose number is the inherited
+    # running chapter — an in-batch continuation arm (``…, lukuun uusi 31 a … §``)
+    # the old parser owns via Pattern E (surface_parse 2841-2877). The numbered
+    # ``N lukuun`` form is dispatched above (before the provenance guard); this bare
+    # form reuses the same recognizer (which consumes its own reinstatement
+    # preamble) and emits with the INHERITED chapter, exactly as Pattern E's
+    # ``chapter=chapter``. (The numbered form would have set ``ch_pre`` and been
+    # handled above, so a bare ``LUKU:ILL`` here is unambiguous.)
+    #
+    # Only fired when the inherited chapter is KNOWN (a ``N luvun`` arm earlier in
+    # THIS insertion batch sets it). A bare ``lukuun`` opening a fresh verb group
+    # (``muutetaan … 20 luvun … § sekä lisätään lukuun uusi 9 a §``) inherits the
+    # chapter from a PRIOR verb group — a cross-group resolution this single-arm
+    # recognizer does not perform; emitting a chapter-less node there would DIVERGE
+    # from the old parser (which carries the prior group's chapter). Decline so the
+    # driver keeps the old parser's fail-loud rather than ship a wrong chapter.
+    if _at_cat_case(scan, "LUKU", "ILL") and inherited_chapter:
+        luku_nodes = recognize_bare_anaphoric_chapter_insert(scan, verb)
+        if luku_nodes is not None:
+            return [
+                InsNode(
+                    kind=n.kind,
+                    label=n.label,
+                    chapter=inherited_chapter,
+                    part=n.part or inherited_part,
+                )
+                for n in luku_nodes
+            ]
+
     # (The LUKU:ILL-scoped insert arm is dispatched above, before the broad
     # provenance guard, so its reinstatement preamble is consumed faithfully.)
 
     # ── Bare ``uusi numlist (§ | luku | osa)`` (citation-stripped) ──────────
+    #
+    # The old Pattern D emits with the INHERITED chapter / part (the ``_insertion``
+    # args), NOT a ``N luvun`` pre-parse on this arm — so a ``N luvun [reinst] uusi
+    # M §`` whole-section insert is chapter-less. Thread ``inherited_*`` here.
     if _at(scan, "UUSI"):
         scan.advance()
         _skip_nain_kuuluva(scan)
-        whole = _recognize_whole_target_list(scan, effective_chapter, effective_part)
+        whole = _recognize_whole_target_list(scan, inherited_chapter, inherited_part)
         if whole is not None:
             return whole
         return None
