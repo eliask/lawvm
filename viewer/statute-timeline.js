@@ -2028,7 +2028,12 @@ function buildToc() {
     if (secs.length) {
       html += '<ul class="toc-sections">';
       for (const { child, childAddr, entry: childEntry } of secs) {
-        const sectionDisplay = displayLabelHeading(childAddr, child);
+        // A leaf section (no addressable children) is itself a covering unit, so
+        // it carries a content blob but no display_nodes scaffold row. Use that
+        // blob for its label+heading; otherwise (a section that only scaffolds
+        // deeper covering units) fall back to the display_nodes row.
+        const secNode = child || (childEntry && childEntry.hash ? getBlob(childEntry.hash) : null);
+        const sectionDisplay = displayLabelHeading(childAddr, secNode);
         const sLabel = sectionDisplay.label;
         const sHeading = sectionDisplay.heading;
         const sTomb = tombstoneInfoForTreeEntry(childEntry);
