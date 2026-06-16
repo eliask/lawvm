@@ -77,6 +77,15 @@ class NZAmendInstruction:
     old_text: str
     new_text: str
     each_place: bool
+    # Structural-amend payloads beyond the omit/substitute pair. ``anchor_text``
+    # is the existing text an ``inserting`` instruction inserts relative to (the
+    # ``<quote.in>`` reference word); ``insert_position`` is ``"after"`` or
+    # ``"before"``. Both stay empty for the substitution verbs. ``omit_only`` is
+    # ``True`` for an ``omitting`` instruction that deletes a single ``<amend.in>``
+    # span with no replacement (lowered as a text-replace to the empty string).
+    anchor_text: str = ""
+    insert_position: str = ""
+    omit_only: bool = False
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -85,6 +94,9 @@ class NZAmendInstruction:
             "old_text": self.old_text,
             "new_text": self.new_text,
             "each_place": self.each_place,
+            "anchor_text": self.anchor_text,
+            "insert_position": self.insert_position,
+            "omit_only": self.omit_only,
         }
 
 
@@ -1417,12 +1429,23 @@ def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
         verb = _amend_instruction_verb(flat)
         target_citation = _amend_instruction_target(text_node)
         each_place = bool(re.search(r"\bin each place\b|\bwherever\b", flat, re.IGNORECASE))
+        old_text = ""
+        new_text = ""
+        anchor_text = ""
+        insert_position = ""
+        omit_only = False
         if verb in {"omitting_substituting", "replace_with"} and len(amend_ins) == 2:
             old_text = _node_text(amend_ins[0])
             new_text = _node_text(amend_ins[1])
-        else:
-            old_text = ""
-            new_text = ""
+        elif verb == "omitting" and len(amend_ins) == 1:
+            # "is amended by omitting <amend.in>X</amend.in>." — a pure deletion
+            # of a single span (no substitution). Lowered as a text-replace to
+            # the empty string. Multi-``<amend.in>`` omit shapes are left as a
+            # not-supported typed instruction (no old/new), never guessed.
+            old_text = _node_text(amend_ins[0])
+            omit_only = True
+        elif verb == "inserting":
+            anchor_text, new_text, insert_position = _insert_after_anchor_payload(text_node, amend_ins)
         instructions.append(
             NZAmendInstruction(
                 target_citation=target_citation,
@@ -1430,9 +1453,50 @@ def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
                 old_text=old_text,
                 new_text=new_text,
                 each_place=each_place,
+                anchor_text=anchor_text,
+                insert_position=insert_position,
+                omit_only=omit_only,
             )
         )
     return tuple(instructions)
+
+
+def _insert_after_anchor_payload(
+    text_node: etree._Element,
+    amend_ins: list[etree._Element],
+) -> tuple[str, str, str]:
+    """Extract (anchor, new_text, position) for an ``inserting`` instruction.
+
+    Only the unambiguous ``<quote.in>``-anchored convention is parsed:
+    "amended by inserting, after the word <quote.in>ANCHOR</quote.in>, the words
+    <amend.in>NEW</amend.in>". The anchor (existing text the insertion is keyed
+    to) lives in ``<quote.in>``; the new text lives in a single ``<amend.in>``.
+    ``position`` is ``"after"`` or ``"before"`` read from the prose.
+
+    Returns empty strings (no payload) for any other shape — notably the older
+    two-``<amend.in>`` form ("inserting X after Y") whose element order is not a
+    reliable anchor/new discriminator — so the consumer keeps it a typed
+    not-supported residue rather than guessing which span is the anchor.
+    """
+    quote_ins = [
+        child
+        for child in text_node.iter()
+        if isinstance(child.tag, str) and _localname(child) == "quote.in"
+    ]
+    if len(quote_ins) != 1 or len(amend_ins) != 1:
+        return "", "", ""
+    flat = _node_text(text_node).lower()
+    if re.search(r"\bafter\b", flat):
+        position = "after"
+    elif re.search(r"\bbefore\b", flat):
+        position = "before"
+    else:
+        return "", "", ""
+    anchor = _node_text(quote_ins[0])
+    new_text = _node_text(amend_ins[0])
+    if not anchor or not new_text:
+        return "", "", ""
+    return anchor, new_text, position
 
 
 def _amend_instruction_verb(flat_text: str) -> str:

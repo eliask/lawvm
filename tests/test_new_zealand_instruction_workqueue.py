@@ -2298,15 +2298,15 @@ def test_typed_amend_in_preferred_over_prose_for_exact_payload() -> None:
     assert row.new_text == "sections 18, 18A, and 18B"
 
 
-def test_typed_amend_in_insert_verb_stays_typed_blocker_not_guess() -> None:
-    # The matched typed instruction is an insert (one ``<amend.in>``), which is
-    # not a text-replace shape. It must surface as a typed blocker keyed to the
-    # target, never a guessed substitution candidate.
+def test_typed_amend_in_insert_after_anchor_lowers_to_text_replace() -> None:
+    # The matched typed instruction is an insert keyed to an explicit
+    # ``<quote.in>`` anchor. It lowers to a single text-replace whose old text is
+    # the anchor and whose new text is the anchor followed by the inserted words.
     target_xml = b"""\
 <act>
   <body>
     <prov id="S17"><label>17</label><heading>Seventeen</heading>
-      <prov.body><subprov id="S17-2"><label>2</label><para><text>Body.</text></para></subprov></prov.body>
+      <prov.body><subprov id="S17-2"><label>2</label><para><text>A signature is required.</text></para></subprov></prov.body>
       <notes>
         <history-note id="HN17">
           <amended-provision>Section 17(2)</amended-provision>
@@ -2335,7 +2335,134 @@ def test_typed_amend_in_insert_verb_stays_typed_blocker_not_guess() -> None:
     report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
     row = [r for r in report.rows if r.target_address == "section:17/subsection:2"][0]
 
-    assert row.instruction_subfamily_status == "blocked_typed_amend_in_not_substitution_verb"
+    assert row.instruction_subfamily_status == "candidate_direct_typed_amend_in_insert"
+    assert row.instruction_subfamily == "direct_single_text_substitution"
+    assert row.old_text == "required"
+    assert row.new_text == "required of a chief executive"
+
+
+def test_typed_amend_in_omit_only_lowers_to_deletion() -> None:
+    # "is amended by omitting <amend.in>X</amend.in>" (single span, no
+    # substitution) lowers to a single text-replace whose old text is the
+    # omitted span and whose new text is empty (a deletion).
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S14"><label>14</label><heading>Fourteen</heading>
+      <prov.body><subprov id="S14-1"><label>1</label><para><text>A is detained for an unspecified period under this Act.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN14">
+          <amended-provision>Section 14(1)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A40">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 14(1): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A40"><label>5</label><heading>Amend</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 14(1)</extref></citation>
+        is amended by omitting <amend.in>for an unspecified period</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:14/subsection:1"][0]
+
+    assert row.instruction_subfamily_status == "candidate_direct_typed_amend_in_omit_deletion"
+    assert row.instruction_subfamily == "direct_single_text_substitution"
+    assert row.old_text == "for an unspecified period"
+    assert row.new_text == ""
+
+
+def test_typed_amend_in_insert_before_anchor_lowers_to_text_replace() -> None:
+    # An insert-before instruction keyed to an explicit anchor lowers to a
+    # text-replace whose new text is the inserted words followed by the anchor.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S20"><label>20</label><heading>Twenty</heading>
+      <prov.body><subprov id="S20-1"><label>1</label><para><text>The board may appoint a member.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN20">
+          <amended-provision>Section 20(1)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A41">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 20(1): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A41"><label>5</label><heading>Amend</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 20(1)</extref></citation>
+        is amended by inserting <amend.in>new</amend.in> before <quote.in>member</quote.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:20/subsection:1"][0]
+
+    assert row.instruction_subfamily_status == "candidate_direct_typed_amend_in_insert"
+    assert row.old_text == "member"
+    assert row.new_text == "new member"
+
+
+def test_typed_amend_in_insert_two_amend_in_no_anchor_stays_residue() -> None:
+    # The older two-``<amend.in>`` insert form has no explicit anchor and an
+    # unreliable element order; it must surface as a typed not-supported residue,
+    # never a guessed insertion.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S30"><label>30</label><heading>Thirty</heading>
+      <prov.body><subprov id="S30-1"><label>1</label><para><text>A power of dismissing a member.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN30">
+          <amended-provision>Section 30(1)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A42">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 30(1): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A42"><label>5</label><heading>Amend</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 30(1)</extref></citation>
+        is amended by inserting <amend.in>or suspending</amend.in> after <amend.in>dismissing</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:30/subsection:1"][0]
+
+    assert row.instruction_subfamily_status == "blocked_typed_amend_in_insert_anchor_unparsed"
     assert row.instruction_subfamily == ""
     assert row.old_text == ""
     assert row.new_text == ""

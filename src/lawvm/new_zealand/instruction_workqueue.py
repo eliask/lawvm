@@ -625,6 +625,10 @@ def _classify_typed_amend_in_text_substitution(
             target_citation_status="matched",
         )
     instruction = matched[0]
+    if instruction.verb == "omitting" and instruction.omit_only:
+        return _classify_typed_omit_only(instruction)
+    if instruction.verb == "inserting":
+        return _classify_typed_insert_after(instruction)
     if instruction.verb not in {"omitting_substituting", "replace_with"}:
         return _TextSubstitutionCandidate(
             status="blocked_typed_amend_in_not_substitution_verb",
@@ -671,6 +675,98 @@ def _classify_typed_amend_in_text_substitution(
         target_citation_status="matched",
         old_text=old_text,
         new_text=new_text,
+        scope="inline_text_single_occurrence",
+    )
+
+
+def _classify_typed_omit_only(instruction: Any) -> _TextSubstitutionCandidate:
+    """Lower a typed omit-only ``<amend.in>`` instruction to a deletion.
+
+    "is amended by omitting <amend.in>X</amend.in>" deletes the span ``X`` with
+    no replacement. This lowers to a text-replace whose old text is ``X`` and
+    whose new text is the empty string; the downstream single-occurrence oracle
+    + dry-run kernel verify the deletion exactly the same way as a substitution.
+    Refuse-don't-guess if the omitted span is empty after normalization.
+    """
+    old_text = " ".join(instruction.old_text.split()).strip(" ,;.")
+    if not old_text:
+        return _TextSubstitutionCandidate(
+            status="blocked_typed_amend_in_payload_incomplete",
+            rule_id="nz_instruction_semantics_blocked_typed_amend_in_payload_incomplete",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+            old_text=old_text,
+        )
+    if instruction.each_place:
+        return _TextSubstitutionCandidate(
+            status="candidate_direct_each_place_typed_amend_in_omit_deletion",
+            subfamily="direct_each_place_text_substitution",
+            rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_omit_deletion_candidate",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+            old_text=old_text,
+            new_text="",
+            scope="inline_text_each_place",
+        )
+    return _TextSubstitutionCandidate(
+        status="candidate_direct_typed_amend_in_omit_deletion",
+        subfamily="direct_single_text_substitution",
+        rule_id="nz_instruction_semantics_direct_typed_amend_in_omit_deletion_candidate",
+        explicit_target_citation=instruction.target_citation,
+        target_citation_status="matched",
+        old_text=old_text,
+        new_text="",
+        scope="inline_text_single_occurrence",
+    )
+
+
+def _classify_typed_insert_after(instruction: Any) -> _TextSubstitutionCandidate:
+    """Lower a typed insert-relative-to-anchor ``<amend.in>`` instruction.
+
+    "is amended by inserting, after the word <quote.in>ANCHOR</quote.in>, the
+    words <amend.in>NEW</amend.in>" inserts ``NEW`` adjacent to ``ANCHOR``. Only
+    the unambiguous ``<quote.in>``-anchored shape carries a parsed
+    ``anchor_text`` + ``insert_position`` (see ``_insert_after_anchor_payload``);
+    any other insert shape arrives with no anchor and stays a typed
+    not-supported residue, never a guess about which span is the anchor.
+
+    Lowered as a text-replace keyed on the anchor: ``after`` →
+    ``ANCHOR`` → ``ANCHOR NEW``; ``before`` → ``ANCHOR`` → ``NEW ANCHOR``. The
+    anchor is the matched old text so the existing single-occurrence oracle +
+    dry-run kernel verify the insertion exactly.
+    """
+    anchor = " ".join(instruction.anchor_text.split()).strip()
+    new = " ".join(instruction.new_text.split()).strip(" ,;.")
+    if not anchor or not new or instruction.insert_position not in {"after", "before"}:
+        return _TextSubstitutionCandidate(
+            status="blocked_typed_amend_in_insert_anchor_unparsed",
+            rule_id="nz_instruction_semantics_blocked_typed_amend_in_insert_anchor_unparsed",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+        )
+    if instruction.insert_position == "after":
+        replacement = f"{anchor} {new}"
+    else:
+        replacement = f"{new} {anchor}"
+    if instruction.each_place:
+        return _TextSubstitutionCandidate(
+            status="candidate_direct_each_place_typed_amend_in_insert",
+            subfamily="direct_each_place_text_substitution",
+            rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_insert_candidate",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+            old_text=anchor,
+            new_text=replacement,
+            scope="inline_text_each_place",
+        )
+    return _TextSubstitutionCandidate(
+        status="candidate_direct_typed_amend_in_insert",
+        subfamily="direct_single_text_substitution",
+        rule_id="nz_instruction_semantics_direct_typed_amend_in_insert_candidate",
+        explicit_target_citation=instruction.target_citation,
+        target_citation_status="matched",
+        old_text=anchor,
+        new_text=replacement,
         scope="inline_text_single_occurrence",
     )
 
@@ -1260,7 +1356,17 @@ def _latest_oracle_text_witness(
         return target_node
     old_occurrences = normalized_nz_inline_occurrence_count(target_node.node.text, text_substitution.old_text)
     new_occurrences = normalized_nz_inline_occurrence_count(target_node.node.text, text_substitution.new_text)
-    if old_occurrences == 0 and new_occurrences == 1:
+    is_deletion = not text_substitution.new_text.strip()
+    if is_deletion and old_occurrences == 0:
+        # Omit-only deletion: the omitted span is absent from the latest
+        # consolidated text, consistent with its deletion. ``new_text`` is empty
+        # so the substitution-oriented branches below never apply.
+        status = "oracle_old_text_deleted"
+    elif is_deletion:
+        # The span the instruction says to omit is still present in the latest
+        # text — refuse rather than assert a deletion the oracle contradicts.
+        status = "oracle_old_text_not_deleted"
+    elif old_occurrences == 0 and new_occurrences == 1:
         status = "oracle_new_text_only"
     elif (
         text_substitution.scope == "inline_text_each_place"

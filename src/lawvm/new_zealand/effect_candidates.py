@@ -66,6 +66,8 @@ _TEXT_REPLACE_ALLOWED_ORACLE_TEXT_STATUSES = frozenset(
         "oracle_new_text_only",
         "oracle_new_text_only_each_place",
         "oracle_new_text_contains_old_text",
+        # Omit-only deletion: the omitted span is gone from the latest text.
+        "oracle_old_text_deleted",
     }
 )
 _TEXT_REPLACE_CANDIDATE_SUBFAMILIES = frozenset(
@@ -85,6 +87,8 @@ _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES = frozenset(
     {
         "observed_single_replacement",
         "observed_each_place_replacement",
+        "observed_single_deletion",
+        "observed_each_place_deletion",
     }
 )
 
@@ -1253,6 +1257,7 @@ def _source_change_text_witness(
         after_old=after_old,
         after_new=after_new,
         scope=instruction_row.text_substitution_scope,
+        is_deletion=not instruction_row.new_text.strip(),
     )
     return _SourceChangeTextWitness(
         status=status,
@@ -1301,6 +1306,7 @@ def _source_change_text_status(
     after_old: int,
     after_new: int,
     scope: str,
+    is_deletion: bool = False,
 ) -> str:
     if before_old == 1 and before_new == 0 and after_old == 0 and after_new == 1:
         return "observed_single_replacement"
@@ -1312,6 +1318,15 @@ def _source_change_text_status(
         and after_old == 0
     ):
         return "observed_each_place_replacement"
+    # Omit-only deletion: new_text is empty so before_new/after_new are 0 by
+    # construction. A genuine single deletion has the span present before and
+    # absent after; the each-place form removes every occurrence at once.
+    if is_deletion:
+        if before_old == 1 and after_old == 0:
+            return "observed_single_deletion"
+        if scope == "inline_text_each_place" and before_old > 0 and after_old == 0:
+            return "observed_each_place_deletion"
+        return "deletion_not_observed"
     if before_old == 0 and before_new == 0 and after_old == 0 and after_new == 0:
         return "neither_old_nor_new_observed"
     if before_old > 0 and after_new > 0:

@@ -738,6 +738,77 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_omitti
     )
 
 
+def test_build_effect_candidate_surface_emits_deletion_candidate_from_typed_omit_only() -> None:
+    # A typed omit-only ``<amend.in>`` deletes a span. The latest consolidated
+    # target no longer contains the omitted span (it was deleted), so the
+    # latest-oracle witness reports ``oracle_old_text_deleted`` and the candidate
+    # is emitted as a text-replace to the empty string.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S14"><label>14</label><heading>Target</heading>
+      <subprov id="S14-1"><label>1</label><para><text>A person may be detained under this Act.</text></para></subprov>
+      <notes>
+        <history-note id="HN1">
+          <amended-provision>Section 14(1)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A5">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2025</amending-leg>
+          Section 14(1): amended by section 5 of the Example Amendment Act 2025 (2025 No 4).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A5"><label>5</label><heading>Omission</heading>
+      <prov.body><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 14(1)</extref></citation>
+        is amended by omitting <amend.in>for an unspecified period</amend.in>.
+      </text></para></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    target_document = parse_nz_source_document(target_xml)
+    operation_surface = build_operation_surface(
+        target_document,
+        work_id="act_public_2020_1",
+        archived_dependency_work_ids=frozenset({"act_public_2025_4"}),
+    )
+    payload_surface = build_payload_surface(
+        operation_surface,
+        dependency_documents={"act_public_2025_4": parse_nz_source_document(amendment_xml)},
+    )
+    effect_readiness = build_effect_readiness_surface(operation_surface, payload_surface)
+    instruction_workqueue = build_instruction_workqueue(
+        operation_surface,
+        payload_surface,
+        effect_readiness,
+        target_document,
+    )
+
+    report = build_effect_candidate_surface(
+        operation_surface,
+        payload_surface,
+        effect_readiness,
+        instruction_workqueue,
+    )
+    row = report.rows[0]
+
+    assert report.summary()["candidate_status_counts"] == {"candidate_emitted": 1}
+    assert row.action == "text_replace"
+    assert row.instruction_subfamily_status == "candidate_direct_typed_amend_in_omit_deletion"
+    assert row.latest_oracle_text_status == "oracle_old_text_deleted"
+    assert row.operation is not None
+    assert row.operation.text_patch is not None
+    assert row.operation.text_patch.selector.match_text == "for an unspecified period"
+    assert row.operation.text_patch.replacement == ""
+
+
 def test_build_effect_candidate_surface_blocks_text_replace_without_latest_oracle_witness() -> None:
     target_xml = b"""\
 <act>

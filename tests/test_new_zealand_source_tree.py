@@ -209,11 +209,11 @@ def test_amend_instructions_read_replace_with_and_linkcontent_target() -> None:
     assert instruction.new_text == "new rate"
 
 
-def test_amend_instructions_keep_insert_and_each_place_typed_not_guessed() -> None:
-    # An insert instruction (one ``<amend.in>``) must carry its verb but no
-    # old/new payload — it stays a typed not-yet-supported instruction, never a
-    # guessed substitution. A wherever/in-each-place omit/substitute must be
-    # flagged ``each_place`` while still carrying exact old/new.
+def test_amend_instructions_extract_insert_after_anchor_and_each_place() -> None:
+    # An insert-after instruction with an explicit ``<quote.in>`` anchor carries
+    # its anchor, the inserted text, and the position — the unambiguous shape the
+    # lowering supports. A wherever/in-each-place omit/substitute must be flagged
+    # ``each_place`` while still carrying exact old/new.
     xml = b"""\
 <act>
   <body>
@@ -239,12 +239,69 @@ def test_amend_instructions_keep_insert_and_each_place_typed_not_guessed() -> No
 
     insert, each_place = node.amend_instructions
     assert insert.verb == "inserting"
+    # Insert-after anchor extraction: anchor in <quote.in>, new text in <amend.in>.
+    assert insert.anchor_text == "required"
+    assert insert.new_text == "of a chief executive"
+    assert insert.insert_position == "after"
     assert insert.old_text == ""
-    assert insert.new_text == ""
+    assert insert.omit_only is False
     assert each_place.verb == "omitting_substituting"
     assert each_place.each_place is True
     assert each_place.old_text == "widow"
     assert each_place.new_text == "spouse or partner"
+
+
+def test_amend_instructions_omit_only_carries_deletion_span() -> None:
+    # "is amended by omitting <amend.in>X</amend.in>" with a single span and no
+    # substitution must carry the omitted span as old_text and be flagged
+    # ``omit_only`` (lowered downstream as a deletion to the empty string).
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A9"><label>9</label><heading>Omit</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM5">Section 14(1)(b)</extref></citation>
+        is amended by omitting <amend.in>for an unspecified period</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A9"][0]
+    (omit,) = node.amend_instructions
+    assert omit.verb == "omitting"
+    assert omit.omit_only is True
+    assert omit.old_text == "for an unspecified period"
+    assert omit.new_text == ""
+    assert omit.anchor_text == ""
+
+
+def test_amend_instructions_insert_two_amend_in_no_anchor_stays_unparsed() -> None:
+    # The older two-``<amend.in>`` insert form ("inserting X after Y") has no
+    # ``<quote.in>`` anchor and an unreliable element order — it must NOT be
+    # given a parsed anchor/new payload (refuse-don't-guess).
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A10"><label>10</label><heading>Insert</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM6">Section 174(4)</extref></citation>
+        is amended by inserting <amend.in>or suspending</amend.in> after <amend.in>dismissing</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A10"][0]
+    (insert,) = node.amend_instructions
+    assert insert.verb == "inserting"
+    assert insert.anchor_text == ""
+    assert insert.new_text == ""
+    assert insert.insert_position == ""
 
 
 def test_amend_instructions_empty_when_no_amend_in() -> None:

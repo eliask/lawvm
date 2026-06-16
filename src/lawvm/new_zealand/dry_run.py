@@ -1841,6 +1841,29 @@ def _oracle_partition_text(
     oracle_occupancy = _occupancy(oracle_node)
     oracle_old_occ = normalized_inline_occurrence_count(oracle_node.text, old_text)
     oracle_has_new = normalized_inline_contains(oracle_node.text, new_text)
+    if not new_text.strip():
+        # Omit-only deletion: there is no new text to find. The oracle reflects
+        # the deletion when the omitted span's residual count matches the
+        # candidate after-node's residual count (which is the after-deletion
+        # count, normally 0). MORE old_text in the oracle than we removed is a
+        # non-reflected deletion (residual); the deletion agrees otherwise.
+        if oracle_old_occ > after_old_occurrences:
+            return (
+                "residual_old_text_remains",
+                NZ_DRY_RUN_TEXT_RESIDUAL_OLD_TEXT_REMAINS_RULE_ID,
+                True,
+                oracle_occupancy,
+                oracle_old_occ,
+                False,
+            )
+        return (
+            "agrees",
+            NZ_DRY_RUN_TEXT_REPLACE_AGREES_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_old_occ,
+            True,
+        )
     if oracle_old_occ > after_old_occurrences:
         # The oracle still carries an old_text occurrence the substitution
         # removed: the substitution is not reflected. Report it as a residual

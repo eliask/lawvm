@@ -101,6 +101,23 @@ _AFTER_XML_NEW_ABSENT = b"""\
 """
 
 
+# Deletion fixtures: an omit-only deletion removes "in the prescribed form"
+# from 108(1). The agreeing oracle no longer carries that span; the residual
+# oracle still carries it (deletion not reflected).
+_AFTER_XML_DELETION_AGREES = b"""\
+<act>
+  <body>
+    <prov id="DLM360602" deletion-status=""><label>108</label><heading>Forms</heading>
+      <prov.body>
+        <subprov id="DLM360602s1"><label>1</label><para><text>An application must be.</text></para></subprov>
+        <subprov id="DLM360602s2"><label>2</label><para><text>The Registrar keeps the register.</text></para></subprov>
+      </prov.body></prov>
+    <prov id="DLM360603" deletion-status=""><label>109</label><heading>Neighbour</heading>
+      <prov.body><para><text>Neighbour text.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
 # Each-place fixtures: 108(1) carries the old phrase TWICE; an each-place
 # substitution must rewrite BOTH occurrences. Sibling 108(2) untouched.
 _BEFORE_XML_EACH_PLACE = b"""\
@@ -373,6 +390,45 @@ def test_text_replace_residual_when_new_text_absent_in_oracle() -> None:
     assert proof.oracle_match == "residual_new_text_absent"
     assert proof.oracle_match_rule_id == NZ_DRY_RUN_TEXT_RESIDUAL_NEW_TEXT_ABSENT_RULE_ID
     assert proof.text_oracle_contains_new_text is False
+
+
+def test_text_replace_omit_only_deletion_applies_and_agrees() -> None:
+    # An omit-only deletion (new_text empty) removes the span. The oracle no
+    # longer carries it, so the deletion agrees.
+    report = _run(
+        _AFTER_XML_DELETION_AGREES,
+        (_text_replace_row(old_text="in the prescribed form", new_text=""),),
+    )
+
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1
+    assert summary["operations_refused"] == 0
+    assert summary["dry_run_oracle_agreements"] == 1
+    assert summary["dry_run_oracle_residuals"] == 0
+
+    proof = report.proofs[0]
+    assert proof.action == str(StructuralAction.TEXT_REPLACE)
+    assert proof.text_old_occurrences_before == 1
+    assert proof.text_old_occurrences_after == 0
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_TEXT_REPLACE_AGREES_RULE_ID
+
+
+def test_text_replace_omit_only_deletion_residual_when_span_remains() -> None:
+    # The oracle still carries the omitted span: the deletion is NOT reflected.
+    # ``_BEFORE_XML`` (where 108(1) still says "in the prescribed form") stands in
+    # for an unchanged on-or-after oracle.
+    report = _run(
+        _BEFORE_XML,
+        (_text_replace_row(old_text="in the prescribed form", new_text=""),),
+    )
+
+    summary = report.summary()
+    assert summary["dry_run_oracle_agreements"] == 0
+    assert summary["dry_run_oracle_residuals"] == 1
+    proof = report.proofs[0]
+    assert proof.oracle_match == "residual_old_text_remains"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_TEXT_RESIDUAL_OLD_TEXT_REMAINS_RULE_ID
 
 
 def test_text_replace_each_place_applies_at_every_occurrence_and_agrees() -> None:
