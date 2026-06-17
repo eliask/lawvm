@@ -23,10 +23,15 @@ from lawvm.core.reference_mention import (
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.legal_surface.bitemporal import (
     BrokenRefReport,
+    CurrentStateFinding,
+    CurrentStateReport,
+    CurrentStateUnavailable,
     PitCache,
     cached_tree_as_of,
     citation_anchor_for_statute,
+    scan_current_state,
     scan_one_statute,
+    scan_one_statute_current_state,
     scan_broken_references,
 )
 from lawvm.finland.references.broken_detection import (
@@ -439,3 +444,144 @@ def test_scan_broken_references_unavailable_counted_separately() -> None:
     assert report.unavailable_count >= 1
     assert report.unavailable_by_kind.get("current", 0) >= 1
     assert report.statutes_with_findings == 0
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT MODE: current-state scan (no replay) via injected body_for
+# ---------------------------------------------------------------------------
+#
+# These inject a fake current-body accessor (``body_for``) — NO real
+# legal_pit replay, no corpus. They pin the three default-mode outcomes:
+#   * target whose current body CONTAINS the cited section -> no finding
+#   * target whose current body LACKS the cited section    -> absent finding
+#   * target whose current body is unavailable             -> Unavailable
+
+# A target body consolidated to CURRENTLY carry §5 (so the cite resolves).
+_TARGET_HAS_SEC5 = (
+    b'<?xml version="1.0" encoding="UTF-8"?>'
+    b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    b'<body><section eId="sec_5"><num>5 \xc2\xa7</num>'
+    b"<p>Sis\xc3\xa4lt\xc3\xb6.</p></section></body></akomaNtoso>"
+)
+
+# A target body whose CURRENT consolidated text-state no longer carries §5
+# (it now carries only §7) -> the cited §5 is absent NOW.
+_TARGET_NO_SEC5 = (
+    b'<?xml version="1.0" encoding="UTF-8"?>'
+    b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    b'<body><section eId="sec_7"><num>7 \xc2\xa7</num>'
+    b"<p>Sis\xc3\xa4lt\xc3\xb6.</p></section></body></akomaNtoso>"
+)
+
+
+def test_current_state_present_section_yields_no_finding() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_HAS_SEC5 if statute_id == "2010/500" else None
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert result.error is None
+    assert result.mentions_checked >= 1
+    assert result.findings == ()
+    assert result.unavailable == ()
+
+
+def test_current_state_absent_section_yields_finding() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert result.error is None
+    assert result.mentions_checked >= 1
+    assert len(result.findings) == 1
+    finding = result.findings[0]
+    assert isinstance(finding, CurrentStateFinding)
+    assert finding.kind == "reference.target_provision_absent"
+    assert finding.target.statute_id == "2010/500"
+    assert finding.target.section_label == "5"
+    # Surface fact, not a legal conclusion.
+    assert "absent" in finding.message
+    assert result.unavailable == ()
+
+
+def test_current_state_unavailable_target_is_not_called_absent() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return None  # target current body unavailable -> fail-loud
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert result.error is None
+    assert result.mentions_checked >= 1
+    assert result.findings == ()  # never called absent
+    assert len(result.unavailable) == 1
+    assert isinstance(result.unavailable[0], CurrentStateUnavailable)
+    assert result.unavailable[0].target.statute_id == "2010/500"
+
+
+def test_current_state_unparseable_target_is_unavailable_not_absent() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return b"<<<not xml"  # parse fails -> presence undetermined
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert result.error is None
+    assert result.findings == ()
+    assert len(result.unavailable) == 1
+
+
+def test_scan_current_state_aggregates_by_kind() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
+
+    report: CurrentStateReport = scan_current_state(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert report.statutes_scanned == 1
+    assert report.statutes_with_findings == 1
+    assert report.statutes_errored == []
+    assert report.total_findings == 1
+    assert report.kind_counts == {"reference.target_provision_absent": 1}
+    assert report.unavailable_count == 0
+    assert report.top_statutes(5)[0].sid == "711/2022"
+
+
+def test_scan_current_state_no_body_is_not_an_error() -> None:
+    store = _FakeStore({})  # citing statute has no body
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_HAS_SEC5
+
+    report = scan_current_state(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+    )
+    assert report.statutes_scanned == 1
+    assert report.statutes_errored == []
+    assert report.mentions_checked == 0
+    assert report.total_findings == 0

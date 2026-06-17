@@ -67,7 +67,7 @@ from lawvm.finland.references.broken_detection import (
 )
 
 if TYPE_CHECKING:
-    from lawvm.core.reference_mention import ReferenceMention
+    from lawvm.core.reference_mention import ProvisionRef, ReferenceMention
     from lawvm.corpus_store import CorpusStore
 
 
@@ -79,6 +79,14 @@ __all__ = [
     "legal_pit_tree_as_of",
     "PitCache",
     "cached_tree_as_of",
+    # Current-state (no-replay) default mode
+    "CurrentStateFinding",
+    "CurrentStateUnavailable",
+    "CurrentStateScanResult",
+    "CurrentStateReport",
+    "BodyFor",
+    "scan_one_statute_current_state",
+    "scan_current_state",
 ]
 
 
@@ -573,4 +581,386 @@ def scan_broken_references(
         if reason_ct.get(r.value, 0)
     }
     report.unavailable_by_kind = dict(sorted(unavailable_kind_ct.items()))
+    return report
+
+
+# ===========================================================================
+# DEFAULT MODE: current-state detection (no replay)
+# ===========================================================================
+#
+# WHY a second, cheaper mode is the DEFAULT
+# -----------------------------------------
+# The replay path above answers the temporal-provenance question ("did the
+# target exist WHEN cited; was it repealed vs renumbered SINCE?"). Answering it
+# requires a full point-in-time ``legal_pit`` replay of every target statute as
+# of two dates — heavy, and the reason ``broken-refs`` was slow enough to need
+# ``--limit`` sampling.
+#
+# But the *default* question a reader of the statute book actually has is much
+# cheaper: "does the cited target provision EXIST in the target's CURRENT
+# consolidated text-state?" The Finlex oracle already gives us each statute's
+# current consolidated body for free (no replay). So the default scan is a
+# structural presence check against that current body — exactly the access +
+# parse + presence machinery the corpus type-mismatch lint already owns.
+#
+# REUSE, do not duplicate (no third tree walker)
+# ----------------------------------------------
+# ``legal_surface.corpus_lints`` already (a) reads the target's CURRENT body
+# (``_read_body`` — oracle-preferred, archive-only), (b) parses it into a
+# deterministic ``{section_label: _SectionStructure}`` map (``_parse_target_sections``),
+# and (c) decides momentti/kohta absence + structural-type mismatch from both
+# sides (``_check_citation``). We IMPORT and reuse all three here rather than
+# writing a third walker. The ONLY thing corpus_lints deliberately does not do
+# is treat a MISSING SECTION as a finding (it scopes a missing section out as a
+# renumber-over-time concern owned by broken_detection). For the current-state
+# "is the cited target present NOW?" question, a missing section IS the cheap
+# analog of "broken", so this mode adds that one decision on top of the reused
+# structure parser + deeper-level check.
+#
+# SURFACE-FACT DISCIPLINE (preserved)
+# -----------------------------------
+# A finding here is strictly "the cited provision is absent in the target's
+# current consolidated text-state" (or a structural-type disagreement) — never a
+# legal conclusion. A target whose current body is unavailable / unparseable is
+# reported as ``CurrentStateUnavailable`` (fail-loud), NEVER called absent.
+
+
+# Injected access to a statute's CURRENT consolidated body bytes (archive-only,
+# no replay). Defaults to ``corpus_lints._read_body`` over the store; tests
+# inject a fake so the default mode is testable without a corpus.
+BodyFor = Callable[[str], Optional[bytes]]
+"""``(statute_id) -> current consolidated body XML, or None if unavailable.``"""
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentStateFinding:
+    """A resolved citation whose target provision is absent in the CURRENT text-state.
+
+    The cheap, no-replay analog of a ``BrokenReferenceFinding``: established
+    purely from the target's current consolidated body, with no point-in-time
+    materialization and therefore NO temporal classification (repealed vs
+    renumbered). It only says the cited address is not present (or its claimed
+    structural type disagrees) in the target's text-state as it stands now.
+
+    Attributes:
+        source: The citing provision.
+        target: The resolved target provision found absent / type-mismatched.
+        kind: The corpus-lint surface-fact kind
+            (``reference.target_provision_absent`` /
+            ``reference.structural_type_mismatch``).
+        message: Self-evidencing diagnostic (embeds the cited path + the
+            target's actual shape), reused verbatim from the corpus lint.
+        rule_id: Stable rule identifier.
+    """
+
+    source: ProvisionRef
+    target: ProvisionRef
+    kind: str
+    message: str
+    rule_id: str = "fi.refs.current_state.absent"
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentStateUnavailable:
+    """The current-state presence of a target could not be established (fail-loud).
+
+    Emitted instead of a (false) absence finding when the target's current body
+    is unavailable or cannot be parsed deterministically. Brokenness stays
+    *undetermined* for that reference — never called absent.
+
+    Attributes:
+        source: The citing provision.
+        target: The resolved target provision we could not check.
+        reason: Human-readable diagnostic.
+        rule_id: Stable rule identifier.
+    """
+
+    source: ProvisionRef
+    target: ProvisionRef
+    reason: str
+    rule_id: str = "fi.refs.current_state.unavailable"
+
+
+@dataclass(frozen=True)
+class CurrentStateScanResult:
+    """Per-statute current-state scan outcome (always returned — errors recorded).
+
+    Mirrors ``StatuteScanResult`` for the no-replay default mode.
+    """
+
+    sid: str
+    mentions_checked: int
+    findings: tuple[CurrentStateFinding, ...]
+    unavailable: tuple[CurrentStateUnavailable, ...]
+    error: Optional[str] = None
+
+
+@dataclass
+class CurrentStateReport:
+    """Corpus-wide aggregate of the no-replay current-state scan.
+
+    Attributes:
+        statutes_scanned: How many citing statutes were scanned.
+        statutes_with_findings: How many scanned statutes had ≥1 finding.
+        statutes_errored: ids whose own scan raised (with the error text).
+        mentions_checked: Total resolved cross-statute mentions inspected.
+        kind_counts: Findings tallied by surface-fact ``kind``.
+        unavailable_count: Total ``CurrentStateUnavailable`` records (fail-loud).
+        per_statute: All ``CurrentStateScanResult`` rows.
+    """
+
+    statutes_scanned: int = 0
+    statutes_with_findings: int = 0
+    statutes_errored: list[tuple[str, str]] = field(default_factory=list)
+    mentions_checked: int = 0
+    kind_counts: dict[str, int] = field(default_factory=dict)
+    unavailable_count: int = 0
+    per_statute: list[CurrentStateScanResult] = field(default_factory=list)
+
+    @property
+    def total_findings(self) -> int:
+        return sum(self.kind_counts.values())
+
+    def top_statutes(self, n: int) -> list[CurrentStateScanResult]:
+        """Statutes ranked by finding count (errored statutes excluded)."""
+        scored = [r for r in self.per_statute if r.error is None and r.findings]
+        return sorted(scored, key=lambda r: -len(r.findings))[:n]
+
+
+def _provision_ref_to_address_path(ref: "ProvisionRef"):
+    """Build a corpus_lints ``_AddressPath`` from a target ``ProvisionRef``.
+
+    Returns ``None`` (skip — tag-don't-guess) when the ref carries no section
+    label or carries a momentti/kohta ordinal this mode cannot resolve as a
+    1-based integer (matching the lint's own ``_parse_address_tail`` discipline).
+    The corpus lint parses an integer-shaped ``section/subsection/item`` tail; we
+    construct the same shape directly from the typed ref instead of re-stringing
+    it, so the deeper-level check is byte-for-byte the lint's check.
+    """
+    from lawvm.finland.legal_surface.corpus_lints import _AddressPath
+
+    if not ref.section_label:
+        return None
+    subsection: Optional[int] = None
+    item: Optional[int] = None
+    depth = 1
+    if ref.subsection_num is not None:
+        if ref.subsection_num < 1:
+            return None
+        subsection = ref.subsection_num
+        depth = 2
+        if ref.item_label:
+            # The lint resolves only integer-shaped kohta ordinals.
+            if not ref.item_label.isdigit():
+                return None
+            item = int(ref.item_label)
+            if item < 1:
+                return None
+            depth = 3
+    return _AddressPath(
+        section=ref.section_label,
+        subsection=subsection,
+        item=item,
+        depth=depth,
+    )
+
+
+def _check_current_presence(ref: "ProvisionRef", sections):
+    """Decide current-state presence of ``ref`` against parsed target sections.
+
+    Reuses the corpus lint's deterministic structure: a missing SECTION is the
+    cheap analog of "broken" (the lint scopes this out as a temporal concern; in
+    current-state mode it IS the finding). For a present section, the deeper
+    momentti/kohta absence + structural-type-mismatch decision is delegated
+    verbatim to the lint's ``_check_citation`` (no duplicated logic).
+
+    Returns ``(kind, message)`` on a provable absence/mismatch, else ``None``.
+    ``None`` for an address tail this mode cannot resolve (tag-don't-guess).
+    """
+    from lawvm.finland.helpers import _normalize_source_section_num
+    from lawvm.finland.legal_surface.corpus_lints import (
+        KIND_ABSENT,
+        _check_citation,
+    )
+
+    path = _provision_ref_to_address_path(ref)
+    if path is None:
+        return None
+
+    sec_label = _normalize_source_section_num(path.section)
+    if sec_label not in sections:
+        # The cited SECTION is absent from the target's current text-state. This
+        # is the no-replay analog of a broken reference; corpus_lints scopes a
+        # missing section out (it owns only single-time type mismatches), so the
+        # decision is made here.
+        return (
+            KIND_ABSENT,
+            (
+                f"cited section {sec_label} § is absent from the target's "
+                f"current consolidated text-state"
+            ),
+        )
+
+    # Section present — defer momentti/kohta absence + type-mismatch to the lint.
+    finding = _check_citation(path, sections)
+    if finding is None:
+        return None
+    return (finding.kind, finding.message)
+
+
+def _default_body_for(store: "CorpusStore") -> BodyFor:
+    """Default current-body accessor: ``corpus_lints._read_body`` over the store.
+
+    Archive-only (oracle-preferred), no replay. Returns ``None`` when the body
+    is unavailable so the caller reports it as ``CurrentStateUnavailable``
+    (fail-loud), never as absent.
+    """
+    from lawvm.finland.legal_surface.corpus_lints import _read_body
+
+    def _body(statute_id: str) -> Optional[bytes]:
+        return _read_body(store, statute_id)  # type: ignore[arg-type]
+
+    return _body
+
+
+def scan_one_statute_current_state(
+    sid: str,
+    store: "CorpusStore",
+    *,
+    body_for: Optional[BodyFor] = None,
+) -> CurrentStateScanResult:
+    """Scan one citing statute for citations absent in the target's CURRENT text-state.
+
+    The no-replay default counterpart to ``scan_one_statute``. Reads the citing
+    body and extracts resolved cross-statute mentions exactly as the replay path
+    does, then for each resolved target checks presence against the TARGET's
+    current consolidated body (reused corpus_lints access + structure parse +
+    presence check). NO point-in-time replay. Always returns a result — a
+    body/extraction failure is recorded in ``error``, never raised away.
+    """
+    from lawvm.finland.legal_surface.corpus_lints import _parse_target_sections
+    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+
+    if body_for is None:
+        body_for = _default_body_for(store)
+
+    try:
+        xb = _resolved_body(store, sid)
+    except Exception as exc:  # noqa: BLE001 — fail-loud into the errored bucket
+        return CurrentStateScanResult(
+            sid=sid,
+            mentions_checked=0,
+            findings=(),
+            unavailable=(),
+            error=f"read_body: {exc!r}",
+        )
+    if not xb:
+        return CurrentStateScanResult(
+            sid=sid, mentions_checked=0, findings=(), unavailable=()
+        )
+
+    try:
+        extraction = extract_all_reference_mentions(xb, sid)
+    except Exception as exc:  # noqa: BLE001 — fail-loud into the errored bucket
+        return CurrentStateScanResult(
+            sid=sid,
+            mentions_checked=0,
+            findings=(),
+            unavailable=(),
+            error=f"extract: {exc!r}",
+        )
+
+    # Cache parsed target bodies per target statute within this citing statute
+    # (sentinel distinguishes "unavailable/unparseable" from "not yet parsed").
+    _UNPARSED = object()
+    parsed: dict[str, object] = {}
+
+    findings: list[CurrentStateFinding] = []
+    unavailable: list[CurrentStateUnavailable] = []
+    checked = 0
+    for mention in extraction.mentions:
+        if not _will_check(mention):
+            continue
+        checked += 1
+        target = mention.target_provision_ref
+        assert target is not None and target.statute_id  # guarded by _will_check
+        source = mention.source_provision_ref
+        target_statute = target.statute_id
+
+        if target_statute not in parsed:
+            body = body_for(target_statute)
+            parsed[target_statute] = (
+                _parse_target_sections(body) if body is not None else _UNPARSED
+            )
+        sections = parsed[target_statute]
+        if sections is _UNPARSED or sections is None:
+            unavailable.append(
+                CurrentStateUnavailable(
+                    source=source,
+                    target=target,
+                    reason=(
+                        f"current consolidated body for target statute "
+                        f"{target_statute!r} is unavailable or could not be "
+                        "parsed deterministically; presence undetermined"
+                    ),
+                )
+            )
+            continue
+
+        hit = _check_current_presence(target, sections)  # type: ignore[arg-type]
+        if hit is None:
+            continue
+        kind, message = hit
+        findings.append(
+            CurrentStateFinding(
+                source=source,
+                target=target,
+                kind=kind,
+                message=(
+                    f"{message}. Cited target {target.serialized()}"
+                ),
+            )
+        )
+
+    return CurrentStateScanResult(
+        sid=sid,
+        mentions_checked=checked,
+        findings=tuple(findings),
+        unavailable=tuple(unavailable),
+    )
+
+
+def scan_current_state(
+    statute_ids: list[str],
+    store: "CorpusStore",
+    *,
+    body_for: Optional[BodyFor] = None,
+) -> CurrentStateReport:
+    """Corpus current-state (no-replay) broken-reference scan over ``statute_ids``.
+
+    The DEFAULT mode: for each citing statute, extract resolved cross-statute
+    mentions and check whether each cited target provision is present in the
+    TARGET's current consolidated text-state. No point-in-time replay — cheap
+    enough to run corpus-wide. Aggregates findings by surface-fact ``kind`` and
+    counts ``CurrentStateUnavailable`` separately (fail-loud — undetermined,
+    never absent).
+    """
+    report = CurrentStateReport()
+    kind_ct: collections.Counter[str] = collections.Counter()
+
+    for sid in statute_ids:
+        result = scan_one_statute_current_state(sid, store, body_for=body_for)
+        report.per_statute.append(result)
+        report.statutes_scanned += 1
+        if result.error is not None:
+            report.statutes_errored.append((result.sid, result.error))
+            continue
+        report.mentions_checked += result.mentions_checked
+        if result.findings:
+            report.statutes_with_findings += 1
+        for finding in result.findings:
+            kind_ct[finding.kind] += 1
+        report.unavailable_count += len(result.unavailable)
+
+    report.kind_counts = dict(sorted(kind_ct.items()))
     return report
