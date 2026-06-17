@@ -83,6 +83,7 @@ def emit_apply_group_snapshot_if_allowed(
         amendment_effective_date,
         base_ir,
         path_hint=group.group_path_hint,
+        source_pathologies_out=source_pathologies_out,
     ):
         _emit_section_snapshot(
             state,

@@ -144,9 +144,18 @@ _NONOPERATIVE_HEADING_PREFIXES = (
     "voimassaolo",
 )
 
-_SELLAISENA_KUIN_PATTERNS = (
+_PROVENANCE_HEADING_PATTERNS = (
     "sellaisena kuin",
-    "sellaisenaan",
+    "sellaisina kuin",
+    "siten kuin",
+)
+
+_PROVENANCE_BLOCK_NAMES = frozenset(
+    {
+        "insertions-originals",
+        "repeals-originals",
+        "substitutions-originals",
+    }
 )
 
 
@@ -173,11 +182,14 @@ def _classify_tags(el: etree._Element, kind: str) -> frozenset[str]:
         name_attr = child.get("name", "")
         if name_attr in ("voimaantulo", "siirtymasaannos"):
             tags.add("nonoperative")
-    # Sellaisena-kuin provenance: look for the phrase in the heading or in
-    # any direct text content.
-    all_text = " ".join(str(_t) for _t in el.itertext()).lower()
-    for pat in _SELLAISENA_KUIN_PATTERNS:
-        if pat in all_text:
+    # Sellaisena-kuin provenance belongs to publisher/source wrappers, not to
+    # arbitrary operative body text. Ordinary section content can lawfully use
+    # words such as "sellaisenaan" without becoming non-operative.
+    if any(pat in heading for pat in _PROVENANCE_HEADING_PATTERNS):
+        tags.add("provenance")
+    for child in el:
+        name_attr = child.get("name", "")
+        if name_attr in _PROVENANCE_BLOCK_NAMES:
             tags.add("provenance")
             break
     return frozenset(tags)

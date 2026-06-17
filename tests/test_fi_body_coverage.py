@@ -175,6 +175,49 @@ def test_voimaantulo_section_ignore() -> None:
     assert report.uncovered_count == 1
 
 
+def test_section_content_sellaisenaan_remains_operative_body() -> None:
+    tree = _body(
+        """
+        <section>
+          <num>17 g §</num>
+          <heading>Rekisterinpitäjä ja vastuut</heading>
+          <subsection>
+            <content>
+              <p>Tulli siirtää tiedot sellaisenaan toimivaltaiselle viranomaiselle.</p>
+            </content>
+          </subsection>
+        </section>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    unit = units[0]
+
+    assert unit.observed_label == "17g"
+    assert "provenance" not in unit.tags
+    report = analyze_coverage(units, [])
+    assert report.gaps[0].disposition == "supplemental_candidate"
+
+
+def test_provenance_heading_is_nonoperative_coverage_gap() -> None:
+    tree = _body(
+        """
+        <section>
+          <num>29 §</num>
+          <heading>Sellaisena kuin se on laissa 732/2008</heading>
+          <subsection><content><p>Prior text witness.</p></content></subsection>
+        </section>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    unit = units[0]
+
+    assert "provenance" in unit.tags
+    report = analyze_coverage(units, [])
+    assert report.gaps[0].disposition == "ignore_nonoperative"
+
+
 def test_uncovered_count_excludes_broad_scope_coverage() -> None:
     unit = CoverageUnit(
         unit_id="section_9",

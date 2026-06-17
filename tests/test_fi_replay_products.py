@@ -210,6 +210,56 @@ def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> 
     assert "Lounais-Suomen elinvoimakeskukselle" in section_7_text
 
 
+def test_2018_1069_whole_section_replace_keeps_owned_body_after_temporary_overlay() -> None:
+    replay = replay_xml_for_test("2018/1069", mode="official_consolidation", quiet=True)
+
+    section_4 = replay.materialized_state.find_section("4")
+    section_6 = replay.materialized_state.find_section("6")
+
+    assert section_4 is not None
+    assert section_6 is not None
+    section_4_text = " ".join(irnode_to_text(section_4).split())
+    section_6_text = " ".join(irnode_to_text(section_6).split())
+
+    assert "Valtionavustusta yksityistien rakentamiseen on haettava" in section_4_text
+    assert "Avustusta ei makseta ilman erityistä syytä" in section_4_text
+    assert "Tiekunnan on vuosittain haettava avustuksen maksatusta" in section_6_text
+    assert "Työllisyys-, kehittämis- ja hallintokeskus maksaa" in section_6_text
+
+
+def test_2006_1096_temporary_subsection_replace_preserves_untouched_base_subsection() -> None:
+    replay = replay_xml_for_test("2006/1096", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("1")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Valtioneuvoston jäsenille maksetaan tehtävän asianmukaisen hoitamisen vaatima palkkio." in text
+    assert "vähennettynä viidellä prosentilla" in text
+
+
+def test_2019_1239_permanent_subsection_replace_rebases_over_active_temporary_parent() -> None:
+    replay = replay_xml_for_test("2019/1239", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("1")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "alueen pilaantuneisuuden selvittämisen ja pilaantuneen alueen puhdistamisen järjestämisessä" in text
+    assert "Avustusta ei myönnetä yritykselle" in text
+
+
+def test_2014_1444_subsection_group_rebase_drops_expired_temporary_child() -> None:
+    replay = replay_xml_for_test("2014/1444", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("3", "1")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Rahoitusta voidaan myöntää vain toimintaan, joka tapahtuu rahoitushakemuksen jättämisen jälkeen." in text
+    assert "Edellä 1 §:n 6 momentissa tarkoitettua rahoitusta voidaan myöntää" not in text
+
+
 def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     """official_consolidation should anchor 2016/258 to the oracle-version amendment date.
 
@@ -4384,6 +4434,23 @@ def test_replay_xml_1998_986_inserts_provenance_qualified_plural_subsections_int
     ]
     assert "5" in sub_labels, "subsection 5 must be inserted by 2005/865"
     assert "6" in sub_labels, "subsection 6 must be inserted by 2005/865"
+
+
+def test_replay_xml_2019_571_recovers_17g_with_sellaisenaan_body_text() -> None:
+    """Ordinary body text containing ``sellaisenaan`` must not be ignored as provenance.
+
+    Amendment 2025/863 inserts 3 luku / 17 a-17 h §. The parser currently
+    misses that law-level suffix range in the full mixed clause, so uncovered
+    body recovery owns the section insertions. 17 g § contains the operative
+    word ``sellaisenaan``; body coverage previously tagged that whole section
+    as provenance and made it non-actionable.
+    """
+    replay = replay_xml_for_test("2019/571", mode="official_consolidation", quiet=True)
+    section = replay.materialized_state.find_section("17g", "3")
+
+    assert section is not None, "2025/863 must insert chapter 3 section 17g"
+    text = " ".join(irnode_to_text(section).split())
+    assert "siirtää näiltä vastaanotetut tiedot sellaisenaan" in text
 
 
 def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
