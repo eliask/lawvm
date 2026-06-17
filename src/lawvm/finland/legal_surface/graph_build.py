@@ -35,6 +35,7 @@ from lawvm.core.legal_surface_lints import (
 )
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
+from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
 from lawvm.finland.legal_surface.lenses.exception_condition import (
@@ -84,6 +85,7 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     ProcedureLens(),
     SanctionLens(),
     ExceptionConditionLens(),
+    AnaphoraLens(),
 )
 
 # Cross-lens edge passes, run in declared order after assembly (Pro r5 §D5).
