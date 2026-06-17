@@ -689,3 +689,72 @@ def test_g2_intervening_date_phrase_stripped() -> None:
     assert m.target_provision_ref is not None
     assert m.target_provision_ref.statute_id == "fi-name:laki kielitaidosta"
     assert m.target_provision_ref.section_label == "6"
+
+
+# ── -kaari (code) heads: oikeudenkäymiskaari, maakaari, … (gap [2]) ──────────
+#
+# The historical Finnish CODES are statutes named by inflected title exactly like
+# -laki acts, but ``kaari`` is not an M1 statute head, so the bare-head lane never
+# fired on them. These must be recognized as CROSS-STATUTE by-name anchors (codes
+# ARE statutes), chapter-qualified, resolving via the statute-name registry — and
+# NEVER leaking as internal self-references to the citing statute.
+
+
+def test_kaari_head_chapter_qualified_cross_statute() -> None:
+    """``oikeudenkäymiskaaren 12 luvun 32 §:ää`` -> chapter-qualified cross-statute."""
+    mentions = recognize_by_name_refs("oikeudenkäymiskaaren 12 luvun 32 §:ää")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.cite_kind is CiteKind.CROSS_STATUTE
+    assert m.cite_confidence is CiteConfidence.STATUTE_ONLY
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:oikeudenkäymiskaari"
+    assert m.target_provision_ref.provision_path == "chp_12__sec_32"
+    assert m.target_provision_ref.section_label == "32"
+
+
+def test_kaari_head_inessive_section() -> None:
+    """``oikeudenkäymiskaaren 17 luvun 65 §:ssä`` -> chp_17__sec_65 cross-statute."""
+    mentions = recognize_by_name_refs("oikeudenkäymiskaaren 17 luvun 65 §:ssä")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.cite_kind is CiteKind.CROSS_STATUTE
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:oikeudenkäymiskaari"
+    assert m.target_provision_ref.provision_path == "chp_17__sec_65"
+
+
+def test_kaari_other_codes_resolve_by_name() -> None:
+    """maakaari / kauppakaari / perintökaari are recognized as cross-statute codes."""
+    for text, key, path in (
+        ("maakaaren 2 luvun 1 §:n mukaan", "fi-name:maakaari", "chp_2__sec_1"),
+        ("kauppakaaren 10 luvun 8 §", "fi-name:kauppakaari", "chp_10__sec_8"),
+        ("perintökaaren 5 luvun 2 §:ssä", "fi-name:perintökaari", "chp_5__sec_2"),
+    ):
+        mentions = recognize_by_name_refs(text)
+        assert len(mentions) == 1, text
+        m = mentions[0]
+        assert m.cite_kind is CiteKind.CROSS_STATUTE
+        assert m.target_provision_ref is not None
+        assert m.target_provision_ref.statute_id == key
+        assert m.target_provision_ref.provision_path == path
+
+
+def test_kaari_head_no_tail_statute_level() -> None:
+    """A bare ``maakaaressa`` (no § tail) -> one statute-level cross-statute ref."""
+    mentions = recognize_by_name_refs("maakaaressa säädetään")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:maakaari"
+    assert m.target_provision_ref.section_label == ""
+
+
+def test_kaari_id_anchored_form_deferred_to_plaintext_lane() -> None:
+    """``oikeudenkäymiskaaren (4/1734) 12 luvun 32 §`` is the by-id lane's case."""
+    assert recognize_by_name_refs("oikeudenkäymiskaaren (4/1734) 12 luvun 32 §") == []
+
+
+def test_kaari_bare_head_no_modifier_not_emitted() -> None:
+    """A bare inflected ``kaaressa`` with no compound modifier is not a title."""
+    assert recognize_by_name_refs("kaaressa todetaan") == []

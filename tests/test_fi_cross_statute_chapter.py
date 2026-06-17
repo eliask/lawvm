@@ -143,3 +143,75 @@ def test_consumed_surface_preserves_multiple_tai() -> None:
     sp = parse_body_provision_tail_spanned("114, 115 tai 155 §:n säädetään")
     assert sp.consumed_text == "114, 115 tai 155 §:n"
     assert [t.section_label for t in sp.targets] == ["114", "115", "155"]
+
+
+# ── Multi-chapter enumeration under one statute head (gap [5]) ───────────────
+#
+# A cross-statute tail under ONE statute head can span MULTIPLE chapter clauses
+# (``rikoslain 17 luvun 18 §:ssä, 20 luvussa, 21 luvun 1—3 §:ssä``). Every chapter
+# clause must enumerate its own chapter-qualified members; previously only the
+# first chapter clause was captured and the rest silently dropped.
+
+
+def test_multi_chapter_enumeration_spans_all_clauses() -> None:
+    sp = parse_body_provision_tail_spanned(
+        "17 luvun 18, 18 a tai 19 §:ssä, 20 luvussa, "
+        "21 luvun 1—3 tai 6 §:ssä, 31 luvun 1—4 §:ssä, 50 luvun 1—4 §:ssä"
+    )
+    pairs = [(t.chapter, t.section_label) for t in sp.targets]
+    assert pairs == [
+        ("17", "18"),
+        ("17", "18a"),
+        ("17", "19"),
+        ("20", ""),  # chapter-only clause, section deferred
+        ("21", "1"),
+        ("21", "2"),
+        ("21", "3"),
+        ("21", "6"),
+        ("31", "1"),
+        ("31", "2"),
+        ("31", "3"),
+        ("31", "4"),
+        ("50", "1"),
+        ("50", "2"),
+        ("50", "3"),
+        ("50", "4"),
+    ]
+    # The consumed surface spans the whole multi-chapter run (author ``tai`` kept).
+    assert sp.consumed_text.endswith("50 luvun 1—4 §:ssä")
+    assert "20 luvussa" in sp.consumed_text
+
+
+def test_multi_chapter_two_clauses_minimal() -> None:
+    sp = parse_body_provision_tail_spanned("3 luvun 1 §:ssä ja 5 luvun 2 §:ssä")
+    assert [(t.chapter, t.section_label) for t in sp.targets] == [
+        ("3", "1"),
+        ("5", "2"),
+    ]
+
+
+def test_single_chapter_clause_unchanged_by_multichapter_path() -> None:
+    """A coordinated section run with no second chapter prefix stays one clause."""
+    sp = parse_body_provision_tail_spanned("9 luvun 9 a ja 9 b §:ssä")
+    assert [(t.chapter, t.section_label) for t in sp.targets] == [
+        ("9", "9a"),
+        ("9", "9b"),
+    ]
+
+
+def test_multi_chapter_end_to_end_by_name() -> None:
+    """The by-name lane lifts every chapter clause to a chapter-qualified ref."""
+    from lawvm.finland.references.by_name import recognize_by_name_refs
+
+    text = (
+        "rikoslain 17 luvun 18, 18 a tai 19 §:ssä, 20 luvussa, "
+        "21 luvun 1—3 tai 6 §:ssä"
+    )
+    paths = [
+        m.target_provision_ref.provision_path
+        for m in recognize_by_name_refs(text)
+        if m.target_provision_ref
+    ]
+    assert "chp_20" in paths
+    assert "chp_21__sec_6" in paths
+    assert "chp_17__sec_18a" in paths

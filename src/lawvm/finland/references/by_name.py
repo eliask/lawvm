@@ -165,6 +165,74 @@ _COORD_LEFT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# ``-kaari`` (code) heads: oikeudenkäymiskaari, maakaari, kauppakaari, …
+# ---------------------------------------------------------------------------
+#
+# The historical Finnish CODES (``kaari``) — Oikeudenkäymiskaari (procedural
+# code, 1734/4), Maakaari (land code), Kauppakaari (commercial code),
+# Perintökaari (inheritance code) — ARE statutes, named by their inflected title
+# exactly like ``-laki`` acts: ``oikeudenkäymiskaaren 12 luvun 32 §:ää``,
+# ``maakaaressa säädetään``. But ``kaari`` is NOT a closed statute head in the
+# M1 morphology engine (it is not a productive document-type head like ``laki`` /
+# ``asetus``), so the bare-head by-name lane above never fires on a ``-kaari``
+# title. The consequence is a CORRECTNESS bug: with no by-name match the trailing
+# ``32 §`` is captured by the INTERNAL lane as a self-reference to the CITING
+# statute (wrong statute, ``exact`` confidence) instead of a cross-statute ref to
+# the code.
+#
+# ``kaari`` declines as a regular Kotus type-26 ``-i`` noun: the oblique stem is
+# ``kaare-`` (genitive ``kaaren``, inessive ``kaaressa``, elative ``kaaresta``,
+# illative ``kaareen``, adessive ``kaarella``, ablative ``kaarelta``, allative
+# ``kaarelle``, translative ``kaareksi``, essive ``kaarena``) plus the partitive
+# ``kaarta`` and the comitative/instructive that do not occur in citations. The
+# NOMINATIVE ``kaari`` is deliberately NOT a trigger (a bare uninflected head is
+# not a by-name citation — same discipline as the ``-laki`` lane).
+#
+# A ``-kaari`` head requires a non-empty GLUED modifier (a real compound code
+# title, ``oikeudenkäymis``-, ``maa``-, …) — a bare inflected ``kaaren`` with no
+# modifier is not a resolvable title and is not emitted. Resolution to a concrete
+# ``NNN/YYYY`` id is deferred to the registry (``fi-name:<nominative>``); the code
+# titles resolve via the SAME statute-name registry the ``-laki`` lane uses
+# (single → resolved, multiple → ambiguous, unregistered → STATUTE_ONLY). Never
+# an internal leak.
+# The closed set of CODE titles whose head is ``kaari`` (nominative key, lower
+# case). A bare ``-kaari`` token ending in a code-noun oblique can also be an
+# ordinary common noun (``sateenkaari`` rainbow, ``hammaskaari`` dental arch,
+# ``jalkakaari`` foot arch) — those are NOT statutes. When the citation carries a
+# ``§`` provision tail it is unambiguously a code citation (a rainbow has no
+# sections), so the tail is sufficient positive evidence and any modifier is
+# accepted. But a BARE ``-kaari`` head with no tail is only emitted when its
+# normalized name is one of the KNOWN codes — otherwise the common-noun reading
+# wins and nothing is emitted (same positive-evidence discipline as the weak
+# ``-laki`` heads). The Finnish codes are a closed historical set; new codes are
+# not minted, so this list is stable.
+_KNOWN_KAARI_CODES: frozenset[str] = frozenset(
+    {
+        "oikeudenkäymiskaari",  # 1734/4 procedural code
+        "maakaari",  # 1995/540 (and 1734/1) land code
+        "kauppakaari",  # 1734/3 commercial code
+        "perintökaari",  # 1965/40 inheritance code
+        "ulosottokaari",  # 2007/705 enforcement code
+        "tietoyhteiskuntakaari",  # 2014/917 information society code
+        "naimiskaari",  # archaic marriage code (1734)
+        "rakennuskaari",  # archaic building code (1734)
+        "rikoskaari",  # archaic penal code (1734)
+    }
+)
+_KAARI_OBLIQUE_ALT = (
+    r"kaar(?:en|essa|esta|een|ella|elta|elle|eksi|ena|tta|in)"
+    r"|kaarta"
+)
+_KAARI_HEAD_RE = re.compile(
+    rf"(?<![A-Za-zÅÄÖåäö0-9-])"  # word start (no preceding name char)
+    rf"(?P<modifier>[A-Za-zÅÄÖåäö0-9-]{{1,80}}?)"  # non-empty glued modifier
+    rf"(?P<oblique>{_KAARI_OBLIQUE_ALT})"
+    rf"(?![A-Za-zÅÄÖåäö0-9])",  # word end
+    re.IGNORECASE,
+)
+
+
 # The window after the name head in which to look for a ``§`` / momentti tail.
 # A citation tail is short; a bounded slice keeps the shared tail parser from
 # scanning the rest of the paragraph.
@@ -575,6 +643,89 @@ def _recognize_descriptive_participle_refs(text: str) -> list[ReferenceMention]:
     return out
 
 
+def _recognize_kaari_refs(text: str) -> list[ReferenceMention]:
+    """Recognise ``-kaari`` (code) head cross-statute references (gap [2]).
+
+    See the module-section comment for the shape and the rationale (codes ARE
+    statutes; ``kaari`` is not an M1 head so the bare-head lane misses it; the
+    trailing ``§`` would otherwise leak as a WRONG internal self-reference). Emits
+    one :class:`ReferenceMention` per provision in the optional ``§`` tail, carrying
+    the chapter (``N luvun M §`` → ``chp_N__sec_M``) via the SAME chapter-carry
+    path the ``-laki`` lane uses, and the name key ``fi-name:<modifier>kaari``
+    (nominative reattached). Resolution to a concrete id is deferred to the
+    registry — never an internal leak, never a fabricated id.
+    """
+    out: list[ReferenceMention] = []
+    source_ref = ProvisionRef(statute_id="")
+
+    for m in _KAARI_HEAD_RE.finditer(text):
+        # An id-anchored ``(NNN/YYYY)`` right after the head is the plain-text
+        # by-id lane's case — exclude (no double-emission).
+        if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # Parse the optional structural tail (chapter + section + sub-refs) via the
+        # shared body parser, bounded to a short window.
+        tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        consumed_tail = tail_parse.consumed_text
+
+        # The normalized name key reattaches the nominative head ``kaari`` to the
+        # modifier (``oikeudenkäymis`` + ``kaari`` → ``oikeudenkäymiskaari``),
+        # folded to lower case — the SAME surface the statute-name registry indexes
+        # for the code title, so resolve.py resolves it with no change.
+        normalized = (m.group("modifier") + "kaari").lower()
+
+        # Positive-evidence gate (mirrors the weak-``laki``-head discipline): a
+        # ``§`` provision tail makes the code citation unambiguous (a common-noun
+        # ``-kaari`` — rainbow / arch — has no sections), so any modifier is
+        # accepted. A BARE ``-kaari`` head with no tail is only emitted for a KNOWN
+        # code title; otherwise the common-noun reading wins and nothing is emitted
+        # (no garbage ``fi-name:sateenkaari``).
+        if not targets and normalized not in _KNOWN_KAARI_CODES:
+            continue
+
+        name_start = m.start("modifier")
+        name_surface = text[name_start : m.end("oblique")]
+        name_span = SourceSpan("", name_start, m.end("oblique") - name_start)
+
+        if not targets:
+            targets = [BodyProvisionTarget(section_label="")]
+
+        for tgt in targets:
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
+            target_ref = ProvisionRef(
+                statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
+                section_label=tgt.section_label,
+                subsection_num=tgt.subsection_num,
+                item_label=tgt.item_label,
+            )
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
+            else:
+                surface = name_surface
+            out.append(
+                ReferenceMention(
+                    source_provision_ref=source_ref,
+                    target_provision_ref=target_ref,
+                    cite_kind=CiteKind.CROSS_STATUTE,
+                    cite_confidence=CiteConfidence.STATUTE_ONLY,
+                    phrase_lemma="statute_name_kaari_head",
+                    source_span=name_span,
+                    valid_at_interval=(None, None),
+                    edge_subtype=None,
+                    surface_text=surface,
+                )
+            )
+    return out
+
+
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     """Recognise inflected-statute-name cross-references in ``text``.
 
@@ -749,6 +900,11 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     # name-head lane above never fires on them (the ``lain`` head carries no glued
     # modifier). Recognize them separately and merge their mentions in.
     out.extend(_recognize_descriptive_participle_refs(text))
+    # ``-kaari`` (code) heads (``oikeudenkäymiskaaren 12 luvun 32 §``) are not M1
+    # statute heads, so the name-head lane above never fires on them; recognize
+    # them separately (codes ARE statutes) and merge their cross-statute mentions
+    # in — never an internal leak.
+    out.extend(_recognize_kaari_refs(text))
     return out
 
 

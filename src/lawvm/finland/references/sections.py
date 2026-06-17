@@ -99,6 +99,16 @@ _CHAPTER_TAIL_PREFIX_RE = re.compile(
     rf"^(?P<chnums>{_CH_NUM_RUN})\s+{_CHAPTER_TAIL_HEAD}\b\s*",
     re.IGNORECASE,
 )
+# A clause separator between successive chapter clauses under one statute head
+# (``… 18 §:ssä, 20 luvussa``): a comma and/or a coordinating joiner. Anchored
+# with ``match`` at the offset just past the consumed text, so only a separator
+# that DIRECTLY follows the consumed run is treated as a clause boundary; the
+# outer loop's chapter-prefix requirement then decides whether a real chapter
+# clause follows. Bounded literals only (§1.11).
+_CLAUSE_SEP_RE = re.compile(
+    r"\s*(?:,\s*)?(?:(?:ja|sek\xe4|tai)\s+)?",
+    re.IGNORECASE,
+)
 # Chapter-run splitter / range / spaced-letter-suffix patterns (module scope per
 # §1.11; bounded quantifiers only).
 _CH_COORD_SPLIT_RE = re.compile(r"\s*(?:,|\bja\b|\bsek\xe4\b|\btai\b)\s*", re.IGNORECASE)
@@ -300,92 +310,145 @@ def parse_body_provision_tail_spanned(tail_text: str) -> BodyTailParse:
     # (joiner preserved) backs the recorded surface so it keeps the author's
     # original ``tai`` (N7). ``shrinks`` maps a consumed slice back onto ws_norm.
     normalized, shrinks = _normalize_disjunctive_joiner_spanned(ws_norm)
-    # Peel a leading ``N luvun`` chapter prefix (``9 luvun 9 b §`` → chapter 9,
-    # section run ``9 b §``) before the section parse, mirroring the INTERNAL
-    # lane. The chapter labels are carried onto every expanded target so the
-    # caller builds a chapter-qualified AKN path. ``ch_prefix_len`` is the char
-    # length of the peeled prefix in ``normalized`` so the consumed-slice (and the
-    # span alignment the by-name lane derives from it) still includes the chapter
-    # text — the prefix is part of the citation surface, only the PARSE skips it.
-    section_text, chnums = _split_leading_chapter(normalized)
-    ch_prefix_len = len(normalized) - len(section_text)
-    chapters = _expand_chapter_run(chnums) if chnums else []
-    toks = _reclassify_body_tokens(tokenize(section_text))
-    if not toks:
-        # No parsable section run. If a chapter prefix was present, the reference
-        # is chapter-only (``5 luvussa`` / ``20 luvussa``): emit one chapter-only
-        # target per chapter (section deferred) so the caller can record a
-        # chapter-scoped reference instead of dropping it. Fail-loud otherwise.
-        if chapters:
-            return BodyTailParse(
-                targets=[
-                    BodyProvisionTarget(section_label="", chapter=ch)
-                    for ch in chapters
-                ],
-                # The chapter prefix carries no disjunctive joiner, so its slice
-                # is identical in ws_norm; take it from ws_norm for consistency.
-                consumed_text=ws_norm[:ch_prefix_len].rstrip(),
-            )
-        return BodyTailParse(targets=[], consumed_text="")
-    scan = _sections._Scan(Cursor(toks, 0))
 
-    chapter_choices: List[Optional[str]] = list(chapters) or [None]
+    # A cross-statute / body tail under ONE statute head can span MULTIPLE chapter
+    # clauses (``rikoslain 17 luvun 18 §:ssä, 20 luvussa, 21 luvun 1—3 §:ssä``):
+    # after the first chapter clause's section run is consumed, a list separator
+    # introduces the NEXT chapter clause (``, 20 luvussa``). Each clause has its
+    # own chapter prefix (``N luvun`` / ``N luvussa``) and its own section run, and
+    # the chapter prefix is what re-opens the clause boundary — a plain
+    # coordinated section run with no new chapter prefix stays inside the current
+    # clause (handled by the inner section loop). We therefore drive an OUTER loop
+    # over chapter clauses keyed off a leading-chapter-prefix at the clause head,
+    # and ONLY treat a separator as a clause boundary when a fresh chapter prefix
+    # follows it. A single-clause tail (the common case) makes exactly one pass,
+    # so the prior behavior is preserved byte-for-byte.
     targets: List[BodyProvisionTarget] = []
-    consumed_end = 0  # char offset into ``section_text`` of the last consumed token
-    while scan.pos < len(toks):
-        parsed = _sections.recognize_section_ref(scan)
-        if parsed is None:
+    consumed_end = 0  # furthest consumed char offset into ``normalized``
+    clause_base = 0  # offset into ``normalized`` of the current clause head
+    first_clause = True
+    while clause_base < len(normalized):
+        clause_text = normalized[clause_base:]
+        # Peel a leading ``N luvun`` chapter prefix off THIS clause (``9 luvun
+        # 9 b §`` → chapter 9, section run ``9 b §``). For the first clause the
+        # chapter is optional (a bare ``108—110 §`` tail has none); for a
+        # SUBSEQUENT clause a chapter prefix is REQUIRED — without one there is no
+        # new clause to open, so the loop stops (the trailing prose is not a
+        # citation clause).
+        section_text, chnums = _split_leading_chapter(clause_text)
+        if chnums is None and not first_clause:
             break
-        # The body lane models only the suffix form (section + sub-refs);
-        # renumber / pykälä-prefix are amendment shapes that do not occur in a
-        # body citation tail. Emit one target per (chapter, expanded section,
-        # sub-ref). When no chapter prefix was peeled, ``chapter_choices`` is
-        # ``[None]`` so the section-only behavior is unchanged.
-        subs = list(parsed.subs) or [SubRef()]
-        for chapter in chapter_choices:
-            for num, suffix in parsed.nums:
-                for expanded in _sections._expand_range_single(num):
-                    label = expanded + (
-                        suffix if len(_sections._expand_range_single(num)) == 1 else ""
-                    )
-                    for sub in subs:
-                        targets.append(_subref_to_target(label, sub, chapter))
-        # Record the consumed boundary as the furthest char_end among the tokens
-        # consumed so far (tokens carry char offsets into ``section_text``).
-        for i in range(min(scan.pos, len(toks))):
-            ce = toks[i].char_end
-            if ce > consumed_end:
-                consumed_end = ce
-        # Consume a list separator between coordinated section-reference runs
-        # (``6 §:n 1 momentissa ja 8 §:n 2 momentissa``); stop when none.
-        saved = scan.pos
-        if _sections._sep(scan) is None:
-            break
-        # Guard against a separator that does not introduce another section ref.
-        if scan.pos == saved:
+        ch_prefix_len = len(clause_text) - len(section_text)
+        chapters = _expand_chapter_run(chnums) if chnums else []
+        chapter_choices: List[Optional[str]] = list(chapters) or [None]
+        # The global offset (into ``normalized``) of the section run for this
+        # clause, used to lift the per-clause token offsets to global offsets.
+        section_base = clause_base + ch_prefix_len
+
+        toks = _reclassify_body_tokens(tokenize(section_text))
+        clause_targets: List[BodyProvisionTarget] = []
+        clause_consumed_local = 0  # furthest token char_end within ``section_text``
+        if toks:
+            scan = _sections._Scan(Cursor(toks, 0))
+            while scan.pos < len(toks):
+                parsed = _sections.recognize_section_ref(scan)
+                if parsed is None:
+                    break
+                # The body lane models only the suffix form (section + sub-refs);
+                # renumber / pykälä-prefix are amendment shapes that do not occur
+                # in a body citation tail. Emit one target per (chapter, expanded
+                # section, sub-ref). When no chapter prefix was peeled,
+                # ``chapter_choices`` is ``[None]`` so the section-only behavior is
+                # unchanged.
+                subs = list(parsed.subs) or [SubRef()]
+                for chapter in chapter_choices:
+                    for num, suffix in parsed.nums:
+                        for expanded in _sections._expand_range_single(num):
+                            label = expanded + (
+                                suffix
+                                if len(_sections._expand_range_single(num)) == 1
+                                else ""
+                            )
+                            for sub in subs:
+                                clause_targets.append(
+                                    _subref_to_target(label, sub, chapter)
+                                )
+                # Record the consumed boundary as the furthest char_end among the
+                # tokens consumed so far (tokens carry offsets into section_text).
+                for i in range(min(scan.pos, len(toks))):
+                    ce = toks[i].char_end
+                    if ce > clause_consumed_local:
+                        clause_consumed_local = ce
+                # Consume a list separator between coordinated section-reference
+                # runs INSIDE this clause (``6 §:n 1 mom ja 8 §:n 2 mom``). A
+                # separator that introduces a new chapter prefix is the next
+                # clause's boundary, not an in-clause section join: stop here and
+                # let the outer loop pick the next clause up (it re-peels the
+                # chapter prefix from the right offset).
+                saved = scan.pos
+                if _sections._sep(scan) is None:
+                    break
+                if scan.pos == saved:
+                    break
+                # Peek: if what follows the separator is a chapter prefix, this is
+                # a clause boundary — stop the in-clause section loop and defer to
+                # the outer loop, which re-peels the chapter prefix from the
+                # recorded consumed offset (the separator is re-matched there by
+                # ``_CLAUSE_SEP_RE``). ``section_text`` from the next unconsumed
+                # token onward is the remaining text; a leading chapter prefix
+                # there means a new clause.
+                rest_local = (
+                    section_text[toks[scan.pos].char_start :]
+                    if scan.pos < len(toks)
+                    else ""
+                )
+                if _CHAPTER_TAIL_PREFIX_RE.match(rest_local):
+                    break
+
+        if clause_targets:
+            targets.extend(clause_targets)
+        elif chapters:
+            # A chapter prefix was peeled but no section run parsed after it
+            # (``20 luvussa`` / ``5 luvussa tai …``): the clause is chapter-only.
+            # Emit one chapter-only target per chapter (section deferred) so it is
+            # never silently dropped.
+            for ch in chapters:
+                targets.append(BodyProvisionTarget(section_label="", chapter=ch))
+
+        # Compute this clause's furthest global consumed offset. With a section
+        # run, it is the section run's furthest token end lifted by section_base;
+        # for a chapter-only clause, the chapter prefix itself is consumed.
+        if clause_consumed_local > 0:
+            consumed_end = section_base + clause_consumed_local
+        elif chapters:
+            consumed_end = section_base  # chapter prefix consumed, no section
+        elif first_clause:
+            # First clause, no chapter and no parsable section: fail-loud (no ref).
+            return BodyTailParse(targets=[], consumed_text="")
+        else:
             break
 
-    # A chapter prefix was peeled but no section run parsed after it (``5 luvussa
-    # tai …`` — the chapter is followed by prose, not a §): the reference is
-    # chapter-only. Emit one chapter-only target per chapter (section deferred) so
-    # it is never silently dropped, exactly as the ``not toks`` branch does.
-    if not targets and chapters:
-        return BodyTailParse(
-            targets=[
-                BodyProvisionTarget(section_label="", chapter=ch) for ch in chapters
-            ],
-            consumed_text=ws_norm[:ch_prefix_len].rstrip(),
-        )
+        # Advance to the next clause: skip a separator (``, `` / ``ja`` / ``sekä``
+        # / ``tai``) after the consumed text, then loop. The outer loop's chapter-
+        # prefix requirement (for non-first clauses) stops the scan when the
+        # separator does not introduce a fresh chapter clause.
+        first_clause = False
+        next_pos = consumed_end
+        sep_m = _CLAUSE_SEP_RE.match(normalized, next_pos)
+        if sep_m is None:
+            break
+        clause_base = sep_m.end()
 
-    # The consumed slice is reported against the FULL tail: add back the peeled
-    # chapter-prefix length so the chapter text stays part of the consumed
-    # surface (by_name's span alignment relies on this), then recover the
-    # author's original disjunctive joiner (``tai``) from ws_norm so the recorded
-    # surface is faithful (N7) while target enumeration stays the ``ja`` semantics.
+    if not targets:
+        return BodyTailParse(targets=[], consumed_text="")
+
+    # The consumed slice is reported against the FULL tail. Recover the author's
+    # original disjunctive joiner (``tai``) from ws_norm so the recorded surface
+    # is faithful (N7) while target enumeration stays the ``ja`` semantics. The
+    # consumed offset already indexes the full ``normalized`` string (chapter
+    # prefixes included), so by_name's span alignment stays correct.
     consumed_text = (
-        _unnormalize_consumed(
-            normalized[: ch_prefix_len + consumed_end], ws_norm, shrinks
-        )
+        _unnormalize_consumed(normalized[:consumed_end], ws_norm, shrinks).rstrip()
         if consumed_end > 0
         else ""
     )
