@@ -43,7 +43,6 @@ ambiguous/temporal cases the registry refuses to silently pick among).
 
 from __future__ import annotations
 
-import datetime as dt
 import sys
 from dataclasses import dataclass
 
@@ -51,6 +50,7 @@ from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
     _inflected_surfaces,
     _split_head,
+    all_entries_from_farchive,
     default_artifact_path,
     serialize_entries,
 )
@@ -88,51 +88,12 @@ class BuildReport:
         print(f"  surface collisions        : {self.collisions}", file=file)
 
 
-def _extract_title_and_date(
-    xb: bytes,
-) -> tuple[str, dt.date | None] | None:
-    """Extract ``(title, enactment_date|None)`` from a statute XML blob.
+def _total_statutes(limit: int) -> int:
+    """How many statute ids the enumerator will walk (for the report denominator).
 
-    Returns ``None`` when no ``docTitle`` is present. ``enactment_date`` is the
-    ``FRBRWork`` ``dateIssued`` parsed as a date, or ``None`` if absent/unparseable
-    (never fabricated).
-    """
-    from lxml import etree
-
-    try:
-        tree = etree.fromstring(xb)
-    except etree.XMLSyntaxError:
-        return None
-
-    title_el = tree.find(".//{*}docTitle")
-    if title_el is None:
-        return None
-    title = " ".join(
-        etree.tostring(title_el, method="text", encoding="unicode").split()
-    )
-    if not title:
-        return None
-
-    valid_from: dt.date | None = None
-    work = tree.find(".//{*}FRBRWork")
-    if work is not None:
-        for d in work.findall("{*}FRBRdate"):
-            if d.get("name") == "dateIssued":
-                raw = d.get("date")
-                if raw:
-                    try:
-                        valid_from = dt.date.fromisoformat(raw)
-                    except ValueError:
-                        valid_from = None
-                break
-    return title, valid_from
-
-
-def _iter_entries(limit: int) -> "tuple[list[StatuteNameEntry], BuildReport]":
-    """Stream the corpus, yielding (entries, report).
-
-    Memory-careful: reads one statute XML at a time, extracts only title + date,
-    and discards the XML before moving on.
+    Mirrors ``all_entries_from_farchive``'s ``limit`` slicing so ``no_title`` can
+    be computed honestly as ``total - titles_indexed`` (the enumerator skips
+    unparseable / title-less blobs rather than reporting them).
     """
     from farchive import Farchive
 
@@ -140,48 +101,42 @@ def _iter_entries(limit: int) -> "tuple[list[StatuteNameEntry], BuildReport]":
 
     store = TransparentCorpusStore(Farchive(_archive_path()))
     ids = store.list_statute_ids()
-    if limit:
-        ids = ids[:limit]
+    return len(ids[:limit]) if limit else len(ids)
 
-    report = BuildReport(total_statutes=len(ids))
+
+def _iter_entries(limit: int) -> "tuple[list[StatuteNameEntry], BuildReport]":
+    """Materialize the FULL-corpus entries (via the shared streaming enumerator).
+
+    Title/date extraction and memory discipline (one XML blob at a time) live in
+    :func:`statute_name.all_entries_from_farchive`; this driver just consumes the
+    stream, accumulates the (small) ``StatuteNameEntry`` records and the
+    report-side surface/collision tallies.  The accumulated entry list is the
+    serialized artifact — only the bulky XML is streamed, never held.
+    """
+    total = _total_statutes(limit)
+    report = BuildReport(total_statutes=total)
     entries: list[StatuteNameEntry] = []
     # surface key -> set of distinct statute ids (collision detection)
     surface_to_ids: dict[str, set[str]] = {}
 
     print(
-        f"build-statute-name-registry: enumerating {len(ids)} statutes...",
+        f"build-statute-name-registry: enumerating {total} statutes...",
         file=sys.stderr,
     )
-    for i, sid in enumerate(ids):
+    for i, entry in enumerate(all_entries_from_farchive(limit=limit)):
         if i and i % 10000 == 0:
-            print(f"  {i}/{len(ids)}", file=sys.stderr)
-        xb = store.read_source(sid) or store.read_amendment(sid)
-        if not xb:
-            report.no_title += 1
-            continue
-        extracted = _extract_title_and_date(xb)
-        del xb  # release the XML blob immediately
-        if extracted is None:
-            report.no_title += 1
-            continue
-        title, valid_from = extracted
-
-        entry = StatuteNameEntry(
-            statute_id=sid,
-            canonical_title=title,
-            valid_from=valid_from,
-            valid_to=None,
-        )
+            print(f"  indexed {i}...", file=sys.stderr)
         entries.append(entry)
         report.titles_indexed += 1
-        if valid_from is None:
+        if entry.valid_from is None:
             report.no_date += 1
-        if _split_head(title) is None:
+        if _split_head(entry.canonical_title) is None:
             report.no_known_head += 1
+        for key in _inflected_surfaces(entry.canonical_title):
+            surface_to_ids.setdefault(key, set()).add(entry.statute_id)
 
-        for key in _inflected_surfaces(title):
-            surface_to_ids.setdefault(key, set()).add(sid)
-
+    # The enumerator skips blobs with no readable docTitle; count them honestly.
+    report.no_title = max(0, total - report.titles_indexed)
     report.surface_variants = len(surface_to_ids)
     report.collisions = sum(1 for ids_ in surface_to_ids.values() if len(ids_) > 1)
     return entries, report
