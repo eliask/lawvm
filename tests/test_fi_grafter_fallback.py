@@ -13049,6 +13049,77 @@ def test_uncovered_skips_tällä_lailla_kumotaan_repeal_clause_section() -> None
     )
 
 
+def test_uncovered_heading_replace_does_not_authorize_repeal_clause_body_payload() -> None:
+    """Heading-only replacement authority must not admit repeal-list body text.
+
+    Regression for 1996/1195 / 2001/893: the omnibus repeal item for the parent
+    statute also repeals a preceding heading. That heading-facet replacement is
+    not authority to replace section 1 or 2 with the amendment act's own repeal
+    and commencement provisions.
+    """
+    ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+    base_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1 §"),
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="Base section one."),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="48",
+                children=(IRNode(kind=IRNodeKind.NUM, text="48 §"),),
+            ),
+        ),
+    )
+    state = ReplayState(ir=base_ir)
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        (
+            f'<akn xmlns="{ns}">'
+            f'<body>'
+            f'<section><num>1 §</num>'
+            f'<subsection><content>'
+            f'<p>Tällä lailla kumotaan lain (1195/1996) 48 § sekä sen edellä oleva väliotsikko.</p>'
+            f'</content></subsection></section>'
+            f'<section><num>2 §</num>'
+            f'<subsection><content><p>Tämä laki tulee voimaan 1 päivänä tammikuuta 2002.</p></content></subsection>'
+            f'</section>'
+            f'</body>'
+            f'</akn>'
+        ).encode()
+    )
+    ops = [
+        AmendmentOp(op_id="", op_type="REPEAL", target_section="48", target_unit_kind="section"),
+        AmendmentOp(
+            op_id="",
+            op_type="REPLACE",
+            target_section="48",
+            target_unit_kind="section",
+            target_special="otsikko",
+        ),
+    ]
+
+    recovered = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        ops,
+        muutos_tree,
+        "2001/893",
+        failed_ops_out=[],
+    )
+
+    assert not [r for r in recovered if r.is_replace_action and r.target_norm in {"1", "2"}]
+
+
 # ---------------------------------------------------------------------------
 # Regression tests: multi-väliaikaisesti scope detection (2021/147 pattern)
 # ---------------------------------------------------------------------------

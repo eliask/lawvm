@@ -202,7 +202,12 @@ def _build_peg_covered_sets(
 
 def _compute_has_content_ops(ops: List[AmendmentOp], muutos_tree: etree._Element) -> bool:
     """Whether REPLACE/INSERT body recovery is permitted for this amendment."""
-    if any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "section" for op in ops):
+    if any(
+        op.op_type in ("REPLACE", "INSERT")
+        and op.target_unit_kind == "section"
+        and op.target_special is None
+        for op in ops
+    ):
         return True
     if any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter" for op in ops):
         return True
