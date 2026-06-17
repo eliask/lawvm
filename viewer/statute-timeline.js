@@ -264,16 +264,110 @@ const REF_KINDS = {
     nav(p) { goToAddrAtDate(p.addr || null, p.date, p.phrase || undefined); },
     hover: null,
   },
+  // Structured inline statute citation. Rendering + navigation + hover all
+  // branch on the resolution STATUS derived from the graph-authoritative
+  // interlink row (resolution_status + confidence + presence of an in-act
+  // locator / external url / candidate set). The status is the single source
+  // of truth for the surface affordance:
+  //   resolved      → deep-link to the target provision (in-act or cross-act)
+  //   statute_only  → act-level link (no in-act anchor known)
+  //   external      → external (EU/treaty) link, opens in a new tab
+  //   ambiguous     → non-navigating, hovercard lists the candidate works
+  //   open          → tagged, non-clickable span (vague / unparsed locator)
+  //   broken        → struck-through, "repealed/renumbered since" affordance
   semantic: {
     display(p) {
+      const status = semanticRefStatus(p);
       const text = p.text || p.surface_text || p.target_work_id || p.interlink_id || '';
-      const title = [p.role, p.target_work_id, p.target_locator].filter(Boolean).join(' · ');
-      return { text, title, cls: 'ref-semantic' };
+      const statusLabel = tr('semanticStatus_' + status) || status;
+      const title = [statusLabel, p.role, p.target_work_id, p.target_locator]
+        .filter(Boolean).join(' · ');
+      return { text, title, cls: 'ref-semantic ref-sem-' + status };
     },
-    nav: null,
+    // nav is keyed by status: navigating statuses get an action, the rest
+    // fall through to a no-op (refLink still renders them as inert anchors,
+    // styled by their status class; the click handler ignores a missing nav).
+    nav(p) {
+      const status = semanticRefStatus(p);
+      if (status === 'resolved' || status === 'statute_only') {
+        semanticNavToTarget(p, status);
+      } else if (status === 'external') {
+        const url = (p.target_url || '').trim();
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      // ambiguous / open / broken → non-navigating by design.
+    },
     hover(p) { return semanticInterlinkHovercardHtml(p); },
   },
 };
+
+// Classify a semantic interlink row into a display/nav status. Maps the
+// graph-authoritative resolution_status (+ locator/url/candidate signals) onto
+// the five surface affordances the viewer renders. Pure + total: never throws,
+// always returns one of resolved|statute_only|external|ambiguous|open|broken.
+function semanticRefStatus(row) {
+  if (!row) return 'open';
+  const rs = String(row.resolution_status || '').toLowerCase();
+  if (rs === 'broken') return 'broken';
+  if (rs === 'ambiguous') return 'ambiguous';
+  const hasUrl = !!String(row.target_url || '').trim();
+  if (rs === 'external_only') return hasUrl ? 'external' : 'open';
+  if (rs === 'unresolved') return 'open';
+  if (rs === 'resolved') {
+    const hasTarget = !!String(row.target_work_id || row.target_local_id || '').trim();
+    if (!hasTarget) return hasUrl ? 'external' : 'open';
+    const hasLocator = !!String(row.target_locator || '').trim();
+    return hasLocator ? 'resolved' : 'statute_only';
+  }
+  // Anything else (missing / legacy) with a usable url is external; else vague.
+  if (hasUrl) return 'external';
+  return 'open';
+}
+
+// Resolve a semantic interlink to the manifest statute it points at. The
+// neutral row carries target_local_id (e.g. "301/2004"), which is the same key
+// the manifest uses for Finnish statutes. Returns null if the target act is not
+// in the current manifest (then we cannot deep-link in-viewer).
+function semanticTargetStatuteId(row) {
+  const localId = String((row && row.target_local_id) || '').trim();
+  if (localId && manifest.some(s => s.statute_id === localId)) return localId;
+  return null;
+}
+
+// Navigate to a semantic citation target. resolved → in-act provision anchor;
+// statute_only → act top (no anchor). Same-statute jumps reuse goToAddrAtDate;
+// cross-statute jumps load the target act (carrying an address permalink when a
+// provision anchor is known). Falls back to a hovercard-only no-op + an
+// external link when the act is outside the current manifest.
+function semanticNavToTarget(row, status) {
+  const statuteId = semanticTargetStatuteId(row);
+  const target = semanticTargetForRow(row);
+  const addr = (status === 'resolved') ? semanticTargetAddress(row, target) : null;
+  if (statuteId && statuteId !== currentStatuteId) {
+    statuteSel.value = statuteId;
+    loadStatute(statuteId, { statute: statuteId, mode: 'law', address: addr || null });
+    return;
+  }
+  if (statuteId === currentStatuteId || (!statuteId && addr)) {
+    goToAddrAtDate(addr || null, null);
+    return;
+  }
+  // Target act not in manifest and no in-viewer anchor: offer the external
+  // link if the interlink carries one; otherwise the hovercard is the payload.
+  const links = semanticTargetLinks(row, target);
+  if (links.length && links[0].url) window.open(links[0].url, '_blank', 'noopener,noreferrer');
+}
+
+// Best-effort rendered-tree address for a resolved target provision. Prefers an
+// explicit rendered_address on the resolved target row (set when the target was
+// materialised in the viewer's tree); otherwise null (act-top fallback).
+function semanticTargetAddress(row, target) {
+  const fromTarget = target && String(target.rendered_address || target.address || '').trim();
+  if (fromTarget) return fromTarget;
+  const detail = jsonObj(row && row.detail_json);
+  const fromDetail = String(detail.target_address || detail.rendered_address || '').trim();
+  return fromDetail || null;
+}
 
 // Emit a reference as an <a>. The payload rides in a data-* attr (JSON) so the
 // DELEGATED click/hover handlers rehydrate it without per-element closures (the
@@ -498,13 +592,53 @@ function semanticTargetLinks(row, target) {
   return out;
 }
 
+// Surface kind (xml_ref / prose_ref / metadata_ref …) → a coarse citation
+// class for the hovercard: cross-statute / internal / EU / treaty. Internal vs
+// cross is decided by whether the target act equals the source act.
+function semanticCiteKindLabel(row) {
+  const workId = String((row && row.target_work_id) || '').toLowerCase();
+  const localId = String((row && row.target_local_id) || '');
+  if (workId.startsWith('eu:') || workId.startsWith('eu/')) return tr('citeKindEU');
+  if (/treaty|sops|sopimussarja/.test(workId)) return tr('citeKindTreaty');
+  if (localId && currentStatuteId && localId === currentStatuteId) return tr('citeKindInternal');
+  if (String(row && row.role || '') === 'internal') return tr('citeKindInternal');
+  return tr('citeKindCross');
+}
+
+// Candidate target works for an AMBIGUOUS interlink (pipe-joined in the row).
+function semanticCandidateWorks(row) {
+  const raw = String((row && row.candidate_work_ids) || '').trim();
+  if (!raw) return [];
+  return raw.split('|').map(s => s.trim()).filter(Boolean);
+}
+
 function semanticInterlinkHovercardHtml(row) {
   if (!row) return null;
+  const status = semanticRefStatus(row);
   const target = semanticTargetForRow(row);
   const targetDetail = jsonObj(target && target.detail_json);
   const links = semanticTargetLinks(row, target);
   const title = (target && target.title) || row.target_work_id || row.surface_text || row.interlink_id || '';
   let h = `<div class="hc-title">${escHtml(title)}</div>`;
+  // Status badge + citation-kind chip headline the card so the affordance the
+  // user just hovered is named explicitly.
+  h += `<div class="hc-status-row">`
+    + `<span class="hc-status hc-status-${status}">${escHtml(tr('semanticStatus_' + status) || status)}</span>`
+    + `<span class="hc-citekind">${escHtml(semanticCiteKindLabel(row))}</span>`
+    + `</div>`;
+  // AMBIGUOUS: list the candidate works the resolver could not disambiguate.
+  if (status === 'ambiguous') {
+    const cands = semanticCandidateWorks(row);
+    if (cands.length) {
+      h += `<div class="hc-candidates"><div class="hc-candidates-lbl">${escHtml(tr('semanticCandidates'))}</div><ul>`;
+      for (const c of cands) h += `<li>${escHtml(c)}</li>`;
+      h += `</ul></div>`;
+    }
+  }
+  // BROKEN: name the affordance — the target was repealed/renumbered since.
+  if (status === 'broken') {
+    h += `<div class="hc-broken-note">${escHtml(tr('semanticBrokenNote'))}</div>`;
+  }
   const hierarchy = semanticTargetHierarchy(target);
   if (hierarchy.length) {
     h += `<div class="hc-path">${hierarchy.map(part => {
