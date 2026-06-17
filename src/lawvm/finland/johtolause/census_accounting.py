@@ -195,6 +195,40 @@ FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Insertion recovery (class I_insertion_recovery). These clauses carry a
+# ``lisätään ... uusi X`` insertion that the legacy parser silently flattened or
+# dropped: OLD modelled the insertion target as a plain ``SurfaceTargetRef`` (a
+# bare reference, losing the alakohta/momentti/section being created) or omitted
+# the LISATA verb group entirely. The johtolause insertion recognizers
+# (``fi.insertion_alakohta_into_item`` / ``fi.insertion_section`` /
+# ``fi.insertion_law_level_bare_section``) now make NEW emit the correct
+# ``SurfaceInsertion`` node, so NEW diverges from the lossy OLD parse — NEW is
+# strictly better (the inserted unit is named in the source and replays into the
+# tree; the OLD reference parse would not create it). The clause is therefore an
+# adjudicated correction and lands in ``genuine_delta_adjudicated_fix``, not in
+# ``unclassified``. Verdict authority: source-language reading + replay effect
+# (Finlex supporting-only). The recovery is replay-pinned: e.g. 2025/1253's
+# ``1 kohtaan uusi c alakohta`` is materialization-tested to append sub-item ``c``
+# under item 1 against the official consolidated text.
+# ---------------------------------------------------------------------------
+FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0: frozenset[str] = frozenset(
+    {
+        "1976/672",  # 'lisätään lakiin uusi 3 a §' — OLD dropped the whole LISATA group;
+        #             NEW emits SurfaceInsertion(3a §) (fi.insertion_law_level_bare_section).
+        "2001/436",  # 'lisätään 1 §:n ... 6 kohtaan uusi c alakohta, uusi 4 a § ja 6 §:n ...
+        #             uusi c alakohta' — OLD one bare ref (dropped 2 of 3 inserts + alakohta);
+        #             NEW 3 SurfaceInsertion nodes (alakohta_into_item ×2 + section 4a).
+        "2003/363",  # 'lisätään 1 §:n ... 13 kohtaan uusi c alakohta, 12 §:ään uusi 4 momentti
+        #             ja uusi 20 a §' — OLD one bare ref; NEW 3 SurfaceInsertion nodes.
+        "2018/387",  # LISATA tail '78 §:n 2 momentin 1 kohtaan uusi d alakohta' — OLD bare ref
+        #             (item '1', dropped alakohta); NEW SurfaceInsertion sub_target '1d'.
+        "2025/1253",  # 'lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta' — OLD bare ref
+        #             (item '1'); NEW SurfaceInsertion sub_target '1c' (replay-pinned).
+    }
+)
+
+
+# ---------------------------------------------------------------------------
 # Pinned baselines. A human bumps these deliberately when the split legitimately
 # changes; the CI test fails on any un-bumped drift in the wrong direction.
 # Measured live on the full canonical corpus at base 8aa37aee.
@@ -217,9 +251,12 @@ FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR: int = 32966
 #: ``parity_bug`` verdicts {1995/551, 1991/1055, 1989/117} were then FIXED
 #: grammar-side (E_lukuun_tilalle recovery), and the last one, 2002/723, was
 #: adjudicated as a replay-neutral witness-span normalization (see
-#: ``FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0``). Unclassified is
-#: now 0: every genuine delta is accounted. Any NEW parity miss pushes this
-#: above 0 and fails CI.
+#: ``FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0``). A later round then
+#: added the insertion recognizers, which moved 5 more clauses out of the lossy
+#: OLD parse into NEW-better insertion captures (class I_insertion_recovery, see
+#: ``FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0``); those are adjudicated,
+#: not unclassified. Unclassified is 0: every genuine delta is accounted. Any NEW
+#: parity miss pushes this above 0 and fails CI.
 FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE: int = 0
 
 
@@ -341,6 +378,7 @@ def census_accounting(
                 sid in adjudicated_fixes
                 or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
                 or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0
             ):
                 counts["genuine_delta_adjudicated_fix"] += 1
             else:
@@ -359,6 +397,7 @@ def census_accounting(
                 sid in adjudicated_fixes
                 or sid in FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
                 or sid in FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
+                or sid in FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0
             ):
                 counts["genuine_delta_adjudicated_fix"] += 1
             else:
