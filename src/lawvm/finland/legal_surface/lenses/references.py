@@ -32,6 +32,7 @@ Every rejected candidate and every unlocatable surface becomes an explicit
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from typing import cast
 
@@ -50,15 +51,21 @@ from lawvm.core.reference_mention import (
     ReferenceMention,
     RejectedRefCandidate,
 )
-from lawvm.finland.legal_surface.bundle import locate_span
+from lawvm.finland.legal_surface.bundle import decode_body_text, locate_span
+from lawvm.finland.references.defined_terms import (
+    DefinedTermBinding,
+    recognize_defined_term_bindings,
+)
 from lawvm.finland.references.ref_mention_extractor import (
     ExtractionResult,
     extract_all_reference_mentions,
 )
 from lawvm.finland.references.registries.statute_name import StatuteNameRegistry
 from lawvm.finland.references.resolve import (
+    DefinedTermTable,
     ResolutionStatus,
     ResolvedReference,
+    build_defined_term_table,
     resolve_mentions,
 )
 
@@ -210,11 +217,23 @@ class ReferenceLens:
 
             resolutions: list[ResolvedReference | None] = []
             if resolve_targets:
+                # Per-statute local defined-term / alias table. The recognizer
+                # reports binding spans as CHAR offsets into the decoded body
+                # text; the use mentions are re-anchored to BYTE offsets in
+                # ``xml_bytes`` (ref_mention_extractor._relocate). The table's
+                # ordering check ("binding precedes use") compares offsets, so
+                # the binding sites MUST live in the same byte space. We
+                # therefore re-anchor each binding onto its term TOKEN — which
+                # byte-matches ``xml_bytes`` verbatim — before building the table.
+                defined_terms = _build_local_defined_term_table(
+                    bytes(xml_bytes), unit.work_id
+                )
                 resolutions.extend(
                     resolve_mentions(
                         list(extraction.mentions),
                         statute_registry=cast(StatuteNameRegistry, statute_registry),
                         eu_registry=eu_registry if eu_registry is not None else _default_eu_registry(),
+                        defined_terms=defined_terms,
                     )
                 )
             else:
@@ -590,6 +609,74 @@ class ReferenceLens:
             },
             status="blocked" if rej.blocking else "open",
         )
+
+
+def _reanchor_binding_to_xml_bytes(
+    binding: DefinedTermBinding, xml_bytes: bytes
+) -> DefinedTermBinding | None:
+    """Re-anchor a binding's ``source_span`` onto its term token in ``xml_bytes``.
+
+    The recognizer reports the binding construct's span as a CHAR offset into the
+    decoded body text (``decode_body_text``). The resolver compares a binding's
+    byte offset against the USE mention's byte offset (re-anchored into
+    ``xml_bytes`` by ``ref_mention_extractor._relocate``), so the two MUST share a
+    byte space. The whole construct (e.g.
+    ``annetussa asetuksessa (EY) N:o 1069/2009 (sivutuoteasetus)``) seldom
+    byte-matches ``xml_bytes`` because element tags sit inside it — but the
+    binding's ``term`` (e.g. ``sivutuoteasetus``) is a single token present
+    verbatim in ``xml_bytes``.
+
+    BINDING-SITE PROXY: we use the term token's FIRST byte occurrence in
+    ``xml_bytes`` as the binding-site offset. The term is recorded in the
+    NOMINATIVE as written at the binding site; a later USE is inflected (different
+    bytes), so the nominative term's first verbatim occurrence is the binding
+    site, not an earlier use. (A bare nominative use that genuinely precedes the
+    binding — uncommon for an alias — would make this proxy slightly early; the
+    "binding precedes use" guard then errs toward resolving rather than blocking
+    that one use. The use-before-binding case for INFLECTED uses stays correctly
+    unresolved because the inflected bytes never match the nominative anchor.)
+
+    Returns a binding whose ``source_span.byte_offset`` is the xml_bytes byte
+    offset of the term token, or ``None`` when the term token is not found
+    verbatim in ``xml_bytes`` (e.g. tag-split term — refuse to guess a position;
+    the binding is dropped rather than mis-anchored).
+    """
+    if binding.source_span is None:
+        return None
+    term = binding.term.strip()
+    if not term:
+        return None
+    needle = term.encode("utf-8")
+    pos = xml_bytes.find(needle)
+    if pos < 0:
+        return None
+    new_span = dataclasses.replace(
+        binding.source_span, byte_offset=pos, byte_len=len(needle)
+    )
+    return dataclasses.replace(binding, source_span=new_span)
+
+
+def _build_local_defined_term_table(
+    xml_bytes: bytes, work_id: str
+) -> DefinedTermTable:
+    """Build the per-statute defined-term table in ``xml_bytes`` byte space.
+
+    Recognizes binding sites over the decoded body text, then re-anchors each
+    binding onto its term token's byte offset in ``xml_bytes`` so the resolver's
+    "binding precedes use" ordering compares like-for-like (use offsets are
+    ``xml_bytes`` byte offsets). Bindings whose term token does not appear
+    verbatim in ``xml_bytes`` are dropped (no mis-anchored position).
+    """
+    body_text = decode_body_text(xml_bytes)
+    if not body_text:
+        return build_defined_term_table([])
+    bindings = recognize_defined_term_bindings(body_text, source_file=work_id)
+    reanchored: list[DefinedTermBinding] = []
+    for b in bindings:
+        fixed = _reanchor_binding_to_xml_bytes(b, xml_bytes)
+        if fixed is not None:
+            reanchored.append(fixed)
+    return build_defined_term_table(reanchored)
 
 
 def _default_eu_registry() -> object:
