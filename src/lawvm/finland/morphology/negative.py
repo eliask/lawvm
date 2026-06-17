@@ -62,6 +62,7 @@ from functools import lru_cache
 
 from .api import MorphCase, MorphEntry, MorphNumber
 from .generate import generate_forms
+from .heads import head_entry
 
 # --------------------------------------------------------------------------- #
 # The closed laki obliques that the by-name regex uses as triggers.  A negative
@@ -157,6 +158,52 @@ _AGENT_NOUN_PL_OBLIQUES: dict[MorphCase, str] = {
 
 
 # --------------------------------------------------------------------------- #
+# Family 2b: non-statute ``-sopimus`` product / contract common nouns.  The
+# ``sopimus`` head is a closed by-name trigger head (it heads contract /
+# instrument nouns), so its obliques (``sopimuksen`` / ``sopimuksessa`` /
+# ``sopimukselle`` ...) fire the by-name trigger on ANY ``X-sopimus`` compound.
+# A genuine named act, by contrast, is ``X-sopimuslaki`` -- it carries the
+# ``laki`` head (``sopimuslain``), never the ``sopimus`` head.  But many
+# ``X-sopimus`` compounds
+# are ordinary PRODUCT / CONTRACT common nouns, not named acts:
+# ``kapitalisaatiosopimus`` (a capitalization/insurance investment product) is the
+# proven corpus false positive (it surfaces capitalized as a defined term in
+# tuloverolaki 1992/1535 and is wrongly emitted as ``fi-name:kapitalisaatiosopimus``).
+#
+# These are folded in as a CLOSED set of non-statute lemmas, generated through the
+# SAME M1 ``sopimus`` head paradigm that produces the positive trigger, so the gate
+# rejects them by paradigm inversion -- exactly as the agent nouns are generated
+# through their own paradigm.  The WHOLE compound inflection is the negative
+# surface (``kapitalisaatiosopimuksen``), matched as a suffix of the token: this
+# can never shadow a genuine ``...sopimuslaki`` reference (different head:
+# ``sopimuslain`` carries the ``laki`` paradigm, never ``sopimukse-``), nor any
+# other ``X-sopimus`` compound that is not explicitly listed (fail-loud: an
+# unlisted ``X-sopimus`` returns UNKNOWN and is handled by the existing weak-head
+# evidence gate, never silently rejected).
+#
+# Boundary discipline: list ONLY ``-sopimus`` common nouns that are demonstrably
+# NOT named acts.  A named act is ``X-sopimuslaki`` (head ``laki``), so the bare
+# ``X-sopimus`` head is the product/contract noun; the two never collide.  Keep
+# the set minimal and proven -- do not add a compound on suspicion alone.
+# --------------------------------------------------------------------------- #
+_NON_STATUTE_SOPIMUS_LEMMAS: tuple[str, ...] = ("kapitalisaatiosopimus",)
+# The closed ``sopimus`` head obliques the by-name lane triggers on; a non-statute
+# ``-sopimus`` lemma only needs its colliding (oblique) surfaces enumerated.  The
+# nominative is excluded (a bare uninflected head is not a by-name trigger).
+_SOPIMUS_OBLIQUE_CASES: tuple[MorphCase, ...] = (
+    MorphCase.GEN,
+    MorphCase.PART,
+    MorphCase.INE,
+    MorphCase.ELA,
+    MorphCase.ILL,
+    MorphCase.ADE,
+    MorphCase.ABL,
+    MorphCase.ALL,
+    MorphCase.TRA,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Family 3: jokin pronoun reduced obliques (joll- / joill- stems).  Irregular
 # pronoun paradigm outside M1's modelled noun classes; the closed reduced
 # oblique surface set is supplied explicitly.  Never compounds.
@@ -236,10 +283,16 @@ def _shadowed_laki_oblique(surface: str) -> str | None:
 class _NegEntry:
     """A negative-paradigm surface and the lemma that generates it.
 
-    ``shadows`` is the bare laki oblique the surface ends in; the gate rejects a
-    token only when the negative surface is STRICTLY LONGER than ``shadows``
-    (its non-head stem extends past the bare head -- a sound morphological
-    proof, not a substring coincidence).
+    For a ``laki``-oblique collision entry ``shadows`` is the bare laki oblique
+    the surface ends in; the gate rejects a token only when the negative surface
+    is STRICTLY LONGER than ``shadows`` (its non-head stem extends past the bare
+    head -- a sound morphological proof, not a substring coincidence).
+
+    For a WHOLE-COMPOUND entry (a closed non-statute ``-sopimus`` lemma's full
+    inflected surface) there is no shorter shadowed head: the surface IS the
+    complete non-statute word.  ``shadows`` is then the empty string and the gate
+    rejects a token that ends in the full surface unconditionally -- the closed
+    lemma membership is the proof, so no length comparison applies.
     """
 
     surface: str
@@ -253,6 +306,35 @@ def _neg_entry(surface: str, lemma: str) -> _NegEntry | None:
     if shadow is None:
         return None
     return _NegEntry(surface=surface, lemma=lemma, shadows=shadow)
+
+
+def _non_statute_sopimus_forms() -> list[_NegEntry]:
+    """Whole-compound negative entries for the closed non-statute ``-sopimus`` set.
+
+    Each lemma is inflected through M1's ``sopimus`` head paradigm (the same head
+    that produces the positive by-name trigger) and every OBLIQUE surface is
+    registered as a whole-compound negative entry (``shadows=""``).  The
+    nominative is excluded (a bare head is not a by-name trigger).  Because the
+    whole compound is the rejection key, this can never shadow a genuine
+    ``...sopimuslaki`` reference (a different head) nor an unlisted ``X-sopimus``
+    compound (it returns UNKNOWN, handled by the weak-head evidence gate).
+    """
+    entry = head_entry("sopimus")
+    wanted = set(_SOPIMUS_OBLIQUE_CASES)
+    oblique_endings: list[str] = []
+    for form in generate_forms(entry, numbers=(MorphNumber.SG,)):
+        if form.certainty != "deterministic" or not form.surface:
+            continue
+        if form.case in wanted:
+            oblique_endings.append(form.surface.lower())
+    out: list[_NegEntry] = []
+    for lemma in _NON_STATUTE_SOPIMUS_LEMMAS:
+        # The modifier rides invariant in front of the head; the lemma minus its
+        # final ``sopimus`` head is the invariant prefix the oblique attaches to.
+        prefix = lemma[: -len("sopimus")]
+        for ending in oblique_endings:
+            out.append(_NegEntry(surface=prefix + ending, lemma=lemma, shadows=""))
+    return out
 
 
 def _agent_noun_forms() -> list[_NegEntry]:
@@ -332,6 +414,13 @@ class NegativeParadigms:
           match -> the bare laki elative survives as a real reference.
         * ``oppilaille``   -> ``oppilaille`` (10) > ``laille`` (6)  REJECT
 
+        A WHOLE-COMPOUND entry (``shadows == ""``, a closed non-statute
+        ``-sopimus`` lemma's full surface) matches when the token ends in the
+        full surface -- the closed lemma membership is the proof, so the
+        strictly-longer rule (which discriminates a derivational stem from a bare
+        head) does not apply; an empty ``shadows`` makes the length test
+        vacuously true.
+
         Longest-first so the most specific paradigm wins.
         """
         low = token.lower()
@@ -351,14 +440,16 @@ def negative_paradigms() -> NegativeParadigms:
     surfaces: list[_NegEntry] = []
     surfaces.extend(_adj_nen_forms())
     surfaces.extend(_agent_noun_forms())
+    surfaces.extend(_non_statute_sopimus_forms())
     for s in _JOKIN_OBLIQUE_SURFACES:
         entry = _neg_entry(s, "jokin")
         if entry is not None:
             surfaces.append(entry)
 
-    # Every entry already collides with a laki oblique by construction
-    # (_neg_entry returns None otherwise).  Sort longest-first for the
-    # most-specific-paradigm-wins longest-suffix match.
+    # Every laki-collision entry collides with a laki oblique by construction
+    # (_neg_entry returns None otherwise); whole-compound entries carry
+    # ``shadows=""``.  Sort longest-first for the most-specific-paradigm-wins
+    # longest-suffix match.
     by_len = tuple(sorted(set(surfaces), key=lambda e: len(e.surface), reverse=True))
     return NegativeParadigms(
         whole_surfaces=tuple(sorted(set(surfaces), key=lambda e: e.surface)),

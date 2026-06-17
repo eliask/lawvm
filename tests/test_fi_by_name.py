@@ -424,5 +424,54 @@ def test_coordinated_compound_resolves_full_registry_key() -> None:
     )
 
 
+def test_kapitalisaatiosopimus_is_not_a_statute_name() -> None:
+    """``kapitalisaatiosopimus`` (an insurance/investment product) -> NOTHING.
+
+    A capitalization agreement is a CONTRACT/PRODUCT common noun, not a named act.
+    Its ``sopimus``-head obliques fire the by-name trigger, and the weak-head
+    evidence gate previously let it through on BOTH FP paths it actually takes in
+    the corpus (tuloverolaki 1992/1535): capitalized mid-sentence (a defined-term
+    surface), and with a ``§`` provision tail (the sections are tuloverolaki's
+    own, not an act called ``kapitalisaatiosopimus``). It is now hard-rejected by
+    the negative-paradigm gate, so neither path emits.
+    """
+    # Capitalized mid-sentence (defined-term shape, previously emitted).
+    assert (
+        recognize_by_name_refs(
+            "Verovelvollisen Kapitalisaatiosopimuksen tuotto on veronalaista."
+        )
+        == []
+    )
+    # With a provision tail (previously emitted via has_provision_tail evidence).
+    assert recognize_by_name_refs("kapitalisaatiosopimuksen 46 ja 47 §:n mukaan") == []
+    # Plain lowercase oblique.
+    assert recognize_by_name_refs("Sopimuksena pidetään kapitalisaatiosopimusta.") == []
+    # The gate itself hard-rejects every oblique surface.
+    assert _gate_rejects("kapitalisaatiosopimuksen")
+    assert _gate_rejects("Kapitalisaatiosopimuksen")
+    assert _gate_rejects("kapitalisaatiosopimuksesta")
+    assert _gate_rejects("kapitalisaatiosopimukselle")
+
+
+def test_genuine_sopimuslaki_act_still_resolves() -> None:
+    """A real ``...sopimuslaki`` act is NOT over-broadened away by the FP filter.
+
+    ``vakuutussopimuslaki`` carries the ``laki`` head (``vakuutussopimuslain``),
+    a different head from the rejected ``kapitalisaatiosopimus`` (the ``sopimus``
+    head, ``kapitalisaatiosopimuksen``). The two never collide, so suppressing the
+    product noun must leave the named act untouched.
+    """
+    mentions = recognize_by_name_refs("vakuutussopimuslain 2 §:ssä säädetään.")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:vakuutussopimuslaki"
+    assert m.target_provision_ref.section_label == "2"
+    # The gate must not reject the genuine sopimuslaki obliques.
+    assert not _gate_rejects("vakuutussopimuslain")
+    assert not _gate_rejects("vakuutussopimuslaissa")
+    assert not _gate_rejects("työsopimuslaissa")
+
+
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []

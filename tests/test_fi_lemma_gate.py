@@ -199,3 +199,43 @@ def test_negative_paradigm_determiner_modifiers() -> None:
     assert np.is_determiner_modifier("tämän")
     assert np.is_determiner_modifier("Mainitun")  # case-folded
     assert not np.is_determiner_modifier("luonnonsuojelu")
+
+
+def test_negative_paradigm_non_statute_sopimus_whole_compound() -> None:
+    """A closed non-statute ``-sopimus`` lemma's whole-compound surface rejects.
+
+    ``kapitalisaatiosopimus`` is a contract/product common noun riding the
+    ``sopimus`` head, not a named act. Each of its oblique surfaces is a
+    whole-compound negative entry (no shorter shadowed head), so the gate rejects
+    it to the ``kapitalisaatiosopimus`` lemma.
+    """
+    np = negative_paradigms()
+    for tok in (
+        "kapitalisaatiosopimuksen",
+        "kapitalisaatiosopimuksessa",
+        "kapitalisaatiosopimuksesta",
+        "kapitalisaatiosopimukselle",
+    ):
+        hit = np.longest_suffix_match(tok)
+        assert hit is not None and hit.lemma == "kapitalisaatiosopimus", tok
+        assert hit.shadows == ""
+        assert lemma_gate(tok).verdict is GateVerdict.REJECT_KNOWN_OTHER
+
+
+def test_negative_paradigm_genuine_sopimuslaki_not_shadowed() -> None:
+    """A genuine ``...sopimuslaki`` act (``laki`` head) is never shadowed.
+
+    The named act carries the ``laki`` head (``vakuutussopimuslain`` /
+    ``työsopimuslaissa``); the rejected product noun carries the ``sopimus`` head
+    (``kapitalisaatiosopimuksen``). The two never share a tail, so the
+    non-statute ``-sopimus`` family cannot match a real act reference.
+    """
+    np = negative_paradigms()
+    for tok in (
+        "vakuutussopimuslain",
+        "vakuutussopimuslaissa",
+        "työsopimuslaissa",
+        "maakaaressa",
+    ):
+        assert np.longest_suffix_match(tok) is None, tok
+        assert lemma_gate(tok).verdict is GateVerdict.UNKNOWN
