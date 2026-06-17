@@ -59,10 +59,12 @@ def test_name_with_momentti_tail() -> None:
 def test_coordinated_compound_modifier_head_detected() -> None:
     """``maankäyttö- ja rakennuslain 132 §`` -> name head detected, section 132.
 
-    The inflection rides the LAST conjunct's head (``rakennus`` + ``lain``); the
-    normalized key reattaches the head to that conjunct (tag-don't-guess: no
-    per-conjunct id synthesis). The reported surface includes the elided-head
-    left conjunct (``maankäyttö- ja``).
+    The inflection rides the LAST conjunct's head (``rakennus`` + ``lain``), but
+    the normalized key preserves the FULL coordinated compound name
+    (``maankäyttö- ja rakennuslaki``), because the statute-name registry
+    generates the coordinated surface under the whole name — keying on the
+    truncated last conjunct alone (``rakennuslaki``) would miss the registered
+    act. The reported surface includes the elided-head left conjunct.
     """
     mentions = recognize_by_name_refs("maankäyttö- ja rakennuslain 132 §:ssä")
     assert len(mentions) == 1
@@ -70,7 +72,7 @@ def test_coordinated_compound_modifier_head_detected() -> None:
     assert m.cite_kind is CiteKind.CROSS_STATUTE
     assert m.cite_confidence is CiteConfidence.STATUTE_ONLY
     assert m.target_provision_ref is not None
-    assert m.target_provision_ref.statute_id == "fi-name:rakennuslaki"
+    assert m.target_provision_ref.statute_id == "fi-name:maankäyttö- ja rakennuslaki"
     assert m.target_provision_ref.section_label == "132"
     # Full coordinated name surface reported for overlay display.
     assert "maankäyttö- ja rakennuslain" in m.surface_text
@@ -313,6 +315,88 @@ def test_real_la_stem_compound_law_still_emitted() -> None:
     assert len(mentions) == 1
     assert mentions[0].target_provision_ref is not None
     assert mentions[0].target_provision_ref.statute_id == "fi-name:maakuntalaki"
+
+
+def test_section_tail_surface_does_not_overcapture_following_prose() -> None:
+    """The reported surface is the consumed name + § tail, NOT a fixed window.
+
+    Previously the recognizer appended the whole 120-char tail window, so the
+    surface ran on into the following prose (``... §:ssä tarkoitetun
+    luontovahingon, aluehallintoviraston on sen lisäksi …``). It must stop at the
+    bytes the section-tail grammar actually consumed.
+    """
+    text = (
+        "luonnonsuojelulain 5 a §:ssä tarkoitetun luontovahingon, "
+        "aluehallintoviraston on sen lisäksi ilmoitettava asiasta"
+    )
+    mentions = recognize_by_name_refs(text)
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:luonnonsuojelulaki"
+    assert m.target_provision_ref.section_label == "5a"
+    # The surface stops at the consumed provision tail — no run-on prose.
+    assert m.surface_text == "luonnonsuojelulain 5 a §:ssä"
+
+
+def test_section_tail_surface_trimmed_with_luku() -> None:
+    """A luku-qualified § tail surface stops at ``§:ssä``, not the trailing prose."""
+    mentions = recognize_by_name_refs(
+        "osakeyhtiölain 13 luvun 9 §:ssä tarkoitetulla tavalla"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.surface_text == "osakeyhtiölain 13 luvun 9 §:ssä"
+
+
+def test_jokin_pronoun_oblique_paradigm_not_a_statute_name() -> None:
+    """The ``jokin`` paradigm ``joll-`` obliques must not mis-segment as ``laki``.
+
+    Beyond the adessive ``jollain`` / ``joillain`` (already guarded), the further
+    obliques ``jollaiksi`` / ``jollailla`` / ``jollaille`` / ``jollailta`` /
+    ``jollaissa`` and their ``joilla-`` plurals mis-segment as a ``laki`` oblique
+    and invent ``fi-name:jollaki``. These are pronouns, never statutes; the whole
+    closed ``joll-`` oblique paradigm is hard-rejected.
+    """
+    for tok in (
+        "jollaiksi",
+        "jollailla",
+        "jollaille",
+        "jollailta",
+        "jollaissa",
+        "joillaiksi",
+        "joillailla",
+        "joillaille",
+        "joillailta",
+        "joillaissa",
+    ):
+        assert recognize_by_name_refs(f"Asia voidaan {tok} ratkaista.") == [], tok
+
+
+def test_coordinated_compound_resolves_full_registry_key() -> None:
+    """``perintö- ja lahjaverolain`` keys the FULL coordinated name.
+
+    The registry generates the coordinated-compound surface under the whole name
+    (``perintö- ja lahjaverolaki`` -> 1940/378). Keying on the truncated last
+    conjunct (``lahjaverolaki``) would silently under-resolve, so the ``fi-name:``
+    key must carry the full coordinated compound.
+    """
+    mentions = recognize_by_name_refs("perintö- ja lahjaverolain 9 §:ssä")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert (
+        m.target_provision_ref.statute_id == "fi-name:perintö- ja lahjaverolaki"
+    )
+    assert m.target_provision_ref.section_label == "9"
+    # No-tail coordinated form keys the full name too.
+    no_tail = recognize_by_name_refs("perintö- ja lahjaverolain mukaan")
+    assert len(no_tail) == 1
+    assert no_tail[0].target_provision_ref is not None
+    assert (
+        no_tail[0].target_provision_ref.statute_id
+        == "fi-name:perintö- ja lahjaverolaki"
+    )
 
 
 def test_empty_text() -> None:

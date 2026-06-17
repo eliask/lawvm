@@ -71,7 +71,7 @@ from lawvm.finland.morphology import (
 from lawvm.finland.references.registries.statute_name import _HEADS_BY_LEN
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
-    parse_body_provision_tail,
+    parse_body_provision_tail_spanned,
 )
 
 
@@ -221,13 +221,20 @@ _ADJ_NOT_LAKI_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Pronoun forms whose orthography mis-segments as ``<modifier>`` + ``lain`` (the
-# ``laki`` genitive): the ``jokin`` paradigm adessive ``jollain`` / plural
-# ``joillain`` ("by some / by one of …") is a pronoun, never a statute. The head
-# trigger reads the trailing ``lain`` and invents ``fi-name:jollaki``. Matched
-# against the WHOLE token (modifier + oblique), case-folded. (Closed pronoun
-# class, same discipline as the adjective reject above.)
-_PRONOUN_NOT_LAKI_RE = re.compile(r"^joi?llain$", re.IGNORECASE)
+# Pronoun forms whose orthography mis-segments as ``<modifier>`` + a ``laki``
+# oblique: the ``jokin`` paradigm built on the ``joll-`` stem (singular adessive
+# ``jollain`` / plural ``joillain`` "by some / by one of …", plus the further
+# obliques ``jollaiksi``/``jollailla``/``jollaille``/``jollailta``/``jollaissa``
+# and their ``joilla-`` plurals) is a pronoun, never a statute. The head trigger
+# reads the trailing ``lain``/``laiksi``/``lailla``/… and invents
+# ``fi-name:jollaki``. The closed ``joll-`` oblique paradigm is enumerated here
+# (the partitive ``jollaista``/``joillaista`` is already rejected by
+# ``_ADJ_NOT_LAKI_RE``; verified against the full statute-name registry — no real
+# act key starts ``jol``, so no resolvable title collides). Matched against the
+# WHOLE token (modifier + oblique), case-folded.
+_PRONOUN_NOT_LAKI_RE = re.compile(
+    r"^joi?lla(?:in|iksi|illa|ille|ilta|issa|ista)$", re.IGNORECASE
+)
 
 # Closed ``-las``/``-läs`` agent-noun PLURAL obliques that mis-segment as a
 # ``laki`` head. ``oppilas`` (pupil) / ``sotilas`` (soldier) / ``kokelas``
@@ -295,11 +302,14 @@ def _modifier_is_capitalized_midsentence(
 def _normalize_name(modifier: str, head_form: _HeadForm) -> str:
     """Build the normalized name key by reattaching the nominative head.
 
-    ``modifier`` is the invariant prefix as matched (original casing); the
-    nominative head surface is reattached and the whole folded to lower case
-    (``luonnonsuojelu`` + ``laki`` -> ``luonnonsuojelulaki``). When the modifier
-    is empty (a bare inflected head, e.g. ``lain``), the nominative head alone is
-    returned (key ``laki``).
+    ``modifier`` is the invariant prefix as matched (original casing), possibly
+    already left-extended over a coordinated elided-head conjunct chain
+    (``perintö- ja lahjavero``); the nominative head surface is reattached and
+    the whole folded to lower case (``luonnonsuojelu`` + ``laki`` ->
+    ``luonnonsuojelulaki``; ``perintö- ja lahjavero`` + ``laki`` ->
+    ``perintö- ja lahjaverolaki``, the key the registry generates for the
+    coordinated compound). When the modifier is empty (a bare inflected head,
+    e.g. ``lain``), the nominative head alone is returned (key ``laki``).
     """
     mod = " ".join(modifier.split())
     return (mod + head_form.nominative).lower()
@@ -312,10 +322,12 @@ def _extend_coordinated_modifier(text: str, match_start: int, modifier: str) -> 
     conjunct: ``maankäyttö- ja rakennuslaki`` = ``maankäyttölaki`` +
     ``rakennuslaki``. The name-head regex only captures from the last conjunct
     (``rakennus`` + ``lain``); this scans the text immediately to the LEFT of the
-    match for a ``<word>- ja `` chain and prepends it so the reported surface is
-    the full coordinated name. The normalized key still reattaches the head to
-    the LAST conjunct only (the head the inflection actually rides), per
-    tag-don't-guess — we do not synthesize per-conjunct ids.
+    match for a ``<word>- ja `` chain and prepends it so the FULL coordinated
+    name is reported AND keyed: the registry generates the coordinated-compound
+    surface under the whole name (``perintö- ja lahjaverolaki`` -> 1940/378), so
+    the ``fi-name:`` key reattaches the head to the extended modifier, not the
+    last conjunct alone. We still synthesize a single key (one mention), not
+    per-conjunct ids.
     """
     left = text[:match_start]
     m = _COORD_LEFT_RE.search(left)
@@ -395,7 +407,12 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # the shared body-mode section/sub-ref recognizers, bounded to a short
         # window so it does not scan the rest of the paragraph.
         tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
-        targets = parse_body_provision_tail(tail_text)
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        # Only the bytes the grammar actually consumed (``5 a §:ssä``), not the
+        # whole fixed window — otherwise the reported surface runs on into the
+        # following prose.
+        consumed_tail = tail_parse.consumed_text
         has_provision_tail = bool(targets)
 
         # Precision gate for WEAK (common-noun) heads and the ``laki`` elative
@@ -417,7 +434,12 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
                 continue
 
         modifier = _extend_coordinated_modifier(text, m.start("modifier"), m.group("modifier"))
-        normalized = _normalize_name(m.group("modifier"), head_form)
+        # The normalized key uses the FULL (possibly coordinated) modifier, not
+        # just the last conjunct: the registry generates coordinated-compound
+        # surfaces (``perintö- ja lahjaverolain`` -> 1940/378) under the full
+        # name, so keying on the truncated last conjunct (``lahjaverolaki``)
+        # would miss the registered act.
+        normalized = _normalize_name(modifier, head_form)
 
         if not targets:
             # No parsable § tail — a statute-level by-name reference.
@@ -443,10 +465,10 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
                 subsection_num=tgt.subsection_num,
                 item_label=tgt.item_label,
             )
-            # Surface = name + the consumed tail slice (best-effort, for overlay
-            # display). For the statute-level fallback it is just the name.
-            if tgt.section_label:
-                surface = (name_surface + " " + tail_text.strip()).strip()
+            # Surface = name + the consumed tail slice (for overlay display).
+            # For the statute-level fallback it is just the name.
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
             else:
                 surface = name_surface
             out.append(
