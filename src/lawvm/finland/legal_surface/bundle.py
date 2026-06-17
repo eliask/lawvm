@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_graph import SourceSpanRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceBundle, SourceSurfaceUnit
+from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.tokenize import (
     build_morph_overlay,
     build_token_tape,
@@ -99,6 +100,14 @@ def build_surface_bundle(
         # absent annotation means "unknown", never "no lemma exists". Cheap: the
         # default lemma index is memoized.
         morph_overlay=build_morph_overlay(token_tape),
+        # Clause-segmentation substrate: deterministic sentence/clause index over
+        # the same coordinate space. Additive — unconsumed by v0 lenses, and the
+        # graph_id is computed over node/edge payloads only (never unit views), so
+        # this cannot perturb the assembled graph. Later attachment passes query
+        # it instead of the magic colocation window.
+        clause_index=build_clause_index(
+            source_unit_id, raw_text, token_tape=token_tape
+        ),
     )
     subject = SurfaceGraphSubject(
         jurisdiction="fi",

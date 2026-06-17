@@ -44,6 +44,12 @@ from lawvm.core.legal_surface_lens import (
     SurfaceNodeSeed,
 )
 from lawvm.core.legal_surface_tokens import Token, TokenTape
+from lawvm.finland.legal_surface.clause_segment import (
+    bound_scope_hint as _shared_bound_scope_hint,
+)
+from lawvm.finland.legal_surface.clause_segment import (
+    is_clause_initial_ish as _shared_is_clause_initial_ish,
+)
 from lawvm.finland.legal_surface.tokenize import build_token_tape
 
 _LENS_ID = "fi.exception_condition.v0"
@@ -73,10 +79,9 @@ _CONDITION_MARKERS: tuple[str, ...] = (
 #: Cues needing the stricter clause-initial-ish guard (common short words).
 _CLAUSE_INITIAL_CUES: frozenset[str] = frozenset({"jos", "kun"})
 
-#: Clause-boundary marker chars (for scope bounding + clause-initial guard).
-_CLAUSE_BOUNDARY_CHARS = ",;.\n"
-#: Additional clause-initial-ish openers the recognizer accepts.
-_CLAUSE_INITIAL_OPENERS = frozenset({":", "(", "["})
+# The clause-initial / scope-bounding rules come from the SHARED authority
+# (imported above) via the delegating _is_clause_initial_ish / _bound_scope_hint
+# helpers below. This lens keeps no private copy of the clause-boundary logic.
 _MAX_SCOPE_HINT = 200
 
 
@@ -193,31 +198,13 @@ def _try_match_phrase(
 
 
 def _is_clause_initial_ish(raw_text: str, start: int) -> bool:
-    """Mirror recognizer ``_is_clause_initial_ish`` on the char offset."""
-    i = start - 1
-    while i >= 0 and raw_text[i].isspace():
-        i -= 1
-    if i < 0:
-        return True
-    return raw_text[i] in _CLAUSE_BOUNDARY_CHARS or raw_text[i] in ":(["
+    """Delegate to the SHARED clause-boundary authority (char offsets)."""
+    return _shared_is_clause_initial_ish(raw_text, start)
 
 
 def _bound_scope_hint(raw_text: str, after: int) -> tuple[int, int] | None:
-    """Mirror recognizer ``_bound_scope_hint`` on char offsets."""
-    start = after
-    while start < len(raw_text) and raw_text[start].isspace():
-        start += 1
-    if start >= len(raw_text):
-        return None
-    limit = min(len(raw_text), start + _MAX_SCOPE_HINT)
-    end = start
-    while end < limit and raw_text[end] not in _CLAUSE_BOUNDARY_CHARS:
-        end += 1
-    while end > start and raw_text[end - 1].isspace():
-        end -= 1
-    if end <= start:
-        return None
-    return (start, end)
+    """Delegate to the SHARED clause-boundary authority (char offsets)."""
+    return _shared_bound_scope_hint(raw_text, after, max_len=_MAX_SCOPE_HINT)
 
 
 def _scan_phrases(

@@ -52,6 +52,12 @@ class SourceSurfaceUnit:
     # future optional views (Phase 7)
     token_tape: object | None = None
     morph_overlay: object | None = None
+    # Optional clause/sentence segmentation view (a ``ClauseIndex``). Additive:
+    # default ``None``, and the assembler's graph_id is computed only over node/
+    # edge payloads + the subject — never over unit views — so populating this
+    # cannot perturb the graph. Later attachment passes query it to ask "which
+    # clause/sentence owns this span?" instead of a magic char window.
+    clause_index: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
