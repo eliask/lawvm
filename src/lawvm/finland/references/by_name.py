@@ -221,6 +221,14 @@ _ADJ_NOT_LAKI_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Pronoun forms whose orthography mis-segments as ``<modifier>`` + ``lain`` (the
+# ``laki`` genitive): the ``jokin`` paradigm adessive ``jollain`` / plural
+# ``joillain`` ("by some / by one of …") is a pronoun, never a statute. The head
+# trigger reads the trailing ``lain`` and invents ``fi-name:jollaki``. Matched
+# against the WHOLE token (modifier + oblique), case-folded. (Closed pronoun
+# class, same discipline as the adjective reject above.)
+_PRONOUN_NOT_LAKI_RE = re.compile(r"^joi?llain$", re.IGNORECASE)
+
 # A capitalized-modifier signal: the modifier's first character is an uppercase
 # letter. Combined with a mid-sentence check (the match does not begin the text
 # nor follow sentence-terminating punctuation), this is the proper-name-ish
@@ -341,6 +349,8 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # not a fail-loud residue; it is a non-reference and must not be emitted.
         whole_token = m.group("modifier") + m.group("oblique")
         if _ADJ_NOT_LAKI_RE.search(whole_token):
+            continue
+        if _PRONOUN_NOT_LAKI_RE.match(whole_token):
             continue
 
         # Parse the optional structural tail (everything after the head) through

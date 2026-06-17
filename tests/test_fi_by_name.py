@@ -239,5 +239,12 @@ def test_capitalized_strong_head_still_emitted() -> None:
     assert m.target_provision_ref.statute_id == "fi-name:kuntalaki"
 
 
+def test_pronoun_jollain_is_not_a_statute_name() -> None:
+    """``jollain`` (jokin adessive, "by one of …") must not mis-segment as
+    ``jol`` + ``lain`` (laki genitive) and invent ``fi-name:jollaki``."""
+    assert recognize_by_name_refs("osoittaa jollain seuraavista yhdistelmistä") == []
+    assert recognize_by_name_refs("ratkaistaan joillain tavoilla") == []
+
+
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []
