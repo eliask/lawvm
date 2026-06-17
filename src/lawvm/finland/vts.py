@@ -469,14 +469,25 @@ def _voimaantulo_repeal_fragment_for_parent(
                 # same string the fragment extractor sees.
                 para_plain = re.sub(r"^\d+\)\s*", "", para_plain)
                 cite_match = citation_re.search(para_plain)
-                if cite_match and _has_repeal_enactment_before(para_plain, cite_match.start()):
+                citation_has_repeal_authority = bool(
+                    cite_match
+                    and (
+                        under_kumotaan_intro
+                        or _has_repeal_enactment_before(para_plain, cite_match.start())
+                    )
+                )
+                if cite_match and citation_has_repeal_authority:
                     # Extract text after citation, before "sellaisena kuin" / ";".
                     fragment = _vts_extract_after_citation(para_plain, citation_re)
                     if fragment:
                         return fragment
                 if has_title:
                     title_pos, _ = _find_parent_title_span(para_plain, title_variants)
-                    if title_pos >= 0 and _has_repeal_enactment_before(para_plain, title_pos):
+                    title_has_repeal_authority = title_pos >= 0 and (
+                        under_kumotaan_intro
+                        or _has_repeal_enactment_before(para_plain, title_pos)
+                    )
+                    if title_has_repeal_authority:
                         fragment = _vts_extract_after_parent_title(para_plain, title_variants)
                         if fragment:
                             return fragment

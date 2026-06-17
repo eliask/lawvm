@@ -272,6 +272,38 @@ def test_extract_voimaantulo_repeals_does_not_mix_parent_citation_from_one_parag
     assert ops == []
 
 
+def test_extract_voimaantulo_repeals_paragraph_under_kumotaan_intro() -> None:
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <body>'
+        f'    <section eId="sec_25"><num>25 §</num><heading>Voimaantulo</heading>'
+        f'      <subsection eId="sec_25__subsec_2">'
+        f'        <intro><p>Tällä lailla kumotaan:</p></intro>'
+        f'        <paragraph eId="sec_25__subsec_2__para_1"><num>1)</num><content>'
+        f'          <p>veronkantolain (611/1978) 2 a ja 3 luku ja 30 §:n 2 ja 3 momentti;</p>'
+        f'        </content></paragraph>'
+        f'        <paragraph eId="sec_25__subsec_2__para_2"><num>2)</num><content>'
+        f'          <p>muun lain (654/1992) 30 ja 32 §.</p>'
+        f'        </content></paragraph>'
+        f'      </subsection>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode()
+
+    ops = extract_voimaantulo_repeals(xml, "1978/611", parent_title="Veronkantolaki")
+
+    chapter_labels = {op.target_section for op in ops if op.target_unit_kind == "chapter"}
+    subsection_targets = {
+        (op.target_section, op.target_paragraph)
+        for op in ops
+        if op.target_unit_kind == "section"
+    }
+    assert chapter_labels == {"2a", "3"}
+    assert subsection_targets == {("30", 2), ("30", 3)}
+    assert all(op.voimaantulo_repeal for op in ops)
+
+
 def test_extract_voimaantulo_repeals_records_paragraphized_unparsed_source() -> None:
     diagnostics: list[VtsSourceDiagnostic] = []
     xml = (
@@ -359,6 +391,24 @@ def test_extract_voimaantulo_repeals_real_corpus_2018_253_does_not_false_repeal_
         return
     ops = extract_voimaantulo_repeals(xml, "1994/201", parent_title="Kotikuntalaki")
     assert not any(op.target_section == "3" and op.target_chapter is None for op in ops)
+
+
+def test_extract_voimaantulo_repeals_real_corpus_1998_532_governed_numbered_list() -> None:
+    cs = get_corpus_store()
+    xml = cs.read_source("1998/532")
+    if xml is None:
+        return
+
+    ops = extract_voimaantulo_repeals(xml, "1978/611", parent_title="Veronkantolaki")
+
+    chapter_labels = {op.target_section for op in ops if op.target_unit_kind == "chapter"}
+    subsection_targets = {
+        (op.target_section, op.target_paragraph)
+        for op in ops
+        if op.target_unit_kind == "section"
+    }
+    assert chapter_labels == {"2a", "3"}
+    assert subsection_targets == {("30", 2), ("30", 3)}
 
 
 def test_extract_voimaantulo_repeals_application_clause_with_same_paragraph_kumotaan_is_not_a_repeal() -> None:

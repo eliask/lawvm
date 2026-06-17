@@ -1711,6 +1711,39 @@ def test_1994_201_2018_253_does_not_false_repeal_section_3_via_voimaantulo_extra
     )
 
 
+def test_1978_611_1998_532_cross_statute_vts_repeals_are_routed() -> None:
+    """1998/532 §25(2)(1) repeals provisions of 1978/611 from a governed list item."""
+
+    compiled_ops: list[dict[str, object]] = []
+    pinned_replay(
+        "1978/611",
+        mode="official_consolidation",
+        quiet=True,
+        compiled_ops_out=compiled_ops,
+    )
+
+    rows = [
+        row
+        for row in compiled_ops
+        if row.get("source_statute") == "1998/532"
+        and row.get("witness_rule_id") == "fi.repeal_vts_voimaantulo"
+    ]
+    targets = {
+        (
+            row.get("target_unit_kind"),
+            row.get("target_norm"),
+            row.get("target_paragraph"),
+        )
+        for row in rows
+    }
+    assert targets == {
+        ("chapter", "2a", ""),
+        ("chapter", "3", ""),
+        ("section", "30", "2"),
+        ("section", "30", "3"),
+    }
+
+
 def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_chapters() -> None:
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections
