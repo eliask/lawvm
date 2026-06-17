@@ -45,16 +45,21 @@ import dataclasses
 import datetime as dt
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Mapping, Optional
 
 from lawvm.core.reference_mention import (
     AmbiguousReferenceFinding,
     CiteConfidence,
     ReferenceMention,
 )
+from lawvm.finland.references.defined_terms import (
+    STATUS_OK,
+    DefinedTermBinding,
+)
 from lawvm.finland.references.registries import eu_nickname
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameRegistry,
+    _normalize_key,
     build_registry,
     sample_entries_from_farchive,
 )
@@ -141,6 +146,162 @@ class ResolvedReference:
 
 
 # ---------------------------------------------------------------------------
+# Local defined-term / alias bindings (in-statute scope)
+# ---------------------------------------------------------------------------
+#
+# A statute introduces a SHORT local name and then uses it (inflected) throughout
+# the rest of the document (``… asetuksessa (EY) N:o 1069/2009 (sivutuoteasetus)
+# …`` then later ``sivutuoteasetuksen 3 artiklassa``). The defined-term
+# recognizer (``references/defined_terms.py``, READ-ONLY here) recognizes the
+# BINDING SITE and emits :class:`DefinedTermBinding` records tying a term surface
+# to a canonical ``target_ref``. This module CONSUMES those bindings as a
+# per-statute table so a later inflected USE of the alias resolves EXACT/resolved
+# instead of falling to ``open`` / ``statute_only``.
+#
+# The match is on the SAME normalized-head key the statute-name registry uses
+# (``registries.statute_name._normalize_key``): the ``fi-name:<name>`` placeholder
+# the by-name recognizer emits already reattaches the NOMINATIVE head to the
+# invariant modifier (``sivutuoteasetuksen`` -> key ``sivutuoteasetus``), and the
+# binding term is itself recorded in the nominative; both fold to the same key, so
+# an inflected use matches WITHOUT a second/ad-hoc normalizer.
+#
+# Fail-loud / tag-don't-guess discipline (mirrors the registry projection):
+#   * a term used BEFORE its binding site (the use's byte offset precedes the
+#     binding's ``source_span``) does NOT resolve via the binding — that ordering
+#     case is left as today (open / statute_only);
+#   * a binding with ``status=unsupported_morphology`` resolves ONLY on an exact
+#     surface match (no inflection guessing);
+#   * >1 DISTINCT target for the same term key is ambiguous and NEVER picked — the
+#     key is dropped from the resolving table entirely.
+
+
+@dataclass(frozen=True, slots=True)
+class _DefinedTermEntry:
+    """One resolvable local binding behind a normalized term key.
+
+    Attributes:
+        target_ref: The canonical act id the term denotes (FI ``N/Y`` or EU
+            surface). Always present (bindings with no ``target_ref`` carry no
+            resolvable identity and are excluded from the table).
+        binding_offset: Byte offset of the binding SITE in the source text — a use
+            is only resolved by this binding when the use's byte offset is at or
+            after this (binding precedes use). ``None`` when the binding has no
+            span (ordering then cannot be verified and the binding does not apply).
+        term_surface: The term surface as written at the binding site (nominative),
+            folded to a normalized key for the exact-surface requirement on
+            morphologically-unsupported bindings.
+        morphology_ok: Whether the binding's term morphology is supported. When
+            ``False`` the binding resolves a use only on an exact surface match.
+    """
+
+    target_ref: str
+    binding_offset: Optional[int]
+    term_surface: str
+    morphology_ok: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DefinedTermTable:
+    """Per-statute defined-term / alias table consumed by resolution.
+
+    Maps a normalized term key (``_normalize_key`` of the binding term) to the
+    single resolvable :class:`_DefinedTermEntry` for that key. A key whose
+    bindings name MORE THAN ONE distinct target is omitted (ambiguous — never
+    picked); a key with no act-tied binding is omitted (no resolvable identity).
+
+    Use :func:`build_defined_term_table`; do not construct directly.
+    """
+
+    _by_key: Mapping[str, _DefinedTermEntry]
+
+    def resolve(
+        self,
+        name_key: str,
+        *,
+        use_offset: Optional[int],
+        use_surface: str,
+    ) -> Optional[str]:
+        """Return the bound ``target_ref`` for ``name_key``, or ``None``.
+
+        ``name_key`` is the already-normalized head key carried by the placeholder
+        (``fi-name:<name>``). Returns ``None`` (no local resolution; fall through
+        to the registry) when:
+
+        * the key is unknown / ambiguous (not in the table);
+        * the binding site does not precede the use (``use_offset`` is ``None``,
+          or earlier than the binding's offset, or the binding has no offset) —
+          the use-before-binding ordering case;
+        * the binding's morphology is unsupported and ``use_surface`` is not an
+          exact (normalized) match of the binding term surface.
+        """
+        entry = self._by_key.get(name_key)
+        if entry is None:
+            return None
+        # Ordering: a binding applies only to a use AT OR AFTER its site. Without a
+        # verifiable use offset, or a binding offset, we cannot establish that the
+        # binding precedes the use — leave it to the registry (tag-don't-guess).
+        if entry.binding_offset is None or use_offset is None:
+            return None
+        if use_offset < entry.binding_offset:
+            return None
+        # Morphologically-unsupported bindings resolve only on an exact surface
+        # match (no inflection guessing).
+        if not entry.morphology_ok:
+            if _normalize_key(use_surface) != entry.term_surface:
+                return None
+        return entry.target_ref
+
+
+def build_defined_term_table(
+    bindings: list[DefinedTermBinding],
+) -> DefinedTermTable:
+    """Build a :class:`DefinedTermTable` from a statute's defined-term bindings.
+
+    Bindings with no ``target_ref`` (a definitional expansion that ties the term
+    to text, not an act) carry no resolvable identity and are skipped. The EARLIEST
+    binding site per term is kept (a use must follow the first introduction). A
+    term key bound to MORE THAN ONE distinct target is dropped entirely (ambiguous,
+    never picked). The key is the registry's ``_normalize_key`` of the term — the
+    SAME normalization the statute-name registry uses, so an inflected use (whose
+    ``fi-name:`` placeholder reattaches the nominative head) matches.
+    """
+    # term key -> {target_ref -> earliest entry seen for that target}
+    by_key: dict[str, dict[str, _DefinedTermEntry]] = {}
+    for b in bindings:
+        if not b.target_ref:
+            continue
+        key = _normalize_key(b.term)
+        if not key:
+            continue
+        offset = b.source_span.byte_offset if b.source_span is not None else None
+        entry = _DefinedTermEntry(
+            target_ref=b.target_ref,
+            binding_offset=offset,
+            term_surface=key,
+            morphology_ok=(b.status == STATUS_OK),
+        )
+        targets = by_key.setdefault(key, {})
+        prior = targets.get(b.target_ref)
+        if prior is None:
+            targets[b.target_ref] = entry
+        else:
+            # Same target re-bound: keep the EARLIEST site (a use must follow the
+            # first introduction). A None offset never displaces a real one.
+            if prior.binding_offset is None or (
+                offset is not None and offset < prior.binding_offset
+            ):
+                targets[b.target_ref] = entry
+
+    resolved: dict[str, _DefinedTermEntry] = {}
+    for key, targets in by_key.items():
+        if len(targets) == 1:
+            # Exactly one distinct target — resolvable.
+            resolved[key] = next(iter(targets.values()))
+        # >1 distinct target → ambiguous: drop the key (never pick).
+    return DefinedTermTable(_by_key=resolved)
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -163,21 +324,35 @@ def _placeholder_kind(mention: ReferenceMention) -> Optional[str]:
     return None
 
 
-def _rewrite_target_id(mention: ReferenceMention, work_id: str) -> ReferenceMention:
+def _rewrite_target_id(
+    mention: ReferenceMention,
+    work_id: str,
+    *,
+    phrase_lemma: Optional[str] = None,
+) -> ReferenceMention:
     """Return a NEW mention with the target's statute_id rewritten to ``work_id``.
 
     The input mention is never mutated (frozen dataclasses, ``replace``). The
     cite_confidence is promoted to EXACT — the identity is now resolved to a
-    single real id.
+    single real id. ``phrase_lemma`` overrides the syntactic-class label on the
+    rewritten mention when provided (used to record local-binding provenance).
     """
     target = mention.target_provision_ref
     assert target is not None  # guarded by caller
     new_target = dataclasses.replace(target, statute_id=work_id)
-    return dataclasses.replace(
-        mention,
-        target_provision_ref=new_target,
-        cite_confidence=CiteConfidence.EXACT,
-    )
+    changes: dict[str, object] = {
+        "target_provision_ref": new_target,
+        "cite_confidence": CiteConfidence.EXACT,
+    }
+    if phrase_lemma is not None:
+        changes["phrase_lemma"] = phrase_lemma
+    return dataclasses.replace(mention, **changes)
+
+
+# Provenance tag recorded on the rewritten mention's ``phrase_lemma`` when a
+# placeholder resolves via an in-statute defined-term binding rather than the
+# statute-name registry.
+_LOCAL_BINDING_PHRASE_LEMMA = "defined_term_local_binding"
 
 
 def _ambiguity_finding(
@@ -205,11 +380,43 @@ def _resolve_fi_name(
     mention: ReferenceMention,
     statute_registry: StatuteNameRegistry,
     as_of: Optional[dt.date],
+    defined_terms: Optional[DefinedTermTable],
 ) -> ResolvedReference:
-    """Resolve a ``fi-name:<name>`` placeholder against the statute registry."""
+    """Resolve a ``fi-name:<name>`` placeholder.
+
+    A local in-statute defined-term binding is consulted FIRST: when the
+    placeholder name matches a binding (on the registry's normalized-head key) and
+    the binding precedes the use, the placeholder resolves EXACT/resolved to the
+    binding's ``target_ref`` (provenance recorded on ``phrase_lemma``). Otherwise
+    the placeholder falls through to the statute-name registry exactly as before.
+    """
     target = mention.target_provision_ref
     assert target is not None
     name = target.statute_id[len(_FI_NAME_PREFIX) :]
+
+    if defined_terms is not None:
+        use_offset = (
+            mention.source_span.byte_offset
+            if mention.source_span is not None
+            else None
+        )
+        bound = defined_terms.resolve(
+            name,
+            use_offset=use_offset,
+            use_surface=mention.surface_text or name,
+        )
+        if bound is not None:
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention, bound, phrase_lemma=_LOCAL_BINDING_PHRASE_LEMMA
+                ),
+                status=ResolutionStatus.RESOLVED,
+                work_id=bound,
+                candidates=(bound,),
+                rejected_candidates=(),
+                finding=None,
+            )
+
     result = statute_registry.lookup(name, as_of)
     candidate_ids = tuple(c.statute_id for c in result.candidates)
 
@@ -330,18 +537,21 @@ def resolve_mention(
     statute_registry: StatuteNameRegistry,
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
+    defined_terms: Optional[DefinedTermTable] = None,
 ) -> ResolvedReference:
     """Resolve a single mention's placeholder identity against the registries.
 
     See :func:`resolve_mentions` for the routing contract. ``eu_registry`` is
     accepted for interface symmetry with the statute registry; the EU lookup is
     a module-level pure function (``eu_nickname.lookup``), so the default is the
-    module itself and no per-call state is threaded.
+    module itself and no per-call state is threaded. ``defined_terms`` (optional,
+    default ``None``) is the per-statute local alias table consulted before the
+    statute-name registry for ``fi-name:`` placeholders.
     """
     del eu_registry  # the eu_nickname module's lookup is a pure function
     kind = _placeholder_kind(mention)
     if kind == _FI_NAME_PREFIX:
-        return _resolve_fi_name(mention, statute_registry, as_of)
+        return _resolve_fi_name(mention, statute_registry, as_of, defined_terms)
     if kind == _EU_NICKNAME_PREFIX:
         return _resolve_eu_nickname(mention)
     return _passthrough(mention)
@@ -353,6 +563,7 @@ def resolve_mentions(
     statute_registry: StatuteNameRegistry,
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
+    defined_terms: Optional[DefinedTermTable] = None,
 ) -> list[ResolvedReference]:
     """Project placeholder mentions to :class:`ResolvedReference` records.
 
@@ -378,6 +589,12 @@ def resolve_mentions(
         as_of: The validity instant the citations are read against
             (static-as-of-citing). ``None`` resolves against the whole timeline
             (and is allowed to be AMBIGUOUS).
+        defined_terms: Optional per-statute local alias table (built from the
+            statute's :class:`DefinedTermBinding` records via
+            :func:`build_defined_term_table`). When supplied, a ``fi-name:``
+            placeholder that matches a local binding preceding the use resolves
+            EXACT to the binding's target BEFORE the registry is consulted. Default
+            ``None`` leaves every existing caller unaffected.
 
     Returns:
         One :class:`ResolvedReference` per input mention, in input order.
@@ -388,6 +605,7 @@ def resolve_mentions(
             statute_registry=statute_registry,
             eu_registry=eu_registry,
             as_of=as_of,
+            defined_terms=defined_terms,
         )
         for m in mentions
     ]
@@ -413,9 +631,11 @@ def build_default_registries(
 
 
 __all__ = [
+    "DefinedTermTable",
     "ResolutionStatus",
     "ResolvedReference",
     "build_default_registries",
+    "build_defined_term_table",
     "resolve_mention",
     "resolve_mentions",
 ]
