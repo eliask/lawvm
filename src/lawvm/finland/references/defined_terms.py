@@ -175,6 +175,21 @@ _FI_ID_LOOSE = re.compile(r"\((\d{1,6})/(\d{4})[\s,)]")
 # A single token of a Finnish term: letters (incl. ä ö å) and internal hyphen.
 _TERM_WORD = r"[a-zA-ZäöåÄÖÅ]+(?:-[a-zA-ZäöåÄÖÅ]+)*"
 
+# CELEX number surface (e.g. "32020L0284"): a sector digit, 4-digit year, a
+# document-type letter, then a 4-digit running number.  These appear as a
+# parenthetical RIGHT AFTER an EU act cite ("(EU) 2020/284 (32020L0284)") and are
+# the machine id of the SAME act, never a Finnish defined-term surface.
+_CELEX = re.compile(r"^\s*3\d{4}[A-Z]\d{4}\s*$", re.IGNORECASE)
+
+# Inline markup tags (e.g. "<i>rakennetukilaki</i>") that leak into the raw
+# statute text; stripped from a captured term surface before classification.
+_MARKUP_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*\s*/?>")
+
+
+def _strip_markup(s: str) -> str:
+    """Remove inline HTML/markup tags (e.g. ``<i>…</i>``) from a term surface."""
+    return _MARKUP_TAG.sub("", s).strip()
+
 # ---------------------------------------------------------------------------
 # Shape 1: parenthetical alias right after an act cite
 # ---------------------------------------------------------------------------
@@ -229,9 +244,11 @@ _TARKOITETAAN = re.compile(
     re.IGNORECASE,
 )
 
-# Adessive endings the defined term in shape 3 commonly carries; stripped to
-# recover the nominative/stem term for morphology classification.
-_ADESSIVE_SUFFIXES = ("llä", "lla")
+# Leading scope locatives that may precede the definiendum in an inline shape-3
+# capture ("Tässä laissa X:llä tarkoitetaan …") — never part of the term surface.
+_SCOPE_LEADERS: frozenset[str] = frozenset(
+    {"tässä", "tätä", "laissa", "lakia", "luvussa", "pykälässä", "momentissa"}
+)
 
 # ---------------------------------------------------------------------------
 # Scope cue for a definitional ``tarkoitetaan`` (shape 3)
@@ -332,13 +349,46 @@ _ENUM_HEADER = re.compile(
 # preceding item's terminating '``;``'), optional whitespace / stripped
 # enumerator, then the leading definiendum word, then the expansion up to the next
 # '``;``' (item end).  Bounded throughout (AGENTS.md §1.11).
+# A bounded leading run of word-tokens at the start of an enumerated item
+# (e.g. "palkansaajaan rinnastettavalla yrittäjällä luonnollista henkilöä"),
+# followed by the remaining expansion.  The definiendum phrase is the LEADING run
+# of words ENDING at the LAST adessive-marked token (the head); the recognizer
+# splits the run at that head, so the multi-word definiendum is preserved as a
+# full surface and the expansion starts after it.  Bounded run length.
 _ENUM_ITEM = re.compile(
     r"[:;]\s{0,80}"
     r"(?:\d{1,3}[a-z]?\)\s{0,5})?"
-    rf"(?P<term>{_TERM_WORD})\s+"
-    r"(?P<expansion>[^;]{0,400})",
+    rf"(?P<run>{_TERM_WORD}(?:\s+{_TERM_WORD}){{0,8}})\s+"
+    r"(?P<rest>[^;]{0,400})",
     re.IGNORECASE,
 )
+
+
+def _adessive_phrase_from_run(words: list[str]) -> Optional[list[str]]:
+    """Return the leading definiendum phrase from a word run, or ``None``.
+
+    The definiendum is the LEADING run of words up to and INCLUDING the last
+    adessive-marked token within the (bounded) prefix that is a genuine
+    definiendum head.  We scan the prefix: the head is the FIRST adessive token
+    that is a genuine definiendum (``_is_definitional_definiendum``); we extend
+    through any further consecutive adessive tokens (agreeing modifier + head,
+    e.g. ``rinnastettavalla yrittäjällä``).  Words after the last adessive token
+    belong to the expansion.  ``None`` when no adessive definiendum head is found
+    (item is not a definition — no fabrication).
+    """
+    last_head_idx = -1
+    for i, w in enumerate(words):
+        low = w.lower()
+        if low.endswith("lla") or low.endswith("llä"):
+            if _is_definitional_definiendum(w):
+                last_head_idx = i
+        elif last_head_idx >= 0:
+            # First non-adessive word after we have at least one adessive head:
+            # the definiendum phrase ends at the last adessive token.
+            break
+    if last_head_idx < 0:
+        return None
+    return words[: last_head_idx + 1]
 # How far past a header an enumerated block may extend before we stop scanning
 # items (a definitions block is long but bounded; this caps the scan window).
 _ENUM_BLOCK_WINDOW = 12000
@@ -415,6 +465,8 @@ _PRONOUN_ADESSIVE_FORMS: frozenset[str] = frozenset(
         "sillä",    # se
         "tällä",    # tämä
         "niillä",   # ne
+        "näillä",   # nämä
+        "noilla",   # nuo
         "kaikilla",  # kaikki
         "edellä",   # edellä — adverb "above" (referential)
     }
@@ -549,21 +601,6 @@ def _classify_term_morphology(term: str) -> str:
     return STATUS_OK
 
 
-def _strip_adessive(term: str) -> str:
-    """Strip a trailing adessive (-llä/-lla) to recover the term's stem form.
-
-    Used for shape 3 where the defined term precedes ``tarkoitetaan`` in the
-    adessive (``sivutuotteella`` → ``sivutuote``-ish stem).  Conservative: only
-    strips the suffix, does not attempt consonant-gradation reversal, so the
-    recovered form is the citation stem, not a guaranteed nominative.
-    """
-    low = term.lower()
-    for suf in _ADESSIVE_SUFFIXES:
-        if low.endswith(suf) and len(term) > len(suf) + 1:
-            return term[: -len(suf)]
-    return term
-
-
 def _is_definitional_definiendum(last_word: str) -> bool:
     """True iff ``last_word`` (the token directly before ``tarkoitetaan``) is a
     genuine DEFINITIONAL definiendum, not the REFERENTIAL idiom.
@@ -603,8 +640,14 @@ def _is_definitional_definiendum(last_word: str) -> bool:
 def _recognize_jaljempana(text: str, source_file: str) -> list[DefinedTermBinding]:
     out: list[DefinedTermBinding] = []
     for m in _JALJEMPANA.finditer(text):
-        raw_term = m.group("term").strip()
+        # Strip inline markup (e.g. ``jäljempänä <i>rakennetukilaki</i>``) so the
+        # term surface is the bare Finnish word, not an HTML-wrapped fragment.
+        raw_term = _strip_markup(m.group("term"))
         if not raw_term:
+            continue
+        # A CELEX number ("32020L0284") is the machine id of the cited act, not a
+        # Finnish alias surface — never mint a binding for it.
+        if _CELEX.match(raw_term):
             continue
         # The act this alias refers to is the act cite preceding the cue inside a
         # bounded look-back window (typ. same parenthetical group).
@@ -646,8 +689,14 @@ def _recognize_parenthetical_alias(
         alias_paren_open = m.start()  # index of this group's '('
         if alias_paren_open in claimed:
             continue
-        alias_body = m.group(1).strip()
+        # Strip inline markup before inspecting the alias body.
+        alias_body = _strip_markup(m.group(1))
         if not alias_body:
+            continue
+        # A CELEX number ("32020L0284") parenthetical is the machine id of the
+        # preceding EU act cite ("(EU) 2020/284 (32020L0284)"), not an alias — it
+        # must not be minted as a defined-term surface.
+        if _CELEX.match(alias_body):
             continue
         # Skip alias-parens that are themselves an act cite or a jäljempänä group
         # (handled elsewhere).
@@ -684,25 +733,36 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         raw_term = m.group("term").strip()
         if not raw_term:
             continue
-        # The captured term may be a multi-word run; keep only the last word(s)
-        # that form the defined head.  The defined term is the word directly
-        # before "tarkoitetaan" (possibly a final-head compound run already in
-        # the capture).  Strip a leading scope phrase like "tässä laissa".
-        last_word = raw_term.split()[-1]
-        # Only the DEFINITIONAL idiom (``X:llä tarkoitetaan``) introduces a term;
-        # the REFERENTIAL idiom (``…, jota / N momentissa / N §:ssä tarkoitetaan``
-        # = "referred to in …") binds nothing.  Reject the referential shape so it
-        # cannot bind function words / scope locatives / truncated stems as phantom
-        # defined terms (the USED_BEFORE_DEFINITION flood).
+        # The captured run is the (multi-word) definiendum directly before
+        # "tarkoitetaan".  Only the DEFINITIONAL idiom (``X:llä tarkoitetaan``)
+        # introduces a term; its HEAD (last word) must be an adessive definiendum.
+        # The REFERENTIAL idiom (``…, jota / N momentissa / N §:ssä tarkoitetaan``
+        # = "referred to in …") binds nothing — its last word is a pronoun /
+        # inessive cross-reference, rejected by ``_is_definitional_definiendum``.
+        words = raw_term.split()
+        last_word = words[-1]
         if not _is_definitional_definiendum(last_word):
             continue
-        term_for_class = _strip_adessive(last_word)
-        # Recover full final-head run: take the last token only as the bound
-        # term (conservative); multi-token runs with inflected modifiers were
-        # captured but the head is the last token.
+        # Drop any leading scope locative ("Tässä laissa X:llä tarkoitetaan") or
+        # leading demonstrative/relative pronoun-adessive ("Näillä X:llä …");
+        # those are never part of the term surface.  The definiendum phrase is the
+        # trailing run of remaining words ending at the adessive head — preserved
+        # as a FULL multi-word surface (no stem mangling).
+        start_idx = 0
+        for i, w in enumerate(words[:-1]):
+            low = w.lower()
+            if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
+                start_idx = i + 1
+        phrase_words = words[start_idx:]
+        if not phrase_words:
+            continue
+        term_surface = " ".join(phrase_words)
         expansion_text = m.group("expansion").strip()
         act_id = _act_id_in_expansion(expansion_text)
-        status = _classify_term_morphology(term_for_class)
+        # The definiendum surface is an INFLECTED (adessive) form; M1 is
+        # generation-only and cannot reverse it to a nominative, so the term is
+        # matched by its exact written surface, not generated inflections.
+        status = STATUS_UNSUPPORTED_MORPHOLOGY
         # Scope inherits from the nearest preceding definitions-header cue
         # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
         # lakia sovellettaessa …"); conservative ``statute`` default when no such
@@ -714,7 +774,7 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         scope = _scope_cue_before(text, m.start("expansion"))
         out.append(
             DefinedTermBinding(
-                term=term_for_class,
+                term=term_surface,
                 target_ref=act_id,
                 expansion=None if act_id is not None else (expansion_text or None),
                 scope=scope,
@@ -751,22 +811,33 @@ def _recognize_enumerated_definitions(
             block_end = min(block_end, headers[i + 1].start())
         block = text[block_start:block_end]
         for it in _ENUM_ITEM.finditer(block):
-            definiendum = it.group("term").strip()
-            if not definiendum:
+            run = it.group("run").strip()
+            rest = it.group("rest").strip()
+            if not run:
                 continue
-            # The enumerated definiendum is in the adessive ("X:llä"); reject the
-            # referential / non-definiendum shape exactly as shape 3 does.
-            if not _is_definitional_definiendum(definiendum):
+            run_words = run.split()
+            # The enumerated definiendum is the LEADING adessive-headed phrase
+            # ("X:llä" / "<modifier> <head>:llä"); reject the referential /
+            # non-definiendum shape exactly as shape 3 does (no fabrication).
+            phrase_words = _adessive_phrase_from_run(run_words)
+            if phrase_words is None:
                 continue
-            term_for_class = _strip_adessive(definiendum)
-            expansion_text = it.group("expansion").strip()
+            # Full multi-word definiendum SURFACE preserved (no stem mangling).
+            term_surface = " ".join(phrase_words)
+            # Any word-run tokens AFTER the definiendum head belong to the
+            # expansion (prepended to the regex's tail).
+            trailing = run_words[len(phrase_words):]
+            expansion_text = (" ".join(trailing) + (" " if trailing else "") + rest).strip()
             act_id = _act_id_in_expansion(expansion_text)
-            status = _classify_term_morphology(term_for_class)
+            # The definiendum surface is an INFLECTED (adessive) form; M1 is
+            # generation-only and cannot reverse it to a nominative, so the term
+            # is matched by its exact written surface, not generated inflections.
+            status = STATUS_UNSUPPORTED_MORPHOLOGY
             abs_start = block_start + it.start()
             abs_end = block_start + it.end()
             out.append(
                 DefinedTermBinding(
-                    term=term_for_class,
+                    term=term_surface,
                     target_ref=act_id,
                     expansion=None if act_id is not None else (expansion_text or None),
                     scope=scope,
