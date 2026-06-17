@@ -55,6 +55,15 @@ from lawvm.finland.legal_surface.frame_lints import (
     DelegationWithoutInstrumentLintPass,
 )
 from lawvm.finland.legal_surface.frame_passes import ActorTemporalColocationPass
+from lawvm.finland.legal_surface.frame_relations import (
+    ExceptionScopesFramePass,
+    FrameActorColocationPass,
+    SanctionConditionLintPass,
+)
+from lawvm.finland.legal_surface.cross_lens_passes import (
+    FrameReferenceColocationPass,
+    FrameTemporalColocationPass,
+)
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
     AmbiguousReferenceLintPass,
@@ -84,6 +93,14 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
 DEFAULT_EDGE_PASSES: tuple[SurfaceEdgePass, ...] = (
     DefinitionClosurePass(),
     ActorTemporalColocationPass(),
+    # Cross-lens interlinks — the fabric that ties the 8 lenses' node sets
+    # together. All candidate-status, surface-colocation affordances (never
+    # asserted facts); each edge carries char_distance so a strict consumer can
+    # filter to containment-only.
+    FrameReferenceColocationPass(),
+    FrameTemporalColocationPass(),
+    ExceptionScopesFramePass(),
+    FrameActorColocationPass(),
 )
 
 # Lint passes (graph queries; Pro r5 §D6). Not run by build_legal_surface_graph
@@ -100,8 +117,9 @@ DEFAULT_LINT_PASSES: tuple[SurfaceLintPass, ...] = (
     OpenReferenceLintPass(),
     StatuteOnlyMissLintPass(),
     AmbiguousReferenceLintPass(),
-    # EXPERIMENTAL H5/H6 frame affordance lint (candidate, never a legal claim).
+    # EXPERIMENTAL H5/H6 frame affordance lints (candidate, never a legal claim).
     DelegationWithoutInstrumentLintPass(),
+    SanctionConditionLintPass(),
 )
 
 

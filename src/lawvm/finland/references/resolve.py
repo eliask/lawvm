@@ -43,8 +43,10 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import warnings
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Mapping, Optional
 
 from lawvm.core.reference_mention import (
@@ -61,6 +63,8 @@ from lawvm.finland.references.registries.statute_name import (
     StatuteNameRegistry,
     _normalize_key,
     build_registry,
+    default_artifact_path,
+    load_statute_name_registry,
     sample_entries_from_farchive,
 )
 
@@ -614,17 +618,35 @@ def resolve_mentions(
 def build_default_registries(
     *,
     statute_sample_limit: int = 500,
+    artifact_path: "str | Path | None" = None,
 ) -> tuple[StatuteNameRegistry, object]:
     """Build the default (statute_name, eu_nickname) registry pair.
 
-    Convenience for callers that want a ready-to-use registry pair. The
-    statute-name registry is built from a SMALL sample of farchive titles
-    (``statute_sample_limit``, default 500) — the full ~56k-title corpus
-    registry is a later data-build artifact step, NOT done here (memory). The EU
-    registry is the ``eu_nickname`` module (its ``lookup`` is a pure function).
+    Prefers the PERSISTED FULL-CORPUS registry artifact (``artifact_path`` or
+    :func:`default_artifact_path`): a jsonl of all ~59k titles, built offline by
+    ``lawvm build-statute-name-registry``. Loading it is a cheap file read (no
+    farchive walk at startup) and is what gives by-name resolution its real
+    recall (full vs the 500-title sample is ~35% vs ~92% statute_only-miss).
+
+    Fallback (artifact absent) is the SMALL sample of ``statute_sample_limit``
+    titles — but the fallback is announced via :mod:`warnings`, never silent: a
+    sample registry resolves a tiny fraction of by-name citations, so a caller
+    must know it is running degraded rather than mistaking sample misses for
+    genuine coverage gaps.
 
     Returns ``(statute_registry, eu_nickname_module)``.
     """
+    path = Path(artifact_path) if artifact_path is not None else default_artifact_path()
+    if path.exists():
+        return load_statute_name_registry(path), eu_nickname
+    warnings.warn(
+        f"statute-name registry artifact not found at {path!s}; falling back to a "
+        f"{statute_sample_limit}-title SAMPLE registry — by-name resolution recall "
+        f"will be severely degraded. Build the full artifact with "
+        f"`lawvm build-statute-name-registry`.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     entries = sample_entries_from_farchive(limit=statute_sample_limit)
     statute_registry = build_registry(entries)
     return statute_registry, eu_nickname
