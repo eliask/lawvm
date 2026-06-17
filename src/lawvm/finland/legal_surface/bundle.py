@@ -139,3 +139,34 @@ def locate_span(
         text_hash=_sha256_text(surface_text),
     )
     return ref, end
+
+
+def span_ref_at(
+    unit: SourceSurfaceUnit,
+    char_start: int,
+    char_end: int,
+) -> SourceSpanRef | None:
+    """Build a SourceSpanRef for an explicit char range in ``unit.raw_text``.
+
+    Unlike :func:`locate_span`, which searches for a surface string, this anchors
+    on a range a recognizer already matched in the SAME coordinate space the
+    bundle's ``raw_text`` defines (the §D4 unit). It is the truthful anchor for a
+    fact whose surface string does not round-trip through ``str.find`` — e.g. a
+    recognizer that normalised whitespace in its captured surface but reported the
+    exact offsets of the construct it matched. The text_hash addresses the ACTUAL
+    sliced text at those offsets, so the ref stays content-addressed and never
+    fabricates an offset: an out-of-range request yields ``None`` (fail-loud).
+    """
+    n = len(unit.raw_text)
+    if char_start < 0 or char_end > n or char_start >= char_end:
+        return None
+    sliced = unit.raw_text[char_start:char_end]
+    return SourceSpanRef(
+        source_unit_id=unit.source_unit_id,
+        source_hash=unit.source_hash,
+        work_id=unit.work_id,
+        address=unit.address,
+        char_start=char_start,
+        char_end=char_end,
+        text_hash=_sha256_text(sliced),
+    )
