@@ -110,6 +110,14 @@ _EU_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Section label from a <section><num>…</num> surface (``10 §.`` -> ``10``,
+# ``115 a §`` -> ``115a``, ``5 §`` -> ``5``). The label is the leading number run
+# plus an optional letter suffix, normalized to the glued AKN form (no spaces),
+# matching the body sub-ref grammar's section-label shape (``\d{1,6}[a-z]?``).
+_SECTION_NUM_LABEL_RE = re.compile(
+    r"(\d{1,6})\s*([a-zA-Z\xe4\xf6\xc4\xd6])?",
+)
+
 # ---------------------------------------------------------------------------
 # Plain-text statute citation recognizer (AGENTS.md §1.13)
 # ---------------------------------------------------------------------------
@@ -981,6 +989,86 @@ def extract_plain_text_statute_mentions(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Enclosing-section provenance for internal (same-statute) mentions
+# ---------------------------------------------------------------------------
+#
+# An INTERNAL bare reference (``Edellä 2 momentissa``, ``1 kohdassa``) names a
+# provision of the SECTION the citing text sits in; the surface omits that
+# section. The downstream elliptical resolver needs the TRUE enclosing section to
+# fill the omitted part. We thread it onto each internal mention's
+# ``source_provision_ref.section_label`` here, derived from real AKN ancestry —
+# the nearest ``<section>`` ancestor of the ``<p>`` the citation sits in — rather
+# than re-deriving it from a byte-offset remap downstream (which fails for old
+# statutes whose ``<section>`` elements carry no ``eId``).
+
+
+def _akn_section_label(section_el: ET.Element[str]) -> str:
+    """Bare section label of a ``<section>`` from its eId, else its ``<num>``.
+
+    Prefers the eId-derived label (``sec_115a`` -> ``115a``) so it matches the
+    body sub-ref grammar's glued AKN form. Falls back to the section's own
+    ``<num>`` surface (``10 §.`` -> ``10``, ``115 a §`` -> ``115a``) for statutes
+    whose sections carry no eId (pre-eId Finlex consolidations). Returns ``""``
+    when neither yields a label (the mention then stays section-less and the
+    elliptical resolver tags it OPEN — fail-loud, never guessed).
+    """
+    eid = section_el.get("eId") or ""
+    if eid:
+        m = _AKN_SECTION_PATH_RE.search(eid)
+        if m is not None:
+            return m.group(1)
+    for child in section_el:
+        local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if local == "num":
+            num_text = (child.text or "").strip()
+            nm = _SECTION_NUM_LABEL_RE.match(num_text)
+            if nm is not None:
+                letter = (nm.group(2) or "").lower()
+                return nm.group(1) + letter
+            break
+    return ""
+
+
+def _enclosing_section_labels(
+    root: ET.Element[str],
+) -> dict[ET.Element[str], str]:
+    """Map each ``<p>`` element to its nearest enclosing ``<section>``'s label.
+
+    Builds a child->parent map once (ElementTree has no parent pointers), then
+    walks up from each ``<p>`` to the first ``<section>`` ancestor and records its
+    label (eId- or ``<num>``-derived). A ``<p>`` outside any section is absent
+    from the map. This is the authoritative "which section am I in" signal the
+    elliptical resolver consumes — real ancestry, not a byte-offset remap.
+    """
+    parent: dict[ET.Element[str], ET.Element[str]] = {}
+    for el in root.iter():
+        for child in el:
+            parent[child] = el
+
+    # Cache a section element's derived label so a section with many <p> is
+    # labeled once.
+    sec_label_cache: dict[ET.Element[str], str] = {}
+    out: dict[ET.Element[str], str] = {}
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "p":
+            continue
+        cur = parent.get(el)
+        while cur is not None:
+            cur_local = cur.tag.split("}")[-1] if "}" in cur.tag else cur.tag
+            if cur_local == "section":
+                label = sec_label_cache.get(cur)
+                if label is None:
+                    label = _akn_section_label(cur)
+                    sec_label_cache[cur] = label
+                if label:
+                    out[el] = label
+                break
+            cur = parent.get(cur)
+    return out
+
+
 def extract_surface_grammar_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -1037,6 +1125,21 @@ def extract_surface_grammar_mentions(
         section_label="",
     )
 
+    # Map each <p> to its enclosing <section> label (real AKN ancestry), so an
+    # INTERNAL bare reference carries the section it sits in on its source
+    # provenance. The elliptical resolver consumes this authoritative context
+    # instead of re-deriving the enclosing section by a byte-offset remap.
+    enclosing_labels = _enclosing_section_labels(root)
+
+    def _src_ref_for(section_label: str) -> ProvisionRef:
+        if not section_label:
+            return src_ref
+        return ProvisionRef(
+            statute_id=statute_id,
+            provision_path="",
+            section_label=section_label,
+        )
+
     def _reanchor(mention: ReferenceMention) -> ReferenceMention:
         return replace(
             mention,
@@ -1047,6 +1150,7 @@ def extract_surface_grammar_mentions(
 
     def _reanchor_grouped(
         mentions: List[ReferenceMention],
+        source_provision_ref: ProvisionRef,
     ) -> List[ReferenceMention]:
         """Re-anchor a lane's mentions, sharing ONE span per coordinated run.
 
@@ -1075,7 +1179,7 @@ def extract_surface_grammar_mentions(
                 out.append(
                     replace(
                         mentions[k],
-                        source_provision_ref=src_ref,
+                        source_provision_ref=source_provision_ref,
                         source_span=span,
                         valid_at_interval=valid_at_interval,
                     )
@@ -1104,8 +1208,15 @@ def extract_surface_grammar_mentions(
         # Coordinated internal refs (``47 ja 49 §:ssä``) enumerate into one
         # mention per member, all sharing the whole-coordination surface; group
         # them so each coordinated occurrence shares one span (see below).
+        # The internal mentions carry their enclosing-section label on the source
+        # provenance (real AKN ancestry of THIS <p>), so the elliptical resolver
+        # can fill a bare momentti/kohta against the right section without a
+        # byte-offset remap.
+        enclosing_src_ref = _src_ref_for(enclosing_labels.get(p_el, ""))
         result.mentions.extend(
-            _reanchor_grouped(recognize_internal_refs(text, statute_id))
+            _reanchor_grouped(
+                recognize_internal_refs(text, statute_id), enclosing_src_ref
+            )
         )
         for mention in recognize_by_name_refs(text):
             result.mentions.append(_reanchor(mention))

@@ -19,18 +19,25 @@ target. Resolving the omitted part is LawVM's job, NOT the viewer's; the viewer
 renders only the LawVM-resolved target.
 
 This module is a PURE downstream projection (it edits no recognizer): given the
-statute's materialized AKN tree and the recognizer's internal mentions (which
-carry a ``source_span`` byte offset into the SAME ``xml_bytes`` the tree was
-parsed from), it re-derives the two pieces of context resolution needs —
+statute's materialized AKN tree and the recognizer's internal mentions, it uses
+the two pieces of context resolution needs —
 
-  (i)  the ENCLOSING section of the citing text (the AKN ``<section>`` ancestor
-       of the byte span), and
+  (i)  the ENCLOSING section of the citing text — read DIRECTLY from the
+       mention's ``source_provision_ref.section_label``, which the extractor
+       threaded on from the real ``<section>`` ancestry of the citing ``<p>``
+       (see ``ref_mention_extractor._enclosing_section_labels``); and
   (ii) the materialized child structure of that section (which moments exist,
-       which moments carry kohta) —
+       which moments carry kohta), keyed by that section label —
 
 and rewrites the bare target onto a concrete section/momentti, OR tags it
 ``ambiguous`` / ``open`` when convention + structure do not uniquely resolve. It
 NEVER silently picks (AGENTS.md §1.1 fail-loud).
+
+The enclosing section is authoritative AKN ancestry, NOT a byte-offset remap:
+old Finlex consolidations carry ``<section>`` elements with no ``eId`` (so an
+eId-keyed byte extent map finds zero sections and every bare ref falls to OPEN);
+the ancestry-threaded label resolves them via the section's own ``<num>`` surface
+(``10 §.`` -> ``10``).
 
 Two disambiguation bases (BOTH in play, per the operator):
 
@@ -81,7 +88,13 @@ _SUBSECTION = "subsection"
 _PARAGRAPH = "paragraph"
 
 # Pull the bare section label out of a ``…sec_<label>…`` AKN eId fragment.
-_SEC_EID_RE = re.compile(r"(?:^|__)sec_([A-Za-z0-9.-]+?)(?:v\d+)?(?=__|$)")
+# The label run is bounded and GREEDY (no lazy/optional overlap — §1.11): an
+# optional trailing ``v<digits>`` version tag is split off in :func:`_sec_label_from_eid`
+# rather than modeled as an adjacent optional group, which the regex risk linter
+# (rightly) flags as overlapping-backtracking.
+_SEC_EID_RE = re.compile(r"(?:^|__)sec_([A-Za-z0-9.-]{1,32})(?=__|$)")
+# Trailing AKN version tag (``…v3``) appended to a section label segment.
+_SEC_VERSION_SUFFIX_RE = re.compile(r"v\d+$")
 
 
 class EllipticalStatus(Enum):
@@ -127,9 +140,15 @@ def _localname(tag: str) -> str:
 
 
 def _sec_label_from_eid(eid: str) -> Optional[str]:
-    """Extract the bare section label (``5``, ``198b``) from a ``…sec_…`` eId."""
+    """Extract the bare section label (``5``, ``198b``) from a ``…sec_…`` eId.
+
+    Strips a trailing AKN version tag (``sec_5v3`` -> ``5``) after the bounded
+    greedy label match, so the section-label key is version-agnostic.
+    """
     m = _SEC_EID_RE.search(eid)
-    return m.group(1) if m is not None else None
+    if m is None:
+        return None
+    return _SEC_VERSION_SUFFIX_RE.sub("", m.group(1))
 
 
 def _is_internal_bare_ref(mention: ReferenceMention) -> bool:
@@ -151,22 +170,30 @@ def _is_internal_bare_ref(mention: ReferenceMention) -> bool:
     return tgt.subsection_num is not None or tgt.item_label is not None
 
 
+# Section label from a ``<section><num>…</num>`` surface, used when the section
+# carries no eId (pre-eId Finlex consolidations): ``10 §.`` -> ``10``,
+# ``115 a §`` -> ``115a``. Mirrors ``ref_mention_extractor._SECTION_NUM_LABEL_RE``
+# so the threaded source-ref label and the structure-oracle label agree.
+_SECTION_NUM_LABEL_RE = re.compile(r"(\d{1,6})\s*([a-zA-Z\xe4\xf6\xc4\xd6])?")
+
+
 @dataclass(frozen=True, slots=True)
 class _SectionStructure:
-    """Materialized child structure of one AKN <section>, by byte extent.
+    """Materialized child structure of one AKN <section>, keyed by label.
 
     Attributes:
-        section_label:        The bare section label (``5``).
-        byte_start/byte_end:  The section's byte extent in ``xml_bytes`` (used to
-                              find which section a citation's byte span sits in).
+        section_label:        The bare section label (``5``, ``10``, ``115a``).
         subsec_nums:          Every momentti number present, ascending.
         subsecs_with_kohta:   The momentti numbers that carry >=1 kohta
                               (<paragraph>), ascending.
+
+    The structure is the per-section oracle the bare-kohta rule consults; the
+    enclosing section itself is identified by the mention's threaded
+    ``source_provision_ref.section_label`` (real AKN ancestry), so no byte extent
+    is needed here.
     """
 
     section_label: str
-    byte_start: int
-    byte_end: int
     subsec_nums: Tuple[int, ...]
     subsecs_with_kohta: Tuple[int, ...]
 
@@ -176,20 +203,39 @@ def _subsec_num_from_eid(eid: str) -> Optional[int]:
     return int(m.group(1)) if m is not None else None
 
 
-def build_section_structures(xml_bytes: bytes) -> List[_SectionStructure]:
-    """Materialize each <section>'s child structure + byte extent from xml_bytes.
+def _section_label_of(sec: ET.Element[str]) -> Optional[str]:
+    """Bare label of a ``<section>`` from its eId, else its ``<num>`` surface.
 
-    Uses :class:`ET.iterparse` over the SAME bytes the recognizer was anchored to
-    so the byte extents are directly comparable to a mention's ``source_span``.
+    Returns ``None`` when neither yields a label (the section then has no key to
+    resolve against).
+    """
+    eid = sec.get("eId") or ""
+    if eid:
+        label = _sec_label_from_eid(eid)
+        if label is not None:
+            return label
+    for child in sec:
+        if _localname(child.tag) == "num":
+            nm = _SECTION_NUM_LABEL_RE.match((child.text or "").strip())
+            if nm is not None:
+                return nm.group(1) + (nm.group(2) or "").lower()
+            break
+    return None
+
+
+def build_section_structures(xml_bytes: bytes) -> List[_SectionStructure]:
+    """Materialize each <section>'s child structure, keyed by section label.
+
     For each section we record which moments exist and which carry kohta — the
-    structural-uniqueness oracle for bare-kohta resolution. Sections without an
-    eId-derivable label are skipped (no label to resolve to).
+    structural-uniqueness oracle for bare-kohta resolution. The section label is
+    eId-derived where present and falls back to the section's ``<num>`` surface
+    (pre-eId consolidations), so old statutes whose sections carry no eId still
+    populate the oracle. Momentti numbers come from the subsection eId where
+    present, else from 1-based document position (old statutes whose subsections
+    carry neither eId nor ``<num>``); kohta-carriers are the moments holding a
+    ``<paragraph>``. Sections with no derivable label are skipped.
     """
     out: List[_SectionStructure] = []
-    # We parse the whole tree, then locate each section's byte extent by its eId
-    # surface in xml_bytes: the ``eId="…"`` attribute string appears verbatim,
-    # exactly once, per element, so its first occurrence is that section's open
-    # tag — directly comparable to a mention's ``source_span`` byte offset.
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
@@ -198,62 +244,57 @@ def build_section_structures(xml_bytes: bytes) -> List[_SectionStructure]:
     for sec in root.iter():
         if _localname(sec.tag) != _SECTION:
             continue
-        eid = sec.get("eId") or ""
-        label = _sec_label_from_eid(eid)
+        label = _section_label_of(sec)
         if label is None:
-            continue
-        # Byte extent: locate the section's eId attribute occurrence in xml_bytes.
-        # Each eId is unique, so the first occurrence is THIS section's open tag;
-        # the extent runs from that open tag to the next section's eId (or EOF).
-        byte_start = _eid_byte_offset(xml_bytes, eid)
-        if byte_start < 0:
             continue
         subsec_nums: List[int] = []
         subsecs_with_kohta: List[int] = []
+        position = 0
         for sub in sec:
             if _localname(sub.tag) != _SUBSECTION:
                 continue
-            sub_eid = sub.get("eId") or ""
-            num = _subsec_num_from_eid(sub_eid)
+            position += 1
+            # Prefer the eId-derived momentti number; fall back to 1-based
+            # document position when the subsection carries no eId (old
+            # consolidations), so a bare ``N momentissa`` and the kohta-carrier
+            # index live in the same ordinal space.
+            num = _subsec_num_from_eid(sub.get("eId") or "")
             if num is None:
-                continue
+                num = position
             subsec_nums.append(num)
             if any(_localname(c.tag) == _PARAGRAPH for c in sub):
                 subsecs_with_kohta.append(num)
         out.append(
             _SectionStructure(
                 section_label=label,
-                byte_start=byte_start,
-                byte_end=-1,  # filled below once all starts are known
                 subsec_nums=tuple(sorted(set(subsec_nums))),
                 subsecs_with_kohta=tuple(sorted(set(subsecs_with_kohta))),
             )
         )
 
-    # Fill byte_end = the next section's byte_start (sections are document-ordered
-    # by their open-tag offset); the last runs to EOF.
-    out.sort(key=lambda s: s.byte_start)
-    filled: List[_SectionStructure] = []
-    for i, s in enumerate(out):
-        end = out[i + 1].byte_start if i + 1 < len(out) else len(xml_bytes)
-        filled.append(dataclasses.replace(s, byte_end=end))
-    return filled
+    return out
 
 
-def _eid_byte_offset(xml_bytes: bytes, eid: str) -> int:
-    """First byte offset of the ``eId="<eid>"`` attribute occurrence in xml_bytes."""
-    needle = b'eId="' + eid.encode("utf-8") + b'"'
-    return xml_bytes.find(needle)
+def _enclosing_label(mention: ReferenceMention) -> str:
+    """The enclosing-section label threaded onto the mention's source provenance.
+
+    The extractor sets ``source_provision_ref.section_label`` to the real
+    ``<section>`` ancestor of the citing ``<p>`` (see
+    ``ref_mention_extractor._enclosing_section_labels``). An empty string means
+    the citation sits outside any labeled section (OPEN downstream).
+    """
+    src = mention.source_provision_ref
+    return src.section_label if src is not None else ""
 
 
-def _enclosing_section(
-    structures: List[_SectionStructure], byte_offset: Optional[int]
+def _structure_for_label(
+    structures: List[_SectionStructure], label: str
 ) -> Optional[_SectionStructure]:
-    """The section whose byte extent contains ``byte_offset`` (None if outside)."""
-    if byte_offset is None:
+    """The materialized structure of the section with ``label`` (None if absent)."""
+    if not label:
         return None
     for s in structures:
-        if s.byte_start <= byte_offset < s.byte_end:
+        if s.section_label == label:
             return s
     return None
 
@@ -291,67 +332,67 @@ def resolve_elliptical_mention(
 ) -> EllipticalResolution:
     """Resolve one internal mention's omitted section/momentti against the tree.
 
-    See module docstring for the resolution ladder. The mention's
-    ``source_span.byte_offset`` (into the SAME ``xml_bytes`` ``structures`` were
-    built from) locates the enclosing section; the section's materialized child
-    structure decides convention vs structural-uniqueness vs ambiguity.
+    See module docstring for the resolution ladder. The enclosing section is read
+    DIRECTLY from the mention's ``source_provision_ref.section_label`` (threaded by
+    the extractor from the citing ``<p>``'s real ``<section>`` ancestry); the
+    section's materialized child structure decides convention vs
+    structural-uniqueness vs ambiguity for the bare-kohta case.
     """
     if not _is_internal_bare_ref(mention):
         return EllipticalResolution(mention, EllipticalStatus.NOT_ELLIPTICAL)
 
     tgt = mention.target_provision_ref
     assert tgt is not None
-    byte_offset = (
-        mention.source_span.byte_offset if mention.source_span is not None else None
-    )
-    enclosing = _enclosing_section(structures, byte_offset)
+    enclosing_label = _enclosing_label(mention)
 
-    if enclosing is None:
+    if not enclosing_label:
         # No enclosing section in scope -> OPEN (cannot anchor; never guess).
         return EllipticalResolution(
             _downgrade(mention, CiteConfidence.OPEN),
             EllipticalStatus.OPEN,
         )
 
+    enclosing = _structure_for_label(structures, enclosing_label)
+
     # ── bare momentti (subsection named, section omitted) ──────────────────
     if tgt.subsection_num is not None and tgt.item_label is None:
         # CONVENTION: the bare momentti is a momentti of the enclosing section.
-        # If the section actually carries that momentti, resolve; if the section
-        # has moments but not THIS one, it is still convention-resolvable to the
-        # enclosing section (the momentti number is the surface's; we trust it),
-        # so we attach the enclosing section regardless. (We do not invent a
-        # momentti the surface did not name.)
+        # The momentti number is the surface's; we trust it and attach the
+        # enclosing section regardless of whether the section's materialized
+        # structure happens to enumerate that exact momentti number (old
+        # consolidations carry no subsection numbering). We do not invent a
+        # momentti the surface did not name.
         return EllipticalResolution(
             _rewrite_target(
                 mention,
-                section_label=enclosing.section_label,
+                section_label=enclosing_label,
                 subsection_num=tgt.subsection_num,
             ),
             EllipticalStatus.RESOLVED,
-            enclosing_section_label=enclosing.section_label,
+            enclosing_section_label=enclosing_label,
         )
 
     # ── bare kohta (item named, momentti AND section omitted) ──────────────
     if tgt.item_label is not None and tgt.subsection_num is None:
-        carriers = enclosing.subsecs_with_kohta
+        carriers = enclosing.subsecs_with_kohta if enclosing is not None else ()
         if len(carriers) == 1:
             # STRUCTURAL UNIQUENESS: exactly one momentti carries kohta -> that
             # momentti is the bare-kohta target's momentti.
             return EllipticalResolution(
                 _rewrite_target(
                     mention,
-                    section_label=enclosing.section_label,
+                    section_label=enclosing_label,
                     subsection_num=carriers[0],
                 ),
                 EllipticalStatus.RESOLVED,
-                enclosing_section_label=enclosing.section_label,
+                enclosing_section_label=enclosing_label,
             )
         # 0 or >1 moments carry kohta -> NOT uniquely resolvable -> AMBIGUOUS
         # (list candidates, never pick).
         return EllipticalResolution(
             _downgrade(mention, CiteConfidence.AMBIGUOUS),
             EllipticalStatus.AMBIGUOUS,
-            enclosing_section_label=enclosing.section_label,
+            enclosing_section_label=enclosing_label,
             candidate_subsections=carriers,
         )
 
@@ -361,11 +402,11 @@ def resolve_elliptical_mention(
         return EllipticalResolution(
             _rewrite_target(
                 mention,
-                section_label=enclosing.section_label,
+                section_label=enclosing_label,
                 subsection_num=tgt.subsection_num,
             ),
             EllipticalStatus.RESOLVED,
-            enclosing_section_label=enclosing.section_label,
+            enclosing_section_label=enclosing_label,
         )
 
     return EllipticalResolution(mention, EllipticalStatus.NOT_ELLIPTICAL)

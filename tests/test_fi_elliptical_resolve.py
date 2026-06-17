@@ -64,12 +64,21 @@ def _mention_at(
     *,
     subsection_num: int | None,
     item_label: str | None,
-    byte_offset: int,
+    enclosing_section: str,
     surface: str,
 ) -> ReferenceMention:
-    """Build a bare INTERNAL mention as the recognizer emits one (empty section)."""
+    """Build a bare INTERNAL mention as the extractor emits one.
+
+    The TARGET is bare (empty section, the part the surface omits); the SOURCE
+    provenance carries the ENCLOSING section label the extractor threaded on from
+    the citing ``<p>``'s real ``<section>`` ancestry — the authoritative context
+    the resolver reads (no byte-offset remap). ``enclosing_section=""`` models a
+    citation outside any labeled section (OPEN).
+    """
     return ReferenceMention(
-        source_provision_ref=ProvisionRef(statute_id="123/2024"),
+        source_provision_ref=ProvisionRef(
+            statute_id="123/2024", section_label=enclosing_section
+        ),
         target_provision_ref=ProvisionRef(
             statute_id="123/2024",
             section_label="",
@@ -80,18 +89,12 @@ def _mention_at(
         cite_confidence=CiteConfidence.EXACT,
         phrase_lemma="internal_section_ref",
         source_span=SourceSpan(
-            source_file="123/2024", byte_offset=byte_offset, byte_len=len(surface)
+            source_file="123/2024", byte_offset=0, byte_len=len(surface)
         ),
         valid_at_interval=(None, None),
         edge_subtype=None,
         surface_text=surface,
     )
-
-
-def _byte_offset_of(needle: str) -> int:
-    off = _STATUTE_XML.find(needle.encode("utf-8"))
-    assert off >= 0, f"fixture missing {needle!r}"
-    return off
 
 
 def test_section_structure_oracle_is_materialized() -> None:
@@ -110,10 +113,9 @@ def test_section_structure_oracle_is_materialized() -> None:
 def test_bare_kohta_resolves_to_unique_momentti_with_kohta() -> None:
     """Bare ``1 kohdassa`` -> sec 5 momentti 2 (the only momentti WITH kohta)."""
     structures = build_section_structures(_STATUTE_XML)
-    # Anchor the citation inside section 5's momentti 3 prose.
-    off = _byte_offset_of("Edella 1 kohdassa")
+    # The citation sits in section 5 (threaded onto the source provenance).
     m = _mention_at(
-        subsection_num=None, item_label="1", byte_offset=off, surface="1 kohdassa"
+        subsection_num=None, item_label="1", enclosing_section="5", surface="1 kohdassa"
     )
     res = resolve_elliptical_mention(m, structures)
     assert res.status is EllipticalStatus.RESOLVED
@@ -129,9 +131,8 @@ def test_bare_kohta_resolves_to_unique_momentti_with_kohta() -> None:
 def test_bare_momentti_resolves_to_enclosing_section() -> None:
     """Bare ``2 momentissa`` -> the ENCLOSING section 5's momentti 2, NOT root."""
     structures = build_section_structures(_STATUTE_XML)
-    off = _byte_offset_of("2 momentissa tarkoitettu")
     m = _mention_at(
-        subsection_num=2, item_label=None, byte_offset=off, surface="2 momentissa"
+        subsection_num=2, item_label=None, enclosing_section="5", surface="2 momentissa"
     )
     res = resolve_elliptical_mention(m, structures)
     assert res.status is EllipticalStatus.RESOLVED
@@ -157,10 +158,8 @@ def test_bare_kohta_with_two_kohta_carrying_moments_is_ambiguous() -> None:
   </subsection>
 </section></body></act></akomaNtoso>""".encode("utf-8")
     structures = build_section_structures(xml)
-    off = xml.find(b"Edella 1 kohdassa")
-    assert off >= 0
     m = _mention_at(
-        subsection_num=None, item_label="1", byte_offset=off, surface="1 kohdassa"
+        subsection_num=None, item_label="1", enclosing_section="9", surface="1 kohdassa"
     )
     res = resolve_elliptical_mention(m, structures)
     assert res.status is EllipticalStatus.AMBIGUOUS
@@ -173,11 +172,11 @@ def test_bare_kohta_with_two_kohta_carrying_moments_is_ambiguous() -> None:
 
 
 def test_bare_ref_outside_any_section_is_open() -> None:
-    """A bare ref whose byte span sits outside any <section> is OPEN, not root."""
+    """A bare ref with no enclosing-section label on its provenance is OPEN, not root."""
     structures = build_section_structures(_STATUTE_XML)
-    # Byte offset 0 (the <akomaNtoso> open tag) precedes the first section.
+    # No enclosing section threaded (the citation sits outside any labeled section).
     m = _mention_at(
-        subsection_num=2, item_label=None, byte_offset=0, surface="2 momentissa"
+        subsection_num=2, item_label=None, enclosing_section="", surface="2 momentissa"
     )
     res = resolve_elliptical_mention(m, structures)
     assert res.status is EllipticalStatus.OPEN
@@ -207,9 +206,8 @@ def test_already_anchored_internal_ref_passes_through() -> None:
 
 def test_resolve_mentions_batch_preserves_order_and_passes_non_internal() -> None:
     """Batch helper resolves bare internals and passes non-internal through."""
-    off_k = _byte_offset_of("Edella 1 kohdassa")
     bare_kohta = _mention_at(
-        subsection_num=None, item_label="1", byte_offset=off_k, surface="1 kohdassa"
+        subsection_num=None, item_label="1", enclosing_section="5", surface="1 kohdassa"
     )
     cross = ReferenceMention(
         source_provision_ref=ProvisionRef(statute_id="123/2024"),
@@ -229,3 +227,73 @@ def test_resolve_mentions_batch_preserves_order_and_passes_non_internal() -> Non
     ]
     assert out[0].mention.target_provision_ref is not None
     assert out[0].mention.target_provision_ref.section_label == "5"
+
+
+# A pre-eId Finlex consolidation shape (cf. 1935/62, 1942/598): the <section>
+# elements carry NO eId — only a <num> surface (``33 §.``) — and the subsections
+# carry neither eId nor <num>. The old byte-offset remap (keyed on eId
+# occurrences) found ZERO sections here, so the bare ``Edellä 1 momentissa`` fell
+# to OPEN. With the enclosing section threaded from real <num>-derived ancestry,
+# it resolves to the section it sits in.
+_NO_EID_STATUTE_XML = f"""<akomaNtoso xmlns="{_AKN}">
+<act>
+<body>
+<section><num>10 §.</num>
+  <subsection><content><p>Kymmenennen pykalan ensimmainen momentti.</p></content></subsection>
+</section>
+<section><num>33 §.</num>
+  <subsection><content><p>Kolmannenkymmenennenkolmannen alku.</p></content></subsection>
+  <subsection><content><p>Edellä 1 momentissa mainittu oikeus.</p></content></subsection>
+</section>
+</body>
+</act>
+</akomaNtoso>""".encode("utf-8")
+
+
+def test_no_eid_section_resolves_via_num_ancestry() -> None:
+    """A bare momentti in a NO-eId section resolves via <num> ancestry, not OPEN.
+
+    This is the end-to-end path the threading hardens: the extractor reads the
+    enclosing section's ``<num>`` label (``33``) from the citing <p>'s real
+    ancestry and stamps it onto the mention's source provenance; the resolver
+    fills the omitted section from that label. The eId-keyed byte remap could not
+    see this section at all (no eId), so this previously fell to OPEN.
+    """
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_all_reference_mentions,
+    )
+
+    extraction = extract_all_reference_mentions(_NO_EID_STATUTE_XML, "1935/62")
+    # The extractor must have threaded the enclosing section (33) onto the
+    # internal bare-momentti mention's source provenance.
+    internal_bare = [
+        m
+        for m in extraction.mentions
+        if m.cite_kind is CiteKind.INTERNAL
+        and m.target_provision_ref is not None
+        and m.target_provision_ref.subsection_num == 1
+        and not m.target_provision_ref.section_label
+        and (m.surface_text or "").strip().startswith("1 moment")
+    ]
+    assert internal_bare, "extractor emitted no bare internal momentti mention"
+    assert internal_bare[0].source_provision_ref is not None
+    assert internal_bare[0].source_provision_ref.section_label == "33"
+
+    out = resolve_elliptical_mentions(
+        list(extraction.mentions), _NO_EID_STATUTE_XML
+    )
+    resolved = [
+        r
+        for r in out
+        if r.status is EllipticalStatus.RESOLVED
+        and (r.mention.surface_text or "").strip().startswith("1 moment")
+    ]
+    assert resolved, "bare momentti in a no-eId section did not resolve (still OPEN?)"
+    tgt = resolved[0].mention.target_provision_ref
+    assert tgt is not None
+    # Resolves to the ENCLOSING section 33 (its <num> label), NOT root / OPEN.
+    assert tgt.section_label == "33"
+    assert tgt.subsection_num == 1
+    assert resolved[0].mention.cite_confidence is CiteConfidence.EXACT
+    # And nothing in this statute fell to OPEN.
+    assert not any(r.status is EllipticalStatus.OPEN for r in out)
