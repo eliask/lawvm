@@ -68,6 +68,7 @@ from lawvm.finland.morphology import (
     generate_forms,
     head_entry,
 )
+from lawvm.finland.references.lemma_gate import GateVerdict, lemma_gate
 from lawvm.finland.references.registries.statute_name import _HEADS_BY_LEN
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
@@ -194,81 +195,22 @@ _WEAK_HEADS: frozenset[str] = frozenset(
 
 # The single ``laki`` oblique surface (elative ``laista``) that is orthographically
 # identical to the partitive of the highly productive ``-lainen``/``-nainen``
-# adjective family: ``sellaista`` ("such"), ``samanlaista`` ("similar"),
-# ``veronalaista`` ("subject to tax"), ``alaista`` ("subordinate"). Every OTHER
-# adjective form (``-laisessa``, ``-laisen``, ``-laisesta`` …) differs from every
-# ``laki`` oblique and never fires; only ``laista`` collides. We therefore gate
-# ``laista`` with the same positive-evidence requirement as the weak heads, AND
-# reject outright any token that is an unambiguous ``-alainen``/``-nainen``
-# adjective inflection (which is NEVER a ``laki``).
+# adjective family (``sellaista``, ``veronalaista`` …). It is gated with the same
+# positive-evidence requirement as the weak heads (the morphology gate hard-
+# rejects the unambiguous adjective inflections; this only adds caution to the
+# residual bare ``laista`` collisions that the gate returns UNKNOWN).
 _LAKI_ADJ_COLLISION_OBLIQUE = "laista"
 
-# Unambiguous ``-alainen``/``-nainen`` adjective inflections that the ``laista``
-# trigger mis-segments as a ``laki`` elative. These are pure garbage: an
-# ``-alainen`` adjective in the partitive (``veronalaista``, ``työnalaista``,
-# ``valvonnanalaista``) is not a statute. The ``-lai`` digraph stem before the
-# case ending (``…alaista``, ``…llaista``, ``…nlaista``) marks the derivational
-# adjective suffix rather than the ``laki`` head. Matched against the WHOLE token
-# (modifier + oblique), case-folded.
-_ADJ_NOT_LAKI_RE = re.compile(
-    r"(?:"
-    r"[aeiouyäö]llaista"  # demonstrative -llainen: sellaista, tällaista, tuollaista
-    r"|alaista"           # -alainen partitive: veronalaista, valvonnanalaista, alaista
-    r"|nlaista"           # -nlainen partitive: samanlaista, vastaavanlaista
-    r"|rilaista"          # erilaista, monenkirjavan- … (eri-/-ri stems)
-    r"|kalaista"          # paikallaista etc. (rare; -kkalainen)
-    r")$",
-    re.IGNORECASE,
-)
-
-# Pronoun forms whose orthography mis-segments as ``<modifier>`` + a ``laki``
-# oblique: the ``jokin`` paradigm built on the ``joll-`` stem (singular adessive
-# ``jollain`` / plural ``joillain`` "by some / by one of …", plus the further
-# obliques ``jollaiksi``/``jollailla``/``jollaille``/``jollailta``/``jollaissa``
-# and their ``joilla-`` plurals) is a pronoun, never a statute. The head trigger
-# reads the trailing ``lain``/``laiksi``/``lailla``/… and invents
-# ``fi-name:jollaki``. The closed ``joll-`` oblique paradigm is enumerated here
-# (the partitive ``jollaista``/``joillaista`` is already rejected by
-# ``_ADJ_NOT_LAKI_RE``; verified against the full statute-name registry — no real
-# act key starts ``jol``, so no resolvable title collides). Matched against the
-# WHOLE token (modifier + oblique), case-folded.
-_PRONOUN_NOT_LAKI_RE = re.compile(
-    r"^joi?lla(?:in|iksi|illa|ille|ilta|issa|ista)$", re.IGNORECASE
-)
-
-# Closed ``-las``/``-läs`` agent-noun PLURAL obliques that mis-segment as a
-# ``laki`` head. ``oppilas`` (pupil) / ``sotilas`` (soldier) / ``kokelas``
-# (cadet/novice) form their plural oblique on the stem ``-lai-`` (``oppilaille``
-# "to pupils", ``sotilailta`` "from soldiers", ``kokelaiksi`` "into cadets",
-# ``oppilain`` "of pupils"). The trailing ``lai`` + case ending is byte-identical
-# to a ``laki`` SINGULAR oblique (``laille``/``lailta``/``laiksi``/``lain`` …), so
-# the head trigger reads it as a ``laki`` head and invents ``fi-name:oppilaki``.
-# These three agent nouns are a CLOSED class in legal/administrative prose and are
-# never statute names; the reject is anchored on the agent-noun head (optional
-# compound prefix before it: ``rintamasotilaille``) so it can never match a real
-# ``-laki`` compound — crucially NOT the ``laki`` ADESSIVE/TRANSLATIVE collisions
-# that ARE real citations (``eläkelailla``, ``elintarvelaiksi``), which carry a
-# different stem and are left untouched. Verified against the full statute-name
-# registry: zero real-law keys collide. Matched against the WHOLE token, folded.
-_LAS_AGENT_NOUN_NOT_LAKI_RE = re.compile(
-    r"(?:^|[a-zåäö])(?:oppi|soti|koke)lai(?:lle|lta|ksi|lla|ssa|sta|n|hin)$",
-    re.IGNORECASE,
-)
-
-# Closed DETERMINER/pronoun + ``laki`` orthographic collapse (an elided space in
-# older / OCR'd source): ``tämänlain`` (``tämän lain`` "of this law"),
-# ``tässälaissa`` (``tässä laissa`` "in this law"), ``mainitunlain``
-# (``mainitun lain`` "of the said law"). The whole token is an inflected
-# determiner glued to a ``laki`` oblique — a real compound title's modifier is a
-# noun stem, never an inflected determiner, so this can never be a resolvable
-# named act. Closed determiner set; verified against the full registry: zero
-# real-law keys collide. Matched against the WHOLE token, case-folded.
-_DETERMINER_LAKI_COLLAPSE_RE = re.compile(
-    r"^(?:t[aä]m[aä]n|t[aä]ss[aä]|t[aä]st[aä]|tuon|sen|n[aä]iden|niiden"
-    r"|mainitun|sellaisen|kunkin|saman|kyseisen|kyseisess[aä]|er[aä][aä]n)"
-    r"la(?:in|issa|ista|ille|ilta|illa|iksi|kia|kiin)$",
-    re.IGNORECASE,
-)
+# False-positive families (``-lainen``/``-nainen`` adjectives, the ``jokin``
+# pronoun ``joll-`` obliques, the ``-las``/``-läs`` agent-noun plurals, and the
+# determiner+``laki`` orthographic collapse) are no longer matched by hand-written
+# suffix regexes here. They are rejected by the SHARED, M1-derived morphology gate
+# (:func:`lawvm.finland.references.lemma_gate.lemma_gate`), which inverts the M1
+# paradigm engine over the closed statute heads PLUS the closed non-statute
+# collision paradigms. Paradigm inversion is sound where suffix-substring matching
+# had a consonant-gradation bug class (``'asetus' not in 'asetuksen'``); the gate
+# also backs the same engine used to generate the positive head triggers, so the
+# accept and reject sides can never disagree about what a real head surface is.
 
 # A capitalized-modifier signal: the modifier's first character is an uppercase
 # letter. Combined with a mid-sentence check (the match does not begin the text
@@ -388,19 +330,22 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         if _ID_PAREN_RE.match(text, m.end()):
             continue
 
-        # Hard reject the ``-alainen``/``-nainen`` adjective family. The partitive
-        # ``-laista`` is orthographically identical to the ``laki`` elative
-        # ``laista`` and the trigger mis-segments it, but an adjective in the
-        # partitive (``sellaista``, ``veronalaista``) is NEVER a ``laki``. This is
-        # not a fail-loud residue; it is a non-reference and must not be emitted.
+        # Morphology gate (SHARED, M1-derived): reject the non-statute collision
+        # families by paradigm inversion, not suffix-substring matching. The gate
+        # rejects a token only when a closed NON-statute paradigm explains it at
+        # least as completely as the ``laki`` oblique that fired the trigger:
+        # the ``-lainen``/``-nainen`` adjective partitive (``veronalaista``), the
+        # ``jokin`` pronoun ``joll-`` obliques (``jollain``), the ``-las`` agent-
+        # noun plurals (``oppilaille``), and the determiner+``laki`` collapse
+        # (``tämänlain``, detected from the peeled modifier). These are non-
+        # references, not fail-loud residue — they must not be emitted. A genuine
+        # compound (``luonnonsuojelulaissa``) or a real ``-lai-`` law
+        # (``työeläkelailla``) returns UNKNOWN and proceeds as before.
         whole_token = m.group("modifier") + m.group("oblique")
-        if _ADJ_NOT_LAKI_RE.search(whole_token):
-            continue
-        if _PRONOUN_NOT_LAKI_RE.match(whole_token):
-            continue
-        if _LAS_AGENT_NOUN_NOT_LAKI_RE.search(whole_token):
-            continue
-        if _DETERMINER_LAKI_COLLAPSE_RE.match(whole_token):
+        if (
+            lemma_gate(whole_token, peeled_modifier=m.group("modifier")).verdict
+            is GateVerdict.REJECT_KNOWN_OTHER
+        ):
             continue
 
         # Parse the optional structural tail (everything after the head) through

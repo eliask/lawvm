@@ -9,6 +9,21 @@ from __future__ import annotations
 
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
 from lawvm.finland.references.by_name import recognize_by_name_refs
+from lawvm.finland.references.lemma_gate import GateVerdict, lemma_gate
+
+
+def _gate_rejects(token: str, modifier: str | None = None) -> bool:
+    """True iff the shared morphology gate hard-rejects ``token``.
+
+    The by-name false-positive rejections are now owned by the M1-derived gate
+    (:mod:`lawvm.finland.references.lemma_gate`); these helpers pin that the gate
+    itself rejects each preserved FP family (not just that the recognizer emits
+    nothing for some other incidental reason).
+    """
+    return (
+        lemma_gate(token, peeled_modifier=modifier).verdict
+        is GateVerdict.REJECT_KNOWN_OTHER
+    )
 
 
 def test_name_only_no_tail_emits_statute_level_mention() -> None:
@@ -212,6 +227,9 @@ def test_alainen_adjective_partitive_not_a_laki() -> None:
     """
     assert recognize_by_name_refs("Tarkoitetaan sellaista toimintaa.") == []
     assert recognize_by_name_refs("kyseessä on veronalaista tuloa") == []
+    # The M1-derived gate hard-rejects each adjective partitive.
+    assert _gate_rejects("sellaista")
+    assert _gate_rejects("veronalaista")
 
 
 def test_real_laki_elative_with_tail_still_emitted() -> None:
@@ -246,6 +264,8 @@ def test_pronoun_jollain_is_not_a_statute_name() -> None:
     ``jol`` + ``lain`` (laki genitive) and invent ``fi-name:jollaki``."""
     assert recognize_by_name_refs("osoittaa jollain seuraavista yhdistelmistä") == []
     assert recognize_by_name_refs("ratkaistaan joillain tavoilla") == []
+    assert _gate_rejects("jollain")
+    assert _gate_rejects("joillain")
 
 
 def test_las_agent_noun_plural_is_not_a_statute_name() -> None:
@@ -266,6 +286,8 @@ def test_las_agent_noun_plural_is_not_a_statute_name() -> None:
     assert recognize_by_name_refs("annettu kokelaiksi otetuille") == []
     assert recognize_by_name_refs("etu kuuluu vain sotilailta perittyihin") == []
     assert recognize_by_name_refs("kaikkien oppilain oikeudet turvataan") == []
+    for tok in ("oppilaille", "rintamasotilaille", "oppilailta", "kokelaiksi", "oppilain"):
+        assert _gate_rejects(tok), tok
 
 
 def test_laki_adessive_translative_collision_still_emitted() -> None:
@@ -301,6 +323,9 @@ def test_determiner_laki_collapse_is_not_a_statute_name() -> None:
     assert recognize_by_name_refs("mikäli ei tässälaissa toisin säädetä") == []
     assert recognize_by_name_refs("vuoden kuluessa tämänlain voimaantulosta") == []
     assert recognize_by_name_refs("noudatetaan mainitunlain säännöksiä") == []
+    assert _gate_rejects("tässälaissa", "tässä")
+    assert _gate_rejects("tämänlain", "tämän")
+    assert _gate_rejects("mainitunlain", "mainitun")
 
 
 def test_real_la_stem_compound_law_still_emitted() -> None:
