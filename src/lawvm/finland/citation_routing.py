@@ -11,6 +11,79 @@ from lawvm.finland.johtolause.affected_statute import (
     instrument_from_text,
     parse_routing_surface,
 )
+from lawvm.finland.morphology import (
+    MorphCase,
+    MorphNumber,
+    generate_forms,
+    head_entry,
+    is_known_head,
+)
+
+# Closed statute/instrument heads the M1 morphology engine can inflect, sorted
+# longest-first so a title ending in ``...asetus`` splits on ``asetus`` and never
+# on a shorter coincidental suffix (mirrors
+# ``references/registries/statute_name.py``, the reference implementation of
+# "inflect a statute title head via M1").
+_INFLECTABLE_HEADS: tuple[str, ...] = (
+    "direktiivi",
+    "ilmoitus",
+    "määräys",
+    "päätös",
+    "sopimus",
+    "asetus",
+    "säädös",
+    "ohje",
+    "laki",
+)
+
+# Legacy string-slice genitive fallback, used ONLY when M1 returns no
+# deterministic genitive for a head (so coverage never regresses below the old
+# behavior). Maps a trailing nominative head -> its genitive surface.
+_LEGACY_GENITIVE_BY_HEAD: dict[str, str] = {
+    "laki": "lain",
+    "asetus": "asetuksen",
+    "päätös": "päätöksen",
+}
+
+
+def _split_title_head(norm_title: str) -> tuple[str, str] | None:
+    """Split a normalized (lowercased) title into ``(modifier, head_lemma)``.
+
+    Returns the invariant modifier prefix plus the closed-class head lemma the
+    title ends with, or ``None`` if the title ends in no known statute head.
+    """
+    for head in sorted(_INFLECTABLE_HEADS, key=len, reverse=True):
+        if norm_title.endswith(head):
+            return norm_title[: len(norm_title) - len(head)], head
+    return None
+
+
+def _head_genitive_title(norm_title: str) -> str | None:
+    """Return the genitive surface of ``norm_title`` via real head inflection.
+
+    Splits off the closed-class head, inflects it through the M1 morphology
+    engine, and re-attaches the invariant modifier (the same generation-first
+    strategy as the M2 statute-name registry). Falls back to the legacy
+    string-slice genitive when M1 declines to inflect the head
+    (``certainty="unsupported"``) so coverage never regresses. Returns ``None``
+    when the title ends in no recognized head.
+    """
+    split = _split_title_head(norm_title)
+    if split is None:
+        return None
+    modifier, head = split
+    if is_known_head(head):
+        for form in generate_forms(
+            head_entry(head),
+            cases=(MorphCase.GEN,),
+            numbers=(MorphNumber.SG,),
+        ):
+            if form.certainty == "deterministic" and form.surface:
+                return modifier + form.surface
+    legacy = _LEGACY_GENITIVE_BY_HEAD.get(head)
+    if legacy is not None:
+        return modifier + legacy
+    return None
 
 # Compiled at module scope per §1.11.  Two unbounded .* with re.DOTALL would
 # cause O(N^2) backtracking on long non-matching inputs.
@@ -87,10 +160,12 @@ def _parent_title_reference_variants(parent_title: str) -> set[str]:
 
     variants = {norm}
 
-    if norm.endswith("laki"):
-        variants.add(f"{norm[:-4]}lain")
-    if norm.endswith("asetus"):
-        variants.add(f"{norm[:-6]}asetuksen")
+    # Genitive form via real M1 head inflection (covers laki/asetus/päätös and
+    # the wider closed-head set), with a legacy string-slice fallback when M1
+    # declines so coverage never regresses below the old laki/asetus slicing.
+    genitive = _head_genitive_title(norm)
+    if genitive is not None:
+        variants.add(genitive)
 
     if norm.startswith("laki "):
         body = norm[5:].strip()

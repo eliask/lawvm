@@ -15,6 +15,7 @@ import lxml.etree as etree
 
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.address_parse import ParsedLegalAddress, parse_legal_addresses
+from lawvm.finland.citation_routing import _head_genitive_title
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
@@ -156,12 +157,13 @@ def _parent_title_variants(parent_title: str) -> List[str]:
     if not norm:
         return []
     variants = [norm]
-    if norm.endswith("laki"):
-        variants.append(norm[:-4] + "lain")
-    elif norm.endswith("asetus"):
-        variants.append(norm[:-6] + "asetuksen")
-    elif norm.endswith("päätös"):
-        variants.append(norm[:-6] + "päätöksen")
+    # Genitive form via real M1 head inflection (split off the closed-class
+    # head, inflect via the morphology engine, re-attach the invariant
+    # modifier), with a legacy string-slice fallback when M1 declines to
+    # inflect a head so coverage never regresses below the old behavior.
+    genitive = _head_genitive_title(norm)
+    if genitive is not None:
+        variants.append(genitive)
     # Titles that start with "laki " also appear in cross-statute prose as
     # "<rest> annetun lain" (genitive form without the leading "laki").
     if norm.startswith("laki "):
