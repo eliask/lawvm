@@ -619,6 +619,11 @@ def _eu_edge_to_mention(
         source_span=_span_from_edge(edge, source_statute_id),
         valid_at_interval=valid_at_interval,
         edge_subtype=edge_subtype,
+        # The matched EU citation surface (e.g. "(EY) N:o 999/2001") — a verbatim
+        # substring of the source text. Carried so the hub's byte re-anchoring,
+        # the viewer overlay, and provenance behave like the <ref>/plain-text
+        # lanes; previously this lane left surface_text empty.
+        surface_text=edge.surface_text,
     )
 
 

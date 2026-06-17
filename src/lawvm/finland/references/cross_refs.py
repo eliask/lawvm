@@ -520,6 +520,12 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
     # First-occurrence byte span per key (UNIT: bytes into xml_bytes, computed by
     # encoding the decoded-text char prefix up to the recognizer's char start).
     eu_spans: dict[tuple[str, str, str], tuple[int, int]] = {}
+    # First-occurrence matched surface per key — the EU citation phrase exactly as
+    # it appears in the decoded text (the recognizer's ``raw``, e.g.
+    # "(EY) N:o 999/2001"). Verbatim substring of the source text, so it byte-matches
+    # for downstream re-anchoring / viewer overlay / provenance. Empty when the
+    # surface for the first occurrence was not recorded.
+    eu_surfaces: dict[tuple[str, str, str], str] = {}
     # We don't have element-level section context for text patterns;
     # use empty string for source_section (provision-level tracking is not
     # feasible from plain text without full DOM traversal).
@@ -532,6 +538,7 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         *,
         char_start: int = -1,
         char_end: int = -1,
+        surface: str = "",
     ) -> None:
         if int(year) < 1957 or int(year) > 2050:
             return  # sanity filter
@@ -543,6 +550,9 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
             b_off = len(text[:char_start].encode("utf-8"))
             b_len = len(text[char_start:char_end].encode("utf-8"))
             eu_spans[key] = (b_off, b_len)
+        # Record the matched surface of the first occurrence (verbatim substring).
+        if key not in eu_surfaces and surface:
+            eu_surfaces[key] = surface
 
     # recognize_eu_acts(DIALECT_CROSS_REF) yields all matches across the
     # N:o form, the modern year-first form, and the NUMBER/YEAR/FORM order,
@@ -558,6 +568,7 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         _add(
             eu_type, ref.year, ref.number, subtype,
             char_start=ref.start, char_end=ref.end,
+            surface=ref.raw,
         )
 
     for ref in recognize_celex(text, dialect=DIALECT_CROSS_REF):
@@ -566,6 +577,7 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         _add(
             eu_type, ref.year, str(int(ref.number)), "",
             char_start=ref.start, char_end=ref.end,
+            surface=ref.raw,
         )
 
     edges: List[CrossRefEdge] = []
@@ -580,6 +592,10 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
             source_section=src_sec,
             target_section='',
             count=count,
+            # The matched EU citation surface (verbatim substring of the source
+            # text, e.g. "(EY) N:o 999/2001") — drives byte re-anchoring, the
+            # viewer overlay, and provenance, exactly like the <ref> lane.
+            surface_text=eu_surfaces.get((src_sec, target_id, subtype), ""),
             edge_subtype=subtype,
             source_byte_offset=b_off,
             source_byte_len=b_len,

@@ -742,6 +742,52 @@ class TestSourceSpanProvenance:
         # The slice contains the EU regulation number that defined the target.
         assert b"999/2001" in sliced
 
+    def test_eu_lane_mention_carries_surface_text(self) -> None:
+        """An EU citation mention carries the matched EU citation surface, and
+        that surface is a verbatim substring of the source bytes (so the hub's
+        byte re-anchoring / viewer overlay / provenance work like other lanes).
+
+        Regression: the EU formal-citation lane previously left surface_text
+        empty, which broke surface-driven re-anchoring and miscounted EU
+        detections in the recall audit.
+        """
+        result = extract_eu_reference_mentions(
+            EXACT_EU.xml_bytes,
+            EXACT_EU.source_statute_id,
+        )
+        eu = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
+        assert eu
+        m = eu[0]
+        assert m.surface_text, "EU mention must carry a non-empty surface_text"
+        # The surface is the matched EU citation phrase, verbatim in the source.
+        assert "999/2001" in m.surface_text
+        assert m.surface_text.encode("utf-8") in EXACT_EU.xml_bytes
+        # And it byte-matches the located span.
+        assert m.source_span is not None
+        sliced = EXACT_EU.xml_bytes[
+            m.source_span.byte_offset : m.source_span.byte_offset + m.source_span.byte_len
+        ]
+        assert sliced == m.surface_text.encode("utf-8")
+
+    def test_eu_lane_surface_byte_matches_through_hub(self) -> None:
+        """Through the combined hub (extract_all_reference_mentions), an EU
+        citation surface byte-matches the raw bytes and yields a located span.
+
+        Covers the long-form embedded-repeal case: both the primary and the
+        embedded-repeal EU mentions carry a verbatim surface and a span.
+        """
+        result = extract_all_reference_mentions(
+            EU_EMBEDDED_REPEAL.xml_bytes,
+            EU_EMBEDDED_REPEAL.source_statute_id,
+        )
+        eu = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
+        assert eu
+        for m in eu:
+            assert m.surface_text, f"EU mention missing surface_text: {m}"
+            assert m.surface_text.encode("utf-8") in EU_EMBEDDED_REPEAL.xml_bytes
+            assert m.source_span is not None
+            assert m.source_span.byte_len > 0
+
     def test_metadata_edge_mention_has_no_span(self) -> None:
         """REPEALS/ISSUED_UNDER metadata edges have no body surface → span None.
 
