@@ -1197,6 +1197,49 @@ def _matches_slice(address: str, slice_prefix: str) -> bool:
     return address == slice_prefix or address.startswith(slice_prefix + "/")
 
 
+class _OracleReadMemoizingCorpus:
+    """Delegating corpus proxy that memoizes per-statute consolidated reads.
+
+    Target-preview enrichment resolves one row per unique ``target_key``, and a
+    target key embeds the *locator* (``section:5`` vs ``section:12``). Many keys
+    therefore point at the SAME target statute, and each formerly triggered a
+    fresh ``read_oracle`` of that statute's full consolidated XML — an N+1 read
+    over the corpus (measured: 291 reads, only 76 distinct statutes; ~75% pure
+    re-reads dominating export wall-clock).
+
+    ``read_oracle``/``read_source`` return the cached PIT consolidated artifact,
+    which the store treats as immutable for the duration of a run (see
+    ``TransparentStore.read_oracle``); memoizing them by ``sid`` returns the
+    byte-identical payload, so the exported DB is unchanged. The cache is
+    process-local, lives only for one export, and is bounded by the number of
+    distinct cited target statutes (the corpus already holds these bytes), so it
+    adds no unbounded memory pressure. Every other corpus method is delegated
+    untouched.
+    """
+
+    __slots__ = ("_corpus", "_oracle_cache", "_source_cache")
+
+    def __init__(self, corpus: Any) -> None:
+        self._corpus = corpus
+        self._oracle_cache: Dict[str, Any] = {}
+        self._source_cache: Dict[str, Any] = {}
+
+    def read_oracle(self, sid: str) -> Any:
+        cache = self._oracle_cache
+        if sid not in cache:
+            cache[sid] = self._corpus.read_oracle(sid)
+        return cache[sid]
+
+    def read_source(self, sid: str) -> Any:
+        cache = self._source_cache
+        if sid not in cache:
+            cache[sid] = self._corpus.read_source(sid)
+        return cache[sid]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._corpus, name)
+
+
 def export_transition_graph(
     statute_id: str,
     out_path: str | Path,
@@ -1427,9 +1470,17 @@ def export_transition_graph(
             interlink_provider is not None
             and interlink_provider.resolve_target is not None
         ):
+            # Target-preview resolution reads one target statute per unique
+            # locator key; many keys share a statute, so memoize the consolidated
+            # reads for this export to collapse the N+1 (byte-identical output;
+            # see _OracleReadMemoizingCorpus).
             preview_context = InterlinkTargetPreviewContext(
                 source_statute_id=canonical_id,
-                corpus=corpus,
+                corpus=(
+                    _OracleReadMemoizingCorpus(corpus)
+                    if corpus is not None
+                    else None
+                ),
             )
             def target_resolver(target_ref: Any) -> Any:
                 return interlink_provider.resolve_target(
