@@ -60,6 +60,7 @@ from lawvm.core.reference_mention import (
     CiteKind,
     ProvisionRef,
     ReferenceMention,
+    SourceSpan,
 )
 from lawvm.finland.morphology import (
     MorphCase,
@@ -377,6 +378,16 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # The reported surface spans the name head and (when present) its tail.
         name_surface = modifier + m.group("oblique")
 
+        # Anchor the mention to where the name reference occurs in ``text``. The
+        # offset is the regex match start (a character offset into ``text``) — the
+        # same convention the defined-term binder uses for its own
+        # ``SourceSpan.byte_offset`` (see references/defined_terms.py), so a use
+        # site and a binding site recognized over the SAME text are directly
+        # comparable for the binder's "binding precedes use" ordering check. Was
+        # previously dropped to None, which left local-alias resolution inert.
+        name_start = m.start("modifier")
+        name_span = SourceSpan("", name_start, m.end("oblique") - name_start)
+
         for tgt in targets:
             target_ref = ProvisionRef(
                 statute_id=f"fi-name:{normalized}",
@@ -397,7 +408,7 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
                     cite_kind=CiteKind.CROSS_STATUTE,
                     cite_confidence=CiteConfidence.STATUTE_ONLY,
                     phrase_lemma="statute_name_head",
-                    source_span=None,
+                    source_span=name_span,
                     valid_at_interval=(None, None),
                     edge_subtype=None,
                     surface_text=surface,

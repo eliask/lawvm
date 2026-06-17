@@ -22,9 +22,13 @@ def test_name_only_no_tail_emits_statute_level_mention() -> None:
     assert m.target_provision_ref.statute_id == "fi-name:luonnonsuojelulaki"
     # Statute-level: no section path resolved.
     assert m.target_provision_ref.section_label == ""
-    # The name surface is carried; no fabricated id, source span deferred.
+    # The name surface is carried; no fabricated id. The span anchors the use
+    # site in the text (offset 0, the full name word) — needed for the
+    # defined-term binder's "binding precedes use" ordering check.
     assert m.surface_text == "luonnonsuojelulaissa"
-    assert m.source_span is None
+    assert m.source_span is not None
+    assert m.source_span.byte_offset == 0
+    assert m.source_span.byte_len == len("luonnonsuojelulaissa")
     assert m.phrase_lemma == "statute_name_head"
 
 
