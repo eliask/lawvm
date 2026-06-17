@@ -124,6 +124,30 @@ def _project_refs_for_statute(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Project ReferenceMention rows for one statute.
 
+    SOURCE OF TRUTH (Pro r5 Phase 3 Stage 3): dispatches to the Legal Surface
+    Graph projector by DEFAULT. The graph is the single source of truth for the
+    fi_refs export; the extractor path is retained (as
+    :func:`_project_refs_for_statute_via_extractor`) purely as the PARITY ORACLE
+    that the parity gate (``tests/test_fi_export_parity.py``) compares against.
+
+    Returns (mention_rows, diagnostic_rows) with profile columns attached.
+    """
+    return _project_refs_for_statute_via_graph(statute_id, store, profile)
+
+
+def _project_refs_for_statute_via_extractor(
+    statute_id: str,
+    store: Any,
+    profile: ProfileTag,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """PARITY ORACLE: project rows via the deterministic ReferenceMention extractor.
+
+    This is the historical export path. It is NO LONGER the default writer (the
+    graph projector is), but it is kept reachable so the parity gate can assert
+    the graph path reproduces it field-for-field. The extractor surfaces
+    diagnostics; the graph projector cannot (diagnostics are not graph nodes), so
+    only this path returns diagnostic rows.
+
     Returns (mention_rows, diagnostic_rows) with profile columns attached.
     """
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
@@ -150,6 +174,57 @@ def _project_refs_for_statute(
             "blocking": diag.blocking,
         })
 
+    return mention_rows, diag_rows
+
+
+def _project_refs_for_statute_via_graph(
+    statute_id: str,
+    store: Any,
+    profile: ProfileTag,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """SOURCE OF TRUTH: project rows via the Legal Surface Graph.
+
+    Reads xml_bytes -> builds the Legal Surface Graph -> reconstructs
+    ReferenceMention records from the graph (the Phase-3b parity-proven
+    reconstruction) -> runs them through the SAME ``reference_mention_to_row``
+    projection + ``_augment_row`` the extractor path uses. Full-row parity with
+    the extractor is proven by ``tests/test_fi_export_parity.py``.
+
+    PERFORMANCE: the export only needs reference rows, so we build the graph with
+    ONLY the ReferenceLens (``lenses=(ReferenceLens(),)``) and no cross-lens edge
+    passes (``edge_passes=()`` — the default DefinitionClosurePass operates on
+    definition nodes, which a reference-only build does not mint). This keeps the
+    fi_refs export as fast as the extractor path while leaving the projection
+    unaffected: ``graph_to_reference_mentions`` only reads ``reference_expr`` /
+    ``reference_resolution`` nodes + the intrinsic ``resolution_of`` edge, all of
+    which the ReferenceLens alone produces.
+
+    Returns (mention_rows, diagnostic_rows). The graph carries no extractor
+    diagnostics, so diag_rows is always empty here (diagnostics remain available
+    via :func:`_project_refs_for_statute_via_extractor`).
+    """
+    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
+    from lawvm.finland.legal_surface.lenses.references import ReferenceLens
+    from lawvm.finland.legal_surface.projection import graph_to_reference_mentions
+
+    xml_bytes = _get_statute_xml(statute_id, store)
+    if xml_bytes is None:
+        return [], []
+
+    graph = build_legal_surface_graph(
+        xml_bytes,
+        statute_id,
+        lenses=(ReferenceLens(),),
+        edge_passes=(),
+    )
+    mentions = graph_to_reference_mentions(graph)
+
+    mention_rows = [
+        _augment_row(reference_mention_to_row(m), profile)
+        for m in mentions
+    ]
+
+    diag_rows: List[Dict[str, Any]] = []
     return mention_rows, diag_rows
 
 

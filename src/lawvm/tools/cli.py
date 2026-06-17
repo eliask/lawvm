@@ -10521,6 +10521,114 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON with coverage, tier counts, top shapes, and dropped statutes",
     )
 
+    # --- refs-bench ---
+    refs_bench_p = sub.add_parser(
+        "refs-bench",
+        help="corpus-wide reference-resolution coverage benchmark (fi)",
+        description=(
+            "Parse-only, replay-free coverage benchmark for the reference/interlink "
+            "layer (the reference-layer counterpart to `parse-bench`). Dispatches on "
+            "the global -j/--jurisdiction flag; only fi has a free-text reference "
+            "recognizer today. Reads each statute's cached body XML and runs "
+            "`extract_all_reference_mentions` READ-ONLY (no oracle replay, no apply, "
+            "no diff), then tallies the resolution-status distribution (each "
+            "CiteConfidence), the per-CiteKind breakdown, and a ranked inventory of "
+            "the residue shapes (sub-EXACT mentions + rejected candidates) — the "
+            "reference worklist. Headline metric: corpus-wide fraction of mentions "
+            "that are EXACT vs the residue tail. Use --limit N to sample cheaply."
+        ),
+    )
+    refs_bench_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N statutes (default: no cap = full corpus)",
+    )
+    refs_bench_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: min(8, cpu-2) to respect memory ceiling)",
+    )
+    refs_bench_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="show the top N residue shapes and worst statutes (default: 20)",
+    )
+    refs_bench_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with coverage, status/kind counts, top residue shapes",
+    )
+    refs_bench_p.add_argument(
+        "--mode",
+        choices=("precision", "recall", "both"),
+        default="precision",
+        help=(
+            "precision = resolution-status of EMITTED mentions (default, original "
+            "behavior); recall = anchor-driven coverage proxy (which reference-bearing "
+            "anchors the recognizers MISS); both = run precision then recall"
+        ),
+    )
+    refs_bench_p.add_argument(
+        "--recall",
+        action="store_true",
+        help="shorthand for --mode recall (anchor-driven recall/miss-worklist pass)",
+    )
+    refs_bench_p.add_argument(
+        "--scorecard",
+        action="store_true",
+        help=(
+            "print the per-family SCORECARD: for each cite-family (CiteKind) show "
+            "coverage + the resolved/statute_only/ambiguous/open/unsupported/broken "
+            "fractions (Pro 'how to judge success' view). Auto-on under --mode both. "
+            "Additive: does not change precision/recall output or the --json schema."
+        ),
+    )
+
+    # --- surface-lints ---
+    surface_lints_p = sub.add_parser(
+        "surface-lints",
+        help="corpus-wide Legal Surface Graph lint report + node-kind census (fi)",
+        description=(
+            "Parse-only, replay-free lint report from the Legal Surface Graph (the "
+            "analyzer OUTPUT of the surface-graph spine; the lint-layer counterpart "
+            "to `refs-bench`/`parse-bench`). Reads each statute's cached body XML, "
+            "builds the surface graph and derives the surface lints READ-ONLY (no "
+            "oracle replay, no apply, no diff), then tallies per-lint_kind counts, "
+            "per-severity counts, a graph node-kind CENSUS, and the top-N statutes "
+            "by lint count with example messages. Loads the statute-name + EU "
+            "registries ONCE per worker so resolution-dependent reference lints "
+            "fire (notes degraded mode if the artifact is absent). A statute that "
+            "errors is counted in an errored bucket by id, never silently skipped. "
+            "Use --limit N to sample cheaply."
+        ),
+    )
+    surface_lints_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N statutes (default: no cap = full corpus)",
+    )
+    surface_lints_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: min(8, cpu-2) to respect memory ceiling)",
+    )
+    surface_lints_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="worklist depth: top N statutes / errored statutes shown (default: 20)",
+    )
+    surface_lints_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with lint_kind/severity counts, node-kind census, top statutes",
+    )
+
     # --- parse-characterize ---
     parse_char_p = sub.add_parser(
         "parse-characterize",
@@ -10552,6 +10660,34 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     parse_char_p.add_argument("--limit", type=int, default=0, help="cap to first N statutes")
     parse_char_p.add_argument("--workers", type=int, default=0, help="worker processes (default 8)")
     parse_char_p.add_argument("--json", action="store_true", help="verify: emit JSON diff")
+
+    # --- build-statute-name-registry ---
+    bsnr_p = sub.add_parser(
+        "build-statute-name-registry",
+        help="materialize the full statute-name -> id registry artifact (Index B)",
+        description=(
+            "Enumerate ALL statutes in the farchive corpus, read each docTitle and "
+            "its real enactment date, and serialize the full statute-name -> id "
+            "registry (Index B) to a JSON-lines artifact for the reference "
+            "resolution projection. Memory-careful streaming enumeration "
+            "(~56k statutes). valid_from = FRBR dateIssued (open when absent); "
+            "valid_to is always open (never fabricated); titles with no known "
+            "statute head are indexed nominative-only (no guessed inflection). "
+            "The artifact is regenerable + large, so it is gitignored, not "
+            "committed (like the .farchive it derives from)."
+        ),
+    )
+    bsnr_p.add_argument(
+        "--out",
+        default="",
+        help=(
+            "output path (default: "
+            "$LAWVM_CANONICAL_DATA_ROOT/data/finland/statute_name_registry.jsonl)"
+        ),
+    )
+    bsnr_p.add_argument(
+        "--limit", type=int, default=0, help="cap to first N statutes (for testing)"
+    )
 
     # --- rebuild-indexes ---
     ri_p = sub.add_parser(
@@ -12976,10 +13112,27 @@ def _main_impl() -> None:
 
         parse_bench_main(args)
 
+    elif args.command == "refs-bench":
+        from lawvm.tools.refs_bench import main as refs_bench_main
+
+        refs_bench_main(args)
+
+    elif args.command == "surface-lints":
+        from lawvm.tools.surface_lints import main as surface_lints_main
+
+        surface_lints_main(args)
+
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main
 
         parse_characterize_main(args)
+
+    elif args.command == "build-statute-name-registry":
+        from lawvm.tools.build_statute_name_registry import (
+            main as build_statute_name_registry_main,
+        )
+
+        build_statute_name_registry_main(args)
 
     elif args.command == "fi-source-label-audit":
         from lawvm.tools.fi_source_label_audit import main as fi_source_label_audit_main
