@@ -1,0 +1,256 @@
+"""Tests for the H1 REFERENCES surface lens (Pro r5 Phase 2, §D3/§D5).
+
+These prove the seed -> assembler path end to end: the lens turns existing
+``ReferenceMention`` output into Legal Surface Graph seeds, and the core
+assembler mints them into a firewall-safe graph whose intrinsic edges resolve.
+"""
+from __future__ import annotations
+
+from lawvm.core.legal_surface_assembler import assemble_surface_graph
+from lawvm.core.legal_surface_graph import SourceUnitRef
+from lawvm.core.legal_surface_lens import SurfaceAnalysisContext
+from lawvm.finland.legal_surface.bundle import build_surface_bundle
+from lawvm.finland.legal_surface.lenses.references import (
+    LENS_ID,
+    ReferenceLens,
+    _CONFIDENCE_TO_STATUS,
+)
+from lawvm.core.reference_mention import CiteConfidence
+
+_AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+
+# A small synthetic statute: one cross-statute id-bearing <ref> (→ 2022/711) and
+# one internal § cross-reference (5 §:ssä, same statute).
+_XML = (
+    f'<akomaNtoso xmlns="{_AKN}" '
+    'xmlns:finlex="http://data.finlex.fi/schema/finlex"><act><body>'
+    "<section><num>5 §</num><paragraph><content>"
+    '<p>Noudatetaan, mitä '
+    '<ref href="/akn/fi/act/statute-consolidated/2022/711#sec_7">lannoitelaissa</ref>'
+    " säädetään.</p>"
+    "<p>Lisäksi 5 §:ssä säädetään poikkeuksesta.</p>"
+    "</content></paragraph></section></body></act></akomaNtoso>"
+).encode("utf-8")
+
+_STATUTE_ID = "2003/314"
+
+
+def _run_lens(*, options: dict[str, object] | None = None):
+    bundle = build_surface_bundle(_XML, _STATUTE_ID, surface_time="2020-06-01")
+    lens = ReferenceLens()
+    ctx = SurfaceAnalysisContext(surface_time="2020-06-01", options=options or {})
+    return bundle, lens.analyze(bundle, context=ctx)
+
+
+def test_lens_protocol_surface() -> None:
+    lens = ReferenceLens()
+    assert lens.lens_id == "fi.references.v0"
+    assert lens.jurisdiction == "fi"
+    assert lens.schema_version == "v0"
+    assert "reference_expr" in lens.produces_node_kinds
+    assert "reference_resolution" in lens.produces_node_kinds
+    assert set(lens.produces_edge_kinds) >= {
+        "resolution_of",
+        "refers_to",
+        "has_candidate",
+        "unresolved_because",
+    }
+    assert lens.required_views == ("raw_text",)
+
+
+def test_confidence_status_map_is_total() -> None:
+    # Every CiteConfidence member maps to a graph status (fail-loud completeness).
+    assert set(_CONFIDENCE_TO_STATUS) == set(CiteConfidence)
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.EXACT] == "resolved"
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.STATUTE_ONLY] == "statute_only"
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.AMBIGUOUS] == "ambiguous"
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.OPEN] == "open"
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.BROKEN] == "broken"
+    assert _CONFIDENCE_TO_STATUS[CiteConfidence.UNRESOLVED] == "unsupported"
+
+
+def test_lens_emits_expr_and_resolution_seeds() -> None:
+    _bundle, result = _run_lens()
+    assert result.lens_id == LENS_ID
+    kinds = [s.node_kind for s in result.node_seeds]
+    assert "reference_expr" in kinds
+    assert "reference_resolution" in kinds
+    # one expr + one resolution per located mention
+    n_expr = kinds.count("reference_expr")
+    n_res = kinds.count("reference_resolution")
+    assert n_expr == n_res
+    assert n_expr >= 1
+    # every reference_expr has a source_ref (located in raw_text)
+    for seed in result.node_seeds:
+        if seed.node_kind == "reference_expr":
+            assert seed.source_ref is not None
+    # one resolution_of edge per (expr, resolution) pair
+    res_of = [e for e in result.edge_seeds if e.edge_kind == "resolution_of"]
+    assert len(res_of) == n_expr
+    # without registries, no target resolution: no refers_to / has_candidate
+    assert all(e.edge_kind == "resolution_of" for e in result.edge_seeds)
+    assert result.coverage["resolution_enabled"] is False
+
+
+def _assemble(bundle, result):
+    unit = bundle.units[0]
+    source_units = (
+        SourceUnitRef(
+            source_unit_id=unit.source_unit_id,
+            work_id=unit.work_id,
+            address=unit.address,
+            source_hash=unit.source_hash,
+        ),
+    )
+    return assemble_surface_graph(
+        subject=bundle.subject,
+        source_units=source_units,
+        lens_results=(result,),
+    )
+
+
+def test_e2e_assemble_graph() -> None:
+    bundle, result = _run_lens()
+    graph = _assemble(bundle, result)
+
+    node_kinds = [n.node_kind for n in graph.nodes.values()]
+    assert "reference_expr" in node_kinds
+    assert "reference_resolution" in node_kinds
+
+    # resolution_of edges resolve to real nodes in the graph
+    res_of = [e for e in graph.edges if e.edge_kind == "resolution_of"]
+    assert res_of
+    for edge in res_of:
+        assert edge.src in graph.nodes
+        assert edge.dst in graph.nodes
+        assert graph.nodes[edge.src].node_kind == "reference_resolution"
+        assert graph.nodes[edge.dst].node_kind == "reference_expr"
+
+    # firewall holds: every node and edge is surface_only and not replay_authorized
+    for node in graph.nodes.values():
+        assert node.surface_only is True
+        assert node.replay_authorized is False
+    for edge in graph.edges:
+        assert edge.surface_only is True
+        assert edge.replay_authorized is False
+
+
+def test_e2e_with_registry_resolves_target() -> None:
+    # A registry that resolves the by-name placeholder to a single id should make
+    # the lens emit a legal_work_entity + refers_to edge (§D5 resolved endpoint).
+    registry = _StubStatuteRegistry({"lannoitelaki": ["2022/711"]})
+    bundle, result = _run_lens(options={"statute_registry": registry})
+    assert result.coverage["resolution_enabled"] is True
+
+    entity_seeds = [s for s in result.node_seeds if s.node_kind == "legal_work_entity"]
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    # the resolved by-name placeholder yields one entity + one refers_to
+    assert any(s.payload.get("work_id") == "2022/711" for s in entity_seeds)
+    assert any(e.payload.get("work_id") == "2022/711" for e in refers_to)
+    # resolved endpoints assert refers_to, never has_candidate, for that mention
+    assert all(e.status == "asserted" for e in refers_to)
+
+    graph = _assemble(bundle, result)
+    # the minted entity node exists and the refers_to edge resolves to it
+    entity_ids = {
+        nid for nid, n in graph.nodes.items() if n.node_kind == "legal_work_entity"
+    }
+    assert entity_ids
+    g_refers = [e for e in graph.edges if e.edge_kind == "refers_to"]
+    assert g_refers
+    for edge in g_refers:
+        assert edge.dst in entity_ids
+        assert graph.nodes[edge.src].node_kind == "reference_resolution"
+    # has_candidate appears only if some mention was ambiguous; not here
+    assert not has_candidate
+
+
+def test_e2e_ambiguous_emits_candidates_not_refers_to() -> None:
+    # Two candidates for the by-name placeholder → ambiguous: has_candidate edges
+    # only, NO refers_to from THAT resolution node (§D5). A distinct candidate id
+    # (not the direct <ref> target) keeps the assertion unambiguous.
+    registry = _StubStatuteRegistry({"lannoitelaki": ["1999/123", "1888/77"]})
+    bundle, result = _run_lens(options={"statute_registry": registry})
+
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    assert has_candidate
+    assert all(e.status == "candidate" for e in has_candidate)
+    candidate_ids = {e.payload.get("candidate_id") for e in has_candidate}
+    assert {"1999/123", "1888/77"} <= candidate_ids
+
+    # The resolution node that owns has_candidate edges must NOT also own a
+    # refers_to edge — ambiguity is never silently collapsed to one target (§D5).
+    ambiguous_resolutions = {e.src_local for e in has_candidate}
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    assert not any(e.src_local in ambiguous_resolutions for e in refers_to)
+    # No candidate id leaked into a refers_to assertion anywhere.
+    assert not any(
+        e.payload.get("work_id") in {"1999/123", "1888/77"} for e in refers_to
+    )
+
+    graph = _assemble(bundle, result)
+    g_has = [e for e in graph.edges if e.edge_kind == "has_candidate"]
+    assert g_has
+    for edge in g_has:
+        assert edge.dst in graph.nodes
+        assert graph.nodes[edge.dst].node_kind == "legal_work_entity"
+
+
+def test_unlocatable_surface_still_mints_reference_expr() -> None:
+    # Phase 3b cardinality-gap closure: a mention whose surface cannot be
+    # char-anchored in raw_text is NO LONGER dropped to a residual — it still
+    # mints a reference_expr node (against a degenerate-char fallback source_ref),
+    # so the full mention set round-trips to fi_refs rows. The authoritative byte
+    # span rides the payload, independent of the graph char coordinate.
+    bundle = build_surface_bundle(_XML, _STATUTE_ID)
+    # Replace the unit's raw_text with empty so locate_span cannot anchor.
+    import dataclasses
+
+    unit = bundle.units[0]
+    blanked_unit = dataclasses.replace(unit, raw_text="")
+    blanked_bundle = dataclasses.replace(bundle, units=(blanked_unit,))
+
+    lens = ReferenceLens()
+    result = lens.analyze(blanked_bundle, context=SurfaceAnalysisContext())
+    # Every mention still becomes a reference_expr node (no silent drop).
+    expr_seeds = [s for s in result.node_seeds if s.node_kind == "reference_expr"]
+    assert expr_seeds
+    # The fallback source_ref is a degenerate (zero-length) char span — the byte
+    # origin is carried in the payload, not fabricated into the char coordinate.
+    for seed in expr_seeds:
+        assert seed.source_ref is not None
+        assert seed.source_ref.char_start == seed.source_ref.char_end
+
+    # The nodes assemble (fail-loud firewall still holds, no drop).
+    graph = _assemble(blanked_bundle, result)
+    assert any(n.node_kind == "reference_expr" for n in graph.nodes.values())
+
+
+# ── Test doubles ─────────────────────────────────────────────────────────────
+
+
+class _StubLookupResult:
+    def __init__(self, candidates: list[str]) -> None:
+        if len(candidates) == 0:
+            self.status = "none"
+        elif len(candidates) == 1:
+            self.status = "single"
+        else:
+            self.status = "multiple"
+        self.candidates = tuple(_StubCandidate(c) for c in candidates)
+
+
+class _StubCandidate:
+    def __init__(self, statute_id: str) -> None:
+        self.statute_id = statute_id
+
+
+class _StubStatuteRegistry:
+    """Minimal StatuteNameRegistry stand-in for resolve_mentions routing."""
+
+    def __init__(self, table: dict[str, list[str]]) -> None:
+        self._table = table
+
+    def lookup(self, name: str, as_of: object = None) -> _StubLookupResult:
+        return _StubLookupResult(self._table.get(name, []))
