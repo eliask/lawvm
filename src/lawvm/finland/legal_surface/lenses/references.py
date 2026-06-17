@@ -57,6 +57,7 @@ from lawvm.finland.references.defined_terms import (
     DefinedTermBinding,
     recognize_defined_term_bindings,
 )
+from lawvm.finland.references.elliptical_resolve import resolve_elliptical_mentions
 from lawvm.finland.references.ref_mention_extractor import (
     ExtractionResult,
     extract_all_reference_mentions,
@@ -254,6 +255,20 @@ class ReferenceLens:
                 bytes(xml_bytes), unit.work_id, valid_at_interval=unit_interval
             )
 
+            # Elliptical INTERNAL refs (bare momentti / bare kohta) omit part of
+            # their address; the recognizer leaves it empty, which would resolve
+            # to the whole-statute root. Fill the omitted section (convention) /
+            # momentti (structural uniqueness) against the materialized AKN tree
+            # BEFORE the rest of the pipeline reads each mention's target. The
+            # pass is order- and cardinality-preserving (one resolution per input
+            # mention) and downgrades to ambiguous/open fail-loud, never to root.
+            mentions = [
+                res.mention
+                for res in resolve_elliptical_mentions(
+                    list(extraction.mentions), bytes(xml_bytes)
+                )
+            ]
+
             resolutions: list[ResolvedReference | None] = []
             if resolve_targets:
                 # Per-statute local defined-term / alias table. The recognizer
@@ -269,7 +284,7 @@ class ReferenceLens:
                 )
                 resolutions.extend(
                     resolve_mentions(
-                        list(extraction.mentions),
+                        mentions,
                         statute_registry=cast(StatuteNameRegistry, statute_registry),
                         eu_registry=eu_registry if eu_registry is not None else _default_eu_registry(),
                         defined_terms=defined_terms,
@@ -283,10 +298,10 @@ class ReferenceLens:
                     )
                 )
             else:
-                resolutions.extend(None for _ in extraction.mentions)
+                resolutions.extend(None for _ in mentions)
 
             cursor = 0
-            for mention, resolved in zip(extraction.mentions, resolutions, strict=True):
+            for mention, resolved in zip(mentions, resolutions, strict=True):
                 n_mentions += 1
                 located_ref, cursor = self._locate(unit, mention, cursor)
                 # Every real mention becomes a reference_expr node — no locatable
