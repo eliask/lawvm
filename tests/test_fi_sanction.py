@@ -136,6 +136,34 @@ def test_trigger_bearing_frame() -> None:
     assert "rikkoo kieltoa" in trig
 
 
+def test_trigger_does_not_cross_sentence_boundary() -> None:
+    # The first sentence's "sakkoon" marker must NOT pull a "Jollei ... joka ..."
+    # trigger from the FOLLOWING sentence into its frame/trigger span.
+    text = (
+        "Rikkomuksesta tuomitaan sakkoon.\n"
+        "Jollei teosta muualla säädetä rangaistusta, se, joka rikkoo, tuomitaan."
+    )
+    scan = recognize_sanction_frames(text)
+    # the first-sentence SAKKO marker frame
+    sakko = [
+        f for f in scan.frames
+        if f.sanction_kind == SanctionKind.SAKKO
+        and "sakko" in f.marker_surface.lower()
+    ]
+    assert sakko, f"no SAKKO frame; got {[f.marker_surface for f in scan.frames]}"
+    f = sakko[0]
+    # the marker sits before the newline; its frame must stay within sentence 1.
+    newline = text.index("\n")
+    span_end = f.source_span.byte_offset + f.source_span.byte_len
+    assert span_end <= newline, (
+        f"frame span {span_end} crossed sentence boundary {newline}: "
+        f"{_slice(text, f.source_span)!r}"
+    )
+    # no trigger pulled from the second sentence either.
+    if f.trigger_span is not None:
+        assert f.trigger_span.byte_offset < newline
+
+
 # ---------------------------------------------------------------------------
 # Fail-loud residuals
 # ---------------------------------------------------------------------------

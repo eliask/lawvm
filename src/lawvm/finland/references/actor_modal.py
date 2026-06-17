@@ -53,6 +53,7 @@ char-regex spans — expected and accepted). The frame PAYLOAD shape is UNCHANGE
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
 
@@ -80,7 +81,10 @@ Voice = Literal["active", "passive"]
 # These are SURFACE tokens, not legal categories. Glosses are descriptive of
 # the SURFACE form only:
 #
-#   on             "is" (copula; surface obligation-shape in "on tehtävä")  active
+#   on             necessive shape ONLY: "on" + a -ttava/-tava/-tävä           active
+#                  participle ("on tehtävä", "on toimitettava"). A bare copula
+#                  ("X on Y", "joka on tehty ...") is NOT a modal and does not
+#                  fire — see the necessive gate in _scan_tape.
 #   tulee          "shall / must" (necessive)                               active
 #   saa            "may"                                                     active
 #   ei saa         "may not" (negated saa)                                  active  negative
@@ -159,6 +163,18 @@ _ACTOR_MATCHER = TokenActorMatcher(_ACTOR_PHRASES_LONGEST_FIRST)
 # inter-word separator is the single space the tokenizer preserves.
 _modal_lookup = {tok: (pol, voice) for tok, pol, voice in _MODAL_MARKERS}
 _MODAL_MATCHER = TokenActorMatcher(tuple(_modal_lookup.keys()))
+
+#: The bare ``on`` marker is a genuine deontic surface ONLY in the necessive
+#: construction ``on`` + a passive necessive participle (``-ttava``/``-tava``/
+#: ``-tävä``: "on tehtävä", "on toimitettava", "on annettava"). A plain copula
+#: ("Viranomainen on toimivaltainen", "X on Y") or a relative-clause copula
+#: ("päätös, joka on tehty esittelystä") is NOT a modal and must not fire. The
+#: participle ends in a long vowel ``a``/``ä`` after a ``v``; require the ``ttav``
+#: / ``tav`` / ``täv`` cluster so plain adjectives/past participles (``tehty``,
+#: ``toimivaltainen``) do not qualify.
+_NECESSIVE_PARTICIPLE_RE = re.compile(
+    r"^\w*t[aä]v[aä]$", re.IGNORECASE
+)
 
 #: Maximum gap (in characters) between an actor head and the modal that may
 #: still be read as the SAME surface frame. Beyond this the actor and modal are
@@ -320,6 +336,23 @@ def _capture_object_span(
     return (char_start, last_nonspace_end)
 
 
+def _on_is_necessive(tokens: Tuple[Token, ...], after_index: int) -> bool:
+    """True iff the word following a bare ``on`` is a passive necessive participle.
+
+    Gates the bare ``on`` marker: only ``on`` + ``-ttava/-tava/-tävä`` ("on
+    tehtävä", "on toimitettava") is a deontic surface. A plain copula
+    ("X on Y") or a relative-clause copula ("joka on tehty ...") fails this gate
+    and emits no frame. ``after_index`` is the token index just past ``on``.
+    """
+    n = len(tokens)
+    j = after_index
+    while j < n and tokens[j].category == "whitespace":
+        j += 1
+    if j >= n or tokens[j].category != "word":
+        return False
+    return _NECESSIVE_PARTICIPLE_RE.match(tokens[j].text) is not None
+
+
 def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
     tokens = tape.tokens
 
@@ -340,6 +373,15 @@ def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
     for modal_m in modal_matches:
         norm_token = modal_m.surface
         pol, voice = _modal_lookup[norm_token]
+
+        # Bare ``on`` is a deontic surface ONLY in the necessive construction
+        # (``on`` + ``-ttava/-tava/-tävä`` participle). A plain copula ("X on Y")
+        # or a relative-clause copula ("joka on tehty ...") is not a modal — it
+        # is demoted to residual (no frame, no bound actor). The longer ``on
+        # velvollinen`` / ``on oikeus`` / ``on oikeutettu`` markers are distinct
+        # tokens and are unaffected.
+        if norm_token == "on" and not _on_is_necessive(tokens, modal_m.end_index):
+            continue
 
         best_actor_idx: Optional[int] = None
         for a_idx, actor_m in enumerate(actor_matches):

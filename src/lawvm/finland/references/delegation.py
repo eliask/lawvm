@@ -213,6 +213,46 @@ _INSTRUMENT_NOUNS: frozenset[str] = frozenset(
 #: Permissive modal surfaces → binding_strength="may" (exact ``word`` tokens).
 _MAY_MODAL_SET: frozenset[str] = frozenset(_MAY_MODALS)
 
+#: Postposition surfaces (CLOSED, lowercase) that take a genitive complement. An
+#: instrument noun in the genitive immediately FOLLOWED by one of these is the
+#: complement of the postposition phrase, NOT the object of a delegation verb.
+#: This excludes the standard enacting preamble
+#: ``<actor> päätöksen mukaisesti säädetään`` (= "is provided in accordance with
+#: the decision of <actor>"), where ``päätöksen`` is the postposition complement
+#: and not a delegated instrument, and the ``… nojalla …`` authority-basis shape.
+_POSTPOSITIONS: frozenset[str] = frozenset(
+    {
+        "mukaisesti",
+        "mukaan",
+        "nojalla",
+        "perusteella",
+        "estämättä",
+    }
+)
+
+#: Demonstrative-determiner surfaces (CLOSED, lowercase) heading a cross-reference
+#: to an EXISTING instrument (``tätä asetusta``, ``tämän asetuksen``, ``tässä
+#: asetuksessa`` = "this decree"). An instrument noun immediately PRECEDED by one
+#: of these is naming an already-existing instrument, not a newly-delegated one,
+#: so it must not seed a second delegation frame in the clause.
+_DEMONSTRATIVES: frozenset[str] = frozenset(
+    {
+        "tätä",
+        "tämän",
+        "tässä",
+        "tästä",
+        "tähän",
+        "tällä",
+        "tuota",
+        "tuon",
+        "tuossa",
+        "sitä",
+        "sen",
+        "siinä",
+        "siihen",
+    }
+)
+
 #: Maximum subject-span length (characters) captured as the trailing subject
 #: surface. The subject is a SURFACE span only; it is not parsed.
 _MAX_SUBJECT_SPAN = 200
@@ -398,6 +438,56 @@ def _resolve_actor(
     return None, [], False
 
 
+def _prev_word_token(tokens: Tuple[Token, ...], idx: int) -> Optional[Token]:
+    """The nearest preceding ``word`` token before ``idx`` (skipping whitespace)."""
+    j = idx - 1
+    while j >= 0:
+        if tokens[j].category == "word":
+            return tokens[j]
+        if tokens[j].category != "whitespace":
+            return None
+        j -= 1
+    return None
+
+
+def _next_word_token(tokens: Tuple[Token, ...], idx: int) -> Optional[Token]:
+    """The nearest following ``word`` token after ``idx`` (skipping whitespace)."""
+    n = len(tokens)
+    j = idx + 1
+    while j < n:
+        if tokens[j].category == "word":
+            return tokens[j]
+        if tokens[j].category != "whitespace":
+            return None
+        j += 1
+    return None
+
+
+def _is_cross_reference_instrument(
+    tokens: Tuple[Token, ...], inst_idx: int
+) -> bool:
+    """True if the instrument-noun token names an EXISTING instrument, not a
+    newly-delegated one — so it must NOT seed a delegation frame.
+
+    Two CLOSED surface shapes are excluded:
+
+      * postposition complement — the instrument is immediately FOLLOWED by a
+        genitive-governing postposition (``päätöksen mukaisesti``, ``… nojalla``).
+        This is the enacting preamble / authority-basis shape, where the noun is
+        the complement of the postposition, not the object of the delegation verb.
+      * demonstrative cross-reference — the instrument is immediately PRECEDED by
+        a demonstrative determiner (``tätä asetusta``, ``tämän asetuksen``),
+        naming an instrument that already exists rather than delegating a new one.
+    """
+    nxt = _next_word_token(tokens, inst_idx)
+    if nxt is not None and nxt.text.lower() in _POSTPOSITIONS:
+        return True
+    prev = _prev_word_token(tokens, inst_idx)
+    if prev is not None and prev.text.lower() in _DEMONSTRATIVES:
+        return True
+    return False
+
+
 def _first_delegation_verb_index(
     tokens: Tuple[Token, ...], lo: int, hi: int
 ) -> Optional[int]:
@@ -436,6 +526,16 @@ def _scan_tape(tape: TokenTape, source_file: str) -> DelegationScan:
         instrument_kind = _instrument_kind_for_surface(inst_tok.text)
         if instrument_kind is None:
             continue  # not a closed-set instrument; impossible by construction
+
+        # The instrument noun must be a DELEGATED instrument (the object of the
+        # delegation verb), not the complement of a postposition (the enacting
+        # preamble ``päätöksen mukaisesti säädetään`` / ``… nojalla …``) nor a
+        # demonstrative cross-reference to an already-existing instrument
+        # (``tätä asetusta``, ``tämän asetuksen``). Such tokens are skipped: they
+        # are not delegation candidates and must not seed a (possibly second)
+        # frame in the clause.
+        if _is_cross_reference_instrument(tokens, inst_idx):
+            continue
 
         clause_lo, clause_hi = _clause_token_bounds(tokens, inst_idx)
         if clause_lo >= clause_hi:

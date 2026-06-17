@@ -412,31 +412,62 @@ def _nearest_preceding_actor(
     return best
 
 
+#: Sentence terminators that bound the trigger search to the marker's own
+#: sentence. A trigger lead-in beyond one of these (in either direction) belongs
+#: to a DIFFERENT sentence and must not be pulled into this marker's frame.
+_SENTENCE_TERMINATORS = ".;:\n"
+
+
+def _sentence_bounds(text: str, frame_lo: int, frame_hi: int) -> Tuple[int, int]:
+    """Return (lo, hi) of the sentence containing the marker frame.
+
+    ``lo`` is just after the nearest sentence terminator before ``frame_lo`` (or
+    0); ``hi`` is at the nearest sentence terminator at/after ``frame_hi`` (or
+    end of text). The marker's trigger must live inside this window — never
+    across a sentence boundary.
+    """
+    lo = frame_lo
+    while lo > 0 and text[lo - 1] not in _SENTENCE_TERMINATORS:
+        lo -= 1
+    hi = frame_hi
+    n = len(text)
+    while hi < n and text[hi] not in _SENTENCE_TERMINATORS:
+        hi += 1
+    return (lo, hi)
+
+
 def _capture_trigger_span(
     text: str, frame_lo: int, frame_hi: int
 ) -> Optional[Tuple[int, int]]:
-    """Capture a trigger-condition surface span associated with a marker.
+    """Capture a trigger-condition surface span in the marker's OWN sentence.
 
     A trigger is the run after a closed lead-in token ("joka"/"jos"/…) that sits
-    near the sanction marker (within the same sentence-ish window). SURFACE
+    in the SAME sentence as the sanction marker. The search window is clamped to
+    the marker's sentence bounds (nearest sentence terminator on each side), so a
+    lead-in in a different following/preceding sentence is never captured. SURFACE
     ONLY: the run is bounded by a clause terminator and :data:`_MAX_TRIGGER_SPAN`.
     Returns (start, end) of the run AFTER the lead-in, or None.
     """
-    # search window: from a little before the frame to the end-of-clause after it
-    window_lo = max(0, frame_lo - _MAX_TRIGGER_SPAN)
-    window_hi = min(len(text), frame_hi + _MAX_TRIGGER_SPAN)
+    # search window: the marker's own sentence (never crossing a sentence
+    # boundary), additionally capped by _MAX_TRIGGER_SPAN on each side.
+    sent_lo, sent_hi = _sentence_bounds(text, frame_lo, frame_hi)
+    window_lo = max(sent_lo, frame_lo - _MAX_TRIGGER_SPAN)
+    window_hi = min(sent_hi, frame_hi + _MAX_TRIGGER_SPAN)
+    if window_hi <= window_lo:
+        return None
     segment = text[window_lo:window_hi]
     lead = _TRIGGER_RE.search(segment)
     if lead is None:
         return None
     start = window_lo + lead.end()
-    while start < len(text) and text[start].isspace():
+    while start < sent_hi and text[start].isspace():
         start += 1
-    if start >= len(text):
+    if start >= sent_hi:
         return None
-    limit = min(len(text), start + _MAX_TRIGGER_SPAN)
+    # the trigger run stays inside the sentence; cap by _MAX_TRIGGER_SPAN too.
+    limit = min(sent_hi, start + _MAX_TRIGGER_SPAN)
     end = start
-    while end < limit and text[end] not in ".;:\n":
+    while end < limit and text[end] not in _SENTENCE_TERMINATORS:
         end += 1
     while end > start and text[end - 1].isspace():
         end -= 1

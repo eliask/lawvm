@@ -72,6 +72,34 @@ def test_on_oikeus_role_actor() -> None:
     assert frame.modal.voice == "active"
 
 
+# ---------------------------------------------------------------------------
+# Bare "on" fires ONLY in the necessive construction (on + -ttava/-tava/-tävä).
+# A plain copula ("X on Y") or a relative-clause copula ("joka on tehty ...")
+# is NOT a deontic modal and must not produce a frame.
+# ---------------------------------------------------------------------------
+
+
+def test_on_necessive_participle_is_a_frame() -> None:
+    text = "Viranomaisen on toimitettava asiakirja hakijalle."
+    scan = recognize_actor_modal_frames(text)
+    frame = _frame_for_actor(scan, "Viranomaisen")
+    assert frame.modal.token == "on"
+
+
+def test_bare_on_copula_is_not_a_modal_frame() -> None:
+    # "Viranomainen on toimivaltainen" is a plain copula, not a deontic modal.
+    text = "Viranomainen on toimivaltainen tässä asiassa."
+    scan = recognize_actor_modal_frames(text)
+    assert all(f.modal.token != "on" for f in scan.frames)
+
+
+def test_relative_clause_on_copula_is_not_a_modal_frame() -> None:
+    # "joka on tehty ... esittelystä" is a relative-clause copula, not a modal.
+    text = "Päätös, jonka viranomainen on tehnyt esittelystä, annetaan tiedoksi."
+    scan = recognize_actor_modal_frames(text)
+    assert all(f.modal.token != "on" for f in scan.frames)
+
+
 def test_object_span_captured() -> None:
     text = "Kunta päättää palveluiden järjestämisestä."
     scan = recognize_actor_modal_frames(text)

@@ -158,6 +158,68 @@ def test_validity_open_on_voimassa() -> None:
 
 
 # ---------------------------------------------------------------------------
+# FIXED_TERM_EXPIRY — "on voimassa <date> saakka/asti" is a DETERMINATE end,
+# not an open-ended validity. (Fixes the false VALIDITY_OPEN on a stated end.)
+# ---------------------------------------------------------------------------
+
+
+def test_validity_with_long_form_end_is_fixed_term_not_open() -> None:
+    text = "Tämä laki on voimassa 31 päivään joulukuuta 2025 saakka."
+    # NOT a false-open: no VALIDITY_OPEN row for this clause.
+    assert _by_kind(text, TemporalKind.VALIDITY_OPEN) == []
+    fixed = _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY)
+    assert len(fixed) == 1
+    expr = fixed[0]
+    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.bound == date(2025, 12, 31)
+    assert expr.rule_id == "fixed_term_expiry.long_form"
+
+
+def test_validity_with_numeric_end_asti_is_fixed_term_not_open() -> None:
+    text = "Tämä asetus on voimassa 1.1.2027 asti."
+    assert _by_kind(text, TemporalKind.VALIDITY_OPEN) == []
+    fixed = _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY)
+    assert len(fixed) == 1
+    expr = fixed[0]
+    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.bound == date(2027, 1, 1)
+    assert expr.rule_id == "fixed_term_expiry.numeric"
+
+
+def test_validity_until_event_stays_open_not_fixed_term() -> None:
+    # "siihen saakka, kunnes ..." has no date: genuinely open, must NOT be typed
+    # as a determinate fixed-term expiry.
+    text = "Tämä laki on voimassa siihen saakka, kunnes toisin säädetään."
+    assert _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY) == []
+    op = _by_kind(text, TemporalKind.VALIDITY_OPEN)
+    assert len(op) == 1
+    assert op[0].status is TemporalStatus.OPEN
+    # and the until-event cue is still reported as an EVENT_BOUND residual
+    assert len(_by_kind(text, TemporalKind.EVENT_BOUND)) == 1
+
+
+# ---------------------------------------------------------------------------
+# DURATION "-sta alkaen" is restricted to a closed temporal-anchor stem set
+# (no longer fires on any elative noun like "sopimuksesta alkaen").
+# ---------------------------------------------------------------------------
+
+
+def test_duration_sta_alkaen_keeps_temporal_anchor() -> None:
+    text = "Maksu peritään voimaantulopäivästä alkaen."
+    dur = _by_kind(text, TemporalKind.DURATION_FROM_COMMENCEMENT)
+    assert len(dur) == 1
+    assert dur[0].surface_text == "voimaantulopäivästä alkaen"
+
+
+def test_duration_sta_alkaen_drops_non_temporal_noun() -> None:
+    # "sopimuksesta alkaen" / "josta alkaen" are not temporal reckoning points.
+    assert _by_kind("Maksu peritään sopimuksesta alkaen.",
+                    TemporalKind.DURATION_FROM_COMMENCEMENT) == []
+    assert _by_kind("Oikeus, josta alkaen sovelletaan.",
+                    TemporalKind.DURATION_FROM_COMMENCEMENT) == []
+
+
+# ---------------------------------------------------------------------------
 # Fail-loud invariant + general behaviour
 # ---------------------------------------------------------------------------
 

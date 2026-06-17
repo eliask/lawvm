@@ -250,3 +250,43 @@ def test_instrument_kind_is_closed_vocab():
     for text in texts:
         for f in _frames(text):
             assert f.instrument_kind in closed
+
+
+# ---------------------------------------------------------------------------
+# Enactment-preamble / cross-reference precision (FP removal).
+# ---------------------------------------------------------------------------
+
+
+def test_enactment_preamble_paatoksen_mukaisesti_is_not_a_delegation():
+    # "<actor> päätöksen mukaisesti säädetään" is the standard enacting preamble:
+    # "päätöksen" is the genitive complement of the postposition "mukaisesti",
+    # NOT a delegated instrument. It must not produce a päätös delegation frame.
+    text = "Valtioneuvoston päätöksen mukaisesti säädetään seuraavaa:"
+    assert _frames(text) == ()
+
+
+def test_nojalla_authority_basis_is_not_a_delegation_instrument():
+    # "... päätöksen nojalla ..." is an authority-basis postposition phrase.
+    text = "Tämän päätöksen nojalla annetaan tarkemmat säännökset."
+    # No frame seeded off the postposition-complement "päätöksen".
+    assert all(f.instrument_kind != "päätös" for f in _frames(text))
+
+
+def test_demonstrative_cross_reference_does_not_emit_second_frame():
+    # The clause delegates "määräyksiä" (correct) and separately cross-references
+    # an EXISTING decree as "tämän asetuksen" — the latter must NOT seed a second
+    # (spurious) asetus delegation frame.
+    text = (
+        "Puolustusministeriö antaa täydentäviä määräyksiä niistä laitteista, "
+        "joiden osalta se rajoittaa tämän asetuksen soveltamista."
+    )
+    frames = _frames(text)
+    assert [f.instrument_kind for f in frames] == ["määräys"]
+
+
+def test_genuine_asetus_delegation_still_fires():
+    # Guard: the precision fixes must not suppress a real delegation.
+    text = "Valtioneuvoston asetuksella säädetään tarkemmin asiasta."
+    (f,) = _frames(text)
+    assert f.instrument_kind == "asetus"
+    assert f.binding_strength == "must"
