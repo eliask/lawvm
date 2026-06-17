@@ -63,6 +63,20 @@ class AuthorityEdge:
     parent_section: str     # section cited, e.g. "44" (may be empty)
     parent_moment: str      # subsection cited, e.g. "3" (may be empty)
     quote: str              # preamble text snippet (up to 300 chars)
+    # The drafting KIND of the cited authority basis, read from the Finnish
+    # inflection of the act-name word that immediately precedes the
+    # ``(NUM/YEAR)`` id in the ``nojalla`` clause:
+    #   "act"      — ``…lain (…)``, ``…laissa``, ``…kaaren`` (a laki/statute);
+    #   "decree"   — ``…asetuksen (…)`` (an asetus);
+    #   "decision" — ``…päätöksen (…)`` (a päätös);
+    #   ""         — no recognizable kind word (multi-word name tail, etc.).
+    # An authority basis can be a laki OR a decree/decision (a decree may be
+    # issued under another decree's authority), so the kind is NOT assumed: it
+    # is read from the surface and carried so the reference-mention lift types a
+    # laki basis as a statute cross-reference instead of a non-statutory
+    # instrument. Empirically the surface kind matches the target statute_type
+    # in ~all sampled cases. See _classify_authority_kind.
+    parent_kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -274,15 +288,74 @@ _PAT_NEGATIVE = [
 # Asetus preamble pattern (reverse direction: asetus → parent law)
 # ---------------------------------------------------------------------------
 
-# "säädetään [lain nimi] (NUM/YEAR) [§:n [momentin]] nojalla:"
-# Matches both 4-digit years (1986) and 2-digit years (86 → normalized to 19xx/20xx).
-# Middle part allows "sellaisena kuin...laissa (NUM/YY)" interpositions via [^:]*?.
-_PAT_NOJALLA = re.compile(
+# Single AUTHORITY-BASIS CONJUNCT inside a (possibly coordinated) ``nojalla``
+# clause: "[lain nimi] (NUM/YEAR) [§:n [momentin]]". The Finnish drafting form
+# coordinates several authority bases with ``ja`` / ``sekä`` / ``,`` before one
+# terminal ``nojalla``:
+#
+#   "…lukiolain (629/1998) 36 §:n 1 momentin ja
+#     valtion maksuperustelain (150/1992) 8 §:n nojalla"
+#
+# The earlier single-match approach captured ONLY the conjunct adjacent to
+# ``nojalla`` (here ``150/1992 §8``) and dropped the first conjunct
+# (``629/1998 §36``). This conjunct pattern is applied across the window that
+# precedes a single ``nojalla`` so EVERY coordinated basis is distributed over
+# the same ``nojalla`` authority and emitted with its own section/momentti.
+# Years are matched as 4-digit (1986) or 2-digit (86 → normalized to 19xx/20xx).
+#
+#   group 1 = act-name word right before the id (kind signal; may be absent)
+#   group 2 = statute number, group 3 = year (2- or 4-digit)
+#   group 4 = section (optional), group 5 = momentti (optional)
+#
+# Bounded quantifiers (AGENTS.md §1.11): the name word is a single bounded
+# token; the section/momentti tails are bounded digit runs.
+_PAT_NOJALLA_CONJUNCT = re.compile(
+    r'([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})?\s*'
     r'\((\d{1,5})\s*/\s*(\d{2,4})\)\s*'
-    r'(?:(\d+)\s*(?:§:n|§)\s*(?:(\d+)\s*momentin\s*)?)?'
-    r'[^:]*?nojalla',
+    r'(?:(\d+)\s*[a-z]?\s*(?:§:n|§)\s*(?:(\d+)\s*momentin\s*)?)?',
     re.IGNORECASE
 )
+
+
+def _classify_authority_kind(name_word: str) -> str:
+    """Classify a ``nojalla`` authority-basis from the act-name word before its id.
+
+    The Finnish inflected name word that immediately precedes the
+    ``(NUM/YEAR)`` id carries the drafting kind of the basis:
+
+      - ``lain`` / ``laissa`` / ``laki`` / ``…kaaren`` (codes: maakaari,
+        perintökaari, ulosottokaari …)  → ``"act"`` (a laki / statute).
+      - ``asetuksen`` / ``asetus``                       → ``"decree"``.
+      - ``päätöksen`` / ``päätös``                       → ``"decision"``.
+
+    Returns ``""`` when the word carries no recognizable kind (e.g. the basis
+    name is multi-word and the token before the id is a non-name fragment).
+    A blank kind is conservative: the lift then keeps the legacy
+    non-statutory-instrument typing rather than guessing a statute.
+    """
+    if not name_word:
+        return ""
+    w = name_word.lower()
+    if 'asetuks' in w or w.endswith('asetus'):
+        return 'decree'
+    if 'p\xe4\xe4t\xf6ks' in w or w.endswith('p\xe4\xe4t\xf6s'):
+        return 'decision'
+    # Laki inflections (lain, laissa, laista, lakia, laeista …) and the
+    # legislative "code" family (…kaaren / …kaari: maakaari, perintökaari,
+    # ulosottokaari) — all statutes.
+    if (
+        w.endswith('lain')
+        or w.endswith('laki')
+        or w.endswith('laissa')
+        or w.endswith('laista')
+        or w.endswith('lakia')
+        or w.endswith('laeista')
+        or w.endswith('laeissa')
+        or w.endswith('kaaren')
+        or w.endswith('kaari')
+    ):
+        return 'act'
+    return ''
 
 
 def _normalize_year(year_str: str) -> str:
@@ -524,19 +597,41 @@ def extract_asetus_authority(
         ptext = _elem_text_norm(root)[:500]
 
     results: List[AuthorityEdge] = []
-    for m in _PAT_NOJALLA.finditer(ptext):
-        num, year = m.group(1), m.group(2)
-        parent_id = f"{_normalize_year(year)}/{num}"
-        sec = m.group(3) or ''
-        moment = m.group(4) or ''
-        snippet_start = max(0, m.start() - 50)
-        snippet_end = min(len(ptext), m.end() + 50)
-        results.append(AuthorityEdge(
-            asetus_id=asetus_id,
-            parent_statute_id=parent_id,
-            parent_section=sec,
-            parent_moment=moment,
-            quote=ptext[snippet_start:snippet_end],
-        ))
+    seen: set[tuple[str, str, str]] = set()
+
+    # A ``nojalla`` clause may coordinate several authority bases with
+    # ``ja`` / ``sekä`` / ``,`` before one terminal ``nojalla``. Distribute that
+    # single ``nojalla`` authority over ALL coordinated conjuncts: for each
+    # ``nojalla`` occurrence, take the text window from the previous clause
+    # boundary up to it and emit one edge per ``(NUM/YEAR)`` conjunct, each with
+    # its own section/momentti and surface-derived kind. The original code took
+    # only the conjunct adjacent to ``nojalla`` and dropped the earlier ones.
+    prev_boundary = 0
+    for nm in re.finditer(r'nojalla', ptext, re.IGNORECASE):
+        window = ptext[prev_boundary:nm.start()]
+        prev_boundary = nm.end()
+        for m in _PAT_NOJALLA_CONJUNCT.finditer(window):
+            name_word = (m.group(1) or '').strip()
+            num, year = m.group(2), m.group(3)
+            parent_id = f"{_normalize_year(year)}/{num}"
+            sec = m.group(4) or ''
+            moment = m.group(5) or ''
+            # Deduplicate identical (parent, section, momentti) triples that can
+            # arise from overlapping windows or repeated surfaces.
+            dedup_key = (parent_id, sec, moment)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            abs_start = prev_boundary - len(window) + m.start()
+            snippet_start = max(0, abs_start - 50)
+            snippet_end = min(len(ptext), nm.end() + 10)
+            results.append(AuthorityEdge(
+                asetus_id=asetus_id,
+                parent_statute_id=parent_id,
+                parent_section=sec,
+                parent_moment=moment,
+                quote=ptext[snippet_start:snippet_end],
+                parent_kind=_classify_authority_kind(name_word),
+            ))
 
     return results

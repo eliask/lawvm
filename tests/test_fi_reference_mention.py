@@ -1801,3 +1801,98 @@ class TestTwoDigitYearAndSectionlessCites:
         # No anchor word (lain/asetuksen/päätöksen) precedes the paren.
         plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         assert plain == [], plain
+
+
+class TestIssuedUnderAuthorityBasisTyping:
+    """ISSUED_UNDER 'nojalla' authority basis: a cited laki must type as a
+    statute cross-reference (with its section retained), not a non-statutory
+    instrument. A genuine delegated instrument basis stays an instrument.
+    """
+
+    def test_act_basis_types_cross_statute_with_section(self) -> None:
+        from lawvm.finland.references.cross_refs import CrossRefEdge
+        from lawvm.finland.references.ref_mention_extractor import (
+            _edge_to_cite_kind,
+            _edge_to_mention,
+        )
+
+        edge = CrossRefEdge(
+            source_statute_id="2010/908",
+            target_statute_id="1998/629",
+            edge_type="ISSUED_UNDER",
+            target_section="36",
+        )
+        # The graph layer tags the basis kind from the 'lukiolain (…)' surface.
+        edge.target_kind = "act"  # type: ignore[attr-defined]
+
+        assert _edge_to_cite_kind(edge, "2010/908") == CiteKind.CROSS_STATUTE
+
+        mention = _edge_to_mention(edge, "2010/908", (None, None))
+        assert mention.cite_kind == CiteKind.CROSS_STATUTE
+        assert mention.target_provision_ref is not None
+        # Section retained (Defect 2: bare label, not an AKN sec_ path).
+        assert mention.target_provision_ref.section_label == "36"
+        # The ISSUED_UNDER role is preserved on the subtype, not the cite_kind.
+        assert mention.edge_subtype == "ISSUED_UNDER"
+
+    def test_decree_basis_stays_non_statutory_instrument(self) -> None:
+        from lawvm.finland.references.cross_refs import CrossRefEdge
+        from lawvm.finland.references.ref_mention_extractor import _edge_to_cite_kind
+
+        edge = CrossRefEdge(
+            source_statute_id="2099/1",
+            target_statute_id="2005/1248",
+            edge_type="ISSUED_UNDER",
+            target_section="3",
+        )
+        edge.target_kind = "decree"  # type: ignore[attr-defined]
+
+        # A decree issued under another decree's authority must NOT over-correct.
+        assert (
+            _edge_to_cite_kind(edge, "2099/1")
+            == CiteKind.NON_STATUTORY_INSTRUMENT
+        )
+
+    def test_untagged_issued_under_keeps_legacy_instrument_typing(self) -> None:
+        from lawvm.finland.references.cross_refs import CrossRefEdge
+        from lawvm.finland.references.ref_mention_extractor import _edge_to_cite_kind
+
+        edge = CrossRefEdge(
+            source_statute_id="x",
+            target_statute_id="2006/1013",
+            edge_type="ISSUED_UNDER",
+        )
+        # No target_kind tag → conservative legacy typing (no regression).
+        assert (
+            _edge_to_cite_kind(edge, "x") == CiteKind.NON_STATUTORY_INSTRUMENT
+        )
+
+    def test_issues_target_is_delegated_instrument(self) -> None:
+        from lawvm.finland.references.cross_refs import CrossRefEdge
+        from lawvm.finland.references.ref_mention_extractor import _edge_to_cite_kind
+
+        edge = CrossRefEdge(
+            source_statute_id="x",
+            target_statute_id="2011/500",
+            edge_type="ISSUES",
+        )
+        # ISSUES target IS the delegated instrument — stays an instrument even
+        # if a stray kind tag were present.
+        edge.target_kind = "act"  # type: ignore[attr-defined]
+        assert (
+            _edge_to_cite_kind(edge, "x") == CiteKind.NON_STATUTORY_INSTRUMENT
+        )
+
+    def test_bare_section_label_retained_on_target(self) -> None:
+        from lawvm.finland.references.ref_mention_extractor import (
+            _parse_provision_ref_from_path,
+        )
+
+        # The authority lane carries a bare numeric/label section, NOT a sec_ path.
+        assert _parse_provision_ref_from_path("2016/1048", "37").section_label == "37"
+        assert _parse_provision_ref_from_path("1992/150", "8").section_label == "8"
+        assert _parse_provision_ref_from_path("2000/1", "115a").section_label == "115a"
+        # Comma-joined list keeps the first member as the primary section.
+        assert _parse_provision_ref_from_path("2000/1", "8,36").section_label == "8"
+        # An AKN sec_ path still resolves via the existing path regex.
+        assert _parse_provision_ref_from_path("2000/1", "sec_12a").section_label == "12a"

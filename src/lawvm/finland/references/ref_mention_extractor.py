@@ -108,6 +108,18 @@ _AKN_SUBSECTION_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bare section label as carried directly on a CrossRefEdge.target_section by the
+# delegation/authority preamble parser (``"37"``, ``"8"``, ``"115a"``) — NOT an
+# AKN ``sec_N`` path. The authority (``nojalla``) lane populates target_section
+# with the section number as it appears in the surface, so this is the leading
+# numeric run plus an optional letter suffix. Used as the fallback when
+# _AKN_SECTION_PATH_RE (which requires the ``sec_`` prefix) does not match, so
+# the cited §37/§36/§8 is retained on the mention instead of silently dropped.
+_BARE_SECTION_LABEL_RE = re.compile(
+    r"^([0-9]{1,6}[a-z]?)$",
+    re.IGNORECASE,
+)
+
 # EU statute id extractor: "eu/TYPE/YEAR/NUMBER"
 _EU_ID_RE = re.compile(
     r"^eu/([a-z]{2,10})/(\d{4})/(\d{1,6})$",
@@ -538,6 +550,19 @@ def _parse_provision_ref_from_path(
         m_sec = _AKN_SECTION_PATH_RE.search(provision_path)
         if m_sec:
             section_label = m_sec.group(1)
+        else:
+            # No AKN ``sec_N`` path matched. The authority (``nojalla``) lane
+            # carries the cited section as a BARE label (``"37"``, ``"8"``,
+            # ``"115a"``) on the edge's target_section, not a glued AKN path —
+            # accept it directly so the §37/§36/§8 is retained instead of being
+            # silently dropped. A comma-joined list (``"8,36"``, emitted when one
+            # parent law is cited with several sections) keeps its first member
+            # as the primary section label; the full path string is preserved on
+            # provision_path for any consumer that needs the rest.
+            first = provision_path.split(",", 1)[0].strip()
+            m_bare = _BARE_SECTION_LABEL_RE.match(first)
+            if m_bare:
+                section_label = m_bare.group(1)
 
         m_sub = _AKN_SUBSECTION_PATH_RE.search(provision_path)
         if m_sub:
@@ -551,6 +576,15 @@ def _parse_provision_ref_from_path(
     )
 
 
+# Authority-basis target-kind values that mean "the cited basis is a laki /
+# statute, NOT a delegated instrument". Carried on an ISSUED_UNDER edge as
+# ``target_kind`` (set by the graph layer from the ``nojalla`` surface inflection
+# or the target's statute_type). An act-basis is a CROSS_STATUTE reference; a
+# decree/decision basis (a decree CAN be issued under another decree) stays a
+# NON_STATUTORY_INSTRUMENT. ``"act"`` is the only statute-typed value.
+_AUTHORITY_STATUTE_KINDS = frozenset({"act"})
+
+
 def _edge_to_cite_kind(
     edge: CrossRefEdge,
     source_statute_id: str,
@@ -561,8 +595,16 @@ def _edge_to_cite_kind(
 
     CITES:        CROSS_STATUTE (or INTERNAL if target == source).
     REPEALS:      CROSS_STATUTE (metadata-level fact).
-    ISSUED_UNDER: NON_STATUTORY_INSTRUMENT (source issued under target authority).
-    ISSUES:       NON_STATUTORY_INSTRUMENT (source issued a decree as target).
+    ISSUED_UNDER: CROSS_STATUTE when the cited authority basis is a laki/statute
+                  (``target_kind == "act"``); otherwise NON_STATUTORY_INSTRUMENT.
+                  The ``nojalla`` authority basis names the ACT that delegated the
+                  rulemaking power and is a statute cross-reference, NOT a
+                  non-statutory instrument. A decree CAN be issued under another
+                  decree's authority, so the act-vs-instrument split is taken from
+                  the edge's ``target_kind`` (the surface inflection / target
+                  statute_type), never assumed.
+    ISSUES:       NON_STATUTORY_INSTRUMENT (source issued a decree as target —
+                  the target IS the delegated instrument).
     """
     edge_type = edge.edge_type
     if edge_type == "CITES":
@@ -572,7 +614,17 @@ def _edge_to_cite_kind(
         if edge.target_statute_id.startswith("eu/"):
             return CiteKind.EU
         return CiteKind.CROSS_STATUTE
-    if edge_type in ("ISSUED_UNDER", "ISSUES"):
+    if edge_type == "ISSUED_UNDER":
+        # The authority basis is the cited ACT under which the source decree was
+        # issued. When the graph layer has tagged the basis as a laki/statute,
+        # this is a statute cross-reference — NOT an instrument. The tag rides on
+        # the edge as ``target_kind`` (absent on un-tagged edges → legacy
+        # instrument typing, so no over-correction of a genuine decree basis).
+        target_kind = str(getattr(edge, "target_kind", "") or "").lower()
+        if target_kind in _AUTHORITY_STATUTE_KINDS:
+            return CiteKind.CROSS_STATUTE
+        return CiteKind.NON_STATUTORY_INSTRUMENT
+    if edge_type == "ISSUES":
         return CiteKind.NON_STATUTORY_INSTRUMENT
     if edge_type == "REPEALS":
         return CiteKind.CROSS_STATUTE
