@@ -28,8 +28,18 @@ Finnish specifics handled here (NOT in core):
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
 
-from lawvm.core.legal_surface_tokens import Token, TokenTape
+from lawvm.core.legal_surface_tokens import (
+    MorphAnnotation,
+    MorphOverlay,
+    Token,
+    TokenTape,
+)
+from lawvm.finland.morphology.lemma_index import build_lemma_index
+
+if TYPE_CHECKING:
+    from lawvm.finland.morphology.lemma_index import LemmaIndex
 
 #: Finnish word characters (the recognizer's word-char class is ASCII + äöåÄÖÅ).
 _WORD_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZäöåÄÖÅ")
@@ -133,4 +143,49 @@ def build_token_tape(source_unit_id: str, raw_text: str) -> TokenTape:
         source_unit_id=source_unit_id,
         text_hash=_sha256_text(raw_text),
         tokens=tuple(tokens),
+    )
+
+
+def build_morph_overlay(
+    tape: TokenTape,
+    *,
+    lemma_index: LemmaIndex | None = None,
+) -> MorphOverlay:
+    """Build a SPARSE reverse-morphology overlay over ``tape`` (Finnish).
+
+    For each ``word``-category token, the token's ``normalized`` surface is run
+    through the reverse :class:`~lawvm.finland.morphology.lemma_index.LemmaIndex`
+    (which inverts M1 generation over the CLOSED known-head inventory). A token
+    whose surface inverts to one or more lemmas gets a :class:`MorphAnnotation`
+    at its index; an out-of-vocabulary token gets NO annotation.
+
+    COVERAGE BOUNDARY (explicit): the overlay annotates ONLY tokens whose surface
+    inverts to a known lemma (statute / structural heads — ``laki``, ``asetus``,
+    ``pykälä``, ``momentti``, …). It is NOT a general lemmatizer. A consuming
+    lens may use it for lemma-based matching of that closed vocabulary, and MUST
+    treat an ABSENT annotation as "unknown / out of the analyzed vocabulary",
+    never as "no lemma exists for this token". Ambiguity is surfaced, not
+    resolved: a surface that inverts to >1 lemma is annotated with all of them
+    and ``unique=False``.
+
+    Deterministic: a pure function of (tape, lemma index). The default lemma
+    index is the memoized closed-head inventory, so repeated builds are cheap.
+    """
+    index = lemma_index if lemma_index is not None else build_lemma_index()
+    annotations: dict[int, MorphAnnotation] = {}
+    for token_index, tok in enumerate(tape.tokens):
+        if tok.category != "word":
+            continue
+        lemmas = index.analyze(tok.normalized)
+        if not lemmas:
+            continue
+        annotations[token_index] = MorphAnnotation(
+            token_index=token_index,
+            lemmas=lemmas,
+            unique=len(lemmas) == 1,
+        )
+    return MorphOverlay(
+        source_unit_id=tape.source_unit_id,
+        text_hash=tape.text_hash,
+        annotations=annotations,
     )
