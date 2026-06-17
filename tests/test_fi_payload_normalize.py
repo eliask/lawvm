@@ -1904,6 +1904,62 @@ def test_prepare_group_payload_collapses_first_moment_intro_list_with_lettered_s
     assert irnode_to_text(paragraphs[0]) == "1) hankkeen kuvaus erityisesti: a) sijainti; b) koko;"
 
 
+def test_flattened_first_moment_collapse_ignores_already_structured_trailing_omission() -> None:
+    """A trailing omission on an already-numbered first moment is not a flattened row."""
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Lain soveltamisala"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Tätä lakia sovelletaan:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="ensimmäinen laki;"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="toinen laki."),),
+                    ),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                ),
+            ),
+        ),
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+        )
+    ]
+
+    got = _collapse_intro_list_subsections_inside_section_ir("section", ops, muutos_ir)
+
+    assert got is muutos_ir
+    sub = next(c for c in got.children if c.kind is IRNodeKind.SUBSECTION)
+    assert [child.kind for child in sub.children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.OMISSION,
+    ]
+    assert _payload_normalization_observation_rows(
+        got,
+        source_statute="2017/542",
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+    ) == []
+
+
 def test_prepare_group_payload_prunes_carried_subsections_outside_single_target_moment() -> None:
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,

@@ -1992,6 +1992,10 @@ def _collapse_intro_list_subsections_inside_section_ir(
                 break
             rows.append(row)
             j += 1
+        if not rows:
+            new_children.append(child)
+            i += 1
+            continue
         paras = (
             _collapse_flattened_list_rows_after_existing_paragraphs(existing_paragraphs, rows)
             if existing_paragraphs

@@ -41,6 +41,7 @@ import datetime as dt
 from typing import List, Literal, Optional, Set, Tuple
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_structure_ops import _apply_container_op
@@ -49,8 +50,11 @@ from lawvm.finland.apply_runtime_support import (
     _find_chapter_insert_parent_path,
     _stamp_exact_section_snapshot_payload,
 )
+from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.johtolause.compat import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.replay_entrypoint import replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.restructure_plan import resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan
 from tests.corpus_pin_helpers import pinned_replay
@@ -2190,3 +2194,28 @@ def test_1993_615_heading_amendments_applied() -> None:
     assert heading83c.text == "Velvollisuus ilmoittaa kuolleesta riistaeläimestä", (
         f"Expected 2017/504 heading amendment, got: {heading83c.text!r}"
     )
+
+
+def test_2017_93_bench_comparable_first_subsection_replace_drops_stale_flattened_tail() -> None:
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2017/93",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=True,
+            oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+        ),
+    )
+
+    sec1 = replay.materialized_state.find_section("1")
+    assert sec1 is not None
+    sub1 = next(
+        child
+        for child in sec1.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraphs = [child for child in sub1.children if child.kind is IRNodeKind.PARAGRAPH]
+
+    assert [paragraph.label for paragraph in paragraphs] == [str(idx) for idx in range(1, 10)]
+    assert "Pelastusopistosta annettu laki (607/2006)." in irnode_to_text(paragraphs[-1])
