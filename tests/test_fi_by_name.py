@@ -473,5 +473,71 @@ def test_genuine_sopimuslaki_act_still_resolves() -> None:
     assert not _gate_rejects("työsopimuslaissa")
 
 
+def test_kauppalain_market_town_homonym_no_tail_not_emitted() -> None:
+    """``kauppalain`` coordinated with municipality terms (no § tail) -> NOTHING.
+
+    ``kauppalain`` is the archaic plural genitive of ``kauppala`` (a market town,
+    a municipality type) AND the genitive singular of ``kauppalaki`` (the Sale of
+    Goods Act, 355/1987). In statute 1964/639 the road-law clause
+    ``maalaiskuntien, kauppalain tai kaupunkien`` is the market-town reading. With
+    no provision tail and a lowercase mid-sentence modifier there is no positive
+    evidence of an act citation, so the named-homonym precision gate suppresses it
+    rather than mis-resolving to ``fi-name:kauppalaki``.
+    """
+    assert (
+        recognize_by_name_refs(
+            "Ne maalaiskuntien, kauppalain tai kaupunkien alueilla olevat tiet."
+        )
+        == []
+    )
+    assert (
+        recognize_by_name_refs(
+            "kun on kysymys kaupunkien ja eri kuntina olevien kauppalain alueella."
+        )
+        == []
+    )
+
+
+def test_genuine_kauppalaki_with_section_tail_still_resolves() -> None:
+    """A genuine ``kauppalain N §`` reference is preserved by the homonym gate.
+
+    The named-homonym gate only suppresses ``kauppalain`` when there is NO
+    positive evidence. A following ``§`` tail (``kauppalain 41 §``) is the
+    citation shape every genuine corpus Sale-of-Goods reference carries, so it
+    still resolves to ``fi-name:kauppalaki`` with the section path.
+    """
+    mentions = recognize_by_name_refs("sekä kauppalain 41 §:n mukaisesti.")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:kauppalaki"
+    assert m.target_provision_ref.section_label == "41"
+
+    coord = recognize_by_name_refs(
+        "ei sovelleta mitä kauppalain 13 §:n 3 momentissa säädetään."
+    )
+    assert len(coord) >= 1
+    assert all(
+        m.target_provision_ref is not None
+        and m.target_provision_ref.statute_id == "fi-name:kauppalaki"
+        for m in coord
+    )
+
+
+def test_kauppalaki_unambiguous_inessive_not_over_suppressed() -> None:
+    """Only the ``lain`` form is homonymous; ``kauppalaissa`` is unambiguous.
+
+    The homonym is keyed on the exact ``(name, oblique)`` pair: ``kauppala``'s
+    plural inessive/elative are ``kauppaloissa`` / ``kauppaloista``, never
+    ``kauppalaissa`` / ``kauppalaista``. So the inessive ``kauppalaissa`` can only
+    be ``kauppalaki`` and must still resolve at statute level with no tail — the
+    homonym gate must not over-broaden to every ``kauppala-`` surface.
+    """
+    mentions = recognize_by_name_refs("mitä kauppalaissa säädetään sovelletaan.")
+    assert len(mentions) == 1
+    assert mentions[0].target_provision_ref is not None
+    assert mentions[0].target_provision_ref.statute_id == "fi-name:kauppalaki"
+
+
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []

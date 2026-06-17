@@ -201,6 +201,31 @@ _WEAK_HEADS: frozenset[str] = frozenset(
 # residual bare ``laista`` collisions that the gate returns UNKNOWN).
 _LAKI_ADJ_COLLISION_OBLIQUE = "laista"
 
+# Statute-NAME homonyms: a (normalized-name, oblique-surface) pair where the FULL
+# name surface is orthographically identical to an ordinary common noun's
+# inflection, so the bare trigger alone cannot tell the act from the common noun.
+# Unlike the ``-lainen`` / ``-las`` collisions (handled by the morphology gate via
+# a non-statute paradigm that is STRICTLY LONGER than the bare laki oblique), here
+# the surface is exactly ``modifier`` + bare laki oblique — the negative-paradigm
+# strictly-longer rule cannot fire, and a blanket negative entry would also drop
+# the genuine act reference. So we resolve it the same way weak heads are resolved:
+# require POSITIVE EVIDENCE (a ``§`` / momentti tail, or a proper-name-ish
+# capitalized modifier mid-sentence) that it is a real act citation. Without that
+# evidence the common-noun reading wins and nothing is emitted.
+#
+#   * ``kauppalaki`` (Sale of Goods Act, 355/1987) vs ``kauppala`` (market town,
+#     a municipality type) archaic plural genitive ``kauppalain``. Statute
+#     1964/639 coordinates ``maalaiskuntien, kauppalain tai kaupunkien`` — the
+#     market-town reading. Every genuine corpus ``kauppalaki`` reference carries a
+#     ``§`` tail (``kauppalain 41 §``) or an ``(355/1987)`` id (id-anchored case
+#     excluded earlier as the plain-text lane's). Only the genitive ``lain`` form
+#     collides (the plural inessive/elative of ``kauppala`` are ``kauppaloissa`` /
+#     ``kauppaloista``, never ``kauppalaissa`` / ``kauppalaista``), so the homonym
+#     is keyed on the exact ``(name, oblique)`` pair, not the whole head.
+_NAME_HOMONYM_OBLIQUES: frozenset[tuple[str, str]] = frozenset(
+    {("kauppalaki", "lain")}
+)
+
 # False-positive families (``-lainen``/``-nainen`` adjectives, the ``jokin``
 # pronoun ``joll-`` obliques, the ``-las``/``-läs`` agent-noun plurals, and the
 # determiner+``laki`` orthographic collapse) are no longer matched by hand-written
@@ -360,24 +385,6 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         consumed_tail = tail_parse.consumed_text
         has_provision_tail = bool(targets)
 
-        # Precision gate for WEAK (common-noun) heads and the ``laki`` elative
-        # that collides with the adjective partitive. These trigger on ordinary
-        # compound nouns (``vuokrasopimuksen``, ``lupapäätöksen``), so require
-        # POSITIVE EVIDENCE that the token is a real act reference: either a
-        # following provision tail (a citation shape) or a capitalized modifier
-        # mid-sentence (a proper-name-ish title). Strong heads (``laki`` in its
-        # other forms, ``asetus``, ``direktiivi``) keep the looser behavior — the
-        # false positives concentrate in the weak heads.
-        needs_evidence = (
-            head_form.head_lemma in _WEAK_HEADS
-            or oblique == _LAKI_ADJ_COLLISION_OBLIQUE
-        )
-        if needs_evidence and not has_provision_tail:
-            if not _modifier_is_capitalized_midsentence(
-                text, m.start("modifier"), m.group("modifier")
-            ):
-                continue
-
         modifier = _extend_coordinated_modifier(text, m.start("modifier"), m.group("modifier"))
         # The normalized key uses the FULL (possibly coordinated) modifier, not
         # just the last conjunct: the registry generates coordinated-compound
@@ -385,6 +392,27 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # name, so keying on the truncated last conjunct (``lahjaverolaki``)
         # would miss the registered act.
         normalized = _normalize_name(modifier, head_form)
+
+        # Precision gate for WEAK (common-noun) heads, the ``laki`` elative that
+        # collides with the adjective partitive, and statute-NAME homonyms whose
+        # full surface equals an ordinary common noun's inflection
+        # (``kauppalain`` = ``kauppalaki`` gen.sg vs ``kauppala`` archaic pl.gen).
+        # These trigger on ordinary common nouns, so require POSITIVE EVIDENCE
+        # that the token is a real act reference: either a following provision
+        # tail (a citation shape) or a capitalized modifier mid-sentence (a
+        # proper-name-ish title). Strong heads (``laki`` in its other forms,
+        # ``asetus``, ``direktiivi``) keep the looser behavior — the false
+        # positives concentrate in the weak heads and these named homonyms.
+        needs_evidence = (
+            head_form.head_lemma in _WEAK_HEADS
+            or oblique == _LAKI_ADJ_COLLISION_OBLIQUE
+            or (normalized, oblique) in _NAME_HOMONYM_OBLIQUES
+        )
+        if needs_evidence and not has_provision_tail:
+            if not _modifier_is_capitalized_midsentence(
+                text, m.start("modifier"), m.group("modifier")
+            ):
+                continue
 
         if not targets:
             # No parsable § tail — a statute-level by-name reference.
