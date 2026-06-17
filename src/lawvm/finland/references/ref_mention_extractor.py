@@ -1030,6 +1030,88 @@ def _akn_section_label(section_el: ET.Element[str]) -> str:
     return ""
 
 
+def _trusted_section_labels(
+    root: ET.Element[str],
+) -> Optional[frozenset[str]]:
+    """The statute's own section labels, IFF the tree is trusted for ABSENCE.
+
+    Returns the set of ``<section>`` labels only when EVERY section carries an
+    eId (a consolidated, fully-addressed body) and there are at least three of
+    them. On such a body, a section absent from the set is genuinely not part of
+    the statute — the signal the internal-ref recogniser uses as a secondary net
+    to decline a foreign section number that leaked in as a bogus internal
+    target. Returns ``None`` for a partial / un-eId'd / non-consolidated body
+    (enacted source, amendment act, pre-eId Finlex consolidation): absence there
+    is untrustworthy, so the recogniser must NOT guard (recall over a speculative
+    decline). Fail-loud by abstention.
+    """
+    labels: list[str] = []
+    all_eid = True
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "section":
+            continue
+        if not el.get("eId"):
+            all_eid = False
+            break
+        lbl = _akn_section_label(el)
+        if lbl:
+            labels.append(lbl)
+    if not all_eid or len(labels) < 3:
+        return None
+    return frozenset(labels)
+
+
+def _fill_bare_momentti_target(
+    mention: ReferenceMention,
+    enclosing_section_label: str,
+) -> ReferenceMention:
+    """Fill a bare same-section momentti/kohta TARGET from the enclosing section.
+
+    A purely-bare anaphora (``1 momentissa`` with no explicit ``§``) names a
+    momentti/kohta of the SECTION the citing text sits in (drafting convention).
+    The recogniser leaves the target's ``section_label`` empty (the surface omits
+    it). Without filling, the target collapses to the whole-statute root and the
+    citation surfaces as ``open`` despite the section being known. This fills the
+    TARGET's section from the enclosing section the extractor already threaded
+    onto the source provenance, so ``1 momentissa`` inside section ``34 a``
+    resolves to target ``sec=34a mom=1``.
+
+    Fail-loud: only an INTERNAL mention whose target carries a momentti/kohta but
+    NO section and NO chapter-qualified ``__`` path is filled, and only when the
+    enclosing section is genuinely known. An explicit-section momentti
+    (``34 a §:n 1 momentissa``, target already ``sec=34a``) is untouched. An
+    unknown enclosing section leaves the target bare (stays ``open`` downstream —
+    never a guessed section). The elliptical resolver remains the authority for
+    the bare-kohta structural-uniqueness case; this only handles the
+    section-from-convention fill that the parquet projection (which does not run
+    the elliptical resolver) would otherwise drop.
+    """
+    if not enclosing_section_label:
+        return mention
+    if mention.cite_kind is not CiteKind.INTERNAL:
+        return mention
+    tgt = mention.target_provision_ref
+    if tgt is None:
+        return mention
+    if tgt.section_label:
+        return mention
+    if "__" in (tgt.provision_path or ""):
+        return mention
+    # Only fill the bare-MOMENTTI convention case (a momentti is named). A bare
+    # KOHTA (item only, no momentti) needs the enclosing section's materialized
+    # child STRUCTURE to pick the momentti-with-kohta — that is the elliptical
+    # resolver's job (it consults the tree); pre-filling its section here would
+    # make the resolver treat it as already-anchored and skip the structural
+    # disambiguation. Leave bare-kohta to the resolver (fail-loud there).
+    if tgt.subsection_num is None:
+        return mention
+    return replace(
+        mention,
+        target_provision_ref=replace(tgt, section_label=enclosing_section_label),
+    )
+
+
 def _enclosing_section_labels(
     root: ET.Element[str],
 ) -> dict[ET.Element[str], str]:
@@ -1131,6 +1213,12 @@ def extract_surface_grammar_mentions(
     # instead of re-deriving the enclosing section by a byte-offset remap.
     enclosing_labels = _enclosing_section_labels(root)
 
+    # The statute's own section set when the tree is trusted for ABSENCE (fully
+    # eId'd consolidated body), else None. The internal-ref recogniser uses it as
+    # a secondary net to decline a foreign section number that leaked in as a
+    # bogus internal target (external-law phrase that did not anchor).
+    trusted_sections = _trusted_section_labels(root)
+
     def _src_ref_for(section_label: str) -> ProvisionRef:
         if not section_label:
             return src_ref
@@ -1178,7 +1266,9 @@ def extract_surface_grammar_mentions(
             for k in range(i, j):
                 out.append(
                     replace(
-                        mentions[k],
+                        _fill_bare_momentti_target(
+                            mentions[k], source_provision_ref.section_label
+                        ),
                         source_provision_ref=source_provision_ref,
                         source_span=span,
                         valid_at_interval=valid_at_interval,
@@ -1215,7 +1305,10 @@ def extract_surface_grammar_mentions(
         enclosing_src_ref = _src_ref_for(enclosing_labels.get(p_el, ""))
         result.mentions.extend(
             _reanchor_grouped(
-                recognize_internal_refs(text, statute_id), enclosing_src_ref
+                recognize_internal_refs(
+                    text, statute_id, known_sections=trusted_sections
+                ),
+                enclosing_src_ref,
             )
         )
         for mention in recognize_by_name_refs(text):

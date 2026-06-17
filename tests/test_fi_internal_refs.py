@@ -361,3 +361,138 @@ def test_never_widens_to_whole_statute() -> None:
         tr = m.target_provision_ref
         assert tr is not None
         assert tr.section_label or tr.subsection_num is not None or tr.item_label
+
+
+# ---------------------------------------------------------------------------
+# A comma-glued YEAR / decree-year is not parsed as a § section number
+# ---------------------------------------------------------------------------
+
+
+def test_year_word_not_glued_as_section_keeps_real_provision() -> None:
+    # "vuoden 1971, 53 §:n 5 momentissa": the year 1971 must NOT become § 1971;
+    # the real provision 53 §:n 5 mom survives.
+    got = _targets("vuoden 1971, 53 §:n 5 momentissa säädettyä")
+    assert ("1971", None, None) not in got
+    assert got == [("53", 5, None)]
+
+
+def test_year_word_before_coordinated_real_section() -> None:
+    # "vuoden 1984 ja 16 §:n 3 momentissa": 1984 is a year, 16 §:n 3 mom is real.
+    got = _targets("vuoden 1984 ja 16 §:n 3 momentissa")
+    assert ("1984", None, None) not in got
+    assert got == [("16", 3, None)]
+
+
+def test_decree_id_year_part_not_glued_as_section() -> None:
+    # "asetuksessa 1314/1996, 7 ja 17 §": the decree-id year 1996 must NOT become
+    # § 1996; the real sections 7 and 17 survive.
+    got = _targets("asetuksessa 1314/1996, 7 ja 17 §")
+    assert ("1996", None, None) not in got
+    assert got == [("7", None, None), ("17", None, None)]
+
+
+def test_decree_id_year_part_before_coordinated_sections() -> None:
+    got = _targets("asetuksissa 917/1981 ja 1314/1996 sekä 18, 19 ja 22 §")
+    assert ("1981", None, None) not in got
+    assert ("1996", None, None) not in got
+    assert got == [("18", None, None), ("19", None, None), ("22", None, None)]
+
+
+def test_leading_section_not_stripped_without_year_context() -> None:
+    # A genuine leading section that happens to be 4 digits but is NOT preceded by
+    # a year word / decree-id slash is left intact (no over-eager strip).
+    got = _targets("Mitä 1234 §:ssä säädetään")
+    assert got == [("1234", None, None)]
+
+
+# ---------------------------------------------------------------------------
+# An external-law section must not leak into a bogus INTERNAL self-target
+# ---------------------------------------------------------------------------
+
+
+def test_bracket_statute_id_excluded() -> None:
+    # "(ampuma-aselain [1/1998] 20 §:n 3 momentti)": the bracket id [1/1998] is an
+    # EXTERNAL-law anchor; 20 § is owned by the cross-statute by-id lane, never an
+    # internal self-reference. Emit nothing here.
+    assert recognize_internal_refs("ampuma-aselain [1/1998] 20 §:n 3 momentti", _SID) == []
+
+
+def test_bracket_statute_id_with_momentti_excluded() -> None:
+    assert recognize_internal_refs("[1/1998] 5 §:n 2 momentissa", _SID) == []
+
+
+def test_coordinated_external_law_sections_all_excluded() -> None:
+    # A section coordination governed by one external name head: every member is
+    # external, not just the adjacent first one. None may leak as internal.
+    text = (
+        "sotilaskurinpidosta ja rikostorjunnasta Puolustusvoimissa annetun lain "
+        "88 tai 93 §:n 1 momentissa tarkoitetun"
+    )
+    assert recognize_internal_refs(text, _SID) == []
+
+
+def test_coordinated_external_law_long_list_excluded() -> None:
+    # The governing id sits before a long coordination; the LAST member (72 §)
+    # must still be recognised as external (coordination-aware lookback).
+    text = (
+        "sijoitusrahastolain (48/1999) 2 §:n 13 kohdassa, "
+        "69 §:n 1 momentissa, 71 §:ssä, 72 §:ssä tarkoitettu"
+    )
+    assert recognize_internal_refs(text, _SID) == []
+
+
+def test_internal_coordination_not_excluded_by_coord_lookback() -> None:
+    # A genuine internal section coordination (no governing external anchor) must
+    # still be recognised — the coordination-aware lookback only excludes when an
+    # external id / name head governs the run.
+    got = _targets("Tämän lain 2 §:ssä, 5 §:ssä ja 7 §:ssä säädetään")
+    assert ("2", None, None) in got
+    assert ("7", None, None) in got
+
+
+def test_section_absent_above_max_declined_on_trusted_tree() -> None:
+    # An anaphoric external-law section (governing phrase in an EARLIER sentence,
+    # no local anchor) that is ABSENT from the statute's own tree and ABOVE its
+    # max section is declined to a fail-loud STATUTE_ONLY — never a bogus concrete
+    # internal target. known_sections is the trusted (fully eId'd) section set.
+    known = frozenset({str(n) for n in range(1, 47)})  # statute has sections 1..46
+    ms = recognize_internal_refs("Pääesikunnan 93 §:n 1 momentissa", _SID, known_sections=known)
+    assert len(ms) == 1
+    tr = ms[0].target_provision_ref
+    assert tr is not None
+    assert tr.section_label == ""  # declined, not a bogus sec=93
+    assert ms[0].cite_confidence is CiteConfidence.STATUTE_ONLY
+
+
+def test_section_present_not_declined_on_trusted_tree() -> None:
+    # A section that DOES exist in the trusted tree resolves normally.
+    known = frozenset({str(n) for n in range(1, 47)})
+    got = _targets_with_sections("5 §:n 2 momentissa", known)
+    assert got == [("5", 2, None)]
+
+
+def test_section_within_range_hole_not_declined() -> None:
+    # A section absent from the tree but WITHIN [1, max] (a likely letter-suffix
+    # the structure builder missed, not a leak) is NOT declined — recall over a
+    # speculative decline. Here the tree lacks "9" but it is below max=46.
+    known = frozenset({str(n) for n in range(1, 47)} - {"9"})
+    got = _targets_with_sections("9 §:ssä", known)
+    assert got == [("9", None, None)]
+
+
+def test_existence_guard_inert_without_trusted_sections() -> None:
+    # No known_sections (non-consolidated / un-eId'd body) => guard never fires,
+    # so recall is preserved even for a high section number.
+    got = _targets("93 §:n 1 momentissa")
+    assert got == [("93", 1, None)]
+
+
+def _targets_with_sections(
+    text: str, known: frozenset[str]
+) -> list[tuple[str, int | None, str | None]]:
+    out: list[tuple[str, int | None, str | None]] = []
+    for m in recognize_internal_refs(text, _SID, known_sections=known):
+        tr = m.target_provision_ref
+        assert tr is not None
+        out.append((tr.section_label, tr.subsection_num, tr.item_label))
+    return out

@@ -255,45 +255,50 @@ def test_no_eid_section_resolves_via_num_ancestry() -> None:
 
     This is the end-to-end path the threading hardens: the extractor reads the
     enclosing section's ``<num>`` label (``33``) from the citing <p>'s real
-    ancestry and stamps it onto the mention's source provenance; the resolver
-    fills the omitted section from that label. The eId-keyed byte remap could not
-    see this section at all (no eId), so this previously fell to OPEN.
+    ancestry and stamps it onto the mention's source provenance. The extractor
+    now ALSO fills the bare-momentti TARGET section from that enclosing label by
+    drafting convention (so the parquet projection, which does not run the
+    elliptical resolver, anchors it too). The eId-keyed byte remap could not see
+    this section at all (no eId), so this previously fell to OPEN.
     """
     from lawvm.finland.references.ref_mention_extractor import (
         extract_all_reference_mentions,
     )
 
     extraction = extract_all_reference_mentions(_NO_EID_STATUTE_XML, "1935/62")
-    # The extractor must have threaded the enclosing section (33) onto the
-    # internal bare-momentti mention's source provenance.
+    # The bare-momentti mention now carries BOTH the enclosing section (33) on its
+    # source provenance AND a TARGET section filled from it by convention.
     internal_bare = [
         m
         for m in extraction.mentions
         if m.cite_kind is CiteKind.INTERNAL
         and m.target_provision_ref is not None
         and m.target_provision_ref.subsection_num == 1
-        and not m.target_provision_ref.section_label
         and (m.surface_text or "").strip().startswith("1 moment")
     ]
     assert internal_bare, "extractor emitted no bare internal momentti mention"
     assert internal_bare[0].source_provision_ref is not None
     assert internal_bare[0].source_provision_ref.section_label == "33"
+    # Target section filled at extraction time (convention), not left empty.
+    assert internal_bare[0].target_provision_ref is not None
+    assert internal_bare[0].target_provision_ref.section_label == "33"
 
     out = resolve_elliptical_mentions(
         list(extraction.mentions), _NO_EID_STATUTE_XML
     )
-    resolved = [
+    # The momentti target is already anchored at extraction, so the resolver
+    # passes it through (NOT_ELLIPTICAL) with the section intact — the end-to-end
+    # target is the ENCLOSING section 33, NOT root / OPEN.
+    bare = [
         r
         for r in out
-        if r.status is EllipticalStatus.RESOLVED
-        and (r.mention.surface_text or "").strip().startswith("1 moment")
+        if (r.mention.surface_text or "").strip().startswith("1 moment")
     ]
-    assert resolved, "bare momentti in a no-eId section did not resolve (still OPEN?)"
-    tgt = resolved[0].mention.target_provision_ref
+    assert bare, "bare momentti in a no-eId section missing after resolution"
+    tgt = bare[0].mention.target_provision_ref
     assert tgt is not None
-    # Resolves to the ENCLOSING section 33 (its <num> label), NOT root / OPEN.
     assert tgt.section_label == "33"
     assert tgt.subsection_num == 1
-    assert resolved[0].mention.cite_confidence is CiteConfidence.EXACT
+    assert bare[0].mention.cite_confidence is CiteConfidence.EXACT
     # And nothing in this statute fell to OPEN.
     assert not any(r.status is EllipticalStatus.OPEN for r in out)

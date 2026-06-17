@@ -105,6 +105,52 @@ _SECTION_SURFACE_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Year / decree-year glue guard
+# ---------------------------------------------------------------------------
+#
+# A number run is GREEDY across coordination joiners, so a 4-digit YEAR that
+# abuts the run gets swallowed as if it were the first SECTION number:
+#
+#   ``vuoden 1971, 53 §:n 5 momentissa``  -> run ``1971, 53`` -> bogus § 1971
+#   ``asetuksessa 1314/1996, 7 ja 17 §``  -> run ``1996, 7 ja 17`` -> bogus § 1996
+#   ``vuoden 1984 ja 16 §:n 3 momentissa`` -> run ``1984 ja 16`` -> bogus § 1984
+#
+# The bogus token is ALWAYS the LEADING element of the captured surface, and the
+# original text preceding it is either a YEAR word (``vuoden`` / ``vuodelta`` /
+# ``vuonna`` / ``vuotta``) or a decree-id slash (``1314/1996`` -> the ``/`` just
+# before the year). A genuine leading § number is NEVER preceded by either. When
+# detected, the leading 4-digit year token + its trailing coordination separator
+# are stripped, so the REAL provisions in the clause (``53 §:n 5 mom``, ``7 ja
+# 17 §``) parse and the year never becomes a §. Stripping is conservative: only a
+# bare 4-digit token with no letter suffix qualifies as a year.
+_LEADING_YEAR_RE = re.compile(
+    rf"^(?P<year>\d{{4}})\s*(?:{_SEP})\s*",
+    re.IGNORECASE,
+)
+# A year-word or decree-id slash immediately before the surface marks the
+# leading 4-digit token as a YEAR (``vuoden 1971`` / ``1314/1996``), not a §.
+_YEAR_CONTEXT_RE = re.compile(
+    r"(?:vuo(?:den|delta|nna|tta|sina|silta)|/)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_year(surface: str, before: str) -> str:
+    """Drop a leading 4-digit YEAR token (+ separator) glued onto a § run.
+
+    Returns ``surface`` with a leading ``YYYY,`` / ``YYYY ja`` stripped IFF the
+    text immediately before the surface is a year word (``vuoden``) or a decree-id
+    slash (``1314/1996``), so the year never parses as a § number. Otherwise the
+    surface is returned unchanged (a genuine leading § is left intact).
+    """
+    ym = _LEADING_YEAR_RE.match(surface)
+    if ym is None:
+        return surface
+    if _YEAR_CONTEXT_RE.search(before):
+        return surface[ym.end() :]
+    return surface
+
 # Chapter prefix (``N luvun`` / ``N luku`` / ``N luvussa`` …) that qualifies a
 # following section reference: ``3 luvun 5 §``, ``2 luvun 4 §:n 1 momentti``,
 # coordinated ``3 ja 4 luvun 5 §``. The chapter number run reuses ``_NUM_RUN``
@@ -152,9 +198,12 @@ _BARE_SUBREF_RE = re.compile(
 # ---------------------------------------------------------------------------
 #
 # A statute-id parenthetical immediately before the citation → plain-text by-id
-# lane owns it.  e.g. ``(123/2020) 5 §``.
+# lane owns it.  e.g. ``(123/2020) 5 §``. The id appears both parenthesised
+# ``(1/1998)`` and bracketed ``[1/1998]`` (the latter in ``(ampuma-aselain
+# [1/1998] 20 §)`` editorial back-references); either form is an EXTERNAL-law
+# anchor, so the following § is NOT an internal self-reference.
 _PRECEDING_STATUTE_ID_RE = re.compile(
-    r"\(\s*\d{1,6}/\d{4}\s*\)\s*$",
+    r"[(\[]\s*\d{1,6}/\d{4}\s*[)\]]\s*$",
 )
 
 # An inflected statute-NAME head immediately before the citation → cross-statute
@@ -189,6 +238,49 @@ _SELF_DEMONSTRATIVES = frozenset(
 
 # How far back to look for a preceding name head / statute id.
 _LOOKBACK = 80
+# A wider window for coordination-governed citations: a long section list
+# (``2 §:ssä, 69 §:n 1 momentissa, 71 §:ssä, 72 §``) can push the governing
+# anchor several hundred chars before the last member. Used only after the
+# trailing sibling fragments are peeled (so the name-head check still runs on a
+# bounded ``_LOOKBACK`` slice at the head, not the whole window).
+_COORD_LOOKBACK = 600
+
+# A section-coordination FRAGMENT that precedes the citation when several
+# sections of ONE governing act are listed: ``…(48/1999) 2 §:n 13 kohdassa,
+# 69 §:n 1 momentissa, 71 §:ssä, 72 §…``. When the citing § is a later member of
+# such a list, the governing external-law id / name head sits BEFORE the whole
+# run — past the bounded name-head window. To find it we strip trailing
+# ``…N §… ,`` fragments off the preceding context (right to left) so the
+# name-head / id check sees the governing anchor at the head of the coordination,
+# not the intervening sibling §. Each fragment is ``<num run> § <tail> <sep>``.
+# Bounded quantifiers only (§1.11).
+_COORD_FRAGMENT_RE = re.compile(
+    rf"""
+    \s*{_NUM_RUN}\s*§(?::[a-zäöå]+)?
+    (?:\s+{_NUM_RUN}\s+{_TAIL_NOUN})*
+    \s*(?:{_SEP})\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _strip_trailing_coord_fragments(before: str) -> str:
+    """Remove trailing sibling ``N §…,`` coordination fragments from ``before``.
+
+    A citation that is a later member of a section coordination governed by one
+    act (``…annetun lain 2 §:ssä, 69 §:n 1 momentissa, 72 §``) has its governing
+    name head / id BEFORE the first member. Peeling the trailing ``…, 69 §…,``
+    siblings off the preceding context lets :func:`_is_excluded` see that
+    governing anchor instead of the adjacent sibling §. Iterates while a fragment
+    abuts; bounded (each step shortens the string).
+    """
+    prev = None
+    while before != prev:
+        prev = before
+        m = _COORD_FRAGMENT_RE.search(before)
+        if m is not None and m.start() >= 0:
+            before = before[: m.start()]
+    return before
 
 
 def _strip_chapter_prefix(before: str) -> tuple[str, Optional[str]]:
@@ -233,6 +325,23 @@ def _is_excluded(text: str, start: int) -> bool:
     statute-name head one ``luvun`` token further back (``jätelain 3 luvun 5 §``)
     still owns the citation via the cross-statute by-name lane.
     """
+    # A wider window than the bounded name-head lookback so the governing anchor
+    # at the HEAD of a multi-section coordination is reachable once the trailing
+    # sibling ``N §…,`` fragments are peeled off (``…annetun lain 2 §:ssä,
+    # 69 §:n 1 momentissa, 72 §`` — the name head governs every member).
+    wide = text[max(0, start - _COORD_LOOKBACK) : start]
+    coord_head = _strip_trailing_coord_fragments(wide)
+    if coord_head != wide:
+        # The citation is a later member of a section coordination; its governing
+        # external-law id / name head (if any) sits just before the first member.
+        head_ctx = coord_head[-_LOOKBACK:]
+        head_ctx, _ch = _strip_chapter_prefix(head_ctx)
+        if _PRECEDING_STATUTE_ID_RE.search(head_ctx):
+            return True
+        hm = _PRECEDING_NAME_HEAD_RE.search(head_ctx)
+        if hm is not None and (hm.group("prev") or "").lower() not in _SELF_DEMONSTRATIVES:
+            return True
+
     before = text[max(0, start - _LOOKBACK) : start]
     # Look PAST a chapter prefix so a name head before it still excludes
     # (``jätelain 3 luvun 5 §`` is cross-statute, not internal).
@@ -377,9 +486,58 @@ def _make_mention(
     )
 
 
+# Numeric prefix of a section label (``16a`` -> 16, ``150f`` -> 150), for the
+# above-max existence guard. ``None`` for a non-numeric label (never guarded).
+_SEC_NUM_PREFIX_RE = re.compile(r"(\d{1,6})")
+
+
+def _section_num_prefix(label: str) -> Optional[int]:
+    m = _SEC_NUM_PREFIX_RE.match(label)
+    return int(m.group(1)) if m is not None else None
+
+
+def _internal_section_unsupported(
+    section_label: str,
+    known_sections: Optional[frozenset[str]],
+) -> bool:
+    """True iff an internal §-target's section cannot belong to this statute.
+
+    A SECONDARY net for the external-law leak: when a governing external-law
+    phrase did not anchor (it sits past the lookback, or in an earlier sentence),
+    a foreign section number leaks in as a bogus INTERNAL target (``93 §`` in a
+    42-section act). When the citing body is a TRUSTED, fully eId'd consolidated
+    tree, a section number that is both ABSENT from that tree AND strictly ABOVE
+    the tree's largest section cannot be a genuine same-statute reference — so the
+    target is declined (the caller emits a fail-loud STATUTE_ONLY, never a
+    concrete bogus internal target).
+
+    Scoped to fail-loud, low collateral:
+      * ``known_sections is None`` (non-consolidated / un-eId'd body, where
+        absence is untrustworthy because the materialized tree is partial) ->
+        NEVER guarded.
+      * Only ABOVE the materialized max declines: a within-range "hole" is far
+        more often a letter-suffix section the structure builder missed than a
+        leak, so it is left intact (recall over a speculative decline).
+    """
+    if known_sections is None or not known_sections:
+        return False
+    if section_label in known_sections:
+        return False
+    tn = _section_num_prefix(section_label)
+    if tn is None:
+        return False
+    maxnum = 0
+    for k in known_sections:
+        kn = _section_num_prefix(k)
+        if kn is not None and kn > maxnum:
+            maxnum = kn
+    return maxnum > 0 and tn > maxnum
+
+
 def recognize_internal_refs(
     text: str,
     statute_id: str,
+    known_sections: Optional[frozenset[str]] = None,
 ) -> List[ReferenceMention]:
     """Recognize bare / internal same-statute section references in ``text``.
 
@@ -428,6 +586,12 @@ def recognize_internal_refs(
             if _is_excluded(text, m.start()):
                 continue
             surface = m.group("surf")
+            # Drop a leading 4-digit YEAR token glued onto the § run when the
+            # text just before it is a year word / decree-id slash (``vuoden 1971,
+            # 53 §`` / ``1314/1996, 7 ja 17 §``), so the year never parses as a §
+            # and the REAL provisions in the clause survive.
+            before_surf = text[max(0, m.start() - 12) : m.start()]
+            surface = _strip_leading_year(surface, before_surf)
             # A ``N luvun`` chapter prefix immediately before the section surface
             # qualifies it (``3 luvun 5 §`` → chapter 3, section 5). Recover the
             # chapter run and consume its span so the chapter-only pass does not
@@ -458,6 +622,24 @@ def recognize_internal_refs(
             chapter_choices: List[Optional[str]] = list(chapters) or [None]
             for chapter in chapter_choices:
                 for tgt in targets:
+                    # Secondary external-leak net: a section that cannot belong
+                    # to this statute (absent + above the trusted tree's max) is
+                    # an external-law number that leaked in because its governing
+                    # phrase did not anchor. Decline it to a fail-loud
+                    # STATUTE_ONLY (act fixed = this statute, provision NOT
+                    # claimed) — never a bogus concrete internal target.
+                    if chapter is None and _internal_section_unsupported(
+                        tgt.section_label, known_sections
+                    ):
+                        mentions.append(
+                            _make_mention(
+                                statute_id,
+                                surface,
+                                ProvisionRef(statute_id=statute_id),
+                                CiteConfidence.STATUTE_ONLY,
+                            )
+                        )
+                        continue
                     mentions.append(
                         _make_mention(
                             statute_id,

@@ -188,3 +188,66 @@ def test_coordinated_reference_not_double_emitted() -> None:
         and m.target_provision_ref.section_label in {"47", "49"}
     )
     assert labels == ["47", "49"], f"double-emission or missing member: {labels}"
+
+
+# ---------------------------------------------------------------------------
+# A bare same-section momentti anaphora fills the TARGET section from the
+# enclosing section, so it does not collapse to the whole-statute root.
+# ---------------------------------------------------------------------------
+#
+# A bare "1 momentissa" (an "Edellä 1 momentissa" anaphora with no explicit §)
+# names a momentti of the SECTION the citing text sits in. The recogniser leaves
+# the target section empty; the extractor must fill it from the enclosing
+# <section> ancestry so the projection (which does not run the elliptical
+# resolver) anchors the target at sec=<enclosing> mom=1 instead of OPEN.
+_BARE_MOMENTTI_XML = (
+    '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    "<body>"
+    '<section eId="sec_34a">'
+    "<num>34 a §</num>"
+    '<subsection eId="sec_34a__subsec_2"><content>'
+    "<p>Edellä 1 momentissa tarkoitettua lupaa ei myönnetä.</p>"
+    "</content></subsection>"
+    "</section>"
+    "</body></akomaNtoso>"
+)
+
+
+def test_bare_momentti_target_section_filled_from_enclosing() -> None:
+    xb = _BARE_MOMENTTI_XML.encode("utf-8")
+    res = extract_surface_grammar_mentions(xb, "TEST/BAREMOM")
+    bare = [
+        m
+        for m in res.mentions
+        if "INTERNAL" in str(m.cite_kind)
+        and (m.surface_text or "").strip() == "1 momentissa"
+    ]
+    assert bare, "bare '1 momentissa' anaphora not detected"
+    tr = bare[0].target_provision_ref
+    assert tr is not None
+    # TARGET section filled from the enclosing section 34 a (eId sec_34a -> 34a),
+    # NOT left empty (which would collapse to the whole-statute root / OPEN).
+    assert tr.section_label == "34a", f"target section not filled: {tr.section_label!r}"
+    assert tr.subsection_num == 1
+
+
+def test_bare_momentti_outside_section_stays_open() -> None:
+    # No enclosing <section> -> the target section is genuinely unknown and must
+    # stay empty (fail-loud, never a guessed section).
+    xb = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<body><p>Edellä 1 momentissa tarkoitettua sovelletaan.</p>"
+        "</body></akomaNtoso>"
+    ).encode("utf-8")
+    res = extract_surface_grammar_mentions(xb, "TEST/BAREMOM2")
+    bare = [
+        m
+        for m in res.mentions
+        if "INTERNAL" in str(m.cite_kind)
+        and (m.surface_text or "").strip() == "1 momentissa"
+    ]
+    assert bare, "bare '1 momentissa' anaphora not detected"
+    tr = bare[0].target_provision_ref
+    assert tr is not None
+    assert tr.section_label == "", "target section guessed where enclosing unknown"
+    assert tr.subsection_num == 1
