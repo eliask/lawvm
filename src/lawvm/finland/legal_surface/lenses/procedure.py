@@ -20,11 +20,12 @@ SAFETY BOUNDARY (mirrors the recognizer): SURFACE FACTS ONLY. A node records the
 value ``"asserted"`` (the same choice ActorModalLens made; the recognizer's own
 "surface_fact_only" is not a graph resolution status).
 
-Span alignment (Pro r5 §"span alignment"): the recognizer reports CHARACTER
-offsets relative to the text it was given. We feed it ``unit.raw_text`` verbatim
-and build each ``SourceSpanRef`` DIRECTLY from those offsets (more precise than
-re-locating via ``locate_span``). The process-noun head span anchors the node;
-the actor/deadline spans travel in the payload.
+Span alignment (Pro r5 §"span alignment"): the recognizer is a TOKEN/GRAMMAR
+recognizer over the source-preserving ``token_tape`` view (Phase 7); its spans
+are TOKEN-ALIGNED character offsets into ``unit.raw_text``. We feed it the
+unit's tape (+ morph overlay) and build each ``SourceSpanRef`` DIRECTLY from
+those offsets. ``required_views=("token_tape",)``. The process-noun head span
+anchors the node; the actor/deadline spans travel in the payload.
 """
 from __future__ import annotations
 
@@ -39,7 +40,12 @@ from lawvm.core.legal_surface_lens import (
     SurfaceNodeSeed,
     SurfaceResidualSeed,
 )
+from lawvm.core.legal_surface_tokens import MorphOverlay, TokenTape
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.legal_surface.tokenize import (
+    build_morph_overlay,
+    build_token_tape,
+)
 from lawvm.finland.references.procedure import (
     ProcedureResidual,
     scan_procedure,
@@ -80,7 +86,7 @@ class ProcedureLens:
     schema_version: str = "v0"
     produces_node_kinds: tuple[str, ...] = ("procedure_frame",)
     produces_edge_kinds: tuple[str, ...] = ()
-    required_views: tuple[str, ...] = ("raw_text",)
+    required_views: tuple[str, ...] = ("token_tape",)
 
     def analyze(
         self,
@@ -93,7 +99,16 @@ class ProcedureLens:
         units_scanned = 0
         for unit in bundle.units:
             units_scanned += 1
-            scan = scan_procedure(unit.raw_text)
+            # The substrate populates token_tape/morph_overlay; tolerate an
+            # un-tokenized unit by building on demand (fail-loud only if
+            # raw_text is absent). The tape's spans index into unit.raw_text.
+            tape = unit.token_tape
+            if not isinstance(tape, TokenTape):
+                tape = build_token_tape(unit.source_unit_id, unit.raw_text)
+            overlay = unit.morph_overlay
+            if not isinstance(overlay, MorphOverlay):
+                overlay = build_morph_overlay(tape)
+            scan = scan_procedure(unit.raw_text, tape=tape, overlay=overlay)
             for frame in scan.frames:
                 ref = _span_ref(
                     unit.source_unit_id,
