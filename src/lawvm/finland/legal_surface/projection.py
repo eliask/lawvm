@@ -64,6 +64,9 @@ from lawvm.core.reference_mention import (
     SourceSpan,
     reference_mention_to_row,
 )
+from lawvm.finland.legal_surface.lenses.references import (
+    LENS_ID as _REFERENCES_LENS_ID,
+)
 
 # ── Parity field sets (the contract the parity gate asserts against) ──────────
 
@@ -309,8 +312,20 @@ def graph_to_reference_mentions(
     being present is part of the parity contract.
     """
     by_expr = _resolution_index(graph)
+    # Only the H1 ReferenceLens (``fi.references.v0``) mints the fi_refs-bearing
+    # ``reference_expr`` nodes this projection inverts. Other lenses (notably the
+    # discourse AnaphoraLens, ``fi.anaphora.v0``) REUSE the ``reference_expr`` node
+    # kind for a uniform census, but their payload carries a discourse
+    # ``resolution_status`` rather than the fi_refs ``cite_confidence`` — they are
+    # NOT fi_refs rows. Scope the projection to the references lens so those census
+    # nodes are not mis-read as fi_refs mentions (which would fail-loud on the
+    # absent ``cite_confidence``). The fail-loud check on the references-lens nodes
+    # is unchanged: a ``fi.references.v0`` expr without a valid cite_confidence
+    # still raises.
     expr_nodes = [
-        node for node in graph.nodes.values() if node.node_kind == "reference_expr"
+        node
+        for node in graph.nodes.values()
+        if node.node_kind == "reference_expr" and node.lens_id == _REFERENCES_LENS_ID
     ]
 
     mentions: list[ReferenceMention] = []
