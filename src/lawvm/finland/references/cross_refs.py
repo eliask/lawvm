@@ -166,11 +166,56 @@ def _parse_ref_href(href: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def _body_byte_range(xml_bytes: bytes) -> tuple[int, int]:
+    """Byte range ``[lo, hi)`` of the AKN ``<body>`` element in the raw bytes.
+
+    The Finlex envelope places a ``<references>`` block and a
+    ``<proprietary>``/``<finlex:ref>`` metadata block BEFORE the body, and the
+    same citation ``href`` often appears in that metadata first. Scoping the
+    href search to the body range stops the locator from latching onto a
+    metadata occurrence (the multi-KB-span catastrophe). Falls back to the whole
+    document if no ``<body`` open tag is found (defensive — body-less inputs
+    have no inline ``<ref>`` to locate anyway).
+    """
+    lo = xml_bytes.find(b"<body")
+    if lo < 0:
+        return (0, len(xml_bytes))
+    close = xml_bytes.rfind(b"</body>")
+    hi = close + len(b"</body>") if close >= 0 else len(xml_bytes)
+    return (lo, hi)
+
+
+def _find_ref_start_tag_end(xml_bytes: bytes, attr_pos: int) -> Optional[int]:
+    """Byte just after the ``>`` of the ``<ref …>`` start tag enclosing ``attr_pos``.
+
+    Matches ``<ref`` only when immediately followed by a space or ``>`` so it can
+    never latch onto ``<references`` (of which ``<ref`` is a prefix). Returns
+    ``None`` if no genuine ``<ref`` start tag precedes ``attr_pos`` or the tag's
+    closing ``>`` cannot be found.
+    """
+    cursor = attr_pos
+    while True:
+        cand = xml_bytes.rfind(b"<ref", 0, cursor)
+        if cand < 0:
+            return None
+        nxt = xml_bytes[cand + 4:cand + 5]
+        if nxt in (b" ", b">"):
+            gt = xml_bytes.find(b">", cand)
+            if gt < 0:
+                return None
+            return gt + 1
+        # ``<ref`` was a prefix of a longer tag (e.g. ``<references``); keep
+        # walking left for a real ``<ref`` start tag.
+        cursor = cand
+
+
 def _locate_ref_byte_span(
     xml_bytes: bytes,
     href: str,
     *,
     search_from: int = 0,
+    body_lo: int = 0,
+    body_hi: Optional[int] = None,
 ) -> Optional[tuple[int, int]]:
     """Locate the byte span of an inline ``<ref href="HREF">…</ref>`` element.
 
@@ -178,32 +223,42 @@ def _locate_ref_byte_span(
     the element's ``href`` attribute in the raw bytes and expanding to the
     enclosing ``<ref`` start tag and matching ``</ref>`` close tag.
 
-    UNIT: bytes into ``xml_bytes``. Returns ``(byte_offset, byte_len)`` covering
-    the whole ``<ref …>surface</ref>`` element, or ``None`` if it cannot be
-    located (e.g. the href contained characters that were re-encoded by the XML
-    parser). The search starts at ``search_from`` so repeated identical hrefs
+    The returned span covers ONLY the inner citation phrase — the bytes between
+    the start tag's ``>`` and the ``</ref>`` close — so ``xml_bytes[off:off+len]``
+    slices exactly the surface text, not the ``<ref href="…">…</ref>`` markup
+    envelope.
+
+    UNIT: bytes into ``xml_bytes``. Returns ``(byte_offset, byte_len)``, or
+    ``None`` if it cannot be located (e.g. the href contained characters that
+    were re-encoded by the XML parser). The href search is scoped to
+    ``[body_lo, body_hi)`` so a duplicate href inside the leading
+    ``<references>``/``<proprietary>`` metadata block cannot be matched. The
+    search starts at ``max(search_from, body_lo)`` so repeated identical hrefs
     can be walked left-to-right by advancing the cursor.
     """
     if not href:
         return None
+    if body_hi is None:
+        body_hi = len(xml_bytes)
+    start_from = max(search_from, body_lo)
     # The href appears verbatim as an attribute value: href="HREF" or href='HREF'.
     needle_dq = b'href="' + href.encode("utf-8") + b'"'
     needle_sq = b"href='" + href.encode("utf-8") + b"'"
-    attr_pos = xml_bytes.find(needle_dq, search_from)
+    attr_pos = xml_bytes.find(needle_dq, start_from, body_hi)
     if attr_pos < 0:
-        attr_pos = xml_bytes.find(needle_sq, search_from)
+        attr_pos = xml_bytes.find(needle_sq, start_from, body_hi)
     if attr_pos < 0:
         return None
-    # Expand left to the enclosing "<ref" start.
-    start = xml_bytes.rfind(b"<ref", 0, attr_pos)
-    if start < 0:
+    # Expand left to the enclosing genuine "<ref " / "<ref>" start tag and take
+    # the byte just after its closing ">" — the start of the inner phrase.
+    inner_start = _find_ref_start_tag_end(xml_bytes, attr_pos)
+    if inner_start is None:
         return None
-    # Expand right to the matching "</ref>" close.
-    close = xml_bytes.find(b"</ref>", attr_pos)
+    # Expand right to the matching "</ref>" close — the inner phrase ends there.
+    close = xml_bytes.find(b"</ref>", inner_start)
     if close < 0:
         return None
-    end = close + len(b"</ref>")
-    return (start, end - start)
+    return (inner_start, close - inner_start)
 
 
 def _find_section_ancestor(
@@ -344,6 +399,10 @@ def extract_cross_refs(
     href_search_cursor: dict[str, int] = {}
     cite_counts: dict[tuple[str, str, str], tuple[int, str]] = {}
     if body is not None:
+        # Scope inline-ref byte-span recovery to the <body> range so a duplicate
+        # href inside the leading <references>/<proprietary> metadata block can
+        # never be matched (that mismatch produced multi-KB spans).
+        body_lo, body_hi = _body_byte_range(xml_bytes)
         parent_map = {child: parent for parent in root.iter() for child in parent}
         for ref_elem in body.iter(f'{{{_AKN_NS}}}ref'):
             href = ref_elem.get('href', '')
@@ -357,7 +416,9 @@ def extract_cross_refs(
                     # Locate this occurrence's byte span, advancing the cursor so
                     # a later identical href maps to the next element in the bytes.
                     located = _locate_ref_byte_span(
-                        xml_bytes, href, search_from=href_search_cursor.get(href, 0)
+                        xml_bytes, href,
+                        search_from=href_search_cursor.get(href, 0),
+                        body_lo=body_lo, body_hi=body_hi,
                     )
                     if located is not None:
                         b_off, b_len = located
@@ -463,6 +524,19 @@ _EU_TYPE_MAP = {
 _EU_JURISDICTION = re.compile(r'\b(EU|EY|ETY|EURATOM|ETA)\b')
 
 _CELEX_TYPE = {'R': 'reg', 'L': 'dir', 'D': 'dec'}
+
+# "YEAR/NUMBER/FORM" — year-first slash form, e.g. "2001/23/EY" in
+# "Neuvoston direktiivi 2001/23/EY". The shared recognizer's NUMBER/YEAR/FORM
+# pattern (_CR_EU_P2) requires a 4-digit MIDDLE group, so it only matches the
+# number-first order ("999/2001/EY"); a small (1–3 digit) act number after a
+# 4-digit year is left unrecognised. The 4-digit-then-≤3-digit shape is
+# unambiguously year-first (number-first would need a 4-digit year in the
+# middle), so it cannot collide with the number-first form. Year bounds are
+# enforced by the _add sanity filter.
+_EU_YEAR_FIRST_SLASH = re.compile(
+    r'\b(\d{4})/(\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b',
+    re.I,
+)
 
 # Look-behind: 40 chars before a match to detect the act type keyword
 _TYPE_LOOKBEHIND = 40
@@ -578,6 +652,17 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
             eu_type, ref.year, str(int(ref.number)), "",
             char_start=ref.start, char_end=ref.end,
             surface=ref.raw,
+        )
+
+    # Year-first slash form ("2001/23/EY") that the shared NUMBER/YEAR/FORM
+    # recognizer misses because its middle group must be 4 digits. Common in
+    # signature/footer citations like "Neuvoston direktiivi 2001/23/EY".
+    for m in _EU_YEAR_FIRST_SLASH.finditer(text):
+        eu_type = _classify_eu_type(text, m.start())
+        _add(
+            eu_type, m.group(1), m.group(2), "",
+            char_start=m.start(), char_end=m.end(),
+            surface=m.group(0),
         )
 
     edges: List[CrossRefEdge] = []

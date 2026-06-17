@@ -109,3 +109,47 @@ def test_cross_refs_single_id_unchanged() -> None:
     edges = extract_eu_refs(_xml(_SINGLE_CLAUSE), "2010/1")
     assert [e.target_statute_id for e in edges] == ["eu/act/2009/1069"]
     assert edges[0].edge_subtype == ""
+
+
+def test_eu_year_first_slash_directive_recognized() -> None:
+    """Year-first slash form ``YEAR/NUMBER/EY`` must be recognised.
+
+    ``Neuvoston direktiivi 2001/23/EY`` is year-first (year 2001, act 23). The
+    shared NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE group, so the
+    small act number after the year was left unrecognised — the citation yielded
+    zero EU edges.
+    """
+    body = "Neuvoston direktiivi 2001/23/EY; EYVL N:o L 82, 22.3.2001."
+    edges = extract_eu_refs(_xml(body), "2002/943")
+    by_target = {e.target_statute_id: e for e in edges}
+    assert "eu/dir/2001/23" in by_target
+    edge = by_target["eu/dir/2001/23"]
+    assert edge.edge_type == "CITES"
+    assert edge.surface_text == "2001/23/EY"
+
+
+def test_eu_number_first_slash_still_number_first() -> None:
+    """The number-first form ``NUMBER/YEAR/EY`` must keep number-first reading.
+
+    The new year-first pattern must not steal the established number-first
+    interpretation of e.g. ``999/2001/EY`` (act 999, year 2001).
+    """
+    edges = extract_eu_refs(_xml("asetus 999/2001/EY"), "2010/1")
+    assert [e.target_statute_id for e in edges] == ["eu/reg/2001/999"]
+
+
+def test_eu_edge_surface_and_byte_span_with_non_ascii_prefix() -> None:
+    """EU edges carry a surface and a byte span that slices to that surface.
+
+    Locks in correct surface propagation and char→byte offset conversion even
+    when non-ASCII characters precede the citation in the same paragraph.
+    """
+    body = "Tämä äöä viittaa asetukseen (EU) 2016/679 yleinen tietosuoja."
+    xml = _xml(body)
+    edges = extract_eu_refs(xml, "2020/1")
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.surface_text == "(EU) 2016/679"
+    assert edge.source_byte_offset is not None
+    sliced = xml[edge.source_byte_offset : edge.source_byte_offset + edge.source_byte_len]
+    assert sliced.decode("utf-8") == edge.surface_text
