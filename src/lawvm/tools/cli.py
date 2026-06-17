@@ -10673,6 +10673,31 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON with findings-by-reason, unavailable counts, top statutes",
     )
 
+    # --- surface-graph ---
+    surface_graph_p = sub.add_parser(
+        "surface-graph",
+        help="end-to-end Legal Surface Graph inspector for one statute (fi)",
+        description=(
+            "Build the FULL Legal Surface Graph for one statute (all 8 lenses -> "
+            "assembler -> cross-lens/frame edge passes -> lints) and print a single "
+            "view of the middle semantics: lens coverage, node-kind and edge-kind "
+            "census (the interlink fabric is flagged), the reference "
+            "resolution-status breakdown (resolved / statute_only / ambiguous / "
+            "open / broken), and the derived lints. READ-ONLY, surface-fact only — "
+            "the authority firewall holds (every node/edge is surface_only); this "
+            "is a projection of what the graph knows, never a legal conclusion."
+        ),
+    )
+    surface_graph_p.add_argument(
+        "statute_id",
+        help="statute id to inspect, e.g. 527/2014",
+    )
+    surface_graph_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the graph summary as JSON",
+    )
+
     # --- parse-characterize ---
     parse_char_p = sub.add_parser(
         "parse-characterize",
@@ -13200,6 +13225,11 @@ def _main_impl() -> None:
         from lawvm.tools.bitemporal_refs import main as broken_refs_main
 
         broken_refs_main(args)
+
+    elif args.command == "surface-graph":
+        from lawvm.tools.surface_graph import main as surface_graph_main
+
+        surface_graph_main(args)
 
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main
