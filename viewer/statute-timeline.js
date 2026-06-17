@@ -173,6 +173,17 @@ let sourceById = {};        // source_id -> source_artifacts row
 let interlinks = [];        // optional precomputed semantic interlink rows
 let interlinksByRenderedAddress = new Map();
 let interlinkTargetsByKey = new Map();
+let surfaceOverlays = [];   // optional precomputed semantic surface-overlay rows
+let overlaysByRenderedAddress = new Map();
+let overlaysById = new Map();
+// Which overlay layers are visible. `reference` (the existing inline-citation
+// layer) is on by default; the richer semantic layers are opt-in to avoid
+// clutter. Held in-memory for the session (no persistence on purpose).
+const OVERLAY_LAYER_KINDS = [
+  'reference', 'defined_term', 'term_use', 'temporal',
+  'delegation', 'sanction', 'exception_condition', 'actor_modal',
+];
+let enabledOverlayKinds = new Set(['reference']);
 let displayNodeByDateAddress = new Map();
 let evidenceEvents = [];    // optional precomputed LawVM uncertainty rows
 let evidenceBySource = new Map();
@@ -299,7 +310,56 @@ const REF_KINDS = {
     },
     hover(p) { return semanticInterlinkHovercardHtml(p); },
   },
+  // Rich semantic surface overlay (defined terms, term uses, temporal markers,
+  // delegation/sanction/exception/actor-modal frames). Display class + hover
+  // card branch on the overlay KIND (carried on the payload). All copy is
+  // surface-fact framing — never a legal conclusion. Term-use overlays may
+  // navigate back to their defining term (via links_json); the rest are
+  // hoverable-but-inert tagged spans.
+  overlay: {
+    display(p) {
+      const def = OVERLAY_KINDS[p.kind] || OVERLAY_KINDS._default;
+      const text = p.text || p.label || '';
+      const title = [tr('overlayLayer_' + p.kind) || p.kind, p.label].filter(Boolean).join(' · ');
+      return { text, title, cls: 'ref-overlay ov-' + (p.kind || 'unknown') + (def.statusCls ? def.statusCls(p) : '') };
+    },
+    nav(p) {
+      const def = OVERLAY_KINDS[p.kind];
+      if (def && typeof def.nav === 'function') def.nav(p);
+    },
+    hover(p) { return overlayHovercardHtml(p); },
+  },
 };
+
+// Per-kind overlay descriptors. Each MAY declare statusCls(payload) → extra
+// class suffix (for resolution-styled layers) and nav(payload) → click action.
+// Everything degrades: a missing/unknown kind falls back to a tagged span.
+const OVERLAY_KINDS = {
+  _default: {},
+  reference: {},
+  defined_term: {},
+  term_use: {
+    statusCls(p) { const s = String(p.status || '').toLowerCase(); return s ? ' ov-status-' + s : ''; },
+    // Navigate back to the defining-term overlay this use points at.
+    nav(p) {
+      const defLink = overlayLinks(p).find(l => l.rel === 'defines' || l.rel === 'definition' || l.rel === 'defined_by');
+      const targetId = defLink && defLink.target_overlay_id;
+      const target = targetId && overlaysById.get(targetId);
+      if (target) navToOverlay(target);
+    },
+  },
+  temporal: {},
+  delegation: {},
+  sanction: {},
+  exception_condition: {},
+  actor_modal: {},
+};
+
+// Scroll the document to the rendered span of an overlay row (best effort).
+function navToOverlay(row) {
+  const addr = String(row.rendered_address || '').trim();
+  if (addr) goToAddrAtDate(addr, null);
+}
 
 // Classify a semantic interlink row into a display/nav status. Maps the
 // graph-authoritative resolution_status (+ locator/url/candidate signals) onto
@@ -536,6 +596,126 @@ function indexInterlinkTargets(rows) {
   }
 }
 
+// =====================================================================
+// Surface overlays: rich semantic layers (defined terms, term uses, temporal
+// markers, frame badges). Each row carries the SAME rendered_* span columns as
+// interlinks; we place markers identically. Code defensively — tolerate
+// missing/extra columns; never throw.
+// =====================================================================
+function indexSurfaceOverlays() {
+  overlaysByRenderedAddress = new Map();
+  overlaysById = new Map();
+  for (const row of surfaceOverlays) {
+    if (row && row.overlay_id != null) overlaysById.set(String(row.overlay_id), row);
+    const addr = row && String(row.rendered_address || '').trim();
+    if (!addr) continue;
+    let rows = overlaysByRenderedAddress.get(addr);
+    if (!rows) { rows = []; overlaysByRenderedAddress.set(addr, rows); }
+    rows.push(row);
+  }
+}
+
+// End column for a span row: tolerate either an explicit end (rendered_char_end)
+// or a length (rendered_char_len / rendered_length). Mirrors what interlink
+// rows carry while degrading gracefully on the alternate shape.
+function spanEnd(row, start) {
+  const explicit = Number(row.rendered_char_end);
+  if (Number.isInteger(explicit)) return explicit;
+  const len = Number(row.rendered_char_len != null ? row.rendered_char_len : row.rendered_length);
+  if (Number.isInteger(len) && Number.isInteger(start)) return start + len;
+  return NaN;
+}
+
+function overlayActiveAt(row, date) {
+  if (date && row.rendered_effective_date && row.rendered_effective_date !== date) return false;
+  if (date && row.valid_at_start && row.valid_at_start > date) return false;
+  if (date && row.valid_at_end && row.valid_at_end < date) return false;
+  return true;
+}
+
+// Overlays of a given segment that are (a) of an ENABLED kind, (b) active on
+// the selected date, (c) place onto a valid char range within the text.
+function renderedOverlaysForSegment(addr, segmentIndex, text) {
+  const rows = overlaysByRenderedAddress.get(addr) || [];
+  return rows
+    .filter(row => enabledOverlayKinds.has(String(row.kind || '')))
+    .filter(row => Number(row.rendered_segment_index) === segmentIndex
+      && overlayActiveAt(row, changeDates[curDateIdx]))
+    .map(row => {
+      const start = Number(row.rendered_char_start);
+      return { row, start, end: spanEnd(row, start) };
+    })
+    .filter(item => Number.isInteger(item.start) && Number.isInteger(item.end)
+      && item.start >= 0 && item.end > item.start && item.end <= text.length)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+function overlayLinks(row) {
+  return jsonArray(row && row.links_json).filter(l => l && typeof l === 'object');
+}
+
+function overlayPayload(row) {
+  return jsonObj(row && row.payload_json);
+}
+
+// Human label for a payload key; falls back to the raw key (snake → spaced).
+function overlayFieldLabel(key) {
+  return tr('overlayField_' + key) || String(key).replace(/_/g, ' ');
+}
+
+// Resolve a link target (overlay or node) to a short display string.
+function overlayLinkLabel(link) {
+  if (link.target_overlay_id != null) {
+    const t = overlaysById.get(String(link.target_overlay_id));
+    if (t) return t.label || t.overlay_id;
+    return String(link.target_overlay_id);
+  }
+  if (link.target_node_id != null) return String(link.target_node_id);
+  return '';
+}
+
+// Surface-fact hovercard for an overlay row: kind heading + the typed payload
+// facts + any co-located links. Never states a legal conclusion.
+function overlayHovercardHtml(row) {
+  if (!row) return null;
+  const kind = String(row.kind || '');
+  const payload = overlayPayload(row);
+  const links = overlayLinks(row);
+  const title = row.label || tr('overlayLayer_' + kind) || kind;
+  let h = `<div class="hc-title">${escHtml(title)}</div>`;
+  h += `<div class="hc-status-row">`
+    + `<span class="hc-status hc-overlay-${escAttr(kind)}">${escHtml(tr('overlayLayer_' + kind) || kind)}</span>`;
+  if (kind === 'term_use' && row.status) {
+    h += `<span class="hc-citekind">${escHtml(row.status)}</span>`;
+  }
+  h += `</div>`;
+  // defined_term: surface usage count when the lane supplied it.
+  if (kind === 'defined_term' && payload.use_count != null) {
+    h += `<div class="hc-overlay-note">${escHtml(tr('overlayUsedNTimes', Number(payload.use_count)))}</div>`;
+  }
+  // The typed payload facts (surface description only).
+  const keys = Object.keys(payload).filter(k => payload[k] != null && payload[k] !== '' && typeof payload[k] !== 'object');
+  if (keys.length) {
+    h += `<dl class="hc-meta">`;
+    for (const k of keys) {
+      h += `<div><dt>${escHtml(overlayFieldLabel(k))}</dt><dd>${escHtml(String(payload[k]))}</dd></div>`;
+    }
+    h += `</dl>`;
+  }
+  // Co-located links (e.g. a sanction frame's references; a term use's
+  // definition). Listed as surface relations, not navigations of legal weight.
+  if (links.length) {
+    h += `<div class="hc-overlay-links"><div class="hc-overlay-links-lbl">${escHtml(tr('overlayLinks'))}</div><ul>`;
+    for (const link of links) {
+      const label = overlayLinkLabel(link);
+      const rel = link.rel ? `${escHtml(link.rel)}: ` : '';
+      h += `<li>${rel}${escHtml(label)}</li>`;
+    }
+    h += `</ul></div>`;
+  }
+  return h;
+}
+
 function jsonObj(value) {
   if (!value) return {};
   if (typeof value === 'object') return value;
@@ -695,14 +875,32 @@ function renderedInterlinksForSegment(addr, segmentIndex, text) {
 }
 
 function renderTextWithInterlinks(addr, segmentIndex, text) {
-  const spans = renderedInterlinksForSegment(addr, segmentIndex, text);
+  // The existing inline-citation layer renders only when its toggle (the
+  // `reference` overlay kind) is on (default). Overlay layers render per the
+  // enabled-kinds set. Both are placed by the SAME rendered-span machinery,
+  // then merged into one left-to-right, non-overlapping marker stream.
+  const refsOn = enabledOverlayKinds.has('reference');
+  const interlinkSpans = refsOn
+    ? renderedInterlinksForSegment(addr, segmentIndex, text).map(s => ({ ...s, _layer: 'semantic' }))
+    : [];
+  const overlaySpans = renderedOverlaysForSegment(addr, segmentIndex, text)
+    // The `reference` overlay kind is the same conceptual layer as interlinks;
+    // when interlinks already render it, don't double-mark.
+    .filter(s => !(refsOn && String(s.row.kind || '') === 'reference'))
+    .map(s => ({ ...s, _layer: 'overlay' }));
+  const spans = [...interlinkSpans, ...overlaySpans]
+    .sort((a, b) => a.start - b.start || a.end - b.end);
   if (!spans.length) return escHtml(text);
   let html = '', pos = 0;
   for (const span of spans) {
-    if (span.start < pos) continue;
+    if (span.start < pos) continue;   // skip overlaps; first (leftmost) wins
     html += escHtml(text.slice(pos, span.start));
     const surface = text.slice(span.start, span.end);
-    html += refLink('semantic', { ...span.row, text: surface }, surface);
+    if (span._layer === 'semantic') {
+      html += refLink('semantic', { ...span.row, text: surface }, surface);
+    } else {
+      html += refLink('overlay', { ...span.row, text: surface }, surface);
+    }
     pos = span.end;
   }
   html += escHtml(text.slice(pos));
@@ -1157,6 +1355,7 @@ async function loadStatute(statuteId, permalink) {
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
     interlinks = []; interlinksByRenderedAddress = new Map(); interlinkTargetsByKey = new Map();
+    surfaceOverlays = []; overlaysByRenderedAddress = new Map(); overlaysById = new Map();
     displayNodeByDateAddress = new Map();
     evidenceEvents = []; evidenceBySource = new Map(); evidenceByDate = new Map(); evidenceWithAddress = [];
     compareSel = { d1: null, d2: null };
@@ -1184,6 +1383,12 @@ async function loadStatute(statuteId, permalink) {
       indexInterlinkTargets(q('SELECT * FROM lawvm_interlink_targets ORDER BY target_key'));
     } else {
       indexInterlinkTargets([]);
+    }
+    // Optional rich semantic overlay layers. Absent table → no extra overlays
+    // (graceful degradation; no error).
+    if (tableExists('lawvm_surface_overlays')) {
+      surfaceOverlays = q('SELECT * FROM lawvm_surface_overlays ORDER BY overlay_id');
+      indexSurfaceOverlays();
     }
     evidenceEvents = q('SELECT * FROM evidence_events ORDER BY event_id');
     indexEvidenceEvents();
@@ -1246,6 +1451,7 @@ function renderShell() {
         </div>
         <div class="timeaxis" id="timeaxis" title="">${timeAxisInnerHtml()}</div>
       </div>
+      ${overlayLayerBarHtml()}
     </div>
     <p class="mode-hint" id="mode-hint"></p>
     <div class="view" id="view"></div>`;
@@ -1257,10 +1463,60 @@ function renderShell() {
   document.getElementById('next-date').addEventListener('click', () => selectDate(Math.min(changeDates.length - 1, curDateIdx + 1)));
   document.getElementById('date-jump').addEventListener('change', (e) => selectDate(parseInt(e.target.value, 10)));
   document.getElementById('focus-changes-toggle').addEventListener('click', toggleFocusChangesOnly);
+  wireOverlayLayerBar();
   wireTimeAxis();
   wireSecJump();
 
   setMode('law', /*skipRender*/ true);
+}
+
+// ---- overlay layer toggle bar (pills) ----
+// Which layers are offered: `reference` always (the existing inline-citation
+// layer), plus any richer kind that actually has rows in the loaded data.
+function availableOverlayKinds() {
+  const present = new Set(surfaceOverlays.map(r => String(r.kind || '')));
+  return OVERLAY_LAYER_KINDS.filter(k => k === 'reference' || present.has(k));
+}
+
+function overlayLayerBarHtml() {
+  const kinds = availableOverlayKinds();
+  // Nothing beyond the always-present reference layer? Still show it so the
+  // affordance is discoverable, but skip the bar entirely if there are no
+  // interlinks AND no overlays at all (keeps clean corpora uncluttered).
+  if (!interlinks.length && !surfaceOverlays.length) return '';
+  let html = `<div class="overlay-bar" id="overlay-bar" role="group" aria-label="${escAttr(tr('overlayLayers'))}">`;
+  html += `<span class="overlay-bar-lbl">${escHtml(tr('overlayLayers'))}</span>`;
+  for (const k of kinds) {
+    const on = enabledOverlayKinds.has(k);
+    html += `<button type="button" class="overlay-pill ov-pill-${escAttr(k)}${on ? ' active' : ''}"`
+      + ` data-overlay-kind="${escAttr(k)}" aria-pressed="${on ? 'true' : 'false'}"`
+      + ` title="${escAttr(tr('overlayLayerTip_' + k) || tr('overlayLayer_' + k) || k)}">`
+      + `${escHtml(tr('overlayLayer_' + k) || k)}</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function wireOverlayLayerBar() {
+  const bar = document.getElementById('overlay-bar');
+  if (!bar) return;
+  for (const btn of bar.querySelectorAll('.overlay-pill')) {
+    btn.addEventListener('click', () => toggleOverlayKind(btn.dataset.overlayKind));
+  }
+}
+
+function toggleOverlayKind(kind) {
+  if (!kind) return;
+  if (enabledOverlayKinds.has(kind)) enabledOverlayKinds.delete(kind);
+  else enabledOverlayKinds.add(kind);
+  const btn = document.querySelector(`.overlay-pill[data-overlay-kind="${cssEsc(kind)}"]`);
+  if (btn) {
+    const on = enabledOverlayKinds.has(kind);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  // Overlays render inside the law-view document text; re-render it.
+  if (mode === 'law') renderLaw({ preserveScroll: true });
 }
 
 // ---- real time axis: ticks at change dates, proportional positions ----
