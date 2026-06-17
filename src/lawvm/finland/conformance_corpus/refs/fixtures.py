@@ -463,7 +463,9 @@ EU_EMBEDDED_REPEAL = CorpusFixture(
     expected_mentions=[
         {
             "source_statute_id": "2011/542",
-            "target_statute_id": "eu/act/2009/1069",
+            # Both acts are governed by an inflected ``asetus`` stem
+            # ("asetuksen"/"asetuksessa") → classified as ``reg``.
+            "target_statute_id": "eu/reg/2009/1069",
             "cite_kind": "eu",
             "cite_confidence": "exact",
             "edge_subtype": "CITES",
@@ -471,7 +473,7 @@ EU_EMBEDDED_REPEAL = CorpusFixture(
         },
         {
             "source_statute_id": "2011/542",
-            "target_statute_id": "eu/act/2002/1774",
+            "target_statute_id": "eu/reg/2002/1774",
             "cite_kind": "eu",
             "cite_confidence": "exact",
             "edge_subtype": "REPEALS_EMBEDDED",

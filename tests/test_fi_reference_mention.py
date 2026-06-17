@@ -335,10 +335,10 @@ class TestConformanceFixtures:
             for m in eu_mentions
             if m.target_provision_ref is not None
         }
-        assert "eu/act/2009/1069" in by_target, f"primary missing: {by_target}"
-        assert "eu/act/2002/1774" in by_target, f"embedded missing: {by_target}"
-        assert by_target["eu/act/2009/1069"].edge_subtype == "CITES"
-        assert by_target["eu/act/2002/1774"].edge_subtype == "REPEALS_EMBEDDED"
+        assert "eu/reg/2009/1069" in by_target, f"primary missing: {by_target}"
+        assert "eu/reg/2002/1774" in by_target, f"embedded missing: {by_target}"
+        assert by_target["eu/reg/2009/1069"].edge_subtype == "CITES"
+        assert by_target["eu/reg/2002/1774"].edge_subtype == "REPEALS_EMBEDDED"
         # Each expected fixture mention must match an actual EU mention by target.
         for expected in EU_EMBEDDED_REPEAL.expected_mentions:
             match = by_target[expected["target_statute_id"]]

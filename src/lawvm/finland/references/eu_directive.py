@@ -54,6 +54,11 @@ from lawvm.finland.johtolause.grammar.sections import (
     _number_list,
 )
 from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.references.eu_reference import (
+    DIALECT_CROSS_REF,
+    recognize_celex,
+    recognize_eu_acts,
+)
 from lawvm.finland.references.registries import eu_nickname
 
 # ---------------------------------------------------------------------------
@@ -78,24 +83,112 @@ _NICKNAME_RE = re.compile(
     rf"(?P<head>{_HEAD_WORD})",
 )
 
-# The article window: a number list (digits, commas, conjunctions, dashes,
-# letter suffixes) immediately followed by an inflected ``artikla``.
-# NOTE: the number-window class is bounded ({0,120}) and the redundant trailing
-# ``\s*`` was folded into it.  The old ``[...]*?\s*`` shape had the lazy class and
-# the following ``\s*`` overlapping on whitespace, which made an article phrase
-# without a terminal ``artikla`` backtrack catastrophically (~3 s at 16k chars).
-# Folding + bounding keeps the same matches (the ``nums`` capture is stripped and
-# re-tokenised downstream) while running linearly.  120 chars covers any realistic
-# article list ("1, 2 ja 3 artiklassa").
+# The article window: a number list (digits with optional letter suffix, joined
+# only by explicit list connectors — comma / "ja" / "tai" / dash) immediately
+# followed by an inflected ``artikla``.
+#
+# The number list is built from list ITEMS joined by CONNECTORS, instead of a
+# loose ``[\d\s,...]`` class. This stops ``nums`` from reaching back across a
+# whitespace-separated standalone number that is NOT part of the list:
+# ``2004 8 artiklassa`` no longer captures ``2004`` (the bare ``2004`` is a
+# preceding year, not an article), and ``2012 13 ja 14 artiklan`` captures
+# ``13 ja 14`` (the real articles) rather than collapsing to ``2012``. Plain
+# whitespace between two digit runs is NOT a connector, so the list start anchors
+# to the contiguous run.
+#
+# ReDoS safety (§1.11): every quantifier is bounded and no two adjacent
+# unbounded/overlapping repeats exist. An item is ``\d{1,4}`` + optional single
+# letter suffix; the list is the item followed by at most a bounded number of
+# ``connector item`` pairs; connectors are explicit (no bare ``\s`` bridging two
+# digit runs). The whole thing precedes ``artikla`` directly (optional single
+# space), so a no-``artikla`` tail fails fast without catastrophic backtracking.
+_ARTIKLA_ITEM = r"\d{1,4}(?:\s?[a-z])?"
+_ARTIKLA_CONNECTOR = r"(?:\s*[,–—-]\s*|\s+(?:ja|tai|sekä)\s+)"
 _ARTIKLA_RE = re.compile(
-    r"(?P<nums>\d[\d\s,a-z–—-]{0,120})"
-    r"artikla(?:ssa|sta|an|n|a|ksi|lla|lta|lle|t)?\b",
+    rf"(?P<nums>{_ARTIKLA_ITEM}(?:{_ARTIKLA_CONNECTOR}{_ARTIKLA_ITEM}){{0,30}})"
+    r"\s*artikla(?:ssa|sta|an|n|a|ksi|lla|lta|lle|t)?\b",
     re.IGNORECASE,
 )
 
 # Reasonable lookbehind window (chars) from an article phrase to its governing
 # nickname head. Finnish keeps the two adjacent: "<nickname> N ja M artiklassa".
 _NICKNAME_LOOKBEHIND = 80
+
+# CELEX sector/type letter per instrument-head stem. A directive is L, a
+# regulation is R, a decision is D. The head word that governs the article
+# carries the instrument type, so it disambiguates a form-less inline cite
+# (e.g. "direktiivin 2009/138/EY" → L → 32009L0138). Most-specific stem first.
+_HEAD_CELEX_TYPE: tuple[tuple[str, str], ...] = (
+    ("direktiiv", "L"),   # direktiivi → directive
+    ("päätöks", "D"),     # päätöksen → decision (gradated stem)
+    ("päätös", "D"),
+    ("asetuks", "R"),     # asetuksen → regulation (gradated stem)
+    ("asetus", "R"),
+    ("asetu", "R"),       # broad asetus stem (matches _HEAD_WORD's "asetu")
+)
+
+
+# Year-first slash cite "YEAR/NUMBER/FORM" (e.g. "2009/138/EY", "2001/23/EY").
+# The shared NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE group, so it
+# only reads the number-first order; this picks up the year-first order (4-digit
+# year, ≤3-digit act number — unambiguously year-first). Bounded (§1.11).
+_YEAR_FIRST_SLASH_CITE = re.compile(
+    r"\b(?P<year>\d{4})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b",
+    re.IGNORECASE,
+)
+
+
+def _celex_type_for_head(head: str) -> Optional[str]:
+    """CELEX type letter (L/R/D) implied by an instrument-head surface, or None."""
+    low = head.lower()
+    for stem, letter in _HEAD_CELEX_TYPE:
+        if stem in low:
+            return letter
+    return None
+
+
+def _celex_from_formal_cite(window: str, head: str) -> Optional[str]:
+    """Resolve an adjacent formal EU cite in ``window`` to a CELEX, or None.
+
+    An EU-by-nickname head with NO registry hit is only resolvable when the same
+    window also carries a formal EU cite. Two shapes resolve here:
+
+      * a literal CELEX ("32018R1805") → used verbatim (its own type letter wins);
+      * a form-less / formed act cite ("(EU) 2018/1805", "2009/138/EY",
+        "(EY) N:o 999/2001") → the (year, number) are taken from the cite and the
+        TYPE letter from the governing head word ("direktiivin" → L, "asetuksen"
+        → R, "päätöksen" → D), yielding ``3{year}{TYPE}{number:04d}``.
+
+    Returns ``None`` when no formal cite is adjacent (then the bare head is NOT
+    emitted — fail-loud, no polluting STATUTE_ONLY double-count).
+    """
+    # A literal CELEX is self-typing — prefer it (closest one to the article).
+    celex_hits = recognize_celex(window, dialect=DIALECT_CROSS_REF)
+    if celex_hits:
+        return max(celex_hits, key=lambda h: h.start).celex
+
+    # Otherwise an act cite supplies (year, number); the head supplies the type.
+    # Collect (start, year, number) from BOTH the shared act recognizer
+    # (NUMBER/YEAR/FORM, "(FORM) N:o NUMBER/YEAR", "(FORM) YEAR/NUMBER") and the
+    # year-first slash form ("YEAR/NUMBER/FORM") the shared recognizer misses.
+    type_letter = _celex_type_for_head(head)
+    if type_letter is None:
+        return None
+    candidates: list[tuple[int, int, int]] = []  # (start, year, number)
+    for h in recognize_eu_acts(window, dialect=DIALECT_CROSS_REF):
+        try:
+            candidates.append((h.start, int(h.year), int(h.number)))
+        except ValueError:
+            continue
+    for m in _YEAR_FIRST_SLASH_CITE.finditer(window):
+        candidates.append((m.start(), int(m.group("year")), int(m.group("num"))))
+    if not candidates:
+        return None
+    # The cite closest to the article (largest start offset) governs it.
+    _, year, num = max(candidates, key=lambda c: c[0])
+    if not (1957 <= year <= 2050):
+        return None
+    return f"3{year:04d}{type_letter}{num:04d}"
 
 
 # ---------------------------------------------------------------------------
@@ -230,8 +323,18 @@ def recognize_eu_directive_refs(
         source_provision_path: Provision path of the citing text.
 
     Resolution status per emitted mention:
-        EXACT (single CELEX) / AMBIGUOUS (>1 CELEX) / STATUTE_ONLY (nickname
-        named but unknown to the registry).
+        EXACT (single CELEX — a registry SINGLE hit, or a bare head resolved via
+        an adjacent formal EU cite) / AMBIGUOUS (>1 CELEX, registry MULTIPLE).
+        An unresolvable bare head is NOT emitted (see below), so no STATUTE_ONLY
+        nickname-only mention is produced.
+
+    Bare-head discipline (FAIL-LOUD): a nickname-shaped head with NO registry hit
+    is emitted ONLY when an adjacent formal EU cite is present in the same window
+    — then it resolves to that cite's CELEX (EXACT). A head with neither a
+    registry hit nor an adjacent formal cite (a domestic ``asetus`` / anaphoric
+    ``direktiivin`` whose article number is governed elsewhere) is NOT emitted: a
+    bare ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive and
+    would double-count against the formal-cite lane.
     """
     source_ref = ProvisionRef(
         statute_id=source_statute_id,
@@ -244,20 +347,28 @@ def recognize_eu_directive_refs(
             continue
         surface, res = nickname
         confidence, celex = _status_for(res)
+        if confidence is CiteConfidence.STATUTE_ONLY:
+            # No registry hit. Only emit if an adjacent formal EU cite resolves
+            # the bare head; otherwise drop it (fail-loud, no polluting
+            # STATUTE_ONLY). The window is the nickname lookbehind plus the cite
+            # that may sit between the head and the article number.
+            window = text[max(0, am.start() - _NICKNAME_LOOKBEHIND) : am.start()]
+            resolved_celex = _celex_from_formal_cite(window, surface)
+            if resolved_celex is None:
+                continue
+            confidence = CiteConfidence.EXACT
+            celex = (resolved_celex,)
         articles = _expand_articles(am.group("nums"))
         if not articles:
             continue
 
+        # By this point ``confidence`` is EXACT (registry SINGLE or a bare head
+        # resolved via an adjacent formal cite) or AMBIGUOUS (registry MULTIPLE).
+        # STATUTE_ONLY no longer reaches here: an unresolvable bare head was
+        # dropped above (fail-loud), so the article path is never attached to a
+        # polluting ``eu-nickname:<head>`` placeholder.
         for article in articles:
-            if confidence is CiteConfidence.STATUTE_ONLY:
-                # Instrument identity is textual but CELEX is pending. The act is
-                # "known" only as a nickname surface; carry it in statute_id so
-                # the article path is not silently dropped.
-                target = ProvisionRef(
-                    statute_id=f"eu-nickname:{surface}",
-                    section_label=article,
-                )
-            elif confidence is CiteConfidence.EXACT:
+            if confidence is CiteConfidence.EXACT:
                 target = ProvisionRef(
                     statute_id=f"celex:{celex[0]}",
                     section_label=article,

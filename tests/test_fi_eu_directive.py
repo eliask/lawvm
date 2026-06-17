@@ -10,7 +10,11 @@ previously 0% captured:
 from __future__ import annotations
 
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
-from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
+from lawvm.finland.references.eu_directive import (
+    _ARTIKLA_RE,
+    _expand_articles,
+    recognize_eu_directive_refs,
+)
 from lawvm.finland.references.registries import eu_nickname
 
 
@@ -64,17 +68,46 @@ def test_nickname_article_coordination_exact() -> None:
         assert r.mention.target_provision_ref.statute_id == "celex:32010L0075"
 
 
-def test_unknown_nickname_is_statute_only() -> None:
+def test_unknown_bare_head_without_formal_cite_not_emitted() -> None:
+    # A nickname-shaped head unknown to the registry AND with no adjacent formal
+    # EU cite is NOT a resolvable EU-by-nickname reference: emitting a bare
+    # ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive (the
+    # article number is governed elsewhere) and would double-count against the
+    # formal-cite lane. Fail-loud: emit nothing.
     refs = recognize_eu_directive_refs("foobardirektiivin 4 artiklassa")
+    assert refs == []
+
+
+def test_unknown_bare_head_with_inline_formal_cite_resolves() -> None:
+    # Sub-case (b): a bare head NOT in the registry but followed by an inline
+    # formal EU cite resolves to that cite's CELEX. The head supplies the CELEX
+    # type letter (direktiivi → L), the cite supplies (year, number):
+    # "direktiivin 2009/138/EY 268 artiklan" → 32009L0138.
+    refs = recognize_eu_directive_refs("direktiivin 2009/138/EY 268 artiklan")
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is CiteConfidence.STATUTE_ONLY
-    assert r.celex_candidates == ()
-    assert r.article == "4"
-    # Article path is NOT dropped — the instrument identity is carried textually.
+    assert r.status is CiteConfidence.EXACT
+    assert r.celex_candidates == ("32009L0138",)
+    assert r.article == "268"
     assert r.mention.target_provision_ref is not None
-    assert r.mention.target_provision_ref.section_label == "4"
-    assert "foobardirektiivin" in r.mention.target_provision_ref.statute_id
+    assert r.mention.target_provision_ref.statute_id == "celex:32009L0138"
+
+
+def test_unknown_bare_head_with_eu_year_cite_resolves_regulation() -> None:
+    # Sub-case (b), regulation form: "asetuksen (EU) 2018/1805 30 artiklan"
+    # → asetus → R → 32018R1805.
+    refs = recognize_eu_directive_refs("asetuksen (EU) 2018/1805 30 artiklan")
+    assert len(refs) == 1
+    assert refs[0].status is CiteConfidence.EXACT
+    assert refs[0].celex_candidates == ("32018R1805",)
+    assert refs[0].article == "30"
+
+
+def test_bare_domestic_asetus_anaphora_not_emitted() -> None:
+    # A domestic/anaphoric ``asetus`` whose article number is governed elsewhere
+    # (no registry hit, no adjacent formal EU cite) must not be emitted.
+    refs = recognize_eu_directive_refs("tässä asetuksessa tarkoitetun 5 artiklan")
+    assert refs == []
 
 
 def test_ambiguous_nickname_emits_all_candidates() -> None:
@@ -106,3 +139,34 @@ def test_bare_article_without_nickname_skipped() -> None:
     # article reference owned by other lanes, not an EU-by-nickname reference.
     refs = recognize_eu_directive_refs("12 artiklan mukaisesti")
     assert refs == []
+
+
+# ---------------------------------------------------------------------------
+# Article number-list must not leak across a preceding standalone number
+# ---------------------------------------------------------------------------
+
+
+def test_artikla_number_does_not_absorb_preceding_year() -> None:
+    # "2004 8 artiklassa": the bare "2004" is a preceding number, not an article.
+    # The list must capture only the contiguous "8".
+    m = _ARTIKLA_RE.search("säädöksen 2004 8 artiklassa")
+    assert m is not None
+    assert _expand_articles(m.group("nums")) == ["8"]
+
+
+def test_artikla_list_does_not_absorb_preceding_number() -> None:
+    # "2012 13 ja 14 artiklan": the real articles are 13 and 14; the leading
+    # "2012" must not collapse the list to a single "2012".
+    m = _ARTIKLA_RE.search("vuoden 2012 13 ja 14 artiklan")
+    assert m is not None
+    assert _expand_articles(m.group("nums")) == ["13", "14"]
+
+
+def test_artikla_plain_list_and_range_preserved() -> None:
+    # Connector-joined lists and ranges are unaffected.
+    m1 = _ARTIKLA_RE.search("33 ja 35 artiklassa")
+    assert m1 is not None and _expand_articles(m1.group("nums")) == ["33", "35"]
+    m2 = _ARTIKLA_RE.search("33—35 artiklassa")
+    assert m2 is not None and _expand_articles(m2.group("nums")) == ["33", "34", "35"]
+    m3 = _ARTIKLA_RE.search("1, 2 ja 3 artiklassa")
+    assert m3 is not None and _expand_articles(m3.group("nums")) == ["1", "2", "3"]

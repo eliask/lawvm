@@ -57,9 +57,13 @@ DIALECT_PREPARATORY = "preparatory"
 # --- CROSS_REF dialect EU-act patterns (ported verbatim from cross_refs.py) ---
 
 # "(EY|EU|ETY|EURATOM|ETA) N:o NUMBER/YEAR" — old number-first form. Note the
-# "\s*" before N:o and the case-insensitive flag (cross_refs original).
+# "\s*" before N:o and the case-insensitive flag (cross_refs original). The year
+# group accepts BOTH the 4-digit form ("(EY) N:o 999/2001") and the legacy
+# 2-digit form ("(ETY) N:o 2092/91", "(EY) N:o 207/93"); the lane lowering
+# (cross_refs._add) expands a 2-digit year by the codebase century pivot. The
+# 4-digit alternative is listed first so a "/2001" never matches as "/20" + "01".
 _CR_EU_P1 = re.compile(
-    r'\((?:EU|EY|ETY|EURATOM|ETA)\)\s*N:o\s+(\d{1,6})/(\d{4})',
+    r'\((?:EU|EY|ETY|EURATOM|ETA)\)\s*N:o\s+(\d{1,6})/(\d{4}|\d{2})\b',
     re.I,
 )
 # "(EU|EY|...) YEAR/NUMBER" — modern year-first form (GDPR-style).
@@ -92,25 +96,50 @@ _PREP_CELEX = re.compile(
 
 # --- Embedded-repeal cue (long-form EU citation provenance) ---
 # In a long-form EU citation an inner act named only as provenance can be the
-# object of a repeal performed by the OUTER (enacting) act, e.g.
-#   "asetuksen (EY) N:o 1774/2002 kumoamisesta ... asetuksessa (EY) N:o 1069/2009"
-# Here 1774/2002 is REPEALED-EMBEDDED provenance and 1069/2009 is the primary
-# target. The repeal is signalled by a closed cue set in the gap that follows the
-# inner act's span. Word-boundary anchored, bounded alternation (§1.11).
-_EMBEDDED_REPEAL_CUE = re.compile(
-    r'\b(?:kumoamisesta|kumoamista|kumoaa|kumotaan|kumottu|kumoava)\b',
+# object of a repeal performed by the OUTER (enacting) act. The repealed act is
+# REPEALED-EMBEDDED provenance; the enacting act is the primary target. Finnish
+# spells this in two opposite word orders, and the cue's GRAMMAR tells us which
+# neighbouring act is the repealed object:
+#
+#   (A) object-PRECEDES — deverbal-noun cue ("X:n kumoamisesta ... Y"):
+#         "asetuksen (EY) N:o 1774/2002 kumoamisesta ... asetuksessa (EY) N:o 1069/2009"
+#       The repealed act (1774/2002) sits in the gap BEFORE the cue.
+#   (B) object-FOLLOWS — finite-verb cue ("Y, jolla kumotaan X"):
+#         "asetuksessa (EY) N:o 1069/2009, jolla kumotaan asetus (EY) N:o 1774/2002"
+#       The repealed act (1774/2002) sits in the gap AFTER the cue.
+#
+# Keeping the two cue classes apart prevents role INVERSION: a finite-verb cue
+# trailing the primary act (case B) must NOT mark that primary act as repealed.
+# Word-boundary anchored, bounded alternation (§1.11).
+#
+# Object-precedes cues: the deverbal noun "kumoaminen" in the elative/partitive
+# ("kumoamisesta"/"kumoamista") — "of/about repealing the preceding act". Also
+# the past participle "kumottu/kumotun" used attributively after the object.
+_EMBEDDED_REPEAL_CUE_OBJECT_PRECEDES = re.compile(
+    r'\b(?:kumoamisesta|kumoamista|kumoamisen|kumottu|kumotun)\b',
     re.I,
 )
-# Bounded look-ahead window (chars) after an act span in which a repeal cue
-# flags that act as embedded provenance. The cue follows the inner act almost
-# immediately ("(EY) N:o 1774/2002 kumoamisesta"); the window is also clipped to
-# the next EU-act span so the cue must sit BETWEEN the two acts.
+# Object-follows cues: a finite repeal verb / agentive participle that takes the
+# FOLLOWING act as its object ("jolla kumotaan X", "joka kumoaa X", "X:n kumoava").
+_EMBEDDED_REPEAL_CUE_OBJECT_FOLLOWS = re.compile(
+    r'\b(?:kumotaan|kumoaa|kumoava|kumoavassa|kumoavan)\b',
+    re.I,
+)
+# Bounded window (chars) between an act span and a repeal cue. Object-precedes:
+# the cue follows the inner act almost immediately ("(EY) N:o 1774/2002
+# kumoamisesta"). Object-follows: the act follows the cue almost immediately
+# ("kumotaan asetus (EY) N:o 1774/2002"). Both windows are clipped to the
+# neighbouring EU-act span so the cue must sit BETWEEN the two acts.
 _EMBEDDED_REPEAL_WINDOW = 40
 
 # --- OJ reference (only the preparatory lane recognised these) ---
-# "EUVL L 327, 9.12.2017, s. 20" / "EYVL N:o L 31, 1.2.2002, s. 1"
+# "EUVL L 327, 9.12.2017, s. 20" / "EYVL N:o L 31, 1.2.2002, s. 1". The
+# issue-number→date separator varies: a comma (canonical), a semicolon
+# ("EUVL N:o L 374; 22.12.2004"), or nothing at all ("EYVL N:o L 235 17.9.1996")
+# — accept ``[,;]?`` there. The date→page separator stays a comma (always
+# present in practice). Bounded throughout (§1.11).
 _OJ_RE = re.compile(
-    r'(?:EUVL|EYVL)\s+(?:N:o\s+)?(?P<series>[LCS])\s+(?P<n>\d{1,6}),\s*'
+    r'(?:EUVL|EYVL)\s+(?:N:o\s+)?(?P<series>[LCS])\s+(?P<n>\d{1,6})[,;]?\s*'
     r'(?P<d>\d{1,2}\.\d{1,2}\.\d{4}),\s*s\.\s*(?P<p>\d{1,6})'
 )
 
@@ -181,35 +210,50 @@ class OjRef:
 
 
 def _tag_embedded_repeals(acts: List[EuActRef], text: str) -> List[EuActRef]:
-    """Tag inner EU-act spans that the outer act repeals as embedded provenance.
+    """Tag EU-act spans named only as the object of a repeal as embedded provenance.
 
-    For each act, scan the bounded gap between its ``end`` and the start of the
-    next act span (in source order) for a repeal cue from the closed cue set. A
-    cue in that gap means this act is named only as the object of a repeal the
-    following (outer) act performs → ``role="repealed_embedded"``. The outer/last
-    act keeps the default ``role="primary"``.
+    Two opposite Finnish word orders are recognised, each by its own cue class so
+    roles never invert (see the cue-pattern docstring above):
 
-    PURELY ADDITIVE: only ``role`` changes; the set, order, spans, and parsed
+      (A) object-PRECEDES ("X:n kumoamisesta ... Y"): an object-precedes cue in
+          the bounded gap AFTER an act (clipped to the next act span) means THAT
+          act is the repealed object → ``role="repealed_embedded"``.
+      (B) object-FOLLOWS ("Y, jolla kumotaan X"): an object-follows cue in the
+          bounded gap BEFORE an act (clipped to the previous act span) means THAT
+          act is the repealed object → ``role="repealed_embedded"``.
+
+    The enacting / cited act keeps the default ``role="primary"``.
+
+    PURELY ROLE-TAGGING: only ``role`` changes; the set, order, spans, and parsed
     fields of the returned refs are byte-identical to the input list. When no cue
     is present (the overwhelming majority of EU citations), the input list is
     returned unchanged.
     """
     if len(acts) < 2:
         return acts
-    # Process in source order so each act's gap is clipped at the *next* span.
+    # Process in source order so each act's gaps are clipped at the neighbouring
+    # spans (the cue must sit BETWEEN the two acts, never spanning a third).
     order = sorted(range(len(acts)), key=lambda i: acts[i].start)
     tagged: dict[int, EuActRef] = {}
     for pos, idx in enumerate(order):
         act = acts[idx]
+        # (A) object-precedes: cue in the trailing gap before the next act.
         next_start = (
             acts[order[pos + 1]].start if pos + 1 < len(order) else len(text)
         )
         gap_end = min(act.end + _EMBEDDED_REPEAL_WINDOW, next_start)
-        if gap_end <= act.end:
-            continue
-        gap = text[act.end:gap_end]
-        if _EMBEDDED_REPEAL_CUE.search(gap):
-            tagged[idx] = replace(act, role="repealed_embedded")
+        if gap_end > act.end:
+            after_gap = text[act.end:gap_end]
+            if _EMBEDDED_REPEAL_CUE_OBJECT_PRECEDES.search(after_gap):
+                tagged[idx] = replace(act, role="repealed_embedded")
+                continue
+        # (B) object-follows: cue in the leading gap after the previous act.
+        prev_end = acts[order[pos - 1]].end if pos > 0 else 0
+        gap_start = max(act.start - _EMBEDDED_REPEAL_WINDOW, prev_end)
+        if gap_start < act.start:
+            before_gap = text[gap_start:act.start]
+            if _EMBEDDED_REPEAL_CUE_OBJECT_FOLLOWS.search(before_gap):
+                tagged[idx] = replace(act, role="repealed_embedded")
     if not tagged:
         return acts
     return [tagged.get(i, act) for i, act in enumerate(acts)]

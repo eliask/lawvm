@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from datetime import date
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -515,12 +516,19 @@ def extract_cross_refs(
 # patterns: EU|EY|ETY|EURATOM|ETA, re.I, plus the NUMBER/YEAR/FORM order).
 # Lowering into CrossRefEdge (type classification + sanity filter + dedup)
 # stays here.
-_EU_TYPE_MAP = {
-    'asetus':    'reg',    # regulation
-    'direktiivi': 'dir',   # directive
-    'päätös':    'dec',    # decision
-    'asiakirja': 'act',    # generic
-}
+# Finnish consonant gradation inflects the act-type heads (asetus → asetuksen,
+# päätös → päätöksen), so a bare-nominative substring test misses every inflected
+# regulation/decision and silently falls through to the generic 'act'. Match the
+# inflected STEMS instead. Ordered most-specific first so the longest stem wins
+# when several could co-occur in the look-behind window.
+_EU_TYPE_STEMS: tuple[tuple[str, str], ...] = (
+    ('direktiiv', 'dir'),   # direktiivi(n/ssä/…) — vowel-stemmed (no gradation)
+    ('asetuks', 'reg'),     # asetuksen/asetuksessa/… (gradated genitive stem)
+    ('asetus', 'reg'),      # asetus (nominative)
+    ('päätöks', 'dec'),     # päätöksen/päätöksessä/… (gradated genitive stem)
+    ('päätös', 'dec'),      # päätös (nominative)
+    ('asiakirja', 'act'),   # generic instrument
+)
 _EU_JURISDICTION = re.compile(r'\b(EU|EY|ETY|EURATOM|ETA)\b')
 
 _CELEX_TYPE = {'R': 'reg', 'L': 'dir', 'D': 'dec'}
@@ -543,12 +551,40 @@ _TYPE_LOOKBEHIND = 40
 
 
 def _classify_eu_type(text: str, match_start: int) -> str:
-    """Guess regulation/directive/decision from text before the match."""
+    """Guess regulation/directive/decision from text before the match.
+
+    Tests inflected stems (``asetuks``/``asetus``, ``päätöks``/``päätös``,
+    ``direktiiv``) so gradated forms ("asetuksen", "päätöksen") classify
+    correctly instead of falling through to the generic ``act``. The closest
+    (latest-occurring) stem in the look-behind window wins; on a tie the
+    most-specific (earliest-listed) stem is preferred.
+    """
     window = text[max(0, match_start - _TYPE_LOOKBEHIND):match_start].lower()
-    for fi_word, eu_type in _EU_TYPE_MAP.items():
-        if fi_word in window:
-            return eu_type
-    return 'act'
+    best_pos = -1
+    best_type = 'act'
+    for stem, eu_type in _EU_TYPE_STEMS:
+        pos = window.rfind(stem)
+        if pos > best_pos:
+            best_pos = pos
+            best_type = eu_type
+    return best_type
+
+
+def _normalize_eu_year(year: str) -> str:
+    """Expand a (possibly 2-digit) EU-act year fragment to a 4-digit year.
+
+    A 4-digit fragment is returned verbatim. A 2-digit fragment ``yy`` is
+    expanded by the codebase century pivot (same rule as the plain-text Finnish
+    statute-id lane): ``yy <= current 2-digit year`` → ``20yy``, otherwise
+    ``19yy``. EU-act numbering runs from the 1950s to present, so the window is
+    unambiguous in practice (e.g. ``91`` → ``1991``, ``02`` → ``2002``).
+    """
+    if len(year) != 2:
+        return year
+    yy = int(year)
+    current_yy = date.today().year % 100
+    century = 2000 if yy <= current_yy else 1900
+    return str(century + yy)
 
 
 def _eu_statute_id(eu_type: str, year: str, number: str) -> str:
@@ -614,6 +650,10 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         char_end: int = -1,
         surface: str = "",
     ) -> None:
+        # Expand a 2-digit "(ETY) N:o 2092/91"-style year before sanity-checking
+        # and id-building, so legacy EU citations land on the same canonical
+        # eu/TYPE/YEAR/NUMBER id as their 4-digit form.
+        year = _normalize_eu_year(year)
         if int(year) < 1957 or int(year) > 2050:
             return  # sanity filter
         target_id = _eu_statute_id(eu_type, year, number)

@@ -125,3 +125,17 @@ def test_surface_text_is_artikla_window() -> None:
     assert mentions
     for m in mentions:
         assert "artikla" in m.surface_text
+
+
+def test_treaty_article_does_not_leak_preceding_number() -> None:
+    """The shared ``_ARTIKLA_RE`` leak fix propagates to the treaty lane: a
+    preceding standalone number (here the SopS year ``2020``) is not absorbed
+    into the article list."""
+    text = "sopimuksen (SopS 19/2020) 8 artiklassa tarkoitettu"
+    mentions = recognize_treaty_article_refs(text)
+    labels = [
+        m.target_provision_ref.section_label
+        for m in mentions
+        if m.target_provision_ref
+    ]
+    assert labels == ["8"]
