@@ -126,6 +126,15 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "lisätään lakiin uusi N §/luku inserts a new section/chapter at law level "
         "(DOC illative)."
     ),
+    "fi.insertion_law_level_bare_section": (
+        "A historical law-level insert 'lisätään <statute>:ILL uusi N [a]' with the "
+        "trailing § omitted inserts a new section N at law level (DOC illative)."
+    ),
+    "fi.insertion_alakohta_into_item": (
+        "lisätään N §:n M momentin K kohtaan uusi <letter> alakohta inserts a new "
+        "subparagraph (alakohta) into item K of momentti M in section N, encoded as a "
+        "compound item label for replay."
+    ),
     # --- anaphoric / cross-verb insertion recognizers inheriting section context ---
     "fi.anaphoric_bare_uusi": (
         "A bare anaphoric insertion 'uusi N momentti/kohta' inserts the sub-target into "
@@ -250,5 +259,9 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
     "fi_flat_body_insert_scope_from_base_family_continuation": (
         "A flat-body lettered-suffix section insert (e.g. N a §) inherits the chapter of "
         "the preceding section in its label family."
+    ),
+    "fi_flat_body_replace_scope_from_live_section_gap": (
+        "A flat-body whole-section replacement infers its chapter from the gap between "
+        "live sections that the replaced section's label falls into."
     ),
 }
