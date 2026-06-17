@@ -293,7 +293,12 @@ const REF_KINDS = {
       const statusLabel = tr('semanticStatus_' + status) || status;
       const title = [statusLabel, p.role, p.target_work_id, p.target_locator]
         .filter(Boolean).join(' · ');
-      return { text, title, cls: 'ref-semantic ref-sem-' + status };
+      // Internal refs (target = the loaded act) are live in-page anchors: tag
+      // them so they style as a deeplink, not a precomputed-preview span. Only
+      // the navigating statuses (resolved / statute_only) get the live class.
+      const internalCls = (status === 'resolved' || status === 'statute_only')
+        && semanticIsInternalRef(p) ? ' ref-sem-internal' : '';
+      return { text, title, cls: 'ref-semantic ref-sem-' + status + internalCls };
     },
     // nav is keyed by status: navigating statuses get an action, the rest
     // fall through to a no-op (refLink still renders them as inert anchors,
@@ -402,6 +407,14 @@ function semanticTargetStatuteId(row) {
 function semanticNavToTarget(row, status) {
   const statuteId = semanticTargetStatuteId(row);
   const target = semanticTargetForRow(row);
+  // Internal refs navigate IN-PAGE to the target provision in the loaded act —
+  // the viewer already has the document, so we resolve the in-act address (incl.
+  // a bare `section:N` from the locator) and jump without reloading.
+  if (semanticIsInternalRef(row)) {
+    const addr = (status === 'resolved') ? semanticInternalAddr(row, target) : null;
+    goToAddrAtDate(addr || null, null);
+    return;
+  }
   const addr = (status === 'resolved') ? semanticTargetAddress(row, target) : null;
   if (statuteId && statuteId !== currentStatuteId) {
     statuteSel.value = statuteId;
@@ -427,6 +440,93 @@ function semanticTargetAddress(row, target) {
   const detail = jsonObj(row && row.detail_json);
   const fromDetail = String(detail.target_address || detail.rendered_address || '').trim();
   return fromDetail || null;
+}
+
+// ---- internal references: live in-page transclusion (no precomputed preview) ----
+// An INTERNAL reference's target IS the loaded act, so its preview should be
+// pulled LIVE from the document the viewer already has in the DOM — never from a
+// precomputed target_*/preview field (which is wasteful for internal links and
+// can go stale). Detection: the target statute equals the loaded act, OR the row
+// names no statute but carries an in-act locator/address (a bare "108 §:n …").
+function semanticIsInternalRef(row) {
+  if (!row) return false;
+  const statuteId = semanticTargetStatuteId(row);
+  if (statuteId) return statuteId === currentStatuteId;
+  // No resolvable target statute: treat as internal only when it carries an
+  // in-act anchor and is not flagged as a cross/external citation kind.
+  const workId = String(row.target_work_id || '').toLowerCase();
+  if (workId) return false;                 // names some other work → not internal
+  if (String(row.role || '') === 'internal') return true;
+  return !!semanticInternalAddr(row);
+}
+
+// Derive the in-act address of an internal target. Prefers an explicit rendered
+// address; else builds a coarse `section:N` (or chapter/subsection) address from
+// the row's target_locator (e.g. "section:108", "108", "section:108/subsection:1").
+function semanticInternalAddr(row, target) {
+  const explicit = semanticTargetAddress(row, target || semanticTargetForRow(row));
+  if (explicit) return explicit;
+  const loc = String((row && row.target_locator) || '').trim();
+  if (!loc) return null;
+  // Already an address-shaped locator (has a "kind:value" piece) → use as-is.
+  if (/[a-z_]+:/i.test(loc)) return loc;
+  // Bare numeric/alpha locator → assume a section key.
+  const raw = loc.toLowerCase().replace(/[§.\s]/g, '');
+  return raw ? `section:${raw}` : null;
+}
+
+// Locate the provision element for an in-act address in the live #doc tree.
+// Exact data-addr match first; then a section-suffix match (mirrors the §-jump),
+// so a coarse `section:108` finds the rendered "108 §" node regardless of its
+// chapter prefix. Returns the element, or null if not present at the current date.
+function findLiveProvisionEl(addr) {
+  if (!addr) return null;
+  const doc = document.getElementById('doc');
+  if (!doc) return null;
+  let el = doc.querySelector(`[data-addr="${cssEsc(addr)}"]`);
+  if (el) return el;
+  const m = String(addr).match(/section:([0-9a-z]+)\b/i);
+  if (m) {
+    const sec = m[1].toLowerCase();
+    el = doc.querySelector(`.node[data-addr$="section:${cssEsc(sec)}"]`)
+      || doc.querySelector(`[data-addr$="section:${cssEsc(sec)}"]`);
+  }
+  return el || null;
+}
+
+// Pull a short opening snippet of a provision's text straight from the rendered
+// DOM. Skips structural chrome (labels, history/evidence buttons, child nodes,
+// any open inline-history panel) so the snippet is the provision's own prose.
+function liveTransclusionSnippet(addr, maxLen) {
+  const el = findLiveProvisionEl(addr);
+  if (!el) return null;
+  // Prefer the leaf paragraph text body; fall back to the node body, and at
+  // worst the element itself. We then strip non-prose descendants.
+  const host = el.querySelector(':scope .pblock-body')
+    || el.querySelector(':scope > .node-body')
+    || el;
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      for (let p = n.parentElement; p && p !== host.parentElement; p = p.parentElement) {
+        if (!p.classList) continue;
+        if (p.classList.contains('inline-history') || p.classList.contains('pblock-children')
+          || p.classList.contains('node-children') || p.classList.contains('hist-btn')
+          || p.classList.contains('evidence-badge') || p.classList.contains('pblock-num')
+          || p.classList.contains('node-toggle')) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let text = '';
+  const cap = maxLen || 220;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    text += n.nodeValue;
+    if (text.length > cap + 40) break;
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > cap ? text.slice(0, cap).replace(/\s+\S*$/, '') + '…' : text;
 }
 
 // Emit a reference as an <a>. The payload rides in a data-* attr (JSON) so the
@@ -777,11 +877,9 @@ function semanticTargetLinks(row, target) {
 // cross is decided by whether the target act equals the source act.
 function semanticCiteKindLabel(row) {
   const workId = String((row && row.target_work_id) || '').toLowerCase();
-  const localId = String((row && row.target_local_id) || '');
   if (workId.startsWith('eu:') || workId.startsWith('eu/')) return tr('citeKindEU');
   if (/treaty|sops|sopimussarja/.test(workId)) return tr('citeKindTreaty');
-  if (localId && currentStatuteId && localId === currentStatuteId) return tr('citeKindInternal');
-  if (String(row && row.role || '') === 'internal') return tr('citeKindInternal');
+  if (semanticIsInternalRef(row)) return tr('citeKindInternal');
   return tr('citeKindCross');
 }
 
@@ -798,6 +896,7 @@ function semanticInterlinkHovercardHtml(row) {
   const target = semanticTargetForRow(row);
   const targetDetail = jsonObj(target && target.detail_json);
   const links = semanticTargetLinks(row, target);
+  const isInternal = semanticIsInternalRef(row);
   const title = (target && target.title) || row.target_work_id || row.surface_text || row.interlink_id || '';
   let h = `<div class="hc-title">${escHtml(title)}</div>`;
   // Status badge + citation-kind chip headline the card so the affordance the
@@ -828,7 +927,21 @@ function semanticInterlinkHovercardHtml(row) {
   } else if (target && target.locator_label) {
     h += `<div class="hc-path">${escHtml(target.locator_label)}</div>`;
   }
-  if (target && target.preview_text) {
+  // Internal references transclude LIVE from the loaded act (the viewer already
+  // has the whole document), never from a precomputed preview field. External /
+  // cross-statute links keep their precomputed preview (their target isn't loaded).
+  if (isInternal) {
+    const addr = semanticInternalAddr(row, target);
+    const snippet = liveTransclusionSnippet(addr);
+    h += `<div class="hc-internal-source">${escHtml(tr('interlinkInternalLive'))}</div>`;
+    if (snippet) {
+      h += `<div class="hc-preview hc-preview-live">${escHtml(snippet)}</div>`;
+    } else {
+      // Target not present in the current view (e.g. not in force on this date):
+      // a clear note — never a fabricated preview.
+      h += `<div class="hc-internal-absent">${escHtml(tr('interlinkInternalNotPresent'))}</div>`;
+    }
+  } else if (target && target.preview_text) {
     h += `<div class="hc-preview">${escHtml(target.preview_text)}</div>`;
   }
   if (links.length) {
@@ -843,11 +956,13 @@ function semanticInterlinkHovercardHtml(row) {
   if (row.role) h += `<div><dt>${escHtml(tr('interlinkRole'))}</dt><dd>${escHtml(row.role)}</dd></div>`;
   if (row.target_work_id) h += `<div><dt>${escHtml(tr('interlinkTarget'))}</dt><dd>${escHtml(row.target_work_id)}</dd></div>`;
   if (row.target_locator) h += `<div><dt>${escHtml(tr('interlinkLocator'))}</dt><dd>${escHtml(row.target_locator)}</dd></div>`;
-  if (target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
-  if (targetDetail.preview_date_consolidated) {
+  // Precomputed-preview metadata is meaningless for internal refs (their text is
+  // pulled live), so suppress it for them; keep it for cross/external targets.
+  if (!isInternal && target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
+  if (!isInternal && targetDetail.preview_date_consolidated) {
     h += `<div><dt>${escHtml(tr('interlinkPreviewDate'))}</dt><dd>${escHtml(targetDetail.preview_date_consolidated)}</dd></div>`;
   }
-  if (targetDetail.preview_version_tag) {
+  if (!isInternal && targetDetail.preview_version_tag) {
     h += `<div><dt>${escHtml(tr('interlinkPreviewVersion'))}</dt><dd>${escHtml(targetDetail.preview_version_tag)}</dd></div>`;
   }
   if (row.resolution_status) h += `<div><dt>${escHtml(tr('interlinkStatus'))}</dt><dd>${escHtml(row.resolution_status)}</dd></div>`;
