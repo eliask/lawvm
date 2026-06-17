@@ -354,6 +354,7 @@ def extract_cross_refs(
     statute_id: str,
     *,
     diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+    authority_xml_bytes: Optional[bytes] = None,
 ) -> List[CrossRefEdge]:
     """Extract all cross-reference edges from a Finnish statute XML.
 
@@ -366,7 +367,17 @@ def extract_cross_refs(
 
     Args:
         xml_bytes:  Raw XML bytes of the statute (Akoma Ntoso / Finlex format).
+            Inline body citations, repeals, and issued_under METADATA edges are
+            read from these bytes (typically the consolidated/oracle XML).
         statute_id: Canonical statute ID of the SOURCE, e.g. "2009/953".
+        authority_xml_bytes: Raw XML bytes to parse for the preamble "N §:n
+            nojalla" authority-basis clause that supplies the ISSUED_UNDER
+            section + drafting kind. Defaults to ``xml_bytes``. Callers that hold
+            the BASE (unconsolidated) statute XML should pass it here: Finlex
+            drops the preamble from the consolidated form of older statutes, so
+            the nojalla clause survives only in the base XML. Passing the base
+            keeps the section/kind merge working where the consolidated XML alone
+            would yield nothing.
 
     Returns:
         List of CrossRefEdge instances. Multiple CITES edges to the same target
@@ -539,7 +550,90 @@ def extract_cross_refs(
             edge_type='ISSUES',
         ))
 
+    # ── ISSUED_UNDER enrichment: section + drafting-kind from the preamble ────
+    # The finlex:issuedUnderActs metadata names the authority basis but carries
+    # neither the cited section nor whether the basis is a laki / asetus / päätös.
+    # Both live in the preamble "N §:n nojalla" clause. Merge the AuthorityEdge
+    # facts here so EVERY projection that calls extract_cross_refs (lawvm cite,
+    # the surface-graph reference lens via ref_mention_extractor, the StatuteGraph
+    # builders) sees the same section + target_kind — the single source of truth
+    # for the nojalla authority-basis typing. (Previously this merge lived only in
+    # build_statute_graph_fi_lightweight, leaving cite + the lens on the old
+    # untyped, sectionless edges.)
+    _merge_authority_basis(
+        edges,
+        authority_xml_bytes if authority_xml_bytes is not None else xml_bytes,
+        statute_id,
+    )
+
     return edges
+
+
+def _merge_authority_basis(
+    edges: List[CrossRefEdge],
+    xml_bytes: bytes,
+    statute_id: str,
+) -> None:
+    """Enrich ISSUED_UNDER edges with the preamble "nojalla" section + kind.
+
+    Parses the statute preamble for the Finnish "N §:n nojalla" authority-basis
+    construction (via ``extract_asetus_authority``) and, in place:
+
+    * populates ``target_section`` (the cited section(s), e.g. "60a") on each
+      existing ISSUED_UNDER edge whose target appears as a nojalla basis;
+    * sets ``target_kind`` ("act" / "decree" / "decision") from the per-basis
+      drafting inflection — so a laki basis types as a statute cross-reference
+      while a genuine decree/decision basis stays a non-statutory instrument;
+    * appends ISSUED_UNDER edges for nojalla bases that are absent from the
+      finlex:issuedUnderActs metadata (which is sometimes incomplete).
+
+    The kind is recorded for every basis (even sectionless ones); it is NOT
+    blanket-set to "act" — ~6% of bases are genuinely decree/decision.
+    """
+    from collections import defaultdict
+
+    from lawvm.finland.delegation import extract_asetus_authority
+
+    if not xml_bytes:
+        return
+    auth_edges = extract_asetus_authority(xml_bytes, statute_id)
+    if not auth_edges:
+        return
+
+    # parent_statute_id → ordered cited sections; and → first recognizable kind.
+    auth_map: dict[str, list[str]] = defaultdict(list)
+    parent_kind: dict[str, str] = {}
+    for ae in auth_edges:
+        if ae.parent_section:
+            auth_map[ae.parent_statute_id].append(ae.parent_section)
+        # First recognizable kind for a basis wins; register the basis even when
+        # its kind is empty, but don't clobber a known kind with a later empty one.
+        parent_kind.setdefault(ae.parent_statute_id, "")
+        if ae.parent_kind and not parent_kind[ae.parent_statute_id]:
+            parent_kind[ae.parent_statute_id] = ae.parent_kind
+
+    # Update existing ISSUED_UNDER edges with section info + authority kind.
+    existing_targets: set[str] = set()
+    for edge in edges:
+        if edge.edge_type == "ISSUED_UNDER":
+            existing_targets.add(edge.target_statute_id)
+            if edge.target_statute_id in auth_map:
+                secs = auth_map[edge.target_statute_id]
+                edge.target_section = ",".join(dict.fromkeys(secs))  # dedup, keep order
+            kind = parent_kind.get(edge.target_statute_id, "")
+            if kind:
+                edge.target_kind = kind
+
+    # Add ISSUED_UNDER edges found in the preamble but absent from metadata.
+    for parent_id, secs in auth_map.items():
+        if parent_id not in existing_targets:
+            edges.append(CrossRefEdge(
+                source_statute_id=statute_id,
+                target_statute_id=parent_id,
+                edge_type="ISSUED_UNDER",
+                target_section=",".join(dict.fromkeys(secs)),
+                target_kind=parent_kind.get(parent_id, ""),
+            ))
 
 
 # ---------------------------------------------------------------------------

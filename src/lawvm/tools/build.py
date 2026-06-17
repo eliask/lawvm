@@ -165,46 +165,20 @@ def _worker_fn(sid: str) -> Optional[dict[str, Any]]:
         except Exception:
             pass
         try:
-            citations = [dataclasses.asdict(e) for e in extract_cross_refs(con_xml, sid)]
+            # The preamble "N §:n nojalla" authority-basis merge (ISSUED_UNDER
+            # section + drafting kind) is applied centrally inside
+            # extract_cross_refs. The nojalla clause survives only in the BASE
+            # XML for older statutes (Finlex drops the preamble from the
+            # consolidated form), so pass base_xml as the authority source.
+            citations = [
+                dataclasses.asdict(e)
+                for e in extract_cross_refs(con_xml, sid, authority_xml_bytes=base_xml)
+            ]
             citations += [dataclasses.asdict(e) for e in extract_eu_refs(base_xml, sid)]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
             pass
-
-    # Phase 8.4: section-level ISSUED_UNDER — parse preamble for "N §:n nojalla" patterns.
-    # Populates target_section on existing ISSUED_UNDER edges; adds edges missing from metadata.
-    try:
-        from lawvm.finland.delegation import extract_asetus_authority
-        auth_edges = extract_asetus_authority(base_xml, sid)
-        if auth_edges:
-            from collections import defaultdict as _dd
-            auth_map: Dict[str, list[str]] = _dd(list)
-            for ae in auth_edges:
-                if ae.parent_section:
-                    auth_map[ae.parent_statute_id].append(ae.parent_section)
-            existing_targets: set[str] = set()
-            for e in citations:
-                if e.get("edge_type") == "ISSUED_UNDER":
-                    existing_targets.add(e["target_statute_id"])
-                    if e["target_statute_id"] in auth_map:
-                        secs = auth_map[e["target_statute_id"]]
-                        e["target_section"] = ",".join(dict.fromkeys(secs))
-            for parent_id, secs in auth_map.items():
-                if parent_id not in existing_targets:
-                    citations.append({
-                        "source_statute_id": sid,
-                        "target_statute_id": parent_id,
-                        "edge_type": "ISSUED_UNDER",
-                        "source_section": "",
-                        "target_section": ",".join(dict.fromkeys(secs)),
-                        "count": 1,
-                        "target_stat_hash": "",
-                    })
-    except (NameError, TypeError, AttributeError):
-        raise  # programming bugs — fail loud
-    except Exception:
-        pass
 
     # Stamp each citation edge with target's current consolidated XML hash (D2).
     # Compute once per unique target to avoid redundant reads.

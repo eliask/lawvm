@@ -94,7 +94,13 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
         except Exception:
             pass
         try:
-            citations = list(extract_cross_refs(con_xml, sid))
+            # Parse the preamble "nojalla" authority basis from the BASE XML:
+            # Finlex drops the preamble from the consolidated form of older
+            # statutes, so the nojalla clause (which supplies the ISSUED_UNDER
+            # section + drafting kind) survives only in the base statute XML.
+            citations = list(
+                extract_cross_refs(con_xml, sid, authority_xml_bytes=base_xml)
+            )
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
@@ -171,67 +177,23 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
         except Exception:
             pass
         try:
-            citations = list(extract_cross_refs(con_xml, sid))
+            # Parse the preamble "nojalla" authority basis from the BASE XML:
+            # Finlex drops the preamble from the consolidated form of older
+            # statutes, so the nojalla clause (which supplies the ISSUED_UNDER
+            # section + drafting kind) survives only in the base statute XML.
+            citations = list(
+                extract_cross_refs(con_xml, sid, authority_xml_bytes=base_xml)
+            )
             citations.extend(extract_eu_refs(base_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
             pass
 
-    # Phase 8.4: section-level ISSUED_UNDER — parse preamble for "N §:n nojalla" patterns.
-    # Populates target_section on existing ISSUED_UNDER edges and adds edges absent from
-    # finlex:issuedUnderActs metadata (which is sometimes incomplete).
-    try:
-        from lawvm.finland.delegation import extract_asetus_authority
-        auth_edges = extract_asetus_authority(base_xml, sid)
-        if auth_edges:
-            # Build map: parent_statute_id → list of parent_section values, plus a
-            # parent_kind map carrying the per-basis drafting KIND from the
-            # AuthorityEdge ("act"/"decree"/"decision"/""). The kind is recorded for
-            # every basis (even sectionless ones) so any tagged ISSUED_UNDER edge
-            # receives its type; it is NOT blanket-set to "act" — a decree may be
-            # issued under another decree, and ~6% of bases are genuinely
-            # decree/decision and must stay non-statutory instruments.
-            from collections import defaultdict
-            auth_map: dict[str, list[str]] = defaultdict(list)
-            parent_kind: dict[str, str] = {}
-            for ae in auth_edges:
-                if ae.parent_section:
-                    auth_map[ae.parent_statute_id].append(ae.parent_section)
-                # First recognizable kind for a basis wins; register the basis even
-                # when its kind is empty, but don't clobber a known kind with a
-                # later empty one.
-                parent_kind.setdefault(ae.parent_statute_id, "")
-                if ae.parent_kind and not parent_kind[ae.parent_statute_id]:
-                    parent_kind[ae.parent_statute_id] = ae.parent_kind
-
-            # Update existing ISSUED_UNDER edges with section info + authority kind
-            existing_targets = set()
-            for edge in citations:
-                if edge.edge_type == "ISSUED_UNDER":
-                    existing_targets.add(edge.target_statute_id)
-                    if edge.target_statute_id in auth_map:
-                        secs = auth_map[edge.target_statute_id]
-                        edge.target_section = ",".join(dict.fromkeys(secs))  # dedup, preserve order
-                    kind = parent_kind.get(edge.target_statute_id, "")
-                    if kind:
-                        edge.target_kind = kind
-
-            # Add ISSUED_UNDER edges found in preamble but absent from metadata
-            for parent_id, secs in auth_map.items():
-                if parent_id not in existing_targets:
-                    from lawvm.finland.cross_refs import CrossRefEdge
-                    citations.append(CrossRefEdge(
-                        source_statute_id=sid,
-                        target_statute_id=parent_id,
-                        edge_type="ISSUED_UNDER",
-                        target_section=",".join(dict.fromkeys(secs)),
-                        target_kind=parent_kind.get(parent_id, ""),
-                    ))
-    except (NameError, TypeError, AttributeError):
-        raise  # programming bugs — fail loud
-    except Exception:
-        pass
+    # The ISSUED_UNDER section + drafting-kind enrichment from the preamble
+    # "N §:n nojalla" clause is now applied centrally inside extract_cross_refs
+    # (above), so cite + the surface-graph lens + this builder share one source
+    # of truth for the authority-basis typing. No per-builder merge here.
 
     amendment_chain = get_amendment_children().get(sid, [])
 

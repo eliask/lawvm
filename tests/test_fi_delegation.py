@@ -145,6 +145,22 @@ def test_extract_asetus_authority_distributes_over_coordinated_conjuncts() -> No
     assert ("1992/150", "8", "", "act") in triples
 
 
+def test_extract_asetus_authority_preserves_section_letter_suffix() -> None:
+    # "(1301/2014) 60 a §:n nojalla" — repro 2024/348. The letter suffix MUST be
+    # glued onto the section ("60a", matching the AKN sec_ / inline-CITES form);
+    # dropping it collapses "60 a §" and "60 §" onto the same provision.
+    xml = _preamble_xml(
+        "Maa- ja metsätalousministeriön päätöksen mukaisesti säädetään "
+        "eräiden lain (1301/2014) 60 a §:n nojalla:".encode("utf-8")
+    )
+
+    edges = extract_asetus_authority(xml, "2024/348")
+
+    assert [
+        (e.parent_statute_id, e.parent_section, e.parent_kind) for e in edges
+    ] == [("2014/1301", "60a", "act")]
+
+
 def test_extract_asetus_authority_decree_basis_kind_not_act() -> None:
     # A genuine decree authority basis ("…asetuksen (…) … nojalla") must NOT be
     # classified as an act, so the lift keeps it a non-statutory instrument.

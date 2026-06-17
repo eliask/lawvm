@@ -305,14 +305,21 @@ _PAT_NEGATIVE = [
 #
 #   group 1 = act-name word right before the id (kind signal; may be absent)
 #   group 2 = statute number, group 3 = year (2- or 4-digit)
-#   group 4 = section (optional), group 5 = momentti (optional)
+#   group 4 = section (optional), group 5 = section letter suffix (optional),
+#   group 6 = momentti (optional)
+#
+# The section letter suffix ("60 a §" → section "60a") is CAPTURED, not merely
+# consumed: a Finnish section label is the number glued to its letter suffix
+# (the same "60a" convention the AKN sec_ path and the inline-CITES lane use).
+# Dropping the letter silently collapses "60 a §" and "60 §" onto the same
+# section, losing the distinction between two genuinely different provisions.
 #
 # Bounded quantifiers (AGENTS.md §1.11): the name word is a single bounded
 # token; the section/momentti tails are bounded digit runs.
 _PAT_NOJALLA_CONJUNCT = re.compile(
     r'([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})?\s*'
     r'\((\d{1,5})\s*/\s*(\d{2,4})\)\s*'
-    r'(?:(\d+)\s*[a-z]?\s*(?:§:n|§)\s*(?:(\d+)\s*momentin\s*)?)?',
+    r'(?:(\d+)\s*([a-z])?\s*(?:§:n|§)\s*(?:(\d+)\s*momentin\s*)?)?',
     re.IGNORECASE
 )
 
@@ -614,8 +621,13 @@ def extract_asetus_authority(
             name_word = (m.group(1) or '').strip()
             num, year = m.group(2), m.group(3)
             parent_id = f"{_normalize_year(year)}/{num}"
+            # Glue the optional letter suffix onto the section number ("60 a §" →
+            # "60a"), matching the AKN sec_ / inline-CITES "60a" convention. A bare
+            # number with no suffix stays "60".
             sec = m.group(4) or ''
-            moment = m.group(5) or ''
+            if sec and m.group(5):
+                sec = f"{sec}{m.group(5).lower()}"
+            moment = m.group(6) or ''
             # Deduplicate identical (parent, section, momentti) triples that can
             # arise from overlapping windows or repeated surfaces.
             dedup_key = (parent_id, sec, moment)

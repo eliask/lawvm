@@ -20,7 +20,11 @@ def main(args: "argparse.Namespace") -> None:
     if xml_bytes is None:
         print(f"Statute {sid!r} not found in consolidated ZIP.", file=sys.stderr)
         sys.exit(1)
-    edges = extract_cross_refs(xml_bytes, sid)
+    # The preamble "N §:n nojalla" authority basis (which supplies the
+    # ISSUED_UNDER section + drafting kind) survives only in the BASE statute XML
+    # for older statutes — Finlex drops the preamble from the consolidated form.
+    base_bytes = cs.read_source(sid)
+    edges = extract_cross_refs(xml_bytes, sid, authority_xml_bytes=base_bytes)
     if not getattr(args, "no_eu", False):
         edges = edges + extract_eu_refs(xml_bytes, sid)
 
