@@ -92,6 +92,9 @@ _SEED: dict[str, tuple[str, ...]] = {
     # (EC) 1924/2006 (often "ravinto- ja terveysväiteasetus" in full prose)
     "elintarviketietoasetus": ("32011R1169",),  # Food Information to Consumers
     # Reg (EU) 1169/2011 (FIC)
+    # Mined from corpus R4 bindings (support 7 across distinct statutes): the SE
+    # Statute, Council Reg (EC) 2157/2001 on the Statute for a European company.
+    "eurooppayhtiöasetus": ("32001R2157",),
     # --- Deliberately ambiguous seed (Finnish usage genuinely splits) ---
     # "jätedirektiivi" is used in prose for both the consolidated Waste
     # Framework Directive (2008/98/EY) and, historically, its predecessor
