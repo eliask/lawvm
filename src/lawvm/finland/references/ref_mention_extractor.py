@@ -48,7 +48,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from lawvm.core.reference_mention import (
     AmbiguousReferenceFinding,
@@ -77,6 +77,13 @@ from lawvm.finland.references.treaty_article import recognize_treaty_article_ref
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
 from lawvm.finland.references.by_name import recognize_by_name_refs
+from lawvm.core.preparatory_reference import (
+    PreparatoryReference,
+    PreparatoryReferenceKind,
+)
+from lawvm.finland.references.preparatory_reference_extractor import (
+    extract_preparatory_refs,
+)
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -167,24 +174,25 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
         (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
       | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
         (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
+      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{0,60}
+        (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
       | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
       | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
     )
     \s{0,5}
     \(
     \s{0,3}
-    (\d{1,6})/(\d{4})   # group 1 = number, group 2 = year
+    (\d{1,6})/(\d{2}|\d{4})   # group 1 = number, group 2 = year (2- or 4-digit)
     \s{0,3}
     \)
     """,
     re.VERBOSE | re.IGNORECASE,
 )
 
-# Substring guards for the plain-text extractor:
-#   - "§" (section mark, always present in Finnish statute citations)
-#   - "(" (parenthetical statute ID)
-# Both must be present; if either is absent, skip the full regex scan.
-_PLAIN_TEXT_GUARD_SECTION = "\xa7"  # §
+# Substring guard for the plain-text extractor:
+#   - "(" (the parenthetical statute ID, mandatory in every citation)
+# The "§" mark is NOT a guard: section-less citations to a whole act
+# ("…annetussa laissa (205/2000)") carry no §, and gating on it dropped them.
 _PLAIN_TEXT_GUARD_PAREN = "("
 
 
@@ -312,10 +320,13 @@ class PlainTextStatuteCitationRecognizer:
         if not text:
             return []
 
-        # Substring guards (fast path — eliminates ~99% of non-matching calls)
+        # Substring guard (fast path — eliminates ~99% of non-matching calls).
+        # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,
+        # so "(" is the mandatory marker. The "§" is NOT required: a citation to
+        # a whole act ("…annetussa laissa (205/2000)") names no section. Gating
+        # on "§" alone silently dropped every section-less id-cite; the regex's
+        # mandatory by-name anchor already bounds precision, so "(" suffices.
         if _PLAIN_TEXT_GUARD_PAREN not in text:
-            return []
-        if _PLAIN_TEXT_GUARD_SECTION not in text:
             return []
 
         results: List[PlainTextStatuteHit] = []
@@ -325,7 +336,17 @@ class PlainTextStatuteCitationRecognizer:
             num_raw = m.group(1)
             year = m.group(2)
 
-            # Sanity: year must be plausible
+            # Two-digit year ids ("(307/86)") are common in pre-2000 statutes.
+            # Expand to a full century: a 2-digit year <= the current 2-digit
+            # year maps to 20xx, otherwise 19xx (Finnish statute ids run from
+            # the 1800s to present, so this window is unambiguous in practice).
+            if len(year) == 2:
+                yy = int(year)
+                current_yy = date.today().year % 100
+                century = 2000 if yy <= current_yy else 1900
+                year = str(century + yy)
+
+            # Sanity: year must be plausible (applied to the EXPANDED year).
             year_int = int(year)
             if year_int < 1700 or year_int > 2100:
                 continue
@@ -1023,6 +1044,138 @@ def extract_surface_grammar_mentions(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Preparatory-reference lane (committee reports/opinions, parliament response,
+# EU prep acts, OJ refs) — the rest of the legislative-preparation chain that
+# sits alongside the HE proposal in the preliminaryWork ("Esityöt") footer.
+# ---------------------------------------------------------------------------
+#
+# The HE government-proposal is ALREADY emitted by the <ref>-element lane
+# (extract_reference_mentions → extract_cross_refs) as a ``he/YEAR/NUMBER``
+# target, because Finlex marks HE backlinks with AKN <ref href=".../
+# government-proposal/...">. The preparatory recognizer also recognises HE, but
+# its docstring states HE is handled by the caller — so this lane EXCLUDES
+# kind=HE to avoid double-counting. Every other preparatory kind (committee
+# mietintö/lausunto, EV/EVK response, LA initiative, EU prep act, OJ ref) has
+# no <ref> markup and is owned by no other lane.
+
+
+def _prep_ref_to_mention(
+    prep: PreparatoryReference,
+    statute_id: str,
+    valid_at_interval: Tuple[Optional[date], Optional[date]],
+    locate_span: Callable[[str], Optional[SourceSpan]],
+) -> ReferenceMention:
+    """Lift one (non-HE) PreparatoryReference to a ReferenceMention.
+
+    Preparatory instruments are NOT statutes — they are committee reports,
+    parliament responses, EU prep acts, etc. They are typed as
+    ``NON_STATUTORY_INSTRUMENT`` with the preparatory ``canonical_id`` carried
+    as the target's ``statute_id`` (an explicit, non-statute identity such as
+    ``fi.committee.livm.28.2010`` / ``fi.ev.351.2010``). This keeps them out of
+    the cross-statute dedup space (their ids never collide with
+    ``NUMBER/YEAR`` statute ids) while still surfacing them as first-class
+    reference mentions.
+
+    The preparatory extractor leaves byte spans None (it normalises text before
+    matching); this lane re-anchors each mention to a byte span in the raw
+    ``xml_bytes`` by locating its ``raw_text`` surface, exactly like the
+    plain-text / surface-grammar lanes (fail-loud by absence when not found).
+    """
+    # canonical_id is None only for UNRESOLVED kind; those are not emitted here.
+    target_id = prep.canonical_id or ""
+    tgt_ref = ProvisionRef(
+        statute_id=target_id,
+        provision_path="",
+        section_label="",
+    )
+    src_ref = ProvisionRef(
+        statute_id=statute_id,
+        provision_path="",
+        section_label="",
+    )
+    surface = prep.raw_text or ""
+    return ReferenceMention(
+        source_provision_ref=src_ref,
+        target_provision_ref=tgt_ref,
+        cite_kind=CiteKind.NON_STATUTORY_INSTRUMENT,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="preparatory",
+        source_span=locate_span(surface),
+        valid_at_interval=valid_at_interval,
+        # edge_subtype carries the preparatory kind so consumers can split the
+        # chain (committee_report / committee_opinion / parliament_response /
+        # eu_regulation / oj_reference / ...). Disjoint from the CITES/REPEALS
+        # edge_subtype vocabulary used by the statute lanes.
+        edge_subtype=prep.kind.value,
+        surface_text=surface,
+    )
+
+
+def extract_preparatory_reference_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+) -> ExtractionResult:
+    """Extract preparatory-chain ReferenceMention records (committee, EV, …).
+
+    Wraps :func:`extract_preparatory_refs` and lifts every NON-HE
+    PreparatoryReference to a ReferenceMention. HE is excluded because the
+    <ref>-element lane already emits it as a ``he/YEAR/NUMBER`` target; emitting
+    it here too would double-count it.
+
+    Mentions carry phrase_lemma="preparatory" and cite_kind=NON_STATUTORY_INSTRUMENT.
+    """
+    result = ExtractionResult()
+    if not xml_bytes:
+        return result
+    try:
+        prep_result = extract_preparatory_refs(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+        )
+    except ET.ParseError:
+        # XML parse errors are already reported by extract_reference_mentions;
+        # do not double-report.
+        return result
+
+    # Per-surface byte cursor over xml_bytes; surfaces appear in document order.
+    surface_byte_cursor: dict[bytes, int] = {}
+
+    def _locate(surface: str) -> Optional[SourceSpan]:
+        if not surface:
+            return None
+        needle = surface.encode("utf-8")
+        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        if start < 0:
+            # The recognizer normalises whitespace before matching, so a raw_text
+            # surface may not be a verbatim byte substring — fail loud by absence
+            # (None span) rather than fabricate an offset.
+            return None
+        surface_byte_cursor[needle] = start + 1
+        return SourceSpan(
+            source_file=statute_id,
+            byte_offset=start,
+            byte_len=len(needle),
+        )
+
+    for prep in prep_result.refs:
+        if prep.kind == PreparatoryReferenceKind.HE:
+            # Owned by the <ref>-element lane (he/YEAR/NUMBER). Skip — no dupes.
+            continue
+        if prep.kind == PreparatoryReferenceKind.UNRESOLVED:
+            # No canonical target; surfaced as a rejected candidate by the prep
+            # extractor, not a typed mention.
+            continue
+        result.mentions.append(
+            _prep_ref_to_mention(prep, statute_id, valid_at_interval, _locate)
+        )
+
+    return result
+
+
 def extract_all_reference_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -1078,17 +1231,37 @@ def extract_all_reference_mentions(
         valid_at_interval=valid_at_interval,
     )
 
+    # Preparatory-chain lane: the rest of the legislative-preparation footer
+    # (committee mietintö/lausunto, EV/EVK response, LA, EU prep act, OJ) that
+    # accompanies the HE proposal. HE itself is excluded inside this lane (it is
+    # already emitted by the <ref> lane as he/YEAR/NUMBER), so no double-count.
+    preparatory = extract_preparatory_reference_mentions(
+        xml_bytes,
+        statute_id,
+        valid_at_interval=valid_at_interval,
+    )
+
     combined = ExtractionResult()
-    combined.mentions = domestic.mentions + eu.mentions + plain.mentions + surface.mentions
-    combined.rejected = domestic.rejected + eu.rejected + plain.rejected + surface.rejected
+    combined.mentions = (
+        domestic.mentions + eu.mentions + plain.mentions + surface.mentions + preparatory.mentions
+    )
+    combined.rejected = (
+        domestic.rejected + eu.rejected + plain.rejected + surface.rejected + preparatory.rejected
+    )
     combined.broken_findings = (
-        domestic.broken_findings + eu.broken_findings + plain.broken_findings + surface.broken_findings
+        domestic.broken_findings + eu.broken_findings + plain.broken_findings
+        + surface.broken_findings + preparatory.broken_findings
     )
     combined.ambiguous_findings = (
-        domestic.ambiguous_findings + eu.ambiguous_findings + plain.ambiguous_findings + surface.ambiguous_findings
+        domestic.ambiguous_findings + eu.ambiguous_findings + plain.ambiguous_findings
+        + surface.ambiguous_findings + preparatory.ambiguous_findings
     )
     combined.approximate_findings = (
-        domestic.approximate_findings + eu.approximate_findings + plain.approximate_findings + surface.approximate_findings
+        domestic.approximate_findings + eu.approximate_findings + plain.approximate_findings
+        + surface.approximate_findings + preparatory.approximate_findings
     )
-    combined.diagnostics = domestic.diagnostics + eu.diagnostics + plain.diagnostics + surface.diagnostics
+    combined.diagnostics = (
+        domestic.diagnostics + eu.diagnostics + plain.diagnostics
+        + surface.diagnostics + preparatory.diagnostics
+    )
     return combined

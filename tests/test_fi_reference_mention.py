@@ -41,6 +41,7 @@ from lawvm.finland.ref_mention_extractor import (
     extract_all_reference_mentions,
     extract_eu_reference_mentions,
     extract_plain_text_statute_mentions,
+    extract_preparatory_reference_mentions,
     extract_reference_mentions,
 )
 from lawvm.finland.conformance_corpus.refs.fixtures import (
@@ -1226,14 +1227,22 @@ class TestPlainTextStatuteCitations:
         statute_ids = [h[0] for h in hits]
         assert "1326/2010" in statute_ids
 
-    def test_recognizer_skips_text_without_section_mark(self) -> None:
-        """Text without § character is skipped by substring guard."""
+    def test_recognizer_captures_section_less_id_cite(self) -> None:
+        """A by-name id-cite with NO § is captured as a statute-only hit.
+
+        Citations to a whole act ("…annetussa laissa (205/2000)") carry no §.
+        The recognizer must still capture them: the mandatory by-name anchor
+        before the ``(NUMBER/YEAR)`` paren bounds precision, so the "§"-present
+        substring guard would wrongly drop every section-less act citation.
+        """
         import xml.etree.ElementTree as ET
         recognizer = PlainTextStatuteCitationRecognizer()
-        # No § in text — guard must skip without running regex
+        # No § in text, but a by-name anchor + (id) paren — must be captured.
         p = ET.fromstring("<p>Sovelletaan lain (711/2022) tekstia.</p>")
-        hits = recognizer.scan(p)
-        assert hits == []
+        hits = recognizer.scan_precise(p)
+        assert len(hits) == 1
+        assert hits[0].statute_id == "711/2022"
+        assert hits[0].section_label == ""
 
     def test_recognizer_skips_text_without_paren(self) -> None:
         """Text without '(' is skipped by substring guard."""
@@ -1573,3 +1582,216 @@ class TestPlainTextMomenttiPrecision:
         labels = [seg.label for seg in interlink.target.locator.locator.segments]
         assert kinds == ["section", "subsection"], (kinds, labels)
         assert labels == ["7", "2"], (kinds, labels)
+
+
+# ===========================================================================
+# Recall: preparatory-chain lane (committee reports/opinions, EV, EU prep, OJ)
+# ===========================================================================
+
+
+class TestPreparatoryReferenceLane:
+    """The legislative-preparation footer (preliminaryWork) names more than the
+    HE proposal: committee mietintö/lausunto, the parliamentary response EV,
+    EU preparation acts, OJ refs. The <ref> lane only emits the HE backlink;
+    extract_all_reference_mentions must also surface the rest of the chain via
+    extract_preparatory_reference_mentions, WITHOUT double-counting HE.
+    """
+
+    @staticmethod
+    def _stat_with_preliminary(prep_p_lines: list[bytes]) -> bytes:
+        ps = b"".join(b"<p>" + line + b"</p>" for line in prep_p_lines)
+        return (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act>"
+            b"<body><section><num>1 \xc2\xa7</num><content>"
+            b"<p>T\xc3\xa4ss\xc3\xa4 laissa s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n asiasta.</p>"
+            b"</content></section></body>"
+            b'<hcontainer name="preliminaryWork"><content>'
+            + ps +
+            b"</content></hcontainer>"
+            b"</act></akomaNtoso>"
+        )
+
+    def test_committee_and_response_chain_surfaced(self) -> None:
+        """Committee report + opinion + parliament response become mentions."""
+        xml = self._stat_with_preliminary([
+            b"TyVM 5/2002",
+            b"EV 133/2002",
+        ])
+        result = extract_all_reference_mentions(xml, "2002/943")
+        prep = [m for m in result.mentions if m.phrase_lemma == "preparatory"]
+        targets = {
+            m.target_provision_ref.statute_id: m.edge_subtype
+            for m in prep
+            if m.target_provision_ref is not None
+        }
+        assert "fi.committee.tyvm.5.2002" in targets, targets
+        assert targets["fi.committee.tyvm.5.2002"] == "committee_report"
+        assert "fi.ev.133.2002" in targets, targets
+        assert targets["fi.ev.133.2002"] == "parliament_response"
+        # All preparatory mentions are NON_STATUTORY_INSTRUMENT, EXACT.
+        for m in prep:
+            assert m.cite_kind == CiteKind.NON_STATUTORY_INSTRUMENT
+            assert m.cite_confidence == CiteConfidence.EXACT
+
+    def test_committee_opinion_surfaced(self) -> None:
+        """A PeVL committee opinion becomes a committee_opinion mention."""
+        xml = self._stat_with_preliminary([b"PeVL 56/2010"])
+        result = extract_all_reference_mentions(xml, "2011/415")
+        prep = [m for m in result.mentions if m.phrase_lemma == "preparatory"]
+        targets = {
+            m.target_provision_ref.statute_id: m.edge_subtype
+            for m in prep
+            if m.target_provision_ref is not None
+        }
+        assert targets.get("fi.committee_opinion.pevl.56.2010") == "committee_opinion"
+
+    def test_he_not_double_counted(self) -> None:
+        """HE is owned by the <ref> lane; the preparatory lane must NOT re-emit
+        it. With an HE <ref> backlink present, the he/ target appears exactly
+        once and never under phrase_lemma='preparatory'.
+        """
+        # Finlex nests the preliminaryWork hcontainer INSIDE <body>, so the
+        # HE <ref> backlink is reachable by the body-scanning <ref> lane.
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act>"
+            b"<body>"
+            b"<section><num>1 \xc2\xa7</num><content>"
+            b"<p>Asiasta s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n.</p>"
+            b"</content></section>"
+            b'<hcontainer name="preliminaryWork"><content>'
+            b"<p>"
+            b'<ref href="/akn/fi/doc/government-proposal/2002/8">HE 8/2002</ref>'
+            b"</p>"
+            b"<p>TyVM 5/2002</p>"
+            b"</content></hcontainer>"
+            b"</body>"
+            b"</act></akomaNtoso>"
+        )
+        result = extract_all_reference_mentions(xml, "2002/943")
+        he_mentions = [
+            m for m in result.mentions
+            if m.target_provision_ref is not None
+            and m.target_provision_ref.statute_id.startswith("he/")
+        ]
+        # HE appears once, via the <ref> lane (ref_element), never preparatory.
+        assert len(he_mentions) == 1, he_mentions
+        assert he_mentions[0].phrase_lemma == "ref_element"
+        prep_he = [
+            m for m in result.mentions
+            if m.phrase_lemma == "preparatory"
+            and m.target_provision_ref is not None
+            and m.target_provision_ref.statute_id.startswith("he/")
+        ]
+        assert prep_he == [], "HE must not leak into the preparatory lane"
+
+    def test_direct_extractor_excludes_he(self) -> None:
+        """extract_preparatory_reference_mentions emits non-HE refs only."""
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act>"
+            b"<body><section><num>1 \xc2\xa7</num><content><p>x</p></content></section></body>"
+            b'<hcontainer name="preliminaryWork"><content>'
+            b"<p>"
+            b'<ref href="/akn/fi/doc/government-proposal/2002/8">HE 8/2002</ref>'
+            b"</p>"
+            b"<p>TyVM 5/2002</p>"
+            b"</content></hcontainer>"
+            b"</act></akomaNtoso>"
+        )
+        result = extract_preparatory_reference_mentions(xml, "2002/943")
+        kinds = {m.edge_subtype for m in result.mentions}
+        assert kinds == {"committee_report"}, kinds
+
+
+# ===========================================================================
+# Recall: two-digit-year id-cites and section-less id-cites
+# ===========================================================================
+
+
+class TestTwoDigitYearAndSectionlessCites:
+    """Pre-2000 statutes commonly cite ``(NUMBER/YY)`` with a two-digit year,
+    and citations to a whole act carry no §. Both were silently dropped before:
+    the plain-text year group required four digits, and the recognizer gated on
+    a mandatory § that whole-act cites never have.
+    """
+
+    @staticmethod
+    def _body(p_text: bytes) -> bytes:
+        return (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body><section><num>5 \xc2\xa7</num><content>"
+            b"<p>" + p_text + b"</p>"
+            b"</content></section></body></act></akomaNtoso>"
+        )
+
+    def test_two_digit_year_expands_to_19xx(self) -> None:
+        """'(307/86)' → statute id 307/1986 (two-digit year > current → 19xx)."""
+        xml = self._body(
+            b"Kumotun lain (307/86) 5 \xc2\xa7 mukaan."
+        )
+        result = extract_plain_text_statute_mentions(xml, "1996/801")
+        ids = _target_statute_ids(
+            [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        )
+        assert "307/1986" in ids, ids
+
+    def test_two_digit_year_named_anchor(self) -> None:
+        """'hallintomenettelylain (598/82)' → 598/1982."""
+        xml = self._body(
+            b"Sovelletaan hallintomenettelylain (598/82) 2 \xc2\xa7 s\xc3\xa4\xc3\xa4nn\xc3\xb6st\xc3\xa4."
+        )
+        result = extract_plain_text_statute_mentions(xml, "1991/1742")
+        ids = _target_statute_ids(
+            [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        )
+        assert "598/1982" in ids, ids
+
+    def test_paatos_anchor_two_digit_year(self) -> None:
+        """'p\xc3\xa4\xc3\xa4t\xc3\xb6ksess\xc3\xa4 (233/89)' — the decision anchor + two-digit year."""
+        xml = self._body(
+            "annetussa päätöksessä (233/89) 3 § tarkoitettu.".encode("utf-8")
+        )
+        result = extract_plain_text_statute_mentions(xml, "1991/122")
+        ids = _target_statute_ids(
+            [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        )
+        assert "233/1989" in ids, ids
+
+    def test_four_digit_year_unchanged(self) -> None:
+        """A four-digit year still parses exactly as before (no regression)."""
+        xml = self._body(
+            "ympäristönsuojelulain (527/2014) 5 § nojalla.".encode("utf-8")
+        )
+        result = extract_plain_text_statute_mentions(xml, "2003/314")
+        ids = _target_statute_ids(
+            [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        )
+        assert "527/2014" in ids, ids
+
+    def test_section_less_act_cite_captured(self) -> None:
+        """'annetussa laissa (205/2000)' with no § is captured statute-only."""
+        xml = self._body(
+            b"Tuomareiden nimitt\xc3\xa4misest\xc3\xa4 annetussa laissa (205/2000) s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n."
+        )
+        result = extract_plain_text_statute_mentions(xml, "2000/212")
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        ids = _target_statute_ids(plain)
+        assert "205/2000" in ids, ids
+        m205 = next(
+            m for m in plain
+            if m.target_provision_ref is not None
+            and m.target_provision_ref.statute_id == "205/2000"
+        )
+        assert m205.cite_confidence == CiteConfidence.STATUTE_ONLY
+
+    def test_no_anchor_no_false_positive(self) -> None:
+        """A bare ``(NNN/YY)`` paren with NO by-name anchor is not a citation."""
+        xml = self._body(
+            b"Taulukon rivi (307/86) ei ole lakiviittaus t\xc3\xa4ss\xc3\xa4."
+        )
+        result = extract_plain_text_statute_mentions(xml, "9999/9999")
+        # No anchor word (lain/asetuksen/päätöksen) precedes the paren.
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        assert plain == [], plain

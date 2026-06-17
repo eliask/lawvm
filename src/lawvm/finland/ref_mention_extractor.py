@@ -7,5 +7,6 @@ from lawvm.finland.references.ref_mention_extractor import (  # noqa: F401
     extract_all_reference_mentions,
     extract_eu_reference_mentions,
     extract_plain_text_statute_mentions,
+    extract_preparatory_reference_mentions,
     extract_reference_mentions,
 )
