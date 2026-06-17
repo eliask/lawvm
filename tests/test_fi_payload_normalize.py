@@ -1672,6 +1672,91 @@ def test_normalize_group_payload_rewrites_named_row_repeals_with_genitive_candid
     ]
 
 
+def _province_table_row(header: str, *cells: str) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.ROW,
+        children=tuple(IRNode(kind=IRNodeKind.CELL, text=cell) for cell in (header, *cells)),
+    )
+
+
+def test_normalize_group_payload_merges_named_row_province_table_blocks() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="13 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.TABLE,
+                                children=(
+                                    _province_table_row("Lääni ja kunta", "Veroluokat"),
+                                    _province_table_row("Uudenmaan lääni"),
+                                    _province_table_row("Espoo", "1,0"),
+                                    _province_table_row("Kymen lääni"),
+                                    _province_table_row("Hamina", "2,0"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="13 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.TABLE,
+                                children=(
+                                    _province_table_row("Lääni ja kunta", "Veroluokat"),
+                                    _province_table_row("Kymen lääni"),
+                                    _province_table_row("Hamina", "9,9"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "13", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="13",
+        source_statute="1992/1009",
+        named_row_targets=("kymen",),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+    merged = _muutos_ir(got)
+    text = irnode_to_text(merged)
+
+    assert "Uudenmaan lääni" in text
+    assert "Espoo 1,0" in text
+    assert "Hamina 9,9" in text
+    assert "Hamina 2,0" not in text
+    assert any(
+        o.kind == "ELAB.NAMED_ROW_PROVINCE_TABLE_MERGE"
+        for o in (got.elaboration_observations or ())
+    )
+
+
 def test_normalize_group_payload_rewrites_named_row_replace_with_live_anchor_match() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

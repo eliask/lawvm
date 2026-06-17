@@ -1867,6 +1867,66 @@ def test_emit_section_snapshot_emits_subsection_snapshots_for_whole_section_payl
     ]
 
 
+def test_emit_section_snapshot_preserves_live_fold_for_sparse_item_scoped_muutos_shell() -> None:
+    live_text = (
+        "Toimituksista maksetaan palkkiota seuraavasti: Euroa: "
+        "A. Eläimen ruumiinavaus 29,00 B. Näytteiden ottaminen 13,50 "
+        "H. Poronlihan tarkastus / tunti 32,2"
+    )
+    sparse_text = (
+        "Toimituksista maksetaan palkkiota seuraavasti: "
+        "H. Poronlihan tarkastus sekä poroteurastamon ja teurastuspaikan valvonta / tunti 32,3"
+    )
+    live_section = _sec("2", _sub("1", _content(live_text)))
+    sparse_section = _sec("2", _sub("1", _content(sparse_text)))
+    state = _make_state(_body(live_section))
+    lo_ops: list[LegalOperation] = []
+
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_2_item_h",
+            op_type="REPLACE",
+            target_section="2",
+            target_unit_kind="section",
+            target_paragraph=1,
+            target_item="h",
+            source_statute="2003/811",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=sparse_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter=None,
+        target_address=LegalAddress(
+            path=(("section", "2"), ("subsection", "1"), ("item", "h")),
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2003/811",
+        source_title="Table row H",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(live_section),
+    )
+
+    assert lo_ops
+    section_snapshot = lo_ops[0]
+    assert section_snapshot.target.path == (("section", "2"),)
+    snapshot_text = " ".join(irnode_to_text(section_snapshot.payload).split())
+    assert "A. Eläimen ruumiinavaus" in snapshot_text
+    assert "H. Poronlihan" in snapshot_text
+    assert len(snapshot_text) > len(" ".join(sparse_text.split()))
+
+
 def test_emit_section_snapshot_inserts_new_subsection_addresses_not_in_base() -> None:
     base_section = _sec("3", _sub("1", _content("First")))
     payload_section = _sec(

@@ -12,7 +12,10 @@ from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.invariant_profiles import structural_tree_all_profile
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_label_sequence_gap_findings, build_text_duplication_findings
-from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.apply_ir_ops import (
+    _strip_redundant_paragraph_label_prefixes_ir,
+    _strip_standalone_subsection_item_prefixes_ir,
+)
 from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 from lawvm.finland.replay_pipeline import build_tree_invariant_finding
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
@@ -47,7 +50,9 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
         _record_replay_invariant_profile(request.replay_meta_out)
 
     replay_fold_state = request.state.with_ir(
-        _strip_standalone_subsection_item_prefixes_ir(request.state.ir)
+        _strip_redundant_paragraph_label_prefixes_ir(
+            _strip_standalone_subsection_item_prefixes_ir(request.state.ir)
+        )
     )
     replay_fold_state = replay_fold_state.with_ir(hoist_trailing_wrapup_ir(replay_fold_state.ir))
 

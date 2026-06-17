@@ -4168,6 +4168,196 @@ def _strip_table_header_prefix(text: str) -> str:
     return flat
 
 
+def _table_row_cell_texts(row: IRNode) -> List[str]:
+    return [irnode_to_text(cell).strip() for cell in row.children if cell.kind == IRNodeKind.CELL]
+
+
+def _province_anchor_from_header(header: str) -> str:
+    norm = _norm_row_anchor_text(header)
+    for suffix in (" lääniä", " lääni"):
+        if norm.endswith(suffix):
+            return norm[: -len(suffix)].strip()
+    return norm
+
+
+def _section_province_table(section: Optional[IRNode]) -> Optional[IRNode]:
+    if section is None or section.kind is not IRNodeKind.SECTION:
+        return None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return None
+    tables: List[IRNode] = []
+    for child in subsections[0].children:
+        if child.kind != IRNodeKind.CONTENT:
+            continue
+        tables.extend(grandchild for grandchild in child.children if grandchild.kind == IRNodeKind.TABLE)
+    if len(tables) != 1:
+        return None
+    table = tables[0]
+    rows = [child for child in table.children if child.kind == IRNodeKind.ROW]
+    if not rows:
+        return None
+    if not any(
+        len(_table_row_cell_texts(row)) == 1 and "lääni" in _table_row_cell_texts(row)[0].lower()
+        for row in rows
+    ):
+        return None
+    return table
+
+
+@dataclass(frozen=True, slots=True)
+class _ProvinceTableLayout:
+    prefix_rows: tuple[IRNode, ...]
+    blocks: tuple[tuple[str, tuple[IRNode, ...]], ...]
+
+
+def _layout_province_table(table: IRNode) -> Optional[_ProvinceTableLayout]:
+    rows = tuple(child for child in table.children if child.kind == IRNodeKind.ROW)
+    prefix_rows: List[IRNode] = []
+    blocks: List[tuple[str, tuple[IRNode, ...]]] = []
+    current_anchor: Optional[str] = None
+    current_block: List[IRNode] = []
+    for row in rows:
+        cells = _table_row_cell_texts(row)
+        if len(cells) == 1 and cells[0] and "lääni" in cells[0].lower():
+            if current_anchor is not None:
+                blocks.append((current_anchor, tuple(current_block)))
+            current_anchor = _province_anchor_from_header(cells[0])
+            current_block = [row]
+            continue
+        if current_anchor is None:
+            prefix_rows.append(row)
+            continue
+        current_block.append(row)
+    if current_anchor is not None:
+        blocks.append((current_anchor, tuple(current_block)))
+    if not blocks:
+        return None
+    return _ProvinceTableLayout(tuple(prefix_rows), tuple(blocks))
+
+
+def _merge_province_table_rows(
+    live_layout: _ProvinceTableLayout,
+    amend_layout: _ProvinceTableLayout,
+    named_rows: tuple[str, ...],
+) -> Optional[tuple[IRNode, ...]]:
+    named_set = {_norm_row_anchor_text(row) for row in named_rows if row}
+    if not named_set:
+        return None
+    amend_by_anchor = {anchor: block for anchor, block in amend_layout.blocks}
+    merged_rows: List[IRNode] = list(live_layout.prefix_rows or amend_layout.prefix_rows)
+    changed = False
+    for anchor, live_block in live_layout.blocks:
+        if anchor in named_set and anchor in amend_by_anchor:
+            merged_rows.extend(amend_by_anchor[anchor])
+            changed = True
+        else:
+            merged_rows.extend(live_block)
+    if not changed:
+        return None
+    return tuple(merged_rows)
+
+
+def _replace_section_table_rows(section: IRNode, merged_rows: tuple[IRNode, ...]) -> IRNode:
+    rebuilt_children: List[IRNode] = []
+    for child in section.children:
+        if child.kind != IRNodeKind.SUBSECTION:
+            rebuilt_children.append(child)
+            continue
+        rebuilt_sub_children: List[IRNode] = []
+        for sub_child in child.children:
+            if sub_child.kind != IRNodeKind.CONTENT:
+                rebuilt_sub_children.append(sub_child)
+                continue
+            rebuilt_content_children: List[IRNode] = []
+            for content_child in sub_child.children:
+                if content_child.kind != IRNodeKind.TABLE:
+                    rebuilt_content_children.append(content_child)
+                    continue
+                rebuilt_content_children.append(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        attrs=dict(content_child.attrs),
+                        children=merged_rows,
+                    )
+                )
+            rebuilt_sub_children.append(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=sub_child.text,
+                    attrs=dict(sub_child.attrs),
+                    children=tuple(rebuilt_content_children),
+                )
+            )
+        rebuilt_children.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=child.label,
+                text=child.text,
+                attrs=dict(child.attrs),
+                children=tuple(rebuilt_sub_children),
+            )
+        )
+    return IRNode(
+        kind=IRNodeKind.SECTION,
+        label=section.label,
+        text=section.text,
+        attrs=dict(section.attrs),
+        children=tuple(rebuilt_children),
+    )
+
+
+def _rewrite_named_row_province_table_replaces(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: Optional[str],
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> TableRowRewriteResult:
+    """Merge partial province-table payloads into the live province layout.
+
+    Regional ``lääniä koskevat kohdat`` formulas often ship sparse table bodies
+    that only carry the claimed province blocks.  When ``named_row_targets`` are
+    already owned on the op, rebuild the amendment section by substituting only
+    those province blocks from the payload and retaining the unclaimed live
+    blocks.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    live_table = _section_province_table(ctx.live_node)
+    amend_table = _section_province_table(muutos_ir)
+    if live_table is None or amend_table is None:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    live_layout = _layout_province_table(live_table)
+    amend_layout = _layout_province_table(amend_table)
+    if live_layout is None or amend_layout is None:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    rewritten = False
+    rebuilt_muutos_ir = muutos_ir
+    for op in group_ops:
+        if not (
+            op.op_type == "REPLACE"
+            and op.target_paragraph is None
+            and op.target_item is None
+            and not op.target_special
+        ):
+            continue
+        named_rows = tuple(row for row in op.named_row_targets if row)
+        if not named_rows:
+            continue
+        merged_rows = _merge_province_table_rows(live_layout, amend_layout, named_rows)
+        if merged_rows is None:
+            continue
+        rebuilt_muutos_ir = _replace_section_table_rows(rebuilt_muutos_ir, merged_rows)
+        rewritten = True
+
+    return TableRowRewriteResult(tuple(group_ops), rebuilt_muutos_ir, rewritten)
+
+
 def _rewrite_named_row_table_replaces(
     ctx: PayloadElaborationContext,
     target_unit_kind: TargetUnitKind,
@@ -4618,6 +4808,31 @@ def elaborate_payload_against_live(
     )
     group_ops = list(table_row_named_replaces.group_ops)
     muutos_ir = table_row_named_replaces.muutos_ir
+    if not table_row_named_replaces.rewritten:
+        province_table_named_replaces = _rewrite_named_row_province_table_replaces(
+            ctx,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            muutos_ir,
+            group_ops,
+        )
+        group_ops = list(province_table_named_replaces.group_ops)
+        muutos_ir = province_table_named_replaces.muutos_ir
+        if province_table_named_replaces.rewritten:
+            observations.append(
+                _obs(
+                    "ELAB.NAMED_ROW_PROVINCE_TABLE_MERGE",
+                    "payload_elaboration",
+                    target_section=target_norm,
+                    named_row_targets=[
+                        row
+                        for op in group_ops
+                        for row in op.named_row_targets
+                        if row
+                    ],
+                )
+            )
     table_row_payload = _rewrite_partial_whole_section_table_payload(
         ctx,
         target_unit_kind,

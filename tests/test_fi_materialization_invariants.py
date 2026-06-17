@@ -399,6 +399,25 @@ class TestNoDuplicatesInPIT:
             "velkojan kanssa ole toisin sovittu."
         )
 
+    def test_2001_1234_item_scoped_table_row_snapshot_preserves_sibling_rows(self) -> None:
+        """2003/811 row-H replace must not drop the rest of the §2 fee table at PIT."""
+        source_pathologies: list[object] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay("2001/1234", quiet=True, source_pathologies_out=source_pathologies),
+        )
+        section_2 = replay.materialized_state.find_section("2")
+        assert section_2 is not None
+        section_text = " ".join(irnode_to_text(section_2).split())
+        assert "A. Eläimen ruumiinavaus" in section_text
+        assert "H. Poronlihan tarkastus" in section_text
+        assert any(
+            getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+            and getattr(pathology, "detail", {}).get("recovery_kind")
+            == "section_snapshot_preserve_live_fold_for_descendant_scoped_item"
+            for pathology in source_pathologies
+        )
+
     def test_1988_1347_sparse_descendant_scoped_section_snapshot_keeps_fold(self) -> None:
         """2003/252 descendant-scoped §3 source shell must not truncate folded §3.
 

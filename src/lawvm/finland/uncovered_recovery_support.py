@@ -12,7 +12,7 @@ from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.body_pairing import should_use_body_section
+from lawvm.finland.body_pairing import _part_label_from_cross_heading, should_use_body_section
 from lawvm.finland.helpers import _norm_num_token, _normalize_source_part_num
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.uncovered_recovery_state import (
@@ -246,14 +246,27 @@ def next_letter_label(label: str) -> Optional[str]:
 
 
 def xml_part_label(section_el: etree._Element) -> Optional[str]:
-    """Normalized part label of the nearest ``<part>`` ancestor."""
-    parent = section_el.getparent()
-    while parent is not None:
+    """Normalized part label from ``<part>`` ancestors or a preceding ``crossHeading``."""
+    el: etree._Element | None = section_el
+    while el is not None:
+        parent = el.getparent()
+        if parent is None:
+            break
+        part_from_heading: Optional[str] = None
+        for child in parent:
+            if child is el:
+                break
+            if _tag(child) == "crossHeading":
+                heading_part = _part_label_from_cross_heading(child)
+                if heading_part:
+                    part_from_heading = heading_part
+        if part_from_heading:
+            return part_from_heading
         if _tag(parent) == "part":
             num_el = parent.find("{*}num")
             if num_el is not None and num_el.text:
                 return _normalize_source_part_num(num_el.text) or None
-        parent = parent.getparent()
+        el = parent
     return None
 
 
@@ -262,6 +275,82 @@ def part_label_from_path(path: tuple[tuple[str, str], ...] | None) -> Optional[s
     if not path:
         return None
     return next((lbl for kind, lbl in path if kind == "part"), None)
+
+
+def section_scoped_group_ops(
+    ops: list[AmendmentOp],
+    *,
+    label: str,
+    amend_chapter_label: Optional[str],
+    amend_part_label: Optional[str],
+) -> list[AmendmentOp]:
+    """Return paragraph-scoped compiled ops owned by one uncovered section."""
+    label_norm = _norm_num_token(label)
+    chapter_norm = _norm_num_token(amend_chapter_label) if amend_chapter_label else None
+    part_norm = _norm_num_token(amend_part_label) if amend_part_label else None
+    scoped: list[AmendmentOp] = []
+    for op in ops:
+        if _norm_num_token(op.target_section) != label_norm:
+            continue
+        if chapter_norm and op.target_chapter and _norm_num_token(op.target_chapter) != chapter_norm:
+            continue
+        if part_norm and op.target_part and _norm_num_token(op.target_part) != part_norm:
+            continue
+        if op.target_paragraph is None or op.target_item or op.target_special:
+            continue
+        if op.op_type not in ("REPLACE", "INSERT", "REPEAL"):
+            continue
+        scoped.append(op)
+    return scoped
+
+
+def synthetic_moment_group_ops(
+    *,
+    label: str,
+    amend_chapter_label: Optional[str],
+    amend_part_label: Optional[str],
+    johto_moment_targets: dict[str, frozenset[int]],
+) -> list[AmendmentOp]:
+    """Synthesize paragraph-scoped REPLACE ops from johto moment mentions."""
+    moments = johto_moment_targets.get(_norm_num_token(label), ())
+    if not moments:
+        return []
+    return [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_unit_kind="section",
+            target_section=label,
+            target_chapter=amend_chapter_label,
+            target_part=amend_part_label,
+            target_paragraph=moment,
+        )
+        for moment in sorted(moments)
+    ]
+
+
+def merge_group_ops_for_section(
+    ops: list[AmendmentOp],
+    *,
+    label: str,
+    amend_chapter_label: Optional[str],
+    amend_part_label: Optional[str],
+    johto_moment_targets: dict[str, frozenset[int]],
+) -> list[AmendmentOp]:
+    """Choose paragraph-scoped ops that steer section-level omission merges."""
+    scoped = section_scoped_group_ops(
+        ops,
+        label=label,
+        amend_chapter_label=amend_chapter_label,
+        amend_part_label=amend_part_label,
+    )
+    if scoped:
+        return scoped
+    return synthetic_moment_group_ops(
+        label=label,
+        amend_chapter_label=amend_chapter_label,
+        amend_part_label=amend_part_label,
+        johto_moment_targets=johto_moment_targets,
+    )
 
 
 def uncovered_section_payload_completeness(

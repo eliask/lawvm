@@ -9026,6 +9026,54 @@ def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> No
     )
 
 
+def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_duplicate_labels() -> None:
+    """Same-wave restructure apply may leave transient duplicate labels before fold."""
+    from lawvm.core.invariant_profiles import (
+        collect_tree_invariant_violations,
+        structural_tree_all_profile,
+    )
+
+    corpus = get_corpus()
+    orig = corpus.read_source("2017/320")
+    if orig is None:
+        pytest.skip("corpus archive not available")
+
+    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
+    before = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        stop_before="2019/371",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2019/371",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+        )
+
+    profile = structural_tree_all_profile("process_muutoslaki.post_apply")
+    violations = collect_tree_invariant_violations(phase.output.ir, profile)
+    duplicate_violations = [
+        violation for violation in violations if "duplicate" in violation.message.lower()
+    ]
+    assert duplicate_violations == []
+
+    dedup_findings = [
+        finding
+        for finding in phase.findings()
+        if finding.kind == "APPLY.GLOBAL_LABEL_DEDUP_APPLIED"
+    ]
+    assert len(dedup_findings) == 1
+    assert dedup_findings[0].detail.get("phase") == "process_muutoslaki.post_apply"
+    assert dedup_findings[0].source_statute == "2019/371"
+
+
 def test_replay_xml_2017_320_2018_301_keeps_part_scoped_chapter_4_section_11() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
@@ -13510,6 +13558,167 @@ def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber
     assert lo_ops[0].target == LegalAddress(path=(("section", "73"),))
     assert lo_ops[0].destination == LegalAddress(path=(("chapter", "7"), ("section", "61")))
     assert lo_ops[0].witness_rule_id == FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID
+
+
+def test_emit_restructure_plan_section_snapshot_uses_live_applied_path() -> None:
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID,
+        emit_restructure_plan_section_snapshot_legal_operations,
+    )
+
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="209",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="209 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Renumbered section"),
+        ),
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="V osa"),
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="4",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                            section,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:4/chapter:4/section:1",
+                destination="part:4/chapter:4/section:209",
+                notes=("from_amendment_op",),
+            ),
+            success=True,
+            applied_path=(("part", "5"), ("chapter", "4"), ("section", "209")),
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+    emitted = emit_restructure_plan_section_snapshot_legal_operations(
+        lo_ops_out=lo_ops,
+        state_ir=body,
+        executed_ops=executed,
+        amendment_id="2019/371",
+        source_title="Test relabel snapshot",
+        amendment_issue_date=dt.date(2019, 12, 20),
+        amendment_effective_date=dt.date(2020, 1, 1),
+    )
+
+    assert emitted == 1
+    assert lo_ops[0].action is StructuralAction.INSERT
+    assert lo_ops[0].target == LegalAddress(
+        path=(("part", "5"), ("chapter", "4"), ("section", "209"))
+    )
+    assert lo_ops[0].payload is not None
+    assert lo_ops[0].witness_rule_id == FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID
+
+
+def test_emit_restructure_plan_section_snapshot_resolves_post_part_relabel_live_path() -> None:
+    """Snapshot emission must follow the final live tree, not relabel-time part frames."""
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        emit_restructure_plan_section_snapshot_legal_operations,
+    )
+
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="209",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="209 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Renumbered section"),
+        ),
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="5",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="V osa"),
+                            IRNode(
+                                kind=IRNodeKind.CHAPTER,
+                                label="4",
+                                children=(
+                                    IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                                    section,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:4/chapter:4/section:1",
+                destination="section:209",
+                notes=("from_amendment_op",),
+            ),
+            success=True,
+            applied_path=(("part", "4"), ("chapter", "4"), ("section", "209")),
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+    emitted = emit_restructure_plan_section_snapshot_legal_operations(
+        lo_ops_out=lo_ops,
+        state_ir=body,
+        executed_ops=executed,
+        amendment_id="2019/371",
+        source_title="Test post-part relabel snapshot",
+        amendment_issue_date=dt.date(2019, 12, 20),
+        amendment_effective_date=dt.date(2020, 1, 1),
+    )
+
+    assert emitted == 1
+    assert lo_ops[0].target == LegalAddress(
+        path=(("part", "5"), ("chapter", "4"), ("section", "209"))
+    )
+
+
+def test_chapter_part_move_label_reuse_guard_finding_stamps_guard_rule_id() -> None:
+    from lawvm.finland.restructure_plan_replay import (
+        CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON,
+        FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID,
+        chapter_part_move_label_reuse_guard_finding,
+    )
+
+    finding = chapter_part_move_label_reuse_guard_finding(
+        source_statute="2001/1226",
+        chapter_label="4",
+        old_part_label="2",
+        new_part_label="5",
+    )
+
+    assert finding.kind == "APPLY.MOVE_SKIP"
+    assert finding.detail["reason_code"] == CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON
+    assert (
+        finding.detail["witness_rule_id"]
+        == FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID
+    )
 
 
 def test_build_chapter_part_move_timeline_ops_stamps_stable_witness_rule_id() -> None:

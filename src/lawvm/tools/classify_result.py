@@ -25,6 +25,7 @@ class ClassifyResult:
     # Private fields so callers can reuse already-computed objects
     replay_result: Any = field(default=None, repr=False)
     compiled_ops: List = field(default_factory=list, repr=False)
+    lo_ops: List = field(default_factory=list, repr=False)
     # Cached per-statute data to avoid redundant calls in build_evidence_bundle
     oracle_version_amendment_id: str = field(default="", repr=False)
     oracle_sections: Any = field(default=None, repr=False)

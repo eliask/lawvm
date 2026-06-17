@@ -36,10 +36,14 @@ from lawvm.core.tree_ops import (
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
-from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.apply_ir_ops import (
+    _strip_redundant_paragraph_label_prefixes_ir,
+    _strip_standalone_subsection_item_prefixes_ir,
+)
 from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
+    from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -111,6 +115,7 @@ class ReplayProducts:
     migration_events: tuple[MigrationEvent, ...] = ()
     materialization_spec: Optional[MaterializationSpec] = None
     source_adjudication: Optional[SourceAdjudication] = None
+    fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
     """Reject Finland replay ops that still depend on core tombstone quirks.
@@ -817,7 +822,6 @@ def build_replay_products(
     )
     lo_ops = list(lo_ops_out or [])
     lo_ops = _normalize_repeal_op_sources(lo_ops)
-    _assert_finland_timeline_safe_ops(lo_ops)
     covered_commence_group_ids = frozenset(
         group_id
         for event in resolved_temporal_events
@@ -858,6 +862,31 @@ def build_replay_products(
     _base_tree = _etree.fromstring(ctx.base_xml_bytes)
     _base_issue_date = _fi_statute_issue_date(_base_tree)
     _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
+    from lawvm.finland.replay_fold_timeline_backfill import append_fold_timeline_backfill_ops
+
+    fold_timeline_backfills = append_fold_timeline_backfill_ops(
+        lo_ops=lo_ops,
+        replay_fold_ir=replay_fold_state.ir,
+        base_ir=ctx.base_ir,
+        base_statute_id=statute_id,
+        migration_events=migration_events,
+        as_of=as_of,
+        temporal_events=resolved_temporal_events,
+        base_enacted_date=_base_enacted_date,
+    )
+    if fold_timeline_backfills:
+        backfill_temporal_events = _temporal_events_from_lo_ops(
+            lo_ops,
+            target_statute=base_ir.statute_id,
+            covered_commence_group_ids=covered_commence_group_ids,
+            covered_expiry_signatures=covered_expiry_signatures,
+        )
+        if backfill_temporal_events:
+            resolved_temporal_events = _merge_temporal_events(
+                resolved_temporal_events,
+                backfill_temporal_events,
+            )
+    _assert_finland_timeline_safe_ops(lo_ops)
     raw_timelines = compile_timelines(
         base_ir,
         lo_ops,
@@ -893,7 +922,9 @@ def build_replay_products(
     )
     materialized_state = replay_fold_state.with_ir(pit.body)
     materialized_state = materialized_state.with_ir(
-        _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
+        _strip_redundant_paragraph_label_prefixes_ir(
+            _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
+        )
     )
     if synthesize_repeal_placeholders:
         materialized_state = materialized_state.with_ir(
@@ -917,6 +948,7 @@ def build_replay_products(
         timelines=timelines,
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
+        fold_timeline_backfills=fold_timeline_backfills,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

@@ -18,11 +18,15 @@ import pytest
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.finland.restructure_plan import (
+    FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID,
+    FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID,
     deferred_plan_op_finding,
     ExecutedOp,
     _execute_relabel,
     move_skip_finding,
     RestructureSignal,
+    relabel_migration_ledger_lookup_finding,
+    relabel_structural_label_alias_lookup_finding,
     relabel_skip_source_pathology_finding,
     StructuralTransformOp,
     StructuralTransformPlan,
@@ -1335,6 +1339,29 @@ class TestExecuteRelabel:
         assert target_exec.success is True
         assert target_exec.reason_code == ""
 
+    def test_2017_320_2019_371_part_iia_relabel_resolves_structural_label_alias(
+        self,
+        live_relabel_plan_2017_320_2019_371: tuple[ReplayResult, StructuralTransformPlan],
+    ) -> None:
+        """Live 2019/371 part IIa -> III must resolve the tree's roman part label."""
+        before_master, plan = live_relabel_plan_2017_320_2019_371
+
+        _new_tree, executed = execute_restructure_plan(
+            plan,
+            before_master.replay_fold_state.ir,
+            effective_date="2019-04-01",
+        )
+        by_target = {
+            item.op.target: item
+            for item in executed
+            if item.op.kind is TransformOpKind.RELABEL
+        }
+
+        assert by_target["part:2a"].success is True
+        assert by_target["part:2a"].witness_rule_id == (
+            FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
+        )
+
     def test_2017_320_2019_371_relabel_skips_classify_sparse_target_families(
         self,
         executed_live_relabel_plan_2017_320_2019_371: list[ExecutedOp],
@@ -1374,6 +1401,137 @@ class TestExecuteRelabel:
         assert ("part:5/chapter:1", "chapter:26") not in by_target_dest
         assert ("part:5/chapter:2", "chapter:27") not in by_target_dest
         assert ("part:5/chapter:3", "chapter:28") not in by_target_dest
+
+    def test_relabel_resolves_structural_label_alias_for_part_iia(self) -> None:
+        """Live-tree part IIa may match amendment-frame part 2a through normalization."""
+        tree = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="iia",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="II a osa"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="3 osa"),),
+                ),
+            ),
+        )
+        plan = _make_plan(
+            [
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:2a",
+                    destination="part:3",
+                    notes=("from_amendment_op",),
+                ),
+            ],
+            amendment_id="2019/371",
+        )
+
+        new_tree, executed = execute_restructure_plan(plan, tree, effective_date="2019-04-01")
+
+        assert len(executed) == 1
+        assert executed[0].success is True
+        assert executed[0].witness_rule_id == (
+            FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
+        )
+        finding = relabel_structural_label_alias_lookup_finding(
+            executed[0],
+            source_statute="2019/371",
+        )
+        assert finding is not None
+        assert finding.kind == "APPLY.RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP"
+        part_labels = [child.label for child in new_tree.children if child.kind is IRNodeKind.PART]
+        assert part_labels == ["3", "3"]
+
+    def test_relabel_resolves_amendment_frame_target_via_migration_ledger(self) -> None:
+        """Later-wave relabels may follow prior part migrations instead of failing."""
+        tree = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="1",
+                            children=(IRNode(kind=IRNodeKind.NUM, text="1 luku"),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            LegalAddress(path=(("part", "3"),)),
+            LegalAddress(path=(("part", "4"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        )
+        plan = _make_plan(
+            [
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:3/chapter:1",
+                    destination="chapter:15",
+                    notes=("from_amendment_op",),
+                ),
+            ],
+            amendment_id="2020/1256",
+        )
+
+        new_tree, executed = execute_restructure_plan(
+            plan,
+            tree,
+            migration_ledger=ledger,
+            effective_date="2020-04-01",
+        )
+
+        assert len(executed) == 1
+        assert executed[0].success is True
+        assert executed[0].witness_rule_id == FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID
+        finding = relabel_migration_ledger_lookup_finding(
+            executed[0],
+            source_statute="2020/1256",
+        )
+        assert finding is not None
+        assert finding.kind == "APPLY.RELABEL_MIGRATION_LEDGER_LOOKUP"
+        part_4 = next(
+            child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "4"
+        )
+        chapter_labels = [
+            child.label for child in part_4.children if child.kind is IRNodeKind.CHAPTER
+        ]
+        assert chapter_labels == ["15"]
+
+    def test_2017_320_2020_1256_chapter_15_16_relabels_use_prior_part_migration(
+        self,
+        live_relabel_plan_2017_320_2020_1256: tuple[ReplayResult, StructuralTransformPlan],
+    ) -> None:
+        """2020/1256 chapter 15-16 renumbers should resolve stale part III via 2019/371 lineage."""
+        before_master, plan = live_relabel_plan_2017_320_2020_1256
+        ledger = MigrationLedger(before_master.products.migration_events)
+
+        _new_tree, executed = execute_restructure_plan(
+            plan,
+            before_master.replay_fold_state.ir,
+            migration_ledger=ledger,
+            effective_date="2020-04-01",
+        )
+        by_target = {
+            item.op.target: item
+            for item in executed
+            if item.op.kind is TransformOpKind.RELABEL
+        }
+
+        assert by_target["part:3/chapter:1"].success is True
+        assert by_target["part:3/chapter:2"].success is True
+        # Live pre-2020/1256 fold still hosts part III directly; ledger lookup is
+        # a fallback when the amendment-frame address is absent from the tree.
 
     def test_relabel_missing_target_skips(self, caplog) -> None:
         """RELABEL for nonexistent target should not crash, return tree unchanged."""

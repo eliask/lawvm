@@ -34,6 +34,7 @@ from lawvm.tools.oracle_check import (
     _corpus_selection_detail,
     _diagnose,
     _diagnose_oracle_repeal_stub,
+    _source_pathology_diagnosis_for_blame,
     _attachment_body_text_ir,
     _attachment_body_text_oracle,
     _el_text,
@@ -164,6 +165,33 @@ def test_classify_statute_1988_451_subsection_repeal_not_extra() -> None:
     row = next(item for item in result.section_results if item["section"] == "section:17")
     assert row["diagnosis"] != "REPLAY_EXTRA"
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
+def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source_incomplete() -> None:
+    master = SimpleNamespace(
+        source_pathology_rows=lambda: [
+            {
+                "code": "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+                "source_statute": "2019/371",
+                "target_label": "4 luku 210 §",
+                "detail": {
+                    "target_chapter": "4",
+                    "target_section": "210",
+                    "destination_target_norm": "210",
+                },
+            }
+        ],
+        findings=(),
+    )
+    diagnosis = _source_pathology_diagnosis_for_blame(
+        master,
+        {
+            "source_statute": "2019/371",
+            "target_norm": "210",
+            "target_chapter": "4",
+        },
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
 
 
 def test_diagnose_oracle_repeal_stub_source_limit_when_out_of_window() -> None:
@@ -1452,6 +1480,134 @@ def test_blame_map_prefers_unique_matching_chapter_over_unscoped_section() -> No
 
     assert blame_op["source_statute"] == "1968/493"
     assert blame_op["witness_rule_id"] == "fi_body_chapter_scope_from_source_body"
+
+
+def test_blame_map_includes_restructure_snapshot_lo_ops() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_209_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:209",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+
+    blame_map = _build_blame_map(compiled_ops, lo_ops=lo_ops)
+    blame_op = _lookup_blame_op(blame_map, "part:5/chapter:4/section:209")
+
+    assert blame_op["source_statute"] == "2019/371"
+    assert blame_op["witness_rule_id"] == "fi.restructure.relabel_section_snapshot"
+
+
+def test_blame_lookup_follows_restructure_renumber_migration_lineage() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_210_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:210",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+    migration_events = (
+        SimpleNamespace(
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            to_address=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            source_statute="2020/1256",
+        ),
+    )
+
+    blame_map = _build_blame_map(compiled_ops, lo_ops=lo_ops)
+    blame_op = _lookup_blame_op(
+        blame_map,
+        "part:5/chapter:25/section:210",
+        migration_events=migration_events,
+    )
+
+    assert blame_op["source_statute"] == "2019/371"
+    assert blame_op["witness_rule_id"] == "fi.restructure.relabel_section_snapshot"
+
+
+def test_fi_ledger_inputs_attributes_restructure_blame_via_migration_lineage(
+    monkeypatch,
+) -> None:
+    from lawvm.tools.spec_ledger import fi_ledger_inputs
+
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_209_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:209",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+    migration_events = (
+        SimpleNamespace(
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            to_address=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            source_statute="2020/1256",
+        ),
+    )
+    fake_result = ClassifyResult(
+        sid="2017/320",
+        section_results=[
+            {
+                "section": "part:5/chapter:25/section:209",
+                "diagnosis": "SOURCE_INCOMPLETE",
+                "blame_source": "2019/371",
+            }
+        ],
+        compiled_ops=[],
+        lo_ops=lo_ops,
+        replay_result=SimpleNamespace(migration_events=migration_events),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.oracle_check._classify_statute_sync",
+        lambda _sid, _mode: fake_result,
+    )
+
+    inputs = list(fi_ledger_inputs(["2017/320"], "official_consolidation"))
+
+    assert len(inputs) == 1
+    assert len(inputs[0].divergences) == 1
+    row = inputs[0].divergences[0]
+    assert row.rule_id == "fi.restructure.relabel_section_snapshot"
+    assert row.blame_source == "2019/371"
+    assert row.diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_classify_statute_2017_320_recodification_omission_shell_at_chapter_25_is_source_incomplete() -> None:
+    """2019/371 relabel snapshots for §209-210 omit operative bodies; 2020/1256 renumbers ch.4→ch.25."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:5/chapter:25/section:209",
+        "part:5/chapter:25/section:210",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
 
 
 def test_blame_map_keeps_ambiguous_section_suffix_unattributed() -> None:

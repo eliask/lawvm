@@ -188,6 +188,32 @@ def _serialize_observed_write_audit(audit: ObservedWriteAudit) -> dict[str, obje
     return asdict(audit)
 
 
+def fold_timeline_backfill_finding(
+    *,
+    source_statute: str,
+    address: str,
+    effective: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when fold-owned content is grafted into timelines."""
+    return Finding(
+        kind="REPLAY.FOLD_TIMELINE_BACKFILL",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Replay fold carried a section without timeline authority; "
+                "a fold-owned snapshot was grafted before PIT materialization."
+            ),
+            "address": address,
+            "effective": effective,
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
 def _structural_dedup_applied_finding(
     *,
     phase: str,

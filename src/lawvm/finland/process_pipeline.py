@@ -19,6 +19,7 @@ from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _tree_title, normalize_and_compile_ops
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
+from lawvm.finland.process_apply_fold import normalize_process_apply_fold
 from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_call import ResolvedProcessAmendmentCall, resolve_process_amendment_call
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
@@ -324,6 +325,11 @@ def process_muutoslaki_resolved(
             migration_ledger_initial_len=migration_ledger_initial_len,
             record_finding=record_process_finding,
         ).govern_all(final_state)
+        final_state = normalize_process_apply_fold(
+            final_state,
+            amendment_id=amendment_id,
+            process_findings=process_findings,
+        )
         return result_builder.build(final_state)
 
     except KeyError:

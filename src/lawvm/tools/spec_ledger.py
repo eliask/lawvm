@@ -269,10 +269,18 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi_body_chapter_scope_from_source_body": "A body-scoped section inherits chapter scope from the amendment body container.",
     "fi_chapter_seed_inserted_from_amendment_body": "Chapter seeding inserts a missing base chapter from the earliest amendment body before replay.",
     "fi.recovery.uncovered_body": "Uncovered-body recovery synthesizes a section INSERT/REPLACE from unclaimed amendment body XML.",
+    "fi.recovery.uncovered_body.part_insert_subtree_johto_bypass": "When an amendment INSERTs a new part, uncovered-body recovery may materialize sections carried in that part payload even if the johtolause only names other targets; same-wave repeal-placeholder slots under the inserted part may be reinstated.",
     "fi.recovery.uncovered_chapter_scaffold": "Uncovered-body recovery materializes a missing chapter scaffold needed to host recovered or parsed section operations.",
     "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
     "fi.restructure.renumber_timeline": "A restructure-plan migration event emits an explicit RENUMBER operation so timeline compilation tombstones the old address.",
+    "fi.restructure.relabel_section_snapshot": "After a successful section relabel, replay emits a payload snapshot at the live post-relabel IR path so PIT materialization owns the relocated section body.",
     "fi.restructure.chapter_part_move_timeline": "A chapter moved under a newly created part emits an old-address tombstone plus new-address insert so PIT materialization preserves the move.",
+    "fi.restructure.chapter_part_move_timeline.label_reuse_guard": "Suppress inferred chapter part-move timeline LOs when the same chapter label still lives under its pre-amendment part (label reuse during part INSERT, not a cross-part move).",
+    "fi.restructure.relabel_migration_ledger_lookup": "A later restructure-plan relabel may resolve amendment-frame addresses through prior same-statute migration lineage (as_of_date, not content-lineage not_before) instead of failing with target_not_found.",
+    "fi.restructure.relabel_structural_label_alias_lookup": "A restructure-plan relabel may resolve live tree nodes whose display label differs from the amendment-frame token when Finland structural-label normalization proves equivalence (for example part IIa vs part 2a).",
+    "fi.process.post_apply_label_dedup": "After a restructure-heavy amendment apply loop, transient same-kind+label siblings are removed with the global replay-fold dedup backstop before the next amendment consumes the state.",
+    "fi.replay.fold_timeline_backfill": "Before PIT materialization, replay products graft fold-owned section snapshots onto timeline addresses that only received payload-less renumber/move authority during restructure waves.",
+    "fi.elaboration.named_row_province_table_merge": "Named regional table replaces merge only the claimed province blocks from a sparse amendment table into the live province layout instead of replacing the whole section.",
 }
 
 # Fold the FI catalog supplement (firing parse-witness rules + the fallback-extraction
@@ -300,12 +308,13 @@ def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
 
     firings come from ``compiled_ops[].witness_rule_id``; divergences come from
     ``section_results`` (per-section ``diagnosis``), attributed to the witness rule of
-    the blame compiled-op (``_build_blame_map`` / ``_lookup_blame_op``).
+    the blame op resolved the same way as oracle-check classify
+    (``_blame_map_for_classify_result`` / ``_lookup_blame_op_for_classify_result``),
+    including replay ``lo_ops`` lineage witnesses and migration-event predecessor lookup.
     """
     from lawvm.tools.oracle_check import (
-        _build_blame_map,
         _classify_statute_sync,
-        _lookup_blame_op,
+        _lookup_blame_op_for_classify_result,
     )
 
     for sid in sids:
@@ -318,14 +327,13 @@ def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
                 rid = op.get("witness_rule_id") or ""
                 if rid:
                     firings[rid] += 1
-        blame_map = _build_blame_map(cr.compiled_ops)
         divergences: List[DivergenceRow] = []
         for sec in cr.section_results:
             diagnosis = str(sec.get("diagnosis") or "")
             if diagnosis in _FI_NON_DIVERGENCE:
                 continue
             section_key = str(sec.get("section") or "")
-            blame_op = _lookup_blame_op(blame_map, section_key)
+            blame_op = _lookup_blame_op_for_classify_result(cr, section_key)
             rid = blame_op.get("witness_rule_id") if isinstance(blame_op, dict) else None
             divergences.append(
                 DivergenceRow(

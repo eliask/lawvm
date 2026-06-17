@@ -696,6 +696,24 @@ def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> No
     assert rows
 
 
+def test_2019_371_compile_records_omission_only_recodification_pathology_for_sections_209_210() -> None:
+    """Renumber-only omission shells are manual-frontier source limits, not apply payloads."""
+    replay = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        quiet=True,
+        stop_before="2020/1256",
+    )
+    omission_shell_labels = {
+        str(row.get("target_label") or "")
+        for row in replay.source_pathology_rows()
+        if row.get("code") == "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL"
+        and row.get("source_statute") == "2019/371"
+    }
+    assert any(" 209 §" in label for label in omission_shell_labels)
+    assert any(" 210 §" in label for label in omission_shell_labels)
+
+
 def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> None:
     from lawvm.tools.inspect_amendment import _working_johtolause
 

@@ -12,6 +12,7 @@ from lawvm.core.replay_lints import build_label_sequence_gap_findings, build_tex
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
+    fold_timeline_backfill_finding,
 )
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
@@ -39,6 +40,28 @@ class ReplayProductProjectionRequest:
 def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayProducts:
     """Validate replay products, dedup materialized IR, and project diagnostics."""
     products = request.products
+    if products.fold_timeline_backfills:
+        seen_backfills = {
+            (
+                finding.kind,
+                str(finding.detail.get("address") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "REPLAY.FOLD_TIMELINE_BACKFILL"
+        }
+        for record in products.fold_timeline_backfills:
+            key = ("REPLAY.FOLD_TIMELINE_BACKFILL", record.address)
+            if key in seen_backfills:
+                continue
+            request.replay_findings.append(
+                fold_timeline_backfill_finding(
+                    source_statute=record.source_statute,
+                    address=record.address,
+                    effective=record.effective,
+                    witness_rule_id=record.witness_rule_id,
+                )
+            )
+            seen_backfills.add(key)
     typed_product_tree_violations = {
         "replay_fold_tree": list(
             fi_product_tree_invariant_dicts(

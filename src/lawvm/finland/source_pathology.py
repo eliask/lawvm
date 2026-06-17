@@ -168,6 +168,7 @@ __all__ = [
     "build_container_replace_target_absent_pathology",
     "build_container_membership_mismatch_pathology",
     "build_recodification_source_chain_gap_pathology",
+    "build_recodification_omission_only_section_shell_pathology",
     "build_destructive_shape_loss_risk_pathology",
     "build_empty_operative_body_pathology",
     "build_item_target_structure_absent_pathology",
@@ -223,6 +224,42 @@ def build_recodification_source_chain_gap_pathology(
         target_unit_kind=target_unit_kind,
         target_label=target_label,
         detail={"diagnostic_reason": diagnostic_reason},
+    )
+
+
+def build_recodification_omission_only_section_shell_pathology(
+    *,
+    source_statute: str,
+    source_target_norm: str,
+    destination_target_norm: str,
+    target_chapter: str = "",
+    target_part: str = "",
+) -> SourcePathology:
+    """Build a source-pathology record for renumber-only omission shells.
+
+    Large recodification waves can publish destination-number sections as
+    heading-plus-omission shells without operative body text. Replay may renumber
+    the live section, but must not invent oracle text from uncovered recovery.
+    """
+    return SourcePathology.from_scope(
+        code="RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+        message=(
+            "Recodification destination section is an omission-only shell in source; "
+            "operative body text is absent from the amendment XML."
+        ),
+        source_statute=source_statute,
+        target_unit_kind="section",
+        target_label=_target_label(destination_target_norm, target_chapter),
+        detail={
+            "source_target_norm": source_target_norm,
+            "destination_target_norm": destination_target_norm,
+            "target_chapter": target_chapter,
+            "target_part": target_part,
+            "source_surface": "sparse_omission_shell",
+            "recovery_kind": "recodification_omission_only_section_shell",
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
     )
 
 

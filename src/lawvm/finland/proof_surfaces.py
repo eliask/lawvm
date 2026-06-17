@@ -397,6 +397,16 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         frontier_status="source_chain_frontier",
         required_claim_kind="fi.v1.SOURCE_CHAIN_RESOLUTION",
     ),
+    "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL": FinlandSourcePathologyProofRule(
+        code="RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+        lane="source_pathology",
+        owner_phase="payload_surface_extraction",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_recodification_omission_only_section_shell",
+        frontier_status="manual_frontier",
+        required_claim_kind="fi.v1.PAYLOAD_COMPLETENESS_RESOLUTION",
+    ),
     "TEMPORARY_SECTION_REBASE": FinlandSourcePathologyProofRule(
         code="TEMPORARY_SECTION_REBASE",
         lane="temporal_recovery",

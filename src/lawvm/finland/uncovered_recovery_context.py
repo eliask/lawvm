@@ -10,6 +10,7 @@ from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions,
     collect_johto_mentioned_section_labels,
+    collect_johto_moment_targets,
 )
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.uncovered_recovery_state import (
@@ -27,6 +28,19 @@ class UncoveredRecoveryContext:
     moved_section_destinations: dict[str, str]
     relabel_destination_sections: frozenset[UncoveredSectionKey]
     owned_chapter_labels: frozenset[str]
+    part_insert_labels: frozenset[str]
+    johto_moment_targets: dict[str, frozenset[int]]
+
+
+def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
+    labels: set[str] = set()
+    for op in ops:
+        if op.op_type != "INSERT" or op.target_unit_kind != "part":
+            continue
+        label = _norm_num_token(str(op.target_section or op.target_part or ""))
+        if label:
+            labels.add(label)
+    return frozenset(labels)
 
 
 def build_uncovered_recovery_context(
@@ -43,6 +57,7 @@ def build_uncovered_recovery_context(
     surface into named fields.
     """
     johto_mentioned_labels: set[str] = set()
+    johto_moment_targets: dict[str, frozenset[int]] = {}
     johto_mentioned_new_chapters: set[str] = set()
     johto_mentioned_replaced_chapters: set[str] = set()
     moved_section_destinations: dict[str, str] = {}
@@ -87,6 +102,7 @@ def build_uncovered_recovery_context(
     if johto_el is not None:
         johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
         johto_mentioned_labels.update(collect_johto_mentioned_section_labels(johto_text))
+        johto_moment_targets = collect_johto_moment_targets(johto_text)
         chapter_mentions = collect_johto_chapter_scope_mentions(johto_text)
         johto_mentioned_new_chapters.update(chapter_mentions.new_chapter_labels)
         owned_chapter_labels.update(chapter_mentions.moved_destination_chapter_labels)
@@ -105,4 +121,6 @@ def build_uncovered_recovery_context(
         moved_section_destinations=moved_section_destinations,
         relabel_destination_sections=frozenset(relabel_destination_sections),
         owned_chapter_labels=frozenset(owned_chapter_labels),
+        part_insert_labels=_part_insert_labels_from_ops(ops),
+        johto_moment_targets=johto_moment_targets,
     )

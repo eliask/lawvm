@@ -145,6 +145,11 @@ def test_previous_item_token_returns_none_for_unparseable() -> None:
     assert _previous_item_token("abc") is None
 
 
+def test_previous_item_token_letter_list_sequence() -> None:
+    assert _previous_item_token("c") == "b"
+    assert _previous_item_token("a") is None
+
+
 # ---------------------------------------------------------------------------
 # _expand_section_range
 # ---------------------------------------------------------------------------

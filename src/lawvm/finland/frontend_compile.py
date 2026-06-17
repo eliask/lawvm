@@ -62,6 +62,8 @@ from lawvm.finland.johtolause_supplements import (
 )
 from lawvm.finland.scope import (
     _same_label_move_sections_for_chapter,
+    _unique_section_chapter,
+    infer_letter_suffix_section_chapter_from_stem_host,
     strip_unjustified_chapter_scope_from_unique_sections as _strip_unjustified_chapter_scope_from_unique_sections,
     assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause,
     assign_scope_from_renumber_destinations as _assign_scope_from_renumber_destinations,
@@ -1169,6 +1171,41 @@ def _is_letter_suffix_section_family_continuation(previous_label: str | None, cu
     return ord(current_suffix.lower()) == ord(previous_suffix.lower()) + 1
 
 
+def _infer_unique_live_section_chapter_scope(
+    *,
+    op: AmendmentOp,
+    master: "ReplayState",
+) -> str | None:
+    """Bind chapter scope when johto cites only §N and live tree has one host."""
+    if (
+        op.target_unit_kind != "section"
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.op_type not in {"REPLACE", "REPEAL"}
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+    ):
+        return None
+    section_label = _norm_num_token(op.target_section)
+    unique_chapter = _unique_section_chapter(
+        master,
+        section_label,
+        part_label=op.target_part,
+    )
+    if unique_chapter is not None and master.find_section_path(
+        section_label,
+        unique_chapter,
+        op.target_part,
+    ) is not None:
+        return unique_chapter
+    return infer_letter_suffix_section_chapter_from_stem_host(
+        master,
+        section_label,
+        part_label=op.target_part,
+    )
+
+
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
@@ -1556,6 +1593,22 @@ def _enrich_ops_from_amendment_tree(
                 ):
                     inferred_chapter = last_inferred_section_chapter
                     inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_unique_live_section_chapter_scope(
+                        op=scoped_op,
+                        master=master,
+                    )
+                    if inferred_chapter is not None:
+                        inferred_rule_id = (
+                            "fi_unique_live_section_chapter_scope"
+                            if master.find_section_path(
+                                _norm_num_token(scoped_op.target_section or ""),
+                                inferred_chapter,
+                                scoped_op.target_part,
+                            )
+                            is not None
+                            else "fi_letter_suffix_stem_host_chapter_scope"
+                        )
             if inferred_chapter is not None:
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(

@@ -132,6 +132,20 @@ def test_past_repeal_bypassed_by_whole_chapter_replace() -> None:
     assert v.bypass is True and v.bypass_reason == "whole_chapter_replace"
 
 
+def test_past_repeal_bypassed_by_part_insert_subtree() -> None:
+    from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
+    v = evaluate_past_repeal_guard(
+        {"lawvm_repeal_placeholder": "1"},
+        [],
+        "110",
+        "1",
+        False,
+        amend_part="5",
+        part_insert_labels={"5"},
+    )
+    assert v.bypass is True and v.bypass_reason == "part_insert_subtree"
+
+
 # ---------------------------------------------------------------------------
 # classify_existing_disposition — EXISTING-path terminal verdict
 # ---------------------------------------------------------------------------

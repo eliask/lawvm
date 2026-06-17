@@ -588,13 +588,39 @@ def test_replay_xml_1940_378_keeps_voimaantulo_section_under_chapter_7_after_199
 def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
     replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
 
-    sec109 = replay.materialized_state.find_section("109")
-    sec142 = replay.materialized_state.find_section("142")
+    sec109 = replay.materialized_state.find_section("109", chapter_num="1", part_num="5")
+    sec110 = replay.materialized_state.find_section("110", chapter_num="1", part_num="5")
+    sec111 = replay.materialized_state.find_section("111", chapter_num="1", part_num="5")
+    sec112 = replay.materialized_state.find_section("112", chapter_num="1", part_num="5")
+    sec113 = replay.materialized_state.find_section("113", chapter_num="1", part_num="5")
+    sec142 = replay.materialized_state.find_section("142", chapter_num="5", part_num="5")
 
     assert sec109 is not None
+    assert sec110 is not None
+    assert sec111 is not None
+    assert sec112 is not None
+    assert sec113 is not None
     assert sec142 is not None
     assert "Suomen viranomainen voi myöntää 9 §:ssä tarkoitetun luvan" in " ".join(irnode_to_text(sec109).split())
+    sec110_text = " ".join(irnode_to_text(sec110).split())
+    assert sec110_text.startswith("110 §")
+    assert "avioliitto aiotaan solmia Suomen viranomaisen edessä vieraassa valtiossa" in sec110_text
     assert "Tarkemmat säännökset tämän osan täytäntöönpanosta" in " ".join(irnode_to_text(sec142).split())
+
+
+def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapters() -> None:
+    """2001/1226 inserts part V; same-numbered chapters in parts II/IV must survive."""
+    replay = pinned_replay("1929/234", mode="official_consolidation", quiet=True)
+
+    sec46 = replay.materialized_state.find_section("46", chapter_num="4", part_num="2")
+    assert sec46 is not None
+    sec46_text = " ".join(irnode_to_text(sec46).split())
+    assert sec46_text.startswith("46 §")
+
+    part4_ch1 = replay.materialized_state.find_node("chapter", "1", scope_kind="part", scope_label="4")
+    part2_ch4 = replay.materialized_state.find_node("chapter", "4", scope_kind="part", scope_label="2")
+    assert part4_ch1 is not None
+    assert part2_ch4 is not None
 
 
 def test_replay_xml_1994_674_keeps_section_1_under_inserted_chapter_11a(
@@ -1278,6 +1304,205 @@ def test_replay_xml_can_skip_full_products_for_fast_bench() -> None:
     assert replay.products.materialized_state == replay.replay_fold_state
     assert replay.products.timelines is None
     assert replay.materialization_spec is None
+
+
+def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -> None:
+    """Fold-owned sections must survive PIT when only payload-less RENUMBER LOs exist."""
+    from lawvm.core.provenance import MigrationEvent
+    from lawvm.finland.replay_fold_timeline_backfill import FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
+
+    def _section(label: str, heading: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SECTION,
+            label=label,
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text=f"{label} §"),
+                IRNode(kind=IRNodeKind.HEADING, text=heading),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text=f"Body {label}"),),
+                ),
+            ),
+        )
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="V OSA"),
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="4",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                            _section("1", "Old one"),
+                            _section("2", "Old two"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    fold_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="V OSA"),
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="25",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="25 luku"),
+                            _section("209", "Renumbered one"),
+                            _section("210", "Renumbered two"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/fold-backfill",
+        title="Synthetic fold backfill",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    source = OperationSource(
+        statute_id="2020/1256",
+        title="Restructure amendment",
+        enacted="2021-02-01",
+        effective="2021-02-01",
+    )
+    lo_ops = [
+        LegalOperation(
+            op_id="restructure_renumber_chapter",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            destination=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            source=source,
+            group_id="finland-restructure:2020/1256",
+        ),
+        LegalOperation(
+            op_id="restructure_renumber_section_1",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("part", "5"), ("chapter", "4"), ("section", "1"))),
+            destination=LegalAddress(path=(("part", "5"), ("chapter", "4"), ("section", "209"))),
+            source=source,
+            group_id="finland-restructure:2020/1256",
+        ),
+    ]
+    migration_events = (
+        MigrationEvent(
+            event_id="mig:ch4-ch25",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            to_address=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            effective="2021-02-01",
+            source_statute="2020/1256",
+        ),
+    )
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id="synthetic/fold-backfill",
+        replay_fold_state=ReplayState(ir=fold_body),
+        lo_ops_out=lo_ops,
+        migration_events=migration_events,
+    )
+    addr_209 = LegalAddress(path=(("part", "5"), ("chapter", "25"), ("section", "209")))
+    addr_210 = LegalAddress(path=(("part", "5"), ("chapter", "25"), ("section", "210")))
+
+    assert products.timelines is not None
+    assert addr_209 in products.timelines
+    assert addr_210 in products.timelines
+    assert products.materialized_state.find_section("209", "25", "5") is not None
+    assert products.materialized_state.find_section("210", "25", "5") is not None
+    assert any(record.address == str(addr_209) for record in products.fold_timeline_backfills)
+    assert all(
+        record.witness_rule_id == FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
+        for record in products.fold_timeline_backfills
+    )
+
+
+def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> None:
+    """2019/371 section relabels must snapshot at live IR paths, not amendment frames."""
+    from lawvm.finland.restructure_plan_replay import (
+        FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID,
+    )
+
+    lo_ops: list[LegalOperation] = []
+    pinned_replay(
+        "2017/320",
+        quiet=True,
+        lo_ops_out=lo_ops,
+        stop_before="2020/1256",
+    )
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.op_id == "snapshot_section_209_restructure_2019/371"
+    )
+    assert snapshot.witness_rule_id == FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID
+    assert str(snapshot.target) == "part:5/chapter:4/section:209"
+    assert snapshot.payload is not None
+
+
+def test_replay_xml_2017_320_materializes_part_5_chapter_25_sections() -> None:
+    """Regression: restructure renumber waves must not drop fold-owned ch25 sections from PIT."""
+    replay = pinned_replay("2017/320", mode="legal_pit", quiet=True)
+    fold_sections = extract_ir_sections(replay.replay_fold_state.ir)
+    materialized_sections = extract_ir_sections(replay.materialized_state.ir)
+    ch25_keys = sorted(
+        key for key in fold_sections if key.startswith("part:5/chapter:25/section:")
+    )
+    assert ch25_keys, "fold must carry part:5/chapter:25 sections"
+    assert all(key in materialized_sections for key in ch25_keys)
+    # Upstream relabel snapshots at part:5/chapter:4 own timeline authority for the
+    # 209-215 family before 2020/1256 moves chapter 4 into chapter 25. Fold backfill
+    # must not be the graft that materializes ch25/209.
+    assert not any(
+        finding.kind == "REPLAY.FOLD_TIMELINE_BACKFILL"
+        and "part:5/chapter:25/section:209" in str(finding.detail.get("address") or "")
+        for finding in replay.findings
+    )
+
+
+def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery() -> None:
+    """2019/371 omission-only destination shells must not be inserted via uncovered recovery."""
+    replay_meta: dict[str, object] = {}
+    replay = pinned_replay(
+        "2017/320",
+        quiet=True,
+        stop_before="2020/1256",
+        replay_meta_out=replay_meta,
+    )
+    audits = replay_meta.get("uncovered_body_candidate_audits") or []
+    guarded = {
+        str(row.get("target_section"))
+        for row in audits
+        if isinstance(row, dict)
+        and row.get("source_statute") == "2019/371"
+        and row.get("reason") == "johto_guard"
+        and row.get("disposition") == "SKIP"
+    }
+    assert {"209", "210", "211", "212"}.issubset(guarded)
+    findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.UNCOVERED_BODY_JOHTO_GUARD"
+        and finding.source_statute == "2019/371"
+        and str((finding.detail or {}).get("target_section")) in {"209", "210", "211", "212"}
+    ]
+    assert len(findings) == 4
+    assert all(str((finding.detail or {}).get("reason")) == "johto_guard" for finding in findings)
 
 
 def test_replay_xml_emits_payloaded_part_snapshot_for_2020_1256() -> None:
@@ -4482,6 +4707,78 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
 
     assert replay.find_section("4a") is not None, "2021/407 must insert section 4a"
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"
+
+
+def test_replay_xml_2004_301_2016_454_snapshots_86b_under_chapter_five() -> None:
+    """2016/454 must not mint a bare root timeline for uniquely hosted §86b."""
+    lo_ops: list[LegalOperation] = []
+    replay_xml_for_test("2004/301", quiet=True, lo_ops_out=lo_ops, stop_before="2016/505")
+    snapshot = next(op for op in lo_ops if op.op_id == "snapshot_section_86b")
+    assert str(snapshot.target) == "chapter:5/section:86b"
+
+
+def test_replay_xml_2004_301_has_no_orphan_bare_86b_timeline_after_repeal() -> None:
+    """2023/216 repeal must not leave a viewer-visible bare §86b tombstone."""
+    replay = replay_xml_for_test("2004/301", mode="legal_pit", quiet=True, as_of="2024-01-01")
+    assert replay.products is not None
+    assert replay.products.timelines is not None
+    bare_addr = LegalAddress(path=(("section", "86b"),))
+    assert bare_addr not in replay.products.timelines
+
+
+def test_replay_xml_2004_301_section_142_item_three_has_no_duplicate_kohta_marker() -> None:
+    """§142 2 mom 3 kohta must not carry a redundant ``3)`` body prefix.
+
+    2022/821 uncovered recovery flattened the item body onto ``paragraph.text``
+    while the structured label already owns the kohta marker. The viewer renders
+    ``label + text``, so a carried ``3)`` prefix becomes ``3)3)`` on screen.
+    """
+    replay = replay_xml_for_test("2004/301", mode="legal_pit", quiet=True, as_of="2024-01-01")
+    section142 = replay.materialized_state.find_section("142", "9")
+    assert section142 is not None
+    subsection2 = next(
+        child
+        for child in section142.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "2"
+    )
+    item3 = next(
+        child
+        for child in subsection2.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "3"
+    )
+    assert item3.text is not None
+    assert not item3.text.lstrip().startswith("3)")
+    assert item3.text.startswith("kolmannen maan kansalaisen")
+
+
+def test_replay_xml_2004_301_2023_389_does_not_duplicate_applicability_subsections() -> None:
+    """2023/389 moment-scoped uncovered merges must not leave stale 72 a clauses.
+
+    Amendment 2023/389 changes only ``74 §:n 4 momentti`` and ``75 §:n 3
+    momentti``. Uncovered-body omission merge previously bound the lone payload
+    subsection to moment 2 while moment 4 kept the older ``72 a`` applicability
+    wording, producing near-duplicate ``72 ja 72 b`` / ``72, 72 a ja 72 b`` pairs.
+    """
+    replay = replay_xml_for_test("2004/301", mode="legal_pit", quiet=True)
+    ms = replay.materialized_state
+
+    section74 = ms.find_section("74", "5")
+    section75 = ms.find_section("75", "5")
+    assert section74 is not None
+    assert section75 is not None
+
+    text74 = " ".join(irnode_to_text(section74).split())
+    text75 = " ".join(irnode_to_text(section75).split())
+
+    assert text74.count("Oleskeluluvan myöntämiseen ei sovelleta 72") == 1
+    assert "72, 72 a ja 72 b" not in text74
+    assert "Jos työnteko kestää kauemmin" in text74
+    assert "Oleskeluluvan myöntämiseen ei sovelleta 72 ja 72 b §:ää." in text74
+
+    assert text75.count("Oleskeluluvan myöntämiseen ei sovelleta 72") == 1
+    assert "72, 72 a ja 72 b" not in text75
+    assert "39 §:n mukaisesti" in text75
+    assert "Oleskeluluvan myöntämiseen ei sovelleta 72 ja 72 b §:ää." in text75
 
 
 def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> None:

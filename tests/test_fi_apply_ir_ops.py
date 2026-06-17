@@ -5,7 +5,10 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland import apply_ir_ops
-from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.apply_ir_ops import (
+    _strip_redundant_paragraph_label_prefixes_ir,
+    _strip_standalone_subsection_item_prefixes_ir,
+)
 
 
 def test_strip_standalone_subsection_item_prefixes_uses_compiled_pattern(
@@ -57,3 +60,30 @@ def test_strip_standalone_subsection_item_prefixes_does_not_strip_lowercase() ->
     )
 
     assert _strip_standalone_subsection_item_prefixes_ir(node) is node
+
+
+def test_strip_redundant_paragraph_label_prefixes_removes_duplicate_kohta_marker() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="3",
+                text="3) Kolmannen maan kansalaisen maahantulon estäminen.",
+            ),
+        ),
+    )
+
+    stripped = _strip_redundant_paragraph_label_prefixes_ir(body)
+    paragraph = stripped.children[0]
+    assert paragraph.text == "Kolmannen maan kansalaisen maahantulon estäminen."
+
+
+def test_strip_redundant_paragraph_label_prefixes_keeps_distinct_marker() -> None:
+    node = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        text="4) Neljännen kohdan teksti.",
+    )
+
+    assert _strip_redundant_paragraph_label_prefixes_ir(node) is node

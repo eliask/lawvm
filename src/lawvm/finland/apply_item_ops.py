@@ -888,8 +888,17 @@ def _apply_item_replace(
             para_idx is None
             and amend_para is not None
             and paras
-            and re.fullmatch(r"\d+", item_norm)
             and sub.label == str(view.target_paragraph)
+            and (
+                re.fullmatch(r"\d+", item_norm)
+                or (
+                    re.fullmatch(r"[a-z]", item_norm)
+                    and all(
+                        p.label and re.fullmatch(r"[a-z]", normalized_label_key(p.label))
+                        for p in paras
+                    )
+                )
+            )
         ):
             prev_tok = _previous_item_token(item_norm)
             anchor_idx = None
@@ -907,7 +916,25 @@ def _apply_item_replace(
                     source_pathologies_out=source_pathologies_out,
                 )
                 new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
-                logger.debug("  %s → kohta replace-as-insert (exact subsection numeric recovery)", ctx_label)
+                recovery_kind = (
+                    "letter_item_replace_as_insert"
+                    if re.fullmatch(r"[a-z]", item_norm)
+                    else "numeric_item_replace_as_insert"
+                )
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_destructive_shape_loss_risk_pathology(
+                            source_statute=view.source_statute,
+                            target_unit_kind=view.target_unit_kind,
+                            target_label=f"{view.target_section} § {view.target_paragraph} mom {view.target_item} kohta",
+                            recovery_kind=recovery_kind,
+                            live_sibling_count=len(paras),
+                            payload_sibling_count=1,
+                        )
+                    )
+                if strict_profile is not None:
+                    return None
+                logger.debug("  %s → kohta replace-as-insert (%s recovery)", ctx_label, recovery_kind)
                 return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
         if para_idx is not None and amend_para is None and amend_sub is not None:
             unlabelled_relabel_attempted = True
@@ -1381,6 +1408,25 @@ def _apply_special_targets(
                         target_idx=n,
                     )
                 if not any(c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} for c in sub.children):
+                    paragraph_children = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
+                    if paragraph_children and amend_intro is not None:
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_destructive_shape_loss_risk_pathology(
+                                    source_statute=view.source_statute,
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=f"{view.target_section} § {view.target_paragraph} mom johd",
+                                    recovery_kind="intro_prepend_letter_list_moment",
+                                    live_sibling_count=len(paragraph_children),
+                                    payload_sibling_count=1,
+                                )
+                            )
+                        if strict_profile is not None:
+                            return None
+                        new_sub = _tops._with_children(sub, (amend_intro, *sub.children))
+                        new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
+                        logger.debug("  %s → johd prepend (letter-list moment)", ctx_label)
+                        return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
                     if source_pathologies_out is not None:
                         source_pathologies_out.append(
                             build_item_target_structure_absent_pathology(

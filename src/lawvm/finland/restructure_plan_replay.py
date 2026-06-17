@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import logging
 from collections.abc import Iterable
@@ -11,14 +12,21 @@ from typing import Optional
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.apply_runtime_support import _stamp_exact_section_snapshot_payload
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.restructure_plan import (
+    ExecutedOp,
     StructuralTransformPlan,
+    TransformOpKind,
+    _resolve_live_section_snapshot_path,
+    _resolve_section_node_at_live_path,
     deferred_plan_op_finding,
     execute_restructure_plan,
     move_skip_finding,
+    relabel_migration_ledger_lookup_finding,
+    relabel_structural_label_alias_lookup_finding,
     relabel_skip_finding,
     relabel_skip_source_pathology_finding,
 )
@@ -27,8 +35,17 @@ from lawvm.finland.statute import ReplayState
 logger = logging.getLogger(__name__)
 
 FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID = "fi.restructure.renumber_timeline"
+FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID = (
+    "fi.restructure.relabel_section_snapshot"
+)
 FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID = (
     "fi.restructure.chapter_part_move_timeline"
+)
+FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID = (
+    "fi.restructure.chapter_part_move_timeline.label_reuse_guard"
+)
+CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON = (
+    "chapter_label_reuse_old_part_still_hosts_chapter"
 )
 
 
@@ -79,6 +96,34 @@ def build_chapter_part_move_timeline_ops(
             group_id=f"finland-johto:{request.amendment_id}",
             witness_rule_id=FI_RESTRUCTURE_CHAPTER_PART_MOVE_TIMELINE_RULE_ID,
         ),
+    )
+
+
+def chapter_part_move_label_reuse_guard_finding(
+    *,
+    source_statute: str,
+    chapter_label: str,
+    old_part_label: str,
+    new_part_label: str,
+) -> Finding:
+    """Record suppression of an inferred chapter part-move when labels collide."""
+    return Finding(
+        kind="APPLY.MOVE_SKIP",
+        role="observation",
+        stage="apply",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Inferred chapter part-move suppressed because the same chapter "
+                "label still lives under its pre-amendment part."
+            ),
+            "reason_code": CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON,
+            "witness_rule_id": FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID,
+            "chapter_label": chapter_label,
+            "old_part_label": old_part_label,
+            "new_part_label": new_part_label,
+        },
     )
 
 
@@ -158,6 +203,81 @@ def emit_restructure_plan_renumber_legal_operations(
     return emitted
 
 
+def emit_restructure_plan_section_snapshot_legal_operations(
+    *,
+    lo_ops_out: Optional[list[LegalOperation]],
+    state_ir: IRNode,
+    executed_ops: Iterable[ExecutedOp],
+    amendment_id: str,
+    source_title: str,
+    amendment_issue_date: Optional[dt.date],
+    amendment_effective_date: Optional[dt.date],
+) -> int:
+    """Emit payload snapshots for successful section relabels at their live paths.
+
+    Restructure relabels can land sections on addresses that differ from the
+    amendment-frame migration ``to_address``. Timeline compilation needs a
+    payload snapshot at the live post-relabel path, not only the paired
+    payload-less ``RENUMBER`` LO.
+    """
+    if lo_ops_out is None:
+        return 0
+
+    source = OperationSource(
+        statute_id=amendment_id,
+        title=source_title,
+        enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
+        effective=amendment_effective_date.isoformat() if amendment_effective_date else "",
+        raw_text="",
+    )
+    existing_op_ids = {op.op_id for op in lo_ops_out}
+    existing_payload_targets = {
+        op.target
+        for op in lo_ops_out
+        if op.payload is not None
+        and op.source is not None
+        and op.source.statute_id == amendment_id
+    }
+    emitted = 0
+    for exec_op in executed_ops:
+        if (
+            not exec_op.success
+            or exec_op.op.kind is not TransformOpKind.RELABEL
+            or exec_op.applied_path is None
+            or exec_op.applied_path[-1][0] != "section"
+        ):
+            continue
+        live_path = _resolve_live_section_snapshot_path(state_ir, exec_op.applied_path)
+        if live_path is None:
+            continue
+        address = LegalAddress(path=live_path)
+        if address in existing_payload_targets:
+            continue
+        section_label = live_path[-1][1]
+        op_id = f"snapshot_section_{section_label}_restructure_{amendment_id}"
+        if op_id in existing_op_ids:
+            continue
+        payload = _resolve_section_node_at_live_path(state_ir, live_path)
+        if payload is None or payload.kind is not IRNodeKind.SECTION:
+            continue
+        lo_ops_out.append(
+            LegalOperation(
+                op_id=op_id,
+                sequence=0,
+                action=StructuralAction.INSERT,
+                target=address,
+                payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(payload)),
+                source=source,
+                group_id=f"finland-restructure:{amendment_id}",
+                witness_rule_id=FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID,
+            )
+        )
+        existing_op_ids.add(op_id)
+        existing_payload_targets.add(address)
+        emitted += 1
+    return emitted
+
+
 def emit_restructure_skip_findings(
     exec_ops: Iterable[object],
     findings_out: Optional[list[Finding]],
@@ -170,6 +290,8 @@ def emit_restructure_skip_findings(
         for builder in (
             relabel_skip_finding,
             relabel_skip_source_pathology_finding,
+            relabel_migration_ledger_lookup_finding,
+            relabel_structural_label_alias_lookup_finding,
             move_skip_finding,
             deferred_plan_op_finding,
         ):
@@ -207,14 +329,24 @@ def execute_restructure_plan_with_evidence(
     if executed_labels:
         state = state.with_ir(new_ir)
         if request.migration_ledger is not None:
+            wave_events = request.migration_ledger.events[migration_events_before:]
             emit_restructure_plan_renumber_legal_operations(
                 lo_ops_out=sinks.lo_ops_out,
-                migration_events=request.migration_ledger.events[migration_events_before:],
+                migration_events=wave_events,
                 amendment_id=request.amendment_id,
                 source_title=request.source_title,
                 amendment_issue_date=request.amendment_issue_date,
                 amendment_effective_date=request.amendment_effective_date,
             )
+        emit_restructure_plan_section_snapshot_legal_operations(
+            lo_ops_out=sinks.lo_ops_out,
+            state_ir=state.ir,
+            executed_ops=exec_ops,
+            amendment_id=request.amendment_id,
+            source_title=request.source_title,
+            amendment_issue_date=request.amendment_issue_date,
+            amendment_effective_date=request.amendment_effective_date,
+        )
         replay_print(
             f"  [{request.amendment_id}] {request.log_label} executed: "
             f"{len(executed_labels)} ops"

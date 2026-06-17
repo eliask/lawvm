@@ -1021,3 +1021,75 @@ def test_assign_chapter_scope_from_johtolause_scopes_unique_insert_without_chapt
 
     assert got[0].target.path == (("chapter", "3"), ("section", "10"))
     assert "chapter_scope_carry_forward" in got[0].provenance_tags
+
+
+def test_assign_chapter_scope_from_johtolause_scopes_letter_suffix_replace_from_stem_host() -> None:
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="86"),),
+                ),
+            ),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("chapter", "5"), ("section", section))
+            if section == "86" and chapter in (None, "5")
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    lo = LegalOperation(
+        op_id="replace_86b_stem_host",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "86b"),)),
+    )
+
+    got = assign_chapter_scope_from_johtolause(
+        [lo],
+        "muutetaan ulkomaalaislain (301/2004) 86 b §, sellaisena kuin se on laissa 1218/2013, seuraavasti:",
+        cast(Any, master),
+    )
+
+    assert got[0].target.path == (("chapter", "5"), ("section", "86b"))
+    assert "chapter_scope_from_letter_suffix_stem_host" in got[0].provenance_tags
+
+
+def test_assign_chapter_scope_from_johtolause_scopes_unique_replace_without_chapter_chunk() -> None:
+    master = SimpleNamespace(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="86b"),),
+                ),
+            ),
+        ),
+        find_section_path=lambda section, chapter=None, part=None: (
+            (("chapter", "5"), ("section", "86b"))
+            if section == "86b" and chapter in (None, "5")
+            else None
+        ),
+        duplicate_section_labels=set(),
+    )
+    lo = LegalOperation(
+        op_id="replace_86b_no_chunk",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "86b"),)),
+    )
+
+    got = assign_chapter_scope_from_johtolause(
+        [lo],
+        "muutetaan ulkomaalaislain (301/2004) 86 b §, sellaisena kuin se on laissa 1218/2013, seuraavasti:",
+        cast(Any, master),
+    )
+
+    assert got[0].target.path == (("chapter", "5"), ("section", "86b"))
+    assert "chapter_scope_from_unique_live_section" in got[0].provenance_tags

@@ -120,6 +120,7 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         timelines=products.timelines,
         temporal_events=products.temporal_events,
         migration_events=products.migration_events,
+        fold_timeline_backfills=products.fold_timeline_backfills,
         materialization_spec=products.materialization_spec,
         source_adjudication=products.source_adjudication,
     )
