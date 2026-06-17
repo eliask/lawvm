@@ -150,15 +150,60 @@ class ProvisionRef:
     item_label: Optional[str] = None
 
     def serialized(self) -> str:
-        """Return a stable serialized form for parquet/JSONL output."""
+        """Return a stable serialized form for parquet/JSONL output.
+
+        Self-describing slash form
+        ``statute_id[/chN]/section[/momentti][/kLABEL]``.
+
+        Every non-statute-id, non-section segment is TYPED so the string is
+        unambiguous and round-trippable regardless of which optional components
+        are present:
+
+          * ``ch{N}`` — chapter (luku). The chapter is carried in
+            ``provision_path`` (AKN ``chp_N__sec_M…`` fragment), not in a
+            first-class field, so it is parsed back out here. The ``ch`` prefix
+            is uniform across chapter+section AND chapter-only refs, so a
+            chapter can NEVER alias a section number:
+            ``rikoslain 47 luvun 4 §`` → ``…/ch47/4`` ≠ bare ``rikoslain 4 §``
+            → ``…/4`` (different §4s); chapter-only ``3 luvussa``
+            (``provision_path="chp_3"``) → ``…/ch3`` ≠ bare section-3 ``…/3``.
+          * bare integer — momentti (subsection). Momentti is the ONLY bare
+            non-section segment; it is always a plain integer.
+          * ``k{LABEL}`` — kohta (item). Typed so a section→kohta ref with NO
+            momentti (``6 §:n 3 kohdassa`` → ``…/6/k3``) never aliases a
+            section+momentti ref (``6 §:n 3 momentti`` → ``…/6/3``). Emitted
+            whenever ``item_label`` is present, independent of
+            ``subsection_num``.
+
+        The statute id remains the leading segment, so ``LIKE 'statute_id%'``
+        prefix queries are unaffected. Bare-section refs (no ``chp_`` in
+        ``provision_path``, no kohta) serialize exactly as before.
+        """
         parts = [self.statute_id]
+        chapter = self._chapter_from_provision_path()
+        if chapter is not None:
+            parts.append(f"ch{chapter}")
         if self.section_label:
             parts.append(self.section_label)
             if self.subsection_num is not None:
                 parts.append(str(self.subsection_num))
-                if self.item_label:
-                    parts.append(self.item_label)
+            if self.item_label:
+                parts.append(f"k{self.item_label}")
         return "/".join(p for p in parts if p)
+
+    def _chapter_from_provision_path(self) -> Optional[str]:
+        """Extract the chapter number from the AKN ``chp_N`` provision-path head.
+
+        Returns the chapter label (e.g. ``"47"``, ``"9a"``) when
+        ``provision_path`` begins with a ``chp_`` component, else None. Only the
+        chapter head is consulted — the section/momentti/kohta are already
+        carried by the human label fields.
+        """
+        if not self.provision_path.startswith("chp_"):
+            return None
+        head = self.provision_path.split("__", 1)[0]
+        chapter = head[len("chp_") :]
+        return chapter or None
 
 
 # ---------------------------------------------------------------------------

@@ -1561,7 +1561,7 @@ class TestPlainTextMomenttiPrecision:
         assert tgt.section_label == "7"
         assert tgt.subsection_num == 2
         assert tgt.item_label == "3"
-        assert tgt.serialized() == "711/2022/7/2/3"
+        assert tgt.serialized() == "711/2022/7/2/k3"
 
     def test_interlink_target_locator_has_subsection_segment(self) -> None:
         """The neutral interlink built from a momentti citation carries a
