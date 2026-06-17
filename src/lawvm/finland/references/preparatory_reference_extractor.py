@@ -76,36 +76,83 @@ _HE_REF_HREF_RE = re.compile(
     r'/akn/fi/doc/government-proposal/(\d{4})/(\d+(?:-\d+)?)'
 )
 
-# Committee mietintö: "HaVM 23/2022" or "HaVM 23/2022 vp"
-# Pattern: ABBR N/YYYY where ABBR ends in VM.
-# Substring guard: "VM "
-_COMMITTEE_REPORT_RE = re.compile(
-    r'^(?P<abbr>[A-Z][a-zA-Z]{0,12}VM)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+# Closed set of valiokunta (parliamentary committee) abbreviation stems — the
+# part BEFORE the "VM" (mietintö) / "VL" (lausunto) suffix (AGENTS.md §1.6: a
+# closed real-abbreviation set, not an open `[A-Z][a-zA-Z]{0,12}` wildcard that
+# would mis-accept e.g. "EVL" as a committee opinion).  These are the standing
+# committees of the Finnish Parliament (eduskunnan valiokunnat):
+#
+#   Su  suuri valiokunta            Pe  perustuslakivaliokunta
+#   Ua  ulkoasiainvaliokunta        Va  valtiovarainvaliokunta
+#   Ta  talousvaliokunta            Tar tarkastusvaliokunta
+#   Ha  hallintovaliokunta          La  lakivaliokunta
+#   Li  liikenne- ja viestintä-     Mm  maa- ja metsätalous-
+#   Pu  puolustusvaliokunta         Si  sivistysvaliokunta
+#   St  sosiaali- ja terveys-       Ty  työ- ja tasa-arvo-
+#   Ym  ympäristövaliokunta         Tu  tulevaisuusvaliokunta
+#   Ti  tiedusteluvalvonta-
+#
+# Both VM (mietintö) and VL (lausunto) are produced by the same committee stems
+# (PeVM exists historically alongside the common PeVL), so a single stem set
+# serves both recognizers.
+_COMMITTEE_STEMS = (
+    "Su", "Pe", "Ua", "Va", "Ta", "Tar", "Ha", "La", "Li",
+    "Mm", "Pu", "Si", "St", "Ty", "Ym", "Tu", "Ti",
+)
+# Longest-first so "Tar" wins over "Ta" in the alternation.
+_COMMITTEE_STEM_ALT = "|".join(
+    sorted(_COMMITTEE_STEMS, key=len, reverse=True)
 )
 
-# Committee opinion / lausunto: "PeVL 12/2021" — ABBR ends in VL.
+# Committee mietintö: "HaVM 23/2022" or "HaVM 23/2022 vp"
+# Pattern: STEM + "VM" + N/YYYY (closed STEM set — AGENTS.md §1.6).
+# Substring guard: "VM "
+_COMMITTEE_REPORT_RE = re.compile(
+    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VM)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+)
+
+# Committee opinion / lausunto: "PeVL 12/2021" — STEM + "VL".
 # Substring guard: "VL "
 _COMMITTEE_OPINION_RE = re.compile(
-    r'^(?P<abbr>[A-Z][a-zA-Z]{0,12}VL)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VL)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
 )
 
 # Parliament response: "EV 156/2022" — exactly "EV" at start.
 # Substring guard: "EV "
 _PARLIAMENT_RESPONSE_RE = re.compile(
-    r'^EV\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'EV\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
 )
 
 # Supplementary parliament response: "EVK 3/2019"
 # Substring guard: "EVK "
 _PARLIAMENT_RESPONSE_COMM_RE = re.compile(
-    r'^EVK\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'EVK\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
 )
 
 # Law initiative: "LA 5/2021"
 # Substring guard: "LA "
 _LAW_INITIATIVE_RE = re.compile(
-    r'^LA\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'LA\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
 )
+
+# EU-act suffix form: "direktiivi 2014/40/EU" — the form letters are a SUFFIX on
+# the act number (NUMBER/YEAR/FORM or YEAR/NUMBER/FORM), not a parenthesized
+# "(EU)" token.  Used only to recover eu_form when a paragraph carries a CELEX
+# but no parenthesized EU marker (the prep EU recognizer only matches the
+# parenthesized form).  Bounded groups; literal "/"-delimited; the form
+# alternation cannot overlap the digit groups (§1.11).
+_EU_SUFFIX_FORM_RE = re.compile(
+    r'\b\d{1,6}/\d{1,6}/(?P<form>EU|EY|EEY|ETY|EURATOM|ETA)\b'
+)
+
+# Boundary-delimited segment splitter (F2 packed-paragraph enumeration).
+# A footer paragraph packs several citations behind ","/";"/"(" delimiters:
+#   "<ref>HE…</ref>, LaVM 6/2025, EV 52/2025"
+# Splitting on these delimiters and `^`-matching each segment enumerates ALL
+# tokens while PRESERVING the start-anchor FP-resistance: a bare mid-sentence
+# token ("jotain EV 5/2020 keskellä") is never at a segment start, so it still
+# does not match.  Bounded literal character class; no backtracking (§1.11).
+_DOMESTIC_SEGMENT_SPLIT_RE = re.compile(r'[,;(]')
 
 # EU act / CELEX / OJ recognition is shared with the cross-reference graph lane
 # via references.eu_reference (DIALECT_PREPARATORY preserves this lane's exact
@@ -230,7 +277,20 @@ class PreparatoryRefRecognizer:
         statute_id: str,
         valid_at: Tuple[Optional[date], Optional[date]],
     ) -> Tuple[List[PreparatoryReference], List[CommitteeLifecycleObservation]]:
-        """Recognize citations in normalized paragraph text.
+        """Recognize ALL citations in normalized paragraph text.
+
+        A preparatory footer paragraph packs several citations behind
+        delimiters, e.g. ``"<ref>HE…</ref>, LaVM 6/2025, EV 52/2025"``.  The
+        scan enumerates every token rather than returning after the first:
+
+          - Domestic tokens (committee mietintö/lausunto, EV, EVK, LA) are
+            recognized per delimiter-bounded SEGMENT (split on ``,;(``), with
+            each pattern anchored at the segment start.  This both enumerates
+            packed paragraphs AND keeps the start-anchor FP-resistance: a bare
+            mid-sentence token ("jotain EV 5/2020 keskellä") is never at a
+            segment start, so it still does not match.
+          - EU act / CELEX / OJ recognition stays whole-paragraph (its tokens
+            span delimiters: "(EU) 2017/2226 (32017R2226); EUVL L 327, …").
 
         Args:
             text:       Normalized text of one <p> element.
@@ -248,9 +308,56 @@ class PreparatoryRefRecognizer:
         if not text:
             return refs, obs
 
-        # Priority 1: committee mietintö — substring guard "VM "
-        if "VM " in text or text.endswith("VM"):
-            m = _COMMITTEE_REPORT_RE.match(text)
+        # --- Domestic tokens: one per delimiter-bounded segment ---
+        for segment in _DOMESTIC_SEGMENT_SPLIT_RE.split(text):
+            seg = segment.strip()
+            if not seg:
+                continue
+            ref = self._recognize_domestic_segment(seg, statute_id, valid_at, obs)
+            if ref is not None:
+                refs.append(ref)
+
+        # --- EU act / CELEX / OJ: whole-paragraph (tokens span delimiters) ---
+        # Classify as an EU act when EITHER a parenthesized EU marker is present
+        # OR a CELEX number is present (F3: the suffix form "direktiivi
+        # 2014/40/EU (32014L0040)" has no parenthesized marker but carries a
+        # CELEX that fully identifies the act).
+        has_paren_marker = any(
+            marker in text for marker in ("(EU)", "(EY)", "(EEY)", "(ETY)")
+        )
+        has_celex = bool(recognize_celex(text, dialect=DIALECT_PREPARATORY))
+        if has_paren_marker or has_celex:
+            eu_refs, eu_obs = self._recognize_eu_paragraph(
+                text, statute_id, valid_at
+            )
+            refs.extend(eu_refs)
+            obs.extend(eu_obs)
+        elif "EUVL " in text or "EYVL " in text:
+            # Standalone OJ reference (no EU act, no CELEX).
+            oj_ref = self._extract_oj(text, statute_id, valid_at)
+            if oj_ref is not None:
+                refs.append(oj_ref)
+
+        return refs, obs
+
+    def _recognize_domestic_segment(
+        self,
+        seg: str,
+        statute_id: str,
+        valid_at: Tuple[Optional[date], Optional[date]],
+        obs: List[CommitteeLifecycleObservation],
+    ) -> Optional[PreparatoryReference]:
+        """Recognize ONE domestic citation anchored at the start of ``seg``.
+
+        ``seg`` is a delimiter-bounded, stripped segment.  Each pattern is
+        matched with :meth:`re.match` (anchored at position 0), preserving the
+        prior start-anchor FP-resistance.  ``F4``: the emitted ``raw_text`` is
+        the matched citation TOKEN, not the whole paragraph, so the downstream
+        byte span slices to just the token.
+        """
+        # Priority 1: committee mietintö — substring guard "VM"
+        if "VM" in seg:
+            m = _COMMITTEE_REPORT_RE.match(seg)
             if m:
                 abbr = m.group("abbr")
                 n = int(m.group("n"))
@@ -258,35 +365,19 @@ class PreparatoryRefRecognizer:
                 lifecycle_obs = self._check_lifecycle(abbr, statute_id)
                 if lifecycle_obs:
                     obs.append(lifecycle_obs)
-                refs.append(PreparatoryReference(
-                    source_statute_id=statute_id,
+                return self._domestic_ref(
+                    statute_id, valid_at,
                     kind=PreparatoryReferenceKind.COMMITTEE_REPORT,
                     canonical_id=_committee_canonical_id(
                         abbr, n, y, PreparatoryReferenceKind.COMMITTEE_REPORT
                     ),
-                    raw_text=text,
+                    token=m.group(0),
                     committee_abbrev=abbr,
-                    he_year=None,
-                    he_number=None,
-                    eu_form=None,
-                    eu_number=None,
-                    eu_year=None,
-                    celex=None,
-                    oj_series=None,
-                    oj_number=None,
-                    oj_date=None,
-                    oj_page=None,
-                    confidence=PreparatoryReferenceConfidence.EXACT,
-                    source_span_file=None,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                    valid_at_interval=valid_at,
-                ))
-                return refs, obs
+                )
 
-        # Priority 2: committee opinion — substring guard "VL "
-        if "VL " in text or text.endswith("VL"):
-            m = _COMMITTEE_OPINION_RE.match(text)
+        # Priority 2: committee opinion — substring guard "VL"
+        if "VL" in seg:
+            m = _COMMITTEE_OPINION_RE.match(seg)
             if m:
                 abbr = m.group("abbr")
                 n = int(m.group("n"))
@@ -294,137 +385,92 @@ class PreparatoryRefRecognizer:
                 lifecycle_obs = self._check_lifecycle(abbr, statute_id)
                 if lifecycle_obs:
                     obs.append(lifecycle_obs)
-                refs.append(PreparatoryReference(
-                    source_statute_id=statute_id,
+                return self._domestic_ref(
+                    statute_id, valid_at,
                     kind=PreparatoryReferenceKind.COMMITTEE_OPINION,
                     canonical_id=_committee_canonical_id(
                         abbr, n, y, PreparatoryReferenceKind.COMMITTEE_OPINION
                     ),
-                    raw_text=text,
+                    token=m.group(0),
                     committee_abbrev=abbr,
-                    he_year=None,
-                    he_number=None,
-                    eu_form=None,
-                    eu_number=None,
-                    eu_year=None,
-                    celex=None,
-                    oj_series=None,
-                    oj_number=None,
-                    oj_date=None,
-                    oj_page=None,
-                    confidence=PreparatoryReferenceConfidence.EXACT,
-                    source_span_file=None,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                    valid_at_interval=valid_at,
-                ))
-                return refs, obs
+                )
 
-        # Priority 3: supplementary parliament response — substring guard "EVK "
-        if "EVK " in text:
-            m = _PARLIAMENT_RESPONSE_COMM_RE.match(text)
+        # Priority 3: supplementary parliament response — substring guard "EVK"
+        if seg.startswith("EVK"):
+            m = _PARLIAMENT_RESPONSE_COMM_RE.match(seg)
             if m:
                 n = int(m.group("n"))
                 y = int(m.group("y"))
-                refs.append(PreparatoryReference(
-                    source_statute_id=statute_id,
+                return self._domestic_ref(
+                    statute_id, valid_at,
                     kind=PreparatoryReferenceKind.PARLIAMENT_RESPONSE_COMM,
                     canonical_id=f"fi.evk.{n}.{y}",
-                    raw_text=text,
-                    committee_abbrev=None,
-                    he_year=None,
-                    he_number=None,
-                    eu_form=None,
-                    eu_number=None,
-                    eu_year=None,
-                    celex=None,
-                    oj_series=None,
-                    oj_number=None,
-                    oj_date=None,
-                    oj_page=None,
-                    confidence=PreparatoryReferenceConfidence.EXACT,
-                    source_span_file=None,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                    valid_at_interval=valid_at,
-                ))
-                return refs, obs
+                    token=m.group(0),
+                )
 
-        # Priority 4: parliament response — substring guard "EV " (but not "EVK ")
-        if "EV " in text and "EVK " not in text:
-            m = _PARLIAMENT_RESPONSE_RE.match(text)
+        # Priority 4: parliament response — substring guard "EV" (not "EVK")
+        if seg.startswith("EV ") or seg == "EV" or (
+            seg.startswith("EV") and not seg.startswith("EVK")
+        ):
+            m = _PARLIAMENT_RESPONSE_RE.match(seg)
             if m:
                 n = int(m.group("n"))
                 y = int(m.group("y"))
-                refs.append(PreparatoryReference(
-                    source_statute_id=statute_id,
+                return self._domestic_ref(
+                    statute_id, valid_at,
                     kind=PreparatoryReferenceKind.PARLIAMENT_RESPONSE,
                     canonical_id=f"fi.ev.{n}.{y}",
-                    raw_text=text,
-                    committee_abbrev=None,
-                    he_year=None,
-                    he_number=None,
-                    eu_form=None,
-                    eu_number=None,
-                    eu_year=None,
-                    celex=None,
-                    oj_series=None,
-                    oj_number=None,
-                    oj_date=None,
-                    oj_page=None,
-                    confidence=PreparatoryReferenceConfidence.EXACT,
-                    source_span_file=None,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                    valid_at_interval=valid_at,
-                ))
-                return refs, obs
+                    token=m.group(0),
+                )
 
         # Priority 5: law initiative — substring guard "LA "
-        if text.startswith("LA "):
-            m = _LAW_INITIATIVE_RE.match(text)
+        if seg.startswith("LA "):
+            m = _LAW_INITIATIVE_RE.match(seg)
             if m:
                 n = int(m.group("n"))
                 y = int(m.group("y"))
-                refs.append(PreparatoryReference(
-                    source_statute_id=statute_id,
+                return self._domestic_ref(
+                    statute_id, valid_at,
                     kind=PreparatoryReferenceKind.LAW_INITIATIVE,
                     canonical_id=f"fi.la.{n}.{y}",
-                    raw_text=text,
-                    committee_abbrev=None,
-                    he_year=None,
-                    he_number=None,
-                    eu_form=None,
-                    eu_number=None,
-                    eu_year=None,
-                    celex=None,
-                    oj_series=None,
-                    oj_number=None,
-                    oj_date=None,
-                    oj_page=None,
-                    confidence=PreparatoryReferenceConfidence.EXACT,
-                    source_span_file=None,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                    valid_at_interval=valid_at,
-                ))
-                return refs, obs
+                    token=m.group(0),
+                )
 
-        # Priority 6: EU act paragraph (may also contain CELEX + OJ).
-        # Substring guard: "(EU", "(EY", "(EEY", "(ETY"
-        if any(marker in text for marker in ("(EU)", "(EY)", "(EEY)", "(ETY)")):
-            return self._recognize_eu_paragraph(text, statute_id, valid_at)
+        return None
 
-        # Priority 7: standalone OJ reference.
-        # Substring guards: "EUVL " (modern) or "EYVL " (old pre-EU)
-        if "EUVL " in text or "EYVL " in text:
-            oj_ref = self._extract_oj(text, statute_id, valid_at)
-            if oj_ref is not None:
-                refs.append(oj_ref)
-                return refs, obs
-
-        # Nothing matched
-        return refs, obs
+    def _domestic_ref(
+        self,
+        statute_id: str,
+        valid_at: Tuple[Optional[date], Optional[date]],
+        *,
+        kind: PreparatoryReferenceKind,
+        canonical_id: str,
+        token: str,
+        committee_abbrev: Optional[str] = None,
+    ) -> PreparatoryReference:
+        """Build a domestic (non-EU) PreparatoryReference from a matched token."""
+        return PreparatoryReference(
+            source_statute_id=statute_id,
+            kind=kind,
+            canonical_id=canonical_id,
+            raw_text=token,
+            committee_abbrev=committee_abbrev,
+            he_year=None,
+            he_number=None,
+            eu_form=None,
+            eu_number=None,
+            eu_year=None,
+            celex=None,
+            oj_series=None,
+            oj_number=None,
+            oj_date=None,
+            oj_page=None,
+            confidence=PreparatoryReferenceConfidence.EXACT,
+            source_span_file=None,
+            source_span_byte_offset=None,
+            source_span_byte_len=None,
+            valid_at_interval=valid_at,
+        )
 
     def _recognize_eu_paragraph(
         self,
@@ -457,10 +503,23 @@ class PreparatoryRefRecognizer:
 
         # Extract CELEX if present (first match — prior code used search()).
         celex_matches = recognize_celex(text, dialect=DIALECT_PREPARATORY)
-        celex: Optional[str] = celex_matches[0].celex if celex_matches else None
+        celex_match = celex_matches[0] if celex_matches else None
+        celex: Optional[str] = celex_match.celex if celex_match else None
         celex_type: Optional[str] = (
-            celex_matches[0].celex_type if celex_matches else None
+            celex_match.celex_type if celex_match else None
         )
+
+        # F3: when the parenthesized EU-act form is absent but a CELEX is
+        # present (the common suffix form "direktiivi 2014/40/EU (32014L0040)",
+        # whose form letters are a SUFFIX on the number, not a "(EU)" token),
+        # recover the act identity from the CELEX itself rather than degrading
+        # to a bare OJ row and discarding the CELEX.  The CELEX year/number ARE
+        # the act's year/number; the form letter comes from the suffix form.
+        if eu_act is None and celex_match is not None:
+            eu_year = int(celex_match.year)
+            eu_number = int(celex_match.number)
+            suffix_m = _EU_SUFFIX_FORM_RE.search(text)
+            eu_form = suffix_m.group("form") if suffix_m else "EU"
 
         # Determine EU act kind from CELEX type (if available)
         if celex_type:
@@ -492,11 +551,19 @@ class PreparatoryRefRecognizer:
 
         if eu_number is not None and eu_year is not None and eu_form is not None:
             canonical_id = _eu_canonical_id(kind, eu_form, eu_number, eu_year, celex)
+            # F4: surface = the citation token, not the whole paragraph. Prefer
+            # the parenthesized act span; fall back to the CELEX span.
+            if eu_act is not None:
+                token = eu_act.raw
+            elif celex is not None:
+                token = celex
+            else:
+                token = text
             refs.append(PreparatoryReference(
                 source_statute_id=statute_id,
                 kind=kind,
                 canonical_id=canonical_id,
-                raw_text=text,
+                raw_text=token,
                 committee_abbrev=None,
                 he_year=None,
                 he_number=None,
@@ -515,7 +582,8 @@ class PreparatoryRefRecognizer:
                 valid_at_interval=valid_at,
             ))
         elif m_oj:
-            # EU marker present but no recognizable EU act form — emit OJ standalone
+            # EU marker present but no recognizable EU act form / CELEX — emit OJ
+            # standalone.
             oj_ref = self._extract_oj(text, statute_id, valid_at)
             if oj_ref is not None:
                 refs.append(oj_ref)
@@ -538,11 +606,12 @@ class PreparatoryRefRecognizer:
         oj_date = _parse_oj_date(m_oj.date)
         oj_page = int(m_oj.page)
         canonical_id = _oj_canonical_id(series, oj_number_val, oj_date)
+        # F4: surface = the OJ citation token, not the whole paragraph.
         return PreparatoryReference(
             source_statute_id=statute_id,
             kind=PreparatoryReferenceKind.OJ_REFERENCE,
             canonical_id=canonical_id,
-            raw_text=text,
+            raw_text=m_oj.raw,
             committee_abbrev=None,
             he_year=None,
             he_number=None,
@@ -611,26 +680,70 @@ class PrepRefExtractionResult:
 # ---------------------------------------------------------------------------
 
 
-def _iter_preliminary_work_blocks(root: ET.Element[str]):
-    """Yield all <hcontainer name="preliminaryWork"> elements in the XML tree.
+# hcontainer @name values whose <p> children carry preparatory citations.
+#
+#   preliminaryWork
+#       The base statute's preparation chain (HE + committee + EV + EU act).
+#   amendmentEntryIntoForceAndApplianceProvisions / entryIntoForce
+#       Each AMENDMENT's footer (voimaantulo- ja soveltamissäännös), which is
+#       where every amendment's own preparatory citations live (HaVM/EV/LA/EU
+#       act tokens packed into a footer paragraph).  These were previously never
+#       visited, so ~93% of preparatory tokens — those belonging to amendments
+#       rather than the base act — were silently lost (F1).  The HE <ref> lane
+#       walks the WHOLE document, so footer HEs were already captured; only the
+#       text-recognized preparatory chain broke here.
+_PREPARATORY_BLOCK_NAMES = frozenset({
+    "preliminaryWork",
+    "amendmentEntryIntoForceAndApplianceProvisions",
+    "entryIntoForce",
+})
 
-    Also matches hcontainers with finlex:outline="Esityöt" as a fallback
-    (handles older Finlex AKN variants where name attribute may differ).
-    Both attributes may co-occur on the same element (no double-emit).
+
+def _is_preparatory_block(hc: ET.Element[str]) -> bool:
+    """True if this hcontainer is a preparatory-citation block."""
+    name = hc.get("name", "")
+    outline = hc.get(f"{_FINLEX}outline", "")
+    return name in _PREPARATORY_BLOCK_NAMES or outline in ("Esityöt", "Esiöt")
+
+
+def _iter_preliminary_work_blocks(root: ET.Element[str]):
+    """Yield each TOP-LEVEL hcontainer that may hold preparatory citations.
+
+    Matches by @name in :data:`_PREPARATORY_BLOCK_NAMES` (the base
+    ``preliminaryWork`` block AND every amendment's entry-into-force footer),
+    and also by finlex:outline="Esityöt" as a fallback for older Finlex AKN
+    variants whose name attribute may differ.
+
+    Finlex nests ``entryIntoForce`` blocks INSIDE the
+    ``amendmentEntryIntoForceAndApplianceProvisions`` wrapper.  Because the
+    caller walks each yielded block's ``<content>`` RECURSIVELY, yielding both
+    the wrapper and its nested children would visit every footer ``<p>`` twice.
+    A matching block is therefore yielded only when NO ancestor is also a
+    matching block (the outermost wins; its recursive content walk covers the
+    descendants).  An element matching by both name and outline is yielded once.
     """
+    # Parent map for ancestor lookup (ElementTree has no parent pointers).
+    parents: dict[int, ET.Element[str]] = {
+        id(child): parent for parent in root.iter() for child in parent
+    }
     seen_ids: set[int] = set()
     for hc in root.iter(f"{_AKN}hcontainer"):
-        name = hc.get("name", "")
-        outline = hc.get(f"{_FINLEX}outline", "")
-        is_preliminary = (
-            name == "preliminaryWork"
-            or outline in ("Esityöt", "Esiöt")
-        )
-        if is_preliminary:
-            hc_id = id(hc)
-            if hc_id not in seen_ids:
-                seen_ids.add(hc_id)
-                yield hc
+        if not _is_preparatory_block(hc):
+            continue
+        # Skip if an ancestor is also a preparatory block (avoid double-visit).
+        ancestor = parents.get(id(hc))
+        nested = False
+        while ancestor is not None:
+            if _is_preparatory_block(ancestor):
+                nested = True
+                break
+            ancestor = parents.get(id(ancestor))
+        if nested:
+            continue
+        hc_id = id(hc)
+        if hc_id not in seen_ids:
+            seen_ids.add(hc_id)
+            yield hc
 
 
 def _get_element_text(elem: ET.Element[str]) -> str:
@@ -751,43 +864,51 @@ def extract_preparatory_refs(
                 if tag_local != "p":
                     continue
 
+                emitted = False
+
                 # --- Step 1: HE refs via AKN <ref> markup (reuse #1 logic) ---
+                # A footer <p> commonly PACKS the HE <ref> together with the
+                # domestic chain in one paragraph ("HE 10/2019, HaVM 3/2019,
+                # EV 20/2019"), so the text recognizer (Step 2) ALWAYS runs even
+                # when an HE <ref> was found — it must not be skipped, or the
+                # co-located committee/EV tokens are lost.
                 if _p_contains_he_ref(p_el):
                     he_ref = _extract_he_ref_from_element(
                         p_el, statute_id, valid_at_interval
                     )
                     if he_ref is not None:
                         result.refs.append(he_ref)
-                        continue
-                    # <ref> present but couldn't parse — fall through to text recognizer
+                        emitted = True
 
-                # --- Step 2: plain text recognizer ---
+                # --- Step 2: plain text recognizer (domestic + EU/OJ tokens) ---
                 text = _get_element_text(p_el)
-                if not text:
+                if text:
+                    recognized, lifecycle_obs = _RECOGNIZER.recognize(
+                        text, statute_id, valid_at_interval
+                    )
+                    result.lifecycle_observations.extend(lifecycle_obs)
+                    if recognized:
+                        result.refs.extend(recognized)
+                        emitted = True
+
+                if emitted or not text:
                     continue
 
-                recognized, lifecycle_obs = _RECOGNIZER.recognize(
-                    text, statute_id, valid_at_interval
-                )
-                result.lifecycle_observations.extend(lifecycle_obs)
-
-                if recognized:
-                    result.refs.extend(recognized)
-                else:
-                    # UNRESOLVED: no pattern matched — emit rejection per AGENTS.md §1.8
-                    strict_disp = "block" if strict else "record"
-                    result.rejected.append(RejectedPreparatoryCandidate(
-                        rule_id="fi_prep_ref_unresolved_p_text",
-                        phase="preparatory_ref_extraction",
-                        source_statute_id=statute_id,
-                        reason=(
-                            "Text in preliminaryWork block did not match any known "
-                            "citation pattern (committee VM/VL, EV, EVK, LA, EU act, "
-                            "EUVL OJ, or HE <ref>)."
-                        ),
-                        raw_text=text[:500],  # bounded for safety
-                        blocking=strict,
-                        strict_disposition=strict_disp,
-                    ))
+                # UNRESOLVED: no pattern matched anywhere in this <p>
+                # (and no HE <ref>) — emit rejection per AGENTS.md §1.8.
+                strict_disp = "block" if strict else "record"
+                result.rejected.append(RejectedPreparatoryCandidate(
+                    rule_id="fi_prep_ref_unresolved_p_text",
+                    phase="preparatory_ref_extraction",
+                    source_statute_id=statute_id,
+                    reason=(
+                        "Text in preliminaryWork block did not match any known "
+                        "citation pattern (committee VM/VL, EV, EVK, LA, EU act, "
+                        "EUVL OJ, or HE <ref>)."
+                    ),
+                    raw_text=text[:500],  # bounded for safety
+                    blocking=strict,
+                    strict_disposition=strict_disp,
+                ))
 
     return result

@@ -891,3 +891,180 @@ class TestPreparatoryRefRecognizer:
         assert len(refs) == 1
         assert refs[0].eu_form == "EY"
         assert refs[0].celex == "32002R0178"
+
+
+class TestPreparatoryLaneDefectRegressions:
+    """Regression tests for the five preparatory-lane recall/precision defects.
+
+    F1 — amendment-footer blocks are now scanned (not just preliminaryWork).
+    F2 — packed multi-ref paragraphs enumerate ALL tokens (not just the first),
+         while preserving the start-anchor FP-resistance.
+    F3 — EU directives/decisions in the "/EU" suffix form with a CELEX classify
+         as CELEX-typed EU acts (not degraded to a bare OJ row).
+    F4 — emitted surface = the citation TOKEN, not the whole paragraph.
+    F5 — committee abbreviation set is closed (EVL is NOT a committee opinion).
+    Plus the preserved invariant: HE is owned by the <ref> lane only.
+    """
+
+    _recognizer = PreparatoryRefRecognizer()
+
+    def _recognize(self, text: str) -> List[PreparatoryReference]:
+        refs, _ = self._recognizer.recognize(text, "TEST/100", (None, None))
+        return refs
+
+    # --- F1: amendment-footer block scanning -------------------------------
+
+    def test_f1_footer_block_committee_and_ev_captured(self) -> None:
+        """F1: committee + EV in an amendmentEntryIntoForce* footer are scanned."""
+        from lawvm.finland.conformance_corpus.preparatory.fixtures import (
+            AMENDMENT_FOOTER_PACKED,
+        )
+        result = extract_preparatory_refs(
+            AMENDMENT_FOOTER_PACKED.xml_bytes,
+            AMENDMENT_FOOTER_PACKED.source_statute_id,
+        )
+        kinds = {r.kind for r in result.refs}
+        assert PreparatoryReferenceKind.COMMITTEE_REPORT in kinds
+        assert PreparatoryReferenceKind.PARLIAMENT_RESPONSE in kinds
+        assert PreparatoryReferenceKind.HE in kinds
+
+    def test_f1_footer_block_no_double_visit(self) -> None:
+        """F1: nested entryIntoForce inside the wrapper is visited ONCE, not twice."""
+        from lawvm.finland.conformance_corpus.preparatory.fixtures import (
+            AMENDMENT_FOOTER_PACKED,
+        )
+        result = extract_preparatory_refs(
+            AMENDMENT_FOOTER_PACKED.xml_bytes,
+            AMENDMENT_FOOTER_PACKED.source_statute_id,
+        )
+        # Exactly one committee_report and one parliament_response — a double
+        # visit of the nested block would duplicate both.
+        cr = [r for r in result.refs
+              if r.kind == PreparatoryReferenceKind.COMMITTEE_REPORT]
+        ev = [r for r in result.refs
+              if r.kind == PreparatoryReferenceKind.PARLIAMENT_RESPONSE]
+        assert len(cr) == 1
+        assert len(ev) == 1
+
+    # --- F2: packed-paragraph enumeration ----------------------------------
+
+    def test_f2_packed_paragraph_all_tokens(self) -> None:
+        """F2: a packed paragraph yields every citation, not just the first."""
+        refs = self._recognize("LaVM 6/2025, EV 52/2025")
+        cids = {r.canonical_id for r in refs}
+        assert cids == {"fi.committee.lavm.6.2025", "fi.ev.52.2025"}
+
+    def test_f2_packed_three_tokens(self) -> None:
+        """F2: HE-text + committee + EV in one segment-delimited paragraph."""
+        refs = self._recognize("HaVM 3/2019, EV 20/2019, LaVL 1/2019")
+        cids = {r.canonical_id for r in refs}
+        assert cids == {
+            "fi.committee.havm.3.2019",
+            "fi.ev.20.2019",
+            "fi.committee_opinion.lavl.1.2019",
+        }
+
+    def test_f2_fp_resistance_midprose_ev(self) -> None:
+        """F2 FP-resistance: a mid-sentence EV token still does NOT match."""
+        assert self._recognize("jotain EV 5/2020 keskellä") == []
+
+    def test_f2_fp_resistance_midprose_committee(self) -> None:
+        """F2 FP-resistance: a mid-sentence committee token still does NOT match."""
+        assert self._recognize("ks. HaVM 1/2020 tarkemmin liitteessä") == []
+
+    def test_f2_fp_resistance_statute_cite_not_committee(self) -> None:
+        """F2 FP-resistance: an ordinary statute citation is not a committee ref."""
+        assert self._recognize("annettu lailla 358/2021 muutoksin") == []
+
+    # --- F3: EU suffix form → CELEX classification -------------------------
+
+    def test_f3_directive_suffix_form_celex_typed(self) -> None:
+        """F3: 'direktiivi 2014/40/EU (32014L0040)' → eu_directive on CELEX."""
+        refs = self._recognize(
+            "Euroopan parlamentin ja neuvoston direktiivi 2014/40/EU (32014L0040)"
+        )
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.EU_DIRECTIVE
+        assert refs[0].canonical_id == "eu.celex.32014L0040"
+        assert refs[0].celex == "32014L0040"
+        assert refs[0].eu_form == "EU"
+        assert refs[0].eu_year == 2014
+
+    def test_f3_directive_suffix_form_not_oj(self) -> None:
+        """F3: the suffix form with an OJ tail is NOT degraded to a bare OJ row."""
+        refs = self._recognize(
+            "direktiivi 2001/9/EY (32001L0009); EYVL N:o L 48, 17.2.2001, s. 18"
+        )
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.EU_DIRECTIVE
+        assert refs[0].celex == "32001L0009"
+        # OJ tail is carried on the SAME EU row, not a separate OJ_REFERENCE row.
+        assert refs[0].oj_series == "L"
+
+    def test_f3_decision_celex_typed(self) -> None:
+        """F3: a CELEX type 'D' classifies as eu_decision."""
+        refs = self._recognize("päätös 2010/12/EU (32010D0012)")
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.EU_DECISION
+        assert refs[0].canonical_id == "eu.celex.32010D0012"
+
+    # --- F4: tight surface (token, not whole paragraph) --------------------
+
+    def test_f4_domestic_surface_is_token(self) -> None:
+        """F4: a domestic ref's raw_text is the citation token, not the paragraph."""
+        refs = self._recognize("LaVM 6/2025, EV 52/2025")
+        by_cid = {r.canonical_id: r for r in refs}
+        assert by_cid["fi.committee.lavm.6.2025"].raw_text == "LaVM 6/2025"
+        assert by_cid["fi.ev.52.2025"].raw_text == "EV 52/2025"
+
+    def test_f4_eu_surface_is_token(self) -> None:
+        """F4: an EU ref's raw_text is the act token, not the whole paragraph."""
+        refs = self._recognize(
+            "asetus (EU) 2017/2226 (32017R2226); EUVL L 327, 9.12.2017, s. 20"
+        )
+        assert len(refs) == 1
+        assert refs[0].raw_text == "(EU) 2017/2226"
+
+    # --- F5: closed committee abbreviation set -----------------------------
+
+    def test_f5_evl_not_committee_opinion(self) -> None:
+        """F5: 'EVL 5/2020' must NOT parse as a committee opinion."""
+        refs = self._recognize("EVL 5/2020")
+        assert all(
+            r.kind != PreparatoryReferenceKind.COMMITTEE_OPINION for r in refs
+        )
+
+    def test_f5_bogus_vm_abbrev_rejected(self) -> None:
+        """F5: an out-of-set '*VM' abbreviation is not accepted as a committee."""
+        assert self._recognize("XyzVM 5/2020") == []
+
+    def test_f5_real_committee_stems_still_recognized(self) -> None:
+        """F5: the closed set still recognizes every real committee stem."""
+        for text, cid in (
+            ("SuVM 1/2020", "fi.committee.suvm.1.2020"),
+            ("TarVM 2/2021", "fi.committee.tarvm.2.2021"),
+            ("PeVL 3/2022", "fi.committee_opinion.pevl.3.2022"),
+            ("TiVL 4/2023", "fi.committee_opinion.tivl.4.2023"),
+        ):
+            refs = self._recognize(text)
+            assert len(refs) == 1, f"{text!r} → {refs}"
+            assert refs[0].canonical_id == cid
+
+    # --- preserved invariant: HE owned by the <ref> lane only --------------
+
+    def test_he_not_double_counted_in_mention_lane(self) -> None:
+        """HE is emitted by the <ref> lane only; the prep mention lane excludes it."""
+        from lawvm.finland.references.ref_mention_extractor import (
+            extract_preparatory_reference_mentions,
+        )
+        from lawvm.finland.conformance_corpus.preparatory.fixtures import (
+            AMENDMENT_FOOTER_PACKED,
+        )
+        mentions = extract_preparatory_reference_mentions(
+            AMENDMENT_FOOTER_PACKED.xml_bytes,
+            AMENDMENT_FOOTER_PACKED.source_statute_id,
+        ).mentions
+        subtypes = {m.edge_subtype for m in mentions}
+        assert "he" not in subtypes
+        assert "committee_report" in subtypes
+        assert "parliament_response" in subtypes
