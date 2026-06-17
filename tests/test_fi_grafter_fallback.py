@@ -11136,6 +11136,48 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
     assert got[0].named_row_targets == ("iisalmen",)
 
 
+def test_tag_named_table_row_single_clause_ops_recovers_regional_table_sections() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="op0",
+            op_type="REPLACE",
+            target_section="13",
+            target_kind=TargetKind.SECTION,
+        )
+    ]
+
+    got = _tag_named_table_row_single_clause_ops(
+        ops,
+        (
+            "muutetaan 20 päivänä syyskuuta 1991 annetun metsäveroasetuksen "
+            "(1208/91) 13 §:n Uudenmaan, Turun ja Porin, Hämeen, Kymen, "
+            "Mikkelin, Kuopion, Pohjois-Karjalan, Vaasan, Keski-Suomen ja "
+            "Oulun lääniä koskevat kohdat, 14 §:n Uudenmaan, Turun ja Porin, "
+            "Hämeen ja Keski-Suomen lääniä koskevat kohdat ja 15 §,"
+        ),
+    )
+
+    assert [(op.op_type, op.target_section) for op in got] == [("REPLACE", "13"), ("REPLACE", "14")]
+    assert got[0].named_row_targets == (
+        "uudenmaan",
+        "turun ja porin",
+        "hämeen",
+        "kymen",
+        "mikkelin",
+        "kuopion",
+        "pohjois-karjalan",
+        "vaasan",
+        "keski-suomen",
+        "oulun",
+    )
+    assert got[1].named_row_targets == (
+        "uudenmaan",
+        "turun ja porin",
+        "hämeen",
+        "keski-suomen",
+    )
+
+
 def test_replay_xml_1997_660_renumbers_lettered_items_after_explicit_repeal_shift() -> None:
     compiled_ops = []
     master = pinned_replay("1997/660", mode="legal_pit", compiled_ops_out=compiled_ops)

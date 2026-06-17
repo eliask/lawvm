@@ -332,7 +332,8 @@ def _tag_named_table_row_single_clause_ops(
         return ops
 
     supplemented = list(ops)
-    for clause in clauses:
+    for idx, clause in enumerate(clauses):
+        tagged = False
         for pos, op in enumerate(supplemented):
             if (
                 op.op_type.lower() == clause.action.value
@@ -343,11 +344,24 @@ def _tag_named_table_row_single_clause_ops(
                 and not op.target_special
             ):
                 if tuple(op.named_row_targets) == tuple(clause.named_targets):
+                    tagged = True
                     break
                 merged = list(clause.named_targets)
                 supplemented[pos] = dc_replace(
                     op,
                     named_row_targets=tuple(merged),
                 )
+                tagged = True
                 break
+        if tagged or clause.action is not StructuralAction.REPLACE:
+            continue
+        supplemented.append(
+            AmendmentOp(
+                op_id=f"named_table_row_single_replace_{idx}",
+                op_type="REPLACE",
+                target_section=clause.target_section or "",
+                target_unit_kind="section",
+                named_row_targets=tuple(clause.named_targets),
+            )
+        )
     return supplemented

@@ -1744,6 +1744,26 @@ def test_1978_611_1998_532_cross_statute_vts_repeals_are_routed() -> None:
     }
 
 
+def test_1991_1208_1993_994_regional_table_section_14_op_is_preserved() -> None:
+    """Regional table ``kohta`` clauses must not drop a coordinated section body."""
+
+    compiled_ops: list[dict[str, object]] = []
+    pinned_replay(
+        "1991/1208",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+        compiled_ops_out=compiled_ops,
+    )
+
+    targets = [
+        row.get("target_norm")
+        for row in compiled_ops
+        if row.get("source_statute") == "1993/994" and row.get("target_unit_kind") == "section"
+    ]
+    assert targets == ["13", "14", "15"]
+
+
 def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_chapters() -> None:
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections

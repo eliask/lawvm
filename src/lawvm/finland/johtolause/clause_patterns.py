@@ -96,6 +96,16 @@ _SINGLE_ROW_REPEAL_RE = re.compile(
     r"kumot[a-zäöå]*\s+.{0,200}?(\d+\s*[a-zäöå]?)\s*§:n\s+(.{1,200}?)\s+käräjäoikeutta\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
     flags=re.I,
 )
+_REGIONAL_ROW_REPLACE_RE = re.compile(
+    r"((?:\d+\s*[a-zäöå]?\s*(?:,|\bja\b)?\s*){1,6})§:n\s+(.{1,360}?)\s+"
+    r"(?:lääniä|maakuntaa)\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
+    flags=re.I,
+)
+_KNOWN_COMPOUND_REGIONAL_ROW_NAMES = frozenset(
+    {
+        "turun ja porin",
+    }
+)
 
 _MODIFIER_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
     ("version_qualifier", re.compile(r"\bsellais(?:ena|ina)\b", flags=re.I)),
@@ -156,6 +166,44 @@ def _parse_named_target_list(text: str) -> NamedTargetList:
         elif modifier:
             modifiers.append(modifier)
     return NamedTargetList(targets=tuple(targets), modifiers=tuple(modifiers), raw_text=cleaned)
+
+
+def _parse_regional_named_target_list(text: str) -> NamedTargetList:
+    """Parse Finnish province/region ``kohta`` descriptors.
+
+    Province formulas apply the terminal noun to a list of genitive names:
+    ``Uudenmaan, Turun ja Porin, Hämeen ... lääniä koskevat kohdat``.  The
+    ordinary named-row splitter treats every ``ja`` as a list separator, which
+    would split the historical compound province ``Turun ja Porin``.  Keep the
+    finite compound names owned here and split the remaining comma/conjunction
+    chunks as separate target descriptors.
+    """
+    cleaned = _clean_clause_text(text)
+    if not cleaned:
+        return NamedTargetList(raw_text="")
+
+    targets: List[str] = []
+    modifiers: List[ClauseModifier] = []
+    for comma_part in re.split(r"\s*,\s*", cleaned):
+        part = comma_part.strip()
+        if not part:
+            continue
+        norm_part = _norm_row_anchor_text(part)
+        if norm_part in _KNOWN_COMPOUND_REGIONAL_ROW_NAMES:
+            targets.append(norm_part)
+            continue
+        for piece in re.split(r"\s+ja\s+", part, flags=re.I):
+            target, modifier = _classify_named_row_segment(piece)
+            if target:
+                targets.append(target)
+            elif modifier:
+                modifiers.append(modifier)
+    return NamedTargetList(targets=tuple(targets), modifiers=tuple(modifiers), raw_text=cleaned)
+
+
+def _parse_section_list(text: str) -> tuple[str, ...]:
+    sections = tuple(re.sub(r"\s+", "", match.group(0)) for match in re.finditer(r"\d+\s*[a-zäöå]?", text))
+    return sections
 
 
 def _coverage_id(
@@ -324,7 +372,9 @@ def parse_named_table_row_single_clauses_with_coverage(
     source_artifact_id: str = "",
 ) -> NamedTableRowSingleClauseParseResult:
     text = _clean_clause_text(johto).lower()
-    if "käräjäoikeu" not in text:
+    has_court_row = "käräjäoikeu" in text
+    has_regional_row = ("lääniä koskev" in text or "maakuntaa koskev" in text) and "muut" in text
+    if not has_court_row and not has_regional_row:
         return NamedTableRowSingleClauseParseResult()
 
     patterns = [
@@ -374,6 +424,44 @@ def parse_named_table_row_single_clauses_with_coverage(
                     ignored_spans=ignored_spans,
                 )
             )
+    if has_regional_row:
+        for match in _REGIONAL_ROW_REPLACE_RE.finditer(text):
+            raw_text = match.group(0)
+            sections = _parse_section_list(match.group(1))
+            rows = _parse_regional_named_target_list(match.group(2))
+            if not sections or not rows.targets:
+                continue
+            for section in sections:
+                clauses.append(
+                    NamedTableRowSingleClause(
+                        section=section,
+                        action="replace",
+                        rows=rows,
+                        raw_text=raw_text,
+                    )
+                )
+                ignored_spans = _named_row_ignored_span_row(
+                    text,
+                    start=match.start(),
+                    end=match.start(1),
+                )
+                coverage_rows.append(
+                    _named_row_coverage_row(
+                        recognizer_id="fi_named_table_row_single_regional_replace",
+                        source_text=text,
+                        source_hash=source_hash,
+                        source_artifact_id=source_artifact_id,
+                        match=match,
+                        semantic_slots={
+                            "action": "REPLACE",
+                            "target_unit_kind": "named_table_row",
+                            "target_section": section,
+                            "rows": rows.targets,
+                            "row_clause": rows.raw_text,
+                        },
+                        ignored_spans=ignored_spans,
+                    )
+                )
     return NamedTableRowSingleClauseParseResult(
         clauses=tuple(clauses),
         regex_recognition_coverage=tuple(coverage_rows),

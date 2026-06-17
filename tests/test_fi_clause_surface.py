@@ -641,6 +641,51 @@ class TestNamedRowClauseParsing:
         assert coverage["ignored_spans"] == []
         assert coverage["required_proofs"] == []
 
+    def test_parse_named_row_clauses_parses_regional_table_blocks(self) -> None:
+        got = parse_named_row_clauses(
+            "muutetaan 20 päivänä syyskuuta 1991 annetun metsäveroasetuksen "
+            "(1208/91) 13 §:n Kymen, Mikkelin, Kuopion, Vaasan ja Oulun lääniä "
+            "koskevat kohdat sekä 15 § seuraavasti:"
+        )
+
+        assert len(got) == 1
+        assert got[0].action == StructuralAction.REPLACE
+        assert got[0].target_section == "13"
+        assert got[0].named_targets == ("kymen", "mikkelin", "kuopion", "vaasan", "oulun")
+
+    def test_named_row_regional_clause_keeps_compound_province_name(self) -> None:
+        result = parse_named_table_row_single_clauses_with_coverage(
+            "muutetaan 20 päivänä syyskuuta 1991 annetun metsäveroasetuksen "
+            "(1208/91) 13 §:n Uudenmaan, Turun ja Porin, Hämeen, Kymen, "
+            "Mikkelin, Kuopion, Pohjois-Karjalan, Vaasan, Keski-Suomen ja "
+            "Oulun lääniä koskevat kohdat, 14 §:n Uudenmaan, Turun ja Porin, "
+            "Hämeen ja Keski-Suomen lääniä koskevat kohdat ja 15 §,"
+        )
+
+        assert [clause.section for clause in result.clauses] == ["13", "14"]
+        assert result.clauses[0].rows.targets == (
+            "uudenmaan",
+            "turun ja porin",
+            "hämeen",
+            "kymen",
+            "mikkelin",
+            "kuopion",
+            "pohjois-karjalan",
+            "vaasan",
+            "keski-suomen",
+            "oulun",
+        )
+        assert result.clauses[1].rows.targets == (
+            "uudenmaan",
+            "turun ja porin",
+            "hämeen",
+            "keski-suomen",
+        )
+        assert [row.recognizer_id for row in result.regex_recognition_coverage] == [
+            "fi_named_table_row_single_regional_replace",
+            "fi_named_table_row_single_regional_replace",
+        ]
+
 
 class TestLowerToAst:
     """Verify lower_to_ast produces equivalent legal ops."""
