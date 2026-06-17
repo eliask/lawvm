@@ -2216,6 +2216,28 @@ def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair(
     assert "vähintään kaksi hehtaaria peltoa käsittävällä tilalla" in replay_text
 
 
+def test_replay_xml_1919_1_scopes_flat_replaces_into_live_chapter_gaps() -> None:
+    """Flat section REPLACE payloads fill chapter gaps instead of root sections."""
+    replay = pinned_replay("1919/1-001", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:1/section:1" in sections
+    assert "chapter:2/section:11" in sections
+    assert "chapter:4/section:21" in sections
+    assert "chapter:6/section:37" in sections
+    assert "chapter:6/section:38" in sections
+    assert "chapter:7/section:41" in sections
+    assert "chapter:7/section:42" in sections
+    assert "chapter:7/section:44" in sections
+
+    top_level_sections = {
+        child.label
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.SECTION
+    }
+    assert not (top_level_sections & {"1", "11", "21", "37", "38", "41", "42", "44"})
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]

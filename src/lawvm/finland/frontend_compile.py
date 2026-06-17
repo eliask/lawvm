@@ -916,6 +916,131 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     return chapter
 
 
+def _flat_source_body_section_nums(
+    *,
+    muutos_tree: etree._Element,
+    target_part: str | None,
+) -> set[int]:
+    """Return integer section labels carried as flat whole sections in source body."""
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return set()
+    labels: set[int] = set()
+    for sec in body.findall(".//{*}section"):
+        parent = sec.getparent()
+        if parent is None or etree.QName(parent.tag).localname not in {"body", "hcontainer"}:
+            continue
+        if _part_label_for_source_element(sec) != target_part:
+            continue
+        num_el = sec.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        sec_label = _normalize_source_section_num(num_el.text)
+        if re.fullmatch(r"\d+", sec_label) is None:
+            continue
+        labels.add(int(sec_label))
+    return labels
+
+
+def _infer_flat_body_replace_chapter_from_live_section_gap(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> str | None:
+    """Infer chapter scope for flat section REPLACE payloads missing from base XML.
+
+    Some historical Finnish base XML omits sections that later amendments
+    replace. The source body carries the full section payload, but the
+    johtolause names only ``N §`` without a chapter. When the live chapter
+    sequence itself proves a single gap, compile the op to that chapter rather
+    than letting apply materialize a root-level section.
+
+    Boundary gaps are intentionally conservative: a singleton gap between two
+    chapters can belong to either side (for example 48 / 49 / 50), so it stays
+    unresolved unless the target is the first section before chapter 1's first
+    known section or part of a multi-section source-body tail prefix.
+    """
+    if (
+        op.op_type != "REPLACE"
+        or op.target_unit_kind != "section"
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+    ):
+        return None
+    section_norm = _norm_num_token(op.target_section)
+    if re.fullmatch(r"\d+", section_norm) is None:
+        return None
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+    if master.find_section_path(section_norm, None, op.target_part) is not None:
+        return None
+
+    target_num = int(section_norm)
+    source_nums = _flat_source_body_section_nums(
+        muutos_tree=muutos_tree,
+        target_part=op.target_part,
+    )
+    chapters: list[tuple[str | None, str, tuple[int, ...]]] = []
+
+    def _walk(node: IRNode, current_part: str | None) -> None:
+        next_part = current_part
+        if node.kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(node.label or "")) or None
+        if node.kind is IRNodeKind.CHAPTER and node.label:
+            chapter = _norm_num_token(str(node.label))
+            nums: list[int] = []
+            for child in node.children:
+                if child.kind is not IRNodeKind.SECTION or not child.label:
+                    continue
+                child_norm = _norm_num_token(str(child.label))
+                if re.fullmatch(r"\d+", child_norm) is not None:
+                    nums.append(int(child_norm))
+            if nums and (op.target_part is None or next_part == op.target_part):
+                chapters.append((next_part, chapter, tuple(sorted(set(nums)))))
+        for child in node.children:
+            _walk(child, next_part)
+
+    _walk(master.ir, None)
+
+    candidates: set[str] = set()
+    for idx, (_part, chapter, nums) in enumerate(chapters):
+        chapter_min = nums[0]
+        chapter_max = nums[-1]
+        previous_max = chapters[idx - 1][2][-1] if idx > 0 and chapters[idx - 1][0] == _part else None
+        next_min = chapters[idx + 1][2][0] if idx + 1 < len(chapters) and chapters[idx + 1][0] == _part else None
+
+        if chapter_min < target_num < chapter_max and target_num not in nums:
+            candidates.add(chapter)
+            continue
+
+        if previous_max is None and target_num == chapter_min - 1:
+            candidates.add(chapter)
+            continue
+
+        if target_num > chapter_max and next_min is not None and target_num < next_min:
+            gap = tuple(range(chapter_max + 1, next_min))
+            source_gap = tuple(n for n in gap if n in source_nums)
+            expected_prefix = tuple(range(chapter_max + 1, chapter_max + 1 + len(source_gap)))
+            if len(source_gap) >= 2 and source_gap == expected_prefix and target_num in source_gap:
+                candidates.add(chapter)
+
+    if len(candidates) != 1:
+        return None
+    return next(iter(candidates))
+
+
 def _johto_says_repealed_section_replaced_by_new_section(johto: str, section_norm: str) -> bool:
     """Narrow witness for ``kumotun N §:n tilalle uusi N §`` reinsertion clauses."""
     normalized = _normalize_fi_parse_text(johto)
@@ -1406,6 +1531,13 @@ def _enrich_ops_from_amendment_tree(
                         master=master,
                     )
                     inferred_rule_id = "fi_flat_body_insert_scope_from_bracketing_live_siblings"
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_flat_body_replace_chapter_from_live_section_gap(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    inferred_rule_id = "fi_flat_body_replace_scope_from_live_section_gap"
                 if (
                     inferred_chapter is None
                     and _is_whole_section_insert(scoped_op)

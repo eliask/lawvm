@@ -26,6 +26,7 @@ from typing import Any
 # Maps statute ID -> latest pinned oracle version tag.
 # Updated by running: uv run farchive locators data/finlex.farchive --pattern '%YEAR/NUM%'
 ORACLE_VERSIONS: dict[str, str] = {
+    "1919/1-001": "19980567",
     "1947/625": "20191128",
     "1956/463": "19950981",
     "1959/324": "20020863",
