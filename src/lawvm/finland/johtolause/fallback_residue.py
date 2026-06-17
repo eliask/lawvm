@@ -90,7 +90,14 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
             "record as continuation-undecodable; recovery lane (#32/#38) targets "
             "native ownership"
         ),
-        baseline_count=355,
+        # 355 -> 354: one interleaved-provenance clause became fully grammar-owned
+        # via the bare-``uusi`` whole-target recovery (the Pattern-D
+        # citation-stripped bare-section insert) — its leading bare-section arm,
+        # which previously made the recovery decline, is now consumed and the rest
+        # of the clause parses cleanly. Net -1 (no other interleaved clause shifted:
+        # the recovery's structural-OOS self-guard keeps heading/appendix folds
+        # declining exactly as before).
+        baseline_count=354,
     ),
     FallbackResidueClass(
         class_id="complex_enumeration_with_subtarget_continuation",
@@ -164,14 +171,29 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
         summary=(
             "Insertion shape carrying a 'uusi' anchor the insertion recognizer "
             "declines (out-of-scope insertion shape); declined rather than "
-            "mis-reading the anchor section as a section reference."
+            "mis-reading the anchor section as a section reference. The "
+            "citation-stripped bare-section subset (old Pattern D: ``uusi <numlist> "
+            "[§]``, chained ``ja uusi``, or END-terminated with no structural noun) "
+            "is now natively owned by the grammar's bare-``uusi`` whole-target "
+            "recognizer; what remains carries a genuinely out-of-scope downstream "
+            "feature (heading/appendix/nimike placement, or a tail the old parser "
+            "itself silently drops) the grammar must not reproduce."
         ),
         future_path="own",
         strict_disposition=(
             "record as out-of-scope insertion shape; insertion recognizer scope "
             "expansion targets native ownership"
         ),
-        baseline_count=270,
+        # 270 -> 264: the bare-``uusi`` whole-target recovery (the Pattern-D
+        # citation-stripped bare-section insert: ``uusi <numlist> [§]``, chained
+        # ``ja uusi``, or END-terminated with no structural noun) natively owns the
+        # 6 clean clauses from this class, proven byte-identical to legacy. The arm
+        # carries a structural-OOS self-guard (it declines when a downstream
+        # heading/appendix/backref fold sits in the same batch span), so no clause
+        # with such a fold is silently stripped — those stay declined. Net -6 here;
+        # no recipient class grows (the single interleaved-provenance clause the arm
+        # also freed became fully owned, -1 there too).
+        baseline_count=264,
     ),
     # --- not-a-target / target-position declines -----------------------------
     FallbackResidueClass(
