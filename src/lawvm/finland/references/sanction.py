@@ -41,6 +41,25 @@ Closed-list discipline (mirrors ``actor_modal.py`` / ``vague.py``):
   - A sanction-SHAPED token the scanner sees but cannot type into the closed
     kind set is emitted as a typed :class:`SanctionResidual` (self-evidencing,
     embedding the offending text) — never silently dropped, never guessed.
+
+TOKEN-GRAMMAR SUBSTRATE (Phase 7 migration, decision B — re-baselined spans):
+============================================================================
+The marker is no longer a maximal ``[\\wäöåÄÖÅ]+`` regex run classified by
+substring-anywhere. It is a ``word``-category TOKEN of the source-preserving
+:class:`~lawvm.core.legal_surface_tokens.TokenTape`; its kind comes from matching
+the closed sanction stems against a single token's ``Token.normalized`` (no
+cross-boundary ``\\w`` run). This SPLITS digit-glued artifacts the old regex
+collapsed: ``jos2sakko`` was ONE ``\\w`` run (matched the ``sakko`` substring
+anywhere); on the tape it is ``jos`` | ``2`` | ``sakko``, three tokens, so the
+SAKKO frame now classifies on the ``sakko`` TOKEN — an intended improvement.
+
+Spans are token-aligned: ``marker_surface`` is the token's verbatim ``.text``
+and the marker span is the token's ``.char_start``/``.char_end``. The
+nearest-preceding-actor and trigger-span helpers operate on raw-text character
+offsets unchanged (they bound prose, not vocabulary). ``MorphOverlay`` is NOT
+used: it covers only structural heads (``laki``/``asetus``/``pykälä``), not
+sanction stems (``rangaist``/``sakko``), so token-stem matching on ``.normalized``
+stays primary.
 """
 from __future__ import annotations
 
@@ -49,8 +68,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Literal, Optional, Tuple
 
+from lawvm.core.legal_surface_tokens import Token, TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.canonical_actor_registry import REGISTRY
+from lawvm.finland.legal_surface.tokenize import build_token_tape
 
 
 class SanctionKind(Enum):
@@ -85,9 +106,10 @@ class SanctionKind(Enum):
 # ---------------------------------------------------------------------------
 #
 # Each entry: a SURFACE substring stem (lowercased, inflection-tolerant) ->
-# SanctionKind. The stems are matched as substrings on word-ish boundaries so
-# inflected forms ("rangaistaan", "rangaistus", "rangaistakseen") all hit the
-# "rangais" stem. Glosses are descriptive of the SURFACE form ONLY:
+# SanctionKind. The stems are matched as substrings WITHIN A SINGLE word TOKEN
+# (not across a maximal \w run), so inflected forms ("rangaistaan",
+# "rangaistus", "rangaistakseen") all hit the "rangais" stem on the one token
+# that carries them. Glosses are descriptive of the SURFACE form ONLY:
 #
 #   uhkasako / uhkasakko  conditional fine                  -> UHKASAKKO
 #   seuraamusmaksu        administrative penalty payment    -> SEURAAMUSMAKSU
@@ -153,6 +175,10 @@ _PERMIT_STEMS: tuple[str, ...] = (
 # A "peruutta"-stem token that we SEE but for which no permit noun sits within
 # this many characters either side becomes a typed residual rather than a guess.
 _PERMIT_PROXIMITY = 60
+
+#: Revocation-verb stems handled exclusively by the permit-revocation compound
+#: rule (never by the bare sanction-stem arm).
+_REVOKE_STEMS: tuple[str, ...] = ("peruutta", "peruute")
 
 # ---------------------------------------------------------------------------
 # Closed generic role-actor list (NORMATIVE)
@@ -237,11 +263,6 @@ _ACTOR_RE = re.compile(
     r"(?<![\wäöåÄÖÅ])(?:" + _actor_alternation + r")(?![\wäöåÄÖÅ])"
 )
 
-# Sanction-shaped token regex: a maximal Finnish word run. Each matched word is
-# classified against the closed stem table; a word that LOOKS sanction-shaped
-# (passes a guard) but resolves to no stem becomes a residual.
-_WORD_RE = re.compile(r"[\wäöåÄÖÅ]+")
-
 _TRIGGER_RE = re.compile(
     r"(?<![\wäöåÄÖÅ])(?:"
     + "|".join(r"\s+".join(re.escape(w) for w in t.split(" ")) for t in _TRIGGER_LEADINS)
@@ -273,7 +294,7 @@ class SanctionFrame:
 
     Attributes:
         sanction_kind:    The closed :class:`SanctionKind` the marker typed to.
-        marker_surface:   The matched sanction surface token (verbatim).
+        marker_surface:   The matched sanction surface token (verbatim ``.text``).
         target_actor_span: Byte span of the sanctioned actor surface, or None.
         trigger_span:     Byte span of the trigger-condition surface, or None.
         source_span:      Byte span covering the whole frame.
@@ -337,26 +358,44 @@ def _span(source_file: str, start: int, end: int) -> SourceSpan:
     )
 
 
-def _classify_word(lower_word: str) -> Optional[SanctionKind]:
-    """Return the SanctionKind for a lowercased word, longest-stem-first.
+def sanction_kind(normalized_token: str) -> Optional[SanctionKind]:
+    """Return the SanctionKind for ONE token's ``normalized`` surface.
 
     The stem table is iterated in declared order, which is longest/most-specific
-    first for the overlapping cases (uhkasakko before sako). Returns None if no
-    stem is a substring of the word.
+    first for the overlapping cases (uhkasakko before sako). A stem matches if it
+    is a substring of THIS SINGLE TOKEN's normalized text — NOT a substring
+    anywhere in a maximal ``\\w`` run, so a digit-glued ``jos2sakko`` (three
+    tape tokens) classifies on its ``sakko`` token alone. Returns None if no
+    stem is a substring of the token. The revocation stems are excluded — those
+    are handled only by the permit-revocation compound rule.
     """
+    if any(stem in normalized_token for stem in _REVOKE_STEMS):
+        return None
     for stem, kind in _SANCTION_STEMS:
-        if stem in lower_word:
+        if stem in normalized_token:
             return kind
     return None
 
 
-def _is_sanction_shaped(lower_word: str) -> bool:
-    """A word is 'sanction-shaped' if it trips any closed guard substring.
+def _is_sanction_shaped(normalized_token: str) -> bool:
+    """A token is 'sanction-shaped' if its normalized surface trips a guard.
 
-    Used to decide whether an unclassifiable word is a typed residual (it looked
-    like a sanction but did not type) versus ordinary prose (ignored).
+    Used to decide whether an unclassifiable word TOKEN is a typed residual (it
+    looked like a sanction but did not type) versus ordinary prose (ignored).
     """
-    return any(guard in lower_word for guard in _SANCTION_GUARDS)
+    return any(guard in normalized_token for guard in _SANCTION_GUARDS)
+
+
+def _coerce_tape(text: str, tape: Optional[TokenTape]) -> TokenTape:
+    """Return the supplied tape, or build one over ``text`` on demand."""
+    if isinstance(tape, TokenTape):
+        return tape
+    return build_token_tape("sanction#text", text)
+
+
+def marker_surface(token: Token) -> str:
+    """The verbatim marker surface for a sanction word token (its ``.text``)."""
+    return token.text
 
 
 def _nearest_preceding_actor(
@@ -406,80 +445,113 @@ def _capture_trigger_span(
     return (start, end)
 
 
+def _build_frame(
+    text: str,
+    source_file: str,
+    kind: SanctionKind,
+    surface: str,
+    marker_lo: int,
+    marker_hi: int,
+) -> SanctionFrame:
+    """Assemble a SanctionFrame around a typed marker token span.
+
+    Locates the nearest preceding target actor and a nearby trigger condition
+    (both raw-text-offset surface helpers, unchanged from the regex era), and
+    spans the whole frame from the earliest of {actor, marker} to the latest of
+    {marker, trigger}.
+    """
+    actor_m = _nearest_preceding_actor(text, marker_lo)
+    target_span = (
+        _span(source_file, actor_m.start(), actor_m.end())
+        if actor_m is not None
+        else None
+    )
+    frame_lo = actor_m.start() if actor_m is not None else marker_lo
+    trig = _capture_trigger_span(text, frame_lo, marker_hi)
+    trigger_span = (
+        _span(source_file, trig[0], trig[1]) if trig is not None else None
+    )
+    frame_hi = max(marker_hi, trig[1] if trig is not None else marker_hi)
+    return SanctionFrame(
+        sanction_kind=kind,
+        marker_surface=surface,
+        target_actor_span=target_span,
+        trigger_span=trigger_span,
+        source_span=_span(source_file, min(frame_lo, marker_lo), frame_hi),
+        status="surface_fact_only",
+        rule_id=_RULE_ID,
+    )
+
+
 def _scan_permit_revocation(
-    text: str, source_file: str
-) -> Tuple[List[SanctionFrame], List[SanctionResidual], List[Tuple[int, int]]]:
+    text: str, source_file: str, tape: TokenTape
+) -> Tuple[List[SanctionFrame], List[SanctionResidual], set[int]]:
     """Recognise permit-revocation frames from the 'peruutta' compound rule.
 
-    Returns (frames, residuals, consumed_spans). A "peruutta"-stem word with a
-    permit noun within :data:`_PERMIT_PROXIMITY` is a LUVAN_PERUUTTAMINEN frame;
-    one without is a typed ``revoke_without_permit`` residual (never guessed).
-    The consumed spans let the main word loop skip these words.
+    Returns (frames, residuals, consumed_token_indices). A ``word`` token whose
+    normalized surface carries a revocation stem with a permit noun within
+    :data:`_PERMIT_PROXIMITY` chars is a LUVAN_PERUUTTAMINEN frame; one without
+    is a typed ``revoke_without_permit`` residual (never guessed). The consumed
+    token indices let the main word loop skip these tokens.
     """
     frames: List[SanctionFrame] = []
     residuals: List[SanctionResidual] = []
-    consumed: List[Tuple[int, int]] = []
+    consumed: set[int] = set()
 
-    for m in _WORD_RE.finditer(text):
-        word = m.group(0)
-        lower = word.lower()
-        if "peruutta" not in lower and "peruute" not in lower:
+    for idx, tok in enumerate(tape.tokens):
+        if tok.category != "word":
             continue
-        consumed.append((m.start(), m.end()))
-        lo = max(0, m.start() - _PERMIT_PROXIMITY)
-        hi = min(len(text), m.end() + _PERMIT_PROXIMITY)
+        norm = tok.normalized
+        if not any(stem in norm for stem in _REVOKE_STEMS):
+            continue
+        consumed.add(idx)
+        lo = max(0, tok.char_start - _PERMIT_PROXIMITY)
+        hi = min(len(text), tok.char_end + _PERMIT_PROXIMITY)
         nearby_lower = text[lo:hi].lower()
         has_permit = any(stem in nearby_lower for stem in _PERMIT_STEMS)
         if not has_permit:
             residuals.append(
                 SanctionResidual(
                     kind="revoke_without_permit",
-                    surface_text=word,
-                    source_span=_span(source_file, m.start(), m.end()),
+                    surface_text=tok.text,
+                    source_span=_span(source_file, tok.char_start, tok.char_end),
                     detail=(
-                        f"revocation-shaped token {word!r} has no permit noun "
-                        f"within {_PERMIT_PROXIMITY} chars; not typed as "
+                        f"revocation-shaped token {tok.text!r} has no permit "
+                        f"noun within {_PERMIT_PROXIMITY} chars; not typed as "
                         f"LUVAN_PERUUTTAMINEN"
                     ),
                 )
             )
             continue
-        actor_m = _nearest_preceding_actor(text, m.start())
-        target_span = (
-            _span(source_file, actor_m.start(), actor_m.end())
-            if actor_m is not None
-            else None
-        )
-        frame_lo = actor_m.start() if actor_m is not None else m.start()
-        trig = _capture_trigger_span(text, frame_lo, m.end())
-        trigger_span = (
-            _span(source_file, trig[0], trig[1]) if trig is not None else None
-        )
-        frame_hi = max(m.end(), trig[1] if trig is not None else m.end())
         frames.append(
-            SanctionFrame(
-                sanction_kind=SanctionKind.LUVAN_PERUUTTAMINEN,
-                marker_surface=word,
-                target_actor_span=target_span,
-                trigger_span=trigger_span,
-                source_span=_span(source_file, min(frame_lo, m.start()), frame_hi),
-                status="surface_fact_only",
-                rule_id=_RULE_ID,
+            _build_frame(
+                text,
+                source_file,
+                SanctionKind.LUVAN_PERUUTTAMINEN,
+                tok.text,
+                tok.char_start,
+                tok.char_end,
             )
         )
     return frames, residuals, consumed
 
 
 def recognize_sanction_frames(
-    text: str, source_file: str = ""
+    text: str, source_file: str = "", *, tape: Optional[TokenTape] = None
 ) -> SanctionScan:
     """Recognise surface sanction/consequence frames in ``text``.
 
     Returns a :class:`SanctionScan` carrying typed frames and typed residuals.
     Every emitted frame has ``status="surface_fact_only"``. Nothing is silently
-    dropped: a sanction-shaped token that cannot be typed to the closed
+    dropped: a sanction-shaped ``word`` token that cannot be typed to the closed
     :class:`SanctionKind` set, and a revocation token with no nearby permit
     noun, each become a typed :class:`SanctionResidual`.
+
+    Token-grammar substrate: the marker is a ``word``-category token of the
+    source-preserving :class:`TokenTape`. A caller may pass a prebuilt ``tape``
+    (the lens feeds ``unit.token_tape``); otherwise one is built over ``text``.
+    Kind comes from matching closed sanction stems against a SINGLE token's
+    ``normalized`` (no cross-boundary ``\\w`` run); spans are token-aligned.
 
     The recognizer records SURFACE FACTS ONLY and never asserts culpability,
     liability, guilt, or enforceability.
@@ -488,67 +560,56 @@ def recognize_sanction_frames(
     if not any(guard in lower_text for guard in _SANCTION_GUARDS):
         return SanctionScan(frames=(), residuals=())
 
+    tape = _coerce_tape(text, tape)
+
     frames: List[SanctionFrame] = []
     residuals: List[SanctionResidual] = []
 
-    # Permit-revocation compound rule first (it consumes 'peruutta' words).
-    perm_frames, perm_residuals, consumed_spans = _scan_permit_revocation(
-        text, source_file
+    # Permit-revocation compound rule first (it consumes 'peruutta'/'peruute'
+    # word tokens by index).
+    perm_frames, perm_residuals, consumed = _scan_permit_revocation(
+        text, source_file, tape
     )
     frames.extend(perm_frames)
     residuals.extend(perm_residuals)
-    consumed = set(consumed_spans)
 
-    for m in _WORD_RE.finditer(text):
-        key = (m.start(), m.end())
-        if key in consumed:
+    for idx, tok in enumerate(tape.tokens):
+        if tok.category != "word":
             continue
-        word = m.group(0)
-        lower = word.lower()
-        if not _is_sanction_shaped(lower):
+        if idx in consumed:
             continue
-        # "peruutta"/"peruute" are handled exclusively by the compound rule.
-        if "peruutta" in lower or "peruute" in lower:
+        norm = tok.normalized
+        if not _is_sanction_shaped(norm):
             continue
-        kind = _classify_word(lower)
+        # revocation stems are handled exclusively by the compound rule above
+        # (and excluded by sanction_kind too); skip them here to avoid an
+        # untypeable residual for a token the compound rule already owns.
+        if any(stem in norm for stem in _REVOKE_STEMS):
+            continue
+        kind = sanction_kind(norm)
         if kind is None:
             # Sanction-shaped but untypeable -> typed residual, never a guess.
             residuals.append(
                 SanctionResidual(
                     kind="untypeable_sanction_token",
-                    surface_text=word,
-                    source_span=_span(source_file, m.start(), m.end()),
+                    surface_text=tok.text,
+                    source_span=_span(source_file, tok.char_start, tok.char_end),
                     detail=(
-                        f"sanction-shaped token {word!r} matched a guard but no "
-                        f"closed sanction stem; not typed to any SanctionKind"
+                        f"sanction-shaped token {tok.text!r} matched a guard but "
+                        f"no closed sanction stem; not typed to any SanctionKind"
                     ),
                 )
             )
             continue
 
-        actor_m = _nearest_preceding_actor(text, m.start())
-        target_span = (
-            _span(source_file, actor_m.start(), actor_m.end())
-            if actor_m is not None
-            else None
-        )
-        frame_lo = actor_m.start() if actor_m is not None else m.start()
-        trig = _capture_trigger_span(text, frame_lo, m.end())
-        trigger_span = (
-            _span(source_file, trig[0], trig[1]) if trig is not None else None
-        )
-        frame_hi = max(m.end(), trig[1] if trig is not None else m.end())
         frames.append(
-            SanctionFrame(
-                sanction_kind=kind,
-                marker_surface=word,
-                target_actor_span=target_span,
-                trigger_span=trigger_span,
-                source_span=_span(
-                    source_file, min(frame_lo, m.start()), frame_hi
-                ),
-                status="surface_fact_only",
-                rule_id=_RULE_ID,
+            _build_frame(
+                text,
+                source_file,
+                kind,
+                tok.text,
+                tok.char_start,
+                tok.char_end,
             )
         )
 
