@@ -54,6 +54,7 @@ from lawvm.core.legal_surface_graph import (
 )
 from lawvm.core.legal_surface_lens import SurfaceEdgeSeed
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
+from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.references import ReferenceLens
 
 # Rule ids for the cross-statute edges this module asserts (stable witnesses,
@@ -411,7 +412,16 @@ def build_corpus_surface_graph(
             statute_registry=statute_registry,
             eu_registry=eu_registry,
             surface_time=surface_time,
-            lenses=(ReferenceLens(),),
+            # ReferenceLens is the cross-statute backbone; AnaphoraLens adds
+            # discourse references (``mainitun lain`` …) whose antecedent is a
+            # cross-statute act, so those links also enter the corpus closure.
+            # Both emit reference_expr/reference_resolution/resolution_of, so the
+            # CorpusReferenceEdgePass (which scans every reference_resolution)
+            # promotes their resolved provision targets uniformly. The other
+            # lenses are intra-statute (definitions/frames/temporal) — no
+            # cross-statute edge — so they are intentionally omitted here for
+            # speed.
+            lenses=(ReferenceLens(), AnaphoraLens()),
         )
         for node in statute_graph.nodes.values():
             _merge_node(merged_nodes, node)
