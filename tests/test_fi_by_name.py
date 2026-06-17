@@ -541,3 +541,151 @@ def test_kauppalaki_unambiguous_inessive_not_over_suppressed() -> None:
 
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []
+
+
+# ---------------------------------------------------------------------------
+# G1 — chapter-organized by-name refs carry the chapter onto the AKN path
+# ---------------------------------------------------------------------------
+
+
+def test_g1_chapter_qualified_by_name_carries_provision_path() -> None:
+    """``rikoslain 47 luvun 4 §`` carries chapter 47 onto the AKN provision path.
+
+    Without it the chapter is dropped and the target collapses onto ``rikoslain
+    4 §`` — but §4 exists in EVERY rikoslaki chapter, so the chapter-47 cite would
+    point at chapter 1. The chapter rides the ``provision_path`` via the SAME
+    ``chp_N__sec_M`` form the parenthetical / plain-text lane uses.
+    """
+    mentions = recognize_by_name_refs("rikoslain 47 luvun 4 §:n mukaan")
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:rikoslaki"
+    assert m.target_provision_ref.provision_path == "chp_47__sec_4"
+    assert m.target_provision_ref.section_label == "4"
+
+
+def test_g1_chapter_qualified_distinct_from_bare_section() -> None:
+    """``rikoslain 47 luvun 4 §`` and ``rikoslain 4 §`` must NOT share a target."""
+    chaptered = recognize_by_name_refs("rikoslain 47 luvun 4 §:n")
+    bare = recognize_by_name_refs("rikoslain 4 §")
+    assert len(chaptered) == 1 and len(bare) == 1
+    ct, bt = chaptered[0].target_provision_ref, bare[0].target_provision_ref
+    assert ct is not None and bt is not None
+    # Same statute, same section label — but the chapter-qualified path keeps them
+    # distinct (the chapter-less bare cite has no chapter path).
+    assert ct.statute_id == bt.statute_id == "fi-name:rikoslaki"
+    assert ct.section_label == bt.section_label == "4"
+    assert ct.provision_path == "chp_47__sec_4"
+    assert bt.provision_path == ""
+    assert ct.provision_path != bt.provision_path
+
+
+def test_g1_chapter_with_momentti_and_kohta_enumeration() -> None:
+    """``osakeyhtiölain 20 luvun 4 §:n 1 momentin 1–3 kohdassa`` keeps the chapter
+    on every enumerated kohta target."""
+    mentions = recognize_by_name_refs(
+        "osakeyhtiölain 20 luvun 4 §:n 1 momentin 1–3 kohdassa"
+    )
+    assert len(mentions) == 3
+    for m, item in zip(mentions, ("1", "2", "3"), strict=True):
+        assert m.target_provision_ref is not None
+        assert m.target_provision_ref.statute_id == "fi-name:osakeyhtiölaki"
+        assert m.target_provision_ref.provision_path == "chp_20__sec_4"
+        assert m.target_provision_ref.section_label == "4"
+        assert m.target_provision_ref.subsection_num == 1
+        assert m.target_provision_ref.item_label == item
+
+
+# ---------------------------------------------------------------------------
+# G2 — descriptive-participle ``[X:stä] annetun lain N §`` citations
+# ---------------------------------------------------------------------------
+
+
+def test_g2_descriptive_participle_emits_ref_with_section() -> None:
+    """``valvotusta koevapaudesta annetun lain 23 §:n 1 momentissa`` -> one
+    cross-statute mention keyed head-first as the official-title surface."""
+    mentions = recognize_by_name_refs(
+        "valvotusta koevapaudesta annetun lain 23 §:n 1 momentissa"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.cite_kind is CiteKind.CROSS_STATUTE
+    assert m.cite_confidence is CiteConfidence.STATUTE_ONLY
+    assert m.phrase_lemma == "statute_name_descriptive_participle"
+    assert m.target_provision_ref is not None
+    # Head-first ``laki <complement>`` = the registry's official-title surface for
+    # 629/2013 ("Laki valvotusta koevapaudesta"), so resolve.py can resolve it.
+    assert m.target_provision_ref.statute_id == "fi-name:laki valvotusta koevapaudesta"
+    assert m.target_provision_ref.section_label == "23"
+    assert m.target_provision_ref.subsection_num == 1
+
+
+def test_g2_descriptive_complement_does_not_overcapture_preceding_clause() -> None:
+    """The complement anchors on the elative head, not a greedy left run.
+
+    ``… sitä luottolaitostoiminnasta annetun lain 16 §`` keeps only
+    ``luottolaitostoiminnasta`` — the determiner ``sitä`` and the rest of the
+    preceding clause are NOT swallowed into the title key.
+    """
+    mentions = recognize_by_name_refs(
+        "konsolidointiryhmällä sitä luottolaitostoiminnasta annetun lain 16 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:laki luottolaitostoiminnasta"
+    assert m.target_provision_ref.section_label == "16"
+
+
+def test_g2_descriptive_two_citations_one_sentence() -> None:
+    """Two descriptive citations in one sentence yield two clean, distinct nodes."""
+    mentions = recognize_by_name_refs(
+        "luottolaitostoiminnasta annetun lain 16 §:ssä tai "
+        "sijoituspalveluyrityksistä annetun lain 10 §:ssä tarkoitettua"
+    )
+    keys = {
+        (m.target_provision_ref.statute_id, m.target_provision_ref.section_label)
+        for m in mentions
+        if m.target_provision_ref is not None
+    }
+    assert keys == {
+        ("fi-name:laki luottolaitostoiminnasta", "16"),
+        ("fi-name:laki sijoituspalveluyrityksistä", "10"),
+    }
+
+
+def test_g2_nojalla_authority_basis_not_double_emitted() -> None:
+    """``… annetun lain [N §:n] nojalla`` is the ISSUED_UNDER path's — not ours."""
+    assert recognize_by_name_refs("eläimistä annetun lain 6 §:n nojalla määrätään") == []
+    assert recognize_by_name_refs("eläimistä annetun lain nojalla annetaan") == []
+
+
+def test_g2_inline_id_owned_by_plain_text_lane() -> None:
+    """``… annetun lain (NNN/YYYY) N §`` is the plain-text by-id lane's case."""
+    assert (
+        recognize_by_name_refs(
+            "sijoituspalveluyrityksistä annetun lain (922/2007) 46 §:n 2 momentissa"
+        )
+        == []
+    )
+
+
+def test_g2_non_citation_annetun_lain_fragment_emits_nothing() -> None:
+    """A non-citation ``annetun lain`` fragment (no elative descriptive title)."""
+    # No descriptive elative complement before ``annetun``.
+    assert recognize_by_name_refs("on annetun lain perusteella ratkaistava") == []
+    assert recognize_by_name_refs("tämän lain mukaan annetun lain 5 §") == []
+
+
+def test_g2_intervening_date_phrase_stripped() -> None:
+    """An enactment date phrase between the title and ``annetun`` is not part of
+    the title key but stays in the recorded surface."""
+    mentions = recognize_by_name_refs(
+        "kielitaidosta 1 päivänä kesäkuuta 1922 annetun lain 6 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:laki kielitaidosta"
+    assert m.target_provision_ref.section_label == "6"

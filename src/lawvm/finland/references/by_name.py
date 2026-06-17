@@ -72,6 +72,7 @@ from lawvm.finland.references.lemma_gate import GateVerdict, lemma_gate
 from lawvm.finland.references.registries.statute_name import _HEADS_BY_LEN
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
+    chapter_akn_path,
     parse_body_provision_tail_spanned,
 )
 
@@ -303,6 +304,277 @@ def _extend_coordinated_modifier(text: str, match_start: int, modifier: str) -> 
     return m.group(0) + modifier
 
 
+# ---------------------------------------------------------------------------
+# Descriptive-participle citation form: ``[X:stä] annetun lain N §`` (G2)
+# ---------------------------------------------------------------------------
+#
+# A pervasive Finnish citation form names an act NOT by its compound nickname
+# (``työsopimuslain``) but by its OFFICIAL DESCRIPTIVE TITLE rendered as a
+# participle phrase: ``Laki valvotusta koevapaudesta`` (act 629/2013) is cited
+# ``valvotusta koevapaudesta annetun lain 23 §`` (= "§23 of the law GIVEN
+# concerning supervised liberty"). The anchor is the past participle ``annettu``
+# ("given/issued") agreeing in case with ``laki``; the descriptive complement
+# (in the elative / partitive — ``…sta/…stä``) is the act's subject matter, the
+# same phrase that follows ``Laki`` in the official title. The bare-head by-name
+# lane above never fires here (the head ``lain`` carries no GLUED modifier — the
+# modifier is the separate participle word), so the citation produced ZERO nodes.
+#
+# This recognizer types the shape and emits a cross-statute mention whose name
+# key is reconstructed head-first as ``laki <complement>`` — the SAME surface the
+# statute-name registry indexes for the official title (``_add(title)`` over
+# ``Laki valvotusta koevapaudesta``), so resolve.py resolves it via the registry
+# (or via the in-statute name→id anaphora) with NO change to resolve.py. When the
+# title is not in the registry the mention stays STATUTE_ONLY (tag-don't-guess) —
+# never a fabricated id.
+#
+# Scope guard (no lane theft):
+#   * An inline ``(NNN/YYYY)`` right after ``lain`` is the plain-text by-id lane's
+#     case (its bare-``lain`` arm matches ``lain (629/2013)``) — excluded here.
+#   * The ``… annetun lain [N §:n] nojalla`` AUTHORITY-BASIS preamble is owned by
+#     the ISSUED_UNDER (delegation/authority) path; a ``nojalla`` (or another
+#     genitive-governing postposition) following the citation excludes it here, so
+#     the two lanes never double-emit.
+#   * The complement must be a genuine ``…sta/…stä`` (elative/partitive) descriptive
+#     phrase: a bare ``annetun lain`` with no descriptive complement, or a
+#     non-citation ``annetun`` fragment, emits nothing.
+
+# The participle ``annettu`` agreeing in case with ``laki``, and the ``laki`` head
+# in the matching case. Both inflect together; we accept the common oblique cases.
+_ANNETTU_LAKI_RE = re.compile(
+    r"\bannet(?:un|ussa|ulla|usta|uksi|ulle|ulta|tua)\s+"
+    r"(?P<head>la(?:in|issa|illa|ista|iksi|ille|ilta|kia))\b",
+    re.IGNORECASE,
+)
+
+# The descriptive complement preceding ``annetun`` is the NP the past participle
+# ``annettu`` (of ``antaa``, "give/issue") governs, in the ELATIVE
+# (``…sta/…stä`` = "concerning X"): ``Laki valvotusta koevapaudesta`` → cited
+# ``valvotusta koevapaudesta annetun lain``. The complement is extracted by an
+# ANCHORED token walk (``_descriptive_complement``), NOT a greedy left-run, so it
+# stops at the NP boundary instead of swallowing a preceding clause
+# (``… sitä luottolaitostoiminnasta annetun`` → ``luottolaitostoiminnasta``, not
+# ``sitä luottolaitostoiminnasta``).
+#
+# A title word is a lower-case name token (the official title's subject matter is
+# common-noun lower case), possibly hyphen/colon-joined.
+_DESC_WORD_RE = re.compile(r"^[a-zäöå]{2,40}(?:-[a-zäöå]{2,40})?(?::[a-zäöå]{1,20})?$")
+# The complement NP's words agree in the case the participle governs OR are its
+# inner modifiers: elative (``…sta/…stä``), partitive (``…ta/…tä/…a/…ä``), or the
+# coordinative ``ja``/``sekä``/``tai`` joiner BETWEEN two complement words. The
+# elative is the head case the participle requires; the partitive covers the
+# pre-modifier participle (``valvotusta``) and trailing modifiers. A word that is
+# none of these (a determiner ``sitä``/``sen``, a verb, a nominative noun) breaks
+# the NP — the walk stops there.
+_COMPLEMENT_CASE_SUFFIXES: tuple[str, ...] = (
+    "sta",
+    "stä",
+    "ssa",
+    "ssä",
+    "ta",
+    "tä",
+)
+_COMPLEMENT_JOINERS: frozenset[str] = frozenset({"ja", "sekä", "tai"})
+# Determiner / pronoun surfaces that frequently abut ``X:stä annetun`` but are NOT
+# part of the title (``sitä luottolaitostoiminnasta annetun`` — ``sitä`` = "it").
+# Listed so the walk never starts the complement on one even if its surface happens
+# to end in a complement-case suffix (``sitä`` ends in ``tä``).
+_COMPLEMENT_STOPWORDS: frozenset[str] = frozenset(
+    {"sitä", "sen", "tätä", "tämän", "tuota", "tuon", "niitä", "niiden", "joita"}
+)
+
+# Genitive-governing postpositions that, when they FOLLOW the citation tail, mark
+# the ``annetun lain … nojalla`` authority-basis / postposition reading owned by
+# the ISSUED_UNDER (delegation) path — excluded here to avoid double-emission.
+# Matched anywhere in the SHORT window between the ``annetun lain`` head and the
+# §-tail's end (``lain nojalla``, ``lain 6 §:n nojalla``): the postposition sits
+# right after the head OR right after the § tail, both inside the bounded window,
+# so a single window scan catches both without fragile consumed-length arithmetic.
+_TRAILING_POSTPOSITION_RE = re.compile(
+    r"\b(?:nojalla|mukaisesti|mukaan|perusteella|estämättä)\b",
+    re.IGNORECASE,
+)
+# The window (chars after the ``annetun lain`` head) within which a trailing
+# postposition still binds the citation as an authority basis. Long enough to span
+# a short § tail (``6 §:n nojalla``) but not the rest of the paragraph.
+_POSTPOSITION_WINDOW = 40
+
+# A date phrase (``14 päivänä heinäkuuta 1898``) can sit BETWEEN the descriptive
+# complement and ``annetun`` (``… kielitaidosta 1 päivänä kesäkuuta 1922 annetun
+# lain``). It is part of the enactment reference, not the title complement, so it
+# is stripped off the left of ``annetun`` before the complement scan.
+_DATE_PHRASE_RE = re.compile(
+    r"(?:\d{1,2}\.?\s*)?(?:p(?:äivänä|\.|:nä)?\s+)?"
+    r"(?:tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu"
+    r"(?:ta|n|ssa)?\s+\d{4}\s+$",
+    re.IGNORECASE,
+)
+
+
+def _complement_word_ok(word: str) -> bool:
+    """True when ``word`` can be an inner word of the ``annettu`` complement NP.
+
+    A title word (lower-case name token, not a determiner stopword) ending in a
+    case the participle's NP carries (elative / inessive / partitive), or a
+    coordinating joiner BETWEEN complement words. A word failing this breaks the
+    NP — the leftward walk stops before it.
+    """
+    if word in _COMPLEMENT_JOINERS:
+        return True
+    if word in _COMPLEMENT_STOPWORDS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(_COMPLEMENT_CASE_SUFFIXES)
+
+
+def _descriptive_complement(left: str) -> tuple[str, int] | None:
+    """Extract the ``annettu`` complement NP at the END of ``left``.
+
+    ``left`` is the text immediately before ``annetun`` (date phrase already
+    peeled). Returns ``(complement_surface, start_offset_in_left)`` or ``None``.
+
+    The walk anchors on the LAST elative (``…sta/…stä``) word — the head case the
+    participle governs — then extends LEFT over contiguous complement-NP words
+    (case-agreeing modifiers / joiners), stopping at the NP boundary (a
+    determiner, verb, or nominative/genitive word that is not complement-cased).
+    A trailing joiner is trimmed. Anchoring on the elative (rather than a greedy
+    left run) is what keeps ``… sitä luottolaitostoiminnasta annetun`` → just
+    ``luottolaitostoiminnasta`` and never swallows the preceding clause.
+    """
+    # Tokenize the tail of ``left`` into (word, start_offset) pairs.
+    toks = [(mm.group(0).lower(), mm.start()) for mm in re.finditer(r"\S+", left)]
+    if not toks:
+        return None
+    words = [w for w, _ in toks]
+    # Find the LAST token that is an elative complement head (``…sta/…stä``) and
+    # is itself a clean title word. Search from the right within a bounded tail.
+    anchor: int | None = None
+    for i in range(len(words) - 1, max(-1, len(words) - 9), -1):
+        w = words[i]
+        if w in _COMPLEMENT_STOPWORDS:
+            continue
+        if _DESC_WORD_RE.match(w) and w.endswith(("sta", "stä")):
+            anchor = i
+            break
+    if anchor is None:
+        return None
+    # Every token from the elative anchor up to the end of ``left`` must be a
+    # complement-NP word (the trailing modifiers ``työsuojeluasioissa``); if a
+    # non-complement word intervenes between the anchor and ``annetun`` it is not a
+    # contiguous title NP — bail (FP guard).
+    for j in range(anchor + 1, len(words)):
+        if not _complement_word_ok(words[j]):
+            return None
+    # Extend LEFT over contiguous complement-NP words (case-agreeing pre-modifiers
+    # like the partitive participle ``valvotusta``), stopping at the NP boundary.
+    start = anchor
+    while start - 1 >= 0 and _complement_word_ok(words[start - 1]):
+        start -= 1
+    # Trim a leading joiner (``ja luottolaitostoiminnasta`` → drop ``ja``).
+    while start < anchor and words[start] in _COMPLEMENT_JOINERS:
+        start += 1
+    start_off = toks[start][1]
+    surface = " ".join(words[start:])
+    return surface, start_off
+
+
+def _recognize_descriptive_participle_refs(text: str) -> list[ReferenceMention]:
+    """Recognise ``[X:stä] annetun lain N §`` descriptive-participle citations (G2).
+
+    See the module-section comment for the shape and the scope guards. Emits one
+    :class:`ReferenceMention` per provision in the optional ``§`` tail, carrying
+    the name key ``fi-name:laki <complement>`` (head-first, matching the registry's
+    official-title surface). Resolution to a concrete id is deferred to resolve.py
+    (registry / anaphora / STATUTE_ONLY) — no id is fabricated here.
+    """
+    out: list[ReferenceMention] = []
+    source_ref = ProvisionRef(statute_id="")
+
+    for m in _ANNETTU_LAKI_RE.finditer(text):
+        # Exclude the id-anchored ``annetun lain (NNN/YYYY)`` form: the plain-text
+        # by-id lane (its bare-``lain`` arm) owns it — no double-emission.
+        if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # The descriptive complement sits to the LEFT of ``annetun``. Peel any
+        # intervening enactment date phrase first, then require a genuine
+        # elative/partitive ``…sta/…stä`` complement. An empty / non-``…sta``
+        # left context (a bare ``annetun lain`` or a non-citation fragment) is not
+        # a descriptive title — emit nothing (tag-don't-guess, FP guard).
+        left = text[: m.start()]
+        date_m = _DATE_PHRASE_RE.search(left)
+        if date_m is not None:
+            left = left[: date_m.start()] + " "
+        comp = _descriptive_complement(left)
+        if comp is None:
+            continue
+        complement, comp_start = comp
+
+        # Parse the optional structural ``§`` tail (shared body parser).
+        tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        consumed_tail = tail_parse.consumed_text
+
+        # Authority-basis exclusion: ``… annetun lain [N §:n] nojalla`` (and the
+        # other genitive-governing postpositions) are the ISSUED_UNDER path's. The
+        # postposition sits right after ``lain`` (no § tail) or right after the §
+        # tail — both inside a short window after the head. Scan that window; if a
+        # postposition appears, this is the authority-basis reading — skip (no
+        # double-emission). The window is bounded so a postposition far downstream
+        # in the prose (unrelated to this citation) is not mistaken for its basis.
+        post_window = text[m.end() : m.end() + _POSTPOSITION_WINDOW]
+        if _TRAILING_POSTPOSITION_RE.search(post_window):
+            continue
+
+        if not targets:
+            targets = [BodyProvisionTarget(section_label="")]
+
+        # Reconstruct the official-title surface head-first: ``laki <complement>``.
+        normalized = f"laki {complement}".lower()
+
+        # Anchor at the descriptive complement's start (the citation surface
+        # begins at the title, not at ``annetun``). The complement offset indexes
+        # into ``left`` which, when a date phrase was peeled, is a PREFIX of the
+        # original ``text[:m.start()]`` truncated only on the RIGHT, so the start
+        # offset is identical in ``text``.
+        name_start = comp_start
+        name_surface = text[name_start : m.end()].strip()
+        name_span = SourceSpan("", name_start, m.end() - name_start)
+
+        for tgt in targets:
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
+            target_ref = ProvisionRef(
+                statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
+                section_label=tgt.section_label,
+                subsection_num=tgt.subsection_num,
+                item_label=tgt.item_label,
+            )
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
+            else:
+                surface = name_surface
+            out.append(
+                ReferenceMention(
+                    source_provision_ref=source_ref,
+                    target_provision_ref=target_ref,
+                    cite_kind=CiteKind.CROSS_STATUTE,
+                    cite_confidence=CiteConfidence.STATUTE_ONLY,
+                    phrase_lemma="statute_name_descriptive_participle",
+                    source_span=name_span,
+                    valid_at_interval=(None, None),
+                    edge_subtype=None,
+                    surface_text=surface,
+                )
+            )
+    return out
+
+
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     """Recognise inflected-statute-name cross-references in ``text``.
 
@@ -432,8 +704,22 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         name_span = SourceSpan("", name_start, m.end("oblique") - name_start)
 
         for tgt in targets:
+            # A chapter-qualified by-name tail (``rikoslain 47 luvun 4 §``,
+            # ``osakeyhtiölain 20 luvun 4 §``) carries the chapter onto the AKN
+            # ``provision_path`` via the SAME ``chp_N__sec_M`` helper the
+            # parenthetical / plain-text lane uses (sections.chapter_akn_path) and
+            # the internal lane mirrors — never dropped. Without it, ``rikoslain
+            # 47 luvun 4 §`` and ``rikoslain 4 §`` collapse onto the same target
+            # (§4 exists in EVERY rikoslaki chapter), pointing the chapter-47 cite
+            # at chapter 1. A chapter-only tail (``5 luvussa``) yields ``chp_5``.
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
             target_ref = ProvisionRef(
                 statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
                 section_label=tgt.section_label,
                 subsection_num=tgt.subsection_num,
                 item_label=tgt.item_label,
@@ -457,6 +743,12 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
                     surface_text=surface,
                 )
             )
+
+    # Descriptive-participle citations (``[X:stä] annetun lain N §``) name the act
+    # by its official descriptive title, not a glued compound nickname, so the
+    # name-head lane above never fires on them (the ``lain`` head carries no glued
+    # modifier). Recognize them separately and merge their mentions in.
+    out.extend(_recognize_descriptive_participle_refs(text))
     return out
 
 
