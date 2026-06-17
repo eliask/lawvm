@@ -191,6 +191,9 @@ let evidenceByDate = new Map();
 let evidenceWithAddress = [];
 let metaInfo = {};          // decoded meta table
 let selectedAddress = null; // address with an open inline history panel
+// Internal-reference jump trail: return to the provision where the link was clicked.
+let internalJumpStack = [];
+let _hcSourceAddr = null; // #doc host of the anchor that opened the hovercard
 let mode = 'law';    // 'law' | 'amendments' | 'search' | 'compare'
 let selectedSourceId = null;
 let currentStatuteId = null;
@@ -296,17 +299,37 @@ const REF_KINDS = {
       // Internal refs (target = the loaded act) are live in-page anchors: tag
       // them so they style as a deeplink, not a precomputed-preview span. Only
       // the navigating statuses (resolved / statute_only) get the live class.
-      const internalCls = (status === 'resolved' || status === 'statute_only')
-        && semanticIsInternalRef(p) ? ' ref-sem-internal' : '';
-      return { text, title, cls: 'ref-semantic ref-sem-' + status + internalCls };
+      // When the target is a ghost tombstone at the selected date, add an
+      // inactive affordance (wavy underline) distinct from resolution_status
+      // broken (which names a stale cross-act locator).
+      let internalCls = '';
+      let titleExtra = '';
+      let suffix = '';
+      if ((status === 'resolved' || status === 'statute_only') && semanticIsInternalRef(p)) {
+        internalCls = ' ref-sem-internal';
+        const tgt = internalRefTargetState(p);
+        if (tgt.state === 'inactive') {
+          internalCls += tgt.reason === 'expiry'
+            ? ' ref-sem-internal-inactive ref-sem-internal-expired'
+            : ' ref-sem-internal-inactive ref-sem-internal-repealed';
+          titleExtra = tr(tgt.reason === 'expiry' ? 'interlinkInternalExpired' : 'interlinkInternalRepealed');
+          suffix = internalRefStateSuffix(tgt);
+        } else if (tgt.state === 'absent') {
+          internalCls += ' ref-sem-internal-inactive ref-sem-internal-absent';
+          titleExtra = tr('interlinkInternalNotPresent');
+          suffix = internalRefStateSuffix(tgt);
+        }
+      }
+      const fullTitle = titleExtra ? `${title} · ${titleExtra}` : title;
+      return { text, title: fullTitle, cls: 'ref-semantic ref-sem-' + status + internalCls, suffix };
     },
     // nav is keyed by status: navigating statuses get an action, the rest
     // fall through to a no-op (refLink still renders them as inert anchors,
     // styled by their status class; the click handler ignores a missing nav).
-    nav(p) {
+    nav(p, clickEl) {
       const status = semanticRefStatus(p);
       if (status === 'resolved' || status === 'statute_only') {
-        semanticNavToTarget(p, status);
+        semanticNavToTarget(p, status, clickEl ? captureJumpSource(clickEl) : null);
       } else if (status === 'external') {
         const url = (p.target_url || '').trim();
         if (url) window.open(url, '_blank', 'noopener,noreferrer');
@@ -404,7 +427,7 @@ function semanticTargetStatuteId(row) {
 // cross-statute jumps load the target act (carrying an address permalink when a
 // provision anchor is known). Falls back to a hovercard-only no-op + an
 // external link when the act is outside the current manifest.
-function semanticNavToTarget(row, status) {
+function semanticNavToTarget(row, status, source) {
   const statuteId = semanticTargetStatuteId(row);
   const target = semanticTargetForRow(row);
   // Internal refs navigate IN-PAGE to the target provision in the loaded act —
@@ -412,7 +435,14 @@ function semanticNavToTarget(row, status) {
   // a bare `section:N` from the locator) and jump without reloading.
   if (semanticIsInternalRef(row)) {
     const addr = (status === 'resolved') ? semanticInternalAddr(row, target) : null;
-    goToAddrAtDate(addr || null, null);
+    if (addr) {
+      if (source) pushInternalJumpBack(source, addr, row.surface_text || '');
+      ensureLawView();
+      const landed = jumpToAddr(addr, { internal: true });
+      selectedAddress = landed ? landed.addr : addr;
+      removeInlinePanel();
+      if (!suppressHashUpdate) updateHash();
+    }
     return;
   }
   const addr = (status === 'resolved') ? semanticTargetAddress(row, target) : null;
@@ -465,33 +495,239 @@ function semanticIsInternalRef(row) {
 // the row's target_locator (e.g. "section:108", "108", "section:108/subsection:1").
 function semanticInternalAddr(row, target) {
   const explicit = semanticTargetAddress(row, target || semanticTargetForRow(row));
-  if (explicit) return explicit;
+  if (explicit) return normalizeLocatorAddr(explicit);
   const loc = String((row && row.target_locator) || '').trim();
   if (!loc) return null;
   // Already an address-shaped locator (has a "kind:value" piece) → use as-is.
-  if (/[a-z_]+:/i.test(loc)) return loc;
+  if (/[a-z_]+:/i.test(loc)) return normalizeLocatorAddr(loc);
   // Bare numeric/alpha locator → assume a section key.
   const raw = loc.toLowerCase().replace(/[§.\s]/g, '');
   return raw ? `section:${raw}` : null;
 }
 
-// Locate the provision element for an in-act address in the live #doc tree.
-// Exact data-addr match first; then a section-suffix match (mirrors the §-jump),
-// so a coarse `section:108` finds the rendered "108 §" node regardless of its
-// chapter prefix. Returns the element, or null if not present at the current date.
-function findLiveProvisionEl(addr) {
-  if (!addr) return null;
-  const doc = document.getElementById('doc');
-  if (!doc) return null;
-  let el = doc.querySelector(`[data-addr="${cssEsc(addr)}"]`);
-  if (el) return el;
-  const m = String(addr).match(/section:([0-9a-z]+)\b/i);
-  if (m) {
-    const sec = m[1].toLowerCase();
-    el = doc.querySelector(`.node[data-addr$="section:${cssEsc(sec)}"]`)
-      || doc.querySelector(`[data-addr$="section:${cssEsc(sec)}"]`);
+// Interlink locators use engine ontology kinds; the rendered tree may name the
+// same slot differently (Finland: item/kohta → paragraph). Normalize one segment.
+function normalizeLocatorSegment(seg) {
+  const m = String(seg).match(/^([a-z_]+):(.+)$/i);
+  if (!m) return seg;
+  const kind = m[1].toLowerCase();
+  const val = m[2];
+  if (kind === 'item') return `paragraph:${val}`;
+  if (kind === 'subpara') return `subparagraph:${val}`;
+  return `${kind}:${val}`;
+}
+
+function normalizeLocatorAddr(addr) {
+  if (!addr) return '';
+  return addr.split('/').map(normalizeLocatorSegment).join('/');
+}
+
+function locatorAddrVariants(addr) {
+  const raw = String(addr || '').trim();
+  if (!raw) return [];
+  const norm = normalizeLocatorAddr(raw);
+  const out = [];
+  const seen = new Set();
+  for (const c of [raw, norm]) {
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
   }
-  return el || null;
+  return out;
+}
+
+// Suffix → full rendered address index (built once per #doc render).
+let renderedAddrBySuffix = null;
+
+function invalidateRenderedAddrIndex() {
+  renderedAddrBySuffix = null;
+}
+
+function renderedAddrIndex() {
+  if (renderedAddrBySuffix) return renderedAddrBySuffix;
+  const index = new Map();
+  const doc = document.getElementById('doc');
+  if (!doc) { renderedAddrBySuffix = index; return index; }
+  const seen = new Set();
+  for (const el of doc.querySelectorAll('[data-addr]')) {
+    const da = el.dataset.addr || '';
+    if (!da || seen.has(da)) continue;
+    seen.add(da);
+    for (const path of locatorAddrVariants(da)) {
+      const parts = path.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const suffix = parts.slice(i).join('/');
+        const prev = index.get(suffix);
+        if (!prev || path.length > prev.length) index.set(suffix, path);
+      }
+    }
+  }
+  renderedAddrBySuffix = index;
+  return index;
+}
+
+// Map an interlink/engine address onto the live rendered #doc tree.
+function resolveRenderedAddr(addr) {
+  if (!addr) return { addr: '', el: null };
+  const doc = document.getElementById('doc');
+  if (!doc) return { addr: '', el: null };
+  const index = renderedAddrIndex();
+  for (const cand of locatorAddrVariants(addr)) {
+    const full = index.get(cand);
+    if (full) {
+      const el = doc.querySelector(`[data-addr="${cssEsc(full)}"]`);
+      return { addr: full, el: el || null };
+    }
+  }
+  return { addr: '', el: null };
+}
+
+function tombstoneReasonFromEl(el) {
+  if (!el) return 'repeal';
+  const host = el.closest('.tombstone, .ghost-line');
+  if (!host) return 'repeal';
+  if (host.querySelector('em.expiry, .expiry')) return 'expiry';
+  return 'repeal';
+}
+
+function matchingLiveAddr(addr) {
+  if (!addr) return '';
+  let best = '';
+  for (const cand of locatorAddrVariants(addr)) {
+    if (curLive.has(cand) && cand.length > best.length) best = cand;
+    for (const liveAddr of curLive.keys()) {
+      if (liveAddr === cand || liveAddr.endsWith('/' + cand)) {
+        if (liveAddr.length > best.length) best = liveAddr;
+      }
+    }
+  }
+  return best;
+}
+
+function matchingTombstoneAddr(addr) {
+  if (!addr) return '';
+  let best = '';
+  for (const cand of locatorAddrVariants(addr)) {
+    if (curTombstoned.has(cand) && cand.length > best.length) best = cand;
+    for (const taddr of curTombstoned.keys()) {
+      if (taddr === cand || taddr.endsWith('/' + cand)) {
+        if (taddr.length > best.length) best = taddr;
+      }
+    }
+  }
+  return best;
+}
+
+function tombstoneFoldInfoForAddr(addr) {
+  if (!addr) return null;
+  const direct = matchingTombstoneAddr(addr);
+  return direct ? curTombstoned.get(direct) : null;
+}
+
+function isLiveAtDate(addr) {
+  return !!matchingLiveAddr(addr);
+}
+
+// Whether a provision (or an ancestor) was removed by the scrubbed date.
+function wasRemovedAtDate(addr) {
+  if (!addr) return false;
+  if (tombstoneFoldInfoForAddr(addr) || absentUnitAtDate(addr)) return true;
+  const segs = addr.split('/');
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const anc = segs.slice(0, i).join('/');
+    if (tombstoneFoldInfoForAddr(anc) || absentUnitAtDate(anc)) return true;
+  }
+  return false;
+}
+
+function removalReasonAtDate(addr) {
+  const tomb = tombstoneFoldInfoForAddr(addr);
+  if (tomb) return tomb.reason || 'repeal';
+  if (absentUnitAtDate(addr)) return removalReason(addr, curDateIdx);
+  const segs = addr.split('/');
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const anc = segs.slice(0, i).join('/');
+    const ancTomb = tombstoneFoldInfoForAddr(anc);
+    if (ancTomb) return ancTomb.reason || 'repeal';
+    if (absentUnitAtDate(anc)) return removalReason(anc, curDateIdx);
+  }
+  return 'repeal';
+}
+
+// Whether an internal ref's in-act target is live, tombstoned, or absent at the
+// scrubbed date. Fold matching is authoritative (refs are rendered while #doc HTML
+// is still being assembled, so DOM queries during that pass are stale). DOM is a
+// fallback for harnesses / post-render refresh. absent = locator cannot be mapped
+// at all; inactive = mapped/evidenced but not live (repealed / expired).
+function internalRefTargetState(row, target) {
+  const addr = semanticInternalAddr(row, target || semanticTargetForRow(row));
+  if (!addr) return { state: 'unresolved' };
+  const liveAddr = matchingLiveAddr(addr);
+  const tombAddr = matchingTombstoneAddr(addr);
+  const resolved = resolveRenderedAddr(addr);
+  const el = resolved.el;
+  const domTomb = el && el.closest('.tombstone, .ghost-line');
+  const foldLoaded = curLive.size > 0 || curTombstoned.size > 0;
+
+  if (liveAddr) {
+    return { state: 'active', addr: liveAddr, el };
+  }
+
+  const tomb = tombstoneFoldInfoForAddr(addr);
+  if (tomb || domTomb || tombAddr || wasRemovedAtDate(addr)) {
+    const reason = tomb ? (tomb.reason || 'repeal')
+      : domTomb ? tombstoneReasonFromEl(el) : removalReasonAtDate(addr);
+    return {
+      state: 'inactive',
+      addr: tombAddr || resolved.addr || addr,
+      reason,
+      el,
+      tomb,
+    };
+  }
+
+  if (el && !domTomb) {
+    return { state: 'active', addr: resolved.addr || addr, el };
+  }
+
+  if (foldLoaded) {
+    return { state: 'absent', addr };
+  }
+
+  if (domTomb) {
+    return { state: 'inactive', addr: resolved.addr || addr, reason: tombstoneReasonFromEl(el), el };
+  }
+  if (el) return { state: 'active', addr: resolved.addr || addr, el };
+  return { state: 'absent', addr };
+}
+
+function internalRefStateSuffix(tgt) {
+  if (!tgt || tgt.state === 'active' || tgt.state === 'unresolved') return '';
+  if (tgt.state === 'inactive') {
+    return tgt.reason === 'expiry' ? tr('expiredTombstone') : tr('tombstone');
+  }
+  if (tgt.state === 'absent') return tr('interlinkInternalAbsentBadge');
+  return '';
+}
+
+function scrollTargetForAddr(addr, resolved) {
+  const r = resolved || resolveRenderedAddr(addr);
+  const targetAddr = r.addr || addr;
+  if (!targetAddr) return null;
+  const row = document.querySelector(`#doc .node-row[data-addr="${cssEsc(targetAddr)}"]`);
+  if (row) return row;
+  const pblock = document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`);
+  if (pblock) return pblock;
+  const node = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`);
+  if (node) return node.querySelector(':scope > .node-row') || node;
+  return r.el;
+}
+
+function ensureLawView() {
+  if (mode !== 'law') setMode('law');
+}
+
+// Locate the provision element for an in-act address in the live #doc tree.
+function findLiveProvisionEl(addr) {
+  return resolveRenderedAddr(addr).el;
 }
 
 // Pull a short opening snippet of a provision's text straight from the rendered
@@ -540,10 +776,43 @@ function refLink(kind, payload, displayText) {
   const text = displayText != null ? displayText : (info ? info.text : '');
   const title = info && info.title ? info.title : '';
   const cls = info && info.cls ? info.cls : '';
+  const suffix = info && info.suffix ? String(info.suffix) : '';
   const hoverable = typeof def.hover === 'function' ? ' data-ref-hover="1"' : '';
+  const suffixHtml = suffix
+    ? ` <span class="ref-internal-state">${escHtml(suffix)}</span>` : '';
   return `<a href="#" class="ref-link ${cls}" data-ref-kind="${escAttr(kind)}"`
     + ` data-ref-payload="${escAttr(JSON.stringify(payload))}"${hoverable}`
-    + (title ? ` title="${escAttr(title)}"` : '') + `>${escHtml(text)}</a>`;
+    + (title ? ` title="${escAttr(title)}"` : '') + `>${escHtml(text)}${suffixHtml}</a>`;
+}
+
+// Ref links are emitted while #doc innerHTML is still being built, so the first
+// display() pass can mis-classify targets. Reconcile classes/suffixes once the
+// live tree and fold indexes are both available.
+function refreshInternalRefLinkAffordances(root) {
+  const host = root || document.getElementById('doc');
+  if (!host) return;
+  const def = REF_KINDS.semantic;
+  if (!def || typeof def.display !== 'function') return;
+  for (const a of host.querySelectorAll('a.ref-link[data-ref-kind="semantic"]')) {
+    const p = refPayloadFrom(a);
+    if (!p || !semanticIsInternalRef(p)) continue;
+    let info = null;
+    try { info = def.display(p); } catch (e) { continue; }
+    if (!info) continue;
+    a.className = `ref-link ${info.cls || ''}`.replace(/\s+/g, ' ').trim();
+    if (info.title) a.title = info.title;
+    const surface = String(p.text || p.surface_text || '').trim();
+    const suffix = info.suffix ? String(info.suffix) : '';
+    while (a.firstChild) a.removeChild(a.firstChild);
+    if (surface) a.appendChild(document.createTextNode(surface));
+    if (suffix) {
+      if (surface) a.appendChild(document.createTextNode(' '));
+      const sp = document.createElement('span');
+      sp.className = 'ref-internal-state';
+      sp.textContent = suffix;
+      a.appendChild(sp);
+    }
+  }
 }
 
 function refPayloadFrom(el) {
@@ -552,6 +821,23 @@ function refPayloadFrom(el) {
 
 // Click delegation (installed once). Works for any present or future ref kind.
 document.addEventListener('click', (e) => {
+  const jump = e.target.closest('a.hc-internal-jump');
+  if (jump) {
+    e.preventDefault();
+    e.stopPropagation();
+    hideHovercard();
+    const addr = jump.dataset.internalAddr;
+    if (addr) {
+      const source = _hcSourceAddr ? { fromAddr: _hcSourceAddr, fromScrollY: window.scrollY } : null;
+      if (source) pushInternalJumpBack(source, addr, (jump.textContent || '').trim());
+      ensureLawView();
+      const landed = jumpToAddr(addr, { internal: true });
+      selectedAddress = landed ? landed.addr : addr;
+      removeInlinePanel();
+      if (!suppressHashUpdate) updateHash();
+    }
+    return;
+  }
   const a = e.target.closest('a.ref-link');
   if (!a) return;
   e.preventDefault();
@@ -559,7 +845,7 @@ document.addEventListener('click', (e) => {
   const def = REF_KINDS[a.dataset.refKind];
   if (!def || !def.nav) return;
   const p = refPayloadFrom(a);
-  if (p) { try { def.nav(p); } catch (err) { console.warn('ref nav failed', err); } }
+  if (p) { try { def.nav(p, a); } catch (err) { console.warn('ref nav failed', err); } }
 });
 
 // ---- hovercard: a single shared popover, reused for every hover ----
@@ -594,6 +880,8 @@ function positionHovercard(anchor) {
 async function showHovercardFor(anchor) {
   const def = REF_KINDS[anchor.dataset.refKind];
   if (!def || typeof def.hover !== 'function') return;
+  const host = anchor.closest('#doc [data-addr]');
+  _hcSourceAddr = host ? host.dataset.addr : null;
   const p = refPayloadFrom(anchor);
   if (!p) return;
   const token = ++_hcToken; // guards async + re-render races: last hover wins
@@ -932,13 +1220,22 @@ function semanticInterlinkHovercardHtml(row) {
   // cross-statute links keep their precomputed preview (their target isn't loaded).
   if (isInternal) {
     const addr = semanticInternalAddr(row, target);
-    const snippet = liveTransclusionSnippet(addr);
-    h += `<div class="hc-internal-source">${escHtml(tr('interlinkInternalLive'))}</div>`;
-    if (snippet) {
-      h += `<div class="hc-preview hc-preview-live">${escHtml(snippet)}</div>`;
+    const tgt = internalRefTargetState(row, target);
+    if (tgt.state === 'active') {
+      const snippet = liveTransclusionSnippet(addr);
+      h += `<div class="hc-internal-source">${escHtml(tr('interlinkInternalLive'))}</div>`;
+      if (snippet) {
+        h += `<a href="#" class="hc-preview hc-preview-live hc-internal-jump" data-internal-addr="${escAttr(addr)}">${escHtml(snippet)}</a>`;
+      } else {
+        h += `<div class="hc-internal-absent">${escHtml(tr('interlinkInternalNotPresent'))}</div>`;
+      }
+    } else if (tgt.state === 'inactive') {
+      const noteKey = tgt.reason === 'expiry' ? 'interlinkInternalExpired' : 'interlinkInternalRepealed';
+      h += `<div class="hc-internal-inactive">${escHtml(tr(noteKey))}</div>`;
+      const jumpLabel = tr('interlinkInternalInactiveJump', prettyAddr(tgt.addr));
+      h += `<a href="#" class="hc-preview hc-preview-tombstone hc-internal-jump" data-internal-addr="${escAttr(addr)}">${escHtml(jumpLabel)}</a>`;
     } else {
-      // Target not present in the current view (e.g. not in force on this date):
-      // a clear note — never a fabricated preview.
+      // Target not in the rendered tree at all on this date — never a fabricated preview.
       h += `<div class="hc-internal-absent">${escHtml(tr('interlinkInternalNotPresent'))}</div>`;
     }
   } else if (target && target.preview_text) {
@@ -1468,6 +1765,7 @@ async function loadStatute(statuteId, permalink) {
     db = new SQL.Database(new Uint8Array(buf));
     setLoadProgress(88, tr('indexingDb'), '', false);
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
+    clearInternalJumpStack();
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
     interlinks = []; interlinksByRenderedAddress = new Map(); interlinkTargetsByKey = new Map();
     surfaceOverlays = []; overlaysByRenderedAddress = new Map(); overlaysById = new Map();
@@ -1569,6 +1867,14 @@ function renderShell() {
       ${overlayLayerBarHtml()}
     </div>
     <p class="mode-hint" id="mode-hint"></p>
+    <div class="internal-backbar" id="internal-backbar" hidden>
+      <button type="button" class="internal-back-btn" id="internal-back-btn">
+        <span class="internal-back-arrow" aria-hidden="true">←</span>
+        <span id="internal-back-lbl"></span>
+      </button>
+      <span class="internal-back-meta" id="internal-back-meta"></span>
+      <button type="button" class="internal-back-dismiss" id="internal-back-dismiss" title="${escAttr(tr('internalBackDismiss'))}">×</button>
+    </div>
     <div class="view" id="view"></div>`;
 
   for (const b of app.querySelectorAll('.mode-btn')) {
@@ -1581,6 +1887,7 @@ function renderShell() {
   wireOverlayLayerBar();
   wireTimeAxis();
   wireSecJump();
+  wireInternalBackBar();
 
   setMode('law', /*skipRender*/ true);
 }
@@ -1751,6 +2058,7 @@ function setMode(m, skipRender) {
     else if (m === 'search') renderSearch();
     else renderCompare();
   }
+  updateInternalBackBar();
   if (!suppressHashUpdate) updateHash();
 }
 
@@ -1764,6 +2072,7 @@ function validityInterval(idx) {
 }
 
 async function selectDate(idx, opts) {
+  clearInternalJumpStack();
   curDateIdx = idx;
   const date = changeDates[idx];
   const selDateEl = document.getElementById('sel-date');
@@ -2081,7 +2390,9 @@ function renderDoc() {
   let html = '';
   for (const entry of sortedEntries(tree)) html += renderTreeEntry(entry, 0, focusAddrs);
   docEl.innerHTML = html || `<p class="muted-empty">${escHtml(focusChangesOnly ? tr('noChangedProvisions') : tr('noProvisions'))}</p>`;
+  invalidateRenderedAddrIndex();
   wireDoc(docEl);
+  refreshInternalRefLinkAffordances(docEl);
 }
 
 function renderTreeEntry(entry, depth, focusAddrs) {
@@ -2409,6 +2720,7 @@ let entirelyAbsentDateIdx = -1;
 
 function absentUnitAtDate(addr) {
   if (curLive.has(addr)) return false;
+  if (!changeDates.length || curDateIdx < 0) return false;
   const events = changeIndex().get(addr) || [];
   let last = null;
   for (const e of events) {
@@ -2814,24 +3126,139 @@ function restoreScrollAnchor(anchor) {
   spy.suppressUntil = Date.now() + 600;
 }
 
-function jumpToAddr(addr) {
-  const segs = addr.split('/');
+// Extra breathing room below the sticky topbar when jumping to a provision.
+const JUMP_SCROLL_OFFSET_PX = 100;
+let jumpHighlightTimer = null;
+
+function captureJumpSource(clickEl) {
+  const host = clickEl && clickEl.closest('#doc [data-addr]');
+  if (!host || !host.dataset.addr) return null;
+  return { fromAddr: host.dataset.addr, fromScrollY: window.scrollY };
+}
+
+function pushInternalJumpBack(source, toAddr, surfaceText) {
+  if (!source || !source.fromAddr || !toAddr) return;
+  const resolvedTo = resolveRenderedAddr(toAddr);
+  const to = resolvedTo.addr || toAddr;
+  if (source.fromAddr === to) return;
+  const top = internalJumpStack[internalJumpStack.length - 1];
+  if (top && top.fromAddr === source.fromAddr && top.toAddr === to) return;
+  internalJumpStack.push({
+    fromAddr: source.fromAddr,
+    fromScrollY: source.fromScrollY,
+    surfaceText: String(surfaceText || '').trim(),
+    toAddr: to,
+  });
+  if (internalJumpStack.length > 12) internalJumpStack.shift();
+  updateInternalBackBar();
+}
+
+function clearInternalJumpStack() {
+  internalJumpStack = [];
+  updateInternalBackBar();
+}
+
+function updateInternalBackBar() {
+  const bar = document.getElementById('internal-backbar');
+  if (!bar) return;
+  const frame = internalJumpStack[internalJumpStack.length - 1];
+  const show = !!(frame && mode === 'law');
+  bar.hidden = !show;
+  if (!show) return;
+  const lbl = document.getElementById('internal-back-lbl');
+  const meta = document.getElementById('internal-back-meta');
+  const btn = document.getElementById('internal-back-btn');
+  const backTxt = tr('internalBackTo', prettyAddr(frame.fromAddr));
+  if (lbl) lbl.textContent = backTxt;
+  if (btn) btn.title = backTxt;
+  if (meta) {
+    const via = frame.surfaceText;
+    meta.textContent = via
+      ? tr('internalBackVia', via.length > 72 ? via.slice(0, 69) + '…' : via)
+      : tr('internalBackAt', prettyAddr(frame.toAddr));
+  }
+}
+
+function wireInternalBackBar() {
+  const btn = document.getElementById('internal-back-btn');
+  const dismiss = document.getElementById('internal-back-dismiss');
+  if (btn) btn.addEventListener('click', followInternalJumpBack);
+  if (dismiss) dismiss.addEventListener('click', clearInternalJumpStack);
+}
+
+function followInternalJumpBack() {
+  const frame = internalJumpStack.pop();
+  updateInternalBackBar();
+  if (!frame) return;
+  ensureLawView();
+  selectedAddress = frame.fromAddr;
+  removeInlinePanel();
+  spy.suppressUntil = Date.now() + 1500;
+  if (typeof frame.fromScrollY === 'number') {
+    window.scrollTo({ top: Math.max(0, frame.fromScrollY), behavior: 'auto' });
+  } else {
+    jumpToAddr(frame.fromAddr, { internal: true });
+  }
+  const resolved = resolveRenderedAddr(frame.fromAddr);
+  highlightJumpTargets(resolved.addr || frame.fromAddr, resolved);
+  if (!suppressHashUpdate) updateHash();
+}
+
+function clearJumpHighlight() {
+  if (jumpHighlightTimer) { clearTimeout(jumpHighlightTimer); jumpHighlightTimer = null; }
+  document.querySelectorAll('#doc .jump-highlight').forEach(el => el.classList.remove('jump-highlight'));
+}
+
+function highlightJumpTargets(targetAddr, resolved) {
+  clearJumpHighlight();
+  if (!targetAddr) return;
+  const nodes = document.querySelectorAll(
+    `#doc .pblock[data-addr="${cssEsc(targetAddr)}"], #doc .node[data-addr="${cssEsc(targetAddr)}"]`,
+  );
+  if (nodes.length) {
+    for (const el of nodes) el.classList.add('jump-highlight');
+  } else if (resolved && resolved.el) {
+    const host = resolved.el.closest('.pblock[data-addr], .node[data-addr]') || resolved.el;
+    host.classList.add('jump-highlight');
+  }
+  jumpHighlightTimer = setTimeout(clearJumpHighlight, 2600);
+}
+
+function scrollToJumpTarget(el, opts) {
+  if (!el) return;
+  const topbar = document.getElementById('topbar');
+  const topbarBottom = topbar ? topbar.getBoundingClientRect().bottom : 0;
+  const offset = topbarBottom + JUMP_SCROLL_OFFSET_PX;
+  const rect = el.getBoundingClientRect();
+  const targetY = window.scrollY + rect.top - offset;
+  const instant = !!(opts && opts.instant);
+  const dist = Math.abs(rect.top - offset);
+  const behavior = instant ? 'auto' : (dist > 2500 ? 'auto' : 'smooth');
+  window.scrollTo({ top: Math.max(0, targetY), behavior });
+}
+
+function jumpToAddr(addr, opts) {
+  const internal = !!(opts && opts.internal);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  if (!targetAddr) return null;
+  const segs = targetAddr.split('/');
   for (let i = 1; i <= segs.length; i++) {
     const a = segs.slice(0, i).join('/');
     const n = document.querySelector(`#doc .node[data-addr="${cssEsc(a)}"]`);
     if (n && n.classList.contains('collapsed')) toggleCollapse(n, false);
   }
-  const row = document.querySelector(`#doc .node-row[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc [data-addr="${cssEsc(addr)}"]`);
-  if (row) {
+  const scrollEl = scrollTargetForAddr(targetAddr, resolved);
+  if (scrollEl) {
     spy.suppressUntil = Date.now() + 1500;
-    // Smooth-scroll reads nicely nearby; over long distances (this statute is
-    // huge) it is slow and disorienting — jump instantly instead.
-    const dist = Math.abs(row.getBoundingClientRect().top);
-    row.scrollIntoView({ behavior: dist > 2500 ? 'auto' : 'smooth', block: 'start' });
-    row.classList.add('flash');
-    setTimeout(() => row.classList.remove('flash'), 1200);
+    scrollToJumpTarget(scrollEl, { instant: internal });
+    if (internal) highlightJumpTargets(targetAddr, resolved);
+    else {
+      scrollEl.classList.add('flash');
+      setTimeout(() => scrollEl.classList.remove('flash'), 1200);
+    }
   }
+  return { addr: targetAddr, el: scrollEl };
 }
 
 function filterToc(qstr) {
@@ -2891,7 +3318,9 @@ function versionTrail(addr) {
 function changeIndex() {
   if (changeIdxCache) return changeIdxCache;
   changeIdxCache = new Map();
+  if (!changeDates.length || !changeDates[0]) return changeIdxCache;
   const folds = allFolds();
+  if (!folds[changeDates[0]]) return changeIdxCache;
   const push = (addr, idx, kind) => {
     let l = changeIdxCache.get(addr);
     if (!l) { l = []; changeIdxCache.set(addr, l); }
@@ -3296,8 +3725,11 @@ function removeInlinePanel() {
 
 function openInlineHistory(addr, scroll) {
   removeInlinePanel();
-  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(addr)}"]`);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`)
+    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`)
+    || resolved.el;
   if (!anchor) return;
   // Make sure the anchor is visible (expand collapsed ancestors).
   let el = anchor.parentElement;
@@ -3307,21 +3739,21 @@ function openInlineHistory(addr, scroll) {
   }
   const panel = document.createElement('div');
   panel.className = 'inline-history';
-  panel.innerHTML = `<div class="ih-title">${escHtml(tr('historyTitle'))}</div>` + historyHtml(addr);
+  panel.innerHTML = `<div class="ih-title">${escHtml(tr('historyTitle'))}</div>` + historyHtml(targetAddr);
   // For outline nodes insert right under the heading row; for prose blocks
   // insert after the block itself.
   const row = anchor.querySelector(':scope > .node-row');
   if (row) row.insertAdjacentElement('afterend', panel);
   else anchor.insertAdjacentElement('afterend', panel);
-  wireHistory(panel, addr);
+  wireHistory(panel, targetAddr);
   anchor.classList.add('hist-anchor');
-  const btn = document.querySelector(`.hist-btn[data-addr="${cssEsc(addr)}"]`);
+  const btn = document.querySelector(`.hist-btn[data-addr="${cssEsc(targetAddr)}"]`);
   if (btn) btn.classList.add('active');
-  const evBtn = document.querySelector(`.evidence-badge[data-addr="${cssEsc(addr)}"]`);
+  const evBtn = document.querySelector(`.evidence-badge[data-addr="${cssEsc(targetAddr)}"]`);
   if (evBtn) evBtn.classList.add('active');
   if (scroll) {
     spy.suppressUntil = Date.now() + 1500;
-    (row || anchor).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollToJumpTarget(scrollTargetForAddr(targetAddr) || row || anchor);
   }
 }
 
@@ -3744,12 +4176,16 @@ function goToAddrAtDate(addr, date, phrase) {
   setMode('law', /*skipRender*/ true);
   const idx = date ? changeDates.indexOf(date) : -1;
   const targetIdx = idx >= 0 ? idx : curDateIdx >= 0 ? curDateIdx : defaultChangeDateIndex();
-  selectedAddress = addr;
+  const resolved = addr ? resolveRenderedAddr(addr) : { addr: '' };
+  selectedAddress = resolved.addr || addr;
   // A bare nav (amendments/compare link, no phrase) drops any prior search mark.
   searchHighlight = phrase ? { addr, phrase } : null;
   selectDate(targetIdx, { skipRender: true }).then(() => {
     setMode('law');
-    setTimeout(() => { openInlineHistory(addr, true); reapplySearchHighlight(); }, 50);
+    setTimeout(() => {
+      openInlineHistory(resolved.addr || addr, true);
+      reapplySearchHighlight();
+    }, 50);
   });
 }
 
@@ -3772,8 +4208,11 @@ function reapplySearchHighlight() {
 
 function applySearchHighlight(addr, phrase) {
   if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined' || !phrase) return;
-  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(addr)}"]`);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`)
+    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`)
+    || resolved.el;
   if (!anchor) return;
 
   // Concatenate the anchor's text nodes (skipping any open inline-history

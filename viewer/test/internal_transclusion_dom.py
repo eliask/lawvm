@@ -137,6 +137,7 @@ FIXTURE = """(() => {
     internalHtml: refLink('semantic', { ...internalRow, text: internalRow.surface_text }, internalRow.surface_text),
     internalHover: semanticInterlinkHovercardHtml(internalRow) || '',
     internalAbsentHover: semanticInterlinkHovercardHtml(internalAbsentRow) || '',
+    internalAbsentHtml: refLink('semantic', { ...internalAbsentRow, text: internalAbsentRow.surface_text }, internalAbsentRow.surface_text),
     externalHover: semanticInterlinkHovercardHtml(externalRow) || '',
   };
 })()""".replace("PROSE", repr(PROVISION_TEXT))
@@ -168,6 +169,8 @@ with sync_playwright() as p:
           PROVISION_TEXT in out["internalHover"], out["internalHover"][:200])
     check("internal hovercard tagged live (not precomputed preview)",
           "hc-preview-live" in out["internalHover"], out["internalHover"][:120])
+    check("internal hovercard preview is clickable jump link",
+          "hc-internal-jump" in out["internalHover"], out["internalHover"][:120])
     check("internal hovercard names live source",
           "hc-internal-source" in out["internalHover"], out["internalHover"][:120])
     check("internal hovercard is internal citation kind",
@@ -183,6 +186,60 @@ with sync_playwright() as p:
           "hc-internal-absent" in out["internalAbsentHover"]
           and "hc-preview-live" not in out["internalAbsentHover"],
           out["internalAbsentHover"][:200])
+    check("absent internal anchor appends missing badge",
+          "ref-sem-internal-absent" in out["internalAbsentHtml"]
+          and "[puuttuu]" in out["internalAbsentHtml"],
+          out["internalAbsentHtml"][:200])
+
+    # 4b. Tombstoned target → inactive styling + editorial suffix in anchor.
+    tomb = page.evaluate("""() => {
+      let doc = document.getElementById('doc');
+      doc.innerHTML = ''
+        + '<div class="pblock tombstone kind-section" data-addr="chapter:10/section:108/repealed">'
+        + '  <div class="pblock-inner">'
+        + '    <span class="pblock-num">108 §</span>'
+        + '    <span class="pblock-body tomb-label"><em class="repeal">[kumottu]</em></span>'
+        + '  </div>'
+        + '</div>';
+      invalidateRenderedAddrIndex();
+      const row = {
+        surface_text: '108 §:n kumottu kohta', resolution_status: 'resolved',
+        confidence: 'exact', target_work_id: 'fi:normative_act:108/2009',
+        target_local_id: '108/2009', target_locator: 'section:108/repealed', role: 'cites',
+      };
+      return {
+        html: refLink('semantic', { ...row, text: row.surface_text }, row.surface_text),
+        hover: semanticInterlinkHovercardHtml(row) || '',
+      };
+    }""")
+    check("repealed internal anchor appends kumottu badge",
+          "ref-sem-internal-repealed" in tomb["html"]
+          and "[kumottu]" in tomb["html"],
+          tomb["html"][:220])
+    check("repealed internal hovercard names inactive target",
+          "hc-internal-inactive" in tomb["hover"]
+          and "hc-preview-tombstone" in tomb["hover"],
+          tomb["hover"][:220])
+
+    # 4c. Fold-evidenced repeal without a DOM ghost → [kumottu], never [puuttuu].
+    fold_tomb = page.evaluate("""() => {
+      currentStatuteId = '108/2009';
+      curLive = new Map();
+      curTombstoned = new Map([['chapter:10/section:108/repealed', { reason: 'repeal', date: '2020-01-01' }]]);
+      invalidateRenderedAddrIndex();
+      document.getElementById('doc').innerHTML = '';
+      const row = {
+        surface_text: '108 §:n kumottu kohta', resolution_status: 'resolved',
+        confidence: 'exact', target_work_id: 'fi:normative_act:108/2009',
+        target_local_id: '108/2009', target_locator: 'section:108/repealed', role: 'cites',
+      };
+      return refLink('semantic', { ...row, text: row.surface_text }, row.surface_text);
+    }""")
+    check("fold-evidenced repeal uses kumottu not puuttuu",
+          "ref-sem-internal-repealed" in fold_tomb
+          and "[kumottu]" in fold_tomb
+          and "[puuttuu]" not in fold_tomb,
+          fold_tomb[:220])
 
     # 5. External link still shows its PRECOMPUTED preview (unchanged behaviour).
     check("external hovercard shows precomputed preview",
@@ -190,25 +247,65 @@ with sync_playwright() as p:
           and "hc-preview" in out["externalHover"]
           and "hc-preview-live" not in out["externalHover"], out["externalHover"][:200])
 
-    # 6. Clicking the internal anchor navigates IN-PAGE (goToAddrAtDate) — no
-    # reload / loadStatute. We stub both and click the rendered anchor.
+    # 6. Clicking the internal anchor routes through semanticNavToTarget with the
+    # in-act locator (strict-mode scripts cannot reassign function declarations).
     nav = page.evaluate("""(html) => {
-        const calls = { goto: [], load: [] };
-        const origGoto = window.goToAddrAtDate, origLoad = window.loadStatute;
-        window.goToAddrAtDate = (addr, date) => { calls.goto.push(addr); };
-        window.loadStatute = (id) => { calls.load.push(id); };
+        const calls = { nav: [], load: [] };
+        const origNav = semanticNavToTarget;
+        const origLoad = loadStatute;
+        semanticNavToTarget = (row, status) => {
+          calls.nav.push({ status, addr: semanticInternalAddr(row) });
+        };
+        loadStatute = (id) => { calls.load.push(id); };
         const d = document.createElement('div');
         d.innerHTML = html;
         document.body.appendChild(d);
         const a = d.querySelector('a.ref-sem-internal');
         if (a) a.click();
-        window.goToAddrAtDate = origGoto; window.loadStatute = origLoad;
+        semanticNavToTarget = origNav;
+        loadStatute = origLoad;
         d.remove();
         return calls;
     }""", out["internalHtml"])
-    check("internal click navigates in-page via goToAddrAtDate",
-          len(nav["goto"]) == 1 and "section:108" in (nav["goto"][0] or ""), str(nav["goto"]))
+    check("internal click navigates in-page via semanticNavToTarget",
+          len(nav["nav"]) == 1 and nav["nav"][0].get("status") == "resolved"
+          and "section:108" in (nav["nav"][0].get("addr") or ""), str(nav["nav"]))
     check("internal click does NOT reload the act", len(nav["load"]) == 0, str(nav["load"]))
+
+    # 7. Deep locators map item→paragraph and suffix-match chapter prefixes.
+    deep = page.evaluate("""() => {
+      currentStatuteId = '301/2004';
+      let doc = document.getElementById('doc');
+      if (!doc) { doc = document.createElement('div'); doc.id = 'doc'; document.body.appendChild(doc); }
+      invalidateRenderedAddrIndex();
+      doc.innerHTML = ''
+        + '<div class="node kind-section" data-addr="chapter:6/section:114">'
+        + '  <div class="node-body">'
+        + '    <div class="pblock kind-subsection" data-addr="chapter:6/section:114/subsection:4">'
+        + '      <div class="pblock-inner"><span class="pblock-body"><span class="pblock-text">mom 4 </span></span></div>'
+        + '      <div class="pblock-children">'
+        + '        <div class="pblock kind-paragraph" data-addr="chapter:6/section:114/subsection:4/paragraph:1">'
+        + '          <div class="pblock-inner"><span class="pblock-body"><span class="pblock-text">KOHTA YKSI </span></span></div>'
+        + '        </div>'
+        + '      </div>'
+        + '    </div>'
+        + '  </div>'
+        + '</div>';
+      const locator = 'section:114/subsection:4/item:1';
+      const resolved = resolveRenderedAddr(locator);
+      const scrollEl = scrollTargetForAddr(locator);
+      return {
+        resolvedAddr: resolved.addr,
+        scrollTag: scrollEl && scrollEl.className,
+        scrollAddr: scrollEl && scrollEl.dataset && scrollEl.dataset.addr,
+      };
+    }""")
+    check("item locator resolves to rendered paragraph address",
+          deep.get("resolvedAddr") == "chapter:6/section:114/subsection:4/paragraph:1",
+          str(deep))
+    check("deep internal scroll target is the paragraph block",
+          deep.get("scrollAddr") == "chapter:6/section:114/subsection:4/paragraph:1",
+          str(deep))
 
     browser.close()
 
