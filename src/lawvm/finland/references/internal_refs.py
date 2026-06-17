@@ -202,18 +202,36 @@ _BARE_SUBREF_RE = re.compile(
 # ``(1/1998)`` and bracketed ``[1/1998]`` (the latter in ``(ampuma-aselain
 # [1/1998] 20 §)`` editorial back-references); either form is an EXTERNAL-law
 # anchor, so the following § is NOT an internal self-reference.
+# The year is ``\d{2,4}``: pre-2000 statutes carry a 2-digit decree year
+# (``(555/81)``, ``(495/89)``) as routinely as the modern 4-digit form. A
+# 2-digit-year id is just as much an EXTERNAL-law anchor as a 4-digit one, so the
+# following § is NOT an internal self-reference — gating on ``\d{4}`` let every
+# old-style id leak its sections in as bogus internal targets.
 _PRECEDING_STATUTE_ID_RE = re.compile(
-    r"[(\[]\s*\d{1,6}/\d{4}\s*[)\]]\s*$",
+    r"[(\[]\s*\d{1,6}/\d{2,4}\s*[)\]]\s*$",
 )
 
 # An inflected statute-NAME head immediately before the citation → cross-statute
 # by-name lane owns it.  The trailing word ends in a Finnish law/decree case
 # suffix (``…lain``, ``…laissa``, ``…asetuksen``, …). Captures the (optional)
 # word before it so a self-referential demonstrative can be detected.
+#
+# Beyond the ``laki`` / ``asetus`` families, a small CLOSED set of named
+# constitutional / procedural instruments carry their own nominal stem instead of
+# ``laki``: ``valtiopäiväjärjestys`` (the old parliament act), ``hallitusmuoto``
+# (the old constitution), an institution's ``työjärjestys`` (rules of procedure).
+# These are by-name EXTERNAL statutes too — their § is NOT an internal
+# self-reference — but their head ends in ``-järjestyksen`` / ``-muodon``, not a
+# ``laki`` suffix, so the section leaked in as a bogus internal target
+# (``valtiopäiväjärjestyksen 67 §`` in a 49-§ act). The stems are compound-only
+# (a modifier precedes them), so the surrounding ``[chars]+`` capture keeps them
+# from matching the bare common nouns ``järjestys`` / ``muoto``.
 _NAME_SUFFIX = (
     r"(?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|laki"
     r"|asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi"
-    r"|asetuksella|asetukselle|asetukselta|asetus)"
+    r"|asetuksella|asetukselle|asetukselta|asetus"
+    r"|j\xe4rjestyksen|j\xe4rjestyst\xe4|j\xe4rjestyksess\xe4|j\xe4rjestyksest\xe4|j\xe4rjestys"
+    r"|muodon|muotoa|muodossa|muodosta|muoto)"
 )
 _PRECEDING_NAME_HEAD_RE = re.compile(
     rf"(?P<prev>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)?\s*"
@@ -254,10 +272,38 @@ _COORD_LOOKBACK = 600
 # name-head / id check sees the governing anchor at the head of the coordination,
 # not the intervening sibling §. Each fragment is ``<num run> § <tail> <sep>``.
 # Bounded quantifiers only (§1.11).
+#
+# The fragment tail tolerates the ABBREVIATED ``mom`` / ``mom.`` momentti spelling
+# (``3 §:n 2 mom, 5, 6 …``) alongside the full ``momentissa`` form, because the
+# governing-anchor reachability depends on peeling that fragment whole; a fragment
+# whose ``2 mom`` tail did not match left the bare-number siblings (``5, 6 …``)
+# governed-anchor-blind, leaking them in as bogus internal targets.
+_COORD_TAIL_NOUN = r"(?:moment\w+|kohda\w+|kohta|mom\.?|k\.?)"
 _COORD_FRAGMENT_RE = re.compile(
     rf"""
     \s*{_NUM_RUN}\s*§(?::[a-zäöå]+)?
-    (?:\s+{_NUM_RUN}\s+{_TAIL_NOUN})*
+    (?:\s+{_NUM_RUN}\s+{_COORD_TAIL_NOUN})*
+    \s*(?:{_SEP})\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+# A trailing CHAPTER-bearing coordination fragment governed by the same act, in
+# either of the two chapter shapes that appear mid-list:
+#   * chapter-only:        ``…, 20 luvussa, …``           (no § in the fragment)
+#   * chapter + section:   ``…, 17 luvun 18, 18 a tai 19 §:ssä, …``
+# A long mixed rikoslaki list (``rikoslain (39/1889) 17 luvun … §:ssä, 20
+# luvussa, 21 luvun 1—3 tai 6 §:ssä``) interleaves these with the plain §
+# fragments; without peeling them the governing id sits past reach and the later
+# members (``20 luvussa``, ``21 luvun …``) leak in as bogus internal targets.
+# The optional ``luvun M §`` section tail is consumed so the chapter+section
+# shape is peeled whole. Bounded quantifiers only (§1.11).
+_COORD_CHAPTER_FRAGMENT_RE = re.compile(
+    rf"""
+    \s*{_NUM_RUN}\s+{_CHAPTER_HEAD}
+    (?:\s+{_NUM_RUN}\s*§(?::[a-zäöå]+)?
+        (?:\s+{_NUM_RUN}\s+{_COORD_TAIL_NOUN})*
+    )?
     \s*(?:{_SEP})\s*$
     """,
     re.VERBOSE | re.IGNORECASE,
@@ -277,9 +323,22 @@ def _strip_trailing_coord_fragments(before: str) -> str:
     prev = None
     while before != prev:
         prev = before
+        # Peel a trailing § fragment OR a chapter-bearing fragment, whichever
+        # abuts. Both shapes appear interleaved in one governed coordination
+        # (``17 luvun … §:ssä, 20 luvussa, 21 luvun … §:ssä``); peeling either
+        # lets the governing id/name at the head of the run become reachable.
         m = _COORD_FRAGMENT_RE.search(before)
-        if m is not None and m.start() >= 0:
-            before = before[: m.start()]
+        cm = _COORD_CHAPTER_FRAGMENT_RE.search(before)
+        # Take the fragment that strips MORE (the earlier start) so a chapter
+        # fragment is not shadowed by a shorter § sub-match inside it.
+        cut = None
+        for cand in (m, cm):
+            if cand is not None and cand.start() >= 0:
+                if cut is None or cand.start() < cut:
+                    cut = cand.start()
+        if cut is None:
+            break
+        before = before[:cut]
     return before
 
 
@@ -330,8 +389,13 @@ def _is_excluded(text: str, start: int) -> bool:
     # sibling ``N §…,`` fragments are peeled off (``…annetun lain 2 §:ssä,
     # 69 §:n 1 momentissa, 72 §`` — the name head governs every member).
     wide = text[max(0, start - _COORD_LOOKBACK) : start]
-    coord_head = _strip_trailing_coord_fragments(wide)
-    if coord_head != wide:
+    # Peel this member's own ``N luvun`` chapter prefix off the tail FIRST so the
+    # preceding sibling fragments (``…, 20 luvussa, `` before ``21 luvun M §``)
+    # become peelable — otherwise the trailing chapter prefix (no separator)
+    # blocks the coordination peel and the governing id stays out of reach.
+    wide_no_ch, _wch = _strip_chapter_prefix(wide)
+    coord_head = _strip_trailing_coord_fragments(wide_no_ch)
+    if coord_head != wide_no_ch or wide_no_ch != wide:
         # The citation is a later member of a section coordination; its governing
         # external-law id / name head (if any) sits just before the first member.
         head_ctx = coord_head[-_LOOKBACK:]

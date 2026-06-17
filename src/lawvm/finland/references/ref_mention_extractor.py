@@ -69,6 +69,7 @@ from lawvm.finland.references.cross_refs import (
 )
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
+    chapter_akn_path,
     parse_body_provision_tail,
 )
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
@@ -226,6 +227,12 @@ class PlainTextStatuteHit:
     section_label: str = ""
     subsection_num: Optional[int] = None
     item_label: Optional[str] = None
+    # Chapter label (``"9"``, ``"9a"``) when the citation is chapter-qualified
+    # (``poliisilain (872/2011) 9 luvun 9 b §``), or None. Carried so the caller
+    # builds a chapter-qualified target path (``chp_9__sec_9b``) — mirroring the
+    # internal lane — instead of dropping the chapter. A chapter-only citation
+    # (``… (NNN/YYYY) 5 luvussa``) sets ``chapter`` with an empty section_label.
+    chapter: Optional[str] = None
     # Literal matched anchor surface (e.g. "lannoitelain (711/2022)"), used by
     # the caller to locate the citation's byte span in the source xml_bytes.
     surface_text: str = ""
@@ -388,11 +395,13 @@ class PlainTextStatuteCitationRecognizer:
 
             for tgt in targets:
                 # Deduplicate same provision within this <p>. The key includes
-                # the sub-section precision so distinct momentit/kohdat of one
-                # statute are not collapsed into one hit.
+                # the chapter and the sub-section precision so distinct
+                # momentit/kohdat — and distinct chapters of one statute — are not
+                # collapsed into one hit.
                 key = "/".join(
                     part for part in (
                         statute_id,
+                        tgt.chapter or "",
                         tgt.section_label,
                         str(tgt.subsection_num) if tgt.subsection_num is not None else "",
                         tgt.item_label or "",
@@ -407,6 +416,7 @@ class PlainTextStatuteCitationRecognizer:
                     section_label=tgt.section_label,
                     subsection_num=tgt.subsection_num,
                     item_label=tgt.item_label,
+                    chapter=tgt.chapter,
                     surface_text=m.group(0),
                 ))
 
@@ -950,19 +960,30 @@ def extract_plain_text_statute_mentions(
                 provision_path="",
                 section_label="",
             )
+            # Chapter-qualified target path (``chp_9__sec_9b`` / chapter-only
+            # ``chp_5``), built with the SAME AKN form the internal lane uses, so
+            # a ``N luvun M §`` cross-statute citation keeps its chapter instead of
+            # dropping it. Section-only citations keep an empty provision_path
+            # (unchanged behavior).
+            target_provision_path = (
+                chapter_akn_path(hit.chapter, hit.section_label)
+                if hit.chapter is not None
+                else ""
+            )
             tgt_ref = ProvisionRef(
                 statute_id=target_statute_id,
-                provision_path="",
+                provision_path=target_provision_path,
                 section_label=hit.section_label,
                 subsection_num=hit.subsection_num,
                 item_label=hit.item_label,
             )
             # Resolution status (Tier 1, no registry): the statute id is always
             # explicit in this lane (the ``(NUMBER/YEAR)`` anchor). When the
-            # structural tail parsed to a concrete provision path (a section),
-            # the citation resolves EXACT. When the anchor matched an explicit id
-            # but NO section path parsed (a bare statute-level reference), the act
-            # is fixed but the in-act target is deferred → STATUTE_ONLY, never
+            # structural tail parsed to a concrete provision (a section — possibly
+            # chapter-qualified), the citation resolves EXACT. When the anchor
+            # matched an explicit id but only a chapter (``5 luvussa``) or no
+            # provision parsed (a bare statute-level reference), the act/chapter is
+            # fixed but the in-act section is deferred → STATUTE_ONLY, never
             # silently widened to "whole statute" as if EXACT.
             cite_confidence = (
                 CiteConfidence.EXACT

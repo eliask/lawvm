@@ -441,6 +441,46 @@ def test_coordinated_external_law_long_list_excluded() -> None:
     assert recognize_internal_refs(text, _SID) == []
 
 
+def test_two_digit_year_id_excluded() -> None:
+    # A pre-2000 statute id with a 2-digit decree year ``(555/81)`` is just as
+    # much an external-law anchor as the 4-digit form; the following § must not
+    # leak as an internal self-reference.
+    assert recognize_internal_refs("maa-aineslain (555/81) 3 §:ssä", _SID) == []
+
+
+def test_two_digit_year_id_coordinated_tail_all_excluded() -> None:
+    # The maa-aineslaki repro (1989/557 §124a): an external-law id with a 2-digit
+    # year governs the WHOLE coordinated tail. Every member — including the bare
+    # numbers after the abbreviated ``2 mom`` — binds to the external act, so the
+    # internal lane emits NOTHING.
+    text = "maa-aineslain (555/81) 3§:n 2 mom, 5, 6, 10-13, 13 a, 16 ja 21§:ssä"
+    assert recognize_internal_refs(text, _SID) == []
+
+
+def test_by_name_external_jarjestys_head_excluded() -> None:
+    # ``valtiopäiväjärjestyksen 67 §`` is a by-name EXTERNAL statute (its head is
+    # a named instrument ending in ``-järjestyksen``, not ``laki``); the § must
+    # not leak as a bogus internal self-reference.
+    assert recognize_internal_refs("valtiopäiväjärjestyksen 67 §:ssä", _SID) == []
+
+
+def test_by_name_external_tyojarjestys_head_excluded() -> None:
+    assert recognize_internal_refs("eduskunnan työjärjestyksen 5 §:ssä", _SID) == []
+
+
+def test_rikoslaki_mixed_chapter_coordination_all_excluded() -> None:
+    # The rikoslaki repro (2011/953 §25a): an external id governs a long list that
+    # interleaves §-bearing, chapter-only (``20 luvussa``) and chapter-qualified
+    # (``21 luvun 1—3 tai 6 §``) members. None may leak as internal — neither the
+    # chapter-only nor the later chapter-qualified members.
+    text = (
+        "rikoslain (39/1889) 17 luvun 18, 18 a tai 19 §:ssä, 20 luvussa, "
+        "21 luvun 1—3 tai 6 §:ssä, 31 luvun 2 §:ssä tai "
+        "50 luvun 1, 2, 3, 4 tai 4 a §:ssä tarkoitetusta rikoksesta"
+    )
+    assert recognize_internal_refs(text, _SID) == []
+
+
 def test_internal_coordination_not_excluded_by_coord_lookback() -> None:
     # A genuine internal section coordination (no governing external anchor) must
     # still be recognised — the coordination-aware lookback only excludes when an
