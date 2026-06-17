@@ -14,6 +14,7 @@ from lawvm.core.elaboration_context import (
 from lawvm.core.payload_elaboration import payload_elaboration_evidence_report
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.apply_runtime_support import _build_subsection_override_map
+from lawvm.finland.compile_group_elaboration import _payload_normalization_observation_rows
 from lawvm.finland.helpers import _norm_row_anchor_text
 from lawvm.finland.payload_normalize import SubsectionSlotMap
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, get_replay_profile
@@ -1838,6 +1839,69 @@ def test_prepare_group_payload_collapses_intro_list_subsections_inside_section_r
     subs = [c for c in got.children if c.kind == IRNodeKind.SUBSECTION]
     assert [c.label for c in subs] == ["1", "2"]
     assert [c.label for c in subs[1].children if c.kind == IRNodeKind.PARAGRAPH] == ["1", "2", "3"]
+
+
+def test_prepare_group_payload_collapses_first_moment_intro_list_with_lettered_subitems() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Arviointiselostuksen sisältö"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Selostuksessa esitetään:"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="1) hankkeen kuvaus erityisesti:"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="a) sijainti;"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="b) koko;"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="2) aikataulu;"),),
+            ),
+        ),
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="4",
+            target_paragraph=1,
+        )
+    ]
+
+    got = _collapse_intro_list_subsections_inside_section_ir("section", ops, muutos_ir)
+
+    assert got is not None
+    subs = [c for c in got.children if c.kind == IRNodeKind.SUBSECTION]
+    assert len(subs) == 1
+    assert subs[0].attrs.get("lawvm_payload_normalization_rule") == (
+        "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST",
+    )
+    observation_rows = _payload_normalization_observation_rows(
+        got,
+        source_statute="2021/1163",
+        target_unit_kind="section",
+        target_norm="4",
+        target_chapter=None,
+    )
+    assert [row["kind"] for row in observation_rows] == [
+        "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+    ]
+    paragraphs = [c for c in subs[0].children if c.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+    subparagraphs = [c for c in paragraphs[0].children if c.kind == IRNodeKind.SUBPARAGRAPH]
+    assert [subparagraph.label for subparagraph in subparagraphs] == ["a", "b"]
+    assert irnode_to_text(paragraphs[0]) == "hankkeen kuvaus erityisesti: sijainti; koko;"
 
 
 def test_prepare_group_payload_prunes_carried_subsections_outside_single_target_moment() -> None:

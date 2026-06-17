@@ -1783,19 +1783,138 @@ def _split_flattened_insert_subsection_tail(
     return _tops._with_children(muutos_ir, new_children), True
 
 
-def _flattened_numbered_paragraph_from_subsection_ir(sub_ir: IRNode) -> Optional[IRNode]:
+@dataclass(frozen=True, slots=True)
+class FlattenedListRow:
+    """One content-only subsection row from a flattened list payload."""
+
+    label: str
+    text: str
+    is_lettered: bool
+
+
+_PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+_COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+
+
+def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
     if any(c.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.SUBSECTION} for c in sub_ir.children):
         return None
     flat_text = " ".join(irnode_to_text(sub_ir).split())
-    m = re.match(r"^(\d+)\s*[\).]\s*(.+)$", flat_text)
+    m = re.match(r"^(\d+|[a-z])\s*[\).]\s*(.+)$", flat_text, flags=re.I)
     if m is None:
         return None
-    label = _norm_num_token(m.group(1))
+    raw_label = m.group(1).lower()
+    label = _norm_num_token(raw_label)
     text = m.group(2).strip()
+    return FlattenedListRow(label=label, text=text, is_lettered=not label.isdigit())
+
+
+def _paragraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
+    child_kind = IRNodeKind.INTRO if row.text.endswith(":") else IRNodeKind.CONTENT
     return IRNode(
         kind=IRNodeKind.PARAGRAPH,
-        label=label,
-        children=(IRNode(kind=IRNodeKind.CONTENT, text=text),),
+        label=row.label,
+        children=(IRNode(kind=child_kind, text=row.text),),
+    )
+
+
+def _subparagraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.SUBPARAGRAPH,
+        label=row.label,
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=row.text),),
+    )
+
+
+def _collapse_flattened_list_rows(rows: List[FlattenedListRow]) -> Optional[List[IRNode]]:
+    paragraphs: List[IRNode] = []
+    numeric_labels: List[str] = []
+    current_numeric_idx: Optional[int] = None
+    current_accepts_subitems = False
+
+    for row in rows:
+        if not row.is_lettered:
+            numeric_labels.append(row.label)
+            paragraphs.append(_paragraph_from_flattened_list_row(row))
+            current_numeric_idx = len(paragraphs) - 1
+            current_accepts_subitems = row.text.endswith(":")
+            continue
+        if current_numeric_idx is None or not current_accepts_subitems:
+            return None
+        current = paragraphs[current_numeric_idx]
+        paragraphs[current_numeric_idx] = IRNode(
+            kind=current.kind,
+            label=current.label,
+            text=current.text,
+            attrs=dict(current.attrs),
+            children=tuple(current.children) + (_subparagraph_from_flattened_list_row(row),),
+        )
+
+    if len(numeric_labels) < 2 or numeric_labels[:2] != ["1", "2"]:
+        return None
+    return paragraphs
+
+
+def _append_subparagraph_to_paragraph(paragraph: IRNode, row: FlattenedListRow) -> IRNode:
+    return IRNode(
+        kind=paragraph.kind,
+        label=paragraph.label,
+        text=paragraph.text,
+        attrs=dict(paragraph.attrs),
+        children=tuple(paragraph.children) + (_subparagraph_from_flattened_list_row(row),),
+    )
+
+
+def _collapse_flattened_list_rows_after_existing_paragraphs(
+    existing_paragraphs: List[IRNode],
+    rows: List[FlattenedListRow],
+) -> Optional[List[IRNode]]:
+    paragraphs = list(existing_paragraphs)
+    numeric_labels = [
+        _norm_num_token(paragraph.label or "")
+        for paragraph in paragraphs
+        if paragraph.label and _norm_num_token(paragraph.label or "").isdigit()
+    ]
+    current_numeric_idx: Optional[int] = None
+    current_accepts_subitems = False
+    if paragraphs:
+        for idx in range(len(paragraphs) - 1, -1, -1):
+            label = _norm_num_token(paragraphs[idx].label or "")
+            if label.isdigit():
+                current_numeric_idx = idx
+                current_accepts_subitems = irnode_to_text(paragraphs[idx]).strip().endswith(":")
+                break
+
+    for row in rows:
+        if not row.is_lettered:
+            numeric_labels.append(row.label)
+            paragraphs.append(_paragraph_from_flattened_list_row(row))
+            current_numeric_idx = len(paragraphs) - 1
+            current_accepts_subitems = row.text.endswith(":")
+            continue
+        if current_numeric_idx is None or not current_accepts_subitems:
+            return None
+        paragraphs[current_numeric_idx] = _append_subparagraph_to_paragraph(
+            paragraphs[current_numeric_idx],
+            row,
+        )
+
+    if not numeric_labels or numeric_labels[0] != "1":
+        return None
+    if numeric_labels != [str(idx) for idx in range(1, len(numeric_labels) + 1)]:
+        return None
+    return paragraphs
+
+
+def _with_payload_normalization_rule(node: IRNode, rule_id: str) -> IRNode:
+    existing = node.attrs.get(_PAYLOAD_NORMALIZATION_RULE_ATTR, ())
+    rules = tuple(existing) if isinstance(existing, tuple) else ((str(existing),) if existing else ())
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=node.text,
+        attrs={**dict(node.attrs), _PAYLOAD_NORMALIZATION_RULE_ATTR: tuple(dict.fromkeys((*rules, rule_id)))},
+        children=tuple(node.children),
     )
 
 
@@ -1816,57 +1935,83 @@ def _collapse_intro_list_subsections_inside_section_ir(
     """
     if muutos_ir is None or target_unit_kind != "section" or muutos_ir.kind is not IRNodeKind.SECTION:
         return muutos_ir
-    if not any(
+    has_whole_section_replace = any(
         op.op_type == "REPLACE"
         and op.target_unit_kind == target_unit_kind
         and op.target_paragraph is None
         and not op.target_item
         for op in group_ops
-    ):
+    )
+    has_first_subsection_replace = any(
+        op.op_type == "REPLACE"
+        and op.target_unit_kind == target_unit_kind
+        and op.target_paragraph == 1
+        and not op.target_item
+        and not op.target_special
+        for op in group_ops
+    )
+    if not has_whole_section_replace and not has_first_subsection_replace:
         return muutos_ir
 
     new_children: List[IRNode] = []
     changed = False
     i = 0
     children = list(muutos_ir.children)
+    seen_subsection = False
     while i < len(children):
         child = children[i]
         if child.kind is not IRNodeKind.SUBSECTION:
             new_children.append(child)
             i += 1
             continue
-        if any(c.kind is IRNodeKind.PARAGRAPH for c in child.children):
+        if has_first_subsection_replace and not has_whole_section_replace and seen_subsection:
             new_children.append(child)
             i += 1
             continue
+        seen_subsection = True
         intro_text = " ".join((c.text or "").strip() for c in child.children if c.kind in {IRNodeKind.CONTENT, IRNodeKind.INTRO}).strip()
         if not intro_text.endswith(":"):
             new_children.append(child)
             i += 1
             continue
 
-        paras: List[IRNode] = []
+        existing_paragraphs = [c for c in child.children if c.kind is IRNodeKind.PARAGRAPH]
+        rows: List[FlattenedListRow] = []
         j = i + 1
         while j < len(children):
-            para = None
+            row = None
             if children[j].kind is IRNodeKind.SUBSECTION:
-                para = _flattened_numbered_paragraph_from_subsection_ir(children[j])
-            if para is None:
+                row = _flattened_list_row_from_subsection_ir(children[j])
+            if row is None:
                 break
-            paras.append(para)
+            rows.append(row)
             j += 1
-        para_labels = [_norm_num_token(p.label or "") for p in paras if p.label]
-        if len(para_labels) < 2 or para_labels[:2] != ["1", "2"]:
+        paras = (
+            _collapse_flattened_list_rows_after_existing_paragraphs(existing_paragraphs, rows)
+            if existing_paragraphs
+            else _collapse_flattened_list_rows(rows)
+        )
+        if paras is None:
             new_children.append(child)
             i += 1
             continue
 
+        non_paragraph_children = tuple(c for c in child.children if c.kind is not IRNodeKind.PARAGRAPH)
         collapsed = IRNode(
             kind=child.kind,
             label=child.label,
             text=child.text,
-            attrs=dict(child.attrs),
-            children=tuple(child.children) + tuple(paras),
+            attrs={
+                **dict(child.attrs),
+                _PAYLOAD_NORMALIZATION_RULE_ATTR: (
+                    _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE,
+                ),
+            },
+            children=non_paragraph_children + tuple(paras),
+        )
+        collapsed = _with_payload_normalization_rule(
+            collapsed,
+            _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE,
         )
         new_children.append(collapsed)
         changed = True

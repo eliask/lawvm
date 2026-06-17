@@ -28,6 +28,8 @@ from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
 from lawvm.finland.payload_normalize import elaborate_payload_against_live, prepare_payload_surface
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
+_PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+
 
 def _internal_replay_scope_row(
     *,
@@ -144,6 +146,46 @@ def rejected_operation_findings(failed_ops: Iterable[Any], stage: str) -> list[F
     return findings
 
 
+def _payload_normalization_observation_rows(
+    muutos_ir: IRNode | None,
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: str | None,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    if muutos_ir is None:
+        return rows
+
+    def walk(node: IRNode, path: tuple[str, ...]) -> None:
+        raw_rules = node.attrs.get(_PAYLOAD_NORMALIZATION_RULE_ATTR, ())
+        rules = tuple(raw_rules) if isinstance(raw_rules, tuple) else ((str(raw_rules),) if raw_rules else ())
+        for rule in rules:
+            if not rule:
+                continue
+            rows.append(
+                _internal_elaboration_observation_row(
+                    kind=rule,
+                    stage="group_payload_normalization",
+                    detail={
+                        "rule": rule,
+                        "payload_path": "/".join((*path, f"{node.kind.value}:{node.label or ''}")),
+                    },
+                    source_statute=source_statute,
+                    target_unit_kind=target_unit_kind,
+                    target_norm=target_norm,
+                    target_chapter=target_chapter,
+                )
+            )
+        child_prefix = (*path, f"{node.kind.value}:{node.label or ''}")
+        for child in node.children:
+            walk(child, child_prefix)
+
+    walk(muutos_ir, ())
+    return rows
+
+
 @dataclass(frozen=True, slots=True)
 class ElaborateGroupRequest:
     """Typed inputs for compile-group payload elaboration."""
@@ -193,6 +235,13 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         muutos_ir,
         profile,
         strict_profile,
+    )
+    prepared_payload_observations = _payload_normalization_observation_rows(
+        muutos_ir,
+        source_statute=observation_source_statute,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
     )
     surface: PayloadSurface = build_payload_surface(
         muutos_ir,
@@ -250,6 +299,8 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
 
     local_source_pathologies: list[SourcePathology] = list(payload_norm.source_pathologies or [])
     local_elaboration_observations: list[dict[str, object]] = [
+        *prepared_payload_observations,
+        *[
         _internal_elaboration_observation_row(
             kind=str(observation.kind or ""),
             stage=str(observation.stage or ""),
@@ -261,6 +312,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         )
         for observation in (payload_norm.elaboration_observations or [])
         if str(observation.kind or "").strip()
+        ],
     ]
     slot_assignment = payload_norm.slot_assignment
     local_payload_completeness: list[dict[str, object]] = (

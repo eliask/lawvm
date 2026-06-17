@@ -204,6 +204,41 @@ def test_2017_277_2025_1253_alakohta_insert_appends_subitem_c() -> None:
     assert "suunnitellut toimenpiteet" in irnode_to_text(subitems[2])
 
 
+def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() -> None:
+    """2021/1163's content-only sibling list rows belong under §4 1 momentti."""
+
+    replay = pinned_replay(
+        "2017/277",
+        mode="legal_pit",
+        quiet=True,
+        stop_before="2025/1253",
+        build_full_products=False,
+    )
+    section_node = replay.find_section("4", None, None)
+    assert section_node is not None
+    subsection = next(
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraphs = [
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    first_item = paragraphs[0]
+    subparagraphs = [
+        child
+        for child in first_item.children
+        if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
+    ]
+
+    assert [child.label for child in paragraphs] == [str(idx) for idx in range(1, 17)]
+    assert [child.label for child in subparagraphs] == ["a", "b", "c", "d"]
+    assert "hankkeen energian hankinta" in irnode_to_text(subparagraphs[1])
+    assert "yleistajuinen ja havainnollinen tiivistelmä" in irnode_to_text(paragraphs[-1])
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 
