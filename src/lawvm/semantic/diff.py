@@ -140,7 +140,16 @@ def _is_editorial_or_empty_shell(node: SemanticStructureNode) -> bool:
     return all(_is_editorial_or_empty_shell(c) for c in node.children)
 
 
-_PRESENTATION_ARTIFACT_RE = re.compile(r'^[\s.]{2,}$|^\s*$|^[\w\säöåÄÖÅ.,()-]+[.]{3,}\s*$')
+_DOT_LEADER_TEXT_RE = re.compile(r'^[\w\säöåÄÖÅ,() -]{0,500}\.{3,80}$')
+
+
+def _is_presentation_artifact_text(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if len(stripped) >= 2 and all(ch == "." for ch in stripped):
+        return True
+    return bool(_DOT_LEADER_TEXT_RE.match(stripped))
 
 
 def _is_presentation_artifact(node: SemanticStructureNode) -> bool:
@@ -158,8 +167,7 @@ def _is_presentation_artifact(node: SemanticStructureNode) -> bool:
     # Check own text or facets
     texts = [node.text or ""] + [f.text or "" for f in node.facets]
     for t in texts:
-        t = t.strip()
-        if t and not _PRESENTATION_ARTIFACT_RE.match(t):
+        if not _is_presentation_artifact_text(t):
             return False
     # If no real text, or all children are also artifacts
     if not node.children:

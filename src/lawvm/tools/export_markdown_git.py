@@ -54,8 +54,12 @@ _SKIP_INLINE_CHILD_KINDS = _ADDRESSABLE_KINDS | {"num", "heading"}
 _MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*_{}\[\]()#+.!|<>-])")
 _ANCHOR_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
 _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
-_NUMERIC_STATUTE_ID_RE = re.compile(r"^(\d{1,6}(?:-[A-Za-z0-9]{1,8})?)/(\d{4})$")
-_NUMERIC_STATUTE_PATH_RE = re.compile(r"^acts/(\d{4})/(\d{1,6}(?:-[A-Za-z0-9]{1,8})?)\.md$")
+_NUMERIC_STATUTE_ID_RE = re.compile(
+    r"^(?P<number>[0-9]{1,6}|[0-9]{1,6}-[A-Za-z0-9]{1,8})/(?P<year>[0-9]{4})$"
+)
+_NUMERIC_STATUTE_PATH_RE = re.compile(
+    r"^acts/(?P<year>[0-9]{4})/(?P<number>[0-9]{1,6}|[0-9]{1,6}-[A-Za-z0-9]{1,8})\.md$"
+)
 _ROOT_README_YEAR_LINKS_PER_ROW = 8
 _DEFAULT_BRANCH = "in-force"
 _SUBSTANTIVE_BODY_KINDS = frozenset(
@@ -1483,7 +1487,8 @@ def _git_timezone_offset(offset_seconds: int) -> str:
 def _statute_list_sort_key_for_id(statute_id: str, *, jurisdiction: str) -> tuple[str, str, str]:
     match = _NUMERIC_STATUTE_ID_RE.fullmatch(statute_id.strip())
     if match is not None:
-        number, year = match.groups()
+        number = match.group("number")
+        year = match.group("year")
         return (year, _numeric_statute_number_sort_token(number), statute_id)
     path = _statute_markdown_path(statute_id, jurisdiction=jurisdiction)
     return _statute_list_sort_key_for_path(path)
@@ -1492,7 +1497,8 @@ def _statute_list_sort_key_for_id(statute_id: str, *, jurisdiction: str) -> tupl
 def _statute_list_sort_key_for_path(path: str) -> tuple[str, str, str]:
     match = _NUMERIC_STATUTE_PATH_RE.fullmatch(path.strip())
     if match is not None:
-        year, number = match.groups()
+        year = match.group("year")
+        number = match.group("number")
         return (year, _numeric_statute_number_sort_token(number), path)
     return ("zzzz", path, "")
 
@@ -1521,8 +1527,7 @@ def _root_readme_year_rows(years: Iterable[str]) -> list[str]:
 def _year_for_statute_id(statute_id: str, *, jurisdiction: str) -> str | None:
     match = _NUMERIC_STATUTE_ID_RE.fullmatch(statute_id.strip())
     if match is not None:
-        _number, year = match.groups()
-        return year
+        return match.group("year")
     return _year_for_statute_path(_statute_markdown_path(statute_id, jurisdiction=jurisdiction))
 
 
@@ -1530,8 +1535,7 @@ def _year_for_statute_path(path: str) -> str | None:
     match = _NUMERIC_STATUTE_PATH_RE.fullmatch(path.strip())
     if match is None:
         return None
-    year, _number = match.groups()
-    return year
+    return match.group("year")
 
 
 def _years_for_prepared_statutes(
