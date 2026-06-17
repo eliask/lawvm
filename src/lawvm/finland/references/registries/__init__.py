@@ -23,7 +23,9 @@ See ``notes_internal/FI_MORPHOLOGY_DESIGN_DECISION.md`` (Index B) and
 from __future__ import annotations
 
 from .statute_name import (
+    STATUTE_NAME_ALIASES,
     RegistryResult,
+    StatuteNameAlias,
     StatuteNameEntry,
     StatuteNameRegistry,
     build_registry,
@@ -35,7 +37,9 @@ from .statute_name import (
 )
 
 __all__ = [
+    "STATUTE_NAME_ALIASES",
     "RegistryResult",
+    "StatuteNameAlias",
     "StatuteNameEntry",
     "StatuteNameRegistry",
     "build_registry",
