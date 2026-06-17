@@ -143,6 +143,32 @@ def test_coordinated_members_share_one_occurrence_span() -> None:
     assert sorted(offsets) == [occ1, occ1, occ2, occ2]
 
 
+def test_spaced_letter_suffix_section_detected_and_anchored() -> None:
+    # A letter-suffix section written with a space ("115 a §") is detected end-to-
+    # end and re-anchored to its byte offset; the target label normalizes to the
+    # glued AKN eId form ("115a"), so it resolves to <sec_115a>.
+    xb = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        '<body><section eId="sec_1"><content>'
+        "<p>Tämän lain 115 a §:ssä tarkoitettu toimenpide.</p>"
+        "</content></section></body></akomaNtoso>"
+    ).encode("utf-8")
+    res = extract_surface_grammar_mentions(xb, "TEST/SUFFIX")
+    suffix = [
+        m
+        for m in res.mentions
+        if "INTERNAL" in str(m.cite_kind)
+        and m.target_provision_ref is not None
+        and m.target_provision_ref.section_label == "115a"
+    ]
+    assert suffix, "spaced letter-suffix '115 a §' not detected/resolved to 115a"
+    spans = [m.source_span for m in suffix if m.source_span is not None]
+    assert spans, "spaced letter-suffix mention has no anchored span"
+    surface_off = xb.find("115 a §".encode("utf-8"))
+    assert surface_off >= 0
+    assert any(sp.byte_offset == surface_off for sp in spans)
+
+
 def test_coordinated_reference_not_double_emitted() -> None:
     # The coordinated surface appears ONCE per occurrence in the source; it must
     # not be emitted by more than the enumerated members. Per occurrence: exactly

@@ -78,12 +78,18 @@ _GUARD_CHAPTER = "lu"
 # the § and its momentti/kohta tail, so the captured text can be fed verbatim to
 # the shared body tail parser (no trailing prose). Bounded quantifiers only.
 #
-#   section label:  \d{1,6}[a-z]?      (e.g. 7, 7a, 104)
+#   section label:  \d{1,6}(?:\s*[a-z])?   (e.g. 7, 7a, 7 a, 104, 115 a)
 #   number run:     label (sep label)* with ,/ja/sekä/tai/en-dash joiners
 #   §:             § optionally with an inflection suffix (§:ssä, §:n, §:ää)
 #   tail step:      <number run> momentti|momentin|kohta|kohdassa   (repeatable)
 #
-_SEC_LABEL = r"\d{1,6}[a-zA-Z]?"
+# The letter suffix is written in body prose WITH a space (``115 a §``,
+# ``47 a §:ssä``, ``106 a–106 e §:ää``) far more often than glued (``115a``),
+# so the optional letter must tolerate intervening whitespace. The shared body
+# tail parser already normalizes both spaced and glued forms to the glued AKN
+# eId label (``115 a §`` → ``sec_115a``), so the captured surface resolves
+# regardless of which spacing the source used.
+_SEC_LABEL = r"\d{1,6}(?:\s*[a-zA-Z])?"
 _SEP = r"(?:,|ja|sekä|tai|[–—-])"
 _NUM_RUN = rf"{_SEC_LABEL}(?:\s*{_SEP}\s*{_SEC_LABEL})*"
 _TAIL_NOUN = r"(?:moment\w+|kohda\w+|kohta)"

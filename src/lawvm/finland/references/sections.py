@@ -39,6 +39,46 @@ from lawvm.finland.johtolause.lexer import tokenize
 # ``char_end`` offsets index into.
 _WS_RE = re.compile(r"\s+")
 
+# Body references coordinate sections with the disjunctive ``tai`` ("or")
+# (``114, 115 tai 155 §:n``) as routinely as with ``ja``/``sekä``. The shared
+# johtolause lexicon deliberately classifies only ``ja``/``sekä``/``ynnä`` as
+# CONJ — ``tai`` is left as a plain WORD because it carries a different meaning
+# inside an AMENDMENT johtolause. In a BODY citation tail, however, a ``tai``
+# between two section numbers is a pure coordination joiner with the same
+# enumeration semantics as ``ja``, so we rewrite it to ``ja`` ONLY when it sits
+# between two numeric tokens before handing the tail to the shared recognizer.
+# The rewrite is local to this body lane (it never reaches the amendment
+# parser) and is scoped to the numeric-coordination position so a ``tai`` in the
+# trailing prose the parser ignores is never touched.
+#
+# The left operand may end in a section number (``115``) OR a number + letter
+# suffix (``52 d``); the right operand opens with a number. The lookbehind
+# tolerates a single suffix letter (and its space) after the digits so a
+# suffixed list member (``52 d tai 52 e``) coordinates too. Operates on the
+# WHITESPACE-NORMALIZED tail (single ASCII spaces only), so every gap is a bare
+# literal space — no ``\s*`` repeats (keeps the regex backtracking-safe).
+_TAI_NUMERIC_JOINER_RE = re.compile(
+    r"(?<=\d)(?P<lsuf> [a-zA-Z])?(?P<pre> ?[–—-]? ?)tai(?P<post> ?)(?=\d)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_disjunctive_joiner(tail_text: str) -> str:
+    """Rewrite a numeric-coordination ``tai`` to ``ja`` for the body tail parse.
+
+    ``"114, 115 tai 155 §:n"`` → ``"114, 115 ja 155 §:n"``. Only a ``tai`` flanked
+    by digits (the section-number coordination position) is rewritten; a ``tai``
+    elsewhere in the tail (e.g. inside the trailing prose the parser discards) is
+    left untouched. The replacement preserves the surrounding whitespace so the
+    consumed-slice / char-offset accounting downstream is unaffected.
+    """
+    if "tai" not in tail_text.lower():
+        return tail_text
+    return _TAI_NUMERIC_JOINER_RE.sub(
+        lambda m: f"{m.group('lsuf') or ''}{m.group('pre')}ja{m.group('post')}",
+        tail_text,
+    )
+
 
 @dataclass(frozen=True)
 class BodyProvisionTarget:
@@ -90,8 +130,14 @@ def parse_body_provision_tail_spanned(tail_text: str) -> BodyTailParse:
     trimmed surface (instead of an arbitrary fixed window) get exactly the bytes
     the grammar recognized.
     """
-    normalized = _WS_RE.sub(" ", tail_text).strip()
-    toks = _reclassify_body_tokens(tokenize(tail_text))
+    # Collapse whitespace first, THEN rewrite a numeric-coordination ``tai``
+    # ("or") to ``ja`` so the shared recognizer enumerates disjunctive section
+    # lists (``114, 115 tai 155 §:n``) the same way it enumerates ``ja``/``sekä``
+    # lists. The rewrite runs on the single-space-normalized form (so its regex
+    # stays backtracking-safe) and the SAME string feeds both tokenization and
+    # the consumed-slice accounting.
+    normalized = _normalize_disjunctive_joiner(_WS_RE.sub(" ", tail_text).strip())
+    toks = _reclassify_body_tokens(tokenize(normalized))
     if not toks:
         return BodyTailParse(targets=[], consumed_text="")
     scan = _sections._Scan(Cursor(toks, 0))

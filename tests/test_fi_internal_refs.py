@@ -62,6 +62,70 @@ def test_section_range_hyphen() -> None:
     assert got == [("108", None, None), ("109", None, None), ("110", None, None)]
 
 
+def test_spaced_letter_suffix_section() -> None:
+    # Body prose writes letter-suffix sections WITH a space ("115 a §"). The
+    # surface must capture it, and the target section label normalizes to the
+    # glued AKN eId form ("115a") so it resolves to <sec_115a>.
+    assert _targets("115 a § koskee asiaa") == [("115a", None, None)]
+
+
+def test_spaced_letter_suffix_with_self_reference_and_momentti() -> None:
+    # "Tämän lain 47 a §:ssä" → internal, label glued to "47a".
+    assert _targets("Tämän lain 47 a §:ssä säädetään") == [("47a", None, None)]
+
+
+def test_spaced_letter_suffix_range_expands() -> None:
+    # "106 a–106 e §:ää" → every member 106a..106e, glued labels.
+    assert _targets("106 a–106 e §:ää sovelletaan") == [
+        ("106a", None, None),
+        ("106b", None, None),
+        ("106c", None, None),
+        ("106d", None, None),
+        ("106e", None, None),
+    ]
+
+
+def test_coordinated_list_with_suffixed_members_tai() -> None:
+    # COMPOUNDING case: a disjunctive ("tai") list with letter-suffixed members
+    # must enumerate every member, not collapse to a section-less fallback.
+    assert _targets("52 a, 52 d tai 52 e §:n nojalla") == [
+        ("52a", None, None),
+        ("52d", None, None),
+        ("52e", None, None),
+    ]
+
+
+def test_coordinated_list_disjunctive_tai_enumerates_all() -> None:
+    # A long disjunctive section list must enumerate every member (no collapse
+    # to the bare statute root) — "tai" coordinates like "ja".
+    assert _targets("114, 115, 133, 134, 139 tai 155 §:n nojalla") == [
+        ("114", None, None),
+        ("115", None, None),
+        ("133", None, None),
+        ("134", None, None),
+        ("139", None, None),
+        ("155", None, None),
+    ]
+
+
+def test_section_range_endash_enumerates_middle() -> None:
+    # "16–18 §:ssä" → 16, 17 AND 18 (no dropped middle member).
+    assert _targets("16–18 §:ssä") == [
+        ("16", None, None),
+        ("17", None, None),
+        ("18", None, None),
+    ]
+
+
+def test_section_with_momentti_no_bare_fragment_duplicate() -> None:
+    # "216 §:n 2 momentin" yields exactly ONE section+momentti ref; the momentti
+    # tail must NOT also spawn a standalone bare-statute "2 momentissa" fragment.
+    got = _targets("Tämän lain 216 §:n 2 momentin mukaan")
+    assert got == [("216", 2, None)]
+    # No section-less, momentti-less whole-statute fragment is emitted.
+    assert all(not (sec == "" and sub is None) for sec, sub, _ in got)
+
+
 def test_taman_lain_internal_self_reference() -> None:
     # "tämän lain N §" is INTERNAL (this act), not the by-name cross lane.
     assert _targets("tämän lain 5 §:ssä") == [("5", None, None)]
