@@ -380,6 +380,27 @@ def _ambiguity_finding(
     )
 
 
+def _mention_validity_as_of(mention: ReferenceMention) -> Optional[dt.date]:
+    """Derive the per-mention validity instant to resolve an act-name against.
+
+    Returns the START of the mention's ``valid_at_interval`` — the instant the
+    citing reference state began holding — so an act name is resolved to the
+    version in force WHILE the citing text was valid (static-as-of-citing at the
+    mention's own granularity). When the interval start is ``None`` (open / unknown
+    on the left), no instant can be established and ``None`` is returned: the
+    registry then resolves against the whole timeline and a multi-version name
+    stays AMBIGUOUS (fail-loud, no guess).
+
+    NOTE: the interval START is used deliberately, NOT the citing statute's
+    enactment year. Bodies are read in CONSOLIDATED (current) form, so a statute
+    enacted in year Y may legitimately cite a post-Y version; the enactment year
+    would mis-resolve such citations. The mention's own ``valid_at_interval`` is
+    the only safe per-mention instant.
+    """
+    start, _end = mention.valid_at_interval
+    return start
+
+
 def _resolve_fi_name(
     mention: ReferenceMention,
     statute_registry: StatuteNameRegistry,
@@ -422,6 +443,18 @@ def _resolve_fi_name(
             )
 
     result = statute_registry.lookup(name, as_of)
+
+    # An as-of filter that excludes EVERY version is NOT a registry miss: the act
+    # name IS known, the instant simply falls before any registered version's
+    # window. Downgrading to STATUTE_ONLY here would erase a known identity on a
+    # guessed instant. Re-check unfiltered: if the whole-timeline lookup still
+    # yields candidates, the name stays AMBIGUOUS over those candidates (no pick,
+    # fail-loud) instead of falsely reporting a coverage gap.
+    if as_of is not None and result.status == "none":
+        unfiltered = statute_registry.lookup(name, None)
+        if unfiltered.status != "none":
+            result = unfiltered
+
     candidate_ids = tuple(c.statute_id for c in result.candidates)
 
     if result.status == "single":
@@ -445,7 +478,7 @@ def _resolve_fi_name(
             rejected_candidates=(),
             finding=_ambiguity_finding(mention, candidate_ids),
         )
-    # "none" — a registry miss: the act is textual, the id is pending.
+    # "none" — a genuine registry miss: the act is textual, the id is pending.
     return ResolvedReference(
         mention=mention,
         status=ResolutionStatus.STATUTE_ONLY,
@@ -542,6 +575,7 @@ def resolve_mention(
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
     defined_terms: Optional[DefinedTermTable] = None,
+    use_mention_validity: bool = False,
 ) -> ResolvedReference:
     """Resolve a single mention's placeholder identity against the registries.
 
@@ -551,11 +585,20 @@ def resolve_mention(
     module itself and no per-call state is threaded. ``defined_terms`` (optional,
     default ``None``) is the per-statute local alias table consulted before the
     statute-name registry for ``fi-name:`` placeholders.
+
+    ``use_mention_validity`` (default ``False``) selects the per-mention validity
+    instant (this mention's ``valid_at_interval`` START) as the as-of filter when
+    no explicit ``as_of`` is supplied; see :func:`resolve_mentions`.
     """
     del eu_registry  # the eu_nickname module's lookup is a pure function
     kind = _placeholder_kind(mention)
     if kind == _FI_NAME_PREFIX:
-        return _resolve_fi_name(mention, statute_registry, as_of, defined_terms)
+        effective_as_of = as_of
+        if effective_as_of is None and use_mention_validity:
+            effective_as_of = _mention_validity_as_of(mention)
+        return _resolve_fi_name(
+            mention, statute_registry, effective_as_of, defined_terms
+        )
     if kind == _EU_NICKNAME_PREFIX:
         return _resolve_eu_nickname(mention)
     return _passthrough(mention)
@@ -568,6 +611,7 @@ def resolve_mentions(
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
     defined_terms: Optional[DefinedTermTable] = None,
+    use_mention_validity: bool = False,
 ) -> list[ResolvedReference]:
     """Project placeholder mentions to :class:`ResolvedReference` records.
 
@@ -590,15 +634,26 @@ def resolve_mentions(
         mentions: The recognizer-emitted typed references to resolve.
         statute_registry: The built statute-name registry (Index B).
         eu_registry: The EU nickname registry module (default: the module).
-        as_of: The validity instant the citations are read against
+        as_of: A SINGLE explicit validity instant applied to EVERY mention
             (static-as-of-citing). ``None`` resolves against the whole timeline
-            (and is allowed to be AMBIGUOUS).
+            (and is allowed to be AMBIGUOUS) unless ``use_mention_validity`` is
+            set. An explicit ``as_of`` always overrides per-mention validity.
         defined_terms: Optional per-statute local alias table (built from the
             statute's :class:`DefinedTermBinding` records via
             :func:`build_defined_term_table`). When supplied, a ``fi-name:``
             placeholder that matches a local binding preceding the use resolves
             EXACT to the binding's target BEFORE the registry is consulted. Default
             ``None`` leaves every existing caller unaffected.
+        use_mention_validity: When ``True`` and no explicit ``as_of`` is given,
+            resolve EACH mention against the START of its OWN ``valid_at_interval``
+            — the version of the cited act in force WHILE that citing reference
+            state held. A multi-version act name whose mention interval selects
+            exactly one version then RESOLVES; a name whose interval still leaves
+            >1 version, or whose interval start is ``None`` (open/unknown), stays
+            AMBIGUOUS (fail-loud, no guess). Default ``False`` preserves the prior
+            whole-timeline behaviour for every existing caller. The enactment year
+            of the citing statute is intentionally NOT used (consolidated bodies
+            legitimately cite post-enactment versions).
 
     Returns:
         One :class:`ResolvedReference` per input mention, in input order.
@@ -610,6 +665,7 @@ def resolve_mentions(
             eu_registry=eu_registry,
             as_of=as_of,
             defined_terms=defined_terms,
+            use_mention_validity=use_mention_validity,
         )
         for m in mentions
     ]

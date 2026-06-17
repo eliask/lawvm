@@ -45,6 +45,7 @@ def _mention(
     section_label: str = "",
     target: bool = True,
     surface_text: str = "",
+    valid_at_interval: tuple[dt.date | None, dt.date | None] = (None, None),
 ) -> ReferenceMention:
     """Build a minimal ReferenceMention for resolution tests."""
     tgt = ProvisionRef(statute_id=statute_id, section_label=section_label) if target else None
@@ -55,7 +56,7 @@ def _mention(
         cite_confidence=cite_confidence,
         phrase_lemma="statute_name_head",
         source_span=None,
-        valid_at_interval=(None, None),
+        valid_at_interval=valid_at_interval,
         edge_subtype=None,
         surface_text=surface_text,
     )
@@ -152,6 +153,155 @@ def test_fi_name_as_of_filter_narrows_to_single() -> None:
     )
     assert rr.status is ResolutionStatus.RESOLVED
     assert rr.work_id == "527/2014"
+
+
+def _open_ended_registry():
+    """A registry shaped like the real corpus artifact.
+
+    Each version carries a ``valid_from`` and ``valid_to=None`` (the farchive
+    exposes only one open-ended PIT per statute), so an act with two temporal
+    versions is ``multiple`` over the whole timeline and an ``as_of`` BEFORE the
+    later version's ``valid_from`` narrows it to the earlier one.
+    """
+    return build_registry(
+        [
+            StatuteNameEntry(
+                statute_id="364/1963",
+                canonical_title="Sairausvakuutuslaki",
+                valid_from=dt.date(1963, 7, 4),
+            ),
+            StatuteNameEntry(
+                statute_id="1224/2004",
+                canonical_title="Sairausvakuutuslaki",
+                valid_from=dt.date(2004, 12, 21),
+            ),
+        ]
+    )
+
+
+def test_mention_validity_interval_narrows_multitemporal_to_single() -> None:
+    """A mention interval inside ONE version's window -> resolved to that version.
+
+    ``use_mention_validity`` threads the mention's ``valid_at_interval`` START as
+    the per-mention as-of, so a multi-version act name whose citing text was valid
+    in (e.g.) 1990 resolves to the version then in force — NOT the latest one, and
+    NOT via the citing statute's enactment year.
+    """
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(dt.date(1990, 1, 1), None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        use_mention_validity=True,
+    )
+    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.work_id == "364/1963"
+    assert rr.finding is None
+
+
+def test_open_interval_stays_ambiguous_under_mention_validity() -> None:
+    """SAME name with an open (None) interval start -> stays ambiguous (no guess)."""
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(None, None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        use_mention_validity=True,
+    )
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.work_id is None
+    assert set(rr.candidates) == {"364/1963", "1224/2004"}
+    assert rr.finding is not None
+
+
+def test_mention_interval_not_disambiguating_stays_ambiguous() -> None:
+    """An interval start AFTER both versions' windows -> both survive -> ambiguous."""
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(dt.date(2020, 1, 1), None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        use_mention_validity=True,
+    )
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.work_id is None
+    assert set(rr.candidates) == {"364/1963", "1224/2004"}
+
+
+def test_mention_interval_before_all_versions_stays_ambiguous_not_miss() -> None:
+    """An interval start BEFORE every version -> ambiguous over all, never STATUTE_ONLY.
+
+    An as-of filter that excludes EVERY version is not a coverage gap (the name IS
+    known); the act stays ambiguous over the full candidate set rather than being
+    downgraded to a registry miss on a guessed instant.
+    """
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(dt.date(1900, 1, 1), None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        use_mention_validity=True,
+    )
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert set(rr.candidates) == {"364/1963", "1224/2004"}
+
+
+def test_mention_validity_off_by_default_keeps_whole_timeline() -> None:
+    """Without use_mention_validity, a populated interval is ignored (whole timeline)."""
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(dt.date(1990, 1, 1), None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+    )
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert set(rr.candidates) == {"364/1963", "1224/2004"}
+
+
+def test_explicit_as_of_overrides_mention_validity() -> None:
+    """An explicit batch as_of takes precedence over each mention's interval."""
+    reg = _open_ended_registry()
+    [rr] = resolve_mentions(
+        [
+            _mention(
+                "fi-name:sairausvakuutuslaki",
+                valid_at_interval=(dt.date(1990, 1, 1), None),
+            )
+        ],
+        statute_registry=reg,
+        eu_registry=eu_nickname,
+        as_of=dt.date(2010, 6, 1),
+        use_mention_validity=True,
+    )
+    # 2010 covers BOTH versions -> ambiguous, even though the interval start (1990)
+    # alone would have resolved to the 1963 version.
+    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert set(rr.candidates) == {"364/1963", "1224/2004"}
 
 
 def test_fi_name_miss_is_statute_only_not_silent_resolve() -> None:

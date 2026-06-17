@@ -33,8 +33,9 @@ Every rejected candidate and every unlocatable surface becomes an explicit
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import hashlib
-from typing import cast
+from typing import Optional, cast
 
 from lawvm.core.legal_surface_graph import SourceSpanRef
 from lawvm.core.legal_surface_lens import (
@@ -119,6 +120,37 @@ def _status_for_confidence(confidence: CiteConfidence) -> str:
         raise ValueError(
             f"{LENS_ID}: no graph status mapping for cite_confidence {confidence!r}"
         ) from exc
+
+
+def _parse_iso_date(value: str | None) -> Optional[dt.date]:
+    """Parse an ISO ``YYYY-MM-DD`` (date or datetime) bound to a ``date``.
+
+    Returns ``None`` for an empty / unparseable bound — an unknown bound stays
+    open (fail-loud: an unparseable date is NOT silently coerced to a guessed
+    instant, it simply leaves the interval open on that side).
+    """
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _unit_validity_interval(
+    unit: SourceSurfaceUnit,
+) -> tuple[Optional[dt.date], Optional[dt.date]]:
+    """The validity window of this unit's consolidated text as a date interval.
+
+    Sourced from :attr:`SourceSurfaceUnit.effective_interval` (ISO strings). This
+    is the interval during which THIS version of the body text was in force, and
+    is threaded onto each emitted mention's ``valid_at_interval`` so a by-name
+    citation resolves to the version of the cited act in force WHILE the citing
+    text was valid (static-as-of-citing at the unit's granularity). An open start
+    (``None``) keeps a multi-version name AMBIGUOUS downstream (no guess).
+    """
+    start_raw, end_raw = unit.effective_interval
+    return (_parse_iso_date(start_raw), _parse_iso_date(end_raw))
 
 
 def _normalize_surface(surface_text: str) -> str:
@@ -211,8 +243,15 @@ class ReferenceLens:
                 )
                 continue
 
+            # The validity window of this consolidated body version, threaded
+            # onto every mention's valid_at_interval so a multi-version by-name
+            # citation resolves to the act version in force WHILE this text held
+            # (rather than collapsing to AMBIGUOUS over the whole timeline). An
+            # open window leaves the mention's interval open → AMBIGUOUS (no
+            # guess); see resolve_mentions(use_mention_validity=True) below.
+            unit_interval = _unit_validity_interval(unit)
             extraction: ExtractionResult = extract_all_reference_mentions(
-                bytes(xml_bytes), unit.work_id
+                bytes(xml_bytes), unit.work_id, valid_at_interval=unit_interval
             )
 
             resolutions: list[ResolvedReference | None] = []
@@ -234,6 +273,13 @@ class ReferenceLens:
                         statute_registry=cast(StatuteNameRegistry, statute_registry),
                         eu_registry=eu_registry if eu_registry is not None else _default_eu_registry(),
                         defined_terms=defined_terms,
+                        # Resolve each by-name mention against the version of the
+                        # cited act in force WHILE that mention's reference state
+                        # held (its valid_at_interval start), rather than collapsing
+                        # every multi-version name to AMBIGUOUS. An open/unknown
+                        # interval keeps it AMBIGUOUS (no guess); the citing
+                        # statute's enactment year is never used.
+                        use_mention_validity=True,
                     )
                 )
             else:

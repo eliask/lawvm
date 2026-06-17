@@ -227,7 +227,93 @@ def test_unlocatable_surface_still_mints_reference_expr() -> None:
     assert any(n.node_kind == "reference_expr" for n in graph.nodes.values())
 
 
+def test_unit_effective_interval_narrows_multitemporal_resolution() -> None:
+    # The lens threads the unit's effective_interval onto each mention's
+    # valid_at_interval and resolves by-name placeholders against that instant.
+    # A two-version act name whose unit window predates the later version
+    # resolves to the EARLIER version (not ambiguous, not the latest).
+    import dataclasses
+    import datetime as dt
+
+    registry = _VersionedStubRegistry(
+        {
+            "lannoitelaki": [
+                ("1990/111", dt.date(1990, 1, 1)),
+                ("2010/222", dt.date(2010, 1, 1)),
+            ]
+        }
+    )
+    bundle = build_surface_bundle(_XML, _STATUTE_ID, surface_time="2000-06-01")
+    unit = dataclasses.replace(
+        bundle.units[0], effective_interval=("2000-06-01", None)
+    )
+    scoped_bundle = dataclasses.replace(bundle, units=(unit,))
+    lens = ReferenceLens()
+    ctx = SurfaceAnalysisContext(
+        surface_time="2000-06-01", options={"statute_registry": registry}
+    )
+    result = lens.analyze(scoped_bundle, context=ctx)
+
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    # The 2000 window selects the 1990 version only -> resolved, no candidates.
+    assert any(e.payload.get("work_id") == "1990/111" for e in refers_to)
+    assert not any(
+        e.payload.get("candidate_id") in {"1990/111", "2010/222"}
+        for e in has_candidate
+    )
+
+
+def test_unit_open_interval_keeps_multitemporal_ambiguous() -> None:
+    # SAME name + registry, but the unit window is open (None, None): every
+    # version survives the (absent) instant -> stays ambiguous (has_candidate,
+    # no refers_to). Fail-loud: an open window never guesses a version.
+    import datetime as dt
+
+    registry = _VersionedStubRegistry(
+        {
+            "lannoitelaki": [
+                ("1990/111", dt.date(1990, 1, 1)),
+                ("2010/222", dt.date(2010, 1, 1)),
+            ]
+        }
+    )
+    # default build_surface_bundle leaves effective_interval == (None, None)
+    bundle = build_surface_bundle(_XML, _STATUTE_ID)
+    lens = ReferenceLens()
+    ctx = SurfaceAnalysisContext(options={"statute_registry": registry})
+    result = lens.analyze(bundle, context=ctx)
+
+    has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
+    candidate_ids = {e.payload.get("candidate_id") for e in has_candidate}
+    assert {"1990/111", "2010/222"} <= candidate_ids
+    refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
+    assert not any(
+        e.payload.get("work_id") in {"1990/111", "2010/222"} for e in refers_to
+    )
+
+
 # ── Test doubles ─────────────────────────────────────────────────────────────
+
+
+class _VersionedStubRegistry:
+    """As-of-honouring StatuteNameRegistry stand-in (open-ended versions).
+
+    Each version carries a ``valid_from`` and an open ``valid_to`` (like the real
+    corpus artifact); ``lookup(name, as_of)`` filters to versions with
+    ``valid_from <= as_of`` so a past instant narrows a multi-version name.
+    """
+
+    def __init__(self, table: dict[str, list[tuple[str, object]]]) -> None:
+        self._table = table
+
+    def lookup(self, name: str, as_of: object = None) -> _StubLookupResult:
+        versions = self._table.get(name, [])
+        if as_of is None:
+            ids = [sid for sid, _vf in versions]
+        else:
+            ids = [sid for sid, vf in versions if vf <= as_of]  # type: ignore[operator]
+        return _StubLookupResult(ids)
 
 
 class _StubLookupResult:
