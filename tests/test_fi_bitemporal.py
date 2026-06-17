@@ -1,0 +1,343 @@
+"""Unit tests for the corpus bitemporal broken-reference scan.
+
+These tests INJECT synthetic ``tree_as_of`` / ``provision_present`` adapters —
+NO real ``legal_pit`` replay, no corpus. They pin the three outcomes the scan
+must distinguish:
+
+  * a ref to a present provision           -> no finding
+  * a ref to a repealed provision          -> repealed_since finding
+  * a target whose tree won't materialize  -> BrokenCheckUnavailable (NOT broken)
+"""
+from __future__ import annotations
+
+from datetime import date
+from typing import Optional
+
+from lawvm.core.ir import IRNode
+from lawvm.core.reference_mention import (
+    CiteConfidence,
+    CiteKind,
+    ProvisionRef,
+    ReferenceMention,
+)
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.legal_surface.bitemporal import (
+    BrokenRefReport,
+    citation_anchor_for_statute,
+    scan_one_statute,
+    scan_broken_references,
+)
+from lawvm.finland.references.broken_detection import (
+    BrokenCheckUnavailable,
+    BrokenReason,
+    BrokenReferenceFinding,
+    detect_broken,
+)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic tree builders + injected adapters
+# ---------------------------------------------------------------------------
+
+
+def _statute_tree(*section_labels: str) -> IRNode:
+    """A minimal statute tree carrying the named SECTION children."""
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=tuple(
+            IRNode(kind=IRNodeKind.SECTION, label=lbl) for lbl in section_labels
+        ),
+    )
+
+
+def _present(tree: IRNode, ref: ProvisionRef) -> bool:
+    """Injected presence test: section_label resolves to a SECTION child."""
+    if not ref.section_label:
+        return True
+    return any(
+        c.kind is IRNodeKind.SECTION and c.label == ref.section_label
+        for c in tree.children
+    )
+
+
+def _cross_statute_mention(
+    *,
+    source_statute: str,
+    target_statute: str,
+    target_section: str,
+    cited_on: Optional[date],
+) -> ReferenceMention:
+    return ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id=source_statute, section_label="1"),
+        target_provision_ref=ProvisionRef(
+            statute_id=target_statute, section_label=target_section
+        ),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="plain_text",
+        source_span=None,
+        valid_at_interval=(cited_on, None),
+        edge_subtype="CITES",
+    )
+
+
+# ---------------------------------------------------------------------------
+# detect_broken outcomes (the three the scan aggregates)
+# ---------------------------------------------------------------------------
+
+
+def test_present_provision_yields_no_finding() -> None:
+    mention = _cross_statute_mention(
+        source_statute="711/2022",
+        target_statute="500/2010",
+        target_section="5",
+        cited_on=date(2022, 1, 1),
+    )
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        # Target still carries § 5 at every date.
+        return _statute_tree("1", "5", "9")
+
+    results = detect_broken(
+        [mention],
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert results == []
+
+
+def test_repealed_provision_yields_repealed_since() -> None:
+    mention = _cross_statute_mention(
+        source_statute="711/2022",
+        target_statute="500/2010",
+        target_section="5",
+        cited_on=date(2012, 1, 1),
+    )
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        # § 5 existed when cited (2012) but is gone in the current tree, and the
+        # statute is now effectively empty -> repealed, not renumbered.
+        if on <= date(2015, 1, 1):
+            return _statute_tree("1", "5", "9")
+        return _statute_tree()  # repeal placeholder (no provision content)
+
+    results = detect_broken(
+        [mention],
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert len(results) == 1
+    finding = results[0]
+    assert isinstance(finding, BrokenReferenceFinding)
+    assert finding.reason is BrokenReason.REPEALED_SINCE
+    assert finding.target.statute_id == "500/2010"
+    assert finding.detected_interval == (date(2012, 1, 1), date(2026, 1, 1))
+
+
+def test_moved_provision_yields_renumbered_since() -> None:
+    mention = _cross_statute_mention(
+        source_statute="711/2022",
+        target_statute="500/2010",
+        target_section="5",
+        cited_on=date(2012, 1, 1),
+    )
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        # § 5 existed when cited; gone now, but the statute still carries other
+        # sections -> renumbered/moved, not a whole repeal.
+        if on <= date(2015, 1, 1):
+            return _statute_tree("1", "5", "9")
+        return _statute_tree("1", "9", "12")
+
+    results = detect_broken(
+        [mention],
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert len(results) == 1
+    finding = results[0]
+    assert isinstance(finding, BrokenReferenceFinding)
+    assert finding.reason is BrokenReason.RENUMBERED_SINCE
+
+
+def test_unmaterializable_tree_yields_unavailable_not_broken() -> None:
+    mention = _cross_statute_mention(
+        source_statute="711/2022",
+        target_statute="999/9999",
+        target_section="5",
+        cited_on=date(2022, 1, 1),
+    )
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        return None  # cannot materialize — fail-loud
+
+    results = detect_broken(
+        [mention],
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert len(results) == 1
+    unavail = results[0]
+    assert isinstance(unavail, BrokenCheckUnavailable)
+    assert not isinstance(unavail, BrokenReferenceFinding)
+    assert unavail.unavailable_for == "current"
+    assert unavail.target.statute_id == "999/9999"
+
+
+# ---------------------------------------------------------------------------
+# citation anchor
+# ---------------------------------------------------------------------------
+
+
+def test_citation_anchor_from_statute_year() -> None:
+    assert citation_anchor_for_statute("711/2022") == date(2022, 1, 1)
+    # tail after the last "/" is the number, not the year -> implausible -> None.
+    assert citation_anchor_for_statute("eu/dir/2019/790") is None
+    assert citation_anchor_for_statute("garbage") is None
+
+
+# ---------------------------------------------------------------------------
+# scan_one_statute via injected store + extractor-free path
+# ---------------------------------------------------------------------------
+
+
+class _FakeStore:
+    """Minimal store exposing only what scan_one_statute reads."""
+
+    def __init__(self, bodies: dict[str, bytes]) -> None:
+        self._bodies = bodies
+
+    def read_oracle(self, sid: str) -> Optional[bytes]:
+        return self._bodies.get(sid)
+
+    def read_source(self, sid: str) -> Optional[bytes]:
+        return None
+
+    def read_amendment(self, sid: str) -> Optional[bytes]:
+        return None
+
+
+# An AKN body with one <ref> to another statute's § 5.
+_BODY_WITH_REF = (
+    b'<?xml version="1.0" encoding="UTF-8"?>'
+    b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    b"<body><section eId=\"sec_1\"><num>1 \xc2\xa7</num>"
+    b'<p>Viitataan <ref href="/akn/fi/act/statute/2010/500/!main#sec_5">'
+    b"toiseen lakiin</ref>.</p>"
+    b"</section></body></akomaNtoso>"
+)
+
+
+def test_scan_one_statute_reports_unavailable_when_target_tree_missing() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        return None  # target 500/2010 cannot be materialized
+
+    result = scan_one_statute(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert result.error is None
+    # The ref to 500/2010 §5 is a resolved cross-statute target -> checked.
+    assert result.mentions_checked >= 1
+    assert result.findings == ()
+    assert len(result.unavailable) >= 1
+    assert all(isinstance(u, BrokenCheckUnavailable) for u in result.unavailable)
+
+
+def test_scan_one_statute_no_body_is_not_an_error() -> None:
+    store = _FakeStore({})  # 711/2022 has no body
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        return _statute_tree("5")
+
+    result = scan_one_statute(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+    )
+    assert result.error is None
+    assert result.mentions_checked == 0
+    assert result.findings == ()
+    assert result.unavailable == ()
+
+
+def test_scan_one_statute_repealed_target_is_a_finding() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        # The citing statute is 711/2022 -> anchor 2022-01-01. § 5 of 500/2010
+        # was present at the anchor but is gone (and statute empty) now.
+        if on <= date(2022, 6, 1):
+            return _statute_tree("1", "5")
+        return _statute_tree()
+
+    result = scan_one_statute(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert result.error is None
+    assert len(result.findings) == 1
+    assert result.findings[0].reason is BrokenReason.REPEALED_SINCE
+    assert result.unavailable == ()
+
+
+# ---------------------------------------------------------------------------
+# scan_broken_references aggregation
+# ---------------------------------------------------------------------------
+
+
+def test_scan_broken_references_aggregates_by_reason() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        if on <= date(2022, 6, 1):
+            return _statute_tree("1", "5")
+        return _statute_tree()
+
+    report: BrokenRefReport = scan_broken_references(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert report.statutes_scanned == 1
+    assert report.statutes_with_findings == 1
+    assert report.statutes_errored == []
+    assert report.total_findings == 1
+    assert report.reason_counts == {"repealed_since": 1}
+    assert report.unavailable_count == 0
+    assert report.top_statutes(5)[0].sid == "711/2022"
+
+
+def test_scan_broken_references_unavailable_counted_separately() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        return None
+
+    report = scan_broken_references(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert report.total_findings == 0
+    assert report.reason_counts == {}
+    assert report.unavailable_count >= 1
+    assert report.unavailable_by_kind.get("current", 0) >= 1
+    assert report.statutes_with_findings == 0

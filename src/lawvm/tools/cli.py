@@ -10629,6 +10629,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON with lint_kind/severity counts, node-kind census, top statutes",
     )
 
+    # --- broken-refs ---
+    broken_refs_p = sub.add_parser(
+        "broken-refs",
+        help="corpus bitemporal broken-reference report (fi)",
+        description=(
+            "Corpus bitemporal broken-reference report: per citing statute, "
+            "extract resolved cross-statute citations and check whether each "
+            "cited target provision is present in the TIME-INDEXED text-state of "
+            "the target statute (point-in-time `legal_pit` replay) both as of the "
+            "citation and as of now. Aggregates findings by reason "
+            "(repealed_since / renumbered_since / never_existed). Unlike "
+            "`surface-lints`/`refs-bench` this is NOT parse-only — it replays the "
+            "TARGET statute trees, so it is SLOW; use --limit to sample. A target "
+            "whose tree cannot be materialized is reported as UNAVAILABLE "
+            "(fail-loud), never silently dropped and never called broken. "
+            "Surface-fact discipline: a finding is 'the cited target provision is "
+            "absent/renumbered in the time-indexed text-state as of the "
+            "citation', NOT a legal conclusion about the law's validity."
+        ),
+    )
+    broken_refs_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N citing statutes (default: no cap)",
+    )
+    broken_refs_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: min(8, cpu-2) to respect memory ceiling)",
+    )
+    broken_refs_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="worklist depth: top N statutes / errored statutes shown (default: 20)",
+    )
+    broken_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with findings-by-reason, unavailable counts, top statutes",
+    )
+
     # --- parse-characterize ---
     parse_char_p = sub.add_parser(
         "parse-characterize",
@@ -13151,6 +13195,11 @@ def _main_impl() -> None:
         from lawvm.tools.surface_lints import main as surface_lints_main
 
         surface_lints_main(args)
+
+    elif args.command == "broken-refs":
+        from lawvm.tools.bitemporal_refs import main as broken_refs_main
+
+        broken_refs_main(args)
 
     elif args.command == "parse-characterize":
         from lawvm.tools.parse_characterize import main as parse_characterize_main
