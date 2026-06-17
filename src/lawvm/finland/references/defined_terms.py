@@ -150,7 +150,7 @@ _FI_ID = re.compile(r"\((\d{1,6})/(\d{4})\)")
 _FI_ID_LOOSE = re.compile(r"\((\d{1,6})/(\d{4})[\s,)]")
 
 # A single token of a Finnish term: letters (incl. ä ö å) and internal hyphen.
-_TERM_WORD = r"[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+(?:-[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)*"
+_TERM_WORD = r"[a-zA-ZäöåÄÖÅ]+(?:-[a-zA-ZäöåÄÖÅ]+)*"
 
 # ---------------------------------------------------------------------------
 # Shape 1: parenthetical alias right after an act cite
@@ -182,7 +182,7 @@ _PAREN_ALIAS = re.compile(
 # paren / comma / quote / end-of-window.  Bounded term body.
 
 _JALJEMPANA = re.compile(
-    r"j\xe4ljemp\xe4n\xe4\s{1,3}"
+    r"jäljempänä\s{1,3}"
     r"(?P<q>[\"“”])?"
     r"(?P<term>[^\")(,;]{1,80}?)"
     r"(?(q)[\"“”]|(?=[),;]|\s*$))",
@@ -208,7 +208,7 @@ _TARKOITETAAN = re.compile(
 
 # Adessive endings the defined term in shape 3 commonly carries; stripped to
 # recover the nominative/stem term for morphology classification.
-_ADESSIVE_SUFFIXES = ("ll\xe4", "lla")
+_ADESSIVE_SUFFIXES = ("llä", "lla")
 
 # ---------------------------------------------------------------------------
 # Definitional vs REFERENTIAL ``tarkoitetaan``
@@ -245,20 +245,20 @@ _ADESSIVE_SUFFIXES = ("ll\xe4", "lla")
 # nothing to generalise over — and is unreliable on irregular pronoun paradigms.)
 _PRONOUN_ADESSIVE_FORMS: frozenset[str] = frozenset(
     {
-        "jolla",     # joka
-        "joilla",    # joka (plural)
-        "mill\xe4",  # mikä
-        "sill\xe4",  # se
-        "t\xe4ll\xe4",   # tämä
-        "niill\xe4",     # ne
+        "jolla",    # joka
+        "joilla",   # joka (plural)
+        "millä",    # mikä
+        "sillä",    # se
+        "tällä",    # tämä
+        "niillä",   # ne
         "kaikilla",  # kaikki
-        "edell\xe4",  # edellä — adverb "above" (referential)
+        "edellä",   # edellä — adverb "above" (referential)
     }
 )
 
 # Substring guards (AGENTS.md §1.11)
 _GUARD_PAREN = "("
-_GUARD_JALJEMPANA = "j\xe4ljemp\xe4n\xe4"
+_GUARD_JALJEMPANA = "jäljempänä"
 _GUARD_TARKOITETAAN = "tarkoitetaan"
 
 
@@ -369,8 +369,8 @@ def _classify_term_morphology(term: str) -> str:
     # Approximation of "agreeing modifier": a non-final token carrying a typical
     # case-ending cluster (e.g. -ssa/-sta/-lla/-lta/-een/-iin/-jen/-ien/-ista).
     case_marker = re.compile(
-        r"(ss[a\xe4]|st[a\xe4]|ll[a\xe4]|lt[a\xe4]|lle|"
-        r"[a\xe4]n|een|iin|jen|ien|ist[a\xe4])$"
+        r"(ss[aä]|st[aä]|ll[aä]|lt[aä]|lle|"
+        r"[aä]n|een|iin|jen|ien|ist[aä])$"
     )
     head = tokens[-1]
     if not _SIMPLE_STEM.match(head):
@@ -418,7 +418,7 @@ def _is_definitional_definiendum(last_word: str) -> bool:
     locatives as phantom defined terms.
     """
     low = last_word.lower()
-    if not (low.endswith("lla") or low.endswith("ll\xe4")):
+    if not (low.endswith("lla") or low.endswith("llä")):
         return False
     # Closed pronoun / referential-adverb class: matched as full adessive surface
     # forms (exact equality), never by prefix/stem approximation.
