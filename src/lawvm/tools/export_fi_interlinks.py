@@ -24,6 +24,10 @@ from lawvm.finland.interlinks import (
     fi_interlink_from_preparatory_reference,
     fi_interlink_from_reference_mention,
 )
+from lawvm.finland.legal_surface.overlay_projection import (
+    OVERLAY_ROW_COLUMNS,
+    graph_to_overlay_rows,
+)
 
 
 def _load_corpus_store() -> Any:
@@ -138,6 +142,35 @@ def _project_interlinks_for_statute(
     return rows, diagnostics
 
 
+def _project_overlays_for_statute(
+    statute_id: str,
+    store: Any,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Project FULL Legal Surface Graph overlay rows for one Finnish statute.
+
+    Builds the whole-statute Legal Surface Graph (all 9 lenses + edges) and
+    projects every renderable surface node into a ``lawvm_surface_overlays`` row.
+    Returns ``(overlay_rows, [])`` — no diagnostics channel (the graph build's own
+    diagnostics live on the graph; the overlay projection adds none). Returns
+    ``([], [])`` when the statute XML is absent (same fail-by-absence as the
+    interlink projector).
+
+    The ``rendered_*`` columns are NULL here: the v0 whole-body graph anchor
+    carries no effective_date / segment_index / address, so no
+    ``OverlayRenderedSpanContext`` is supplied — matching the interlink export,
+    which likewise emits null ``rendered_*``. A PIT-aware caller can supply the
+    context to populate them.
+    """
+    from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
+
+    xml_bytes = _get_statute_xml(statute_id, store)
+    if xml_bytes is None:
+        return [], []
+
+    graph = build_legal_surface_graph(xml_bytes, statute_id)
+    return graph_to_overlay_rows(graph), []
+
+
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -163,6 +196,7 @@ def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
     compile_metadata: Any = None,
+    empty_schema_columns: Tuple[str, ...] = INTERLINK_ROW_COLUMNS,
 ) -> bool:
     try:
         import pyarrow as pa
@@ -173,7 +207,7 @@ def _try_write_parquet(
     if rows:
         table = pa.Table.from_pylist(rows)
     else:
-        schema = pa.schema([pa.field(col, pa.string()) for col in INTERLINK_ROW_COLUMNS])
+        schema = pa.schema([pa.field(col, pa.string()) for col in empty_schema_columns])
         table = pa.table({col: [] for col in schema.names}, schema=schema)
     table = _attach_compile_metadata(table, compile_metadata)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +262,40 @@ def export_fi_interlinks(
 
     if all_diagnostics:
         _write_jsonl(out / "lawvm_interlinks_diagnostics.jsonl", all_diagnostics)
+
+    # ── lawvm_surface_overlays: the FULL Legal Surface Graph projection ───────
+    # Emitted in the SAME export run as the interlinks. One row per renderable
+    # surface node (defined terms, term-uses, temporal markers, delegation /
+    # sanction / exception frames, actor/modal frames, references). Placeable by
+    # the SAME rendered-span columns the interlink rows carry.
+    overlay_rows, _ = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=(__name__, "_project_overlays_for_statute"),
+        serial_projector=_project_overlays_for_statute,
+        store=store,
+        workers=workers,
+    )
+    print(
+        f"  surface_overlays: {len(overlay_rows):,} rows over "
+        f"{len(statute_ids):,} statutes"
+    )
+    overlay_jsonl_count = _write_jsonl(out / "lawvm_surface_overlays.jsonl", overlay_rows)
+    if use_parquet:
+        ok = _try_write_parquet(
+            out / "lawvm_surface_overlays.parquet",
+            overlay_rows,
+            compile_metadata,
+            empty_schema_columns=OVERLAY_ROW_COLUMNS,
+        )
+        if ok:
+            print(f"  lawvm_surface_overlays: {overlay_jsonl_count:,} rows (Parquet + JSONL)")
+        else:
+            print(
+                f"  lawvm_surface_overlays: {overlay_jsonl_count:,} rows "
+                f"(JSONL only; pyarrow not installed)"
+            )
+    else:
+        print(f"  lawvm_surface_overlays: {overlay_jsonl_count:,} rows (JSONL)")
 
     return jsonl_count
 
