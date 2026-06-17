@@ -19,6 +19,31 @@ reproduce exactly; this module pins the SPECIFIC blocker for each with a concret
 witness, so the deferral is evidenced rather than asserted, and locks the lenses on
 ``required_views=("raw_text",)``.
 
+RE-ASSESSED 2026-06-17 WITH ``MorphOverlay`` AVAILABLE: the deferral was re-opened
+once the source-preserving substrate gained a reverse-morphology overlay
+(``unit.morph_overlay`` / ``build_morph_overlay``) that maps a tape token to the
+lemma(s) of a CLOSED known-head inventory. The conclusion is UNCHANGED — the
+overlay does NOT resolve any of the four blockers, for two independent reasons,
+both witnessed below (``test_morph_overlay_does_not_unblock_*``):
+
+  1. WRONG SHAPE. Every blocker is a SPAN / CHAR-OFFSET / CASE primitive, not a
+     lemma-identity primitive. The overlay annotates a WHOLE ``word`` token with a
+     casefolded lemma; it gives NOTHING that reconstructs a sub-token char-end
+     (procedure tail cap), a ``_WORD_RE`` run that crosses tokenizer boundaries
+     (sanction), case sensitivity (actor_modal keys on ``Token.normalized`` =
+     casefold, and so does the overlay's lemma key), or the char-offset clause /
+     gap / object / subject / trigger arithmetic all four do over ``raw_text``.
+  2. WRONG VOCABULARY. The overlay's inventory is statute/structural heads
+     (``laki``, ``asetus``, ``pykälä``, ``päätös`` …). It does NOT cover the actor
+     registry phrases, the modal markers, the sanction stems, or most process
+     nouns (``hakemus`` is not annotated). Even where it incidentally fires
+     (``asetuksella`` → ``asetus`` for delegation, ``päätös`` for procedure) it
+     supplies a lemma, never the missing span/offset/case primitive.
+
+So MorphOverlay is ORTHOGONAL to every blocker: it is the wrong abstraction (lemma,
+not span/case) over the wrong inventory (heads, not lens vocabularies). The four
+lenses stay on ``raw_text``.
+
 The blockers (one per recognizer; all witnessed below):
 
   procedure  — ``_PROCESS_RE`` matches ``(?P<stem>…)(?P<tail>[\\wäöåÄÖÅ]{0,12})``:
@@ -55,7 +80,10 @@ The blockers (one per recognizer; all witnessed below):
 
 If a future change makes any recognizer's matching genuinely token-shaped (closed
 word-sequence vocabulary, no sub-token slicing, no case-sensitive literal phrases),
-revisit the migration here against the same oracle-identity bar.
+revisit the migration here against the same oracle-identity bar. Note that adding
+MorphOverlay was NOT such a change (see the re-assessment block above): a lemma
+overlay does not retire a span/offset/case blocker. The trigger for revisiting is a
+change to the RECOGNIZER's matching shape, not a richer substrate view.
 """
 from __future__ import annotations
 
@@ -70,13 +98,13 @@ from lawvm.core.legal_surface_lens import (
     SourceSurfaceUnit,
     SurfaceAnalysisContext,
 )
-from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.core.legal_surface_tokens import MorphOverlay, TokenTape
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
 from lawvm.finland.legal_surface.lenses.procedure import ProcedureLens
 from lawvm.finland.legal_surface.lenses.sanction import SanctionLens
-from lawvm.finland.legal_surface.tokenize import build_token_tape
+from lawvm.finland.legal_surface.tokenize import build_morph_overlay, build_token_tape
 from lawvm.finland.references import actor_modal as _am
 from lawvm.finland.references import procedure as _proc
 from lawvm.finland.references import sanction as _sanc
@@ -170,6 +198,85 @@ def test_witness_actor_alternation_has_multiword_hyphenated_phrases() -> None:
     # while pairing/lookup/span work stays char-offset over raw_text.
     tape = build_token_tape("u", "liikenne- ja viestintäministeriö")
     assert {t.category for t in tape.tokens} >= {"word", "dash", "whitespace"}
+
+
+# ---------------------------------------------------------------------------
+# (2b) MorphOverlay re-assessment WITNESSES (2026-06-17).
+#
+# Once the substrate gained ``build_morph_overlay``, the deferral was re-opened.
+# These witnesses pin WHY the overlay does not unblock any of the four: it is the
+# wrong abstraction (a casefolded whole-token lemma) over the wrong inventory
+# (statute/structural heads, not the lens vocabularies). Each test ties the
+# overlay's behavior to the specific primitive the corresponding lens needs.
+# ---------------------------------------------------------------------------
+
+
+def _overlay_lemmas(text: str) -> dict[int, tuple[str, ...]]:
+    tape = build_token_tape("u", text)
+    overlay = build_morph_overlay(tape)
+    return {i: ann.lemmas for i, ann in overlay.annotations.items()}
+
+
+def test_morph_overlay_does_not_unblock_actor_modal() -> None:
+    """Overlay is casefolded + lacks actor/modal vocab → can't restore case or actors."""
+    # The blocker is CASE SENSITIVITY + a 190-phrase literal alternation. The
+    # overlay keys on the same casefold the tape uses, so it cannot distinguish
+    # 'VM' from 'vm'; and neither the actor surface nor the modal token is in the
+    # closed-head lemma inventory, so the overlay is empty for both.
+    assert _overlay_lemmas("VM") == {}
+    assert _overlay_lemmas("vm") == {}
+    assert _overlay_lemmas("saa") == {}
+    # multi-word hyphenated actor phrase: overlay annotates none of its tokens
+    assert _overlay_lemmas("liikenne- ja viestintäministeriö") == {}
+
+
+def test_morph_overlay_does_not_unblock_sanction() -> None:
+    """Overlay annotates per-tape-token; sanction's ``_WORD_RE`` span is not a token."""
+    # The blocker is a ``[\\wäöåÄÖÅ]+`` run that crosses tokenizer boundaries plus
+    # a ``stem in lower_word`` substring-anywhere classification. The sanction
+    # stems are not in the lemma inventory, and even if a token were annotated the
+    # lemma is per-WHOLE-TOKEN — it cannot reproduce the cross-boundary run span.
+    assert _overlay_lemmas("rangaistaan") == {}
+    assert _overlay_lemmas("sakko") == {}
+    # the digit-split run stays three tokens; the overlay annotates none of them
+    assert _overlay_lemmas("jos2sakko") == {}
+
+
+def test_morph_overlay_does_not_unblock_procedure() -> None:
+    """Overlay gives a whole-token lemma; procedure needs a sub-token char-end."""
+    # The blocker is the tail cap: ``_PROCESS_RE`` ends MID-TOKEN at offset 18 of a
+    # 22-char word. A lemma annotation is attached to the WHOLE token (span 0..22),
+    # so it carries no information that reconstructs the char-end at 18.
+    word = "hakemuksenkasittelyssa"
+    tape = build_token_tape("u", word)
+    overlay = build_morph_overlay(tape)
+    # 'hakemus' is not in the head inventory: no annotation at all here.
+    assert dict(overlay.annotations) == {}
+    # Even where the overlay DOES fire on a process noun (päätös → lemma), the
+    # annotation is for the whole token and offers no sub-token span:
+    paatos = _overlay_lemmas("päätös")
+    assert paatos == {0: ("päätös",)}  # a lemma, not a char-offset primitive
+    m = _proc._PROCESS_RE.search(word)
+    assert m is not None and (m.start(), m.end()) == (0, 18)  # blocker unchanged
+
+
+def test_morph_overlay_does_not_unblock_delegation() -> None:
+    """Overlay may lemmatize the instrument noun but not the char-offset machinery."""
+    # The blocker is char-offset clause bounds + actor alternation + REGISTRY
+    # ambiguity + subject-span capture. The overlay can lemmatize 'asetuksella' →
+    # 'asetus' (it is a structural head), but that lemma replaces NONE of the
+    # offset arithmetic, the case-sensitive actor alternation, or the
+    # registry-ambiguity resolution the recognizer performs over raw_text.
+    assert _overlay_lemmas("asetuksella") == {0: ("asetus",)}
+    # Some delegate-actor surfaces ARE in the head inventory (e.g. 'ministeriö' →
+    # 'ministeriö'); the lemma is nonetheless useless for the recognizer's actual
+    # work, which is the CASE-SENSITIVE registry alternation + REGISTRY ambiguity
+    # resolution + char-offset clause/subject machinery. A lemma identity neither
+    # restores case nor performs the registry lookup that types the actor.
+    assert _overlay_lemmas("ministeriö") == {0: ("ministeriö",)}
+    # 'valtioneuvosto' happens to be outside the head inventory entirely, so the
+    # overlay is simply empty for this institutional actor.
+    assert _overlay_lemmas("valtioneuvosto") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -409,8 +516,13 @@ def test_deferred_lenses_match_oracle_on_real_statutes() -> None:
             continue
         bundle = build_surface_bundle(xb, sid)
         unit = bundle.units[0]
-        # the substrate is populated on real units (sanity for the deferral context)
+        # the substrate is populated on real units (sanity for the deferral
+        # context): BOTH the tape AND the morph overlay are available here, so the
+        # oracle-identity baseline below is anchored with the richer substrate in
+        # scope — the lenses still consume raw_text because the overlay does not
+        # retire any blocker (see the (2b) MorphOverlay witnesses).
         assert isinstance(unit.token_tape, TokenTape)
+        assert isinstance(unit.morph_overlay, MorphOverlay)
         raw = unit.raw_text
         assert _actor_modal_lens(unit) == _actor_modal_oracle(raw), f"actor_modal {sid}"
         assert _delegation_lens(unit) == _delegation_oracle(raw), f"delegation {sid}"
