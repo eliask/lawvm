@@ -144,9 +144,78 @@ _ARTIKLA_ITEM = r"\d{1,4}(?:\s?[a-z])?"
 _ARTIKLA_CONNECTOR = r"(?:\s*[,–—-]\s*|\s+(?:ja|tai|sekä)\s+)"
 _ARTIKLA_RE = re.compile(
     rf"(?P<nums>{_ARTIKLA_ITEM}(?:{_ARTIKLA_CONNECTOR}{_ARTIKLA_ITEM}){{0,30}})"
-    r"\s*artikla(?:ssa|sta|an|n|a|ksi|lla|lta|lle|t)?\b",
+    r"\s*artikla(?P<artcase>ssa|sta|an|n|a|ksi|lla|lta|lle|t)?\b",
     re.IGNORECASE,
 )
+
+# Intra-article element tail: the ``kohta`` (numbered paragraph/point) and the
+# optional ``alakohta`` (lettered sub-point) that an EU article reference can
+# carry. The Finnish article reference maps onto ``ProvisionRef`` as
+# ``section_label`` = article, with the intra-article element below it:
+#
+#   "6 artiklan 1 kohdan c alakohdassa"  → section 6, kohta 1, alakohta c
+#       → ProvisionRef(section_label="6", subsection_num=1, item_label="c")
+#       → serialized "celex:.../6/1/kc"
+#   "7 artiklan 1 ja 2 kohdassa"         → kohta coordination → one ref per kohta
+#       → "celex:.../7/1" and "celex:.../7/2"
+#
+# The tail sits in the genitive on the article ("N artiklan") followed by the
+# kohta number(s) in the genitive/inessive ("M kohdan"/"M kohdassa") and an
+# optional lettered/numbered sub-point ("L alakohdassa"). The kohta number list
+# reuses the SAME bounded list/connector grammar as the article number list so a
+# written coordination ("1 ja 2 kohdassa") enumerates exactly as the article
+# coordination does.
+#
+# The intra-article tail is only attempted when the article itself is in the
+# GENITIVE (``N artiklan``) — that is the case Finnish uses to govern a following
+# kohta ("N artiklan M kohdassa"). A bare locative ``N artiklassa`` (no genitive)
+# carries no intra-article element and is left untouched, so a stray number after
+# it can never be mis-read as a kohta.
+_ARTIKLA_GENITIVE_CASE = "n"
+#
+# ReDoS safety (§1.11): each item is a bounded digit run; the list is the item
+# followed by at most a bounded number of ``connector item`` pairs; the
+# ``koh(ta|dassa|…)`` head is a literal anchor, so a no-kohta tail fails fast.
+# Anchored with ``^`` against the post-article remainder (the caller slices from
+# the article match end, which already consumed ``N artiklan``).
+_KOHTA_ITEM = r"\d{1,3}"
+# An alakohta label is a short letter run (``a``, ``aa``) or a small number; the
+# list is one label + a bounded number of ``connector label`` pairs so a written
+# sub-point coordination (``a ja b alakohdassa``) enumerates exactly as the kohta
+# coordination does. Letters are matched FIRST so a single letter never reads as
+# a degenerate number.
+#
+# UNLIKE the article/kohta number lists (which route through the shared
+# ``_number_list`` grammar that EXPANDS a written range correctly), the alakohta
+# labels are split by a plain string-splitter here, so the alakohta connector is
+# restricted to EXPLICIT coordination words / commas and EXCLUDES the dash. A
+# dash between letter labels ("a–c alakohdassa") is a RANGE this lane cannot
+# soundly expand (letter-range expansion is not implemented), so it must NOT be
+# enumerated as if it were "a" + "c" — that would silently drop the middle "b".
+# A dash-range alakohta therefore fails the alakohta arm and the reference keeps
+# only the (sound) kohta level rather than fabricating a wrong sub-point set.
+_ALAKOHTA_CONNECTOR = r"(?:\s*,\s*|\s+(?:ja|tai|sekä)\s+)"
+_ALAKOHTA_ITEM = r"(?:[a-zåäö]{1,2}|\d{1,3})"
+_ALAKOHTA_LIST = (
+    rf"{_ALAKOHTA_ITEM}(?:{_ALAKOHTA_CONNECTOR}{_ALAKOHTA_ITEM}){{0,10}}"
+)
+# A kohta tail anchored at the start of the post-article remainder: a
+# (possibly coordinated) kohta number list + the ``kohta`` head, then an optional
+# (possibly coordinated) ``alakohta`` lettered/numbered sub-point list. The
+# article-number portion is NOT re-captured; the caller already has it from
+# ``_ARTIKLA_RE``.
+_KOHTA_TAIL_RE = re.compile(
+    r"^\s+"
+    rf"(?P<kohdat>{_KOHTA_ITEM}(?:{_ARTIKLA_CONNECTOR}{_KOHTA_ITEM}){{0,10}})"
+    r"\s*koh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b"
+    rf"(?:\s+(?P<alakohta>{_ALAKOHTA_LIST})\s*"
+    r"alakoh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b)?",
+    re.IGNORECASE,
+)
+# Splits an alakohta label list ("a ja b", "1, 2 ja 3") on the explicit
+# coordination connectors only (NO dash — see ``_ALAKOHTA_CONNECTOR`` above), so
+# a coordinated sub-point list enumerates while a dash-range is never matched.
+_ALAKOHTA_SPLIT_RE = re.compile(_ALAKOHTA_CONNECTOR, re.IGNORECASE)
 
 # Reasonable lookbehind window (chars) from an article phrase to its governing
 # nickname head. Finnish keeps the two adjacent: "<nickname> N ja M artiklassa".
@@ -258,12 +327,14 @@ class EuDirectiveRef:
 # ---------------------------------------------------------------------------
 
 
-def _expand_articles(nums_fragment: str) -> list[str]:
-    """Expand an article number fragment to one article token per article.
+def _expand_number_list(nums_fragment: str) -> list[tuple[str, str]]:
+    """Expand a number fragment to ``(number, letter_suffix)`` pairs.
 
     Delegates entirely to the shared section-grammar number-list recognizer:
     tokenise the fragment, run ``_number_list`` (which already folds in range
-    expansion via ``_expand_range``), and project to bare article numbers.
+    expansion via ``_expand_range``). Used for BOTH the article number list and
+    the intra-article kohta number list, so a written coordination expands
+    identically in either position.
     """
     fragment = nums_fragment.strip().rstrip(",").strip()
     if not fragment:
@@ -273,10 +344,73 @@ def _expand_articles(nums_fragment: str) -> list[str]:
     parsed = _number_list(scan)
     if not parsed:
         return []
+    return list(parsed)
+
+
+def _expand_articles(nums_fragment: str) -> list[str]:
+    """Expand an article number fragment to one article token per article."""
     out: list[str] = []
-    for num, suffix in parsed:
+    for num, suffix in _expand_number_list(nums_fragment):
         out.append(f"{num}{suffix}" if suffix else num)
     return out
+
+
+@dataclass(frozen=True, slots=True)
+class _KohtaTail:
+    """A parsed intra-article element tail (``M [ja K] kohdassa [L alakohdassa]``).
+
+    ``kohdat`` is one or more kohta numbers (a written coordination is enumerated
+    by the shared number-list grammar, so ``1 ja 2 kohdassa`` yields ``(1, 2)``).
+    ``alakohdat`` is the lettered/numbered sub-point label(s) (a coordination
+    ``a ja b alakohdassa`` yields ``("a", "b")``), or an empty tuple when no
+    alakohta follows. ``end`` is the offset (into the post-article remainder) one
+    past the tail, so the caller can extend ``surface_text`` to cover the whole
+    sub-element span.
+    """
+
+    kohdat: tuple[int, ...]
+    alakohdat: tuple[str, ...]
+    end: int
+
+
+def _parse_kohta_tail(remainder: str) -> Optional[_KohtaTail]:
+    """Parse an intra-article ``kohta``/``alakohta`` tail at the start of ``remainder``.
+
+    ``remainder`` is the text immediately AFTER a genitive ``N artiklan`` match.
+    Returns ``None`` when no kohta tail is present (the article carries no
+    intra-article element — leave it at article level). Fail-loud: an ``alakohta``
+    is only carried when the word ``alakohta`` actually follows the label(s) in
+    the text, so a sub-point is never fabricated.
+
+    Both the kohta number(s) and (when present) the alakohta label(s) are split on
+    the SAME list connectors the article numbers use, so a written coordination
+    (``1 ja 2 kohdassa`` / ``a ja b alakohdassa``) enumerates to one entry each.
+    """
+    m = _KOHTA_TAIL_RE.match(remainder)
+    if m is None:
+        return None
+    kohdat_fragment = m.group("kohdat")
+    kohta_nums: list[int] = []
+    for num, _suffix in _expand_number_list(kohdat_fragment):
+        try:
+            kohta_nums.append(int(num))
+        except ValueError:
+            continue
+    if not kohta_nums:
+        return None
+    alakohta_fragment = m.group("alakohta")
+    alakohdat: tuple[str, ...] = ()
+    if alakohta_fragment:
+        alakohdat = tuple(
+            label.strip().lower()
+            for label in _ALAKOHTA_SPLIT_RE.split(alakohta_fragment)
+            if label.strip()
+        )
+    return _KohtaTail(
+        kohdat=tuple(kohta_nums),
+        alakohdat=alakohdat,
+        end=m.end(),
+    )
 
 
 def _find_nickname(
@@ -435,41 +569,76 @@ def recognize_eu_directive_refs(
         if not articles:
             continue
 
+        # Intra-article element: when the article is in the genitive
+        # (``N artiklan``), an immediately-following ``M [ja K] kohdassa
+        # [L alakohdassa]`` tail carries the kohta (paragraph/point) and optional
+        # alakohta (sub-point) below the article. The tail expands the same way an
+        # article coordination does (one kohta per coordinated number). When no
+        # tail is present (a bare ``N artiklassa`` / article-only cite), the
+        # reference stays at article level exactly as before.
+        kohta_tail: Optional[_KohtaTail] = None
+        surface_end = am.end()
+        if (am.group("artcase") or "").lower() == _ARTIKLA_GENITIVE_CASE:
+            kohta_tail = _parse_kohta_tail(text[am.end() :])
+            if kohta_tail is not None:
+                surface_end = am.end() + kohta_tail.end
+        surface_text = text[am.start() : surface_end].strip()
+        # One entry per kohta when a tail is present, else a single None
+        # placeholder so the article-only path is unchanged. Likewise the alakohta
+        # axis is the parsed sub-point list, or a single None when no alakohta
+        # followed (article+kohta only). The reference set is the cartesian product
+        # article × kohta × alakohta — exactly the enumeration a written
+        # coordination spells out.
+        kohta_values: tuple[Optional[int], ...] = (
+            kohta_tail.kohdat if kohta_tail is not None else (None,)
+        )
+        alakohta_values: tuple[Optional[str], ...] = (
+            kohta_tail.alakohdat
+            if kohta_tail is not None and kohta_tail.alakohdat
+            else (None,)
+        )
+
         # By this point ``confidence`` is EXACT (registry SINGLE or a bare head
         # resolved via an adjacent formal cite) or AMBIGUOUS (registry MULTIPLE).
         # STATUTE_ONLY no longer reaches here: an unresolvable bare head was
         # dropped above (fail-loud), so the article path is never attached to a
         # polluting ``eu-nickname:<head>`` placeholder.
         for article in articles:
-            if confidence is CiteConfidence.EXACT:
-                target = ProvisionRef(
-                    statute_id=f"celex:{celex[0]}",
-                    section_label=article,
-                )
-            else:  # AMBIGUOUS — multiple candidates; do not pick one
-                target = ProvisionRef(
-                    statute_id="eu-nickname:" + surface,
-                    section_label=article,
-                )
-            mention = ReferenceMention(
-                source_provision_ref=source_ref,
-                target_provision_ref=target,
-                cite_kind=CiteKind.EU,
-                cite_confidence=confidence,
-                phrase_lemma="eu_directive_nickname_article",
-                source_span=None,
-                valid_at_interval=(None, None),
-                edge_subtype=None,
-                surface_text=text[am.start() : am.end()].strip(),
-            )
-            out.append(
-                EuDirectiveRef(
-                    mention=mention,
-                    nickname_surface=surface,
-                    celex_candidates=celex,
-                    article=article,
-                )
-            )
+            for kohta in kohta_values:
+                for alakohta in alakohta_values:
+                    if confidence is CiteConfidence.EXACT:
+                        target = ProvisionRef(
+                            statute_id=f"celex:{celex[0]}",
+                            section_label=article,
+                            subsection_num=kohta,
+                            item_label=alakohta,
+                        )
+                    else:  # AMBIGUOUS — multiple candidates; do not pick one
+                        target = ProvisionRef(
+                            statute_id="eu-nickname:" + surface,
+                            section_label=article,
+                            subsection_num=kohta,
+                            item_label=alakohta,
+                        )
+                    mention = ReferenceMention(
+                        source_provision_ref=source_ref,
+                        target_provision_ref=target,
+                        cite_kind=CiteKind.EU,
+                        cite_confidence=confidence,
+                        phrase_lemma="eu_directive_nickname_article",
+                        source_span=None,
+                        valid_at_interval=(None, None),
+                        edge_subtype=None,
+                        surface_text=surface_text,
+                    )
+                    out.append(
+                        EuDirectiveRef(
+                            mention=mention,
+                            nickname_surface=surface,
+                            celex_candidates=celex,
+                            article=article,
+                        )
+                    )
     return out
 
 

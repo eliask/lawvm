@@ -209,3 +209,138 @@ def test_artikla_plain_list_and_range_preserved() -> None:
     assert m2 is not None and _expand_articles(m2.group("nums")) == ["33", "34", "35"]
     m3 = _ARTIKLA_RE.search("1, 2 ja 3 artiklassa")
     assert m3 is not None and _expand_articles(m3.group("nums")) == ["1", "2", "3"]
+
+
+# ---------------------------------------------------------------------------
+# Intra-article element capture: kohta (paragraph/point) + alakohta (sub-point)
+# ---------------------------------------------------------------------------
+
+
+def _ref(text: str):
+    refs = recognize_eu_directive_refs(text)
+    assert len(refs) == 1, [r.mention.target_provision_ref.serialized() for r in refs]
+    return refs[0]
+
+
+def test_kohta_carried_onto_subsection_num() -> None:
+    # "N artiklan M kohdassa" — the EU kohta lands on subsection_num and renders
+    # below the article, distinct from a bare-article cite.
+    r = _ref("yleisen tietosuoja-asetuksen 6 artiklan 1 kohdassa tarkoitetulla tavalla")
+    tgt = r.mention.target_provision_ref
+    assert tgt is not None
+    assert tgt.statute_id == "celex:32016R0679"
+    assert tgt.section_label == "6"
+    assert tgt.subsection_num == 1
+    assert tgt.item_label is None
+    assert tgt.serialized() == "celex:32016R0679/6/1"
+    assert r.mention.surface_text == "6 artiklan 1 kohdassa"
+
+
+def test_alakohta_carried_onto_item_label() -> None:
+    # "N artiklan M kohdan L alakohdassa" — the lettered sub-point lands on
+    # item_label and renders as the typed kLABEL segment.
+    r = _ref("yleisen tietosuoja-asetuksen 6 artiklan 1 kohdan c alakohdassa")
+    tgt = r.mention.target_provision_ref
+    assert tgt is not None
+    assert tgt.subsection_num == 1
+    assert tgt.item_label == "c"
+    assert tgt.serialized() == "celex:32016R0679/6/1/kc"
+    assert r.mention.surface_text == "6 artiklan 1 kohdan c alakohdassa"
+
+
+def test_kohta_serializes_distinctly_from_bare_article() -> None:
+    # The whole point of the fix: the sub-element makes the serialized form
+    # distinct from the article-only cite.
+    bare = _ref("yleisen tietosuoja-asetuksen 6 artiklassa")
+    with_kohta = _ref("yleisen tietosuoja-asetuksen 6 artiklan 1 kohdassa")
+    assert bare.mention.target_provision_ref.serialized() == "celex:32016R0679/6"
+    assert (
+        with_kohta.mention.target_provision_ref.serialized()
+        == "celex:32016R0679/6/1"
+    )
+    assert (
+        bare.mention.target_provision_ref.serialized()
+        != with_kohta.mention.target_provision_ref.serialized()
+    )
+
+
+def test_kohta_coordination_enumerates() -> None:
+    # "N artiklan M ja K kohdassa" — kohta coordination enumerates one ref per
+    # kohta, reusing the shared number-list grammar.
+    refs = recognize_eu_directive_refs(
+        "yleisen tietosuoja-asetuksen 7 artiklan 1 ja 2 kohdassa"
+    )
+    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+        "celex:32016R0679/7/1",
+        "celex:32016R0679/7/2",
+    ]
+    # Surface spans the whole coordinated sub-element on each enumerated ref.
+    assert all(r.mention.surface_text == "7 artiklan 1 ja 2 kohdassa" for r in refs)
+
+
+def test_alakohta_coordination_enumerates() -> None:
+    # "N artiklan M kohdan L ja P alakohdassa" — sub-point coordination
+    # enumerates one ref per alakohta under the same kohta.
+    refs = recognize_eu_directive_refs(
+        "yleisen tietosuoja-asetuksen 18 artiklan 1 kohdan a ja b alakohdassa"
+    )
+    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+        "celex:32016R0679/18/1/ka",
+        "celex:32016R0679/18/1/kb",
+    ]
+
+
+def test_article_coordination_with_shared_kohta() -> None:
+    # "N ja K artiklan M kohdassa" — coordinated articles sharing one kohta:
+    # cartesian product article × kohta.
+    refs = recognize_eu_directive_refs(
+        "yleisen tietosuoja-asetuksen 33 ja 35 artiklan 1 kohdassa"
+    )
+    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+        "celex:32016R0679/33/1",
+        "celex:32016R0679/35/1",
+    ]
+
+
+def test_bare_article_no_kohta_unchanged() -> None:
+    # A bare "N artiklassa" (locative, no genitive, no kohta) is untouched: no
+    # subsection_num / item_label fabricated.
+    r = _ref("teollisuuspäästödirektiivin 12 artiklassa")
+    tgt = r.mention.target_provision_ref
+    assert tgt.subsection_num is None
+    assert tgt.item_label is None
+    assert tgt.serialized() == "celex:32010L0075/12"
+    assert r.mention.surface_text == "12 artiklassa"
+
+
+def test_genitive_article_without_kohta_unchanged() -> None:
+    # A genitive "N artiklan" NOT followed by a kohta tail must NOT fabricate a
+    # sub-element (fail-loud): a trailing unrelated number is not a kohta.
+    r = _ref("teollisuuspäästödirektiivin 12 artiklan mukaisesti")
+    tgt = r.mention.target_provision_ref
+    assert tgt.subsection_num is None
+    assert tgt.item_label is None
+    assert tgt.serialized() == "celex:32010L0075/12"
+
+
+def test_alakohta_dash_range_not_fabricated() -> None:
+    # A dash-range alakohta ("a–c alakohdassa") is NOT a coordination this lane
+    # can soundly expand (letter-range expansion is unimplemented). It must NOT
+    # enumerate as "a" + "c" (that would silently drop the middle "b"). Fail-loud:
+    # keep the sound kohta level and leave the sub-point range uncaptured.
+    refs = recognize_eu_directive_refs(
+        "yleisen tietosuoja-asetuksen 6 artiklan 1 kohdan a–c alakohdassa"
+    )
+    assert [r.mention.target_provision_ref.serialized() for r in refs] == [
+        "celex:32016R0679/6/1",
+    ]
+    assert refs[0].mention.target_provision_ref.item_label is None
+
+
+def test_kohta_resolves_via_formal_cite_head() -> None:
+    # The intra-article tail also rides a bare-head-resolved-via-formal-cite ref:
+    # "direktiivin 2013/11/EU 5 artiklan 2 kohdan a alakohdassa" → 32013L0011.
+    r = _ref("direktiivin 2013/11/EU 5 artiklan 2 kohdan a alakohdassa")
+    tgt = r.mention.target_provision_ref
+    assert tgt.statute_id == "celex:32013L0011"
+    assert tgt.serialized() == "celex:32013L0011/5/2/ka"
