@@ -16,6 +16,7 @@ BASE_DIGIT_RESET_SPLIT: Final[str] = "base_digit_reset_split"
 BASE_DUPLICATE_TAIL_SPLIT: Final[str] = "base_duplicate_tail_split"
 BASE_DUPLICATE_SIBLING_DROP: Final[str] = "base_duplicate_sibling_drop"
 BASE_INTRO_LIST_RESTART_SPLIT: Final[str] = "base_intro_list_restart_split"
+BASE_SECTION_ITEM_SUBSECTION_FOLD: Final[str] = "base_section_item_subsection_fold"
 TRAILING_CHAPTER_REPARENT: Final[str] = "trailing_chapter_reparent"
 
 FINLAND_SOURCE_NORMALIZATION_KINDS: Final[tuple[str, ...]] = (
@@ -27,5 +28,6 @@ FINLAND_SOURCE_NORMALIZATION_KINDS: Final[tuple[str, ...]] = (
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_INTRO_LIST_RESTART_SPLIT,
+    BASE_SECTION_ITEM_SUBSECTION_FOLD,
     TRAILING_CHAPTER_REPARENT,
 )

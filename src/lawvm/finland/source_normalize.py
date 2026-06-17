@@ -106,6 +106,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
+    BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
     TRAILING_CHAPTER_REPARENT,
     UNNUMBERED_PEER_REPARENT,
@@ -376,6 +377,239 @@ def _fold_section_scoped_item_style_subsections(
             )
         )
         changed = True
+
+    return rewritten if changed else children
+
+
+def _item_num_value(node: IRNode) -> int | None:
+    num_child = next((child for child in node.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return None
+    raw = (num_child.text or "").strip()
+    if not _ITEM_NUM_RE.match(raw):
+        return None
+    return _numeric_label_value(raw.rstrip(")"))
+
+
+def _paragraph_label_values(subsection: IRNode) -> list[int]:
+    return [
+        value
+        for child in subsection.children
+        if child.kind == IRNodeKind.PARAGRAPH
+        for value in (_numeric_label_value(child.label),)
+        if value is not None
+    ]
+
+
+def _numbered_paragraph_value(paragraph: IRNode) -> int | None:
+    if paragraph.kind != IRNodeKind.PARAGRAPH or not _paragraph_has_num_child(paragraph):
+        return None
+    return _numeric_label_value(paragraph.label)
+
+
+def _paragraph_continuation_children(paragraph: IRNode) -> tuple[IRNode, ...]:
+    payload = tuple(child for child in paragraph.children if child.kind != IRNodeKind.NUM)
+    if payload:
+        return payload
+    if paragraph.text:
+        return (IRNode(kind=IRNodeKind.CONTENT, text=paragraph.text),)
+    return ()
+
+
+def _append_item_continuation(item: IRNode, nodes: tuple[IRNode, ...]) -> IRNode:
+    if not nodes:
+        return item
+    return IRNode(
+        kind=item.kind,
+        label=item.label,
+        text=item.text,
+        attrs=item.attrs,
+        children=tuple(item.children) + nodes,
+    )
+
+
+def _subsection_has_numbered_paragraphs(subsection: IRNode) -> bool:
+    return any(_numbered_paragraph_value(child) is not None for child in subsection.children)
+
+
+def _fold_item_carrier_into_paragraphs(
+    subsection: IRNode,
+    paragraphs: list[IRNode],
+) -> bool:
+    """Append one malformed section-level item carrier into paragraph items."""
+    direct_item_value = _item_num_value(subsection)
+    if direct_item_value is None and not _subsection_has_numbered_paragraphs(subsection):
+        return False
+    if direct_item_value is None and not paragraphs:
+        return False
+
+    consumed = False
+    if direct_item_value is not None:
+        num_child = next(child for child in subsection.children if child.kind == IRNodeKind.NUM)
+        item_children: list[IRNode] = [num_child]
+        for child in subsection.children:
+            if child.kind == IRNodeKind.NUM:
+                continue
+            if child.kind == IRNodeKind.PARAGRAPH and _numbered_paragraph_value(child) is not None:
+                break
+            if child.kind == IRNodeKind.PARAGRAPH:
+                item_children.extend(_paragraph_continuation_children(child))
+            else:
+                item_children.append(child)
+        paragraphs.append(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(direct_item_value),
+                attrs=subsection.attrs,
+                children=tuple(item_children),
+            )
+        )
+        consumed = True
+
+    seen_numbered_paragraph = False
+    for child in subsection.children:
+        if child.kind == IRNodeKind.NUM:
+            continue
+        numbered_value = _numbered_paragraph_value(child)
+        if numbered_value is not None:
+            seen_numbered_paragraph = True
+            paragraphs.append(child)
+            consumed = True
+            continue
+        if direct_item_value is not None and not seen_numbered_paragraph:
+            continue
+        if child.kind == IRNodeKind.PARAGRAPH:
+            continuation = _paragraph_continuation_children(child)
+        else:
+            continuation = (child,)
+        if paragraphs:
+            paragraphs[-1] = _append_item_continuation(paragraphs[-1], continuation)
+
+    return consumed
+
+
+def _paragraph_labels_are_consecutive(paragraphs: list[IRNode]) -> bool:
+    values = [
+        value
+        for paragraph in paragraphs
+        for value in (_numeric_label_value(paragraph.label),)
+        if value is not None
+    ]
+    return values == list(range(1, len(values) + 1))
+
+
+def _fold_section_item_subsection_run(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold a section-level item run misencoded as sibling subsections."""
+    if len(children) < 3:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.kind != IRNodeKind.SUBSECTION:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        base_paragraphs = [c for c in child.children if c.kind == IRNodeKind.PARAGRAPH]
+        base_values = _paragraph_label_values(child)
+        next_child = children[i + 1] if i + 1 < len(children) else None
+        if (
+            not base_values
+            or base_values != list(range(1, len(base_values) + 1))
+            or next_child is None
+            or next_child.kind != IRNodeKind.SUBSECTION
+            or _item_num_value(next_child) != max(base_values) + 1
+            or _is_item_style_subsection(next_child)
+        ):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        folded_paragraphs = list(base_paragraphs)
+        consumed_paths: list[str] = []
+        j = i + 1
+        while j < len(children):
+            candidate = children[j]
+            if candidate.kind != IRNodeKind.SUBSECTION or _is_item_style_subsection(candidate):
+                break
+            trial = list(folded_paragraphs)
+            if not _fold_item_carrier_into_paragraphs(candidate, trial):
+                break
+            if len(trial) == len(folded_paragraphs) or not _paragraph_labels_are_consecutive(trial):
+                break
+            folded_paragraphs = trial
+            consumed_paths.append(_node_path_label(candidate))
+            j += 1
+
+        if not consumed_paths:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        non_paragraph_children = [c for c in child.children if c.kind != IRNodeKind.PARAGRAPH]
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(non_paragraph_children + folded_paragraphs),
+            )
+        )
+
+        next_label = (_numeric_label_value(child.label) or 0) + 1
+        relabelled: list[str] = []
+        for rest in children[j:]:
+            if rest.kind == IRNodeKind.SUBSECTION and _numeric_label_value(rest.label) is not None:
+                old_label = str(rest.label)
+                new_label = str(next_label)
+                relabelled.append(f"{old_label}->{new_label}")
+                rest = IRNode(
+                    kind=rest.kind,
+                    label=new_label,
+                    text=rest.text,
+                    attrs=rest.attrs,
+                    children=rest.children,
+                )
+                next_label += 1
+            rewritten.append(rest)
+
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.IMPOSSIBLE_NUMBERING,
+                before=(
+                    f"section-level subsection item carriers {consumed_paths!r} "
+                    f"after {_node_path_label(child)}"
+                ),
+                after=(
+                    f"folded into {_node_path_label(child)} as paragraphs "
+                    f"{[p.label for p in folded_paragraphs]!r}; relabelled true "
+                    f"subsections {relabelled!r}"
+                ),
+                explanation=(
+                    "The source encoded one moment's numbered kohdat as sibling "
+                    "subsection elements. Because the carried item labels form a "
+                    "single consecutive paragraph sequence under the preceding "
+                    "list-bearing moment, those carriers are folded into that "
+                    "moment and following true subsections are relabelled in "
+                    "document order."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.95,
+            )
+        )
+        changed = True
+        i = len(children)
 
     return rewritten if changed else children
 
@@ -1855,6 +2089,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_scoped_item_style_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_section_item_subsection_run(
             initial_children, statute_id, current_path, facts
         )
 

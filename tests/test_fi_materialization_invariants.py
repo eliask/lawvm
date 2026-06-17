@@ -239,6 +239,33 @@ def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() ->
     assert "yleistajuinen ja havainnollinen tiivistelmä" in irnode_to_text(paragraphs[-1])
 
 
+def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() -> None:
+    """Base §2 items 2-5 are kohdat, not momentit targeted by later amendments."""
+
+    replay = pinned_replay("1966/612", quiet=True, build_full_products=False)
+    section_node = replay.find_section("2", None, None)
+    assert section_node is not None
+    subsections = [
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    ]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+
+    first_moment_items = [
+        child
+        for child in subsections[0].children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    assert [child.label for child in first_moment_items] == ["1", "2", "3", "4", "5"]
+
+    section_text = irnode_to_text(section_node)
+    assert "5) Enintään 10 vuotta" in section_text
+    assert "Valtiokonttori voi erityisistä syistä" in section_text
+    assert "Valtiokonttorin 2 momentissa" in section_text
+    assert "Valtiovarainministeri oi erityisistä" not in section_text
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 

@@ -337,6 +337,14 @@ def test_label_sequence_gap_registry_code_is_nonblocking_observation() -> None:
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_base_section_item_subsection_fold_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_SECTION_ITEM_SUBSECTION_FOLD")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_source_corrected_by_patch_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.SOURCE_CORRECTED_BY_PATCH")
     assert spec is not None

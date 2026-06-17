@@ -35,6 +35,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
+    BASE_SECTION_ITEM_SUBSECTION_FOLD,
     TRAILING_CHAPTER_REPARENT,
 )
 
@@ -239,6 +240,55 @@ class TestTagReclassify:
         assert tag_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
         assert "section-scoped subsection continuation" in tag_facts[0].before
         assert "folded into previous subsection" in tag_facts[0].after
+
+    def test_folds_multi_subsection_item_run_and_relabels_true_moment(self) -> None:
+        """A first-moment item list split across subsection siblings is one momentti."""
+        xml = etree.fromstring(
+            """
+            <section>
+              <num>2 §</num>
+              <subsection>
+                <intro><p>Eläkeajaksi luetaan:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta.</p></content></paragraph>
+              </subsection>
+              <subsection>
+                <num>2)</num>
+                <intro><p>toinen kohta alkaa,</p></intro>
+                <paragraph><content><p>toisen kohdan jatko;</p></content></paragraph>
+                <paragraph><num>3)</num><content><p>kolmas kohta alkaa.</p></content></paragraph>
+              </subsection>
+              <subsection>
+                <intro><p>kolmannen kohdan jatko, sekä</p></intro>
+                <paragraph><content><p>lisäjatko.</p></content></paragraph>
+                <paragraph><num>4)</num><content><p>neljäs kohta.</p></content></paragraph>
+                <paragraph><num>5)</num><content><p>viides kohta.</p></content></paragraph>
+              </subsection>
+              <subsection>
+                <content><p>Todellinen toinen momentti.</p></content>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1966/612")
+
+        subsections = [c for c in normalized.children if c.kind == IRNodeKind.SUBSECTION]
+        assert [sub.label for sub in subsections] == ["1", "2"]
+        paragraphs = [c for c in subsections[0].children if c.kind == IRNodeKind.PARAGRAPH]
+        assert [para.label for para in paragraphs] == ["1", "2", "3", "4", "5"]
+        assert "kolmannen kohdan jatko" in " ".join(
+            gc.text or ""
+            for gc in paragraphs[2].children
+            if gc.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT)
+        )
+        assert check_invariants(normalized) == []
+
+        fold_facts = [f for f in facts if f.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
+        assert "subsection:2" in fold_facts[0].before
+        assert "3->2" in fold_facts[0].after
 
 
 # ---------------------------------------------------------------------------
