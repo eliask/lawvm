@@ -21,15 +21,18 @@ from .api import (
 from .classify import Classification, classify
 from .generate import generate_forms
 from .heads import head_entry, is_known_head
+from .lemma_index import LemmaIndex, build_lemma_index
 
 __all__ = [
     "REFERENCE_V1_PL",
     "REFERENCE_V1_SG",
     "Classification",
+    "LemmaIndex",
     "MorphCase",
     "MorphEntry",
     "MorphForm",
     "MorphNumber",
+    "build_lemma_index",
     "classify",
     "generate_forms",
     "head_entry",
