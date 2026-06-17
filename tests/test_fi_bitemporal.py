@@ -23,6 +23,8 @@ from lawvm.core.reference_mention import (
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.legal_surface.bitemporal import (
     BrokenRefReport,
+    PitCache,
+    cached_tree_as_of,
     citation_anchor_for_statute,
     scan_one_statute,
     scan_broken_references,
@@ -321,6 +323,102 @@ def test_scan_broken_references_aggregates_by_reason() -> None:
     assert report.reason_counts == {"repealed_since": 1}
     assert report.unavailable_count == 0
     assert report.top_statutes(5)[0].sid == "711/2022"
+
+
+# ---------------------------------------------------------------------------
+# PIT materialization cache — repeat targets materialize once, results unchanged
+# ---------------------------------------------------------------------------
+
+
+class _CountingTreeAsOf:
+    """A fake ``TreeAsOf`` that records every (statute_id, as_of) it computes.
+
+    Lets a test assert that a repeated (statute, as_of) materialization is
+    served from cache (the underlying compute runs once) WITHOUT touching real
+    legal_pit replay.
+    """
+
+    def __init__(self, trees: dict[str, IRNode]) -> None:
+        self._trees = trees
+        self.calls: list[tuple[str, date]] = []
+
+    def __call__(self, statute_id: str, on: date) -> Optional[IRNode]:
+        self.calls.append((statute_id, on))
+        return self._trees.get(statute_id)  # None when "cannot materialize"
+
+
+def test_cache_materializes_each_target_as_of_once() -> None:
+    inner = _CountingTreeAsOf({"500/2010": _statute_tree("1", "5")})
+    cache = PitCache()
+    cached = cached_tree_as_of(inner, cache=cache)
+
+    d = date(2022, 1, 1)
+    # Three lookups of the SAME (statute, as_of): only the first computes.
+    assert cached("500/2010", d) is not None
+    assert cached("500/2010", d) is not None
+    assert cached("500/2010", d) is not None
+    assert inner.calls == [("500/2010", d)]
+    assert cache.stats()["misses"] == 1
+    assert cache.stats()["hits"] == 2
+
+    # A different as_of for the same statute is a distinct key -> one more compute.
+    cached("500/2010", date(2026, 1, 1))
+    assert len(inner.calls) == 2
+
+
+def test_cache_remembers_misses_no_re_replay() -> None:
+    inner = _CountingTreeAsOf({})  # every target fails to materialize -> None
+    cache = PitCache()
+    cached = cached_tree_as_of(inner, cache=cache)
+
+    d = date(2022, 1, 1)
+    assert cached("999/9999", d) is None
+    assert cached("999/9999", d) is None  # served from the cached MISS
+    assert inner.calls == [("999/9999", d)]  # underlying compute ran only once
+    assert cache.stats()["hits"] == 1
+
+
+def test_cache_does_not_change_findings() -> None:
+    """Same scan, cached vs uncached adapter -> byte-identical findings."""
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def base_tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+        if on <= date(2022, 6, 1):
+            return _statute_tree("1", "5")
+        return _statute_tree()
+
+    uncached = scan_broken_references(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=base_tree_as_of,
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    cached = scan_broken_references(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        tree_as_of=cached_tree_as_of(base_tree_as_of, cache=PitCache()),
+        provision_present=_present,
+        current_as_of=date(2026, 1, 1),
+    )
+    assert cached.reason_counts == uncached.reason_counts
+    assert cached.total_findings == uncached.total_findings
+    assert cached.unavailable_count == uncached.unavailable_count
+
+
+def test_cache_eviction_bounds_size() -> None:
+    inner = _CountingTreeAsOf({})
+    cache = PitCache(cap=2)
+    cached = cached_tree_as_of(inner, cache=cache)
+
+    cached("a/1", date(2020, 1, 1))
+    cached("b/2", date(2020, 1, 1))
+    cached("c/3", date(2020, 1, 1))  # evicts LRU ("a/1")
+    assert cache.stats()["size"] == 2
+    assert cache.stats()["evictions"] == 1
+    # "a/1" was evicted -> re-lookup recomputes (a second underlying call).
+    cached("a/1", date(2020, 1, 1))
+    assert inner.calls.count(("a/1", date(2020, 1, 1))) == 2
 
 
 def test_scan_broken_references_unavailable_counted_separately() -> None:
