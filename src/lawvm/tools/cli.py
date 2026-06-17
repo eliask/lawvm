@@ -10632,21 +10632,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     # --- broken-refs ---
     broken_refs_p = sub.add_parser(
         "broken-refs",
-        help="corpus bitemporal broken-reference report (fi)",
+        help="corpus broken-reference report (fi); current-state default, replay opt-in",
         description=(
-            "Corpus bitemporal broken-reference report: per citing statute, "
-            "extract resolved cross-statute citations and check whether each "
-            "cited target provision is present in the TIME-INDEXED text-state of "
-            "the target statute (point-in-time `legal_pit` replay) both as of the "
-            "citation and as of now. Aggregates findings by reason "
-            "(repealed_since / renumbered_since / never_existed). Unlike "
-            "`surface-lints`/`refs-bench` this is NOT parse-only — it replays the "
-            "TARGET statute trees, so it is SLOW; use --limit to sample. A target "
-            "whose tree cannot be materialized is reported as UNAVAILABLE "
-            "(fail-loud), never silently dropped and never called broken. "
-            "Surface-fact discipline: a finding is 'the cited target provision is "
-            "absent/renumbered in the time-indexed text-state as of the "
-            "citation', NOT a legal conclusion about the law's validity."
+            "Corpus broken-reference report: per citing statute, extract resolved "
+            "cross-statute citations and check whether each cited target provision "
+            "exists in the target statute's text-state. DEFAULT (current-state, no "
+            "replay): checks presence in the target's CURRENT consolidated body "
+            "(the Finlex oracle gives that for free), so it is a cheap structural "
+            "check that runs corpus-wide without timing out; a finding is 'the "
+            "cited target provision is absent in the current text-state'. "
+            "--provenance: adds the temporal premium via point-in-time `legal_pit` "
+            "replay of the TARGET trees as of the citation AND now, classifying the "
+            "disappearance (repealed_since / renumbered_since / never_existed) — "
+            "this is SLOW, use --limit to sample. A target whose body/tree cannot "
+            "be materialized is reported as UNAVAILABLE (fail-loud), never silently "
+            "dropped and never called broken. Surface-fact discipline: a finding is "
+            "'the cited target provision is absent/renumbered in the target's "
+            "text-state', NOT a legal conclusion about the law's validity."
+        ),
+    )
+    broken_refs_p.add_argument(
+        "--provenance",
+        action="store_true",
+        help=(
+            "opt into the heavy point-in-time replay path for the temporal "
+            "classification (repealed_since/renumbered_since/never_existed); "
+            "default OFF = fast current-state presence scan, no replay"
         ),
     )
     broken_refs_p.add_argument(
