@@ -72,6 +72,9 @@ from lawvm.finland.references.sections import (
     parse_body_provision_tail,
 )
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
+from lawvm.finland.references.eu_nickname_binding import (
+    build_statute_local_nicknames,
+)
 from lawvm.finland.references.treaty import recognize_treaty_refs
 from lawvm.finland.references.treaty_article import recognize_treaty_article_refs
 from lawvm.finland.references.vague import recognize_vague_refs
@@ -1219,6 +1222,12 @@ def extract_surface_grammar_mentions(
     # bogus internal target (external-law phrase that did not anchor).
     trusted_sections = _trusted_section_labels(root)
 
+    # Statute-local EU-nickname pre-pass (built ONCE over the whole document):
+    # an act that coins an ad-hoc ``(jäljempänä <nickname>)`` for an EU instrument
+    # binds that nickname → CELEX here, so a later ``<nickname> N artikla`` use in
+    # any <p> resolves to the right EU-regulation article instead of being dropped.
+    local_eu_aliases = build_statute_local_nicknames("".join(root.itertext()))
+
     def _src_ref_for(section_label: str) -> ProvisionRef:
         if not section_label:
             return src_ref
@@ -1290,7 +1299,9 @@ def extract_surface_grammar_mentions(
             result.mentions.append(_reanchor(mention))
         for mention in recognize_vague_refs(text):
             result.mentions.append(_reanchor(mention))
-        for dref in recognize_eu_directive_refs(text, source_statute_id=statute_id):
+        for dref in recognize_eu_directive_refs(
+            text, source_statute_id=statute_id, local_aliases=local_eu_aliases
+        ):
             result.mentions.append(_reanchor(dref.mention))
         # Internal (same-statute) and by-name cross-statute refs partition by the
         # context preceding the §: bare/self -> internal; name head -> by-name;

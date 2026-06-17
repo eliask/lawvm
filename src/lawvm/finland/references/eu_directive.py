@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from lawvm.core.reference_mention import (
     CiteConfidence,
@@ -64,6 +64,13 @@ from lawvm.finland.references.lemma_gate import (
     head_surface_forms,
 )
 from lawvm.finland.references.registries import eu_nickname
+
+if TYPE_CHECKING:
+    # Imported under TYPE_CHECKING only: ``eu_nickname_binding`` imports
+    # ``_celex_from_formal_cite`` from THIS module, so a runtime top-level import
+    # would be circular. The recognizer only calls the table's ``lookup`` method
+    # (duck-typed), so no runtime import is needed here.
+    from lawvm.finland.references.eu_nickname_binding import StatuteLocalNicknames
 
 # ---------------------------------------------------------------------------
 # Surface patterns (§1.11: bounded quantifiers, compiled at module scope).
@@ -272,13 +279,24 @@ def _expand_articles(nums_fragment: str) -> list[str]:
     return out
 
 
-def _find_nickname(text: str, before_idx: int) -> Optional[tuple[str, eu_nickname.RegistryResult]]:
+def _find_nickname(
+    text: str,
+    before_idx: int,
+    local_aliases: Optional["StatuteLocalNicknames"] = None,
+) -> Optional[tuple[str, eu_nickname.RegistryResult]]:
     """Find the nickname head governing an article phrase ending before ``before_idx``.
 
     Scans the lookbehind window for nickname-shaped heads, preferring the one
     closest to the article phrase. Returns ``(surface, RegistryResult)`` — the
     registry result may be ``status=none`` (unknown nickname → STATUTE_ONLY),
     which is still a recognised directive reference, just unresolved.
+
+    ``local_aliases`` is the statute-local ``jäljempänä``-bound nickname table
+    (built once per statute). It is consulted AFTER the static ``eu_nickname``
+    seed: an ad-hoc nickname the statute coined for an EU instrument resolves to
+    its bound CELEX (single → EXACT), so later ``<nickname> N artikla`` uses are
+    recovered. The static seed always wins on a collision (a coined alias never
+    shadows an established term-of-art).
     """
     window_start = max(0, before_idx - _NICKNAME_LOOKBEHIND)
     window = text[window_start:before_idx]
@@ -305,6 +323,23 @@ def _find_nickname(text: str, before_idx: int) -> Optional[tuple[str, eu_nicknam
             if res.status is not eu_nickname.RegistryStatus.NONE:
                 resolved = (start, surface, res)
                 break
+        if resolved is None and local_aliases is not None:
+            # Static seed missed at every width — consult the statute-local
+            # ad-hoc nickname table (widest surface first, as above).
+            for start, surface in candidates_surfaces:
+                celex = local_aliases.lookup(surface)
+                if celex is not None:
+                    resolved = (
+                        start,
+                        surface,
+                        eu_nickname.RegistryResult(
+                            candidates=(celex,),
+                            status=eu_nickname.RegistryStatus.SINGLE,
+                            lemma=surface.lower(),
+                            matched_surface=surface,
+                        ),
+                    )
+                    break
         if resolved is None:
             # No registry hit at any width — but the head is nickname-shaped, so
             # record it as an unknown (STATUTE_ONLY) candidate using the head.
@@ -340,6 +375,7 @@ def recognize_eu_directive_refs(
     *,
     source_statute_id: str = "",
     source_provision_path: str = "",
+    local_aliases: Optional["StatuteLocalNicknames"] = None,
 ) -> list[EuDirectiveRef]:
     """Recognise EU directive/regulation article references in ``text``.
 
@@ -352,6 +388,12 @@ def recognize_eu_directive_refs(
         text: The provision body / clause text to scan.
         source_statute_id: Statute the citation lives in (for the source ref).
         source_provision_path: Provision path of the citing text.
+        local_aliases: Optional statute-local ``jäljempänä``-bound nickname →
+            CELEX table (built once per statute by
+            :func:`lawvm.finland.references.eu_nickname_binding.build_statute_local_nicknames`).
+            Consulted AFTER the static seed: an ad-hoc nickname the statute coined
+            for an EU instrument resolves to its bound CELEX (EXACT), recovering
+            later ``<nickname> N artikla`` uses that would otherwise be dropped.
 
     Resolution status per emitted mention:
         EXACT (single CELEX — a registry SINGLE hit, or a bare head resolved via
@@ -373,7 +415,7 @@ def recognize_eu_directive_refs(
     )
     out: list[EuDirectiveRef] = []
     for am in _ARTIKLA_RE.finditer(text):
-        nickname = _find_nickname(text, am.start())
+        nickname = _find_nickname(text, am.start(), local_aliases)
         if nickname is None:
             continue
         surface, res = nickname
