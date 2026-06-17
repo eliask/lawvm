@@ -1045,6 +1045,44 @@ def extract_surface_grammar_mentions(
             valid_at_interval=valid_at_interval,
         )
 
+    def _reanchor_grouped(
+        mentions: List[ReferenceMention],
+    ) -> List[ReferenceMention]:
+        """Re-anchor a lane's mentions, sharing ONE span per coordinated run.
+
+        A coordinated reference (``47 ja 49 §:ssä``, ``1 ja 2 momentissa``) is
+        enumerated into one mention PER member, all carrying the SAME whole-
+        coordination ``surface_text`` and emitted consecutively for a single
+        recognizer match. The per-surface byte cursor in :func:`_relocate`
+        advances one document occurrence per call, so calling it once per member
+        would (a) walk each member onto a DIFFERENT later occurrence of the same
+        surface and (b) starve later occurrences of a span. Group consecutive
+        mentions that share a surface and relocate ONCE per group: every member
+        of one coordinated occurrence shares that occurrence's whole-coordination
+        span. Distinct later occurrences of the same surface still advance the
+        cursor (one group = one occurrence), preserving document-order anchoring.
+        """
+        out: List[ReferenceMention] = []
+        i = 0
+        n = len(mentions)
+        while i < n:
+            surface = mentions[i].surface_text or ""
+            j = i + 1
+            while j < n and (mentions[j].surface_text or "") == surface:
+                j += 1
+            span = _relocate(surface)
+            for k in range(i, j):
+                out.append(
+                    replace(
+                        mentions[k],
+                        source_provision_ref=src_ref,
+                        source_span=span,
+                        valid_at_interval=valid_at_interval,
+                    )
+                )
+            i = j
+        return out
+
     for p_el in root.iter():
         local = p_el.tag.split("}")[-1] if "}" in p_el.tag else p_el.tag
         if local != "p":
@@ -1063,8 +1101,12 @@ def extract_surface_grammar_mentions(
         # Internal (same-statute) and by-name cross-statute refs partition by the
         # context preceding the §: bare/self -> internal; name head -> by-name;
         # id-anchored is owned by the plain-text lane (both decline it).
-        for mention in recognize_internal_refs(text, statute_id):
-            result.mentions.append(_reanchor(mention))
+        # Coordinated internal refs (``47 ja 49 §:ssä``) enumerate into one
+        # mention per member, all sharing the whole-coordination surface; group
+        # them so each coordinated occurrence shares one span (see below).
+        result.mentions.extend(
+            _reanchor_grouped(recognize_internal_refs(text, statute_id))
+        )
         for mention in recognize_by_name_refs(text):
             result.mentions.append(_reanchor(mention))
 

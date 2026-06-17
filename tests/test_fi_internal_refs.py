@@ -87,6 +87,34 @@ def test_section_coordination() -> None:
     assert _targets("6 ja 8 §:ssä") == [("6", None, None), ("8", None, None)]
 
 
+def test_section_coordination_two_members_distinct_targets() -> None:
+    # "47 ja 49 §:ssä" → distinct 47 and 49 (NOT 48; no spurious member).
+    assert _targets("47 ja 49 §:ssä") == [("47", None, None), ("49", None, None)]
+
+
+def test_momentti_coordination_two_members() -> None:
+    # "1 ja 2 momentissa" → distinct moments 1 and 2.
+    assert _targets("Edellä 1 ja 2 momentissa") == [("", 1, None), ("", 2, None)]
+
+
+def test_section_coordination_three_members() -> None:
+    # "1, 2 ja 3 §" → three distinct section targets, no duplication.
+    assert _targets("1, 2 ja 3 §:ssä") == [
+        ("1", None, None),
+        ("2", None, None),
+        ("3", None, None),
+    ]
+
+
+def test_coordinated_members_share_one_surface() -> None:
+    # Each coordinated member is its own mention but all carry the SAME whole-
+    # coordination surface (per-member byte separation is the integration's job;
+    # the lane carries the whole surface and one mention per resolved member).
+    ms = recognize_internal_refs("47 ja 49 §:ssä", _SID)
+    assert len(ms) == 2
+    assert {m.surface_text for m in ms} == {"47 ja 49 §:ssä"}
+
+
 def test_jaljempana_bare_momentti() -> None:
     assert _targets("jäljempänä 3 momentissa") == [("", 3, None)]
 

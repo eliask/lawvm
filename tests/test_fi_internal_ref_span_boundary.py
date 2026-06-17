@@ -92,3 +92,73 @@ def test_short_section_ref_anchors_at_its_own_occurrence_not_inside_longer() -> 
             "longer section number)"
         )
         assert sp.byte_offset == true_56_surface
+
+
+# A coordinated internal reference enumerates into one mention PER member, all
+# carrying the same whole-coordination surface. The integration must share ONE
+# span across the members of a single occurrence (not advance its per-surface
+# byte cursor onto a LATER occurrence, which mis-anchored member 2+ and starved
+# repeated occurrences of a span).
+_COORD_XML = (
+    '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    "<body>"
+    '<section eId="sec_1"><content>'
+    "<p>Sovelletaan 47 ja 49 §:ssä säädettyä.</p>"
+    "</content></section>"
+    '<section eId="sec_2"><content>'
+    "<p>Lisäksi 47 ja 49 §:ssä mainittu.</p>"
+    "</content></section>"
+    "</body></akomaNtoso>"
+)
+
+
+def _coord_section_mentions(xml_bytes: bytes):
+    res = extract_surface_grammar_mentions(xml_bytes, "TEST/COORD")
+    return [
+        m
+        for m in res.mentions
+        if "INTERNAL" in str(m.cite_kind)
+        and m.surface_text == "47 ja 49 §:ssä"
+    ]
+
+
+def test_coordinated_members_share_one_occurrence_span() -> None:
+    xb = _COORD_XML.encode("utf-8")
+    needle = "47 ja 49 §:ssä".encode("utf-8")
+    occ1 = xb.find(needle)
+    occ2 = xb.find(needle, occ1 + 1)
+    assert 0 <= occ1 < occ2
+
+    mentions = _coord_section_mentions(xb)
+    # 2 members (47, 49) × 2 occurrences = 4 mentions; NONE may lose its span.
+    assert len(mentions) == 4
+    spans = [m.source_span for m in mentions]
+    assert all(sp is not None for sp in spans), (
+        "a coordinated member lost its span (per-surface cursor walked onto a "
+        "later occurrence instead of sharing the occurrence span)"
+    )
+    offsets = [sp.byte_offset for sp in spans]
+    # Both members of each occurrence share that occurrence's span; the two
+    # occurrences anchor at their own (distinct, document-order) offsets.
+    assert sorted(offsets) == [occ1, occ1, occ2, occ2]
+
+
+def test_coordinated_reference_not_double_emitted() -> None:
+    # The coordinated surface appears ONCE per occurrence in the source; it must
+    # not be emitted by more than the enumerated members. Per occurrence: exactly
+    # one mention for section 47 and one for section 49 (no duplicate pair).
+    xb = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<body><section eId=\"s\"><content>"
+        "<p>Sovelletaan 47 ja 49 §:ssä säädettyä.</p>"
+        "</content></section></body></akomaNtoso>"
+    ).encode("utf-8")
+    res = extract_surface_grammar_mentions(xb, "TEST/COORD2")
+    labels = sorted(
+        m.target_provision_ref.section_label
+        for m in res.mentions
+        if "INTERNAL" in str(m.cite_kind)
+        and m.target_provision_ref is not None
+        and m.target_provision_ref.section_label in {"47", "49"}
+    )
+    assert labels == ["47", "49"], f"double-emission or missing member: {labels}"
