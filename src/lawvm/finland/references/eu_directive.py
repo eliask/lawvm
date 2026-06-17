@@ -80,8 +80,15 @@ _NICKNAME_RE = re.compile(
 
 # The article window: a number list (digits, commas, conjunctions, dashes,
 # letter suffixes) immediately followed by an inflected ``artikla``.
+# NOTE: the number-window class is bounded ({0,120}) and the redundant trailing
+# ``\s*`` was folded into it.  The old ``[...]*?\s*`` shape had the lazy class and
+# the following ``\s*`` overlapping on whitespace, which made an article phrase
+# without a terminal ``artikla`` backtrack catastrophically (~3 s at 16k chars).
+# Folding + bounding keeps the same matches (the ``nums`` capture is stripped and
+# re-tokenised downstream) while running linearly.  120 chars covers any realistic
+# article list ("1, 2 ja 3 artiklassa").
 _ARTIKLA_RE = re.compile(
-    r"(?P<nums>\d[\d\s,a-z–—-]*?)\s*"
+    r"(?P<nums>\d[\d\s,a-z–—-]{0,120})"
     r"artikla(?:ssa|sta|an|n|a|ksi|lla|lta|lle|t)?\b",
     re.IGNORECASE,
 )
