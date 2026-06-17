@@ -246,5 +246,74 @@ def test_pronoun_jollain_is_not_a_statute_name() -> None:
     assert recognize_by_name_refs("ratkaistaan joillain tavoilla") == []
 
 
+def test_las_agent_noun_plural_is_not_a_statute_name() -> None:
+    """``oppilaille`` / ``sotilailta`` / ``kokelaiksi`` are ``-las``/``-läs`` agent
+    nouns in the plural, NOT a ``laki`` head.
+
+    The closed ``-las``/``-läs`` agent-noun class (``oppilas`` pupil, ``sotilas``
+    soldier, ``kokelas`` cadet) forms its plural oblique on the stem ``-lai-``
+    (``oppilaille`` "to pupils", ``sotilailta`` "from soldiers", ``kokelaiksi``
+    "into cadets", ``oppilain`` "of pupils"). The trailing ``lai`` + case ending
+    is byte-identical to a ``laki`` singular oblique, so the head trigger
+    mis-segments it and invents ``fi-name:oppilaki``. These are non-references and
+    are hard-rejected. A compound prefix (``rintamasotilaille``) is tolerated.
+    """
+    assert recognize_by_name_refs("opetus järjestetään oppilaille maksutta") == []
+    assert recognize_by_name_refs("korvaus maksetaan rintamasotilaille") == []
+    assert recognize_by_name_refs("peritään oppilailta lukukausimaksu") == []
+    assert recognize_by_name_refs("annettu kokelaiksi otetuille") == []
+    assert recognize_by_name_refs("etu kuuluu vain sotilailta perittyihin") == []
+    assert recognize_by_name_refs("kaikkien oppilain oikeudet turvataan") == []
+
+
+def test_laki_adessive_translative_collision_still_emitted() -> None:
+    """The ``laki`` ADESSIVE/TRANSLATIVE (``eläkelailla`` / ``elintarvelaiksi``)
+    is a REAL by-name citation and must NOT be swept by the agent-noun reject.
+
+    ``eläkelailla`` ("by means of the pension act") and ``elintarvelaiksi``
+    ("named the food act") share the ``-lai-`` surface fragment but carry a real
+    statute modifier (``eläke`` / ``elintarve``), not an agent-noun stem. The
+    agent-noun reject is anchored on the closed ``oppi``/``soti``/``koke`` heads,
+    so these survive as genuine references.
+    """
+    elake = recognize_by_name_refs("oikeudet säädetään työeläkelailla tarkemmin")
+    assert len(elake) == 1
+    assert elake[0].target_provision_ref is not None
+    assert elake[0].target_provision_ref.statute_id == "fi-name:työeläkelaki"
+    elint = recognize_by_name_refs("päätöksessä sanotaan elintarvelaiksi se laki")
+    assert len(elint) == 1
+    assert elint[0].target_provision_ref is not None
+    assert elint[0].target_provision_ref.statute_id == "fi-name:elintarvelaki"
+
+
+def test_determiner_laki_collapse_is_not_a_statute_name() -> None:
+    """A determiner glued to a ``laki`` oblique (elided space, OCR'd source) is a
+    self-referential demonstrative, NOT a named act.
+
+    ``tämänlain`` (``tämän lain`` "of this law"), ``tässälaissa`` (``tässä
+    laissa`` "in this law"), ``mainitunlain`` (``mainitun lain`` "of the said
+    law"). A real compound title's modifier is a noun stem, never an inflected
+    determiner, so this collapse can never be a resolvable named act. Closed
+    determiner set; hard-rejected.
+    """
+    assert recognize_by_name_refs("mikäli ei tässälaissa toisin säädetä") == []
+    assert recognize_by_name_refs("vuoden kuluessa tämänlain voimaantulosta") == []
+    assert recognize_by_name_refs("noudatetaan mainitunlain säännöksiä") == []
+
+
+def test_real_la_stem_compound_law_still_emitted() -> None:
+    """A real ``-la``-stem compound act (``maakuntalailla``) is NOT a false
+    positive and must still emit.
+
+    ``maakuntalailla`` ("by the regional-government act", adessive) is a genuine
+    statute reference whose modifier (``maakunta``) is not an agent-noun head, so
+    the agent-noun reject leaves it alone.
+    """
+    mentions = recognize_by_name_refs("toimivalta voidaan maakuntalailla siirtää")
+    assert len(mentions) == 1
+    assert mentions[0].target_provision_ref is not None
+    assert mentions[0].target_provision_ref.statute_id == "fi-name:maakuntalaki"
+
+
 def test_empty_text() -> None:
     assert recognize_by_name_refs("") == []
