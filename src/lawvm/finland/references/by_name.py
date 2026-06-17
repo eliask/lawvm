@@ -229,6 +229,40 @@ _ADJ_NOT_LAKI_RE = re.compile(
 # class, same discipline as the adjective reject above.)
 _PRONOUN_NOT_LAKI_RE = re.compile(r"^joi?llain$", re.IGNORECASE)
 
+# Closed ``-las``/``-läs`` agent-noun PLURAL obliques that mis-segment as a
+# ``laki`` head. ``oppilas`` (pupil) / ``sotilas`` (soldier) / ``kokelas``
+# (cadet/novice) form their plural oblique on the stem ``-lai-`` (``oppilaille``
+# "to pupils", ``sotilailta`` "from soldiers", ``kokelaiksi`` "into cadets",
+# ``oppilain`` "of pupils"). The trailing ``lai`` + case ending is byte-identical
+# to a ``laki`` SINGULAR oblique (``laille``/``lailta``/``laiksi``/``lain`` …), so
+# the head trigger reads it as a ``laki`` head and invents ``fi-name:oppilaki``.
+# These three agent nouns are a CLOSED class in legal/administrative prose and are
+# never statute names; the reject is anchored on the agent-noun head (optional
+# compound prefix before it: ``rintamasotilaille``) so it can never match a real
+# ``-laki`` compound — crucially NOT the ``laki`` ADESSIVE/TRANSLATIVE collisions
+# that ARE real citations (``eläkelailla``, ``elintarvelaiksi``), which carry a
+# different stem and are left untouched. Verified against the full statute-name
+# registry: zero real-law keys collide. Matched against the WHOLE token, folded.
+_LAS_AGENT_NOUN_NOT_LAKI_RE = re.compile(
+    r"(?:^|[a-zåäö])(?:oppi|soti|koke)lai(?:lle|lta|ksi|lla|ssa|sta|n|hin)$",
+    re.IGNORECASE,
+)
+
+# Closed DETERMINER/pronoun + ``laki`` orthographic collapse (an elided space in
+# older / OCR'd source): ``tämänlain`` (``tämän lain`` "of this law"),
+# ``tässälaissa`` (``tässä laissa`` "in this law"), ``mainitunlain``
+# (``mainitun lain`` "of the said law"). The whole token is an inflected
+# determiner glued to a ``laki`` oblique — a real compound title's modifier is a
+# noun stem, never an inflected determiner, so this can never be a resolvable
+# named act. Closed determiner set; verified against the full registry: zero
+# real-law keys collide. Matched against the WHOLE token, case-folded.
+_DETERMINER_LAKI_COLLAPSE_RE = re.compile(
+    r"^(?:t[aä]m[aä]n|t[aä]ss[aä]|t[aä]st[aä]|tuon|sen|n[aä]iden|niiden"
+    r"|mainitun|sellaisen|kunkin|saman|kyseisen|kyseisess[aä]|er[aä][aä]n)"
+    r"la(?:in|issa|ista|ille|ilta|illa|iksi|kia|kiin)$",
+    re.IGNORECASE,
+)
+
 # A capitalized-modifier signal: the modifier's first character is an uppercase
 # letter. Combined with a mid-sentence check (the match does not begin the text
 # nor follow sentence-terminating punctuation), this is the proper-name-ish
@@ -351,6 +385,10 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         if _ADJ_NOT_LAKI_RE.search(whole_token):
             continue
         if _PRONOUN_NOT_LAKI_RE.match(whole_token):
+            continue
+        if _LAS_AGENT_NOUN_NOT_LAKI_RE.search(whole_token):
+            continue
+        if _DETERMINER_LAKI_COLLAPSE_RE.match(whole_token):
             continue
 
         # Parse the optional structural tail (everything after the head) through
