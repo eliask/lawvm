@@ -44,6 +44,12 @@ from lawvm.tools.transition_graph_interlinks import (
     place_lawvm_interlinks,
     rendered_text_segments,
 )
+from lawvm.tools.transition_graph_overlays import (
+    SURFACE_OVERLAY_ROW_COLUMNS,
+    LawvmSurfaceOverlayExportProvider,
+    overlay_row_sql_values,
+    place_lawvm_surface_overlays,
+)
 from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 
 SCHEMA_VERSION = "transition-graph.v1"
@@ -1154,6 +1160,24 @@ CREATE TABLE lawvm_interlink_targets (
     preview_text        TEXT,
     detail_json         TEXT
 );
+CREATE TABLE lawvm_surface_overlays (
+    overlay_id              TEXT PRIMARY KEY,
+    statute_id              TEXT,
+    kind                    TEXT,  -- closed overlay vocabulary (defined_term, ...)
+    node_id                 TEXT,  -- stable Legal Surface Graph node identity
+    label                   TEXT,  -- short display surface
+    payload_json            TEXT,  -- typed surface facts
+    links_json              TEXT,  -- co-located overlay/node affordances
+    status                  TEXT,  -- resolution status (reference/term_use only)
+    source_span_byte_offset INTEGER,
+    source_span_byte_len     INTEGER,
+    rendered_statute_id     TEXT,
+    rendered_effective_date TEXT,
+    rendered_address        TEXT,
+    rendered_segment_index  INTEGER,
+    rendered_char_start     INTEGER,
+    rendered_char_end       INTEGER
+);
 """
 
 
@@ -1180,6 +1204,7 @@ class ExportStats:
     n_evidence_events: int
     n_lawvm_interlinks: int
     n_lawvm_interlink_targets: int
+    n_lawvm_surface_overlays: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -1249,6 +1274,7 @@ def export_transition_graph(
     quiet: bool = False,
     profile: TransitionGraphExportProfile | None = None,
     interlink_provider: LawvmInterlinkExportProvider | None = None,
+    overlay_provider: LawvmSurfaceOverlayExportProvider | None = None,
     replay_runner: Any | None = None,
     tree_materializer: Any | None = None,
 ) -> ExportStats:
@@ -1497,6 +1523,23 @@ def export_transition_graph(
             segments_by_date=segments_by_date,
         )
 
+        # --- lawvm_surface_overlays: the FULL Legal Surface Graph projection ---
+        # The jurisdiction adapter projects whole-body overlay rows (defined
+        # terms, frames, temporal markers, references) with null rendered_*; the
+        # exporter then places them onto the SAME per-date rendered segments it
+        # placed interlinks onto, so the viewer paints overlays and interlinks
+        # with identical rendered_address/segment/char coordinates.
+        projected_overlays = (
+            overlay_provider.project_overlays(canonical_id, corpus)
+            if overlay_provider is not None
+            else []
+        )
+        overlay_rows = place_lawvm_surface_overlays(
+            projected_overlays,
+            statute_id=canonical_id,
+            segments_by_date=segments_by_date,
+        )
+
         source_rows: List[SourceArtifactRow] = []
         source_ref_by_amendment: Dict[str, str] = {}
         # the base statute
@@ -1657,6 +1700,14 @@ def export_transition_graph(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [row.sql_values() for row in interlink_target_rows],
         )
+        conn.executemany(
+            "INSERT OR REPLACE INTO lawvm_surface_overlays("
+            + ", ".join(SURFACE_OVERLAY_ROW_COLUMNS)
+            + ") VALUES ("
+            + ", ".join("?" for _ in SURFACE_OVERLAY_ROW_COLUMNS)
+            + ")",
+            [overlay_row_sql_values(row) for row in overlay_rows],
+        )
 
         # --- meta ---
         meta_rows = {
@@ -1721,6 +1772,7 @@ def export_transition_graph(
         n_evidence_events=len(evidence_rows),
         n_lawvm_interlinks=len(interlink_rows),
         n_lawvm_interlink_targets=len(interlink_target_rows),
+        n_lawvm_surface_overlays=len(overlay_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1759,6 +1811,7 @@ def main(args: Any) -> None:
         quiet=False,
         profile=adapter.profile,
         interlink_provider=adapter.interlink_provider,
+        overlay_provider=adapter.overlay_provider,
         replay_runner=adapter.replay_runner,
         tree_materializer=adapter.tree_materializer,
     )
@@ -1784,4 +1837,5 @@ def main(args: Any) -> None:
     print(f"  evidence_events:  {stats.n_evidence_events}", flush=True)
     print(f"  lawvm_interlinks: {stats.n_lawvm_interlinks}", flush=True)
     print(f"  interlink_targets: {stats.n_lawvm_interlink_targets}", flush=True)
+    print(f"  surface_overlays: {stats.n_lawvm_surface_overlays}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)
