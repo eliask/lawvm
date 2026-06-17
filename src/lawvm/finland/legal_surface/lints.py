@@ -283,6 +283,16 @@ class UsedBeforeDefinitionLintPass:
                 binding = index.nodes.get(binding_id)
                 if binding is None or binding.source_ref is None:
                     continue
+                # CONSERVATIVE common-word guard: a ``tarkoitetaan`` binding is a
+                # definitions-section definition. A term defined there and used in
+                # the operative provisions is normal Finnish drafting, not an order
+                # violation; flagging it floods USED_BEFORE_DEFINITION with common
+                # words (``auto`` / ``käyttö`` / ``palvelu``). The lint is reserved
+                # for ALIAS bindings (parenthetical / jäljempänä), where a local
+                # short-name used before it is introduced IS a genuine order
+                # violation (the canonical true positive).
+                if binding.payload.get("binding_kind") == "tarkoitetaan":
+                    continue
                 if binding.source_ref.char_start > use_ref.char_start:
                     term = _term_of(use)
                     lints.append(

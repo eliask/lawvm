@@ -210,6 +210,51 @@ _TARKOITETAAN = re.compile(
 # recover the nominative/stem term for morphology classification.
 _ADESSIVE_SUFFIXES = ("ll\xe4", "lla")
 
+# ---------------------------------------------------------------------------
+# Definitional vs REFERENTIAL ``tarkoitetaan``
+# ---------------------------------------------------------------------------
+#
+# Finnish ``tarkoitetaan`` is used in TWO unrelated idioms:
+#
+#   * DEFINITIONAL — ``X:llä tarkoitetaan Y`` ("by X is meant Y"): the definiendum
+#     X immediately precedes the verb in the ADESSIVE (``-lla`` / ``-llä``).  This
+#     is the only shape that introduces a defined term.
+#   * REFERENTIAL  — ``…, jota / jossa N momentissa / N luvun M §:ssä
+#     tarkoitetaan`` ("… which is referred to in subsection N / § M of chapter N").
+#     Here the word before the verb is a relative pronoun (``jota`` / ``jolla`` /
+#     ``jossa`` …) or a structural-unit cross-reference in the inessive
+#     (``momentissa`` / ``luvussa`` / ``kohdassa`` / ``§:ssä`` / ``laissa`` /
+#     ``asetuksessa`` / ``direktiivissä`` / ``artiklassa``).  It introduces NOTHING;
+#     it points at an existing provision.
+#
+# The referential idiom is what flooded the definition lints: it bound truncated
+# stems (``ssä``, ``jo``, ``ede``), function words (``jota`` / ``joita`` /
+# ``säädetään``) and scope locatives (``momentissa`` / ``luvussa`` / ``laissa``)
+# as if they were defined terms, then every later occurrence of those ubiquitous
+# tokens fired USED_BEFORE_DEFINITION.  We therefore recognise a binding ONLY for
+# the definitional (adessive) shape, and never for a relative pronoun in the
+# adessive (``jolla`` / ``millä`` / ``sillä`` / ``tällä`` …).
+
+# Adessive forms of relative / demonstrative pronouns and referential adverbs:
+# grammatically adessive (``-lla`` / ``-llä``) but never a definiendum (``jolla``
+# = "by which", ``edellä`` = "above").  Keyed by the post-``_strip_adessive`` stem.
+_PRONOUN_ADESSIVE_STEMS: frozenset[str] = frozenset(
+    {
+        "jo",       # jolla / jolloin
+        "joi",      # joilla
+        "mi",       # millä
+        "mil",      # millä (alt strip)
+        "si",       # sillä
+        "sil",      # sillä
+        "t\xe4",    # tällä
+        "t\xe4l",   # tällä (alt strip)
+        "ni\xe4",   # niillä
+        "nii",      # niillä
+        "kai",      # kaikilla
+        "ede",      # edellä  ("above" — referential adverb, not a definiendum)
+    }
+)
+
 # Substring guards (AGENTS.md §1.11)
 _GUARD_PAREN = "("
 _GUARD_JALJEMPANA = "j\xe4ljemp\xe4n\xe4"
@@ -354,6 +399,36 @@ def _strip_adessive(term: str) -> str:
     return term
 
 
+def _is_definitional_definiendum(last_word: str) -> bool:
+    """True iff ``last_word`` (the token directly before ``tarkoitetaan``) is a
+    genuine DEFINITIONAL definiendum, not the REFERENTIAL idiom.
+
+    The definitional idiom is ``X:llä tarkoitetaan Y`` — the definiendum is in the
+    ADESSIVE (``-lla`` / ``-llä``).  We accept ONLY adessive definienda and reject:
+
+      * non-adessive words (``momentissa`` / ``luvussa`` / ``§:ssä`` / ``laissa``
+        are inessive cross-references — "referred to IN …", never definienda);
+      * relative / demonstrative pronouns even in the adessive (``jolla`` /
+        ``millä`` / ``sillä`` / ``tällä`` = "by which / by that" — referential).
+
+    This is the conservative discriminator that keeps every real definition
+    (``Vesialueella`` / ``autolla`` / ``sivutuotteella`` …) while refusing the
+    referential idiom that bound function words, truncated stems and scope
+    locatives as phantom defined terms.
+    """
+    low = last_word.lower()
+    if not (low.endswith("lla") or low.endswith("ll\xe4")):
+        return False
+    stem = _strip_adessive(last_word).lower()
+    if stem in _PRONOUN_ADESSIVE_STEMS:
+        return False
+    # A bare adessive whose stem is too short to be a content word (e.g. a
+    # mangled pronoun like ``jo`` / ``si``) is not a definiendum.
+    if len(stem) < 2:
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Recognizers
 # ---------------------------------------------------------------------------
@@ -369,6 +444,14 @@ def _recognize_jaljempana(text: str, source_file: str) -> list[DefinedTermBindin
         # bounded look-back window (typ. same parenthetical group).
         lb_start = max(0, m.start() - 90)
         target = _first_act_id_in(text[lb_start : m.start()])
+        quoted = m.group("q") is not None
+        # An ALIAS binding introduces a short name for a CITED act, so the act
+        # cite must be present (or the alias must be explicitly quoted).  Without
+        # either, ``jäljempänä X`` is the adverbial "hereinafter provided" idiom
+        # (``jäljempänä säädetään`` / ``jäljempänä on säädetty``) — referential,
+        # not a binding — and must not bind a verb/clause as a phantom term.
+        if target is None and not quoted:
+            continue
         status = _classify_term_morphology(raw_term)
         out.append(
             DefinedTermBinding(
@@ -439,7 +522,15 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         # that form the defined head.  The defined term is the word directly
         # before "tarkoitetaan" (possibly a final-head compound run already in
         # the capture).  Strip a leading scope phrase like "tässä laissa".
-        term_for_class = _strip_adessive(raw_term.split()[-1])
+        last_word = raw_term.split()[-1]
+        # Only the DEFINITIONAL idiom (``X:llä tarkoitetaan``) introduces a term;
+        # the REFERENTIAL idiom (``…, jota / N momentissa / N §:ssä tarkoitetaan``
+        # = "referred to in …") binds nothing.  Reject the referential shape so it
+        # cannot bind function words / scope locatives / truncated stems as phantom
+        # defined terms (the USED_BEFORE_DEFINITION flood).
+        if not _is_definitional_definiendum(last_word):
+            continue
+        term_for_class = _strip_adessive(last_word)
         # Recover full final-head run: take the last token only as the bound
         # term (conservative); multi-token runs with inflected modifiers were
         # captured but the head is the last token.

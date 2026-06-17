@@ -57,6 +57,7 @@ from lawvm.finland.morphology import (
 )
 from lawvm.finland.morphology.api import MorphEntry
 from lawvm.finland.references.defined_terms import (
+    BINDING_TARKOITETAAN,
     STATUS_UNSUPPORTED_MORPHOLOGY,
     DefinedTermBinding,
 )
@@ -368,7 +369,25 @@ def resolve_term_uses(
             )
         else:
             # Matched a binding's surface, but every match is out of scope
-            # (use precedes its definition) -> open, NEVER silently resolved.
+            # (use precedes its definition).
+            #
+            # CONSERVATIVE common-word guard: when EVERY out-of-scope match is a
+            # ``tarkoitetaan`` (definitions-section) binding, an occurrence BEFORE
+            # the definition is the ordinary-language word, not a forward
+            # reference to the definition.  A statute that defines a common term
+            # (``auto`` / ``käyttö`` / ``palvelu``) in a definitions section and
+            # uses it throughout the operative provisions is normal Finnish
+            # drafting — flagging every prior occurrence floods
+            # USED_BEFORE_DEFINITION with false positives.  We therefore do NOT
+            # emit such a pre-definition occurrence as a use at all (consistent
+            # with "we do not fabricate term-shaped uses out of arbitrary prose").
+            #
+            # ALIAS bindings (parenthetical / jäljempänä) are different: a local
+            # short-name used before it is introduced IS a genuine order
+            # violation, so a pre-binding use of an alias surface still yields an
+            # ``open`` use (the canonical USED_BEFORE_DEFINITION true positive).
+            if all(m.binding.binding_kind == BINDING_TARKOITETAAN for m in hits):
+                continue
             uses.append(
                 TermUse(
                     term_surface=surface,
