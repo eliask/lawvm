@@ -21,7 +21,10 @@ import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_graph import SourceSpanRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceBundle, SourceSurfaceUnit
-from lawvm.finland.legal_surface.clause_segment import build_clause_index
+from lawvm.finland.legal_surface.clause_segment import (
+    build_clause_index,
+    build_segmentation_graph,
+)
 from lawvm.finland.legal_surface.tokenize import (
     build_morph_overlay,
     build_token_tape,
@@ -90,7 +93,23 @@ def build_surface_bundle(
         # Stage-1 bridge: adapter lenses run the existing recognizers, which need
         # the XML tree (the <ref> lane especially). Removed once lenses migrate
         # to token_tape views (Phase 7).
-        metadata={"xml_bytes": xml_bytes},
+        #
+        # SegmentationGraph (additive structural substrate, one level above the
+        # clause index in the SourceSyntaxGraph stack): classifies the body into
+        # heading / chapeau / list_item (with chapeau inheritance) /
+        # quoted_amendment_block / prose + explicit residual spans, partitioning
+        # the text exactly (no silent drop). Attached via ``metadata`` rather than
+        # a new unit field so the substrate stays additive without touching the
+        # universal unit schema — like ``xml_bytes`` it is a view a later pass
+        # consumes, NOT a graph input (the assembler's graph_id is computed over
+        # node/edge payloads + subject only, never over unit metadata, so this
+        # cannot perturb the assembled surface graph).
+        metadata={
+            "xml_bytes": xml_bytes,
+            "segmentation_graph": build_segmentation_graph(
+                source_unit_id, raw_text
+            ),
+        },
         # Phase 7 (§D4): populate the source-preserving token view additively.
         # Lenses that ignore it are unaffected; token-consuming lenses set
         # required_views=("token_tape",).
