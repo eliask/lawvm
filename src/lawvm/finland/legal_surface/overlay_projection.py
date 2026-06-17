@@ -54,14 +54,15 @@ from lawvm.core.legal_surface_graph import (
 #
 # Maps a graph node_kind -> the overlay ``kind`` the viewer renders. Only these
 # node kinds produce overlay rows; everything else (entity handles, the
-# reference_resolution that rides on its reference row, surface_residual, and
-# procedure_frame which is outside the pinned vocab) is skipped.
+# reference_resolution that rides on its reference row, surface_residual) is
+# skipped.
 OVERLAY_KIND_BY_NODE_KIND: Mapping[str, str] = {
     "reference_expr": "reference",
     "definition_binding": "defined_term",
     "term_use": "term_use",
     "temporal_expr": "temporal",
     "delegation_frame": "delegation",
+    "procedure_frame": "procedure",
     "sanction_frame": "sanction",
     "exception_condition_cue": "exception_condition",
     "actor_modal_frame": "actor_modal",
@@ -292,6 +293,10 @@ def _overlay_label(node: SurfaceNode, kind: str) -> str:
         instrument = payload.get("instrument_kind")
         if isinstance(instrument, str) and instrument:
             return instrument
+    if kind == "procedure":
+        value = payload.get("process_kind")
+        if isinstance(value, str) and value:
+            return value
     if kind == "sanction":
         for key in ("sanction_kind", "marker_surface"):
             value = payload.get(key)
