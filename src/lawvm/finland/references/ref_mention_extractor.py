@@ -454,6 +454,29 @@ class ExtractionResult:
 # span stays None — fail-loud-by-absence rather than a fabricated zero offset.
 
 
+def _find_with_left_boundary(haystack: bytes, needle: bytes, start: int) -> int:
+    """Locate ``needle`` in ``haystack`` from ``start``, skipping matches lodged
+    inside a longer number run.
+
+    A reference surface that begins with a digit is a section/momentti/article
+    number (``"56 \xc2\xa7:ssa"``); it must not be re-anchored at the tail of a
+    longer number (``"156 \xc2\xa7:ssa"``), where a plain :meth:`bytes.find` would
+    place it. Reject a candidate whose immediately preceding byte is also an ASCII
+    digit and keep scanning. Surfaces that do not begin with a digit are
+    unaffected (the common case), so this is a targeted guard, not a slowdown.
+    """
+    leading_digit = needle[:1].isdigit()
+    pos = start
+    while True:
+        i = haystack.find(needle, pos)
+        if i < 0:
+            return -1
+        if leading_digit and i > 0 and haystack[i - 1 : i].isdigit():
+            pos = i + 1
+            continue
+        return i
+
+
 def _span_from_edge(
     edge: CrossRefEdge,
     source_statute_id: str,
@@ -870,7 +893,9 @@ def extract_plain_text_statute_mentions(
         if surface in local_cache:
             return local_cache[surface]
         needle = surface.encode("utf-8")
-        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
         if start < 0:
             # Surface re-encoded/normalized vs raw bytes — fail loud by absence.
             local_cache[surface] = None
@@ -994,7 +1019,9 @@ def extract_surface_grammar_mentions(
         if not surface:
             return None
         needle = surface.encode("utf-8")
-        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
         if start < 0:
             return None
         surface_byte_cursor[needle] = start + 1
@@ -1148,7 +1175,9 @@ def extract_preparatory_reference_mentions(
         if not surface:
             return None
         needle = surface.encode("utf-8")
-        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
         if start < 0:
             # The recognizer normalises whitespace before matching, so a raw_text
             # surface may not be a verbatim byte substring — fail loud by absence

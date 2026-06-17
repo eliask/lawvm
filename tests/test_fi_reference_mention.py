@@ -685,8 +685,14 @@ class TestSourceSpanProvenance:
         assert m.source_span.byte_len > 0
         assert m.source_span.source_file == EXACT_CROSS_STATUTE.source_statute_id
 
-    def test_ref_lane_byte_span_slices_to_the_ref_element(self) -> None:
-        """The recovered byte span slices back to the <ref>…</ref> element."""
+    def test_ref_lane_byte_span_slices_to_the_inner_citation_phrase(self) -> None:
+        """The recovered byte span slices to the <ref> element's INNER citation
+        phrase, NOT the surrounding markup envelope.
+
+        The span is the citation phrase the reader sees, so it must exclude the
+        ``<ref href=...>`` start tag and the ``</ref>`` close tag — slicing those
+        in was the markup-envelope over-capture bug (up to multi-KB spans when the
+        href search latched onto a metadata duplicate)."""
         result = extract_reference_mentions(
             EXACT_CROSS_STATUTE.xml_bytes,
             EXACT_CROSS_STATUTE.source_statute_id,
@@ -696,10 +702,10 @@ class TestSourceSpanProvenance:
         sliced = EXACT_CROSS_STATUTE.xml_bytes[
             span.byte_offset : span.byte_offset + span.byte_len
         ]
-        assert sliced.startswith(b"<ref")
-        assert sliced.endswith(b"</ref>")
-        # The surface text the edge carried is inside the sliced element.
-        assert b"lannoitelaissa" in sliced
+        # Inner phrase only: no markup tags, exactly the citation surface.
+        assert b"<ref" not in sliced
+        assert b"</ref>" not in sliced
+        assert sliced == b"lannoitelaissa"
 
     def test_plain_text_lane_mention_carries_byte_span(self) -> None:
         """A plain-text statute citation mention carries a real byte span that
