@@ -298,6 +298,191 @@ NO_LEAK_SYNTHETIC_MARKER = CorpusFixture(
 )
 
 # ---------------------------------------------------------------------------
+# Fixture: body-lane section RANGE (en-dash) via the shared sub-ref recognizer
+#
+# "lannoitelain (711/2022) 108—110 §:ää ei kuitenkaan sovelleta" — an en-dash
+# section range expands to three section-precise cross-statute mentions, the
+# same expressiveness as the johtolause amendment grammar.
+# ---------------------------------------------------------------------------
+
+BODY_SECTION_RANGE = CorpusFixture(
+    fixture_id="body_section_range",
+    description=(
+        "Plain-text cross-statute citation with an en-dash section RANGE "
+        "(108—110 §). The body reference lane routes the structural tail "
+        "through the shared sub-ref recognizer, expanding the range to three "
+        "section-precise CROSS_STATUTE mentions (confidence=EXACT)."
+    ),
+    source_statute_id="2003/314",
+    xml_bytes=_wrap_body(
+        _section(
+            b"5 \xc2\xa7",
+            b"lannoitelain (711/2022) 108\xe2\x80\x94110 \xc2\xa7:\xc3\xa4\xc3\xa4 "
+            b"ei kuitenkaan sovelleta.",
+        )
+    ),
+    expected_mentions=[
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "711/2022",
+            "target_provision_ref_str": "711/2022/108",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        },
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "711/2022",
+            "target_provision_ref_str": "711/2022/109",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        },
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "711/2022",
+            "target_provision_ref_str": "711/2022/110",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        },
+    ],
+    expected_rejected=[],
+    expected_diagnostics_rule_ids=[],
+)
+
+# ---------------------------------------------------------------------------
+# Fixture: body-lane section COORDINATION
+#
+# "lain (711/2022) 6 ja 8 §" — a coordinated section list expands to two
+# section-precise mentions.
+# ---------------------------------------------------------------------------
+
+BODY_SECTION_COORDINATION = CorpusFixture(
+    fixture_id="body_section_coordination",
+    description=(
+        "Plain-text cross-statute citation with a coordinated section list "
+        "(6 ja 8 §). Expands to two section-precise CROSS_STATUTE mentions."
+    ),
+    source_statute_id="2003/314",
+    xml_bytes=_wrap_body(
+        _section(
+            b"5 \xc2\xa7",
+            b"Sovelletaan, mit\xc3\xa4 lain (711/2022) 6 ja 8 \xc2\xa7 s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n.",
+        )
+    ),
+    expected_mentions=[
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "711/2022",
+            "target_provision_ref_str": "711/2022/6",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        },
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "711/2022",
+            "target_provision_ref_str": "711/2022/8",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        },
+    ],
+    expected_rejected=[],
+    expected_diagnostics_rule_ids=[],
+)
+
+# ---------------------------------------------------------------------------
+# Fixture: body-lane cross-statute by-id with momentti precision
+#
+# "(424/2003) 6 §:n 1 momentissa" — an explicit-id citation with the inessive
+# momentti form, which body mode promotes to a MOMENTTI sub-reference, threading
+# the subsection into the target ProvisionRef.
+# ---------------------------------------------------------------------------
+
+BODY_BYID_MOMENTTI = CorpusFixture(
+    fixture_id="body_byid_momentti",
+    description=(
+        "Plain-text cross-statute citation by explicit id with momentti "
+        "precision: '(424/2003) 6 §:n 1 momentissa'. Body mode promotes the "
+        "inessive momentti, threading subsection_num=1 into the target ref."
+    ),
+    source_statute_id="2003/314",
+    xml_bytes=_wrap_body(
+        _section(
+            b"5 \xc2\xa7",
+            b"Noudatetaan, mit\xc3\xa4 asetuksen (424/2003) 6 \xc2\xa7:n 1 "
+            b"momentissa s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n.",
+        )
+    ),
+    expected_mentions=[
+        {
+            "source_statute_id": "2003/314",
+            "target_statute_id": "424/2003",
+            "target_provision_ref_str": "424/2003/6/1",
+            "cite_kind": "cross_statute",
+            "cite_confidence": "exact",
+            "phrase_lemma": "plain_text",
+        }
+    ],
+    expected_rejected=[],
+    expected_diagnostics_rule_ids=[],
+)
+
+# ---------------------------------------------------------------------------
+# Fixture: embedded-repeal provenance inside a long-form EU citation
+#
+# "asetuksen (EY) N:o 1774/2002 kumoamisesta (sivutuoteasetus) annetussa ...
+#  asetuksessa (EY) N:o 1069/2009" — the inner act 1774/2002 is named only as
+# the object of a repeal the OUTER (enacting) act 1069/2009 performs. Both are
+# typed EU mentions: 1069/2009 as the primary CITES target, 1774/2002 as
+# REPEALS_EMBEDDED provenance. The (sivutuoteasetus) alias is left as surface
+# text (alias binding is a separate lane).
+# ---------------------------------------------------------------------------
+
+EU_EMBEDDED_REPEAL = CorpusFixture(
+    fixture_id="eu_embedded_repeal",
+    description=(
+        "Long-form EU citation where an inner act is named only as repealed "
+        "provenance: 'asetuksen (EY) N:o 1774/2002 kumoamisesta ... annetussa "
+        "asetuksessa (EY) N:o 1069/2009'. The outer act 1069/2009 is the primary "
+        "CITES target; 1774/2002 is typed as REPEALS_EMBEDDED provenance, "
+        "distinct from the statute's own finlex:repeals metadata."
+    ),
+    source_statute_id="2011/542",
+    xml_bytes=_wrap_body(
+        _section(
+            b"1 \xc2\xa7",
+            b"Sovelletaan, mit\xc3\xa4 tuotteiden terveyss\xc3\xa4\xc3\xa4nn\xc3\xb6ist\xc3\xa4 "
+            b"sek\xc3\xa4 asetuksen (EY) N:o 1774/2002 kumoamisesta (sivutuoteasetus) "
+            b"annetussa Euroopan parlamentin ja neuvoston asetuksessa "
+            b"(EY) N:o 1069/2009 s\xc3\xa4\xc3\xa4det\xc3\xa4\xc3\xa4n.",
+        )
+    ),
+    expected_mentions=[
+        {
+            "source_statute_id": "2011/542",
+            "target_statute_id": "eu/act/2009/1069",
+            "cite_kind": "eu",
+            "cite_confidence": "exact",
+            "edge_subtype": "CITES",
+            "phrase_lemma": "eu_text_pattern",
+        },
+        {
+            "source_statute_id": "2011/542",
+            "target_statute_id": "eu/act/2002/1774",
+            "cite_kind": "eu",
+            "cite_confidence": "exact",
+            "edge_subtype": "REPEALS_EMBEDDED",
+            "phrase_lemma": "eu_text_pattern",
+        },
+    ],
+    expected_rejected=[],
+    expected_diagnostics_rule_ids=[],
+)
+
+# ---------------------------------------------------------------------------
 # All fixtures, indexed by fixture_id
 # ---------------------------------------------------------------------------
 
@@ -311,5 +496,9 @@ ALL_FIXTURES: dict[str, CorpusFixture] = {
         EXACT_REPEALS,
         XML_PARSE_FAILURE,
         NO_LEAK_SYNTHETIC_MARKER,
+        EU_EMBEDDED_REPEAL,
+        BODY_SECTION_RANGE,
+        BODY_SECTION_COORDINATION,
+        BODY_BYID_MOMENTTI,
     ]
 }
