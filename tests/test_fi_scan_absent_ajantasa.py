@@ -6,10 +6,31 @@ import yaml
 
 from scripts.scan_absent_ajantasa import (
     _confidence_label_fi,
+    _finlex_alkup_url,
+    _finlex_lainsaadanto_url,
     _load_corrections,
     _mechanism_label_fi,
     _status_label_fi,
 )
+
+
+def test_finlex_alkup_url_uses_current_saadoskokoelma_scheme() -> None:
+    assert (
+        _finlex_alkup_url("2007", "360")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/360"
+    )
+    # Bare number: leading zeros stripped.
+    assert (
+        _finlex_alkup_url("2007", "05")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/5"
+    )
+
+
+def test_finlex_lainsaadanto_url_uses_current_scheme() -> None:
+    assert (
+        _finlex_lainsaadanto_url("2007", "360")
+        == "https://www.finlex.fi/fi/lainsaadanto/2007/360"
+    )
 
 
 def test_load_corrections_filters_unified_ledger_by_scope(tmp_path: Path) -> None:

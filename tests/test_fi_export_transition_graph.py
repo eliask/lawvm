@@ -1103,3 +1103,24 @@ def test_corpus_backed_export_small_statute(tmp_path: Path) -> None:
         assert bad == 0
     finally:
         conn.close()
+
+
+def test_fi_profile_urls_use_current_finlex_scheme() -> None:
+    from lawvm.finland.transition_graph_profile import (
+        fi_amendment_url,
+        fi_current_statute_url,
+    )
+
+    # Consolidated ("ajantasa") -> lainsaadanto, bare statute number.
+    assert (
+        fi_current_statute_url("fi:normative_act:2007/360", "2007/360")
+        == "https://www.finlex.fi/fi/lainsaadanto/2007/360"
+    )
+    # As-enacted (alkup) -> saadoskokoelma, bare statute number.
+    assert (
+        fi_amendment_url("fi:normative_act:2007/360", "2007/360")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/360"
+    )
+    # Malformed ids degrade to empty (no link is fine; a wrong link is not).
+    assert fi_current_statute_url("", "2007") == ""
+    assert fi_amendment_url("", "2007") == ""

@@ -227,7 +227,13 @@ def _html_presentation_range_labels(html_labels: List[str]) -> List[str]:
 
 
 def _finlex_html_url(sid: str) -> str:
-    """Construct Finlex HTML URL for a statute."""
+    """Construct the Finlex HTML FETCH URL for a statute.
+
+    Deliberately the legacy laki/ajantasa form: it serves grep-able server-
+    rendered HTML used by the audit fetch path, whereas the current lainsaadanto
+    SPA pages are JS-rendered and not fetchable as static HTML. This is a fetch
+    URL, not a human-clickable display link, so it is NOT migrated.
+    """
     year, num = sid.split("/")
     base_num = num.split("-", 1)[0]
     return f"https://www.finlex.fi/fi/laki/ajantasa/{year}/{year}{int(base_num):04d}"

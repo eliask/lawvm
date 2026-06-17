@@ -2386,11 +2386,28 @@ def _finlex_original_url(statute_id: str) -> str:
     year, num = text.split("/", 1)
     if not (year.isdigit() and num.isdigit()):
         return ""
-    return f"https://www.finlex.fi/fi/laki/alkup/{year}/{year}{int(num):04d}"
+    return f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{int(num)}"
+
+
+def _finlex_consolidated_url(statute_id: str) -> str:
+    """New-scheme consolidated ("ajantasa") display URL for a statute, or ""."""
+    text = str(statute_id or "").strip()
+    if "/" not in text:
+        return ""
+    year, num = text.split("/", 1)
+    base_num = num.split("-", 1)[0]
+    if not (year.isdigit() and base_num.isdigit()):
+        return ""
+    return f"https://www.finlex.fi/fi/lainsaadanto/{year}/{int(base_num)}"
 
 
 def _finlex_section_url(statute_id: str, section: str = "") -> str:
-    base = _finlex_html_url(statute_id)
+    # Human-clickable consolidated display link (NOT the fetch URL — that stays
+    # on the old grep-able laki/ajantasa form in audit._finlex_html_url). The
+    # new Finlex SPA's per-section anchor convention is the AKN eId (#sec_*),
+    # which we cannot reconstruct from a bare section label here, so the legacy
+    # #P{label} fragment is preserved as a best-effort hint.
+    base = _finlex_consolidated_url(statute_id)
     label = _section_label_from_key(str(section or ""))
     if base and label and re.fullmatch(r"\d+[a-z]?", label, flags=re.I):
         return f"{base}#P{label}"

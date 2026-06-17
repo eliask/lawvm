@@ -284,7 +284,13 @@ _UA = (
 
 
 def _finlex_html_url(sid: str) -> Optional[str]:
-    """Return Finlex ajantasa URL, or None if sid lacks a numeric statute number."""
+    """Return the Finlex HTML FETCH URL, or None if sid lacks a numeric number.
+
+    Deliberately the legacy laki/ajantasa form: it serves grep-able server-
+    rendered HTML for the chain-verification fetch, whereas the current
+    lainsaadanto SPA pages are JS-rendered. This is a fetch URL, not a display
+    link, so it is NOT migrated.
+    """
     year, num = sid.split("/")
     try:
         base_num = num.split("-", 1)[0]
