@@ -407,17 +407,14 @@ class BrokenRefReport:
 def _resolved_body(store: "CorpusStore", sid: str) -> Optional[bytes]:
     """Best available body XML for reference extraction (archive-only, no replay).
 
-    Prefer the consolidated oracle (the same text the fi_refs projection scans);
-    fall back to the enacted source or amendment act XML so non-consolidated
-    statutes still contribute mentions.
+    Delegates to :func:`read_reference_body`: prefer the consolidated oracle (the
+    same text the fi_refs projection scans), but fall back to the enacted source
+    or amendment act when the oracle is absent OR a ``contentAbsent`` stub, so
+    repealed/expired statutes still contribute their mentions.
     """
-    try:
-        xb = store.read_oracle(sid)
-    except Exception:
-        xb = None
-    if xb:
-        return xb
-    return store.read_source(sid) or store.read_amendment(sid)
+    from lawvm.finland.legal_surface.body_source import read_reference_body
+
+    return read_reference_body(store, sid)
 
 
 def scan_one_statute(

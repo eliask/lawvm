@@ -52,6 +52,7 @@ import lxml.etree as etree
 from lawvm.core.legal_surface_graph import LegalSurfaceGraph, SourceSpanRef
 from lawvm.core.legal_surface_lints import SurfaceLint
 from lawvm.finland.helpers import _normalize_source_section_num
+from lawvm.finland.legal_surface.body_source import read_reference_body
 
 LINT_PASS_ID = "fi.corpus.type_mismatch.v0"
 JURISDICTION = "fi"
@@ -102,23 +103,12 @@ def _num_text(el: etree._Element) -> str | None:
 def _read_body(store: _StoreLike, sid: str) -> bytes | None:
     """Best available body XML (oracle preferred), mirroring corpus_graph policy.
 
-    Archive-only reads; oracle absence is normal and falls back. Any read error
-    is swallowed to ``None`` so an unreadable target produces NO finding (the
-    tag-don't-guess rule), never a false mismatch.
+    Delegates to :func:`read_reference_body`: archive-only reads; oracle absence
+    OR a ``contentAbsent`` stub falls back to source/amendment so repealed/expired
+    statutes still contribute. Any read error is swallowed to ``None`` so an
+    unreadable target produces NO finding (the tag-don't-guess rule).
     """
-    try:
-        xb = store.read_oracle(sid)
-    except Exception:  # noqa: BLE001 — oracle absence is normal, fall back
-        xb = None
-    if xb:
-        return xb
-    try:
-        src = store.read_source(sid)
-        if src:
-            return src
-        return store.read_amendment(sid)
-    except Exception:  # noqa: BLE001 — unreadable target → no finding
-        return None
+    return read_reference_body(store, sid)
 
 
 # ── target structure parsing (minimal, deterministic) ───────────────────────

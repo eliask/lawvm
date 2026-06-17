@@ -384,14 +384,14 @@ def _archive_path() -> str:
 
 
 def _read_body(store, sid: str) -> bytes | None:
-    """Best available body XML (oracle preferred), mirroring surface-lints."""
-    try:
-        xb = store.read_oracle(sid)
-    except Exception:  # noqa: BLE001 — oracle absence is normal, fall back
-        xb = None
-    if xb:
-        return xb
-    return store.read_source(sid) or store.read_amendment(sid)
+    """Best available body XML (oracle preferred), mirroring surface-lints.
+
+    Delegates to :func:`read_reference_body` so a ``contentAbsent`` oracle
+    (repealed/expired statute) falls back to the enacted source.
+    """
+    from lawvm.finland.legal_surface.body_source import read_reference_body
+
+    return read_reference_body(store, sid)
 
 
 def scan_corpus(sample: int) -> _MiningResult:

@@ -53,6 +53,7 @@ from lawvm.core.legal_surface_graph import (
     SurfaceNode,
 )
 from lawvm.core.legal_surface_lens import SurfaceEdgeSeed
+from lawvm.finland.legal_surface.body_source import read_reference_body
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.references import ReferenceLens
@@ -84,18 +85,12 @@ class _StoreLike(Protocol):
 def _read_body(store: _StoreLike, sid: str) -> bytes | None:
     """Best available body XML for surface-graph building (oracle preferred).
 
-    The reference surface lives in the consolidated body, so prefer the oracle;
-    fall back to enacted source or the amendment act so non-consolidated
-    statutes still contribute. Archive-only reads — no replay. Mirrors the
-    ``surface-lints`` body-selection policy.
+    Delegates to :func:`read_reference_body`: prefers the consolidated oracle but
+    falls back to enacted source / amendment when the oracle is absent OR a
+    ``contentAbsent`` stub (repealed/expired statutes), so those statutes still
+    contribute their full reference surface. Archive-only reads — no replay.
     """
-    try:
-        xb = store.read_oracle(sid)
-    except Exception:  # noqa: BLE001 — oracle absence is normal, fall back
-        xb = None
-    if xb:
-        return xb
-    return store.read_source(sid) or store.read_amendment(sid)
+    return read_reference_body(store, sid)
 
 
 # ── address-entity identity ──────────────────────────────────────────────────
