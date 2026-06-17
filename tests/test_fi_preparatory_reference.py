@@ -35,6 +35,9 @@ from lawvm.finland.preparatory_reference_extractor import (
     PreparatoryRefRecognizer,
     extract_preparatory_refs,
 )
+from lawvm.finland.references.preparatory_reference_extractor import (
+    _normalize_domestic_year,
+)
 from lawvm.finland.conformance_corpus.preparatory.fixtures import (
     COMMITTEE_OPINION_ONLY,
     EU_DIRECTIVE,
@@ -1068,3 +1071,156 @@ class TestPreparatoryLaneDefectRegressions:
         assert "he" not in subtypes
         assert "committee_report" in subtypes
         assert "parliament_response" in subtypes
+
+
+class TestPreparatoryTwoDigitYearRecall:
+    """G1 — pre-2000 preparatory footers cite domestic refs with TWO-digit years.
+
+    Older statutes' entry-into-force footers carry committee / EV / EVK / LA
+    citations with a 2-digit year (e.g. ``"LaVM 10/92"``, ``"EV 45/93 vp"``).
+    The recognizer previously required a 4-digit year and silently dropped them.
+    Corpus witness: statute 1966/232's amendment footer reads
+    ``"... HE 131/92 , LaVM 10/92"`` (Swedish-language statute).
+
+    The 2-digit arm is admitted ONLY behind the closed committee/EV/EVK/LA
+    prefixes, so an ordinary statute citation ("lailla 358/95") still never
+    matches, and a 4-digit year is never mis-split into 2+2.
+    """
+
+    _recognizer = PreparatoryRefRecognizer()
+
+    def _recognize(self, text: str) -> List[PreparatoryReference]:
+        refs, _ = self._recognizer.recognize(text, "TEST/100", (None, None))
+        return refs
+
+    def test_committee_report_two_digit_year(self) -> None:
+        """'LaVM 10/92' → committee report, year normalized to 1992."""
+        refs = self._recognize("LaVM 10/92")
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.COMMITTEE_REPORT
+        assert refs[0].canonical_id == "fi.committee.lavm.10.1992"
+
+    def test_corpus_witness_packed_two_digit(self) -> None:
+        """The 1966/232 footer shape: HE-text + 2-digit committee in one segment."""
+        # HE text without <ref> is not recognized (HE owned by the <ref> lane);
+        # the co-located 2-digit committee token must still be captured.
+        refs = self._recognize("HE 131/92, LaVM 10/92")
+        cids = {r.canonical_id for r in refs}
+        assert "fi.committee.lavm.10.1992" in cids
+
+    def test_committee_opinion_two_digit_year(self) -> None:
+        """'PeVL 7/99 vp' → committee opinion, year normalized to 1999."""
+        refs = self._recognize("PeVL 7/99 vp")
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.COMMITTEE_OPINION
+        assert refs[0].canonical_id == "fi.committee_opinion.pevl.7.1999"
+
+    def test_ev_evk_la_two_digit_year(self) -> None:
+        """EV / EVK / LA all admit a 2-digit year."""
+        cases = [
+            ("EV 45/93", "fi.ev.45.1993"),
+            ("EVK 3/95", "fi.evk.3.1995"),
+            ("LA 12/96", "fi.la.12.1996"),
+        ]
+        for text, cid in cases:
+            refs = self._recognize(text)
+            assert len(refs) == 1, f"{text!r} → {refs}"
+            assert refs[0].canonical_id == cid
+
+    def test_century_pivot(self) -> None:
+        """2-digit year century pivot: <=29 → 2000s, >=30 → 1900s."""
+        assert _normalize_domestic_year("92") == 1992
+        assert _normalize_domestic_year("05") == 2005
+        assert _normalize_domestic_year("29") == 2029
+        assert _normalize_domestic_year("30") == 1930
+        assert _normalize_domestic_year("2022") == 2022
+
+    def test_four_digit_year_not_mis_split(self) -> None:
+        """A 4-digit year is never read as a 2-digit year + stray digits."""
+        refs = self._recognize("LaVM 5/2020")
+        assert len(refs) == 1
+        assert refs[0].canonical_id == "fi.committee.lavm.5.2020"
+
+    def test_fp_statute_cite_two_digit_not_a_committee(self) -> None:
+        """FP guard: a statute citation with a 2-digit tail is NOT a ref."""
+        assert self._recognize("annettu lailla 358/95 muutoksin") == []
+        assert self._recognize("asetus 1431/93") == []
+        assert self._recognize("muutos 12/95") == []
+
+    def test_fp_midprose_two_digit_ev_not_a_ref(self) -> None:
+        """FP guard: a mid-sentence 2-digit EV token still does NOT match."""
+        assert self._recognize("jotain EV 5/20 keskellä") == []
+
+
+class TestPreparatoryEuYearFirstSuffixRecall:
+    """G2 — un-parenthesized year-first form-suffix EU acts were dropped.
+
+    A footer may cite an EU act in the year-first form-suffix shape
+    ``"direktiivi 2011/24/EU"`` / ``"direktiivin 2009/13/EY"`` — where the
+    trailing ``/EU``/``/EY`` form letters ARE the EU marker — with no
+    parenthesized ``(EU)`` token and no CELEX.  The EU-paragraph gate previously
+    fired only on a parenthesized marker or a CELEX, so it skipped these
+    entirely: the act was dropped (no ref) or, when an ``EUVL``/``EYVL`` tail was
+    present, degraded to a bare OJ row that lost the act identity.
+
+    Corpus witnesses: statute 2010/1326 footer ``"... direktiv 2011/24/EU ...,
+    EUT L 88, 4.4.2011, s. 45"`` and statute 2025/103 footer ``"neuvoston
+    direktiivi 2009/13/EY, EUVL L 124, 20.5.2009, s. 30"``.
+
+    The shared recognize_eu_acts(DIALECT_PREPARATORY) is the authoritative form
+    gate, so it does not fire on a plain statute cite, a committee token, or an
+    OJ-only paragraph — no false-positive widening.
+    """
+
+    _recognizer = PreparatoryRefRecognizer()
+
+    def _recognize(self, text: str) -> List[PreparatoryReference]:
+        refs, _ = self._recognizer.recognize(text, "TEST/100", (None, None))
+        return refs
+
+    def test_year_first_suffix_bare_act_captured(self) -> None:
+        """'direktiivin 2004/36/EY' (no paren, no CELEX, no OJ) is captured."""
+        refs = self._recognize(
+            "Euroopan parlamentin ja neuvoston direktiivin 2004/36/EY"
+        )
+        eu = [r for r in refs if r.kind.name.startswith("EU")]
+        assert len(eu) == 1
+        assert eu[0].eu_form == "EY"
+        assert eu[0].eu_year == 2004
+        assert eu[0].eu_number == 36
+
+    def test_corpus_witness_with_oj_tail_keeps_act_and_oj(self) -> None:
+        """2025/103 shape: act identity preserved AND OJ data populated."""
+        refs = self._recognize(
+            "neuvoston direktiivi 2009/13/EY, EUVL L 124, 20.5.2009, s. 30"
+        )
+        eu = [r for r in refs if r.kind.name.startswith("EU")]
+        assert len(eu) == 1, f"expected one EU act, got {refs}"
+        assert eu[0].eu_form == "EY"
+        assert eu[0].eu_year == 2009
+        assert eu[0].eu_number == 13
+        # OJ data is preserved on the same row, not split into a bare OJ ref.
+        assert eu[0].oj_series == "L"
+        assert eu[0].oj_number == 124
+
+    def test_corpus_witness_swedish_bare_act_captured(self) -> None:
+        """2010/1326 shape: a Swedish-language directive cite is captured."""
+        refs = self._recognize(
+            "Europaparlamentets och rådets direktiv 2011/24/EU om "
+            "tillämpningen, EUT L 88, 4.4.2011, s. 45"
+        )
+        eu = [r for r in refs if r.kind.name.startswith("EU")]
+        assert len(eu) == 1
+        assert eu[0].eu_form == "EU"
+        assert eu[0].eu_year == 2011
+        assert eu[0].eu_number == 24
+
+    def test_fp_oj_only_paragraph_still_bare_oj(self) -> None:
+        """FP guard: an OJ-only paragraph (no EU-act form) is still a bare OJ."""
+        refs = self._recognize("EUVL L 124, 20.5.2009, s. 30")
+        assert len(refs) == 1
+        assert refs[0].kind == PreparatoryReferenceKind.OJ_REFERENCE
+
+    def test_fp_statute_cite_not_eu_act(self) -> None:
+        """FP guard: a plain domestic statute cite is not an EU act."""
+        assert self._recognize("annettu lailla 358/2021 muutoksin") == []

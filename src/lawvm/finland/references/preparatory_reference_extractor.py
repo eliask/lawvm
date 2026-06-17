@@ -104,36 +104,67 @@ _COMMITTEE_STEM_ALT = "|".join(
     sorted(_COMMITTEE_STEMS, key=len, reverse=True)
 )
 
-# Committee mietintö: "HaVM 23/2022" or "HaVM 23/2022 vp"
-# Pattern: STEM + "VM" + N/YYYY (closed STEM set — AGENTS.md §1.6).
+# Year group shared by the domestic recognizers.  Admits a 4-digit year
+# ("2022") OR a 2-digit year ("92") used by pre-2000 footers ("LaVM 10/92",
+# "EV 45/93 vp").  The 4-digit alternative is listed FIRST so a "/1995" never
+# reads as a 2-digit "/19" + stray "95"; the trailing ``(?!\d)`` keeps the
+# 2-digit arm from biting off a 4-digit year's first two digits and forbids a
+# longer numeric run.  The 2-digit arm is admitted ONLY behind the closed
+# committee/EV/EVK/LA prefixes below, so an ordinary statute citation
+# ("lailla 358/95") — which has no such prefix — still never matches (§1.6).
+_DOMESTIC_YEAR_GROUP = r'(?P<y>\d{4}|\d{2})(?!\d)'
+
+# Committee mietintö: "HaVM 23/2022", "HaVM 23/2022 vp", or "LaVM 10/92".
+# Pattern: STEM + "VM" + N/YEAR (closed STEM set — AGENTS.md §1.6).
 # Substring guard: "VM "
 _COMMITTEE_REPORT_RE = re.compile(
-    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VM)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VM)\s+(?P<n>\d{1,6})/' + _DOMESTIC_YEAR_GROUP
 )
 
 # Committee opinion / lausunto: "PeVL 12/2021" — STEM + "VL".
 # Substring guard: "VL "
 _COMMITTEE_OPINION_RE = re.compile(
-    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VL)\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'(?P<abbr>(?:' + _COMMITTEE_STEM_ALT + r')VL)\s+(?P<n>\d{1,6})/' + _DOMESTIC_YEAR_GROUP
 )
 
 # Parliament response: "EV 156/2022" — exactly "EV" at start.
 # Substring guard: "EV "
 _PARLIAMENT_RESPONSE_RE = re.compile(
-    r'EV\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'EV\s+(?P<n>\d{1,6})/' + _DOMESTIC_YEAR_GROUP
 )
 
 # Supplementary parliament response: "EVK 3/2019"
 # Substring guard: "EVK "
 _PARLIAMENT_RESPONSE_COMM_RE = re.compile(
-    r'EVK\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'EVK\s+(?P<n>\d{1,6})/' + _DOMESTIC_YEAR_GROUP
 )
 
 # Law initiative: "LA 5/2021"
 # Substring guard: "LA "
 _LAW_INITIATIVE_RE = re.compile(
-    r'LA\s+(?P<n>\d{1,6})/(?P<y>\d{4})\b'
+    r'LA\s+(?P<n>\d{1,6})/' + _DOMESTIC_YEAR_GROUP
 )
+
+
+# Century pivot for 2-digit preparatory years.  2-digit forms only ever appear
+# in pre-2000 footers (the 4-digit form is universal from ~2000 on), so "92" is
+# 1992 and "05" is 2005.  Pivot at 29: "00".."29" → 2000-2029, "30".."99" →
+# 1930-1999.  This matches the corpus (no 2-digit form observed past the 1990s)
+# while staying robust if a stray early-2000s 2-digit form ever appears.
+_TWO_DIGIT_YEAR_PIVOT = 29
+
+
+def _normalize_domestic_year(raw_year: str) -> int:
+    """Normalize a matched domestic year string to a full 4-digit year.
+
+    A 4-digit match passes through unchanged; a 2-digit match is expanded with
+    the century pivot above (e.g. "92" → 1992, "05" → 2005).
+    """
+    if len(raw_year) == 4:
+        return int(raw_year)
+    yy = int(raw_year)
+    return (2000 + yy) if yy <= _TWO_DIGIT_YEAR_PIVOT else (1900 + yy)
+
 
 # EU-act suffix form: "direktiivi 2014/40/EU" — the form letters are a SUFFIX on
 # the act number (NUMBER/YEAR/FORM or YEAR/NUMBER/FORM), not a parenthesized
@@ -318,15 +349,26 @@ class PreparatoryRefRecognizer:
                 refs.append(ref)
 
         # --- EU act / CELEX / OJ: whole-paragraph (tokens span delimiters) ---
-        # Classify as an EU act when EITHER a parenthesized EU marker is present
-        # OR a CELEX number is present (F3: the suffix form "direktiivi
-        # 2014/40/EU (32014L0040)" has no parenthesized marker but carries a
-        # CELEX that fully identifies the act).
+        # Classify as an EU act when ANY of:
+        #   - a parenthesized EU marker is present ("(EU) 2017/2226"), OR
+        #   - a CELEX number is present (F3: the suffix form "direktiivi
+        #     2014/40/EU (32014L0040)" has no parenthesized marker but carries a
+        #     CELEX that fully identifies the act), OR
+        #   - the shared EU-act recognizer matches the un-parenthesized
+        #     year-first form-suffix ("direktiivi 2011/24/EU", "direktiivin
+        #     2009/13/EY"), where the trailing "/EU"/"/EY" form letters ARE the
+        #     EU marker (F6).  Without this arm the gate dropped the EU act
+        #     entirely — degrading a directive paragraph to a bare OJ row (when
+        #     an "EUVL"/"EYVL" tail was present) or to nothing at all.  The
+        #     recognizer is the authoritative form gate, so it does not fire on
+        #     a plain domestic statute cite ("358/2021"), a committee token, or
+        #     an OJ-only paragraph — no false-positive widening (§1.6).
         has_paren_marker = any(
             marker in text for marker in ("(EU)", "(EY)", "(EEY)", "(ETY)")
         )
         has_celex = bool(recognize_celex(text, dialect=DIALECT_PREPARATORY))
-        if has_paren_marker or has_celex:
+        has_eu_act = bool(recognize_eu_acts(text, dialect=DIALECT_PREPARATORY))
+        if has_paren_marker or has_celex or has_eu_act:
             eu_refs, eu_obs = self._recognize_eu_paragraph(
                 text, statute_id, valid_at
             )
@@ -361,7 +403,7 @@ class PreparatoryRefRecognizer:
             if m:
                 abbr = m.group("abbr")
                 n = int(m.group("n"))
-                y = int(m.group("y"))
+                y = _normalize_domestic_year(m.group("y"))
                 lifecycle_obs = self._check_lifecycle(abbr, statute_id)
                 if lifecycle_obs:
                     obs.append(lifecycle_obs)
@@ -381,7 +423,7 @@ class PreparatoryRefRecognizer:
             if m:
                 abbr = m.group("abbr")
                 n = int(m.group("n"))
-                y = int(m.group("y"))
+                y = _normalize_domestic_year(m.group("y"))
                 lifecycle_obs = self._check_lifecycle(abbr, statute_id)
                 if lifecycle_obs:
                     obs.append(lifecycle_obs)
@@ -400,7 +442,7 @@ class PreparatoryRefRecognizer:
             m = _PARLIAMENT_RESPONSE_COMM_RE.match(seg)
             if m:
                 n = int(m.group("n"))
-                y = int(m.group("y"))
+                y = _normalize_domestic_year(m.group("y"))
                 return self._domestic_ref(
                     statute_id, valid_at,
                     kind=PreparatoryReferenceKind.PARLIAMENT_RESPONSE_COMM,
@@ -415,7 +457,7 @@ class PreparatoryRefRecognizer:
             m = _PARLIAMENT_RESPONSE_RE.match(seg)
             if m:
                 n = int(m.group("n"))
-                y = int(m.group("y"))
+                y = _normalize_domestic_year(m.group("y"))
                 return self._domestic_ref(
                     statute_id, valid_at,
                     kind=PreparatoryReferenceKind.PARLIAMENT_RESPONSE,
@@ -428,7 +470,7 @@ class PreparatoryRefRecognizer:
             m = _LAW_INITIATIVE_RE.match(seg)
             if m:
                 n = int(m.group("n"))
-                y = int(m.group("y"))
+                y = _normalize_domestic_year(m.group("y"))
                 return self._domestic_ref(
                     statute_id, valid_at,
                     kind=PreparatoryReferenceKind.LAW_INITIATIVE,
