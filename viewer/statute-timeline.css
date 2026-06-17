@@ -657,6 +657,62 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .ref-hovercard .hc-candidates li { margin: 0.05rem 0; }
 .ref-hovercard .hc-broken-note { color: #8a2b2b; font-size: 0.76rem; margin: 0.3rem 0; }
 
+/* ---- semantic overlay layers ---- */
+/* Layer toggle bar (pills) under the scrubber. */
+.overlay-bar {
+  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
+  margin-top: 0.4rem; padding-top: 0.35rem; border-top: 1px solid var(--border);
+}
+.overlay-bar-lbl { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-right: 0.2rem; }
+.overlay-pill {
+  font-size: 0.74rem; padding: 0.1rem 0.55rem; border: 1px solid var(--border);
+  border-radius: 999px; background: #f7fafc; color: var(--muted); cursor: pointer;
+  line-height: 1.5;
+}
+.overlay-pill:hover { background: #eef2f6; }
+.overlay-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.overlay-pill:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(43, 92, 138, 0.35); }
+
+/* Overlay span markers: a distinct, quiet affordance per kind. All are
+   hoverable (cursor: help) except term_use, which navigates to its definition. */
+.ref-overlay { cursor: help; }
+.ov-defined_term {
+  border-bottom: 1px dotted rgba(43, 92, 138, 0.7);
+  text-decoration: none; color: inherit; font-style: normal;
+}
+.ov-term_use {
+  cursor: pointer; color: var(--accent);
+  border-bottom: 1px dashed rgba(43, 92, 138, 0.45);
+}
+.ov-temporal {
+  background: #eef4fb; border-radius: 3px; padding: 0 0.15rem;
+  border-bottom: 1px solid rgba(43, 92, 138, 0.3);
+}
+/* Frame badges: a subtle highlight + left rule per frame kind. */
+.ov-delegation, .ov-sanction, .ov-exception_condition, .ov-actor_modal {
+  border-radius: 3px; padding: 0 0.15rem;
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.ov-delegation { background: #eef2f6; color: #2b5c8a; }
+.ov-sanction { background: #f6e3e3; color: #8a2b2b; }
+.ov-exception_condition { background: #fbf0d9; color: #8a5a00; }
+.ov-actor_modal { background: #efe9f5; color: #563d7c; }
+
+/* Overlay hovercard bits (reuse the shared .ref-hovercard chrome). */
+.ref-hovercard .hc-status[class*="hc-overlay-"] { background: #eef2f6; color: var(--muted); }
+.ref-hovercard .hc-overlay-defined_term { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-term_use { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-temporal { background: #eef4fb; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-delegation { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-sanction { background: #f6e3e3; color: #8a2b2b; }
+.ref-hovercard .hc-overlay-exception_condition { background: #fbf0d9; color: #8a5a00; }
+.ref-hovercard .hc-overlay-actor_modal { background: #efe9f5; color: #563d7c; }
+.ref-hovercard .hc-overlay-note { font-size: 0.76rem; color: var(--muted); margin: 0.25rem 0; }
+.ref-hovercard .hc-overlay-links { margin: 0.35rem 0; }
+.ref-hovercard .hc-overlay-links-lbl { font-weight: 600; color: var(--muted); font-size: 0.72rem; margin-bottom: 0.15rem; }
+.ref-hovercard .hc-overlay-links ul { margin: 0; padding-left: 1.1rem; }
+.ref-hovercard .hc-overlay-links li { margin: 0.05rem 0; }
+
 /* Shared hovercard popover (above the sticky topbar at z-index 40). */
 .ref-hovercard {
   position: absolute; z-index: 60; max-width: 28rem;
