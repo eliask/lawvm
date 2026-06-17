@@ -185,14 +185,27 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
         from lawvm.finland.delegation import extract_asetus_authority
         auth_edges = extract_asetus_authority(base_xml, sid)
         if auth_edges:
-            # Build map: parent_statute_id → list of parent_section values
+            # Build map: parent_statute_id → list of parent_section values, plus a
+            # parent_kind map carrying the per-basis drafting KIND from the
+            # AuthorityEdge ("act"/"decree"/"decision"/""). The kind is recorded for
+            # every basis (even sectionless ones) so any tagged ISSUED_UNDER edge
+            # receives its type; it is NOT blanket-set to "act" — a decree may be
+            # issued under another decree, and ~6% of bases are genuinely
+            # decree/decision and must stay non-statutory instruments.
             from collections import defaultdict
             auth_map: dict[str, list[str]] = defaultdict(list)
+            parent_kind: dict[str, str] = {}
             for ae in auth_edges:
                 if ae.parent_section:
                     auth_map[ae.parent_statute_id].append(ae.parent_section)
+                # First recognizable kind for a basis wins; register the basis even
+                # when its kind is empty, but don't clobber a known kind with a
+                # later empty one.
+                parent_kind.setdefault(ae.parent_statute_id, "")
+                if ae.parent_kind and not parent_kind[ae.parent_statute_id]:
+                    parent_kind[ae.parent_statute_id] = ae.parent_kind
 
-            # Update existing ISSUED_UNDER edges with section info
+            # Update existing ISSUED_UNDER edges with section info + authority kind
             existing_targets = set()
             for edge in citations:
                 if edge.edge_type == "ISSUED_UNDER":
@@ -200,6 +213,9 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
                     if edge.target_statute_id in auth_map:
                         secs = auth_map[edge.target_statute_id]
                         edge.target_section = ",".join(dict.fromkeys(secs))  # dedup, preserve order
+                    kind = parent_kind.get(edge.target_statute_id, "")
+                    if kind:
+                        edge.target_kind = kind
 
             # Add ISSUED_UNDER edges found in preamble but absent from metadata
             for parent_id, secs in auth_map.items():
@@ -210,6 +226,7 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
                         target_statute_id=parent_id,
                         edge_type="ISSUED_UNDER",
                         target_section=",".join(dict.fromkeys(secs)),
+                        target_kind=parent_kind.get(parent_id, ""),
                     ))
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud

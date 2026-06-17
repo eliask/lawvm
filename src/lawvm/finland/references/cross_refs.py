@@ -96,6 +96,12 @@ class CrossRefEdge:
     # any CITES edge whose surface could not be located in the raw bytes.
     source_byte_offset: Optional[int] = None
     source_byte_len: int = 0
+    target_kind: str = ""     # drafting KIND of an ISSUED_UNDER target authority basis,
+                              # carried from the AuthorityEdge that produced the edge:
+                              # "act" (laki), "decree" (asetus), "decision" (päätös), or
+                              # "" (unknown / legacy). Read by the reference-mention lift
+                              # so a laki basis types as a statute cross-reference instead
+                              # of a non-statutory instrument. Empty = legacy/instrument.
 
 
 @dataclass(frozen=True)

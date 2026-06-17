@@ -1896,3 +1896,88 @@ class TestIssuedUnderAuthorityBasisTyping:
         assert _parse_provision_ref_from_path("2000/1", "8,36").section_label == "8"
         # An AKN sec_ path still resolves via the existing path regex.
         assert _parse_provision_ref_from_path("2000/1", "sec_12a").section_label == "12a"
+
+
+def _corpus_available() -> bool:
+    import os
+
+    return bool(os.environ.get("LAWVM_CANONICAL_DATA_ROOT"))
+
+
+@pytest.mark.skipif(
+    not _corpus_available(),
+    reason="LAWVM_CANONICAL_DATA_ROOT not set; real-corpus authority typing skipped",
+)
+class TestIssuedUnderAuthorityKindEndToEnd:
+    """End-to-end: the graph layer (build_statute_graph_fi_lightweight) must set
+    ``target_kind`` on ISSUED_UNDER edges from the 'nojalla' authority basis, so
+    a laki basis types CROSS_STATUTE while a genuine decree/decision basis stays a
+    non-statutory instrument. Complements the synthetic-edge unit tests above by
+    proving the graph.py wiring actually populates the field.
+    """
+
+    @staticmethod
+    def _issued_under_edges(sid: str) -> dict[str, str]:
+        import asyncio
+
+        from lawvm.finland.graph import build_statute_graph_fi_lightweight
+
+        graph = asyncio.run(build_statute_graph_fi_lightweight(sid))
+        return {
+            e.target_statute_id: getattr(e, "target_kind", "")
+            for e in graph.citations
+            if e.edge_type == "ISSUED_UNDER"
+        }
+
+    def test_act_basis_tagged_act_through_graph(self) -> None:
+        from lawvm.finland.references.ref_mention_extractor import (
+            _edge_to_cite_kind,
+        )
+        from lawvm.finland.graph import build_statute_graph_fi_lightweight
+        import asyncio
+
+        graph = asyncio.run(build_statute_graph_fi_lightweight("2010/908"))
+        issued = {
+            e.target_statute_id: e
+            for e in graph.citations
+            if e.edge_type == "ISSUED_UNDER"
+        }
+        # lukiolaki (629/1998) §36 and valtion maksuperustelaki (150/1992) §8.
+        assert issued["1998/629"].target_kind == "act"
+        assert issued["1998/629"].target_section == "36"
+        assert (
+            _edge_to_cite_kind(issued["1998/629"], "2010/908")
+            == CiteKind.CROSS_STATUTE
+        )
+        assert issued["1992/150"].target_kind == "act"
+        assert issued["1992/150"].target_section == "8"
+        assert (
+            _edge_to_cite_kind(issued["1992/150"], "2010/908")
+            == CiteKind.CROSS_STATUTE
+        )
+
+    def test_second_act_basis_tagged_act_through_graph(self) -> None:
+        kinds = self._issued_under_edges("2018/1158")
+        # lain (1048/2016) §37 — a laki authority basis.
+        assert kinds.get("2016/1048") == "act"
+
+    def test_decree_basis_stays_instrument_through_graph(self) -> None:
+        from lawvm.finland.references.ref_mention_extractor import (
+            _edge_to_cite_kind,
+        )
+        from lawvm.finland.graph import build_statute_graph_fi_lightweight
+        import asyncio
+
+        # 1979/86 cites a decree (702/1977) as authority basis; must stay
+        # non-statutory instrument, NOT be over-corrected to a statute ref.
+        graph = asyncio.run(build_statute_graph_fi_lightweight("1979/86"))
+        issued = {
+            e.target_statute_id: e
+            for e in graph.citations
+            if e.edge_type == "ISSUED_UNDER"
+        }
+        assert issued["1977/702"].target_kind == "decree"
+        assert (
+            _edge_to_cite_kind(issued["1977/702"], "1979/86")
+            == CiteKind.NON_STATUTORY_INSTRUMENT
+        )

@@ -43,6 +43,7 @@ class CitationEdgeLike(Protocol):
     edge_type: str
     count: int
     target_stat_hash: str
+    target_kind: str  # drafting kind of an ISSUED_UNDER authority basis (see CrossRefEdge)
 
 
 def _delegation_sort_key(edge: DelegationEdgeLike) -> tuple[object, ...]:
