@@ -13,6 +13,7 @@ from lawvm.finland.metadata import (
     _normalize_fi_parse_text,
     _section_commencement_effective_override,
     _section_subsection_commencement_effective_override,
+    _temporary_provision_expiry_overrides,
     _temporary_section_expiry_overrides,
     _temporary_section_expiry_override,
 )
@@ -183,6 +184,36 @@ def test_temporary_section_expiry_override_parses_subsection_scoped_year_end_sun
     assert target_mid == "2010/1172"
     assert labels == {"11"}
     assert expiry.isoformat() == "2014-12-31"
+
+
+def test_temporary_provision_expiry_overrides_parse_mixed_heading_and_moment_scope() -> None:
+    tree = _tree(
+        "Tämä asetus tulee voimaan 26 päivänä toukokuuta 2025. "
+        "Asetuksen 3 §:n otsikko sekä 3 ja 4 momentti, "
+        "4 §:n 3 ja 4 momentti, 5 §:n 4–6 momentti, "
+        "6 §:n 4–6 momentti, 7 §:n 4 momentti ja 8 §:n 3 momentti "
+        "ovat voimassa 31 päivään joulukuuta 2025."
+    )
+
+    overrides = _temporary_provision_expiry_overrides(tree, "2025/236")
+
+    got = {
+        (override.section, override.subsection, override.special, override.expiry.isoformat())
+        for override in overrides
+    }
+    assert ("3", None, "otsikko", "2025-12-31") in got
+    assert ("3", 3, None, "2025-12-31") in got
+    assert ("3", 4, None, "2025-12-31") in got
+    assert ("4", 3, None, "2025-12-31") in got
+    assert ("4", 4, None, "2025-12-31") in got
+    assert ("5", 4, None, "2025-12-31") in got
+    assert ("5", 5, None, "2025-12-31") in got
+    assert ("5", 6, None, "2025-12-31") in got
+    assert ("6", 4, None, "2025-12-31") in got
+    assert ("6", 5, None, "2025-12-31") in got
+    assert ("6", 6, None, "2025-12-31") in got
+    assert ("7", 4, None, "2025-12-31") in got
+    assert ("8", 3, None, "2025-12-31") in got
 
 
 def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:

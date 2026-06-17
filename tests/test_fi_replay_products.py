@@ -197,6 +197,19 @@ def test_1998_805_materialized_state_restores_sections_after_expired_temporary_c
     assert "Suoritteiden laskeminen" in irnode_to_text(sections["section:2"])
 
 
+def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:
+    replay = replay_xml_for_test("2017/236", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_4_text = irnode_to_text(sections["section:4"])
+    section_7_text = irnode_to_text(sections["section:7"])
+
+    assert "Poiketen siitä, mitä 1 momentissa säädetään" not in section_4_text
+    assert "Edellä 3 momentin 1 kohdassa tarkoitetussa kalastuksessa" not in section_4_text
+    assert "Kun 3 §:n 4 momentissa, 4 §:n 4 momentissa" not in section_7_text
+    assert "Lounais-Suomen elinvoimakeskukselle" in section_7_text
+
+
 def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     """official_consolidation should anchor 2016/258 to the oracle-version amendment date.
 

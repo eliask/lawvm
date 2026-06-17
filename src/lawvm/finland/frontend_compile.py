@@ -72,6 +72,7 @@ from lawvm.finland.metadata import (
     _amendment_expiry_date,
     _expiry_date_precedes_effective_date,
     _infer_expiry_date_from_temporary_payload_text,
+    _temporary_provision_expiry_overrides,
     _temporary_section_expiry_overrides,
     _parse_section_list_labels,
     _normalize_fi_parse_text,
@@ -1284,6 +1285,7 @@ def _enrich_ops_from_amendment_tree(
     source_title = _tree_title(muutos_tree)
     eff_date = _amendment_effective_date(muutos_tree)
     expiry_date = _amendment_expiry_date(muutos_tree)
+    provision_expiry_overrides = _temporary_provision_expiry_overrides(muutos_tree, amendment_id)
     section_expiry_overrides = _temporary_section_expiry_overrides(muutos_tree, amendment_id)
     # Only stamp the expiry on op_source when the amendment has WHOLE-ACT expiry
     # ("Tämä laki on voimassa N päivään ...").  When the expiry is section-scoped
@@ -1293,7 +1295,7 @@ def _enrich_ops_from_amendment_tree(
     # is applied per-section via the section_expiry_override block below.
     _section_scoped_expiry = any(
         target_mid == amendment_id for target_mid, _labels, _expiry in section_expiry_overrides
-    )
+    ) or any(target.target_mid == amendment_id for target in provision_expiry_overrides)
     op_source = OperationSource(
         statute_id=amendment_id,
         title=source_title,
@@ -1543,6 +1545,34 @@ def _enrich_ops_from_amendment_tree(
             last_inferred_section_chapter = None
             last_inferred_section_part = None
     patched = enriched
+    for target in provision_expiry_overrides:
+        if target.target_mid != amendment_id:
+            continue
+        expiry_iso = expires_on_from_valid_until(target.expiry).isoformat()
+        next_patched = []
+        for op in patched:
+            if (
+                _norm_num_token(op.target_section or "") == target.section
+                and op.target_paragraph == target.subsection
+                and op.target_special == target.special
+                and op.lo is not None
+                and op.lo.source is not None
+            ):
+                next_patched.append(
+                    dc_replace(
+                        op,
+                        lo=dc_replace(
+                            op.lo,
+                            source=dc_replace(
+                                op.lo.source,
+                                expires=expiry_iso,
+                            ),
+                        ),
+                    )
+                )
+            else:
+                next_patched.append(op)
+        patched = next_patched
     for _target_mid, labels, section_expiry in section_expiry_overrides:
         if _target_mid != amendment_id:
             continue

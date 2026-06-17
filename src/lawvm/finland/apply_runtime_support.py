@@ -1175,6 +1175,7 @@ def _emit_section_snapshot(
         heading_placed = False
         seen: set[str] = set()
         new_children: list[IRNode] = []
+        dropped_expired_temporary_children = 0
         for child in latest_payload.children:
             if heading_overlay is not None and child.kind is IRNodeKind.HEADING:
                 new_children.append(heading_overlay)
@@ -1196,6 +1197,42 @@ def _emit_section_snapshot(
                     changed = changed or repealed_tombstone != child
                     continue
                 if child_norm in repealed_dropped:
+                    seen.add(child_norm)
+                    changed = True
+                    continue
+                child_path = section_path + (("subsection", child.label),)
+                latest_child_snapshot = next(
+                    (
+                        lo
+                        for lo in reversed(lo_ops_out)
+                        if lo.target.special is None and lo.target.path == child_path
+                    ),
+                    None,
+                )
+                latest_child_expires = (
+                    latest_child_snapshot.source.expires
+                    if latest_child_snapshot is not None and latest_child_snapshot.source is not None
+                    else ""
+                )
+                if op_source.effective and latest_child_expires and op_source.effective >= latest_child_expires:
+                    prior_child_payload = next(
+                        (
+                            lo.payload
+                            for lo in reversed(lo_ops_out)
+                            if (
+                                lo.target.special is None
+                                and lo.target.path == child_path
+                                and lo.source is not None
+                                and not lo.source.expires
+                                and lo.payload is not None
+                                and lo.payload.kind is IRNodeKind.SUBSECTION
+                            )
+                        ),
+                        None,
+                    )
+                    if prior_child_payload is not None:
+                        new_children.append(prior_child_payload)
+                    dropped_expired_temporary_children += 1
                     seen.add(child_norm)
                     changed = True
                     continue
@@ -1228,7 +1265,11 @@ def _emit_section_snapshot(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
                     target_label=normalized_target_norm,
-                    recovery_kind="section_snapshot_rebase_on_latest_exact_parent",
+                    recovery_kind=(
+                        "section_snapshot_drop_expired_temporary_subsection"
+                        if dropped_expired_temporary_children
+                        else "section_snapshot_rebase_on_latest_exact_parent"
+                    ),
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
                     ),
@@ -1350,6 +1391,80 @@ def _emit_section_snapshot(
                 )
             )
 
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(new_children),
+        )
+
+    def _drop_expired_temporary_subsection_children(
+        section_path: Path,
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        if section_payload.kind is not IRNodeKind.SECTION or not op_source.effective:
+            return None
+        current_group_targets = {
+            _norm_num_token(str(rop.resolved_target_subsection_label or ""))
+            for rop in group_rops
+            if rop.resolved_target_subsection_label
+        }
+        new_children: list[IRNode] = []
+        changed = False
+        for child in section_payload.children:
+            if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                new_children.append(child)
+                continue
+            child_norm = _norm_num_token(child.label)
+            if child_norm in current_group_targets:
+                new_children.append(child)
+                continue
+            child_path = section_path + (("subsection", child.label),)
+            latest_child_snapshot = _latest_snapshot_for_path(child_path)
+            latest_child_expires = (
+                latest_child_snapshot.source.expires
+                if latest_child_snapshot is not None and latest_child_snapshot.source is not None
+                else ""
+            )
+            if not latest_child_expires or op_source.effective < latest_child_expires:
+                new_children.append(child)
+                continue
+            prior_payload = next(
+                (
+                    lo.payload
+                    for lo in reversed(lo_ops_out)
+                    if (
+                        lo.target.special is None
+                        and lo.target.path == child_path
+                        and lo.source is not None
+                        and not lo.source.expires
+                        and lo.payload is not None
+                        and lo.payload.kind is IRNodeKind.SUBSECTION
+                    )
+                ),
+                None,
+            )
+            if prior_payload is not None:
+                new_children.append(prior_payload)
+            changed = True
+        if not changed:
+            return None
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=target_norm,
+                    recovery_kind="section_snapshot_drop_expired_temporary_subsection",
+                    live_sibling_count=len(
+                        [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                    payload_sibling_count=len(
+                        [child for child in new_children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                )
+            )
         return IRNode(
             kind=section_payload.kind,
             label=section_payload.label,
@@ -2655,6 +2770,9 @@ def _emit_section_snapshot(
         pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
         if pruned_payload is not None:
             payload = pruned_payload
+        expired_child_pruned_payload = _drop_expired_temporary_subsection_children(tuple(resolved_path), payload)
+        if expired_child_pruned_payload is not None:
+            payload = expired_child_pruned_payload
         carried_pruned_payload = _drop_absent_carried_snapshot_subsections(tuple(resolved_path), payload)
         if carried_pruned_payload is not None:
             payload = carried_pruned_payload
@@ -2684,6 +2802,15 @@ def _emit_section_snapshot(
         )
     ):
         payload = _stamp_exact_section_snapshot_payload(payload)
+    if (
+        action is StructuralAction.REPLACE
+        and payload is not None
+        and target_unit_kind == "section"
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        expired_child_pruned_payload = _drop_expired_temporary_subsection_children(tuple(resolved_path), payload)
+        if expired_child_pruned_payload is not None:
+            payload = expired_child_pruned_payload
 
     lo_ops_out.append(
         _LegalOperation(
@@ -2756,11 +2883,21 @@ def _emit_section_snapshot(
         for child in payload.children:
             if child.kind is not IRNodeKind.SUBSECTION or not child.label:
                 continue
-            if _norm_num_token(child.label) in explicitly_repealed_subsection_labels:
+            child_norm_label = _norm_num_token(child.label)
+            if child_norm_label in explicitly_repealed_subsection_labels:
                 continue
             child_path = section_path + (("subsection", child.label),)
             child_payload = _drop_expired_temporary_paragraph_children(child_path, child) or child
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
+            child_source = op_source
+            for rop in group_rops:
+                rop_subsection = _norm_num_token(str(rop.resolved_target_subsection_label or ""))
+                if rop_subsection != child_norm_label:
+                    continue
+                rop_source = rop.resolved_op_source
+                if rop_source is not None:
+                    child_source = rop_source
+                    break
             child_base_exists = _timeline_target_exists(
                 child_path,
                 replay_history_ops=[],
@@ -2794,7 +2931,7 @@ def _emit_section_snapshot(
                     ),
                     target=LegalAddress(path=child_path),
                     payload=child_payload,
-                    source=op_source,
+                    source=child_source,
                     group_id=f"finland-johto:{amendment_id or 'unknown'}",
                 )
             )

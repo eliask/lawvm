@@ -1012,6 +1012,136 @@ def _parse_section_list_labels(raw: str) -> Set[str]:
 _temporary_section_expiry_cache: dict[tuple[int, str, int], tuple[tuple[str, Set[str], dt.date], ...]] = {}
 
 
+@dataclass(frozen=True, slots=True)
+class TemporaryProvisionExpiryOverride:
+    """Exact temporary-expiry scope for one provision facet or subsection."""
+
+    target_mid: str
+    section: str
+    subsection: int | None
+    special: str | None
+    expiry: dt.date
+    rule_id: str
+
+
+_temporary_provision_expiry_cache: dict[tuple[int, str, int], tuple[TemporaryProvisionExpiryOverride, ...]] = {}
+
+
+def _parse_moment_label_list(raw: str) -> set[int]:
+    labels: set[int] = set()
+    text = _normalize_fi_parse_text(raw)
+    for token in re.split(r'\s*(?:,|ja|sekä)\s*', text.strip(), flags=re.IGNORECASE):
+        token = token.strip()
+        if not token:
+            continue
+        if "\u2013" in token:
+            left, right = token.split("\u2013", 1)
+            if left.strip().isdigit() and right.strip().isdigit():
+                start = int(left.strip())
+                end = int(right.strip())
+                if start <= end:
+                    labels.update(range(start, end + 1))
+            continue
+        if token.isdigit():
+            labels.add(int(token))
+    return labels
+
+
+def _temporary_provision_expiry_overrides(
+    tree: "etree._Element",
+    source_statute_id: str,
+) -> tuple[TemporaryProvisionExpiryOverride, ...]:
+    """Return exact subsection/facet expiry overrides from scoped sunset text.
+
+    This covers mixed clauses such as:
+    ``Asetuksen 3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n 3 ja 4 momentti
+    ... ovat voimassa 31 päivään joulukuuta 2025``.
+    """
+    tree_bytes = etree.tostring(tree, method="xml")
+    cache_key = (id(tree), source_statute_id, hash(tree_bytes))
+    cached = _temporary_provision_expiry_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
+    raw_text = (
+        " ".join(etree.tostring(el, method="text", encoding="unicode") for el in eit_els)
+        if eit_els
+        else etree.tostring(tree, method="text", encoding="unicode")
+    )
+    text = _normalize_fi_parse_text(raw_text)
+    month_map = {
+        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
+        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
+        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
+    }
+    overrides: list[TemporaryProvisionExpiryOverride] = []
+    seen: set[tuple[str, str, int | None, str | None, str]] = set()
+
+    for sunset in re.finditer(
+        r'(?:Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+(?:ovat|on)\s+voimassa\s+'
+        r'(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
+        text,
+        flags=re.IGNORECASE,
+    ):
+        subject = sunset.group(1)
+        month = month_map.get(sunset.group(3).lower())
+        if month is None:
+            continue
+        try:
+            expiry = dt.date(int(sunset.group(4)), month, int(sunset.group(2)))
+        except ValueError:
+            continue
+        for scoped in re.finditer(
+            r'(?P<section>\d+\s*[a-z]?)\s*§:n\s+'
+            r'(?P<body>.*?)(?=(?:,\s*|\s+ja\s+|\s+sekä\s+)\d+\s*[a-z]?\s*§:n|$)',
+            subject,
+            flags=re.IGNORECASE,
+        ):
+            section = _norm_num_token(scoped.group("section"))
+            body = scoped.group("body")
+            if not section:
+                continue
+            if re.search(r'\botsikko\b', body, flags=re.IGNORECASE):
+                key = (source_statute_id, section, None, "otsikko", expiry.isoformat())
+                if key not in seen:
+                    seen.add(key)
+                    overrides.append(
+                        TemporaryProvisionExpiryOverride(
+                            target_mid=source_statute_id,
+                            section=section,
+                            subsection=None,
+                            special="otsikko",
+                            expiry=expiry,
+                            rule_id="fi_temporary_exact_provision_expiry",
+                        )
+                    )
+            for moment in re.finditer(
+                r'(?P<labels>\d+(?:\s*\u2013\s*\d+)?(?:\s*(?:,|ja|sekä)\s*\d+(?:\s*\u2013\s*\d+)?)*)\s+moment',
+                body,
+                flags=re.IGNORECASE,
+            ):
+                for subsection in _parse_moment_label_list(moment.group("labels")):
+                    key = (source_statute_id, section, subsection, None, expiry.isoformat())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    overrides.append(
+                        TemporaryProvisionExpiryOverride(
+                            target_mid=source_statute_id,
+                            section=section,
+                            subsection=subsection,
+                            special=None,
+                            expiry=expiry,
+                            rule_id="fi_temporary_exact_provision_expiry",
+                        )
+                    )
+
+    result = tuple(overrides)
+    _temporary_provision_expiry_cache[cache_key] = result
+    return result
+
+
 def _temporary_section_expiry_overrides(
     tree: "etree._Element",
     source_statute_id: str,
