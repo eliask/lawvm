@@ -1124,31 +1124,6 @@ def materialize_pit_ex(
                     )
                 )
                 continue
-            # Detect permanently-introduced-as-temporary sections: a permanent base
-            # version selected because later versions all expired.  This happens when
-            # a VÄLIAIKAINEN amendment inserts a new section (no prior permanent
-            # content) but its corpus record lacks an explicit expiry date, while
-            # later amendments DO carry an expiry that has now passed.
-            # Only applies when there are later versions AND none of them are active
-            # AND none of them are permanently non-expiring.
-            # Only applies when _sv.source is not None (introduced by an amendment,
-            # not the original statute): a base-statute permanent version (src=None)
-            # represents the permanent baseline that should be restored after a
-            # temporary modification expires, never suppressed.
-            _sv = selection.version
-            if _sv.expires == "" and _sv.variant_kind == "permanent" and _sv.source is not None:
-                _later = [v for v in tl.versions if v.effective > _sv.effective]
-                if _later and not any(
-                    (not v.expires or v.expires > expiry_horizon) for v in _later
-                ) and not any(not v.expires for v in _later):
-                    # All later versions are temporary and have expired.
-                    selection_states.append(
-                        _MaterializationSelectionState(
-                            address=address,
-                            status="inactive",
-                        )
-                    )
-                    continue
             selection_states.append(
                 _MaterializationSelectionState(
                     address=address,

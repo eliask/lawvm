@@ -31,6 +31,7 @@ from lawvm.core.timeline import materialize_pit_ex
 from lawvm.core.timeline import select_active_version
 from lawvm.core.timeline import materialize_pit
 from lawvm.core.timeline_results import MaterializationLineagePlan
+from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.finland.replay_products import FinlandLineageBridgeClassification
 from lawvm.finland.replay_products import _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE
@@ -182,6 +183,18 @@ def test_replay_xml_exposes_typed_replay_products(replay_2009_953_legal_pit: Rep
         FinlandLineageBridgeClassification,
     )
     assert replay_2009_953_legal_pit.source_adjudication.statute_id == "2009/953"
+
+
+def test_1998_805_materialized_state_restores_sections_after_expired_temporary_chain() -> None:
+    replay = replay_xml_for_test("1998/805", mode="official_consolidation", quiet=True)
+
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    assert "section:1" in sections
+    assert "section:2" in sections
+    assert "Kansanopiston ja valtakunnallisen liikunnan koulutuskeskuksen" in irnode_to_text(
+        sections["section:1"]
+    )
+    assert "Suoritteiden laskeminen" in irnode_to_text(sections["section:2"])
 
 
 def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:

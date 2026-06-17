@@ -4963,6 +4963,130 @@ def test_materialize_pit_falls_back_to_permanent_version_after_temporary_expiry(
     assert irnode_to_text(sec) == "permanent text"
 
 
+def test_materialize_pit_restores_base_owned_permanent_amendment_after_temporary_chain() -> None:
+    """Expired temporary overlays must not erase a durable base-owned provision."""
+    base = IRStatute(
+        statute_id="test/temporary-chain",
+        title="Temporary chain",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="base text"),
+            ),
+        ),
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    permanent = IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent amended")
+    temporary_1 = IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary one")
+    temporary_2 = IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary two")
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2009-12-01",
+                    variant_kind="permanent",
+                    source=OperationSource(statute_id="2009/1"),
+                    content=permanent,
+                    content_hash=irnode_content_hash(permanent),
+                ),
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    expires="2020-06-01",
+                    variant_kind="temporary",
+                    source=OperationSource(statute_id="2020/1"),
+                    content=temporary_1,
+                    content_hash=irnode_content_hash(temporary_1),
+                ),
+                ProvisionVersion(
+                    effective="2020-06-01",
+                    enacted="2020-06-01",
+                    expires="2021-01-01",
+                    variant_kind="temporary",
+                    source=OperationSource(statute_id="2020/2"),
+                    content=temporary_2,
+                    content_hash=irnode_content_hash(temporary_2),
+                ),
+            ],
+        )
+    }
+
+    pit = materialize_pit(timelines, "2022-01-01", base=base)
+
+    sec = next((c for c in pit.body.children if c.kind == IRNodeKind.SECTION and c.label == "1"), None)
+    assert sec is not None
+    assert irnode_to_text(sec) == "permanent amended"
+
+
+def test_materialize_pit_restores_permanent_inserted_descendant_after_temporary_chain() -> None:
+    """A non-base permanent insertion is durable unless explicitly projected absent."""
+    base_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                text="base subsection",
+            ),
+        ),
+    )
+    base = IRStatute(
+        statute_id="test/temporary-descendant-chain",
+        title="Temporary descendant chain",
+        body=IRNode(kind=IRNodeKind.BODY, children=(base_section,)),
+    )
+    parent_addr = LegalAddress(path=(("section", "1"),))
+    child_addr = LegalAddress(path=(("section", "1"), ("subsection", "2")))
+    permanent_child = IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="permanent child")
+    temporary_child = IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="temporary child")
+    timelines = {
+        parent_addr: ProvisionTimeline(
+            address=parent_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    content=base_section,
+                    content_hash=irnode_content_hash(base_section),
+                ),
+            ],
+        ),
+        child_addr: ProvisionTimeline(
+            address=child_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2009-12-01",
+                    variant_kind="permanent",
+                    source=OperationSource(statute_id="2009/2"),
+                    content=permanent_child,
+                    content_hash=irnode_content_hash(permanent_child),
+                ),
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    expires="2021-01-01",
+                    variant_kind="temporary",
+                    source=OperationSource(statute_id="2020/2"),
+                    content=temporary_child,
+                    content_hash=irnode_content_hash(temporary_child),
+                ),
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2022-01-01", base=base)
+
+    sec = next((c for c in pit.body.children if c.kind == IRNodeKind.SECTION and c.label == "1"), None)
+    assert sec is not None
+    assert "permanent child" in irnode_to_text(sec)
+    assert "temporary child" not in irnode_to_text(sec)
+
+
 def test_select_active_version_ex_marks_missing_territory_scope() -> None:
     """Scope-bearing active candidates must not be reported as plain absence."""
     addr = LegalAddress(path=(("section", "1"),))
