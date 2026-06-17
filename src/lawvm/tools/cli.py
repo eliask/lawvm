@@ -12036,6 +12036,36 @@ def _main_impl() -> None:
             from lawvm.tools.nz_bench import main as nz_bench_main
 
             nz_bench_main(args)
+        elif j == "us":
+            # The US dry-run bench is fully implemented as a standalone entry
+            # point (``python -m lawvm.us_federal.bench``). Reuse it verbatim by
+            # translating the unified-CLI Namespace into its argv. It honours a
+            # subset of the FI flags — corpus / parallel / json — and uses its
+            # own default corpus (us/bench/us_bench_corpus.csv) when --corpus is
+            # omitted. FI-only replay flags are not applicable and are ignored.
+            from lawvm.us_federal.bench import main as us_bench_main
+
+            us_argv: list[str] = []
+            if getattr(args, "corpus", None):
+                us_argv += ["--corpus", str(args.corpus)]
+            us_parallel = getattr(args, "parallel", None)
+            if us_parallel:
+                us_argv += ["--parallel", str(us_parallel)]
+            us_output_json = getattr(args, "output_json", None)
+            if getattr(args, "json", False) or us_output_json:
+                us_argv.append("--json")
+            if us_output_json:
+                import contextlib
+                import io
+                from pathlib import Path as _Path
+
+                _buf = io.StringIO()
+                with contextlib.redirect_stdout(_buf):
+                    _rc = us_bench_main(us_argv)
+                _Path(us_output_json).write_text(_buf.getvalue())
+            else:
+                _rc = us_bench_main(us_argv)
+            raise SystemExit(_rc)
         elif j == "fi":
             from lawvm.tools.bench import main as bench_main
 

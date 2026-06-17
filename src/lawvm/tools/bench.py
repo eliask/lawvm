@@ -834,9 +834,6 @@ def _load_corpus(corpus_path: str) -> List[Tuple[int, str]]:
 def _default_corpus_path() -> str:
     here = Path(__file__).resolve()
     lawvm_dir = here.parent.parent.parent.parent
-    core = lawvm_dir / "data" / "finland" / "bench_core.csv"
-    if core.exists():
-        return str(core)
     # Primary: data/finland/bench_corpus.csv (3591 curated statutes)
     primary = lawvm_dir / "data" / "finland" / "bench_corpus.csv"
     if primary.exists():
