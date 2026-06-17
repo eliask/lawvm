@@ -2103,7 +2103,7 @@ function renderTreeEntry(entry, depth, focusAddrs) {
   const heading = display && display.heading ? display.heading : '';
   const changeKind = changeKindAtSelectedDate(entry.addr);
   const changed = !!changeKind || [...entry.children.values()].some(c => changedAddrs.has(c.addr));
-  const collapsed = collapsedAddrs.has(entry.addr);
+  const collapsed = isNodeCollapsed(entry.addr);
   const derivedTomb = derivedScaffoldTombstoneInfo(entry);
   const disposition = derivedTomb ? tombstoneDisposition(entry.addr, derivedTomb) : null;
   let html = `<div class="node scaffold kind-${escAttr(displayKind)}${derivedTomb ? ' tombstone derived-tombstone' : ''}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${disposition ? disposition.activeClass : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
@@ -2224,7 +2224,7 @@ function renderNode(node, addr, depth, prevMap, focusAddrs) {
   if (ROW_KINDS.has(kind)) {
     // Outline row: chapter/section — collapsible, default expanded (reading
     // mode); collapse state is remembered across date scrubs and re-renders.
-    const collapsed = collapsedAddrs.has(addr);
+    const collapsed = isNodeCollapsed(addr);
     const changeKind = changeKindAtSelectedDate(addr);
     if (changeKind) changed = true;
     let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
@@ -2399,14 +2399,127 @@ function wireDoc(docEl) {
 }
 
 // Collapse state survives re-renders (date scrubs, language switches).
+// Entirely repealed/expired outline subtrees default collapsed; explicit
+// expand/collapse overrides are remembered per address.
 const collapsedAddrs = new Set();
+const expandedAddrs = new Set();
 
-function toggleCollapse(nodeEl, force) {
-  if (!nodeEl) return;
-  const collapsing = force !== undefined ? force : !nodeEl.classList.contains('collapsed');
+let entirelyAbsentCache = null;
+let entirelyAbsentDateIdx = -1;
+
+function absentUnitAtDate(addr) {
+  if (curLive.has(addr)) return false;
+  const events = changeIndex().get(addr) || [];
+  let last = null;
+  for (const e of events) {
+    if (e.idx <= curDateIdx) last = e;
+    else break;
+  }
+  return !!(last && last.kind === 'removed');
+}
+
+function liveNodeInlineText(node) {
+  return inlineContent(node).map(s => s.text).join('').trim();
+}
+
+function rowChildrenEntirelyAbsent(addr, node) {
+  const children = structChildren(node, addr);
+  const ghosts = ghostMap().get(addr) || [];
+  if (!children.length && !ghosts.length) return null;
+  for (const c of children) {
+    if (!unitEntirelyAbsent(c.childAddr, c.child)) return false;
+  }
+  for (const g of ghosts) {
+    if (!unitEntirelyAbsent(g.addr, null)) return false;
+  }
+  return true;
+}
+
+function unitEntirelyAbsent(addr, node) {
+  if (node && ROW_KINDS.has(node.kind)) {
+    if (liveNodeInlineText(node)) return false;
+    const kids = rowChildrenEntirelyAbsent(addr, node);
+    if (kids === null) return false;
+    return kids;
+  }
+  if (node) {
+    if (liveNodeInlineText(node)) return false;
+    const children = structChildren(node, addr);
+    const ghosts = ghostMap().get(addr) || [];
+    if (!children.length && !ghosts.length) return false;
+    return children.every(c => unitEntirelyAbsent(c.childAddr, c.child))
+      && ghosts.every(g => unitEntirelyAbsent(g.addr, null));
+  }
+  return absentUnitAtDate(addr);
+}
+
+function entrySubtreeEntirelyAbsent(entry) {
+  if (entry.tomb && !entry.hash) return true;
+  if (entry.hash) {
+    const node = getBlob(entry.hash);
+    return node ? unitEntirelyAbsent(entry.addr, node) : false;
+  }
+  const children = [...entry.children.values()];
+  if (!children.length) return false;
+  return children.every(c => {
+    if (c.tomb && !c.hash) return true;
+    if (c.hash) {
+      const n = getBlob(c.hash);
+      return n ? unitEntirelyAbsent(c.addr, n) : false;
+    }
+    return entrySubtreeEntirelyAbsent(c);
+  });
+}
+
+function collapsibleEntirelyAbsent(addr, entry, node) {
+  if (!ROW_KINDS.has(addrKind(addr))) return false;
+  if (node) return unitEntirelyAbsent(addr, node);
+  if (entry) {
+    if (!entry.children.size && !entry.hash) return false;
+    if (entry.hash) {
+      const n = getBlob(entry.hash);
+      return n ? unitEntirelyAbsent(addr, n) : false;
+    }
+    return entrySubtreeEntirelyAbsent(entry);
+  }
+  return false;
+}
+
+function entirelyAbsentAddrs() {
+  if (entirelyAbsentCache && entirelyAbsentDateIdx === curDateIdx) return entirelyAbsentCache;
+  const absent = new Set();
+  const tree = buildRenderTree(curLive, curTombstoned);
+
+  const visitNode = (node, addr) => {
+    if (collapsibleEntirelyAbsent(addr, null, node)) absent.add(addr);
+    for (const { child, childAddr } of structChildren(node, addr)) visitNode(child, childAddr);
+  };
+
+  const visitEntry = (entry) => {
+    if (!entry.hash && entry.children.size) {
+      if (collapsibleEntirelyAbsent(entry.addr, entry, null)) absent.add(entry.addr);
+    }
+    for (const child of entry.children.values()) visitEntry(child);
+    if (entry.hash) {
+      const node = getBlob(entry.hash);
+      if (node) visitNode(node, entry.addr);
+    }
+  };
+
+  for (const entry of tree.values()) visitEntry(entry);
+  entirelyAbsentCache = absent;
+  entirelyAbsentDateIdx = curDateIdx;
+  return absent;
+}
+
+function isNodeCollapsed(addr) {
+  if (expandedAddrs.has(addr)) return false;
+  if (collapsedAddrs.has(addr)) return true;
+  return entirelyAbsentAddrs().has(addr);
+}
+
+function applyCollapseDom(nodeEl, collapsing) {
   nodeEl.classList.toggle('collapsed', collapsing);
-  const addr = nodeEl.dataset.addr;
-  if (addr) { if (collapsing) collapsedAddrs.add(addr); else collapsedAddrs.delete(addr); }
   const tog = nodeEl.querySelector(':scope > .node-row > .node-toggle');
   if (tog && !tog.classList.contains('leaf')) tog.textContent = collapsing ? '▸' : '▾';
   const body = nodeEl.querySelector(':scope > .node-body');
@@ -2417,9 +2530,36 @@ function toggleCollapse(nodeEl, force) {
   }
 }
 
+function toggleCollapse(nodeEl, force) {
+  if (!nodeEl) return;
+  const collapsing = force !== undefined ? force : !nodeEl.classList.contains('collapsed');
+  applyCollapseDom(nodeEl, collapsing);
+  const addr = nodeEl.dataset.addr;
+  if (!addr) return;
+  if (collapsing) {
+    collapsedAddrs.add(addr);
+    expandedAddrs.delete(addr);
+  } else {
+    collapsedAddrs.delete(addr);
+    if (entirelyAbsentAddrs().has(addr)) expandedAddrs.add(addr);
+  }
+}
+
 function setAllCollapsed(collapsed) {
   document.querySelectorAll('#doc .node').forEach(n => {
-    if (n.querySelector(':scope > .node-body')) toggleCollapse(n, collapsed);
+    if (!n.querySelector(':scope > .node-body')) return;
+    const addr = n.dataset.addr || '';
+    if (collapsed) {
+      toggleCollapse(n, true);
+      return;
+    }
+    if (entirelyAbsentAddrs().has(addr)) {
+      expandedAddrs.delete(addr);
+      collapsedAddrs.delete(addr);
+      applyCollapseDom(n, true);
+      return;
+    }
+    toggleCollapse(n, false);
   });
 }
 
@@ -2483,10 +2623,21 @@ function focusChangedContext() {
     renderLaw({ preserveScroll: true });
   }
   const changed = addressesChangedAtSelectedDate();
+  const absent = entirelyAbsentAddrs();
   document.querySelectorAll('#doc .node').forEach(n => {
     if (!n.querySelector(':scope > .node-body')) return;
     const addr = n.dataset.addr || '';
-    toggleCollapse(n, !addressVisibleInFocus(addr, changed));
+    if (!addressVisibleInFocus(addr, changed)) {
+      toggleCollapse(n, true);
+      return;
+    }
+    if (absent.has(addr)) {
+      expandedAddrs.delete(addr);
+      collapsedAddrs.delete(addr);
+      applyCollapseDom(n, true);
+      return;
+    }
+    toggleCollapse(n, false);
   });
 }
 

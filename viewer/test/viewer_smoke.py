@@ -198,10 +198,47 @@ with sync_playwright() as p:
     check("timeline arrows ignore focused input", guarded_after == guarded_before, f"{guarded_before} -> {guarded_after}")
     page.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")
 
-    # Contextual focus keeps the full law available, but collapses unchanged
-    # outline branches around selected-date changes.
+    # Entirely repealed/expired outline subtrees default collapsed at this
+    # timeslice; expand-all must not open them.
     page.select_option("#date-jump", label="2011-04-05")
     page.wait_for_timeout(700)
+    absent_section = page.evaluate("""() => {
+      for (const el of document.querySelectorAll('#doc .node.kind-section')) {
+        const body = el.querySelector(':scope > .node-body');
+        if (!body) continue;
+        const kids = body.querySelectorAll(':scope > .tombstone, :scope > .pblock.tombstone, :scope > .ghost-line');
+        if (kids.length < 2) continue;
+        const row = el.querySelector(':scope > .node-row');
+        if (!row || !(/\\[(kumottu|rauennut)\\]/.test(row.textContent || ''))) continue;
+        return { addr: el.dataset.addr || '', collapsed: el.classList.contains('collapsed'), kids: kids.length };
+      }
+      return null;
+    }""")
+    check("entirely absent section subtree found for collapse test", bool(absent_section),
+          str(absent_section))
+    if absent_section:
+        check("entirely absent section defaults collapsed",
+              absent_section.get("collapsed"),
+              str(absent_section))
+        page.click("#expand-all")
+        page.wait_for_timeout(300)
+        still_collapsed = page.evaluate("""(addr) => {
+          const el = document.querySelector(`#doc .node[data-addr="${addr}"]`);
+          return !!(el && el.classList.contains('collapsed'));
+        }""", absent_section["addr"])
+        check("expand-all skips entirely absent subtrees", still_collapsed)
+        page.locator(
+            f"#doc .node[data-addr='{absent_section['addr']}'] > .node-row"
+        ).click()
+        page.wait_for_timeout(200)
+        user_expanded = page.evaluate("""(addr) => {
+          const el = document.querySelector(`#doc .node[data-addr="${addr}"]`);
+          return !!(el && !el.classList.contains('collapsed'));
+        }""", absent_section["addr"])
+        check("user can expand entirely absent subtree", user_expanded)
+
+    # Contextual focus keeps the full law available, but collapses unchanged
+    # outline branches around selected-date changes.
     full_addr_count = page.locator("#doc [data-addr]").count()
     page.click("#focus-changes-context")
     page.wait_for_timeout(900)
