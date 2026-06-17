@@ -235,23 +235,24 @@ _ADESSIVE_SUFFIXES = ("ll\xe4", "lla")
 # the definitional (adessive) shape, and never for a relative pronoun in the
 # adessive (``jolla`` / ``millä`` / ``sillä`` / ``tällä`` …).
 
-# Adessive forms of relative / demonstrative pronouns and referential adverbs:
+# Adessive surface forms of the closed pronoun / referential-adverb class:
 # grammatically adessive (``-lla`` / ``-llä``) but never a definiendum (``jolla``
-# = "by which", ``edellä`` = "above").  Keyed by the post-``_strip_adessive`` stem.
-_PRONOUN_ADESSIVE_STEMS: frozenset[str] = frozenset(
+# = "by which", ``edellä`` = "above").  Finnish pronouns are a small CLOSED and
+# IRREGULAR class, so we match the FULL surface form by exact equality — no
+# suffix-stripping and no consonant-gradation guessing.  (Reverse morphological
+# analysis ``jolla`` → ``joka`` is unavailable: M1 morphology is generation-only.
+# Generating these via M1 would buy nothing — the class is closed, so there is
+# nothing to generalise over — and is unreliable on irregular pronoun paradigms.)
+_PRONOUN_ADESSIVE_FORMS: frozenset[str] = frozenset(
     {
-        "jo",       # jolla / jolloin
-        "joi",      # joilla
-        "mi",       # millä
-        "mil",      # millä (alt strip)
-        "si",       # sillä
-        "sil",      # sillä
-        "t\xe4",    # tällä
-        "t\xe4l",   # tällä (alt strip)
-        "ni\xe4",   # niillä
-        "nii",      # niillä
-        "kai",      # kaikilla
-        "ede",      # edellä  ("above" — referential adverb, not a definiendum)
+        "jolla",     # joka
+        "joilla",    # joka (plural)
+        "mill\xe4",  # mikä
+        "sill\xe4",  # se
+        "t\xe4ll\xe4",   # tämä
+        "niill\xe4",     # ne
+        "kaikilla",  # kaikki
+        "edell\xe4",  # edellä — adverb "above" (referential)
     }
 )
 
@@ -419,12 +420,13 @@ def _is_definitional_definiendum(last_word: str) -> bool:
     low = last_word.lower()
     if not (low.endswith("lla") or low.endswith("ll\xe4")):
         return False
-    stem = _strip_adessive(last_word).lower()
-    if stem in _PRONOUN_ADESSIVE_STEMS:
+    # Closed pronoun / referential-adverb class: matched as full adessive surface
+    # forms (exact equality), never by prefix/stem approximation.
+    if low in _PRONOUN_ADESSIVE_FORMS:
         return False
-    # A bare adessive whose stem is too short to be a content word (e.g. a
-    # mangled pronoun like ``jo`` / ``si``) is not a definiendum.
-    if len(stem) < 2:
+    # A bare adessive too short to carry a content stem before the 3-char suffix
+    # (e.g. a mangled token) is not a definiendum.
+    if len(low) < 5:
         return False
     return True
 
