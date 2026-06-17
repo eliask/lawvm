@@ -267,6 +267,270 @@ class ClauseIndex:
         return enclosing
 
 
+#: Closed taxonomy of structural segment kinds (the SegmentationGraph alphabet).
+#: Jurisdiction-NEUTRAL: the segmenter MUST label every segment with one of these.
+#: Adding a kind is a deliberate edit here, never a heuristic.
+#:
+#:   * ``heading``                — a section/chapter/subheading title line.
+#:   * ``chapeau``                — the introductory stem governing a following
+#:                                  enumerated list (the text before a ``:``).
+#:   * ``list_item``              — one enumerated item under a chapeau; links to
+#:                                  its governing chapeau (the inheritance edge).
+#:   * ``definition_list``        — refinement of a chapeau whose items are
+#:                                  definitional entries; carried as a ``role`` on
+#:                                  the chapeau + its list_items, NOT a 4th kind on
+#:                                  the items (so list inheritance stays uniform).
+#:   * ``quoted_amendment_block`` — a quoted block of statutory text being
+#:                                  inserted/substituted by an amendment act.
+#:   * ``continuation``           — a segment continuing a prior one across a soft
+#:                                  break (links to the segment it continues).
+#:   * ``prose``                  — ordinary running paragraph text (the default).
+#:   * ``residual``               — an EXPLICIT residual span: text owned but not
+#:                                  interpreted (benign whitespace between lines,
+#:                                  or a span whose structure the token tape does
+#:                                  not carry). NEVER a silent drop — every
+#:                                  residual records a ``residual_reason``.
+SEGMENT_KINDS: frozenset[str] = frozenset(
+    {
+        "heading",
+        "chapeau",
+        "list_item",
+        "definition_list",
+        "quoted_amendment_block",
+        "continuation",
+        "prose",
+        "residual",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class StructuralSegment:
+    """One structural segment over a source unit's text. Jurisdiction-NEUTRAL.
+
+    A segment owns a contiguous char span ``[char_start, char_end)`` of the unit
+    text and is labelled with a closed :data:`SEGMENT_KINDS` ``kind``. The
+    segmentation RULES (which lines are headings / chapeaux / list items, how a
+    list item is linked to its chapeau) are a jurisdiction concern and live in
+    the jurisdiction segmenter (e.g. ``lawvm.finland.legal_surface.clause_segment``);
+    this type only stores the result.
+
+    Inheritance / continuation links are stored as an INDEX into the owning
+    :class:`SegmentationGraph.segments` tuple (``parent_index``): a ``list_item``
+    points at its governing ``chapeau``; a ``continuation`` points at the segment
+    it continues. ``parent_index is None`` for a segment with no parent.
+
+    Attributes:
+        char_start:      0-based inclusive offset into the unit text.
+        char_end:        0-based exclusive offset into the unit text.
+        kind:            A member of :data:`SEGMENT_KINDS`.
+        role:            A jurisdiction-supplied opaque refinement label (e.g.
+                         ``"definition_list"`` tags a definitional chapeau/item,
+                         ``"colon_chapeau"`` records WHY a chapeau boundary was
+                         drawn). Carrier only — never interpreted by core. ``""``
+                         when unrefined.
+        parent_index:    Index into :class:`SegmentationGraph.segments` of the
+                         governing chapeau (for ``list_item``) or the continued
+                         segment (for ``continuation``); ``None`` otherwise.
+        residual_reason: WHY this span is an explicit residual — REQUIRED and
+                         non-empty for ``kind == "residual"`` (self-evidencing:
+                         the reason names what was not interpreted), ``""`` for
+                         every interpreted kind. This is the "no silent drop"
+                         witness: a residual is owned and labelled, never hidden.
+    """
+
+    char_start: int
+    char_end: int
+    kind: str
+    role: str = ""
+    parent_index: "int | None" = None
+    residual_reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.char_start < 0:
+            raise ValueError("StructuralSegment.char_start must be >= 0")
+        if self.char_end < self.char_start:
+            raise ValueError("StructuralSegment.char_end must be >= char_start")
+        if self.kind not in SEGMENT_KINDS:
+            raise ValueError(f"unknown segment kind: {self.kind!r}")
+        if self.parent_index is not None and self.parent_index < 0:
+            raise ValueError("StructuralSegment.parent_index must be >= 0 or None")
+        if self.kind == "residual":
+            if not self.residual_reason:
+                raise ValueError(
+                    "a residual StructuralSegment MUST carry a non-empty "
+                    "residual_reason (no silent drop: every residual names what "
+                    "was left uninterpreted)"
+                )
+        elif self.residual_reason:
+            raise ValueError(
+                "residual_reason is only for kind=='residual'; an interpreted "
+                f"segment ({self.kind!r}) must leave it empty"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentationGraph:
+    """A deterministic, source-anchored STRUCTURAL segmentation of one unit.
+
+    Jurisdiction-NEUTRAL carrier + query harness, sitting one level ABOVE the
+    sentence/clause :class:`ClauseIndex` in the SourceSyntaxGraph stack
+    (``TokenTape → SegmentationGraph → SourceSyntaxGraph → LegalSurfaceGraph``).
+    Where :class:`ClauseIndex` splits prose into sentences/clauses, this graph
+    classifies the unit's whole text into the higher STRUCTURAL segments
+    (headings, chapeaux, list items with chapeau inheritance, quoted amendment
+    blocks, continuations, prose) plus EXPLICIT residual spans.
+
+    THE KILLER INVARIANT — total token ownership / no silent drop (enforced in
+    :meth:`__post_init__`):
+
+        the segment spans, in document order, partition ``[0, text_len)``
+        EXACTLY — contiguous, non-overlapping, no gaps. Every char of the unit
+        is owned by exactly one segment; an uninterpreted span is owned as an
+        explicit ``residual`` segment (with a reason), NEVER dropped.
+
+    This is the structural analogue of :class:`TokenTape`'s contiguous-coverage
+    totality, lifted to the segment layer. A consumer can therefore trust that no
+    legal signal silently vanished between the tape and the segmentation.
+
+    Attributes:
+        source_unit_id: The ``SourceSurfaceUnit.source_unit_id`` this segments.
+        text_hash:      Hash of the exact text segmented (drift anchor; same
+                        convention as :class:`TokenTape` / :class:`ClauseIndex`).
+        text_len:       ``len(raw_text)`` — the full span the segments partition.
+        segments:       Document-order structural segments partitioning
+                        ``[0, text_len)`` exactly.
+    """
+
+    source_unit_id: str
+    text_hash: str
+    text_len: int
+    segments: Tuple[StructuralSegment, ...]
+
+    def __post_init__(self) -> None:
+        if self.text_len < 0:
+            raise ValueError("SegmentationGraph.text_len must be >= 0")
+        n = len(self.segments)
+        cursor = 0
+        for i, seg in enumerate(self.segments):
+            # contiguous, in order, no gap, no overlap (exact partition)
+            if seg.char_start != cursor:
+                raise ValueError(
+                    "SegmentationGraph segments must partition [0, text_len) "
+                    "with NO gap/overlap (no silent drop): segment "
+                    f"{i} starts at {seg.char_start} but expected {cursor}"
+                )
+            if seg.char_end < seg.char_start:
+                raise ValueError(
+                    f"SegmentationGraph segment {i} has char_end < char_start"
+                )
+            cursor = seg.char_end
+            # parent/continuation index must point at an EARLIER segment
+            if seg.parent_index is not None:
+                if not 0 <= seg.parent_index < n:
+                    raise ValueError(
+                        "SegmentationGraph segment.parent_index out of range: "
+                        f"{seg.parent_index} not in [0, {n})"
+                    )
+                if seg.parent_index >= i:
+                    raise ValueError(
+                        "SegmentationGraph parent/continuation link must point "
+                        f"at an EARLIER segment: segment {i} -> {seg.parent_index}"
+                    )
+        if cursor != self.text_len:
+            raise ValueError(
+                "SegmentationGraph segments must cover the FULL text "
+                f"[0, {self.text_len}) (no silent drop): coverage ends at "
+                f"{cursor}, not {self.text_len}"
+            )
+
+    def segment_at(
+        self, char_start: int, char_end: int
+    ) -> "StructuralSegment | _Ambiguous":
+        """Return the enclosing :class:`StructuralSegment` for a char span.
+
+        Mirrors :meth:`ClauseIndex.clause_at`: a span fully inside one segment
+        returns that segment; a span that crosses a segment boundary (or lies
+        outside ``[0, text_len)``) returns :data:`AMBIGUOUS` — never silently
+        bucketed to one side. An empty span is located by its point position.
+        """
+        if char_end < char_start:
+            raise ValueError("query char_end must be >= char_start")
+        hi = char_end if char_end > char_start else char_start + 1
+        enclosing: StructuralSegment | None = None
+        for seg in self.segments:
+            if seg.char_start < hi and char_start < seg.char_end:
+                if enclosing is not None:
+                    return AMBIGUOUS
+                if char_start < seg.char_start or char_end > seg.char_end:
+                    return AMBIGUOUS
+                enclosing = seg
+        if enclosing is None:
+            return AMBIGUOUS
+        return enclosing
+
+    def chapeau_of(
+        self, segment: "StructuralSegment"
+    ) -> "StructuralSegment | None":
+        """The governing chapeau of a ``list_item`` (its ``parent_index``), or None.
+
+        This is the LIST-INHERITANCE accessor: given a list item, return the
+        chapeau it inherits from. Returns ``None`` for a segment that is not a
+        list item or whose parent is not a chapeau.
+        """
+        if segment.kind != "list_item" or segment.parent_index is None:
+            return None
+        parent = self.segments[segment.parent_index]
+        return parent if parent.kind == "chapeau" else None
+
+    def coverage(self) -> "SegmentationCoverage":
+        """Token-ownership census over the partition (the no-silent-drop report).
+
+        Returns the char totals owned by interpreted segments vs explicit
+        residual segments, plus the residual reasons encountered. Because the
+        partition invariant is enforced at construction, ``interpreted_chars +
+        residual_chars == text_len`` always holds (no unowned chars exist).
+        """
+        residual_chars = 0
+        residual_reasons: dict[str, int] = {}
+        for seg in self.segments:
+            if seg.kind == "residual":
+                residual_chars += seg.char_end - seg.char_start
+                residual_reasons[seg.residual_reason] = (
+                    residual_reasons.get(seg.residual_reason, 0) + 1
+                )
+        return SegmentationCoverage(
+            text_len=self.text_len,
+            interpreted_chars=self.text_len - residual_chars,
+            residual_chars=residual_chars,
+            residual_reasons=tuple(sorted(residual_reasons.items())),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentationCoverage:
+    """The token-ownership census of a :class:`SegmentationGraph`.
+
+    Attributes:
+        text_len:          Total chars in the unit.
+        interpreted_chars: Chars owned by non-residual (interpreted) segments.
+        residual_chars:    Chars owned by explicit ``residual`` segments.
+        residual_reasons:  Sorted ``(reason, count)`` pairs of residual segments.
+    """
+
+    text_len: int
+    interpreted_chars: int
+    residual_chars: int
+    residual_reasons: Tuple[Tuple[str, int], ...]
+
+    @property
+    def interpreted_fraction(self) -> float:
+        """Fraction of chars owned by interpreted segments (0.0 if empty)."""
+        if self.text_len == 0:
+            return 0.0
+        return self.interpreted_chars / self.text_len
+
+
 @dataclass(frozen=True, slots=True)
 class MorphAnnotation:
     """A reverse-morphology annotation on a single :class:`Token` of a tape.
