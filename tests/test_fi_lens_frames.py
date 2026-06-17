@@ -30,7 +30,7 @@ _XML = f"""<?xml version="1.0" encoding="UTF-8"?>
       <section eId="sec_1">
         <num>1 §</num>
         <content>
-          <p>Tassa laissa tarkoitetaan jatteella poistettavaa ainetta.</p>
+          <p>Jatteella tarkoitetaan poistettavaa ainetta.</p>
           <p>Tata lakia sovelletaan ymparistonsuojelulain (527/2014) 5 §:ssa tarkoitettuun toimintaan.</p>
           <p>Edella 1 momentissa tarkoitettuun toimintaan sovelletaan myos 5 §:n saannoksia.</p>
           <p>Valtioneuvosto voi antaa asetuksella tarkempia saannoksia.</p>
