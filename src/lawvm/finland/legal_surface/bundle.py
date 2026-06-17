@@ -21,7 +21,10 @@ import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_graph import SourceSpanRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceBundle, SourceSurfaceUnit
-from lawvm.finland.legal_surface.tokenize import build_token_tape
+from lawvm.finland.legal_surface.tokenize import (
+    build_morph_overlay,
+    build_token_tape,
+)
 
 _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
@@ -67,6 +70,7 @@ def build_surface_bundle(
     source_hash = _sha256_bytes(xml_bytes)
     text_hash = _sha256_text(raw_text)
     source_unit_id = f"{statute_id}#body"
+    token_tape = build_token_tape(source_unit_id, raw_text)
     unit = SourceSurfaceUnit(
         source_unit_id=source_unit_id,
         work_id=statute_id,
@@ -89,7 +93,12 @@ def build_surface_bundle(
         # Phase 7 (§D4): populate the source-preserving token view additively.
         # Lenses that ignore it are unaffected; token-consuming lenses set
         # required_views=("token_tape",).
-        token_tape=build_token_tape(source_unit_id, raw_text),
+        token_tape=token_tape,
+        # Phase 7 (§D4): sparse reverse-morphology overlay over the tape. Covers
+        # ONLY the closed known-head vocabulary (lemma index inverts M1); an
+        # absent annotation means "unknown", never "no lemma exists". Cheap: the
+        # default lemma index is memoized.
+        morph_overlay=build_morph_overlay(token_tape),
     )
     subject = SurfaceGraphSubject(
         jurisdiction="fi",
