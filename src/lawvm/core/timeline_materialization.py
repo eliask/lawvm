@@ -104,6 +104,14 @@ def _node_is_complete_snapshot_owner(node: IRNode) -> bool:
     )
 
 
+def _content_is_whole_node_repeal_tombstone(content: IRNode) -> bool:
+    """Return whether placeholder content represents a full-address tombstone."""
+    if content.attrs.get("lawvm_repeal_placeholder") != "1":
+        return False
+    non_substantive = {IRNodeKind.NUM, IRNodeKind.HEADING}
+    return all(child.kind in non_substantive for child in content.children)
+
+
 def _record_duplicate_child_classifications(
     issue_sink: Any,
     *,
@@ -262,6 +270,12 @@ def apply_overlays(
 ) -> IRNode:
     """Apply child-level active version overrides to content (overlay semantics)."""
     parent_len = len(parent_address.path)
+    if _content_is_whole_node_repeal_tombstone(content):
+        # A repeal placeholder is an explicit tombstone for this address.  Older
+        # descendant timelines may still be active independently, but they must
+        # not be rehydrated under the repealed parent during PIT projection.
+        return content
+
     child_overrides: dict[tuple[str, str], Optional[IRNode]] = {}
     for addr, child_content in active.items():
         if len(addr.path) == parent_len + 1 and addr.path[:parent_len] == parent_address.path:

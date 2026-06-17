@@ -382,6 +382,7 @@ def test_replay_xml_1987_322_repeals_sections_10a_to_10f_after_2023_741() -> Non
         section = replay.materialized_state.find_section(label)
         assert section is not None
         assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+        assert not any(child.kind == IRNodeKind.SUBSECTION for child in section.children)
 
 
 def test_replay_xml_1992_772_applies_1994_1281_replace_to_section_6() -> None:

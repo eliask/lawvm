@@ -1129,6 +1129,208 @@ def test_materialize_pit_keeps_child_tombstone_under_stale_parent_snapshot() -> 
     assert _find_node_by_label(result.body, IRNodeKind.SECTION, "27a") is None
 
 
+def test_materialize_pit_keeps_repeal_placeholder_as_descendant_overlay_barrier() -> None:
+    """A repealed parent must not rehydrate older active descendant timelines."""
+    section_addr = LegalAddress(path=(("chapter", "1"), ("section", "10a")))
+    subsection_addr = LegalAddress(
+        path=(("chapter", "1"), ("section", "10a"), ("subsection", "1"))
+    )
+    stale_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Older substantive child must not survive parent repeal.",
+    )
+    old_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="10a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="10 a §"),
+            stale_subsection,
+        ),
+    )
+    repeal_placeholder = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="10a",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.NUM, text="10 a §"),),
+    )
+    base = IRStatute(
+        statute_id="test/repeal-placeholder-barrier",
+        title="Repeal placeholder barrier",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(old_section,),
+                ),
+            ),
+        ),
+    )
+    timelines = {
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=old_section,
+                    source=OperationSource(
+                        statute_id="2020/1",
+                        enacted="2020-01-01",
+                        effective="2020-01-01",
+                    ),
+                ),
+                ProvisionVersion(
+                    effective="2024-01-01",
+                    enacted="2023-12-31",
+                    content=repeal_placeholder,
+                    source=OperationSource(
+                        statute_id="2023/2",
+                        enacted="2023-12-31",
+                        effective="2024-01-01",
+                    ),
+                ),
+            ],
+        ),
+        subsection_addr: ProvisionTimeline(
+            address=subsection_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=stale_subsection,
+                    source=OperationSource(
+                        statute_id="2020/1",
+                        enacted="2020-01-01",
+                        effective="2020-01-01",
+                    ),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2025-01-01", base=base)
+
+    section = _find_node_by_label(pit.body, IRNodeKind.SECTION, "10a")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert _find_node_by_label(section, IRNodeKind.SUBSECTION, "1") is None
+    assert "Older substantive child" not in irnode_to_text(section)
+
+
+def test_materialize_pit_does_not_treat_owned_child_placeholder_as_parent_tombstone() -> None:
+    """A placeholder carrying substantive children is not a full parent repeal."""
+    section_addr = LegalAddress(path=(("chapter", "1"), ("section", "16")))
+    subsection_1_addr = LegalAddress(
+        path=(("chapter", "1"), ("section", "16"), ("subsection", "1"))
+    )
+    subsection_2_addr = LegalAddress(
+        path=(("chapter", "1"), ("section", "16"), ("subsection", "2"))
+    )
+    subsection_1 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Owned surviving child.",
+    )
+    subsection_2 = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        text="Independently active child.",
+    )
+    old_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="16",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="16 §"),
+            subsection_1,
+            subsection_2,
+        ),
+    )
+    partial_placeholder = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="16",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="16 §"),
+            subsection_1,
+        ),
+    )
+    base = IRStatute(
+        statute_id="test/partial-placeholder-not-parent-tombstone",
+        title="Partial placeholder",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(old_section,),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(
+        statute_id="2020/1",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+    )
+    timelines = {
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=old_section,
+                    source=source,
+                ),
+                ProvisionVersion(
+                    effective="2024-01-01",
+                    enacted="2023-12-31",
+                    content=partial_placeholder,
+                    source=OperationSource(
+                        statute_id="2023/2",
+                        enacted="2023-12-31",
+                        effective="2024-01-01",
+                    ),
+                ),
+            ],
+        ),
+        subsection_1_addr: ProvisionTimeline(
+            address=subsection_1_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2024-01-01",
+                    enacted="2023-12-31",
+                    content=subsection_1,
+                    source=source,
+                )
+            ],
+        ),
+        subsection_2_addr: ProvisionTimeline(
+            address=subsection_2_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=subsection_2,
+                    source=source,
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2025-01-01", base=base)
+
+    section = _find_node_by_label(pit.body, IRNodeKind.SECTION, "16")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert _find_node_by_label(section, IRNodeKind.SUBSECTION, "1") is not None
+    assert _find_node_by_label(section, IRNodeKind.SUBSECTION, "2") is not None
+
+
 def test_materialize_pit_applies_nested_section_replace_without_parent_version() -> None:
     """A nested section timeline must still overlay through active parent containers."""
     base = IRStatute(
