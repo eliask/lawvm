@@ -727,6 +727,18 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
   font-family: var(--font-text); font-size: 0.86rem; line-height: 1.38;
   border-left: 3px solid #d6e4f2; padding-left: 0.55rem; margin: 0.4rem 0;
 }
+/* Internal-reference live transclusion: pulled from the loaded act's own DOM,
+   not a precomputed preview field. Greener accent marks it as in-page-live. */
+.ref-hovercard .hc-preview.hc-preview-live { border-left-color: #b9d8c3; }
+.ref-hovercard .hc-internal-source {
+  color: var(--muted); font-size: 0.72rem; margin: 0.25rem 0 -0.1rem;
+}
+.ref-hovercard .hc-internal-absent {
+  color: var(--muted); font-size: 0.78rem; font-style: italic; margin: 0.4rem 0;
+}
+/* Internal citations are live in-page anchors (deeplink styling), distinct from
+   cross-statute resolved links which depend on a precomputed preview. */
+.ref-sem-internal { cursor: pointer; border-bottom-style: solid; }
 .ref-hovercard .hc-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.45rem 0; }
 .ref-hovercard .hc-actions a {
   display: inline-flex; align-items: center; min-height: 1.55rem;

@@ -143,6 +143,11 @@ const STR = {
     citeKindInternal: 'Sisäinen viittaus',
     citeKindEU: 'EU-viittaus',
     citeKindTreaty: 'Valtiosopimusviittaus',
+    // Internal references transclude live from the loaded act (no precomputed
+    // preview): label for the live snippet, and a note when the target
+    // provision is not present in the current view (e.g. not in force today).
+    interlinkInternalLive: 'Tästä säädöksestä',
+    interlinkInternalNotPresent: 'Tässä säädöksessä – ei voimassa tällä päivämäärällä.',
     // Semantic overlay layers (toggleable surface annotations).
     overlayLayers: 'Kerrokset',
     overlayLayer_reference: 'Viittaukset',
@@ -339,6 +344,8 @@ const STR = {
     citeKindInternal: 'Internal reference',
     citeKindEU: 'EU reference',
     citeKindTreaty: 'Treaty reference',
+    interlinkInternalLive: 'From this act',
+    interlinkInternalNotPresent: 'In this act – not present on this date.',
     overlayLayers: 'Layers',
     overlayLayer_reference: 'References',
     overlayLayer_defined_term: 'Defined terms',
@@ -537,6 +544,8 @@ const STR = {
     citeKindInternal: 'Intern hänvisning',
     citeKindEU: 'EU-hänvisning',
     citeKindTreaty: 'Fördragshänvisning',
+    interlinkInternalLive: 'Ur denna författning',
+    interlinkInternalNotPresent: 'I denna författning – inte i kraft detta datum.',
     overlayLayers: 'Lager',
     overlayLayer_reference: 'Hänvisningar',
     overlayLayer_defined_term: 'Definierade begrepp',
