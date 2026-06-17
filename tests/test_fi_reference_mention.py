@@ -45,6 +45,7 @@ from lawvm.finland.ref_mention_extractor import (
 )
 from lawvm.finland.conformance_corpus.refs.fixtures import (
     ALL_FIXTURES,
+    EU_EMBEDDED_REPEAL,
     EXACT_CROSS_STATUTE,
     EXACT_EU,
     EXACT_INTERNAL_SELF_REF_SKIPPED,
@@ -282,12 +283,24 @@ class TestConformanceFixtures:
         _assert_mention_matches(result.mentions[0], EXACT_CROSS_STATUTE.expected_mentions[0])
 
     def test_fixture_exact_internal_self_ref_skipped(self) -> None:
-        """Self-reference produces diagnostic, no mention."""
+        """A self-referencing <ref> produces a diagnostic, never a CROSS_STATUTE
+        mention. Bare same-statute section refs in body prose ARE now captured as
+        INTERNAL mentions (the InternalRef family), targeting the same statute."""
         result = extract_all_reference_mentions(
             EXACT_INTERNAL_SELF_REF_SKIPPED.xml_bytes,
             EXACT_INTERNAL_SELF_REF_SKIPPED.source_statute_id,
         )
-        assert result.mentions == []
+        # The self-referencing <ref> must not become a cross-statute mention.
+        cross = [m for m in result.mentions if m.cite_kind == CiteKind.CROSS_STATUTE]
+        assert cross == [], f"self-ref must not be a CROSS_STATUTE mention: {cross}"
+        # Any emitted mentions are INTERNAL and target the citing statute itself.
+        for m in result.mentions:
+            assert m.cite_kind == CiteKind.INTERNAL
+            assert m.target_provision_ref is not None
+            assert (
+                m.target_provision_ref.statute_id
+                == EXACT_INTERNAL_SELF_REF_SKIPPED.source_statute_id
+            )
         diag_ids = [d.rule_id for d in result.diagnostics]
         for expected_id in EXACT_INTERNAL_SELF_REF_SKIPPED.expected_diagnostics_rule_ids:
             assert expected_id in diag_ids, (
@@ -303,6 +316,32 @@ class TestConformanceFixtures:
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
         assert len(eu_mentions) >= 1, f"Expected EU mention, got {result.mentions}"
         _assert_mention_matches(eu_mentions[0], EXACT_EU.expected_mentions[0])
+
+    def test_fixture_eu_embedded_repeal(self) -> None:
+        """Long-form EU citation: primary target + embedded-repeal provenance.
+
+        'asetuksen (EY) N:o 1774/2002 kumoamisesta ... asetuksessa (EY) N:o
+        1069/2009' yields TWO typed EU mentions — 1069/2009 as the primary CITES
+        target and 1774/2002 as REPEALS_EMBEDDED provenance.
+        """
+        result = extract_all_reference_mentions(
+            EU_EMBEDDED_REPEAL.xml_bytes,
+            EU_EMBEDDED_REPEAL.source_statute_id,
+        )
+        eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
+        by_target = {
+            m.target_provision_ref.statute_id: m
+            for m in eu_mentions
+            if m.target_provision_ref is not None
+        }
+        assert "eu/act/2009/1069" in by_target, f"primary missing: {by_target}"
+        assert "eu/act/2002/1774" in by_target, f"embedded missing: {by_target}"
+        assert by_target["eu/act/2009/1069"].edge_subtype == "CITES"
+        assert by_target["eu/act/2002/1774"].edge_subtype == "REPEALS_EMBEDDED"
+        # Each expected fixture mention must match an actual EU mention by target.
+        for expected in EU_EMBEDDED_REPEAL.expected_mentions:
+            match = by_target[expected["target_statute_id"]]
+            _assert_mention_matches(match, expected)
 
     def test_fixture_exact_issued_under(self) -> None:
         """finlex:issuedUnderActs metadata: NON_STATUTORY_INSTRUMENT, ISSUED_UNDER."""
@@ -345,6 +384,45 @@ class TestConformanceFixtures:
             assert isinstance(result, ExtractionResult), (
                 f"Fixture {fid}: expected ExtractionResult, got {type(result)}"
             )
+
+    def _assert_body_fixture(self, fixture_id: str) -> None:
+        fixture = ALL_FIXTURES[fixture_id]
+        result = extract_all_reference_mentions(
+            fixture.xml_bytes, fixture.source_statute_id
+        )
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        actual_paths = {
+            m.target_provision_ref.serialized()
+            for m in plain
+            if m.target_provision_ref is not None
+        }
+        for expected in fixture.expected_mentions:
+            path = expected["target_provision_ref_str"]
+            match = next(
+                (
+                    m
+                    for m in plain
+                    if m.target_provision_ref is not None
+                    and m.target_provision_ref.serialized() == path
+                ),
+                None,
+            )
+            assert match is not None, (
+                f"{fixture_id}: expected provision {path!r} not in {actual_paths}"
+            )
+            _assert_mention_matches(match, expected)
+
+    def test_fixture_body_section_range(self) -> None:
+        """Body lane: en-dash section RANGE expands to per-section mentions."""
+        self._assert_body_fixture("body_section_range")
+
+    def test_fixture_body_section_coordination(self) -> None:
+        """Body lane: coordinated section list expands to per-section mentions."""
+        self._assert_body_fixture("body_section_coordination")
+
+    def test_fixture_body_byid_momentti(self) -> None:
+        """Body lane: by-id citation threads momentti into the target ref."""
+        self._assert_body_fixture("body_byid_momentti")
 
 
 # ===========================================================================
@@ -581,6 +659,105 @@ class TestNoLeak:
 
 
 # ===========================================================================
+# Category 6b: Source-span provenance tests
+# ===========================================================================
+
+
+class TestSourceSpanProvenance:
+    """Emitted mentions must carry real byte spans into the source xml_bytes.
+
+    OFFSET UNIT: bytes into the statute's xml_bytes (matches SourceSpan field
+    names). The span must slice back to the exact citation surface, so byte-overlap
+    recall benches and the parse-overlay-IR anchoring both work.
+    """
+
+    def test_ref_lane_mention_carries_byte_span(self) -> None:
+        """An AKN <ref> mention carries a non-None SourceSpan with byte_len > 0."""
+        result = extract_reference_mentions(
+            EXACT_CROSS_STATUTE.xml_bytes,
+            EXACT_CROSS_STATUTE.source_statute_id,
+        )
+        assert result.mentions
+        m = result.mentions[0]
+        assert m.phrase_lemma == "ref_element"
+        assert m.source_span is not None
+        assert m.source_span.byte_len > 0
+        assert m.source_span.source_file == EXACT_CROSS_STATUTE.source_statute_id
+
+    def test_ref_lane_byte_span_slices_to_the_ref_element(self) -> None:
+        """The recovered byte span slices back to the <ref>…</ref> element."""
+        result = extract_reference_mentions(
+            EXACT_CROSS_STATUTE.xml_bytes,
+            EXACT_CROSS_STATUTE.source_statute_id,
+        )
+        span = result.mentions[0].source_span
+        assert span is not None
+        sliced = EXACT_CROSS_STATUTE.xml_bytes[
+            span.byte_offset : span.byte_offset + span.byte_len
+        ]
+        assert sliced.startswith(b"<ref")
+        assert sliced.endswith(b"</ref>")
+        # The surface text the edge carried is inside the sliced element.
+        assert b"lannoitelaissa" in sliced
+
+    def test_plain_text_lane_mention_carries_byte_span(self) -> None:
+        """A plain-text statute citation mention carries a real byte span that
+        slices back to the matched citation surface."""
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body>"
+            b"<section><num>1 \xc2\xa7</num>"
+            b"<paragraph><content><p>"
+            b"Sovelletaan, mit\xc3\xa4 elintarvikelain (297/2021) 5 \xc2\xa7 nojalla."
+            b"</p></content></paragraph>"
+            b"</section>"
+            b"</body></act></akomaNtoso>"
+        )
+        result = extract_plain_text_statute_mentions(xml, "2003/314")
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        assert plain
+        m = plain[0]
+        assert m.source_span is not None
+        assert m.source_span.byte_len > 0
+        sliced = xml[
+            m.source_span.byte_offset : m.source_span.byte_offset + m.source_span.byte_len
+        ]
+        assert sliced == "elintarvikelain (297/2021)".encode("utf-8")
+
+    def test_eu_lane_mention_carries_byte_span(self) -> None:
+        """An EU citation mention carries a non-None byte span > 0 that slices
+        back into the source EU citation surface (byte-accurate past non-ASCII)."""
+        result = extract_eu_reference_mentions(
+            EXACT_EU.xml_bytes,
+            EXACT_EU.source_statute_id,
+        )
+        eu = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
+        assert eu
+        m = eu[0]
+        assert m.source_span is not None
+        assert m.source_span.byte_len > 0
+        sliced = EXACT_EU.xml_bytes[
+            m.source_span.byte_offset : m.source_span.byte_offset + m.source_span.byte_len
+        ]
+        # The slice contains the EU regulation number that defined the target.
+        assert b"999/2001" in sliced
+
+    def test_metadata_edge_mention_has_no_span(self) -> None:
+        """REPEALS/ISSUED_UNDER metadata edges have no body surface → span None.
+
+        This documents the deliberate fail-loud-by-absence boundary: spans are
+        populated only where a surface exists in the body bytes.
+        """
+        result = extract_reference_mentions(
+            EXACT_REPEALS.xml_bytes,
+            EXACT_REPEALS.source_statute_id,
+        )
+        meta = [m for m in result.mentions if m.edge_subtype == "REPEALS"]
+        assert meta
+        assert meta[0].source_span is None
+
+
+# ===========================================================================
 # Category 7: Schema-stability tests
 # ===========================================================================
 
@@ -762,6 +939,37 @@ class TestEnumCoverage:
         assert CiteConfidence.AMBIGUOUS.value == "ambiguous"
         assert CiteConfidence.UNRESOLVED.value == "unresolved"
         assert CiteConfidence.BROKEN.value == "broken"
+
+    def test_cite_confidence_resolution_status_members(self) -> None:
+        """STATUTE_ONLY and OPEN exist with the catalogue-spec value strings.
+
+        Per FI_REFERENCE_CATALOGUE.md §0: STATUTE_ONLY = act known / provision
+        pending; OPEN = vague catch-all (tag-don't-guess, never assigned by a
+        confidence threshold).
+        """
+        assert CiteConfidence.STATUTE_ONLY.value == "statute_only"
+        assert CiteConfidence.OPEN.value == "open"
+
+    def test_cite_confidence_existing_members_unchanged(self) -> None:
+        """The original five members keep their identity and value strings.
+
+        Adding STATUTE_ONLY / OPEN must not perturb EXACT / APPROXIMATE /
+        AMBIGUOUS / UNRESOLVED / BROKEN.
+        """
+        existing = {
+            "EXACT": "exact",
+            "APPROXIMATE": "approximate",
+            "AMBIGUOUS": "ambiguous",
+            "UNRESOLVED": "unresolved",
+            "BROKEN": "broken",
+        }
+        for name, value in existing.items():
+            assert CiteConfidence[name].value == value
+        # Full membership is exactly the original five plus the two new ones.
+        assert {m.name for m in CiteConfidence} == set(existing) | {
+            "STATUTE_ONLY",
+            "OPEN",
+        }
 
 
 # ===========================================================================
@@ -1199,7 +1407,8 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="711/2022", section_label="7", subsection_num=2, item_label=None
+                statute_id="711/2022", section_label="7", subsection_num=2, item_label=None,
+                surface_text="lannoitelain (711/2022)",
             )
         ], hits
 
@@ -1211,7 +1420,8 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="250/1966", section_label="5", subsection_num=2, item_label="3"
+                statute_id="250/1966", section_label="5", subsection_num=2, item_label="3",
+                surface_text="lain (250/1966)",
             )
         ], hits
 
@@ -1223,7 +1433,8 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="297/2021", section_label="5", subsection_num=None, item_label=None
+                statute_id="297/2021", section_label="5", subsection_num=None, item_label=None,
+                surface_text="elintarvikelain (297/2021)",
             )
         ], hits
 
