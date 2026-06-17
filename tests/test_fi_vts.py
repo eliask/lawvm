@@ -234,6 +234,33 @@ def test_extract_voimaantulo_repeals_keeps_trailing_section_range_after_genitive
     assert {"10a", "10b", "10c", "10d", "10e", "10f"} <= labels
 
 
+def test_extract_voimaantulo_repeals_keeps_mixed_later_targets_after_genitive_refs_real_corpus() -> None:
+    cs = get_corpus_store()
+    xml = cs.read_source("1995/386")
+    if xml is None:
+        return
+    ops = extract_voimaantulo_repeals(
+        xml,
+        "1979/319",
+        parent_title="Sähkölaki",
+    )
+
+    section_ops = {
+        (op.target_section, op.target_paragraph, op.target_item)
+        for op in ops
+        if op.target_kind == "P"
+    }
+    chapter_labels = {op.target_section for op in ops if op.target_kind == "L"}
+
+    assert ("1", 2, None) in section_ops
+    assert ("2", 1, "5") in section_ops
+    assert ("3", None, None) in section_ops
+    assert ("30", 2, None) in section_ops
+    assert ("60", 3, None) in section_ops
+    assert {("64", None, None), ("66", None, None), ("68", None, None), ("69", None, None)} <= section_ops
+    assert {"2", "3", "4", "5"} <= chapter_labels
+
+
 def test_extract_voimaantulo_repeals_chapter_repeal() -> None:
     xml = _vts_xml("3 luku.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")

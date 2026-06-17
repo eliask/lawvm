@@ -210,13 +210,23 @@ def _parse_genitive_tail(section: str, tail: str) -> List[ParsedLegalAddress]:
     tail = tail.strip()
     addresses: List[ParsedLegalAddress] = []
 
+    def _with_trailing(parsed: ParsedLegalAddress, end: int) -> List[ParsedLegalAddress]:
+        out = [parsed]
+        rest = tail[end:].strip()
+        if rest:
+            out.extend(parse_legal_addresses(rest))
+        return out
+
     # "1 momentin 3 kohdan a alakohta" — subsection + item + sub-item
     m = _SUBSEC_KOHTA_ALAKOHTA_RE.match(tail)
     if m:
         sub = int(m.group(1))
         item = _norm_section(m.group(2))
         subitem = _norm_section(m.group(3))
-        return [ParsedLegalAddress(section=section, subsection=sub, item=item, subitem=subitem)]
+        return _with_trailing(
+            ParsedLegalAddress(section=section, subsection=sub, item=item, subitem=subitem),
+            m.end(),
+        )
 
     # "1 momentin 3 kohta[n ...]" — subsection + item
     m = _SUBSEC_KOHTA_RE.match(tail)
@@ -231,7 +241,10 @@ def _parse_genitive_tail(section: str, tail: str) -> List[ParsedLegalAddress]:
             special = "intro"
         elif first_word in _HEADING_WORDS:
             special = "heading"
-        return [ParsedLegalAddress(section=section, subsection=sub, item=item, special=special)]
+        return _with_trailing(
+            ParsedLegalAddress(section=section, subsection=sub, item=item, special=special),
+            m.end(),
+        )
 
     # "1 ja 2 momentti" — subsection list (nominative)
     m = _SUBSEC_STANDALONE_RE.match(tail)
@@ -257,7 +270,7 @@ def _parse_genitive_tail(section: str, tail: str) -> List[ParsedLegalAddress]:
         if first_word in _HEADING_WORDS:
             return [ParsedLegalAddress(section=section, subsection=sub, special="heading")]
         # plain genitive momentti with no following noun — still a subsection ref
-        return [ParsedLegalAddress(section=section, subsection=sub)]
+        return _with_trailing(ParsedLegalAddress(section=section, subsection=sub), m.end())
 
     # "otsikko" / "väliotsikko" — section heading
     first_word = tail.split()[0].lower() if tail else ""
