@@ -88,6 +88,118 @@
 # source text verbatim as the record, and was verified before==decline /
 # after==parse against grammar.parser.parse through patch_source_xml.
 #
+# Base source XML label defect.
+# 91/1982 (Maa-ainesasetus) — first section is encoded as sec_131 / 131 § in
+# the enacted SD source XML even though the consolidated Finlex witness and the
+# legal sequence identify it as 1 §. The exact full-section fragment patch keeps
+# the correction bounded and repairs both visible <num> and eId lineage.
+- amendment_id: "91/1982"
+  wrong_text: |-
+    <section eId="sec_131">
+                        <num>131 §</num>
+                        <subsection eId="sec_131__subsec_1">
+                            <intro eId="sec_131__subsec_1__intro">
+                                <p>Maa-aineslain 2 §:n 1 momentin 2 kohdassa tarkoitettuna lupana tai suunnitelmana pidetään:</p>
+                            </intro>
+                            <paragraph eId="sec_131__subsec_1__para_1">
+                                <num>1)</num>
+                                <content>
+                                    <p>rakennuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_2">
+                                <num>2)</num>
+                                <content>
+                                    <p>yleisistä teistä annetussa laissa (243/54) tarkoitettua tiesuunnitelmaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_3">
+                                <num>3)</num>
+                                <content>
+                                    <p>yksityisistä teistä annetussa laissa (358/ 62) tarkoitetussa tietoimituksessa annettua päätöstä;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_4">
+                                <num>4)</num>
+                                <content>
+                                    <p>kiinteän omaisuuden ja erityisten oikeuksien lunastuksesta annetussa laissa (603/77) tarkoitettua lunastuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_5">
+                                <num>5)</num>
+                                <content>
+                                    <p>ilmailulaissa (595/64) tarkoitettua lupaa yleisen tai yksityisen lentopaikan rakentamiseen ja pitoon;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_6">
+                                <num>6)</num>
+                                <content>
+                                    <p>vesilaissa (264/61) tarkoitettua lupaa vesistöön rakentamiseen; sekä</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_7">
+                                <num>7)</num>
+                                <content>
+                                    <p>muuta näihin verrattavaa lupaa tai suunnitelmaa.</p>
+                                </content>
+                            </paragraph>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="sec_1">
+                        <num>1 §</num>
+                        <subsection eId="sec_1__subsec_1">
+                            <intro eId="sec_1__subsec_1__intro">
+                                <p>Maa-aineslain 2 §:n 1 momentin 2 kohdassa tarkoitettuna lupana tai suunnitelmana pidetään:</p>
+                            </intro>
+                            <paragraph eId="sec_1__subsec_1__para_1">
+                                <num>1)</num>
+                                <content>
+                                    <p>rakennuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_2">
+                                <num>2)</num>
+                                <content>
+                                    <p>yleisistä teistä annetussa laissa (243/54) tarkoitettua tiesuunnitelmaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_3">
+                                <num>3)</num>
+                                <content>
+                                    <p>yksityisistä teistä annetussa laissa (358/ 62) tarkoitetussa tietoimituksessa annettua päätöstä;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_4">
+                                <num>4)</num>
+                                <content>
+                                    <p>kiinteän omaisuuden ja erityisten oikeuksien lunastuksesta annetussa laissa (603/77) tarkoitettua lunastuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_5">
+                                <num>5)</num>
+                                <content>
+                                    <p>ilmailulaissa (595/64) tarkoitettua lupaa yleisen tai yksityisen lentopaikan rakentamiseen ja pitoon;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_6">
+                                <num>6)</num>
+                                <content>
+                                    <p>vesilaissa (264/61) tarkoitettua lupaa vesistöön rakentamiseen; sekä</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_7">
+                                <num>7)</num>
+                                <content>
+                                    <p>muuta näihin verrattavaa lupaa tai suunnitelmaa.</p>
+                                </content>
+                            </paragraph>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: "LawVM-editorial source-defect fix (no_official_corrigendum_found): base source XML labels first section as sec_131 / 131 §, while consolidated Finlex and legal sequence identify it as 1 §; exact full-section fragment patch repairs structural identity and eIds before replay."
+  verified: "2026-06-17"
+
 # Family A — "kumotun NN§:n tilalle uusi näin kuuluva NN§:" glued-§ shape.
 # The pykälä symbol § is glued to the section number with no space ("18§"); the
 # canonical drafting form is "18 §". Each johtolause has two occurrences (the

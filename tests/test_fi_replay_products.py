@@ -307,6 +307,20 @@ def test_replay_xml_2021_616_applies_corrigendum_without_collapsing_spacing() ->
     assert "voimaanvasta" not in text
 
 
+def test_replay_xml_1982_91_repairs_source_sec_131_label() -> None:
+    replay = pinned_replay("1982/91", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("1")
+    assert section is not None
+    assert replay.materialized_state.find_section("131") is None
+
+    text = " ".join(irnode_to_text(section).split())
+    assert "Maa-aineslain 2 §:n 1 momentin 2 kohdassa" in text
+    assert "rakennuslupaa;" in text
+    assert "muuta näihin verrattavaa lupaa tai suunnitelmaa." in text
+    assert "Täten kumotaan 5 päivänä helmikuuta 1982 annetun maa-ainesasetuksen" not in text
+
+
 def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     """1973/36 must retain the live Finland bug-family sections end to end."""
     replay = pinned_replay(
