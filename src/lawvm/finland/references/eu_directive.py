@@ -59,6 +59,10 @@ from lawvm.finland.references.eu_reference import (
     recognize_celex,
     recognize_eu_acts,
 )
+from lawvm.finland.references.lemma_gate import (
+    head_plural_external_local_forms,
+    head_surface_forms,
+)
 from lawvm.finland.references.registries import eu_nickname
 
 # ---------------------------------------------------------------------------
@@ -72,12 +76,39 @@ from lawvm.finland.references.registries import eu_nickname
 # index does the actual lemma resolution, so this only needs to be permissive
 # enough to hand the right surface span to ``eu_nickname.lookup``.
 _WORD = r"[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö0-9-]*"
-# A head word is a single token CONTAINING the inflected stem of ``direktiivi``
-# or ``asetus`` (``direktiiv`` / ``asetu``), e.g. ``teollisuuspäästödirektiivin``,
-# ``tietosuoja-asetuksen``.
-_HEAD_WORD = r"[A-Za-zÅÄÖåäö0-9-]*(?:direktiiv|asetu)[A-Za-zÅÄÖåäö0-9-]*"
+# A head word is a single token ENDING in an inflected ``direktiivi`` or
+# ``asetus`` form, e.g. ``teollisuuspäästödirektiivin``, ``tietosuoja-asetuksen``.
+# The head form is detected by MORPHOLOGY (paradigm inversion) rather than a
+# hand-written ``direktiiv|asetu`` suffix-substring guess: ``head_surface_forms``
+# returns the full M1-generated paradigm of the EU-instrument heads
+# (``direktiivi``, ``asetus``), longest-first, and the token's tail must be one of
+# those generated forms.  This is sound (every alternative is a real M1 output of
+# a closed head) and kills the consonant-gradation substring bug class
+# (``'asetu'`` substring vs the generated gradated ``asetuksen``).  The leading
+# compound modifier (``teollisuuspäästö``, ``tietosuoja-``) rides invariant in
+# front, exactly as a statute modifier rides before ``laki``; the
+# morphology-backed ``eu_nickname.lookup`` then resolves the lemma.
+#
+# The plural external-local cases (``direktiiveillä``, ``asetuksilla`` …) are
+# added via the explicit, sound M1-boundary supplement: M1's reference_v1
+# profile cannot emit them (``plural_case_form`` raises), but they are real
+# EU-instrument head forms ("näillä direktiiveillä säädetään") the substring
+# matcher used to catch, so dropping them would regress coverage.
+_EU_HEAD_LEMMAS: tuple[str, ...] = ("direktiivi", "asetus")
+_EU_HEAD_FORMS: tuple[str, ...] = head_surface_forms(_EU_HEAD_LEMMAS) + (
+    head_plural_external_local_forms(_EU_HEAD_LEMMAS)
+)
+_EU_HEAD_ALT = "|".join(
+    re.escape(f) for f in sorted(set(_EU_HEAD_FORMS), key=lambda s: (-len(s), s))
+)
+# Optional compound-modifier prefix (any word-stem chars) + a generated head
+# form, with a trailing word boundary so the head form is the token tail.
+_HEAD_WORD = rf"[A-Za-zÅÄÖåäö0-9-]*(?:{_EU_HEAD_ALT})\b"
 
 # nickname window: optional one or two leading modifier words + the head word.
+# Case-sensitive (as the original ``_HEAD_WORD`` was): the generated head forms
+# are lowercase, so a lowercase head form is the tail of the token, matching the
+# original substring matcher's case sensitivity exactly.
 _NICKNAME_RE = re.compile(
     rf"(?:(?P<m2>{_WORD})\s+)?(?:(?P<m1>{_WORD})\s+)?"
     rf"(?P<head>{_HEAD_WORD})",

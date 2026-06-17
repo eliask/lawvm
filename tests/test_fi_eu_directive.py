@@ -12,10 +12,49 @@ from __future__ import annotations
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
 from lawvm.finland.references.eu_directive import (
     _ARTIKLA_RE,
+    _EU_HEAD_FORMS,
     _expand_articles,
     recognize_eu_directive_refs,
 )
 from lawvm.finland.references.registries import eu_nickname
+
+
+# ---------------------------------------------------------------------------
+# Morphology-driven head detection (the retired suffix-substring matcher)
+# ---------------------------------------------------------------------------
+
+
+def test_eu_head_forms_are_morphology_generated_not_substring() -> None:
+    # The head alternation is the M1-generated paradigm of direktiivi + asetus,
+    # including the gradated stem forms (asetuksen, not an ``asetu`` substring),
+    # so the consonant-gradation substring bug class cannot occur.
+    forms = set(_EU_HEAD_FORMS)
+    assert "asetuksen" in forms  # gradated genitive (-Us -> -Ukse-)
+    assert "direktiivin" in forms
+    assert "direktiivi" in forms
+    # No bare ``asetu`` / ``direktiiv`` substring stem leaks into the alternation.
+    assert "asetu" not in forms
+    assert "direktiiv" not in forms
+
+
+def test_eu_head_plural_external_local_supplement_present() -> None:
+    # M1's reference_v1 profile cannot emit the plural external local cases;
+    # they are added via the explicit sound supplement so the head is still
+    # detected in e.g. ``näillä direktiiveillä``.
+    forms = set(_EU_HEAD_FORMS)
+    assert "direktiiveillä" in forms  # plural adessive (M1 boundary supplement)
+    assert "asetuksilla" in forms
+
+
+def test_eu_head_detected_in_plural_adessive() -> None:
+    # The plural adessive head form (the M1-boundary supplement) is detected as a
+    # governing EU-instrument head and resolves via the adjacent formal cite,
+    # exactly as the retired ``direktiiv`` substring matcher did:
+    # "direktiiveillä 2014/86/EU 2 artiklassa" -> 32014L0086.
+    refs = recognize_eu_directive_refs("neuvoston direktiiveillä 2014/86/EU 2 artiklassa")
+    assert len(refs) == 1
+    assert refs[0].status is CiteConfidence.EXACT
+    assert refs[0].celex_candidates == ("32014L0086",)
 
 
 # ---------------------------------------------------------------------------

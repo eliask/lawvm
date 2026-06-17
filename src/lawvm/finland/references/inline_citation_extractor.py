@@ -55,6 +55,7 @@ from lawvm.core.inline_citation import (
     InlineCitationKind,
     InlineCitationPatternMatch,
 )
+from lawvm.finland.references.lemma_gate import head_case_forms
 
 # ---------------------------------------------------------------------------
 # XML namespaces
@@ -150,10 +151,48 @@ _OLD_COMMITTEE_RE = re.compile(
 #   Also "lain (N/YYYY)" without prefix, "lakiin (N/YYYY)", etc.
 # Capture the statute number N and year YYYY.
 # Substring guard: "(" — the parenthesized statute id is the key marker.
+#
+# The STATUTE-HEAD inflection alternation is built by MORPHOLOGY (M1 paradigm
+# inversion) rather than a hand-written suffix enumeration, killing the
+# consonant-gradation substring bug class.  This recognizer historically
+# encoded an INCOMPLETE, hand-picked case set per head (not the full paradigm),
+# so ``head_case_forms`` generates exactly those cases per head to preserve
+# precisely which forms are recognized (no widening to the full paradigm):
+#
+#   laki       — GEN/PART/ELA/ILL  (lain, lakia, laista, lakiin)
+#   asetus     — GEN/PART/ELA/ILL  (asetuksen, asetusta, asetuksesta, asetukseen)
+#   säädös     — GEN/PART/ILL      (säädöksen, säädöstä, säädökseen)
+#   määräys    — GEN               (määräyksen)
+#   direktiivi — GEN               (direktiivin)
+#
+# Honest boundary: the original list also carried the ESSIVE forms ``lakina`` /
+# ``asetuksena``.  M1's ``reference_v1`` profile does not model the essive case,
+# so ``head_case_forms`` cannot generate them; they are supplied explicitly here
+# as a closed two-form supplement so coverage is not silently dropped.
+_STATUTE_HEAD_SPEC: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("laki", (("GEN", "SG"), ("PART", "SG"), ("ELA", "SG"), ("ILL", "SG"))),
+    ("asetus", (("GEN", "SG"), ("PART", "SG"), ("ELA", "SG"), ("ILL", "SG"))),
+    ("säädös", (("GEN", "SG"), ("PART", "SG"), ("ILL", "SG"))),
+    ("määräys", (("GEN", "SG"),)),
+    ("direktiivi", (("GEN", "SG"),)),
+)
+# Essive forms M1's reference_v1 profile does not generate (no essive case).
+_STATUTE_HEAD_ESSIVE_SUPPLEMENT: tuple[str, ...] = ("lakina", "asetuksena")
+_STATUTE_HEAD_FORMS: tuple[str, ...] = tuple(
+    sorted(
+        {
+            form
+            for lemma, cases in _STATUTE_HEAD_SPEC
+            for form in head_case_forms(lemma, cases)
+        }
+        | set(_STATUTE_HEAD_ESSIVE_SUPPLEMENT),
+        key=lambda s: (-len(s), s),  # longest-first for suffix-alternation safety
+    )
+)
+_STATUTE_HEAD_ALT = "|".join(re.escape(f) for f in _STATUTE_HEAD_FORMS)
 _STATUTE_INLINE_RE = re.compile(
     r'(?:[a-zäöåA-ZÄÖÅ]{2,50})'  # leading word (law/decree name fragment)
-    r'(?:lain|lakia|lakiin|laista|lakina|asetuksen|asetusta|asetukseen|asetuksesta|'
-    r'asetuksena|säädöksen|säädöstä|säädökseen|määräyksen|direktiivin)'
+    rf'(?:{_STATUTE_HEAD_ALT})'
     r'\s*\((?P<sn>\d{1,6})/(?P<sy>\d{4})\)',
     re.UNICODE,
 )

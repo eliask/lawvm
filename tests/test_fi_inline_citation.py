@@ -675,3 +675,63 @@ class TestCrossFeatureComposition:
         """The module-scope _RECOGNIZER is an InlineCitationRecognizer instance."""
         from lawvm.finland.inline_citation_extractor import _RECOGNIZER
         assert isinstance(_RECOGNIZER, InlineCitationRecognizer)
+
+
+class TestStatuteHeadMorphology:
+    """The plain-text statute-head inflection alternation is morphology-driven.
+
+    The retired hand-written suffix alternation (``lain|lakia|...``) is replaced
+    by the M1-generated forms of the curated case set, killing the consonant-
+    gradation substring bug class.  The closed COURT/AUTHORITY identifier codes
+    (KKO, KHO, EOA, OKV, VTV, EK) are NOT morphology and stay regex-recognized.
+    """
+
+    def _statute_cites(self, text: str) -> list[InlineCitation]:
+        rec = InlineCitationRecognizer()
+        cites, _pm = rec.recognize_all(
+            text=text,
+            doc_id="x/2022",
+            doc_kind="statute",
+            context=InlineCitationContext.ENACTED_STATUTE_BODY,
+            source_span_file=None,
+        )
+        return [c for c in cites if c.kind == InlineCitationKind.STATUTE_INLINE]
+
+    def test_head_forms_are_morphology_generated_gradated(self) -> None:
+        from lawvm.finland.references.inline_citation_extractor import (
+            _STATUTE_HEAD_FORMS,
+        )
+
+        forms = set(_STATUTE_HEAD_FORMS)
+        # Gradated genitive surfaces are GENERATED (not an ``asetu`` substring).
+        assert {"asetuksen", "asetuksesta", "säädöksen"} <= forms
+        assert "asetu" not in forms
+
+    def test_gradated_genitive_statute_detected(self) -> None:
+        # ``rakennusasetuksen (123/2020)``: the gradated genitive head (asetus ->
+        # -Ukse-) is detected as the compound tail (head glued to its modifier).
+        cites = self._statute_cites("rakennusasetuksen (123/2020) mukaan")
+        assert len(cites) == 1
+        assert cites[0].canonical_id == "123/2020"
+
+    def test_essive_supplement_still_recognised(self) -> None:
+        # The essive ``lakina`` is outside M1's reference_v1 profile; it is kept
+        # via the explicit supplement so coverage is not dropped.
+        cites = self._statute_cites("rakennuslakina (456/2019) tarkoitettu")
+        assert len(cites) == 1
+        assert cites[0].canonical_id == "456/2019"
+
+    def test_court_abbreviation_codes_still_recognized(self) -> None:
+        # Closed identifier codes are NOT morphology and must still be matched.
+        rec = InlineCitationRecognizer()
+        cites, _pm = rec.recognize_all(
+            text="ratkaisussa KKO 2018:45 ja KHO 2019:12 sekä VTV 3/2020",
+            doc_id="x/2022",
+            doc_kind="statute",
+            context=InlineCitationContext.ENACTED_STATUTE_BODY,
+            source_span_file=None,
+        )
+        kinds = {c.kind for c in cites}
+        assert InlineCitationKind.COURT_KKO in kinds
+        assert InlineCitationKind.COURT_KHO in kinds
+        assert InlineCitationKind.VTV_REPORT in kinds
