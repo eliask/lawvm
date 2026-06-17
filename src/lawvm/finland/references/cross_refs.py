@@ -31,6 +31,9 @@ from lawvm.finland.references.eu_reference import (
     recognize_celex,
     recognize_eu_acts,
 )
+from lawvm.finland.references.sections import (
+    coordinated_member_paths_from_ref_surface,
+)
 
 _AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0'
 _FX_NS  = 'http://data.finlex.fi/schema/finlex'
@@ -441,6 +444,10 @@ def extract_cross_refs(
                         target_section=prov_path,
                     )
 
+    # The set of CITES (src_sec, target_id, prov_path) triples actually emitted,
+    # so a coordinated-member addition below never duplicates an edge that some
+    # other <ref> already produced for that same member.
+    emitted_cite_keys: set[tuple[str, str, str]] = set(cite_counts.keys())
     for (src_sec, target_id, prov_path), (count, surface_text) in cite_counts.items():
         span = cite_spans.get((src_sec, target_id, prov_path))
         b_off = span[0] if span is not None else None
@@ -456,6 +463,33 @@ def extract_cross_refs(
             source_byte_offset=b_off,
             source_byte_len=b_len,
         ))
+        # A Finlex inline <ref>'s href anchors only the FIRST member of a
+        # coordinated section list ("(360/1968) 18 a ja 18 b §:ssä" → sec_18a),
+        # but the LawVM convention enumerates EVERY coordinated member. Re-parse
+        # the ref's own surface text through the shared body recognizer and emit a
+        # section-level CITES edge for each coordinated sibling the href dropped.
+        # Skipped when the aggregated surface is ambiguous (empty) — without a
+        # single trusted spelling there is no coordination text to expand.
+        if not surface_text:
+            continue
+        for extra_path in coordinated_member_paths_from_ref_surface(
+            surface_text, prov_path
+        ):
+            extra_key = (src_sec, target_id, extra_path)
+            if extra_key in emitted_cite_keys:
+                continue
+            emitted_cite_keys.add(extra_key)
+            edges.append(CrossRefEdge(
+                source_statute_id=statute_id,
+                target_statute_id=target_id,
+                edge_type='CITES',
+                source_section=src_sec,
+                target_section=extra_path,
+                count=count,
+                surface_text=surface_text,
+                source_byte_offset=b_off,
+                source_byte_len=b_len,
+            ))
 
     # ── REPEALS: this statute repeals target ─────────────────────────────────
     for target_id in _refs_from(
