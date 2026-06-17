@@ -312,6 +312,37 @@ with sync_playwright() as p:
         "(() => { const h = document.querySelector('.ref-hovercard'); return !h || h.hidden; })()")
     check("hovercard hides on mouse-out", hc_hidden)
 
+    # --- Semantic-reference status overlay (pure-function coverage) ---
+    # The inline statute-citation surface branches on the graph-authoritative
+    # interlink resolution status. Drive the render/classify functions over a
+    # one-row-per-status fixture so the affordance mapping is asserted even when
+    # the loaded corpus happens not to exercise every status. Detailed coverage
+    # (CSS strikethrough, candidate lists, hovercard badges) lives in
+    # viewer/test/semantic_refs_dom.py.
+    sem = page.evaluate("""(() => {
+        const mk = (r) => ({ status: semanticRefStatus(r),
+          html: refLink('semantic', { ...r, text: r.surface_text }, r.surface_text),
+          hover: semanticInterlinkHovercardHtml(r) || '' });
+        return {
+          resolved: mk({ surface_text: 'X 5 §', resolution_status: 'resolved', target_local_id: 'X/1', target_locator: 'section:5' }),
+          statute_only: mk({ surface_text: 'X laki', resolution_status: 'resolved', target_local_id: 'X/1', target_locator: '' }),
+          ambiguous: mk({ surface_text: 'laissa', resolution_status: 'ambiguous', candidate_work_ids: 'a|b' }),
+          open: mk({ surface_text: 'erikseen', resolution_status: 'unresolved' }),
+          broken: mk({ surface_text: 'Y 1 §', resolution_status: 'broken', target_local_id: 'Y/9', target_locator: 'section:1' }),
+        };
+    })()""")
+    check("semantic resolved → deep-link class",
+          sem["resolved"]["status"] == "resolved" and "ref-sem-resolved" in sem["resolved"]["html"])
+    check("semantic statute_only → act-level class",
+          sem["statute_only"]["status"] == "statute_only" and "ref-sem-statute_only" in sem["statute_only"]["html"])
+    check("semantic ambiguous → hovercard candidates",
+          sem["ambiguous"]["status"] == "ambiguous" and "hc-candidates" in sem["ambiguous"]["hover"])
+    check("semantic open → tagged non-clickable",
+          sem["open"]["status"] == "open" and "ref-sem-open" in sem["open"]["html"])
+    check("semantic broken → strikethrough + note",
+          sem["broken"]["status"] == "broken" and "ref-sem-broken" in sem["broken"]["html"]
+          and "hc-broken-note" in sem["broken"]["hover"])
+
     # Date ref → law-in-force on that date.
     date_ref = page.locator(".search-hit a.ref-link.ref-date").first
     date_text = (date_ref.inner_text() or "").strip()

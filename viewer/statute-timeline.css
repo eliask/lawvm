@@ -615,6 +615,48 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .tomb-meta .ref-link:hover { color: var(--accent); }
 .ref-date { font-variant-numeric: tabular-nums; }
 
+/* Semantic (inline statute citation) references: the surface affordance is
+   keyed by resolution status. Resolved/statute_only/external navigate (accent,
+   pointer); ambiguous/open are hoverable-but-inert; broken is struck through. */
+.ref-sem-resolved, .ref-sem-statute_only, .ref-sem-external {
+  cursor: pointer; border-bottom-style: dashed;
+}
+.ref-sem-external { border-bottom-color: rgba(86, 61, 124, 0.55); }
+.ref-sem-statute_only { border-bottom-style: dotted; }
+.ref-sem-ambiguous {
+  cursor: help; color: #8a5a00;
+  border-bottom: 1px dashed rgba(138, 90, 0, 0.6);
+}
+.ref-sem-open {
+  cursor: help; color: var(--muted);
+  border-bottom: 1px dotted rgba(107, 107, 102, 0.55);
+}
+.ref-sem-broken {
+  cursor: help; color: #8a2b2b; text-decoration: line-through;
+  text-decoration-color: rgba(138, 43, 43, 0.7);
+  border-bottom: none;
+}
+.ref-sem-broken:hover, .ref-sem-broken:focus-visible { border-bottom: none; }
+
+/* Hovercard: status badge + citation-kind chip, candidate list, broken note. */
+.ref-hovercard .hc-status-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; }
+.ref-hovercard .hc-status {
+  font-size: 0.7rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 4px;
+  background: #eef2f6; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em;
+}
+.ref-hovercard .hc-status-resolved { background: #e3f1e6; color: #2c6b3a; }
+.ref-hovercard .hc-status-statute_only { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-status-external { background: #efe9f5; color: #563d7c; }
+.ref-hovercard .hc-status-ambiguous { background: #fbf0d9; color: #8a5a00; }
+.ref-hovercard .hc-status-open { background: #eeeeea; color: #6b6b66; }
+.ref-hovercard .hc-status-broken { background: #f6e3e3; color: #8a2b2b; }
+.ref-hovercard .hc-citekind { font-size: 0.72rem; color: var(--muted); }
+.ref-hovercard .hc-candidates { margin: 0.35rem 0; }
+.ref-hovercard .hc-candidates-lbl { font-weight: 600; color: var(--muted); font-size: 0.72rem; margin-bottom: 0.15rem; }
+.ref-hovercard .hc-candidates ul { margin: 0; padding-left: 1.1rem; }
+.ref-hovercard .hc-candidates li { margin: 0.05rem 0; }
+.ref-hovercard .hc-broken-note { color: #8a2b2b; font-size: 0.76rem; margin: 0.3rem 0; }
+
 /* Shared hovercard popover (above the sticky topbar at z-index 40). */
 .ref-hovercard {
   position: absolute; z-index: 60; max-width: 28rem;
