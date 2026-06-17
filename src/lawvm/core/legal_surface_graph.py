@@ -116,6 +116,17 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # affordance ("a date/deadline sits inside this frame's text"), NOT a
         # claim that the date legally qualifies the frame.
         "frame_qualified_by_temporal",  # EXPERIMENTAL
+        # exception_condition_cue -> frame node (delegation/procedure/sanction/
+        # actor_modal) whose span the cue PRECEDES or overlaps within a small
+        # window in the same source unit. A CANDIDATE affordance ("this
+        # exception/condition cue sits at or before that frame's text"), NOT a
+        # claim that the exception legally governs/qualifies the frame.
+        "exception_scopes_frame",  # EXPERIMENTAL
+        # frame node -> actor_modal_frame co-located within a small span window in
+        # the same source unit. A CANDIDATE affordance ("an actor/modal shape sits
+        # in/near this frame's text" — who acts in/near this frame), NOT a claim
+        # that the actor is the legal subject of the frame.
+        "frame_has_colocated_actor",  # EXPERIMENTAL
     }
 )
 
