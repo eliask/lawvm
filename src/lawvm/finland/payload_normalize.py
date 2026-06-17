@@ -754,9 +754,24 @@ def _obs(kind: str, stage: str, **detail: Any) -> ElaborationObservation:
 
 def _slot_ir_has_item(node: IRNode, target: str) -> bool:
     target_key = leaf_label_identity_key(target)
+    compound_match = re.fullmatch(r"(\d+)([a-z])", target_key)
     for child in node.children:
         if child.kind is IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == target_key:
             return True
+        if (
+            compound_match
+            and child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and leaf_label_identity_key(child.label) == compound_match.group(1)
+        ):
+            subitem_key = leaf_label_identity_key(compound_match.group(2), "subitem")
+            if any(
+                grandchild.kind is IRNodeKind.SUBPARAGRAPH
+                and grandchild.label
+                and leaf_label_identity_key(grandchild.label, "subitem") == subitem_key
+                for grandchild in child.children
+            ):
+                return True
         if child.kind is IRNodeKind.PARAGRAPH:
             for grandchild in child.children:
                 if (

@@ -794,14 +794,25 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
             i += 1
             continue
 
-        # Alakohta: single "ALAKOHTA"
-        if t.cat == "ALAKOHTA":
+        # Alakohta qualifiers are stripped from target references, but
+        # ``uusi c alakohta`` is operative insertion payload and must remain
+        # visible to the grammar.
+        if (
+            t.cat == "ALAKOHTA"
+            and not (i > 0 and tokens[i - 1].cat == "UUSI")
+            and not (i > 1 and tokens[i - 1].cat == "LETTER" and tokens[i - 2].cat == "UUSI")
+        ):
             annotations.append(Annotation(kind="qualifier", span=Span(i, i + 1), sentinel_cat=""))
             i += 1
             continue
 
         # "LETTER ALAKOHTA"
-        if t.cat == "LETTER" and i + 1 < n and tokens[i + 1].cat == "ALAKOHTA":
+        if (
+            t.cat == "LETTER"
+            and i + 1 < n
+            and tokens[i + 1].cat == "ALAKOHTA"
+            and not (i > 0 and tokens[i - 1].cat == "UUSI")
+        ):
             annotations.append(Annotation(kind="qualifier", span=Span(i, i + 2), sentinel_cat=""))
             i += 2
             continue

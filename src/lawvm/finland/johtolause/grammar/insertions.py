@@ -497,6 +497,52 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
     return None
 
 
+def _recognize_alakohta_insert_into_item(
+    scan: _Scan,
+    sec: str,
+    chapter: str,
+    part: str,
+    mom: int,
+    item: str,
+) -> Optional[list[InsNode]]:
+    """Recognize ``K kohtaan uusi c alakohta`` as compound item ``Kc``.
+
+    Finland's current flat compatibility op has no first-class alakohta carrier.
+    Existing replay uses the compound item label convention (``4b``) for
+    subparagraph appends, so keep that explicit at the parse boundary rather than
+    silently dropping the ``alakohta`` token.
+    """
+    saved = scan.pos
+    item_nums = _number_list(scan)
+    if len(item_nums) != 1 or not _at_cat_cases(scan, "KOHTA", "ILL", "GEN"):
+        scan.goto(saved)
+        return None
+    base_item = item_nums[0][0] + item_nums[0][1]
+    if base_item != item:
+        scan.goto(saved)
+        return None
+    scan.advance()
+    _optional_comma(scan)
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    letter = _letter(scan)
+    if letter is None or not _at(scan, "ALAKOHTA"):
+        scan.goto(saved)
+        return None
+    scan.advance()
+    return [
+        InsNode(
+            kind=TargetKind.SECTION,
+            label=sec,
+            chapter=chapter,
+            part=part,
+            sub_target=InsSubTarget(momentti=mom, item=f"{base_item}{letter}"),
+            witness_rule_id="fi.insertion_alakohta_into_item",
+        )
+    ]
+
+
 # A placeholder label/chapter the bare-anaphoric recognizer stamps on its
 # InsNodes; the driver overwrites it with the resolved anaphoric section /
 # chapter (the recognizer is pure and never sees the prior-batch context).
@@ -1439,11 +1485,28 @@ def _try_section_gen_sub_target(
     if m_nums and _at_cat_cases(scan, "MOMENTTI", "ILL", "GEN"):
         scan.advance()
         m_num = int(m_nums[0][0]) if m_nums[0][0].isdigit() else 0
+        sec_nums = [n + sf for n, sf in nums]
+        if m_num and len(sec_nums) == 1:
+            saved_alakohta = scan.pos
+            item_nums = _number_list(scan) or []
+            if len(item_nums) == 1:
+                item_label = item_nums[0][0] + item_nums[0][1]
+                scan.goto(saved_alakohta)
+                alakohta = _recognize_alakohta_insert_into_item(
+                    scan,
+                    sec_nums[0],
+                    chapter,
+                    part,
+                    m_num,
+                    item_label,
+                )
+                if alakohta:
+                    return alakohta
+            scan.goto(saved_alakohta)
         _skip_gen_reinst_preamble(scan)
         if not _consume_uusi(scan):
             scan.goto(saved)
             return None
-        sec_nums = [n + sf for n, sf in nums]
         all_nodes: list[InsNode] = []
         for sec in sec_nums:
             saved_sub = scan.pos

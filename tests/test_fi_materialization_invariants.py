@@ -176,6 +176,34 @@ def test_2011_1546_2016_1540_bare_section_insert_materializes_section_1a() -> No
     assert "Vienti- ja alusluoton sekä korontasauksen myöntämisen edellytyksenä" in section_text
 
 
+def test_2017_277_2025_1253_alakohta_insert_appends_subitem_c() -> None:
+    """2025/1253's ``1 kohtaan uusi c alakohta`` appends c under item 1."""
+
+    replay = pinned_replay("2017/277", quiet=True, build_full_products=False)
+    section_node = replay.find_section("1", None, None)
+    assert section_node is not None
+    subsection = next(
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    item = next(
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "1"
+    )
+    subitems = [
+        child
+        for child in item.children
+        if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
+    ]
+
+    assert [child.label for child in subitems] == ["a", "b", "c"]
+    assert "fyysisistä ominaisuuksista" in irnode_to_text(subitems[0])
+    assert "sijaintipaikasta" in irnode_to_text(subitems[1])
+    assert "suunnitellut toimenpiteet" in irnode_to_text(subitems[2])
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 

@@ -846,6 +846,17 @@ def test_insertion_momentin_kohta_genitive_subtarget():
     assert codes == ["L P 102 1 4"], codes
 
 
+def test_insertion_alakohta_into_existing_item_uses_compound_item_label() -> None:
+    """``K kohtaan uusi c alakohta`` inserts subitem c under existing item K."""
+
+    text = "lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta seuraavasti:"
+    ops = parse_clause(text).parsed_ops
+
+    assert [op.code() for op in ops] == ["L P 1 1 1c"]
+    assert ops[0].witness is not None
+    assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
+
+
 def test_insertion_anaphoric_momentti_continuation_without_uusi():
     """'uusi N momentin M kohta ja P momentti' shares 'uusi' across the conjunction.
 

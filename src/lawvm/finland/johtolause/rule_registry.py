@@ -244,6 +244,7 @@ _REGISTER_TIERS: dict[str, Register] = {
     "fi.coordinated_part_chapter_heading_ref": "accepted",
     "fi.heading_edelle_luvun_otsikko": "accepted",
     "fi.text_amend_target": "accepted",  # target ref inside a text-amend clause
+    "fi.insertion_alakohta_into_item": "accepted",  # explicit item subparagraph insert
     # --- DISCOURAGED: needlessly-variant / ambiguous / hack / catch-all ---
     # Catch-all buckets: a witness signalling a shape that matched no precise
     # rule — by definition off the recommended subset.
@@ -548,6 +549,24 @@ def _build_registry() -> RuleRegistry:
                     input_text="lisätään 3 §:n 1 momenttiin uusi 10 ja 11 kohta",
                     expected_node_kind="SurfaceInsertion",
                     description="insert multiple kohdats",
+                ),
+            ),
+        )
+    )
+
+    reg.register(
+        ParseRule(
+            rule_id="fi.insertion_alakohta_into_item",
+            description="Insert subparagraph into an existing item: §:GEN momentti item:ILL uusi letter alakohta",
+            node_kind="SurfaceInsertion",
+            category="insertion",
+            shape="NUM PYKALA:GEN NUM MOMENTTI:GEN NUM KOHTA:ILL UUSI LETTER ALAKOHTA",
+            examples=(
+                RuleExample(
+                    input_text="lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta",
+                    expected_node_kind="SurfaceInsertion",
+                    expected_fields={"kind": "SECTION", "label": "1"},
+                    description="encode alakohta insertion as compound item label for replay",
                 ),
             ),
         )
