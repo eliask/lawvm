@@ -205,10 +205,12 @@ def test_unresolved_reference_channel_when_target_unresolved() -> None:
 
 
 def test_no_frame_relation_passes_means_no_relation_channels() -> None:
-    # With ONLY the default edge passes, the frame_contains_reference /
-    # exception_scopes_frame edges are absent — so the inventory must NOT invent
-    # frame-reference channels, and delegation/sanction condition flags are False.
-    graph = build_legal_surface_graph(_XML, "999/2025")
+    # When the graph is built WITHOUT the frame-relation edge passes, the
+    # frame_contains_reference / exception_scopes_frame edges are absent — so the
+    # inventory must NOT invent frame-reference channels, and delegation/sanction
+    # condition flags are False. (Those passes are in DEFAULT_EDGE_PASSES, so we
+    # build with an empty edge-pass set here to exercise the absence path.)
+    graph = build_legal_surface_graph(_XML, "999/2025", edge_passes=())
     affs = inventory_affordances(graph)
     assert not _by_kind(affs, AFFORDANCE_FRAME_REFERENCE_CHANNEL)
     for a in _by_kind(affs, AFFORDANCE_DELEGATION_CHANNEL):
