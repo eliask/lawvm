@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import re
 import warnings
 from dataclasses import dataclass
 from enum import Enum
@@ -306,6 +307,155 @@ def build_defined_term_table(
 
 
 # ---------------------------------------------------------------------------
+# In-statute name->id anaphora (repeated by-name citation)
+# ---------------------------------------------------------------------------
+#
+# A statute commonly NAMES an act once with its explicit id —
+# ``yhteistoimintalain (1333/2021) 5 luvussa`` — then re-cites the SAME act by
+# bare title later — ``yhteistoimintalain 5 §:ssä``. The bare repeat is a
+# by-name placeholder (``fi-name:yhteistoimintalaki``); its id was established
+# earlier in the same text by the id-anchored occurrence of the SAME name. This
+# is name-level anaphora: the bare repeat co-refers with the earlier id-anchored
+# citation of the identical normalized name.
+#
+# We build the binding table from the SAME mention batch resolve_mentions
+# already holds: every id-anchored citation (a CROSS_STATUTE mention whose
+# target is a concrete ``NUMBER/YEAR`` id) whose surface carries a distinctive
+# statute-NAME head binds that name -> that id at its byte offset. The name is
+# recovered by re-running the by-name name recognizer on the surface's name part
+# (left of the ``(id)``): a bare ``lain (335/2007)`` ("the act (id)") carries NO
+# distinctive name head and establishes NO binding (fail-loud: a generic head is
+# not an antecedent for later bare uses). A name bound to >1 distinct id in the
+# same statute is AMBIGUOUS and dropped (never picked).
+
+
+# Concrete Finnish statute id ``NUMBER/YEAR`` (EU/celex/he/fi-name ids never
+# match — they carry a non-numeric prefix or extra path segments).
+_FI_STATUTE_ID_RE = re.compile(r"^[0-9]+/[0-9]{4}$")
+
+
+@dataclass(frozen=True)
+class _NameIdEntry:
+    target_ref: str
+    binding_offset: int
+
+
+@dataclass(frozen=True)
+class NameIdAnaphoraTable:
+    """In-statute name->id bindings established by id-anchored citations.
+
+    Keyed by the registry-normalized statute-name head (the same key a
+    ``fi-name:`` placeholder carries). A bare repeat of a name resolves to the
+    bound id only when an id-anchored occurrence of that name PRECEDES the use
+    (byte-offset ordering) — never a use before its first id-anchored mention.
+    """
+
+    _by_key: Mapping[str, _NameIdEntry]
+
+    def resolve(self, name_key: str, *, use_offset: Optional[int]) -> Optional[str]:
+        entry = self._by_key.get(name_key)
+        if entry is None:
+            return None
+        # The binding must precede the use (anaphora points BACKWARD). Without a
+        # verifiable use offset we cannot establish the ordering — decline.
+        if use_offset is None or use_offset < entry.binding_offset:
+            return None
+        return entry.target_ref
+
+
+def _recover_name_key(surface: str) -> Optional[str]:
+    """Recover the normalized name key from an id-anchored citation surface.
+
+    The surface of an id-anchored named citation is ``<name-inflected> (id) …``
+    (``yhteistoimintalain (1333/2021) 5 luvussa``). The by-name name recognizer
+    declines an id-anchored surface (that case belongs to the plain-text lane),
+    so we feed it the NAME part alone — the text left of the first ``(`` — and
+    read back the ``fi-name:`` key it derives. A surface whose head is a bare
+    generic ``lain`` / ``asetuksen`` (no distinctive title) yields no by-name
+    mention and therefore no key (None): a generic head is not a name antecedent.
+
+    FAIL-LOUD on a dropped left modifier. The by-name head regex captures only
+    the last conjunct of a SPACE-separated multi-word name —
+    ``maatalousyrittäjien tapaturmavakuutuslain`` yields the key
+    ``tapaturmavakuutuslaki`` (the ``maatalousyrittäjien`` modifier is dropped),
+    which is a DIFFERENT act (1026/1981) from the plain ``tapaturmavakuutuslaki``
+    (1948/608). Binding the truncated key would conflate the two acts and
+    mis-resolve a later bare ``tapaturmavakuutuslain`` repeat. We therefore accept
+    the key ONLY when the recognized surface covers the WHOLE name part (the
+    recognizer dropped nothing). A hyphen-coordinated compound
+    (``perintö- ja lahjaverolain``) IS captured whole, so it passes; a separate
+    leading word-modifier is rejected (return ``None`` — no binding).
+    """
+    if not surface:
+        return None
+    name_part = surface.split("(", 1)[0].strip()
+    if not name_part:
+        return None
+    # Local import: by_name is the recognizer that mints fi-name keys; importing
+    # it at module scope would couple this resolution module to the recognizer
+    # package's import graph (resolve.py is imported by the recognizer lane).
+    from lawvm.finland.references.by_name import recognize_by_name_refs
+
+    normalized_name_part = " ".join(name_part.split())
+    for m in recognize_by_name_refs(name_part):
+        tgt = m.target_provision_ref
+        if tgt is None or not tgt.statute_id.startswith(_FI_NAME_PREFIX):
+            continue
+        # Reject a truncated capture: the recognized surface must span the whole
+        # name part, else a dropped leading word-modifier would conflate two
+        # distinct compound act names under one key (fail-loud, no binding).
+        recognized_surface = " ".join((m.surface_text or "").split())
+        if recognized_surface != normalized_name_part:
+            return None
+        return tgt.statute_id[len(_FI_NAME_PREFIX) :]
+    return None
+
+
+def build_name_id_anaphora_table(
+    mentions: list[ReferenceMention],
+) -> NameIdAnaphoraTable:
+    """Build the in-statute name->id table from a statute's mention batch.
+
+    Scans the id-anchored citations (CROSS_STATUTE mentions whose target is a
+    concrete ``NUMBER/YEAR`` id with a locatable byte span) and records, per
+    recovered statute name, the EARLIEST binding offset. A name bound to MORE
+    THAN ONE distinct id in the same statute is AMBIGUOUS and dropped (never
+    picked). Mentions without a span, without a concrete id, or whose surface
+    carries no distinctive name head contribute no binding (fail-loud).
+    """
+    # name key -> {target id -> earliest byte offset for that id}
+    by_key: dict[str, dict[str, int]] = {}
+    for m in mentions:
+        tgt = m.target_provision_ref
+        if tgt is None or not _FI_STATUTE_ID_RE.match(tgt.statute_id):
+            continue
+        if m.source_span is None:
+            continue
+        key = _recover_name_key(m.surface_text or "")
+        if not key:
+            continue
+        offset = m.source_span.byte_offset
+        by_id = by_key.setdefault(key, {})
+        prior = by_id.get(tgt.statute_id)
+        if prior is None or offset < prior:
+            by_id[tgt.statute_id] = offset
+
+    resolved: dict[str, _NameIdEntry] = {}
+    for key, by_id in by_key.items():
+        if len(by_id) != 1:
+            # No id-anchored binding, or >1 distinct id (ambiguous) — drop.
+            continue
+        target_id, offset = next(iter(by_id.items()))
+        resolved[key] = _NameIdEntry(target_ref=target_id, binding_offset=offset)
+    return NameIdAnaphoraTable(_by_key=resolved)
+
+
+# Provenance tag recorded on a mention resolved via in-statute name anaphora
+# (a bare repeat of an earlier id-anchored citation of the same name).
+_NAME_ANAPHORA_PHRASE_LEMMA = "name_id_anaphora_local_binding"
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -406,25 +556,29 @@ def _resolve_fi_name(
     statute_registry: StatuteNameRegistry,
     as_of: Optional[dt.date],
     defined_terms: Optional[DefinedTermTable],
+    name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
 ) -> ResolvedReference:
     """Resolve a ``fi-name:<name>`` placeholder.
 
     A local in-statute defined-term binding is consulted FIRST: when the
     placeholder name matches a binding (on the registry's normalized-head key) and
     the binding precedes the use, the placeholder resolves EXACT/resolved to the
-    binding's ``target_ref`` (provenance recorded on ``phrase_lemma``). Otherwise
-    the placeholder falls through to the statute-name registry exactly as before.
+    binding's ``target_ref`` (provenance recorded on ``phrase_lemma``). Failing
+    that, an in-statute name->id anaphora binding (a bare repeat of an earlier
+    id-anchored citation of the SAME name in this statute) is consulted next —
+    the same name with the same single id established earlier resolves the bare
+    repeat to that id. Otherwise the placeholder falls through to the statute-name
+    registry exactly as before.
     """
     target = mention.target_provision_ref
     assert target is not None
     name = target.statute_id[len(_FI_NAME_PREFIX) :]
 
+    use_offset = (
+        mention.source_span.byte_offset if mention.source_span is not None else None
+    )
+
     if defined_terms is not None:
-        use_offset = (
-            mention.source_span.byte_offset
-            if mention.source_span is not None
-            else None
-        )
         bound = defined_terms.resolve(
             name,
             use_offset=use_offset,
@@ -434,6 +588,20 @@ def _resolve_fi_name(
             return ResolvedReference(
                 mention=_rewrite_target_id(
                     mention, bound, phrase_lemma=_LOCAL_BINDING_PHRASE_LEMMA
+                ),
+                status=ResolutionStatus.RESOLVED,
+                work_id=bound,
+                candidates=(bound,),
+                rejected_candidates=(),
+                finding=None,
+            )
+
+    if name_id_anaphora is not None:
+        bound = name_id_anaphora.resolve(name, use_offset=use_offset)
+        if bound is not None:
+            return ResolvedReference(
+                mention=_rewrite_target_id(
+                    mention, bound, phrase_lemma=_NAME_ANAPHORA_PHRASE_LEMMA
                 ),
                 status=ResolutionStatus.RESOLVED,
                 work_id=bound,
@@ -575,6 +743,7 @@ def resolve_mention(
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
     defined_terms: Optional[DefinedTermTable] = None,
+    name_id_anaphora: Optional[NameIdAnaphoraTable] = None,
     use_mention_validity: bool = False,
 ) -> ResolvedReference:
     """Resolve a single mention's placeholder identity against the registries.
@@ -584,7 +753,10 @@ def resolve_mention(
     a module-level pure function (``eu_nickname.lookup``), so the default is the
     module itself and no per-call state is threaded. ``defined_terms`` (optional,
     default ``None``) is the per-statute local alias table consulted before the
-    statute-name registry for ``fi-name:`` placeholders.
+    statute-name registry for ``fi-name:`` placeholders. ``name_id_anaphora``
+    (optional, default ``None``) is the per-statute name->id anaphora table
+    consulted after defined terms and before the registry (a bare repeat of an
+    earlier id-anchored citation of the same name resolves to that id).
 
     ``use_mention_validity`` (default ``False``) selects the per-mention validity
     instant (this mention's ``valid_at_interval`` START) as the as-of filter when
@@ -597,7 +769,11 @@ def resolve_mention(
         if effective_as_of is None and use_mention_validity:
             effective_as_of = _mention_validity_as_of(mention)
         return _resolve_fi_name(
-            mention, statute_registry, effective_as_of, defined_terms
+            mention,
+            statute_registry,
+            effective_as_of,
+            defined_terms,
+            name_id_anaphora,
         )
     if kind == _EU_NICKNAME_PREFIX:
         return _resolve_eu_nickname(mention)
@@ -611,6 +787,7 @@ def resolve_mentions(
     eu_registry: object = eu_nickname,
     as_of: Optional[dt.date] = None,
     defined_terms: Optional[DefinedTermTable] = None,
+    resolve_name_id_anaphora: bool = True,
     use_mention_validity: bool = False,
 ) -> list[ResolvedReference]:
     """Project placeholder mentions to :class:`ResolvedReference` records.
@@ -644,6 +821,13 @@ def resolve_mentions(
             placeholder that matches a local binding preceding the use resolves
             EXACT to the binding's target BEFORE the registry is consulted. Default
             ``None`` leaves every existing caller unaffected.
+        resolve_name_id_anaphora: When ``True`` (default), an in-statute name->id
+            anaphora table is built ONCE from this batch — every id-anchored
+            citation (a concrete ``NUMBER/YEAR`` id with a distinctive statute-name
+            head) binds that name -> that id at its byte offset. A bare ``fi-name:``
+            repeat of the same name appearing AFTER the binding (and with no
+            defined-term match) resolves to that id. A name bound to >1 distinct id
+            stays AMBIGUOUS (dropped, never picked). Set ``False`` to disable.
         use_mention_validity: When ``True`` and no explicit ``as_of`` is given,
             resolve EACH mention against the START of its OWN ``valid_at_interval``
             — the version of the cited act in force WHILE that citing reference
@@ -658,6 +842,9 @@ def resolve_mentions(
     Returns:
         One :class:`ResolvedReference` per input mention, in input order.
     """
+    name_id_anaphora = (
+        build_name_id_anaphora_table(mentions) if resolve_name_id_anaphora else None
+    )
     return [
         resolve_mention(
             m,
@@ -665,6 +852,7 @@ def resolve_mentions(
             eu_registry=eu_registry,
             as_of=as_of,
             defined_terms=defined_terms,
+            name_id_anaphora=name_id_anaphora,
             use_mention_validity=use_mention_validity,
         )
         for m in mentions
@@ -710,10 +898,12 @@ def build_default_registries(
 
 __all__ = [
     "DefinedTermTable",
+    "NameIdAnaphoraTable",
     "ResolutionStatus",
     "ResolvedReference",
     "build_default_registries",
     "build_defined_term_table",
+    "build_name_id_anaphora_table",
     "resolve_mention",
     "resolve_mentions",
 ]

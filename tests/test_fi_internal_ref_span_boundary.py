@@ -191,6 +191,63 @@ def test_coordinated_reference_not_double_emitted() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A coordinated BY-NAME cross-statute reference must share ONE span across its
+# enumerated members, the SAME way internal coordinated refs do.
+# ---------------------------------------------------------------------------
+#
+# A by-name coordinated run (``työsopimuslain 5 ja 7 §:ssä``) enumerates one
+# mention per member, all carrying the same whole-coordination surface. Lowering
+# them with a per-member re-anchor advanced the per-surface byte cursor past the
+# single document occurrence on member 1, so member 2+ lost their span — and a
+# spanless by-name use has no byte offset, so the offset-gated in-statute
+# defined-term / name-anaphora resolution could not fire (member 2+ stayed
+# statute_only while member 1 resolved). The members of one occurrence must share
+# that occurrence's span (grouped re-anchor), and a second occurrence anchors at
+# its own document-order offset.
+_COORD_BY_NAME_XML = (
+    '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    "<body>"
+    '<section eId="sec_1"><content>'
+    "<p>Sovelletaan työsopimuslain 5 ja 7 §:ssä säädettyä.</p>"
+    "</content></section>"
+    '<section eId="sec_2"><content>'
+    "<p>Lisäksi työsopimuslain 5 ja 7 §:ssä mainittu.</p>"
+    "</content></section>"
+    "</body></akomaNtoso>"
+)
+
+
+def _coord_by_name_mentions(xml_bytes: bytes):
+    res = extract_surface_grammar_mentions(xml_bytes, "TEST/BYNAMECOORD")
+    return [
+        m
+        for m in res.mentions
+        if m.surface_text == "työsopimuslain 5 ja 7 §:ssä"
+    ]
+
+
+def test_coordinated_by_name_members_share_one_occurrence_span() -> None:
+    xb = _COORD_BY_NAME_XML.encode("utf-8")
+    needle = "työsopimuslain 5 ja 7 §:ssä".encode("utf-8")
+    occ1 = xb.find(needle)
+    occ2 = xb.find(needle, occ1 + 1)
+    assert 0 <= occ1 < occ2
+
+    mentions = _coord_by_name_mentions(xb)
+    # 2 members (5, 7) × 2 occurrences = 4 mentions; NONE may lose its span.
+    assert len(mentions) == 4
+    spans = [m.source_span for m in mentions]
+    assert all(sp is not None for sp in spans), (
+        "a coordinated by-name member lost its span (member 2+ went span-less, "
+        "blocking offset-gated in-statute resolution)"
+    )
+    offsets = sorted(sp.byte_offset for sp in spans if sp is not None)
+    # Both members of each occurrence share that occurrence's span; the two
+    # occurrences anchor at their own (distinct, document-order) offsets.
+    assert offsets == [occ1, occ1, occ2, occ2]
+
+
+# ---------------------------------------------------------------------------
 # A bare same-section momentti anaphora fills the TARGET section from the
 # enclosing section, so it does not collapse to the whole-statute root.
 # ---------------------------------------------------------------------------

@@ -1343,8 +1343,21 @@ def extract_surface_grammar_mentions(
                 enclosing_src_ref,
             )
         )
-        for mention in recognize_by_name_refs(text):
-            result.mentions.append(_reanchor(mention))
+        # By-name cross-statute refs coordinate the SAME way internal refs do
+        # (``tukilain 10 c §:n 1–3 momentissa ja 10 d §:n 1–3 momentissa``
+        # enumerates one mention per member, all carrying the whole-coordination
+        # surface). Re-anchoring per-member would advance the per-surface byte
+        # cursor past the single document occurrence on member 1, starving
+        # members 2+ of a span; without a span their use-offset is None and the
+        # offset-gated defined-term / alias resolution in resolve.py cannot fire,
+        # so they stay statute_only while member 1 resolves. Group them so every
+        # coordinated member shares the one occurrence's span (see the INTERNAL
+        # lane above). By-name refs carry no enclosing-section provenance (they
+        # are not INTERNAL), so the group source ref is the plain whole-statute
+        # ``src_ref`` and the grouped helper's bare-momentti fill is a no-op.
+        result.mentions.extend(
+            _reanchor_grouped(recognize_by_name_refs(text), src_ref)
+        )
 
     return result
 

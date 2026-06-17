@@ -468,3 +468,200 @@ def test_resolved_reference_is_frozen() -> None:
     assert dataclasses.is_dataclass(ResolvedReference)
     params = ResolvedReference.__dataclass_params__  # type: ignore[attr-defined]
     assert params.frozen is True
+
+
+# ---------------------------------------------------------------------------
+# In-statute name->id anaphora (a bare repeat of an earlier id-anchored name)
+# ---------------------------------------------------------------------------
+#
+# Mirrors the N4a corpus case (2025/943): ``yhteistoimintalain (1333/2021) 5
+# luvussa`` establishes the name->id binding; a later bare ``yhteistoimintalain
+# 5 §:ssä`` repeat resolves to ``1333/2021`` even though the colloquial name is
+# not a registry head. The binding is offset-gated (anaphora points backward) and
+# ambiguity-safe (a name bound to >1 id stays statute_only).
+
+
+from lawvm.core.reference_mention import SourceSpan  # noqa: E402
+from lawvm.finland.references.resolve import (  # noqa: E402
+    build_name_id_anaphora_table,
+)
+
+
+def _id_anchored(statute_id: str, *, surface: str, offset: int) -> ReferenceMention:
+    """An id-anchored cross-statute citation (the anaphora antecedent)."""
+    return ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="999/2025"),
+        target_provision_ref=ProvisionRef(statute_id=statute_id),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="plain_text",
+        source_span=SourceSpan(source_file="999/2025", byte_offset=offset, byte_len=len(surface)),
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text=surface,
+    )
+
+
+def _bare_name(name: str, *, surface: str, offset: int | None, section_label: str = "") -> ReferenceMention:
+    """A bare by-name repeat (the anaphor) with an optional span/offset."""
+    span = (
+        SourceSpan(source_file="999/2025", byte_offset=offset, byte_len=len(surface))
+        if offset is not None
+        else None
+    )
+    return ReferenceMention(
+        source_provision_ref=ProvisionRef(statute_id="999/2025"),
+        target_provision_ref=ProvisionRef(statute_id=f"fi-name:{name}", section_label=section_label),
+        cite_kind=CiteKind.CROSS_STATUTE,
+        cite_confidence=CiteConfidence.STATUTE_ONLY,
+        phrase_lemma="statute_name_head",
+        source_span=span,
+        valid_at_interval=(None, None),
+        edge_subtype=None,
+        surface_text=surface,
+    )
+
+
+def test_name_id_anaphora_bare_repeat_resolves_to_earlier_id() -> None:
+    """A bare name repeat AFTER an id-anchored same-name citation -> that id."""
+    reg = _statute_registry()
+    batch = [
+        _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=400, section_label="3"),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    # antecedent passes through UNCHANGED (already a concrete id)
+    assert results[0].status is ResolutionStatus.UNCHANGED
+    # bare repeat resolves to the antecedent's id via name anaphora
+    assert results[1].status is ResolutionStatus.RESOLVED
+    assert results[1].work_id == "55/2001"
+    tgt = results[1].mention.target_provision_ref
+    assert tgt is not None and tgt.statute_id == "55/2001" and tgt.section_label == "3"
+    assert results[1].mention.phrase_lemma == "name_id_anaphora_local_binding"
+
+
+def test_name_id_anaphora_use_before_binding_stays_statute_only() -> None:
+    """A bare name BEFORE the id-anchored citation does not resolve (backward only)."""
+    reg = _statute_registry()
+    batch = [
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=50, section_label="3"),
+        _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    assert results[0].status is ResolutionStatus.STATUTE_ONLY
+    tgt = results[0].mention.target_provision_ref
+    assert tgt is not None and tgt.statute_id == "fi-name:työsopimuslaki"
+
+
+def test_name_id_anaphora_ambiguous_two_ids_stays_statute_only() -> None:
+    """A name bound to TWO distinct ids in one statute is ambiguous -> not picked."""
+    reg = _statute_registry()
+    batch = [
+        _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+        _id_anchored("320/1970", surface="työsopimuslain (320/1970)", offset=200),
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=400, section_label="3"),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    assert results[2].status is ResolutionStatus.STATUTE_ONLY
+    tgt = results[2].mention.target_provision_ref
+    assert tgt is not None and tgt.statute_id == "fi-name:työsopimuslaki"
+
+
+def test_name_id_anaphora_generic_head_establishes_no_binding() -> None:
+    """A generic ``lain (id)`` head (no distinctive title) is not a name antecedent."""
+    reg = _statute_registry()
+    batch = [
+        _id_anchored("335/2007", surface="lain (335/2007)", offset=100),
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=400, section_label="3"),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    # the bare repeat has no in-statute name binding (lain != työsopimuslaki) and
+    # the registry does not know the colloquial name -> statute_only (fail-loud)
+    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+
+
+def test_name_id_anaphora_no_span_use_stays_statute_only() -> None:
+    """A bare repeat with no span (no offset) cannot be ordered -> not resolved."""
+    reg = _statute_registry()
+    batch = [
+        _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=None, section_label="3"),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+
+
+def test_name_id_anaphora_can_be_disabled() -> None:
+    """resolve_name_id_anaphora=False restores the prior registry-only routing."""
+    reg = _statute_registry()
+    batch = [
+        _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+        _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=400, section_label="3"),
+    ]
+    results = resolve_mentions(
+        batch, statute_registry=reg, eu_registry=eu_nickname, resolve_name_id_anaphora=False
+    )
+    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+
+
+def test_build_name_id_anaphora_table_keys_recovered_name() -> None:
+    """The table keys on the recovered normalized name, earliest binding offset."""
+    table = build_name_id_anaphora_table(
+        [
+            _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=300),
+            _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
+        ]
+    )
+    # earliest offset kept; a use at 200 (>=100) resolves
+    assert table.resolve("työsopimuslaki", use_offset=200) == "55/2001"
+    # a use at 50 (<100) does not (binding does not precede)
+    assert table.resolve("työsopimuslaki", use_offset=50) is None
+
+
+def test_name_id_anaphora_compound_modifier_not_conflated() -> None:
+    """A multi-word-modifier compound name (whose surface CARRIES the modifier)
+    must not bind under the truncated last-conjunct key.
+
+    ``maatalousyrittäjien tapaturmavakuutuslain (1026/81)`` is a DIFFERENT act
+    from the plain ``tapaturmavakuutuslaki``; the by-name head regex captures only
+    ``tapaturmavakuutuslain``, so binding the truncated key would mis-resolve a
+    later plain ``tapaturmavakuutuslain`` repeat to the farmers' act. The recovery
+    fail-loud rejects the truncated capture (surface != whole name part).
+    """
+    from lawvm.finland.references.resolve import _recover_name_key
+
+    # surface carries the modifier -> recognized surface is shorter -> rejected
+    assert (
+        _recover_name_key("maatalousyrittäjien tapaturmavakuutuslain (1026/81)")
+        is None
+    )
+    # plain name (no dropped modifier) -> accepted
+    assert (
+        _recover_name_key("tapaturmavakuutuslain (608/1948)")
+        == "tapaturmavakuutuslaki"
+    )
+    # hyphen-coordinated compound is captured WHOLE -> accepted
+    assert (
+        _recover_name_key("perintö- ja lahjaverolain (378/1940)")
+        == "perintö- ja lahjaverolaki"
+    )
+
+
+def test_name_id_anaphora_beats_registry_with_explicit_source_id() -> None:
+    """When a name's id is stated explicitly in-source, the bare repeat resolves
+    to THAT id even if the registry would pick a different (default) version.
+
+    Models the 1996/448 corpus case: ``opintotukilaissa (28/72)`` explicitly
+    cites the OLD act; the in-statute id binding wins over the registry's current
+    pick. The anaphora honors the source's own id, not a name-based guess.
+    """
+    reg = build_registry(
+        [StatuteNameEntry(statute_id="65/1994", canonical_title="Opintotukilaki")]
+    )
+    batch = [
+        _id_anchored("28/1972", surface="opintotukilain (28/1972)", offset=100),
+        _bare_name("opintotukilaki", surface="opintotukilain 3 §:ssä", offset=400, section_label="3"),
+    ]
+    results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
+    assert results[1].status is ResolutionStatus.RESOLVED
+    assert results[1].work_id == "28/1972"
