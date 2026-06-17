@@ -105,6 +105,17 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # actor_modal_frame -> temporal_expr co-located within a small span
         # window in the same source unit (a nearby deadline/commencement).
         "actor_modal_temporal_colocated",  # EXPERIMENTAL
+        # frame node (delegation/procedure/sanction/exception/actor_modal) ->
+        # reference_expr whose source span sits INSIDE (or within a small window
+        # of) the frame's span in the same source unit. A CANDIDATE serendipity
+        # affordance ("a citation sits inside this frame's text"), NOT a claim
+        # that the frame legally governs that reference.
+        "frame_contains_reference",  # EXPERIMENTAL
+        # frame node -> temporal_expr whose source span sits INSIDE (or within a
+        # small window of) the frame's span in the same source unit. A CANDIDATE
+        # affordance ("a date/deadline sits inside this frame's text"), NOT a
+        # claim that the date legally qualifies the frame.
+        "frame_qualified_by_temporal",  # EXPERIMENTAL
     }
 )
 
