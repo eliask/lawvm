@@ -226,12 +226,27 @@ _PRECEDING_STATUTE_ID_RE = re.compile(
 # (``valtiopäiväjärjestyksen 67 §`` in a 49-§ act). The stems are compound-only
 # (a modifier precedes them), so the surrounding ``[chars]+`` capture keeps them
 # from matching the bare common nouns ``järjestys`` / ``muoto``.
+#
+# The historical CODES (``-kaari``: oikeudenkäymiskaari, maakaari, kauppakaari,
+# perintökaari, …) are by-name EXTERNAL statutes too. ``kaari`` declines as a
+# Kotus type-26 ``-i`` noun with oblique stem ``kaare-`` (genitive ``kaaren``,
+# inessive ``kaaressa``, elative ``kaaresta``, illative ``kaareen``, adessive
+# ``kaarella``, ablative ``kaarelta``, allative ``kaarelle``, translative
+# ``kaareksi``, essive ``kaarena``) plus the partitive ``kaarta``. A ``§`` tail
+# preceded by such a head (``oikeudenkäymiskaaren 12 luvun 32 §:ää``) is owned by
+# the cross-statute by-name lane, NOT an internal self-reference — without this
+# arm it leaked the section in as a bogus internal target. The forms mirror the
+# by-name lane's ``_KAARI_OBLIQUE_ALT`` exactly; the compound-only ``[chars]+``
+# capture keeps the common nouns (``sateenkaari``, ``hammaskaari``) reachable but
+# they never carry a ``§`` tail.
 _NAME_SUFFIX = (
     r"(?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|laki"
     r"|asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi"
     r"|asetuksella|asetukselle|asetukselta|asetus"
     r"|j\xe4rjestyksen|j\xe4rjestyst\xe4|j\xe4rjestyksess\xe4|j\xe4rjestyksest\xe4|j\xe4rjestys"
-    r"|muodon|muotoa|muodossa|muodosta|muoto)"
+    r"|muodon|muotoa|muodossa|muodosta|muoto"
+    r"|kaaren|kaaressa|kaaresta|kaareen|kaarella|kaarelta|kaarelle"
+    r"|kaareksi|kaarena|kaartta|kaarin|kaarta)"
 )
 _PRECEDING_NAME_HEAD_RE = re.compile(
     rf"(?P<prev>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)?\s*"

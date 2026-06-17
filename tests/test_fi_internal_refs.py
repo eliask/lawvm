@@ -468,6 +468,28 @@ def test_by_name_external_tyojarjestys_head_excluded() -> None:
     assert recognize_internal_refs("eduskunnan työjärjestyksen 5 §:ssä", _SID) == []
 
 
+def test_by_name_external_kaari_genitive_head_excluded() -> None:
+    # ``oikeudenkäymiskaaren 12 luvun 32 §`` is a by-name EXTERNAL code (its head
+    # ends in the ``-kaari`` oblique ``kaaren``, owned by the cross-statute lane);
+    # the § must not leak as a bogus internal self-reference.
+    assert (
+        recognize_internal_refs("oikeudenkäymiskaaren 12 luvun 32 §:ää", _SID) == []
+    )
+
+
+def test_by_name_external_kaari_inessive_head_excluded() -> None:
+    assert (
+        recognize_internal_refs("oikeudenkäymiskaaressa 17 luvun 65 §:ssä", _SID) == []
+    )
+
+
+def test_bare_internal_section_still_recognized_no_kaari_head() -> None:
+    # Guard against over-exclusion: a genuine bare internal section with NO
+    # preceding name head still resolves to an internal self-reference.
+    got = _targets("12 §:ssä säädetään")
+    assert ("12", None, None) in got
+
+
 def test_rikoslaki_mixed_chapter_coordination_all_excluded() -> None:
     # The rikoslaki repro (2011/953 §25a): an external id governs a long list that
     # interleaves §-bearing, chapter-only (``20 luvussa``) and chapter-qualified
