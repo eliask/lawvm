@@ -89,6 +89,22 @@ _PREP_EU_MODERN = re.compile(
 _PREP_EU_NNUM = re.compile(
     r'\((?P<form>EU|EY|EEY|ETY)\)\s+N:o\s+(?P<eu_n>\d{1,6})/(?P<eu_year>\d{4})\b'
 )
+# Un-parenthesized year-first form-suffix: "YEAR/NUMBER/FORM" — e.g.
+# "direktiivin 2004/36/EY", "direktiiviä 2003/42/EY". The paren-only patterns
+# above ("(FORM) YEAR/NUMBER", "(FORM) N:o NUMBER/YEAR") never see this shape,
+# and there is no compensating pass in the preparatory lane, so without this arm
+# these inline body cites are lost outright. The 4-digit-year-then-≤3-digit-act
+# shape is unambiguously year-first: a number-first "NUMBER/YEAR/FORM" cite has a
+# 4-digit YEAR in the MIDDLE, so a ≤3-digit middle group cannot be that form.
+# The left-guard ``(?<![\d/(])`` prevents mis-splitting the tail of a
+# number-first "NUMBER/YEAR/FORM" cite (whose "/YEAR/FORM" tail would otherwise
+# read as a spurious year-first match) and prevents stealing the digits of a
+# parenthesized "(FORM) YEAR/NUMBER" cite. Mirrors eu_directive's
+# ``_YEAR_FIRST_SLASH_CITE``. Bounded throughout (§1.11). The form letter is
+# captured for the ``form`` field; kind/type lowering stays in the lane.
+_PREP_EU_YEAR_FIRST_SUFFIX = re.compile(
+    r'(?<![\d/(])\b(?P<eu_year>\d{4})/(?P<eu_n>\d{1,3})/(?P<form>EU|EY|EEY|ETY)\b'
+)
 # CELEX accepting any uppercase type char, full-celex + part groups.
 _PREP_CELEX = re.compile(
     r'\b(?P<celex>3(?P<cy>\d{4})(?P<ctype>[A-Z])(?P<cn>\d{4}))\b'
@@ -268,9 +284,13 @@ def recognize_eu_acts(text: str, *, dialect: str) -> List[EuActRef]:
         order exactly. CELEX matches are NOT included here (use
         :func:`recognize_celex`); cross_refs scanned CELEX as a separate pass.
 
-    DIALECT_PREPARATORY: returns at most ONE match — the first modern-form
-        match if any, otherwise the first N:o-form match — matching the
-        original ``search()`` semantics. Returns ``[]`` if neither matches.
+    DIALECT_PREPARATORY: returns at most ONE match — the first modern paren
+        form ("(FORM) YEAR/NUMBER") if any, otherwise the first N:o paren form
+        ("(FORM) N:o NUMBER/YEAR"), otherwise the first un-parenthesized
+        year-first form-suffix ("YEAR/NUMBER/FORM", e.g. "direktiivin
+        2004/36/EY"). Paren forms are tried FIRST so the year-first-suffix arm
+        never overrides a parenthesized cite present in the same text. Returns
+        ``[]`` if none match.
     """
     if dialect == DIALECT_CROSS_REF:
         out: List[EuActRef] = []
@@ -301,6 +321,10 @@ def recognize_eu_acts(text: str, *, dialect: str) -> List[EuActRef]:
         m = _PREP_EU_MODERN.search(text)
         if m is None:
             m = _PREP_EU_NNUM.search(text)
+        if m is None:
+            # Un-parenthesized year-first form-suffix ("direktiivin 2004/36/EY").
+            # Tried last so a parenthesized cite in the same text always wins.
+            m = _PREP_EU_YEAR_FIRST_SUFFIX.search(text)
         if m is None:
             return []
         return [EuActRef(
