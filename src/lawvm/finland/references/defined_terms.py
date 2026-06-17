@@ -76,10 +76,25 @@ from lawvm.core.reference_mention import SourceSpan
 # Typed output
 # ---------------------------------------------------------------------------
 
-#: Default scope for in-document bindings.  Aliases introduced in a statute are
-#: scoped to that statute ("tässä laissa …"); there is no narrower lexical scope
-#: this recognizer commits to.
+#: Closed scope vocabulary for a binding's ``scope`` field.  These are the only
+#: values this recognizer emits — no free-form scope text.
+#:
+#:   * ``statute``    — statute-wide ("Tässä laissa …" / "Tätä lakia
+#:                      sovellettaessa …"), AND the CONSERVATIVE fail-safe default
+#:                      when no narrower cue is recognised (so the prior behaviour
+#:                      — every binding ``statute`` — is the never-regress floor).
+#:   * ``chapter``    — chapter-scoped ("Tässä luvussa …").
+#:   * ``section``    — section-scoped ("Tässä pykälässä …").
+#:   * ``subsection`` — subsection-scoped ("Tässä momentissa …").
 _SCOPE_STATUTE = "statute"
+_SCOPE_CHAPTER = "chapter"
+_SCOPE_SECTION = "section"
+_SCOPE_SUBSECTION = "subsection"
+
+#: The closed set of allowed ``scope`` values (for callers / validation).
+SCOPE_VALUES: frozenset[str] = frozenset(
+    {_SCOPE_STATUTE, _SCOPE_CHAPTER, _SCOPE_SECTION, _SCOPE_SUBSECTION}
+)
 
 #: binding_kind values (closed set; kept as strings to match the task contract).
 BINDING_PARENTHETICAL_ALIAS = "parenthetical_alias"
@@ -104,7 +119,15 @@ class DefinedTermBinding:
         expansion:    The definitional expansion text for a ``tarkoitetaan``
                       binding whose right-hand side is NOT an act cite, else
                       ``None``.
-        scope:        Binding scope; always ``"statute"`` for this recognizer.
+        scope:        Binding scope from the closed vocabulary
+                      :data:`SCOPE_VALUES` (``"statute"`` / ``"chapter"`` /
+                      ``"section"`` / ``"subsection"``).  For a ``tarkoitetaan``
+                      definition it is the scope implied by the nearest preceding
+                      definitions-block cue ("Tässä laissa/luvussa/pykälässä/
+                      momentissa …" / "Tätä lakia sovellettaessa …"), defaulting
+                      to ``"statute"`` when no narrower cue is present.  An
+                      act-level alias (parenthetical / ``jäljempänä``) is always
+                      ``"statute"`` (document-wide naming convention).
         source_span:  Byte range of the whole binding construct in the source
                       text.
         binding_kind: One of ``parenthetical_alias`` / ``jaljempana`` /
@@ -209,6 +232,147 @@ _TARKOITETAAN = re.compile(
 # Adessive endings the defined term in shape 3 commonly carries; stripped to
 # recover the nominative/stem term for morphology classification.
 _ADESSIVE_SUFFIXES = ("llä", "lla")
+
+# ---------------------------------------------------------------------------
+# Scope cue for a definitional ``tarkoitetaan`` (shape 3)
+# ---------------------------------------------------------------------------
+#
+# A definitions block declares the lexical reach of its definitions with a
+# DEFINITIONS-HEADER cue — a locative that BINDS the definition verb itself:
+#
+#   "Tässä laissa tarkoitetaan:"        → statute-wide
+#   "Tätä lakia sovellettaessa …"       → statute-wide
+#   "Tässä luvussa tarkoitetaan:"       → chapter
+#   "Tässä pykälässä tarkoitetaan:"     → section
+#   "Tässä momentissa tarkoitetaan:"    → subsection
+#
+# PRECISION DISCIPLINE — the cue must GOVERN THIS DEFINITION, not be stray prose.
+# A bare ``Tässä luvussa`` / ``Tässä pykälässä`` is AMBIGUOUS: it appears far more
+# often in the REFERENTIAL idiom ``Tässä pykälässä säädetään …`` ("provided for in
+# this section"), which says nothing about a definition's scope.  Adopting a
+# narrower scope from such stray prose is a false positive (observed on real
+# corpus: a ``Tässä pykälässä säädetään`` clause one section above mislabelled a
+# later unrelated definition as ``section``).  We therefore require the cue to be
+# a TRUE definitions header: ``Tässä <unit>`` IMMEDIATELY governing the definition
+# verb ``tarkoitetaan`` — i.e. ``Tässä <unit> [definiendum] tarkoitetaan`` with at
+# most a short definiendum run between the locative and the verb, and NO other
+# finite verb / sentence break intervening.  ``Tätä lakia sovellettaessa`` is the
+# statute-wide application cue (also tied to the definition construct).
+#
+# Both forms are matched as a single contiguous cue ENDING at ``tarkoitetaan``
+# (or the application clause), so a stray ``Tässä luvussa säädetään`` can never
+# fire: ``säädetään`` is not ``tarkoitetaan`` and breaks the contiguity.
+#
+# Bounded look-back window (chars): the cue's ``tarkoitetaan`` is the SAME verb
+# the binding sits on (inline ``Tässä <unit> X:llä tarkoitetaan``) OR the block
+# header a short distance above the enumerated definiendum.  Kept tight so the
+# header cannot leak across an unrelated section.
+_SCOPE_CUE_WINDOW = 400
+
+# Closed unit vocabulary mapped to the closed scope vocabulary.
+_SCOPE_CUE_UNITS: dict[str, str] = {
+    "laissa": _SCOPE_STATUTE,
+    "luvussa": _SCOPE_CHAPTER,
+    "pykälässä": _SCOPE_SECTION,
+    "momentissa": _SCOPE_SUBSECTION,
+}
+
+# "Tässä <unit> [up to a short definiendum run] tarkoitetaan" — the cue must lead
+# directly into the definition verb, with only a bounded run of
+# word/punctuation/enumeration tokens (the definiendum + list marker) between the
+# locative and ``tarkoitetaan``, and crucially NO sentence break or other finite
+# verb.  We approximate "no intervening sentence/verb" by forbidding '.' and by
+# bounding the gap to a short span of letters, digits, ':', ')', commas and
+# spaces only (the shapes seen in "Tässä luvussa tarkoitetaan:" and "Tässä
+# pykälässä X:llä tarkoitetaan").
+_SCOPE_CUE_TASSA = re.compile(
+    r"\bTässä\s{1,3}(laissa|luvussa|pykälässä|momentissa)\b"
+    r"(?:[A-Za-zäöåÄÖÅ0-9:)\s,–-]{0,40})?"
+    r"tarkoitetaan\b",
+    re.IGNORECASE,
+)
+# "Tätä lakia sovellettaessa" — statute-wide application cue.
+_SCOPE_CUE_SOVELLETTAESSA = re.compile(
+    r"\bTätä\s{1,3}lakia\s{1,3}sovellettaessa\b",
+    re.IGNORECASE,
+)
+_GUARD_TASSA = "tässä"
+_GUARD_SOVELLETTAESSA = "sovellettaessa"
+
+# ---------------------------------------------------------------------------
+# Shape 3b: ENUMERATED definitions block governed by a header cue
+# ---------------------------------------------------------------------------
+#
+#   "Tässä laissa tarkoitetaan:
+#       sivutuotteella kuollutta eläintä;
+#       jätteellä ainetta …;"
+#
+# This is the CANONICAL Finnish definitions block: the header
+# ``Tässä <unit> tarkoitetaan:`` declares the scope (statute / chapter / section /
+# subsection), then a SEMICOLON-SEPARATED list of items, each opening with the
+# definiendum in the ADESSIVE followed by its expansion:
+# ``<definiendum-adessive> <expansion>;``.  (The list enumerator ``N)`` lives in
+# its own markup node and is NOT present in the paragraph text the binder sees,
+# so items are delimited by the header ``:`` and the item-terminating ``;``.)
+# Unlike inline shape 3 the definiendum follows the verb, so the per-item
+# ``X:llä`` is the binding site.  Each item inherits the header's scope from its
+# unit; statute by default.  CONSERVATIVE: anchored on the header, each item's
+# leading word must be a genuine adessive definiendum
+# (``_is_definitional_definiendum``) — a list item that does not open with an
+# adessive definiendum binds nothing (no fabrication).
+
+# The block header that opens an enumerated definitions list.  The unit decides
+# the scope of EVERY item in the block.
+_ENUM_HEADER = re.compile(
+    r"\bTässä\s{1,3}(?P<unit>laissa|luvussa|pykälässä|momentissa)\s{1,3}"
+    r"tarkoitetaan\s{0,3}:",
+    re.IGNORECASE,
+)
+# A single list item inside the block: a delimiter ('``:``' opening the list or a
+# preceding item's terminating '``;``'), optional whitespace / stripped
+# enumerator, then the leading definiendum word, then the expansion up to the next
+# '``;``' (item end).  Bounded throughout (AGENTS.md §1.11).
+_ENUM_ITEM = re.compile(
+    r"[:;]\s{0,80}"
+    r"(?:\d{1,3}[a-z]?\)\s{0,5})?"
+    rf"(?P<term>{_TERM_WORD})\s+"
+    r"(?P<expansion>[^;]{0,400})",
+    re.IGNORECASE,
+)
+# How far past a header an enumerated block may extend before we stop scanning
+# items (a definitions block is long but bounded; this caps the scan window).
+_ENUM_BLOCK_WINDOW = 12000
+
+
+def _scope_cue_before(text: str, pos: int) -> str:
+    """Return the scope of the NEAREST recognised definitions-header cue governing
+    a binding whose definiendum ends at ``pos``, defaulting to ``statute``.
+
+    The cue must be a TRUE definitions header — ``Tässä <unit> … tarkoitetaan``
+    with the locative directly governing the definition verb (or ``Tätä lakia
+    sovellettaessa``) — never a bare ``Tässä <unit>`` that may belong to the
+    referential ``… säädetään`` idiom.  The cue closest to the definiendum (its
+    ``tarkoitetaan`` end nearest ``pos``) wins.  Fail-safe: no recognised header
+    cue → the conservative ``statute`` default (prior behaviour, never a
+    regression).
+    """
+    start = max(0, pos - _SCOPE_CUE_WINDOW)
+    chunk = text[start:pos]
+    low = chunk.lower()
+    best_offset = -1
+    best_scope = _SCOPE_STATUTE
+    if _GUARD_TASSA in low:
+        for m in _SCOPE_CUE_TASSA.finditer(chunk):
+            # Rank by where the cue's verb ENDS (closest-governing wins).
+            if m.end() > best_offset:
+                best_offset = m.end()
+                best_scope = _SCOPE_CUE_UNITS[m.group(1).lower()]
+    if _GUARD_SOVELLETTAESSA in low:
+        for m in _SCOPE_CUE_SOVELLETTAESSA.finditer(chunk):
+            if m.end() > best_offset:
+                best_offset = m.end()
+                best_scope = _SCOPE_STATUTE
+    return best_scope
 
 # ---------------------------------------------------------------------------
 # Definitional vs REFERENTIAL ``tarkoitetaan``
@@ -539,17 +703,80 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         expansion_text = m.group("expansion").strip()
         act_id = _act_id_in_expansion(expansion_text)
         status = _classify_term_morphology(term_for_class)
+        # Scope inherits from the nearest preceding definitions-header cue
+        # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
+        # lakia sovellettaessa …"); conservative ``statute`` default when no such
+        # header cue is recognised.  Anchor the look-back on the END of THIS
+        # binding's ``tarkoitetaan`` verb (start of the expansion group) so an
+        # INLINE cue whose verb is this very binding's verb — "Tässä pykälässä
+        # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
+        # header above an enumerated definiendum is still seen within the window.
+        scope = _scope_cue_before(text, m.start("expansion"))
         out.append(
             DefinedTermBinding(
                 term=term_for_class,
                 target_ref=act_id,
                 expansion=None if act_id is not None else (expansion_text or None),
-                scope=_SCOPE_STATUTE,
+                scope=scope,
                 source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
                 binding_kind=BINDING_TARKOITETAAN,
                 status=status,
             )
         )
+    return out
+
+
+def _recognize_enumerated_definitions(
+    text: str, source_file: str
+) -> list[DefinedTermBinding]:
+    """Recognize a header-governed enumerated definitions block (shape 3b).
+
+    Anchored on a ``Tässä <unit> tarkoitetaan:`` header; each following enumerated
+    item ``N) <definiendum-adessive> <expansion>;`` becomes a binding inheriting
+    the header's scope (statute / chapter / section / subsection).  CONSERVATIVE:
+    only items whose definiendum is a genuine adessive definiendum
+    (``_is_definitional_definiendum``) bind; the scan is bounded to a window after
+    the header and stops at the next header / window end.
+    """
+    out: list[DefinedTermBinding] = []
+    headers = list(_ENUM_HEADER.finditer(text))
+    for i, h in enumerate(headers):
+        scope = _SCOPE_CUE_UNITS[h.group("unit").lower()]
+        # Start the block at the header's ':' so the FIRST item's ':' delimiter is
+        # in scope (the item regex anchors each item on a ':' / ';' delimiter).
+        block_start = h.end() - 1
+        # Block runs until the next header or the bounded window, whichever first.
+        block_end = min(len(text), block_start + _ENUM_BLOCK_WINDOW)
+        if i + 1 < len(headers):
+            block_end = min(block_end, headers[i + 1].start())
+        block = text[block_start:block_end]
+        for it in _ENUM_ITEM.finditer(block):
+            definiendum = it.group("term").strip()
+            if not definiendum:
+                continue
+            # The enumerated definiendum is in the adessive ("X:llä"); reject the
+            # referential / non-definiendum shape exactly as shape 3 does.
+            if not _is_definitional_definiendum(definiendum):
+                continue
+            term_for_class = _strip_adessive(definiendum)
+            expansion_text = it.group("expansion").strip()
+            act_id = _act_id_in_expansion(expansion_text)
+            status = _classify_term_morphology(term_for_class)
+            abs_start = block_start + it.start()
+            abs_end = block_start + it.end()
+            out.append(
+                DefinedTermBinding(
+                    term=term_for_class,
+                    target_ref=act_id,
+                    expansion=None if act_id is not None else (expansion_text or None),
+                    scope=scope,
+                    source_span=SourceSpan(
+                        source_file, abs_start, abs_end - abs_start
+                    ),
+                    binding_kind=BINDING_TARKOITETAAN,
+                    status=status,
+                )
+            )
     return out
 
 
@@ -566,10 +793,12 @@ def recognize_defined_term_bindings(
     """Recognize defined-term / alias bindings in Finnish statute prose.
 
     Returns a list of :class:`DefinedTermBinding`, one per recognized binding
-    construct, in source order.  CONSERVATIVE: only the three anchored shapes
-    (parenthetical alias after a cite, ``jäljempänä X``, ``X tarkoitetaan Y``)
-    are recognized.  A bare term used with no binding construct yields NO
-    binding (no fabrication).
+    construct, in source order.  CONSERVATIVE: only the anchored shapes are
+    recognized — parenthetical alias after a cite, ``jäljempänä X``, inline
+    ``X tarkoitetaan Y``, and the header-governed enumerated definitions block
+    (``Tässä <unit> tarkoitetaan: 1) X:llä … ; 2) …``), whose items inherit the
+    header's scope.  A bare term used with no binding construct yields NO binding
+    (no fabrication).
 
     Args:
         text:        Plain text of a statute (or fragment thereof).
@@ -606,9 +835,23 @@ def recognize_defined_term_bindings(
             _recognize_parenthetical_alias(text, source_file, claimed_alias_parens)
         )
 
-    # Shape 3: definitional "tarkoitetaan".
+    # Shape 3 + 3b: definitional "tarkoitetaan".  3b (header-governed enumerated
+    # block) and 3 (inline "X tarkoitetaan Y") bind disjoint sites — an
+    # enumerated item carries no "tarkoitetaan" of its own — so they do not
+    # double-bind in practice.  Belt-and-braces: drop any shape-3 binding whose
+    # span falls inside an enumerated-block binding span.
     if _GUARD_TARKOITETAAN in text.lower():
-        bindings.extend(_recognize_tarkoitetaan(text, source_file))
+        enum = _recognize_enumerated_definitions(text, source_file)
+        bindings.extend(enum)
+        enum_spans = [
+            (b.source_span.byte_offset, b.source_span.byte_offset + b.source_span.byte_len)
+            for b in enum
+        ]
+        for b in _recognize_tarkoitetaan(text, source_file):
+            off = b.source_span.byte_offset
+            if any(lo <= off < hi for lo, hi in enum_spans):
+                continue
+            bindings.append(b)
 
     bindings.sort(key=lambda b: b.source_span.byte_offset)
     return bindings

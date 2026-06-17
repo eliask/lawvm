@@ -9,6 +9,7 @@ from lawvm.finland.references.defined_terms import (
     BINDING_JALJEMPANA,
     BINDING_PARENTHETICAL_ALIAS,
     BINDING_TARKOITETAAN,
+    SCOPE_VALUES,
     STATUS_OK,
     STATUS_UNSUPPORTED_MORPHOLOGY,
     DefinedTermBinding,
@@ -163,3 +164,150 @@ def test_bare_term_without_binding_yields_nothing() -> None:
 
 def test_empty_text_yields_nothing() -> None:
     assert recognize_defined_term_bindings("") == []
+
+
+# ---------------------------------------------------------------------------
+# Shape 3 scope cue: the definitional binding inherits the scope of the nearest
+# preceding definitions-block cue (closed vocabulary; conservative default).
+# ---------------------------------------------------------------------------
+
+
+def test_scope_default_is_statute_when_no_cue() -> None:
+    # No recognisable narrower cue → conservative statute default (prior behaviour).
+    text = "Sivutuotteella tarkoitetaan kuollutta eläintä tai sen osaa."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "statute"
+
+
+def test_scope_tassa_laissa_is_statute() -> None:
+    text = "Tässä laissa sivutuotteella tarkoitetaan kuollutta eläintä."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "statute"
+
+
+def test_scope_tata_lakia_sovellettaessa_is_statute() -> None:
+    text = "Tätä lakia sovellettaessa sivutuotteella tarkoitetaan kuollutta eläintä."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "statute"
+
+
+def test_scope_tassa_luvussa_is_chapter() -> None:
+    # A "Tässä luvussa" header before per-item definienda → chapter scope inherited
+    # by each definition in the block.
+    text = (
+        "Tässä luvussa: tietojärjestelmällä tarkoitetaan kokonaisuutta; "
+        "rekisterinpitäjällä tarkoitetaan tahoa."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 2
+    assert {b.scope for b in tk} == {"chapter"}
+    assert {b.term for b in tk} == {"tietojärjestelmä", "rekisterinpitäjä"}
+
+
+def test_scope_tassa_pykalassa_is_section() -> None:
+    text = "Tässä pykälässä viranomaisella tarkoitetaan valtion virastoa."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "section"
+
+
+def test_scope_tassa_momentissa_is_subsection() -> None:
+    text = "Tässä momentissa kuljettajalla tarkoitetaan ajoneuvon ohjaajaa."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "subsection"
+
+
+def test_scope_cue_beyond_window_falls_back_to_statute() -> None:
+    # A cue further back than the bounded look-back window must NOT leak into a
+    # later definition (fail-safe to the conservative statute default).
+    text = (
+        "Tässä luvussa annetaan yleisiä säännöksiä. "
+        + ("täytesana " * 700)
+        + "Sivutuotteella tarkoitetaan kuollutta eläintä."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "statute"
+
+
+def test_nearest_cue_wins_chapter_overrides_statute_application() -> None:
+    # A statute-wide application clause higher up, then a chapter header nearer the
+    # definiendum → the nearer (chapter) cue wins.
+    text = (
+        "Tätä lakia sovellettaessa noudatetaan seuraavaa. "
+        "Tässä luvussa rekisterinpitäjällä tarkoitetaan tahoa."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].scope == "chapter"
+
+
+def test_aliases_stay_statute_scope() -> None:
+    # Act-level aliases are document-wide naming conventions → always statute.
+    text = (
+        "Ympäristönsuojelulaissa (527/2014, jäljempänä ympäristönsuojelulaki) "
+        "ja asetuksessa (EY) N:o 1069/2009 (sivutuoteasetus) säädetään."
+    )
+    bindings = recognize_defined_term_bindings(text)
+    for b in bindings:
+        if b.binding_kind in (BINDING_JALJEMPANA, BINDING_PARENTHETICAL_ALIAS):
+            assert b.scope == "statute"
+
+
+def test_enumerated_block_chapter_items_inherit_chapter_scope() -> None:
+    # Canonical Finnish definitions block: a "Tässä luvussa tarkoitetaan:" header
+    # followed by a ';'-separated list whose items open with an adessive
+    # definiendum. Each item binds and inherits the header's chapter scope.
+    text = (
+        "Tässä luvussa tarkoitetaan: tietojärjestelmällä sähköistä "
+        "kokonaisuutta; rekisterinpitäjällä toiminnasta vastaavaa tahoa;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert {b.scope for b in tk} == {"chapter"}
+    assert {b.term for b in tk} == {"tietojärjestelmä", "rekisterinpitäjä"}
+
+
+def test_enumerated_block_statute_header_items_are_statute() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan: sivutuotteella kuollutta eläintä; "
+        "jätteellä hylättävää ainetta;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert {b.scope for b in tk} == {"statute"}
+    assert {b.term for b in tk} == {"sivutuottee", "jättee"}
+
+
+def test_enumerated_block_item_act_cite_expansion_resolves_target() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan: sivutuoteasetuksella asetusta "
+        "(EY) N:o 1069/2009;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].target_ref == "1069/2009"
+    assert tk[0].scope == "statute"
+
+
+def test_enumerated_block_non_adessive_item_does_not_bind() -> None:
+    # An item that does not open with an adessive definiendum is not fabricated
+    # into a binding (no fabrication discipline).
+    text = "Tässä laissa tarkoitetaan: ja muuta sellaista;"
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert tk == []
+
+
+def test_all_scopes_are_in_closed_vocabulary() -> None:
+    text = (
+        "Tässä luvussa tietojärjestelmällä tarkoitetaan kokonaisuutta. "
+        "Tässä pykälässä viranomaisella tarkoitetaan virastoa. "
+        "Tässä momentissa kuljettajalla tarkoitetaan ohjaajaa. "
+        "Sivutuotteella tarkoitetaan eläintä."
+    )
+    bindings = recognize_defined_term_bindings(text)
+    assert bindings
+    for b in bindings:
+        assert b.scope in SCOPE_VALUES
