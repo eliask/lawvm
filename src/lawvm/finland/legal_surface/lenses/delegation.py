@@ -18,12 +18,13 @@ not a resolution outcome (the recognizer's own "surface_fact_only" is not a
 graph resolution status; "asserted" is the closed-vocabulary mapping for "this
 surface fact is present and owned", the same choice ActorModalLens made).
 
-Span alignment (Pro r5 §"span alignment"): the recognizer takes a TEXT string
-and reports CHARACTER offsets relative to THAT text (Python ``re``). We feed it
-``unit.raw_text`` verbatim, so we build each ``SourceSpanRef`` DIRECTLY from the
-recognizer's offsets rather than re-locating via ``locate_span`` — more precise
-and correct for repeated surfaces. The whole-frame span anchors the node; the
-subject span travels in the payload.
+Span alignment (Pro r5 §"span alignment"): the recognizer is now TOKEN-NATIVE —
+it consumes ``unit.token_tape`` (a :class:`TokenTape` over ``unit.raw_text``) and
+reports WHOLE-TOKEN-aligned character offsets into that same text. We build each
+``SourceSpanRef`` DIRECTLY from the recognizer's offsets rather than re-locating
+via ``locate_span``. Spans are token-aligned (re-baselined vs. the prior
+char-regex spans); the lens stays a thin adapter. The whole-frame span anchors
+the node; the subject span travels in the payload.
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ from lawvm.core.legal_surface_lens import (
     SurfaceNodeSeed,
     SurfaceResidualSeed,
 )
+from lawvm.core.legal_surface_tokens import TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.references.delegation import (
     DelegationFrame,
@@ -81,7 +83,7 @@ class DelegationLens:
     schema_version: str = "v0"
     produces_node_kinds: tuple[str, ...] = ("delegation_frame",)
     produces_edge_kinds: tuple[str, ...] = ()
-    required_views: tuple[str, ...] = ("raw_text",)
+    required_views: tuple[str, ...] = ("token_tape",)
 
     def analyze(
         self,
@@ -94,7 +96,14 @@ class DelegationLens:
         units_scanned = 0
         for unit in bundle.units:
             units_scanned += 1
-            scan = recognize_delegation_frames(unit.raw_text)
+            tape = unit.token_tape
+            if not isinstance(tape, TokenTape):
+                raise ValueError(
+                    "DelegationLens requires a populated token_tape view "
+                    f"(required_views={self.required_views!r}); unit "
+                    f"{unit.source_unit_id!r} has token_tape={type(tape).__name__}"
+                )
+            scan = recognize_delegation_frames(tape)
             for frame in scan.frames:
                 ref = _span_ref(
                     unit.source_unit_id,
