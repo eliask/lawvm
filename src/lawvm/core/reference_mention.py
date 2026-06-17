@@ -69,6 +69,26 @@ class CiteConfidence(Enum):
     BROKEN = "broken"
     """Target was repealed/renumbered after the citation was written."""
 
+    STATUTE_ONLY = "statute_only"
+    """Act identity known, provision path / id pending.
+
+    The citing text names an act (e.g. a by-name reference before the
+    statute-name registry resolves it, or an explicit id followed by a bare
+    ``§`` with no section number). The statute is fixed; the in-act provision
+    target is deferred to a later resolution tier, not silently guessed.
+    """
+
+    OPEN = "open"
+    """Vague catch-all reference by construction (e.g. ``muussa laissa
+    säädetään``).
+
+    These references are open-ended by design: the source text declines to
+    name a specific act or provision. Per tag-don't-guess, the reference is
+    typed OPEN and handed to the bounded residue overlay rather than resolved
+    to a concrete target. OPEN is never assigned by a confidence threshold —
+    only by closed-list vague-marker recognizers.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Source span
@@ -174,7 +194,8 @@ class ReferenceMention:
     """Where the citation text lives."""
 
     target_provision_ref: Optional[ProvisionRef]
-    """Where the citation points; None iff cite_confidence is UNRESOLVED."""
+    """Where the citation points; None iff cite_confidence is UNRESOLVED,
+    BROKEN, or OPEN (the vague catch-all that names no target by construction)."""
 
     cite_kind: CiteKind
     """What kind of instrument is cited."""
@@ -213,12 +234,22 @@ class ReferenceMention:
     This is intentionally not part of the stable fi_refs row schema; neutral
     interlink projections use it for viewer overlays."""
 
+    #: Confidence states for which a None target is the typed-correct outcome.
+    #: UNRESOLVED/BROKEN: target gone or never resolvable. OPEN: vague catch-all
+    #: by construction (the closed-list T3 marker lane declines to name a target
+    #: per tag-don't-guess); OPEN is targetless BY DESIGN, see CiteConfidence.OPEN.
+    _NONE_TARGET_OK = (
+        CiteConfidence.UNRESOLVED,
+        CiteConfidence.BROKEN,
+        CiteConfidence.OPEN,
+    )
+
     def __post_init__(self) -> None:
-        if self.cite_confidence not in (CiteConfidence.UNRESOLVED, CiteConfidence.BROKEN):
+        if self.cite_confidence not in self._NONE_TARGET_OK:
             if self.target_provision_ref is None:
                 raise ValueError(
                     "ReferenceMention.target_provision_ref may only be None "
-                    "when cite_confidence is UNRESOLVED or BROKEN; "
+                    "when cite_confidence is UNRESOLVED, BROKEN, or OPEN; "
                     f"got {self.cite_confidence!r}"
                 )
         if not self.phrase_lemma:
