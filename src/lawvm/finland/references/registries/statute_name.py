@@ -48,6 +48,10 @@ from lawvm.finland.morphology import (
     head_entry,
     is_known_head,
 )
+from lawvm.finland.references.registries.statute_name_aliases import (
+    STATUTE_NAME_ALIASES,
+    StatuteNameAlias,
+)
 
 # Closed statute/instrument heads (mirrors the morphology head table's
 # statute_head instrument heads).  Sorted longest-first so a title ending in
@@ -371,13 +375,40 @@ class StatuteNameRegistry:
 
     def _register(self, entry: StatuteNameEntry) -> None:
         for key in _inflected_surfaces(entry.canonical_title):
-            bucket = self._index.setdefault(key, [])
-            # Dedup on (id, window) so re-registering the same act is idempotent.
-            sig = (entry.statute_id, entry.valid_from, entry.valid_to)
-            if all(
-                (e.statute_id, e.valid_from, e.valid_to) != sig for e in bucket
-            ):
-                bucket.append(entry)
+            self._register_key(key, entry)
+
+    def _register_key(self, key: str, entry: StatuteNameEntry) -> None:
+        """Bind one already-normalized surface ``key`` to ``entry`` (idempotent).
+
+        The shared path behind both generation (``_register``) and the curated
+        alias table (``register_aliases``): a colliding (id, window) is deduped,
+        and a key shared by a DIFFERENT id naturally accumulates so ``lookup``
+        lands ``multiple`` (fail-loud) — an alias never silently overrides.
+        """
+        bucket = self._index.setdefault(key, [])
+        # Dedup on (id, window) so re-registering the same act is idempotent.
+        sig = (entry.statute_id, entry.valid_from, entry.valid_to)
+        if all((e.statute_id, e.valid_from, e.valid_to) != sig for e in bucket):
+            bucket.append(entry)
+
+    def register_aliases(self, aliases: Iterable[StatuteNameAlias]) -> None:
+        """Index each curated colloquial nickname as a surface key for its act.
+
+        Unlike :meth:`_register`, an alias key is NOT expanded through the
+        generation engine: the nickname is by construction not derivable from the
+        official title (that is why it misses), so it is bound DIRECTLY under its
+        normalized key to a :class:`StatuteNameEntry` carrying the act's id and
+        official title.  Validity is left open (``None``) — the curated table only
+        admits nicknames with a single corpus identity, so a window is unneeded.
+        Coexists with generated surfaces and stays fail-loud on any cross-id
+        collision (the shared ``_register_key`` path).
+        """
+        for alias in aliases:
+            entry = StatuteNameEntry(
+                statute_id=alias.statute_id,
+                canonical_title=alias.official_title,
+            )
+            self._register_key(_normalize_key(alias.alias_key), entry)
 
     def lookup(
         self,
@@ -435,6 +466,8 @@ def build_registry(
         | tuple[str, str]
         | StatuteNameEntry
     ],
+    *,
+    aliases: Optional[Iterable[StatuteNameAlias]] = STATUTE_NAME_ALIASES,
 ) -> StatuteNameRegistry:
     """Build a :class:`StatuteNameRegistry` from canonical name->id entries.
 
@@ -442,10 +475,19 @@ def build_registry(
     ``(statute_id, title)``, or a 4-tuple
     ``(statute_id, title, valid_from, valid_to)``.  The title is expanded into
     its inflected surface variants generation-first (see module docstring).
+
+    The curated colloquial-nickname alias table
+    (:data:`statute_name_aliases.STATUTE_NAME_ALIASES`) is registered on top by
+    default (recall lever for nicknames not derivable from the official title;
+    coexists with generated surfaces, fail-loud on cross-id collision).  Pass
+    ``aliases=None`` to build a generation-only registry (e.g. to measure the
+    alias delta or in a test fixture).
     """
     reg = StatuteNameRegistry()
     for raw in entries:
         reg._register(_coerce_entry(raw))
+    if aliases is not None:
+        reg.register_aliases(aliases)
     return reg
 
 
@@ -649,8 +691,10 @@ def sample_entries_from_farchive(
 
 
 __all__ = [
+    "STATUTE_NAME_ALIASES",
     "Candidate",
     "RegistryResult",
+    "StatuteNameAlias",
     "StatuteNameEntry",
     "StatuteNameRegistry",
     "build_registry",
