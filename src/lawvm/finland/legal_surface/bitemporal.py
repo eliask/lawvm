@@ -49,6 +49,8 @@ mention already carries a concrete ``valid_at`` start, that is used as-is.
 from __future__ import annotations
 
 import collections
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Optional
@@ -75,7 +77,152 @@ __all__ = [
     "scan_broken_references",
     "citation_anchor_for_statute",
     "legal_pit_tree_as_of",
+    "PitCache",
+    "cached_tree_as_of",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Process-local point-in-time materialization cache
+# ---------------------------------------------------------------------------
+#
+# WHY this exists
+# ---------------
+# The broken-refs scan resolves dozens of cross-statute citations per citing
+# statute, and every distinct TARGET provision triggers a full ``legal_pit``
+# replay of the target statute *as of* a date. The same target statute is cited
+# over and over — both within one citing statute and across the corpus — and the
+# present-tree check (``as_of = today``) repeats the *identical* materialization
+# for every reference into a given target. Without memoization each of those is a
+# fresh heavy replay; with it, each (target_statute_id, as_of) tree is replayed
+# at most ONCE per worker.
+#
+# WHERE it lives (process-local, not cross-process)
+# -------------------------------------------------
+# The runner (tools/bitemporal_refs.py) uses a ``ProcessPoolExecutor``: workers
+# are independent OS processes with NO shared memory. A cross-process cache would
+# need IPC/serialization of large IRNode trees — not worth it. So the cache is a
+# MODULE-LEVEL singleton (``_PROCESS_PIT_CACHE``): each worker process gets its
+# own, populated lazily as that worker chews through its chunk of statute ids.
+# ``legal_pit_tree_as_of`` is rebuilt per statute by the runner, but it shares
+# this one process-global cache, so reuse survives across statutes within a
+# worker. (Within a single in-process ``scan_broken_references`` call the same
+# global is shared across all statutes, too.)
+#
+# Memory / latency tradeoff (be honest)
+# -------------------------------------
+# A materialized IRNode tree can be large (a fully-amended code is a deep tree).
+# An unbounded cache would, on a full-corpus run, retain one tree per distinct
+# (statute, as_of) and could blow the WSL2 memory ceiling. So the cache is a
+# bounded LRU (``OrderedDict``, default cap 512 entries): on overflow the
+# least-recently-used entry is evicted. The cap trades worst-case memory for a
+# small chance of re-replaying an evicted target later. With low cardinality of
+# distinct as_of dates (today + a handful of citation-year anchors) the working
+# set per worker chunk is typically well under the cap, so eviction is rare in
+# practice. Misses (``None`` = "could not materialize") ARE cached too — a target
+# that fails to replay is expensive to retry, so we remember the failure and
+# never re-replay it (it still surfaces as ``BrokenCheckUnavailable`` every time,
+# identically — caching the miss does not change WHICH findings are produced).
+#
+# Determinism: the cache only avoids recomputation. For a fixed underlying
+# ``legal_pit`` replay (which is itself deterministic per (statute, as_of)), the
+# cached value equals the value that would have been recomputed, so the scan
+# produces byte-identical findings with or without the cache.
+
+_PIT_CACHE_DEFAULT_CAP = 512
+
+
+class PitCache:
+    """Bounded LRU cache over (target_statute_id, as_of_iso) -> Optional[IRNode].
+
+    Caches BOTH successful materializations (an ``IRNode``) and failures
+    (``None`` — "could not materialize"), so a target is replayed at most once
+    per distinct as-of within the cache's lifetime/cap. Not thread-safe by
+    design: the scan is process-parallel (one cache per worker process), never
+    thread-parallel within a process.
+
+    Tracks ``hits`` / ``misses`` (cache hit vs. cache miss — a cache miss is a
+    fresh underlying materialization) and ``evictions`` for measurement.
+    """
+
+    __slots__ = ("_store", "_cap", "hits", "misses", "evictions")
+
+    def __init__(self, cap: int = _PIT_CACHE_DEFAULT_CAP) -> None:
+        # Value is a 1-tuple wrapper so a cached ``None`` (failed materialization)
+        # is distinguishable from "key absent". OrderedDict gives O(1) LRU.
+        self._store: OrderedDict[tuple[str, str], tuple[Optional[IRNode]]] = (
+            OrderedDict()
+        )
+        self._cap = cap if cap > 0 else _PIT_CACHE_DEFAULT_CAP
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
+
+    def get_or_compute(
+        self,
+        statute_id: str,
+        on: date,
+        compute: Callable[[str, date], Optional[IRNode]],
+    ) -> Optional[IRNode]:
+        key = (statute_id, on.isoformat())
+        cached = self._store.get(key)
+        if cached is not None:
+            self.hits += 1
+            self._store.move_to_end(key)  # mark most-recently-used
+            return cached[0]
+        # Cache miss: materialize once, then memoize (hit or miss alike).
+        self.misses += 1
+        value = compute(statute_id, on)
+        self._store[key] = (value,)
+        if len(self._store) > self._cap:
+            self._store.popitem(last=False)  # evict least-recently-used
+            self.evictions += 1
+        return value
+
+    def stats(self) -> dict[str, int | float]:
+        total = self.hits + self.misses
+        return {
+            "hits": self.hits,
+            "misses": self.misses,
+            "evictions": self.evictions,
+            "lookups": total,
+            "size": len(self._store),
+            "hit_rate": (self.hits / total) if total else 0.0,
+        }
+
+    def clear(self) -> None:
+        self._store.clear()
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
+
+
+# The process-local singleton: one per worker process (ProcessPoolExecutor) or
+# one for an in-process scan. Lazily reused so reuse survives across statutes.
+_PROCESS_PIT_CACHE: Optional[PitCache] = None
+
+
+def process_pit_cache() -> PitCache:
+    """Return this process's shared PIT cache, creating it on first use."""
+    global _PROCESS_PIT_CACHE
+    if _PROCESS_PIT_CACHE is None:
+        _PROCESS_PIT_CACHE = PitCache()
+    return _PROCESS_PIT_CACHE
+
+
+def cached_tree_as_of(inner: TreeAsOf, cache: Optional[PitCache] = None) -> TreeAsOf:
+    """Wrap a ``TreeAsOf`` so each (statute_id, as_of) materializes at most once.
+
+    ``cache`` defaults to the process-local singleton (so reuse survives across
+    statutes within a worker). Pass an explicit ``PitCache`` in tests to assert
+    hit/miss behavior without touching the process global.
+    """
+    pit = cache if cache is not None else process_pit_cache()
+
+    def _cached(statute_id: str, on: date) -> Optional[IRNode]:
+        return pit.get_or_compute(statute_id, on, inner)
+
+    return _cached
 
 
 # ---------------------------------------------------------------------------
@@ -92,16 +239,24 @@ __all__ = [
 # never a false BROKEN.
 
 
-def legal_pit_tree_as_of(store: "CorpusStore") -> TreeAsOf:
+def legal_pit_tree_as_of(
+    store: "CorpusStore", *, cache: Optional[PitCache] = None
+) -> TreeAsOf:
     """Build a ``TreeAsOf`` over the real ``legal_pit`` point-in-time replay.
 
     Returns the amended IR tree (``ReplayState.ir``) of one statute as of a
     date, or ``None`` (fail-loud) on any failure. This is the working
     counterpart to ``broken_detection.default_tree_as_of`` (which reaches for
     the wrong accessor and is left untouched per the no-edit boundary).
+
+    The heavy replay is wrapped in the process-local ``PitCache`` so each
+    (statute_id, as_of) tree materializes at most once per worker (see the
+    PitCache docstring for the memory/latency tradeoff). Pass an explicit
+    ``cache`` to scope memoization (tests / isolated runs); ``None`` uses the
+    process-global singleton so reuse survives across statutes.
     """
 
-    def _tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
+    def _replay(statute_id: str, on: date) -> Optional[IRNode]:
         try:
             from lawvm.finland.replay_entrypoint import replay_xml
             from lawvm.finland.replay_request import ReplayXmlRequest
@@ -120,7 +275,7 @@ def legal_pit_tree_as_of(store: "CorpusStore") -> TreeAsOf:
         ir = getattr(state, "ir", None)
         return ir if isinstance(ir, IRNode) else None
 
-    return _tree_as_of
+    return cached_tree_as_of(_replay, cache=cache)
 
 
 # ---------------------------------------------------------------------------
