@@ -1901,7 +1901,7 @@ def test_prepare_group_payload_collapses_first_moment_intro_list_with_lettered_s
     assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
     subparagraphs = [c for c in paragraphs[0].children if c.kind == IRNodeKind.SUBPARAGRAPH]
     assert [subparagraph.label for subparagraph in subparagraphs] == ["a", "b"]
-    assert irnode_to_text(paragraphs[0]) == "hankkeen kuvaus erityisesti: sijainti; koko;"
+    assert irnode_to_text(paragraphs[0]) == "1) hankkeen kuvaus erityisesti: a) sijainti; b) koko;"
 
 
 def test_prepare_group_payload_prunes_carried_subsections_outside_single_target_moment() -> None:

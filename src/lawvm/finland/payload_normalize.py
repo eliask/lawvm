@@ -1814,7 +1814,10 @@ def _paragraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
     return IRNode(
         kind=IRNodeKind.PARAGRAPH,
         label=row.label,
-        children=(IRNode(kind=child_kind, text=row.text),),
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{row.label})"),
+            IRNode(kind=child_kind, text=row.text),
+        ),
     )
 
 
@@ -1822,7 +1825,10 @@ def _subparagraph_from_flattened_list_row(row: FlattenedListRow) -> IRNode:
     return IRNode(
         kind=IRNodeKind.SUBPARAGRAPH,
         label=row.label,
-        children=(IRNode(kind=IRNodeKind.CONTENT, text=row.text),),
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text=f"{row.label})"),
+            IRNode(kind=IRNodeKind.CONTENT, text=row.text),
+        ),
     )
 
 
