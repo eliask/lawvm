@@ -38,7 +38,7 @@ import datetime as dt
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Iterator, Optional
 
 from lawvm.finland.morphology import (
     MorphEntry,
@@ -690,9 +690,108 @@ def sample_entries_from_farchive(
     return out
 
 
+def _extract_title_and_date(xb: bytes) -> tuple[str, Optional[dt.date]] | None:
+    """Extract ``(title, enactment_date|None)`` from one statute XML blob.
+
+    Returns ``None`` when the blob does not parse or carries no ``docTitle``.
+    ``enactment_date`` is the ``FRBRWork`` ``dateIssued`` parsed as a date, or
+    ``None`` when the corpus lacks/garbles it (NEVER fabricated — see the
+    temporal-bounds discipline in ``all_entries_from_farchive``).
+    """
+    from lxml import etree
+
+    try:
+        tree = etree.fromstring(xb)
+    except etree.XMLSyntaxError:
+        return None
+    title_el = tree.find(".//{*}docTitle")
+    if title_el is None:
+        return None
+    title = " ".join(
+        etree.tostring(title_el, method="text", encoding="unicode").split()
+    )
+    if not title:
+        return None
+
+    valid_from: Optional[dt.date] = None
+    work = tree.find(".//{*}FRBRWork")
+    if work is not None:
+        for d in work.findall("{*}FRBRdate"):
+            if d.get("name") == "dateIssued":
+                raw = d.get("date")
+                if raw:
+                    try:
+                        valid_from = dt.date.fromisoformat(raw)
+                    except ValueError:
+                        valid_from = None
+                break
+    return title, valid_from
+
+
+def all_entries_from_farchive(
+    *,
+    archive_path: Optional[str] = None,
+    limit: int = 0,
+) -> Iterator[StatuteNameEntry]:
+    """STREAM every statute's ``(statute_id, title)`` from the farchive.
+
+    The full-corpus counterpart of :func:`sample_entries_from_farchive`: it walks
+    EVERY statute id in the farchive (not a prefix sample) and yields one
+    :class:`StatuteNameEntry` at a time.  It reads a single statute's XML blob,
+    extracts only the title + enactment date, and DISCARDS the blob before moving
+    on, so peak memory stays at one statute's XML regardless of corpus size (the
+    WSL2 memory ceiling is real — the corpus is ~60k statutes / multi-GB).
+
+    Temporal bounds (HONEST, never fabricated):
+
+    * ``valid_from`` = the source XML's ``FRBRWork/FRBRdate[@name='dateIssued']``
+      (the real enactment date) when present, else ``None`` (open).
+    * ``valid_to`` = ALWAYS ``None`` (open).  The farchive exposes only the
+      CURRENT consolidated ``docTitle`` per statute — a single point-in-time
+      title, NOT a title-change history.  An act's title END date (renamed /
+      repealed) is therefore NOT derivable from this source and is left open.
+      The temporal dimension here is single-version-per-statute until a
+      title-history source exists; the registry's ``covers``/``as_of`` machinery
+      still applies (a ``valid_from``-bounded entry is simply treated as current
+      from its enactment onward, whole-history fallback otherwise).
+
+    ``limit`` (0 = unbounded) caps the number of ids walked, for cheap tests.
+    ``archive_path`` defaults to ``$LAWVM_CANONICAL_DATA_ROOT/data/finlex.farchive``.
+    """
+    import os
+
+    from farchive import Farchive
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+
+    if archive_path is None:
+        root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT", ".")
+        archive_path = os.path.join(root, "data", "finlex.farchive")
+
+    store = TransparentCorpusStore(Farchive(archive_path))
+    ids = store.list_statute_ids()
+    if limit:
+        ids = ids[:limit]
+    for sid in ids:
+        xb = store.read_source(sid) or store.read_amendment(sid)
+        if not xb:
+            continue
+        extracted = _extract_title_and_date(xb)
+        del xb  # release the XML blob immediately (bounded peak memory)
+        if extracted is None:
+            continue
+        title, valid_from = extracted
+        yield StatuteNameEntry(
+            statute_id=sid,
+            canonical_title=title,
+            valid_from=valid_from,
+            valid_to=None,
+        )
+
+
 __all__ = [
     "STATUTE_NAME_ALIASES",
     "Candidate",
+    "all_entries_from_farchive",
     "RegistryResult",
     "StatuteNameAlias",
     "StatuteNameEntry",
