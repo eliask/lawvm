@@ -116,7 +116,7 @@ def test_select_active_version_rejects_empty_as_of() -> None:
         ],
     )
 
-    with pytest.raises(Exception, match="as_of must be non-empty"):
+    with pytest.raises(Exception, match="as_of must be an exact YYYY-MM-DD date"):
         select_active_version_ex(timeline, "")
 
 
