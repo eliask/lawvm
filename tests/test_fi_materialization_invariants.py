@@ -46,6 +46,16 @@ def _replay_ir_and_meta(sid: str) -> tuple[IRNode, dict[str, object]]:
     return master.ir, replay_meta
 
 
+def _first_descendant(node: IRNode, kind: IRNodeKind, label: str) -> IRNode:
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.kind is kind and current.label == label:
+            return current
+        stack.extend(reversed(current.children))
+    raise LookupError(f"missing {kind.value}:{label}")
+
+
 @pytest.fixture(scope="module")
 def replay_2012_746() -> ReplayResult:
     return cast(ReplayResult, pinned_replay("2012/746", quiet=True))
@@ -86,6 +96,32 @@ def _subsection_text(
         if child.kind is IRNodeKind.SUBSECTION and child.label == subsection
     )
     return " ".join(irnode_to_text(subsection_node).split())
+
+
+def test_2017_966_sparse_intro_item_insert_uses_owned_item_payload() -> None:
+    replay = pinned_replay(
+        "2017/966",
+        oracle_version="20250047",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    section_1 = _first_descendant(replay.ir, IRNodeKind.SECTION, "1")
+    subsection_1 = next(
+        child
+        for child in section_1.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    item_3 = next(
+        child
+        for child in subsection_1.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "3"
+    )
+    item_3_text = " ".join(irnode_to_text(item_3).split())
+
+    assert "A 02300 Luonnon tuotteiden keruu (pl. polttopuu)." in item_3_text
+    assert "I Majoitus- ja ravitsemistoiminta" not in item_3_text
 
 
 def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> None:
@@ -266,6 +302,44 @@ def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() ->
     assert "Valtiovarainministeri oi erityisistä" not in section_text
 
 
+def test_1990_1207_dotted_paragraph_rows_materialize_as_peer_moments() -> None:
+    """Base §4 dotted paragraph rows are momentit, not items under 1 momentti."""
+
+    replay = pinned_replay(
+        "1990/1207",
+        oracle_version="19921639",
+        quiet=True,
+        build_full_products=False,
+    )
+    section_node = replay.find_section("4", "3", None)
+    assert section_node is not None
+    subsections = [
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    ]
+
+    assert [child.label for child in subsections] == ["1", "2", "3", "4"]
+    assert "Asunto-osan pituuden tulee olla vähintään puolet auton kokonaispituudesta" in irnode_to_text(
+        subsections[0]
+    )
+    assert "Ohjaamon ja asunto-osan välillä tulee olla näköyhteys" in irnode_to_text(subsections[2])
+    assert "Matkailuautossa tulee olla vähintään seuraavat kiinteät varusteet" in irnode_to_text(
+        subsections[3]
+    )
+    assert [child.label for child in subsections[3].children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+    ]
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 
@@ -397,6 +471,25 @@ class TestNoDuplicatesInPIT:
             "85 § Velallinen vastaa ennen konkurssin alkua syntyneestä saatavasta "
             "myös sillä omaisuudella, jonka velallinen vastaisuudessa saa, jollei "
             "velkojan kanssa ole toisin sovittu."
+        )
+
+    def test_2001_1234_item_scoped_table_row_snapshot_preserves_sibling_rows(self) -> None:
+        """2003/811 row-H replace must not drop the rest of the §2 fee table at PIT."""
+        source_pathologies: list[object] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay("2001/1234", quiet=True, source_pathologies_out=source_pathologies),
+        )
+        section_2 = replay.materialized_state.find_section("2")
+        assert section_2 is not None
+        section_text = " ".join(irnode_to_text(section_2).split())
+        assert "A. Eläimen ruumiinavaus" in section_text
+        assert "H. Poronlihan tarkastus" in section_text
+        assert any(
+            getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+            and getattr(pathology, "detail", {}).get("recovery_kind")
+            == "section_snapshot_preserve_live_fold_for_descendant_scoped_item"
+            for pathology in source_pathologies
         )
 
     def test_1988_1347_sparse_descendant_scoped_section_snapshot_keeps_fold(self) -> None:
@@ -1064,6 +1157,15 @@ class TestNoDuplicatesInPIT:
         assert replay_meta.get("invariant_violations") in (None, [])
         assert replay_meta.get("product_invariant_violations") in (None, [])
 
+    def test_1953_317_reflected_section_original_version_extends_oracle_horizon(self) -> None:
+        """fin@20050786 embeds §7 from 2003/537 despite dateConsolidated 2003-06-13."""
+        ir = _replay("1953/317")
+        section_7 = _first_descendant(ir, IRNodeKind.SECTION, "7")
+        text = irnode_to_text(section_7)
+
+        assert "rikoslain 6 luvun 13 §:n" in text
+        assert "rikoslain 3 luvun 11 §:n" not in text
+
     def test_1992_785_section_11_not_stripped_by_future_effective_amendment(self) -> None:
         """1992/785 §11 must remain in PIT at oracle date 2023-04-14.
 
@@ -1092,6 +1194,24 @@ class TestNoDuplicatesInPIT:
         assert "Potilasasiamies" in text or len(text) > 10, (
             f"§11 found but appears to be an empty repeal placeholder: {text!r}"
         )
+
+    def test_2015_1635_chapter_3_not_stripped_by_metadata_only_future_repeal_ref(self) -> None:
+        """2015/1635 ch. 3 remains in the selected pre-repeal oracle body.
+
+        The selected fin@20221289 XML cites 741/2023 in AKN amendment-history
+        metadata, but the body still contains chapter 3.  That metadata citation
+        must not re-admit the future repeal as a body-materialized VTS surface.
+        """
+        ir = _replay("2015/1635", oracle_version="20221289")
+        assert check_invariants(ir) == []
+
+        chapter_labels = [
+            child.label
+            for child in ir.children
+            if child.kind is IRNodeKind.CHAPTER
+        ]
+
+        assert "3" in chapter_labels
 
     def test_2000_812_sections_not_stripped_by_future_effective_amendment(self) -> None:
         """2000/812 must have 0 MISSING sections at oracle date 2023-04-14.
@@ -1230,4 +1350,43 @@ class Test1981_555Section11Split:
         assert irnode_to_text(sub5) == (
             "Lupapäätöksen sisällöstä ja luvan edellyttämien toimenpiteiden määräajasta säädetään "
             "tarkemmin valtioneuvoston asetuksella."
+        )
+
+
+class TestFoldHcontainerOrphanSectionReconcile:
+    """Materialized PIT must preserve fold-owned hcontainer-direct orphan sections."""
+
+    def _section_parent_path(self, ir: IRNode, label: str) -> str:
+        from lawvm.core import tree_ops as tops
+
+        def walk(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> str | None:
+            if node.kind is IRNodeKind.SECTION and node.label == label:
+                return "/".join(f"{kind}:{lbl or '?'}" for kind, lbl in path + (("section", node.label),))
+            for child in node.children:
+                found = walk(
+                    child,
+                    path + ((tops._kind_str(node.kind), node.label or ""),),
+                )
+                if found is not None:
+                    return found
+            return None
+
+        return walk(ir) or ""
+
+    def test_2017_320_section_270_stays_under_hcontainer(
+        self,
+        replay_2017_320_legal_pit_with_meta: tuple[ReplayResult, dict[str, object]],
+    ) -> None:
+        replay, _replay_meta = replay_2017_320_legal_pit_with_meta
+        assert self._section_parent_path(replay.materialized_state.ir, "270").startswith(
+            "body:?/hcontainer:"
+        )
+
+    def test_1868_31_section_46_stays_under_hcontainer(self) -> None:
+        replay = cast(
+            ReplayResult,
+            pinned_replay("1868/31-000", mode="official_consolidation", quiet=True),
+        )
+        assert self._section_parent_path(replay.materialized_state.ir, "46").startswith(
+            "body:?/hcontainer:"
         )

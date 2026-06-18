@@ -522,3 +522,77 @@ def _strip_standalone_subsection_item_prefixes_ir(node: IRNode) -> IRNode:
             )
         ],
     )
+
+
+_REDUNDANT_PARAGRAPH_LABEL_PREFIX_RE = re.compile(
+    r"^\s*(\d+[a-z]?|[a-z])\s*[\).]\s*",
+    flags=re.I,
+)
+
+
+def _strip_redundant_label_prefix_from_text(text: str, label: str) -> str | None:
+    """Strip a leading ``N)``/``N.`` marker when it duplicates an explicit paragraph label."""
+    if not text or not label:
+        return None
+    norm_label = normalized_label_key(label)
+    if not norm_label:
+        return None
+    compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text.lstrip(), flags=re.I)
+    match = _REDUNDANT_PARAGRAPH_LABEL_PREFIX_RE.match(compact)
+    if match is None:
+        return None
+    if normalized_label_key(match.group(1)) != norm_label:
+        return None
+    stripped = compact[match.end() :].lstrip()
+    return stripped or None
+
+
+def _strip_redundant_paragraph_label_prefixes_ir(node: IRNode) -> IRNode:
+    """Strip carried kohta markers from labeled paragraph/subparagraph body text."""
+    new_children = tuple(_strip_redundant_paragraph_label_prefixes_ir(child) for child in node.children)
+    if node.kind not in {IRNodeKind.PARAGRAPH, IRNodeKind.SUBPARAGRAPH} or not node.label:
+        if new_children == node.children:
+            return node
+        return IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs=dict(node.attrs),
+            children=new_children,
+        )
+
+    new_text = node.text
+    stripped_text = _strip_redundant_label_prefix_from_text(node.text or "", node.label)
+    if stripped_text is not None:
+        new_text = stripped_text
+
+    rewritten_children: list[IRNode] = []
+    children_changed = new_children != node.children
+    for child in new_children:
+        if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT} or not child.text:
+            rewritten_children.append(child)
+            continue
+        stripped_child = _strip_redundant_label_prefix_from_text(child.text, node.label)
+        if stripped_child is None:
+            rewritten_children.append(child)
+            continue
+        rewritten_children.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=stripped_child,
+                attrs=dict(child.attrs),
+                children=tuple(child.children),
+            )
+        )
+        children_changed = True
+
+    if new_text == node.text and not children_changed:
+        return node
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=new_text,
+        attrs=dict(node.attrs),
+        children=tuple(rewritten_children),
+    )

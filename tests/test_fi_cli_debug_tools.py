@@ -49,6 +49,19 @@ def test_cli_main_suppresses_broken_pipe(monkeypatch) -> None:
     cli.main()
 
 
+def test_bench_cli_help_matches_fi_tooling_defaults(
+    cli_parser, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli_parser.parse_args(["bench", "--help"])
+
+    assert raised.value.code == 0
+    out = capsys.readouterr().out
+    assert "data/finland/bench_corpus.csv" in out
+    assert "FI default: 1=sequential" in out
+    assert "UK/EE use jurisdiction-specific defaults" in out
+
+
 @lru_cache(maxsize=1)
 def _corpus_available() -> bool:
     try:

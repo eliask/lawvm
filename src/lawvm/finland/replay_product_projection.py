@@ -7,12 +7,19 @@ from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
+from lawvm.core.invariant_surface_matrix import FI_REPLAY_FOLD_SURFACE
 from lawvm.core.phase_result import Finding
-from lawvm.core.replay_lints import build_label_sequence_gap_findings, build_text_duplication_findings
+from lawvm.core.replay_lints import (
+    build_flattened_sublist_findings,
+    build_label_sequence_gap_findings,
+    build_text_duplication_findings,
+)
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
+    fold_timeline_backfill_finding,
 )
+from lawvm.finland.replay_timeline_diagnostics import project_timeline_invariant_findings
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
@@ -39,6 +46,28 @@ class ReplayProductProjectionRequest:
 def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayProducts:
     """Validate replay products, dedup materialized IR, and project diagnostics."""
     products = request.products
+    if products.fold_timeline_backfills:
+        seen_backfills = {
+            (
+                finding.kind,
+                str(finding.detail.get("address") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "REPLAY.FOLD_TIMELINE_BACKFILL"
+        }
+        for record in products.fold_timeline_backfills:
+            key = ("REPLAY.FOLD_TIMELINE_BACKFILL", record.address)
+            if key in seen_backfills:
+                continue
+            request.replay_findings.append(
+                fold_timeline_backfill_finding(
+                    source_statute=record.source_statute,
+                    address=record.address,
+                    effective=record.effective,
+                    witness_rule_id=record.witness_rule_id,
+                )
+            )
+            seen_backfills.add(key)
     typed_product_tree_violations = {
         "replay_fold_tree": list(
             fi_product_tree_invariant_dicts(
@@ -148,6 +177,55 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
                 request.replay_findings.append(finding)
                 seen_text_warnings.add(key)
 
+    materialized_flattened_sublist_findings = build_flattened_sublist_findings(
+        deduped_materialized_ir,
+        phase="materialized",
+        source_statute=request.parent_id,
+    )
+    if request.replay_meta_out is not None and materialized_flattened_sublist_findings:
+        warnings = request.replay_meta_out.setdefault("flattened_sublist_warnings", [])
+        cast(list[dict[str, object]], warnings).extend(
+            {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            for finding in materialized_flattened_sublist_findings
+        )
+    if materialized_flattened_sublist_findings:
+        seen_flattened_sublist_warnings = {
+            (
+                finding.kind,
+                str(finding.detail.get("phase") or ""),
+                str(finding.detail.get("kind") or ""),
+                str(finding.detail.get("path") or ""),
+                str(finding.detail.get("node_kind") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "flattened_sublist_family_warning"
+        }
+        for finding in materialized_flattened_sublist_findings:
+            warning = {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            request.replay_print(
+                "WARNING flattened sublist: "
+                f"{warning['kind']} {warning['path']} {warning['node_kind']} "
+                f"{warning.get('label_sample', [])}"
+            )
+            key = (
+                "flattened_sublist_family_warning",
+                "materialized",
+                str(warning.get("kind") or ""),
+                str(warning.get("path") or ""),
+                str(warning.get("node_kind") or ""),
+            )
+            if key not in seen_flattened_sublist_warnings:
+                request.replay_findings.append(finding)
+                seen_flattened_sublist_warnings.add(key)
+
     materialized_label_gap_findings = build_label_sequence_gap_findings(
         deduped_materialized_ir,
         phase="materialized",
@@ -197,5 +275,24 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
             if key not in seen_label_gap_warnings:
                 request.replay_findings.append(finding)
                 seen_label_gap_warnings.add(key)
+
+    if request.replay_meta_out is not None and request.replay_meta_out.get(
+        "enable_timeline_invariants"
+    ):
+        pit_date = (
+            products.materialization_spec.as_of
+            if products.materialization_spec is not None
+            else None
+        )
+        project_timeline_invariant_findings(
+            ir=products.materialized_state.ir,
+            timelines=products.timelines,
+            pit_date=pit_date,
+            profile=FI_REPLAY_FOLD_SURFACE.replay_profile,
+            replay_findings=request.replay_findings,
+            replay_meta_out=request.replay_meta_out,
+            replay_print=request.replay_print,
+            source_statute=request.parent_id,
+        )
 
     return products

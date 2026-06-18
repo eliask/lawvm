@@ -44,6 +44,7 @@ from lawvm.finland.uncovered_recovery_support import (
     _section_heading_text,
     _uncovered_disposition_for_op_id,
     _xml_part_label,
+    merge_group_ops_for_section,
 )
 from lawvm.finland.uncovered_target_resolve import (
     TargetVerdict,
@@ -78,9 +79,11 @@ class UncoveredRecoveryRun:
     recovery_guards: UncoveredRecoveryGuards
     bp_assignments: object
     johto_mentioned_labels: Set[str]
+    johto_moment_targets: Dict[str, frozenset[int]]
     johto_mentioned_replaced_chapters: Set[str]
     moved_section_destinations: Dict[str, str]
     owned_chapter_labels: Set[str]
+    part_insert_labels: Set[str]
 
     def record_skip(
         self,
@@ -101,8 +104,15 @@ class UncoveredRecoveryRun:
             return True
         return False
 
-    def label_allowed_by_johto(self, label: str, chapter: Optional[str] = None) -> bool:
+    def label_allowed_by_johto(
+        self,
+        label: str,
+        chapter: Optional[str] = None,
+        amend_part_label: Optional[str] = None,
+    ) -> bool:
         if not self.johto_mentioned_labels:
+            return True
+        if amend_part_label and amend_part_label in self.part_insert_labels:
             return True
         if chapter and chapter in self.owned_chapter_labels:
             return True
@@ -315,7 +325,9 @@ class UncoveredRecoveryRun:
                 )
                 return
 
-        if not self.label_allowed_by_johto(label, amend_chapter_label):
+        if not self.label_allowed_by_johto(
+            label, amend_chapter_label, amend_part_label=amend_part_label
+        ):
             self.record_skip("johto_guard", label, amend_chapter_label)
             return
 
@@ -324,7 +336,13 @@ class UncoveredRecoveryRun:
             and amend_chapter_label in self.johto_mentioned_replaced_chapters
         )
         prv = evaluate_past_repeal_guard(
-            existing.attrs, self.ops, label, amend_chapter_label, whole_ch_replace
+            existing.attrs,
+            self.ops,
+            label,
+            amend_chapter_label,
+            whole_ch_replace,
+            amend_part=amend_part_label,
+            part_insert_labels=self.part_insert_labels,
         )
         if prv.applies and not prv.bypass:
             self.recovery_guards.mark_covered(
@@ -376,7 +394,18 @@ class UncoveredRecoveryRun:
                 )
             )
         elif edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
-            merged = _merge_section_with_omission_ir(existing, sec_ir)
+            group_ops = merge_group_ops_for_section(
+                self.ops,
+                label=label,
+                amend_chapter_label=amend_chapter_label,
+                amend_part_label=amend_part_label,
+                johto_moment_targets=self.johto_moment_targets,
+            )
+            merged = _merge_section_with_omission_ir(
+                existing,
+                sec_ir,
+                group_ops=group_ops or None,
+            )
             if merged is not None:
                 mdec = evaluate_omission_merge(merged, existing)
                 if mdec.accept:
@@ -408,7 +437,9 @@ class UncoveredRecoveryRun:
         label = candidate.label
         amend_chapter_label = candidate.amend_chapter_label
         amend_part_label = candidate.amend_part_label
-        if not self.label_allowed_by_johto(label, amend_chapter_label):
+        if not self.label_allowed_by_johto(
+            label, amend_chapter_label, amend_part_label=amend_part_label
+        ):
             self.record_skip("johto_guard", label, amend_chapter_label)
             return
 

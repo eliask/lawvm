@@ -119,11 +119,13 @@ def recover_uncovered_body_ops(
         recovery_guards=preparation.recovery_guards,
         bp_assignments=preparation.body_pairing_assignments,
         johto_mentioned_labels=set(preparation.context.johto_mentioned_labels),
+        johto_moment_targets=dict(preparation.context.johto_moment_targets),
         johto_mentioned_replaced_chapters=set(
             preparation.context.johto_mentioned_replaced_chapters
         ),
         moved_section_destinations=preparation.context.moved_section_destinations,
         owned_chapter_labels=set(preparation.context.owned_chapter_labels),
+        part_insert_labels=set(preparation.context.part_insert_labels),
     )
 
     run_uncovered_candidate_iteration(

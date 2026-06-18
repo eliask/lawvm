@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, replace as dc_replace
 from typing import List, Tuple
 
+from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.clause_ast import ItemShiftClause, NamedRowClause
 from lawvm.core.semantic_types import StructuralAction
@@ -27,6 +28,16 @@ from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_single_clauses,
 )
 from lawvm.finland.ops import AmendmentOp
+
+_SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
+_SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
+_SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
+    r"\bmuut[a-zäöå]{0,12}\b.{0,500}?"
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?::[a-zäöå]{1,6})?.{0,300}?"
+    r"\boikeusaputoimiston\s+"
+    r"(?P<row>[a-zåäö][a-zåäö-]{1,80})\s+sivutoimiston\s+osalta\s+seuraavasti\b",
+    flags=re.I,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +57,22 @@ class ItemShiftAfterRepealClause:
 
     clause: ItemShiftClause
     extra_repeal_target_paragraph: int | None = None
+
+
+@dataclass(frozen=True)
+class SparseOsaltaRowOmissionClause:
+    """Typed recovery for sparse ``osalta`` paragraph-list row omissions.
+
+    Historical administrative decisions sometimes say the section is amended
+    "as regards" a named branch office, while the published source payload
+    omits that branch row from an omission-bracketed excerpt.  The source verb
+    is ``muutetaan`` but the executable row effect is a deletion; that action
+    family recovery must be witnessed explicitly.
+    """
+
+    section: str
+    row_target: str
+    raw_text: str
 
 
 # ---------------------------------------------------------------------------
@@ -365,3 +392,96 @@ def _tag_named_table_row_single_clause_ops(
             )
         )
     return supplemented
+
+
+def _parse_sparse_osalta_row_omission_clauses(johto: str) -> tuple[SparseOsaltaRowOmissionClause, ...]:
+    """Parse office-branch ``osalta`` clauses that publish omission excerpts."""
+    text = re.sub(r"\s+", " ", johto or "").strip()
+    lowered = text.lower()
+    if (
+        "osalta" not in lowered
+        or "sivutoimiston" not in lowered
+        or "oikeusaputoimiston" not in lowered
+        or "seuraavasti" not in lowered
+    ):
+        return ()
+
+    clauses: list[SparseOsaltaRowOmissionClause] = []
+    for match in _SPARSE_OSALTA_ROW_OMISSION_RE.finditer(text):
+        section = re.sub(r"\s+", "", match.group("section")).lower()
+        row_target = match.group("row").strip()
+        if not section or not row_target:
+            continue
+        clauses.append(
+            SparseOsaltaRowOmissionClause(
+                section=section,
+                row_target=row_target,
+                raw_text=match.group(0),
+            )
+        )
+    return tuple(clauses)
+
+
+def _sparse_osalta_recovery_finding(
+    clause: SparseOsaltaRowOmissionClause,
+    *,
+    amendment_id: str,
+) -> Finding:
+    return Finding(
+        kind="ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL",
+        role="observation",
+        stage="frontend_extraction",
+        source_statute=amendment_id,
+        blocking=False,
+        detail={
+            "kind": "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL",
+            "rule_id": _SPARSE_OSALTA_ROW_OMISSION_RULE_ID,
+            "source_statute": amendment_id,
+            "source_verb": "muutetaan",
+            "lowered_action": "REPEAL",
+            "target_unit_kind": "paragraph_row",
+            "target_section": clause.section,
+            "named_row_targets": (clause.row_target,),
+            "raw_text": clause.raw_text,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        },
+    )
+
+
+def _supplement_sparse_osalta_row_omission_repeals(
+    ops: List[AmendmentOp],
+    johto: str,
+    *,
+    amendment_id: str = "",
+) -> tuple[List[AmendmentOp], tuple[Finding, ...]]:
+    """Add witnessed row-level repeals for sparse office-branch omissions."""
+    clauses = _parse_sparse_osalta_row_omission_clauses(johto)
+    if not clauses:
+        return ops, ()
+
+    supplemented = list(ops)
+    findings: list[Finding] = []
+    for idx, clause in enumerate(clauses):
+        duplicate = any(
+            op.op_type == "REPEAL"
+            and op.target_unit_kind == "section"
+            and op.target_section == clause.section
+            and tuple(op.named_row_targets) == (clause.row_target,)
+            for op in supplemented
+        )
+        if duplicate:
+            continue
+        supplemented.append(
+            AmendmentOp(
+                op_id=f"sparse_osalta_row_omission_repeal_{idx}",
+                op_type="REPEAL",
+                target_section=clause.section,
+                target_unit_kind="section",
+                named_row_targets=(clause.row_target,),
+                extraction_provenance_tags=(_SPARSE_OSALTA_ROW_OMISSION_TAG,),
+                witness_rule_id=_SPARSE_OSALTA_ROW_OMISSION_RULE_ID,
+            )
+        )
+        findings.append(_sparse_osalta_recovery_finding(clause, amendment_id=amendment_id))
+    return supplemented, tuple(findings)

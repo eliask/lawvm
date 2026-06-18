@@ -153,6 +153,113 @@ def test_find_flattened_sublist_warnings_detects_interleaved_family() -> None:
     ]
 
 
+def test_find_flattened_sublist_warnings_skips_mixed_family_for_definition_subsections() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="19",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.INTRO,
+                                text="Tässä luvussa tarkoitetaan:",
+                            ),
+                            *tuple(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=f"{label}) def")
+                                for label in ("a", "b", "c", "1", "2")
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert find_flattened_sublist_warnings(body) == []
+
+
+def test_find_flattened_sublist_warnings_detects_mixed_alpha_digit_family() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="78",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("a", "b", "c", "1", "2", "3")
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_flattened_sublist_warnings(body)
+
+    assert warnings == [
+        {
+            "kind": "flattened_sublist_mixed_family",
+            "path": "body/section:78",
+            "node_kind": "paragraph",
+            "families": ["alpha", "digit"],
+            "alpha_run": 3,
+            "digit_run": 3,
+            "label_sample": ["a", "b", "c", "1", "2", "3"],
+        }
+    ]
+
+
+def test_find_flattened_sublist_warnings_detects_interleaved_digit_runs_for_section_78_shape() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="78",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("1", "2", "3", "4", "a", "b", "c", "5", "6", "7")
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_flattened_sublist_warnings(body)
+
+    assert warnings == [
+        {
+            "kind": "flattened_sublist_interleaved",
+            "path": "body/section:78",
+            "node_kind": "paragraph",
+            "repeated_families": ["digit"],
+            "label_sample": ["1", "2", "3", "4", "a", "b", "c", "5", "6", "7"],
+        }
+    ]
+
+
+def test_find_flattened_sublist_warnings_skips_mixed_family_for_single_letter_introducer() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="78",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("1", "2", "3", "4", "jos", "5", "6", "7")
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_flattened_sublist_warnings(body)
+    assert all(warning["kind"] != "flattened_sublist_mixed_family" for warning in warnings)
+
+
 def test_find_flattened_sublist_warnings_ignores_monotonic_family() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
@@ -252,7 +359,7 @@ def test_find_label_sequence_gap_warnings_detects_internal_section_gap() -> None
                 label="10",
                 children=(
                     IRNode(kind=IRNodeKind.SECTION, label="107"),
-                    IRNode(kind=IRNodeKind.SECTION, label="109"),
+                    IRNode(kind=IRNodeKind.SECTION, label="110"),
                 ),
             ),
         ),
@@ -263,7 +370,7 @@ def test_find_label_sequence_gap_warnings_detects_internal_section_gap() -> None
     assert warnings[0]["kind"] == "label_sequence_internal_gap"
     assert warnings[0]["path"] == "body/chapter:10"
     assert warnings[0]["node_kind"] == "section"
-    assert warnings[0]["missing_labels"] == ["108"]
+    assert warnings[0]["missing_labels"] == ["108", "109"]
 
 
 def test_find_label_sequence_gap_warnings_does_not_require_chapter_section_start_at_one() -> None:
@@ -274,6 +381,37 @@ def test_find_label_sequence_gap_warnings_does_not_require_chapter_section_start
                 kind=IRNodeKind.CHAPTER,
                 label="10",
                 children=(IRNode(kind=IRNodeKind.SECTION, label="107"),),
+            ),
+        ),
+    )
+
+    assert find_label_sequence_gap_warnings(body) == []
+
+
+def test_find_label_sequence_gap_warnings_skips_body_level_sections_with_parts() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.PART, label="1"),
+            IRNode(kind=IRNodeKind.SECTION, label="176"),
+            IRNode(kind=IRNodeKind.SECTION, label="178"),
+        ),
+    )
+
+    assert find_label_sequence_gap_warnings(body) == []
+
+
+def test_find_label_sequence_gap_warnings_ignores_single_internal_section_gap() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="10",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="176"),
+                    IRNode(kind=IRNodeKind.SECTION, label="178"),
+                ),
             ),
         ),
     )

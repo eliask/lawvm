@@ -1867,6 +1867,66 @@ def test_emit_section_snapshot_emits_subsection_snapshots_for_whole_section_payl
     ]
 
 
+def test_emit_section_snapshot_preserves_live_fold_for_sparse_item_scoped_muutos_shell() -> None:
+    live_text = (
+        "Toimituksista maksetaan palkkiota seuraavasti: Euroa: "
+        "A. Eläimen ruumiinavaus 29,00 B. Näytteiden ottaminen 13,50 "
+        "H. Poronlihan tarkastus / tunti 32,2"
+    )
+    sparse_text = (
+        "Toimituksista maksetaan palkkiota seuraavasti: "
+        "H. Poronlihan tarkastus sekä poroteurastamon ja teurastuspaikan valvonta / tunti 32,3"
+    )
+    live_section = _sec("2", _sub("1", _content(live_text)))
+    sparse_section = _sec("2", _sub("1", _content(sparse_text)))
+    state = _make_state(_body(live_section))
+    lo_ops: list[LegalOperation] = []
+
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_2_item_h",
+            op_type="REPLACE",
+            target_section="2",
+            target_unit_kind="section",
+            target_paragraph=1,
+            target_item="h",
+            source_statute="2003/811",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=sparse_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter=None,
+        target_address=LegalAddress(
+            path=(("section", "2"), ("subsection", "1"), ("item", "h")),
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2003/811",
+        source_title="Table row H",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(live_section),
+    )
+
+    assert lo_ops
+    section_snapshot = lo_ops[0]
+    assert section_snapshot.target.path == (("section", "2"),)
+    snapshot_text = " ".join(irnode_to_text(section_snapshot.payload).split())
+    assert "A. Eläimen ruumiinavaus" in snapshot_text
+    assert "H. Poronlihan" in snapshot_text
+    assert len(snapshot_text) > len(" ".join(sparse_text.split()))
+
+
 def test_emit_section_snapshot_inserts_new_subsection_addresses_not_in_base() -> None:
     base_section = _sec("3", _sub("1", _content("First")))
     payload_section = _sec(
@@ -4506,6 +4566,71 @@ def test_apply_whole_section_replace_emits_temporary_section_rebase_pathology() 
     assert pathologies[0].detail["rebase_context"] == "section_replace"
     assert pathologies[0].detail["rebase_kind"] == "expired_latest_snapshot_current_live_section"
     assert pathologies[0].detail["latest_snapshot_expires"] == "2019-12-31"
+
+
+def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() -> None:
+    """A permanent whole-section INSERT may replace an expired temp section slot."""
+    temp_section = _sec("27", _content("expired temporary section text"))
+    replacement = _sec("27", _content("new permanent section text"))
+    state = _make_state(
+        _body(IRNode(kind=IRNodeKind.CHAPTER, label="4", children=(temp_section,)))
+    )
+    section_path = (("chapter", "4"), ("section", "27"))
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_section_27",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=temp_section,
+            source=OperationSource(
+                statute_id="2003/156",
+                enacted="2003-08-01",
+                effective="2003-08-01",
+                expires="2008-08-01",
+            ),
+        ),
+    ]
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="INSERT", target_section="27", target_chapter="4"),
+        muutos_ir=replacement,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="27",
+        target_chapter="4",
+        op_source=OperationSource(
+            statute_id="2012/909",
+            enacted="2012-12-28",
+            effective="2013-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        section_path,
+        replacement,
+        None,
+        _LEGAL_PIT,
+        "27 §",
+        base_ir=_body(IRNode(kind=IRNodeKind.CHAPTER, label="4", children=())),
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    section = result.find_section("27", "4")
+    assert section is not None
+    text = irnode_to_text(section)
+    assert "new permanent section text" in text
+    assert "expired temporary section text" not in text
+    assert pathologies
+    assert pathologies[0].code == "TEMPORARY_SECTION_REBASE"
+    assert pathologies[0].detail["rebase_context"] == "section_insert_expired_temporary_slot"
+    assert pathologies[0].detail["rebase_kind"] == "expired_latest_snapshot_prior_non_temporary_snapshot"
+    assert pathologies[0].detail["latest_snapshot_expires"] == "2008-08-01"
 
 
 def _paragraph_labels(sub: IRNode) -> List[str]:
@@ -11110,10 +11235,10 @@ class TestApplyItemReplace:
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2019/1468", "", False, parent_id="2006/395")
         descriptions = [op.description() for op in phase.output if op.target_section == "70"]
-        assert "REPLACE 70 § 2 mom" in descriptions
-        assert "REPLACE 70 § 3 mom 4 kohta" in descriptions
-        assert "REPLACE 70 § 3 mom 5 kohta" in descriptions
-        assert "REPLACE 70 § 3 mom 12 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 2 mom" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 4 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 5 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 12 kohta" in descriptions
         path = state.find_section_path("70", None, "2")
         assert path is not None
         sec = state.resolve(path)
@@ -11171,10 +11296,10 @@ class TestApplyItemReplace:
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2022/572", "", False, parent_id="2006/395")
         descriptions = [op.description() for op in phase.output if op.target_section == "123"]
-        assert "REPLACE 123 § johd" in descriptions
-        assert "REPLACE 123 § 1 mom 8 kohta" in descriptions
-        assert "REPLACE 123 § 1 mom 9 kohta" in descriptions
-        assert "REPLACE 123 § 1 mom 15 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § johd" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 8 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 9 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 15 kohta" in descriptions
         assert "INSERT 8 luku 123 § 2 mom" in descriptions
         path = state.find_section_path("123", None, "2")
         assert path is not None
@@ -15378,12 +15503,21 @@ def test_johd_replace_reports_intro_list_shape_rebound_when_carrier_subsection_i
         source_pathologies_out=pathologies,
     )
 
-    assert result is None
+    assert result is not None
     assert [p.code for p in pathologies] == [
         "SUBSECTION_TARGET_REBOUND",
-        "ITEM_TARGET_STRUCTURE_ABSENT",
+        "DESTRUCTIVE_SHAPE_LOSS_RISK",
     ]
     assert pathologies[0].detail["rebound_kind"] == "intro_list_moment_shape"
+    assert pathologies[1].detail["recovery_kind"] == "intro_prepend_letter_list_moment"
+    new_sec = result.resolve(sec_path)
+    assert new_sec is not None
+    carrier = [c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "3"][0]
+    assert [c.kind for c in carrier.children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
 
 
 def test_johd_replace_rejects_intro_list_shape_rebound_in_strict_mode() -> None:

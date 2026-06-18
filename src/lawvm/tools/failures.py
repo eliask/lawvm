@@ -27,7 +27,7 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.xml_statute import XMLStatute
 from lawvm.finland.replay_entrypoint import replay_xml
-from lawvm.finland.proof_surfaces import source_pathology_proof_rule
+from lawvm.finland.source_pathology_proof_registry import source_pathology_proof_rule
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.core.tree_ops import normalized_label_key
 

@@ -216,21 +216,26 @@ def may_attach_post_list_loppukappale(node: IRNode) -> bool:
 def _previous_item_token(item_norm: str) -> Optional[str]:
     """Return the label that immediately precedes *item_norm* in Finnish item sequences.
 
-    Examples: ``"3"`` → ``"2"``, ``"3a"`` → ``"3"``, ``"3b"`` → ``"3a"``.
-    Returns ``None`` when there is no predecessor (base=1, no suffix).
+    Examples: ``"3"`` → ``"2"``, ``"3a"`` → ``"3"``, ``"3b"`` → ``"3a"``, ``"c"`` → ``"b"``.
+    Returns ``None`` when there is no predecessor (base=1, no suffix, or ``"a"``).
     """
     m = re.match(r'^(\d+)([a-z]?)$', item_norm, flags=re.I)
-    if not m:
-        return None
-    base = int(m.group(1))
-    suffix = m.group(2).lower()
-    if suffix:
-        if suffix == 'a':
-            return str(base)
-        return f"{base}{chr(ord(suffix) - 1)}"
-    if base <= 1:
-        return None
-    return str(base - 1)
+    if m:
+        base = int(m.group(1))
+        suffix = m.group(2).lower()
+        if suffix:
+            if suffix == 'a':
+                return str(base)
+            return f"{base}{chr(ord(suffix) - 1)}"
+        if base <= 1:
+            return None
+        return str(base - 1)
+    if re.fullmatch(r'[a-z]', item_norm, flags=re.I):
+        letter = item_norm.lower()
+        if letter == 'a':
+            return None
+        return chr(ord(letter) - 1)
+    return None
 
 
 def _parse_iso_date(value: Optional[str]) -> Optional[dt.date]:

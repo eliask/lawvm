@@ -9,17 +9,14 @@ Usage:
     uv run python scripts/audit_warnings.py --limit 20
     uv run python scripts/audit_warnings.py --workers 8
     uv run python scripts/audit_warnings.py --corpus .tmp/my_corpus.txt
-    uv run python scripts/audit_warnings.py --limit 50 --workers 4
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import re
 import sys
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 LAWVM_DIR = Path(__file__).resolve().parent.parent
@@ -29,130 +26,31 @@ DEFAULT_CORPUS = LAWVM_DIR / ".tmp" / "diff_triage_corpus.txt"
 DEFAULT_OUTPUT = LAWVM_DIR / ".tmp" / "warning_audit.csv"
 
 
-# ---------------------------------------------------------------------------
-# Warning normalization
-# ---------------------------------------------------------------------------
-
-_NORMALIZE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    # Strip statute/amendment identifiers like 1959/324, 2009/953
-    (re.compile(r"\b\d{4}/\d+\b"), "<SID>"),
-    # Strip numeric section references: "§ 5", "5 §", "§§ 3-7"
-    (re.compile(r"§+\s*\d[\d\-]*|\d[\d\-]*\s*§+"), "<SEC>"),
-    # Strip bare integers that look like section/offset numbers (4+ digits: years are excluded above)
-    (re.compile(r"\b\d{5,}\b"), "<NUM>"),
-    # Strip Python object repr strings  <lawvm.finland.ops.ResolvedOp object at 0x...>
-    (re.compile(r"<[^>]{0,120} object at 0x[0-9a-fA-F]+>"), "<OBJ>"),
-    # Strip hex addresses
-    (re.compile(r"0x[0-9a-fA-F]{4,}"), "<ADDR>"),
-    # Collapse whitespace
-    (re.compile(r"\s+"), " "),
-]
-
-
-def _normalize_message(msg: str) -> str:
-    for pattern, replacement in _NORMALIZE_PATTERNS:
-        msg = pattern.sub(replacement, msg)
-    return msg.strip()
-
-
-# ---------------------------------------------------------------------------
-# Worker (runs in a subprocess — warnings are process-local)
-# ---------------------------------------------------------------------------
-
-
-def _compile_with_warnings(sid: str) -> tuple[str, list[dict[str, object]]]:
-    """Compile one statute, capturing all warnings.  Runs in worker process."""
-    import warnings
-
-    from lawvm.finland.compile import compile_fi_facade
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            compile_fi_facade(sid)
-        except Exception as exc:
-            return sid, [
-                {
-                    "category": "ERROR",
-                    "message": str(exc),
-                    "filename": "",
-                    "lineno": 0,
-                }
-            ]
-
-    results: list[dict[str, object]] = []
-    for w in caught:
-        results.append(
-            {
-                "category": w.category.__name__,
-                "message": str(w.message),
-                "filename": str(w.filename),
-                "lineno": int(w.lineno),
-            }
-        )
-    return sid, results
-
-
-# ---------------------------------------------------------------------------
-# Corpus helpers
-# ---------------------------------------------------------------------------
-
-
-def _normalize_id(raw_id: str) -> str:
-    """Strip -NNN amendment suffix so '1896/37-000' becomes '1896/37'."""
-    if "-" in raw_id:
-        parts = raw_id.rsplit("-", 1)
-        if parts[1].isdigit():
-            return parts[0]
-    return raw_id
-
-
 def _load_corpus(path: Path) -> list[str]:
-    lines = path.read_text().splitlines()
-    return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+    from lawvm.tools.corpus_io import load_statute_ids, resolve_line_list_source
+
+    return load_statute_ids(resolve_line_list_source(path))
 
 
 def _deduplicate_ids(raw_ids: list[str]) -> list[str]:
-    """Deduplicate by normalized parent id, preserving order."""
-    seen: set[str] = set()
-    result: list[str] = []
-    for rid in raw_ids:
-        nid = _normalize_id(rid)
-        if nid not in seen:
-            seen.add(nid)
-            result.append(nid)
-    return result
+    from lawvm.tools.corpus_io import deduplicate_parent_ids
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+    return deduplicate_parent_ids(raw_ids)
 
 
 def main() -> None:
+    from lawvm.tools.audit_channels import (
+        normalize_warning_message,
+        run_audit_channel,
+        warnings_channel_spec,
+    )
+    from lawvm.tools.corpus_io import deduplicate_parent_ids, load_statute_ids, resolve_line_list_source
+
     parser = argparse.ArgumentParser(description="Corpus-wide replay warning audit")
-    parser.add_argument(
-        "--corpus",
-        default=str(DEFAULT_CORPUS),
-        help="Path to corpus file (one statute ID per line)",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(DEFAULT_OUTPUT),
-        help="Output CSV path",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=4,
-        help="Number of worker processes",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=0,
-        help="Limit corpus to first N statutes (0 = no limit)",
-    )
+    parser.add_argument("--corpus", default=str(DEFAULT_CORPUS))
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
     corpus_path = Path(args.corpus)
@@ -160,8 +58,8 @@ def main() -> None:
         print(f"ERROR: corpus file not found: {corpus_path}", file=sys.stderr)
         sys.exit(1)
 
-    raw_ids = _load_corpus(corpus_path)
-    sids = _deduplicate_ids(raw_ids)
+    raw_ids = load_statute_ids(resolve_line_list_source(corpus_path))
+    sids = deduplicate_parent_ids(raw_ids)
     if args.limit:
         sids = sids[: args.limit]
 
@@ -175,29 +73,30 @@ def main() -> None:
     print()
 
     all_rows: list[dict[str, object]] = []
-    done = 0
     error_count = 0
     warning_count = 0
 
-    with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(_compile_with_warnings, sid): sid for sid in sids}
-        for fut in as_completed(futures):
-            done += 1
-            sid, w_list = fut.result()
-            for w in w_list:
-                if w["category"] == "ERROR":
-                    error_count += 1
-                else:
-                    warning_count += 1
-                all_rows.append({"statute_id": sid, **w})
+    def on_progress(done: int, total_count: int, _sid: str) -> None:
+        if done % 100 == 0 or done == total_count:
+            print(f"  [{done:5d}/{total_count}] processed")
 
-            if done % 100 == 0 or done == total:
-                print(f"  [{done:5d}/{total}] warnings so far: {warning_count}  errors: {error_count}")
+    sweep = run_audit_channel(
+        warnings_channel_spec(),
+        sids,
+        workers=args.workers,
+        on_progress=on_progress,
+    )
+    for sid, w_list in sweep.rows:
+        for warning in w_list:
+            if warning["category"] == "ERROR":
+                error_count += 1
+            else:
+                warning_count += 1
+            all_rows.append({"statute_id": sid, **warning})
 
-    # Write full CSV
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
-            f,
+            handle,
             fieldnames=["statute_id", "category", "message", "filename", "lineno"],
         )
         writer.writeheader()
@@ -206,21 +105,20 @@ def main() -> None:
 
     print(f"\nWrote {len(all_rows)} rows to {output_path}")
 
-    # Summary: top patterns
     pattern_counter: Counter[tuple[str, str, str]] = Counter()
     for row in all_rows:
         if row["category"] == "ERROR":
             continue
         key = (
             str(row["category"]),
-            _normalize_message(str(row["message"])),
+            normalize_warning_message(str(row["message"])),
             f"{row['filename']}:{row['lineno']}",
         )
         pattern_counter[key] += 1
 
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print("TOP WARNING PATTERNS (by frequency)")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
     print(f"{'Count':>6}  {'Category':<30}  Source")
     print(f"{'':->6}  {'':->30}  {'':->30}")
 

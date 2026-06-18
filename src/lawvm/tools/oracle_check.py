@@ -117,7 +117,9 @@ def _el_text(el: etree._Element) -> str:
 
 
 def _clean(text: str) -> str:
-    return re.sub(r'[^a-z0-9äöå]', '', text.lower())
+    from lawvm.tools.divergence_core import clean_comparison_text
+
+    return clean_comparison_text(text)
 
 
 def _extract_sections(root: etree._Element) -> dict[str, etree._Element]:
@@ -174,6 +176,10 @@ def _source_pathology_diagnosis_for_blame(
         if exact_target_label and str(row.get("target_label") or "") == exact_target_label:
             matched_codes.add(code)
             continue
+        row_target_label = str(row.get("target_label") or "")
+        if target_section and row_target_label.endswith(f" {target_section} §"):
+            matched_codes.add(code)
+            continue
         if (
             target_section
             and str(detail.get("target_section") or "") == target_section
@@ -184,6 +190,12 @@ def _source_pathology_diagnosis_for_blame(
 
     if not matched_codes:
         return None
+
+    if matched_codes & {
+        "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+        "RECODIFICATION_SOURCE_CHAIN_GAP",
+    }:
+        return "SOURCE_INCOMPLETE"
 
     findings = tuple(getattr(master, "findings", ()) or ())
     has_degraded_coverage = any(
@@ -205,6 +217,85 @@ def _source_pathology_diagnosis_for_blame(
     if not has_degraded_coverage and not has_failed_no_deterministic:
         return None
     return "SOURCE_PATHOLOGY"
+
+
+_RESTRUCTURE_BLAME_WITNESS_RULE_IDS = frozenset(
+    {
+        "fi.restructure.relabel_section_snapshot",
+        "fi.section_renumber",
+        "fi.jolloin_section_renumber",
+    }
+)
+
+_SECTION_HEADING_RE = re.compile(
+    r"^\d+\s*[a-zäöå]?\s*§\s*(.+?)(?:\s{2,}|\n|$)",
+    re.IGNORECASE,
+)
+
+
+def _section_heading_alpha(text: str) -> str:
+    squashed = re.sub(r"\s+", " ", (text or "").strip())
+    match = _SECTION_HEADING_RE.match(squashed)
+    if not match:
+        return ""
+    return re.sub(r"[^a-z0-9äöå]", "", match.group(1).lower())
+
+
+def _recodification_blame_frame_diagnosis(
+    blame_op: BlameRow | None,
+    section_key: str,
+    *,
+    replay_text: str = "",
+    oracle_text: str = "",
+) -> str | None:
+    """Reclassify recodification-frame divergences that compare at the wrong address.
+
+    Large recodification waves snapshot section bodies at pre-migration addresses
+    (``fi.restructure.relabel_section_snapshot``) while the oracle consolidation
+    compares at post-renumber addresses.  When the blamed op frame differs from the
+    compared section key, the divergence is a source-chain placement limit rather
+    than a replay apply bug.
+
+    Same-address ``fi.section_renumber`` rows can still swap which provision owns a
+    label; when replay and oracle headings disagree under that witness, treat the
+    mismatch as source-incomplete rather than REPLAY_MISSING/REPLAY_EXTRA.
+
+    Structural ``EXTRA`` rows (replay has a section shell, oracle has no section at
+    the compared key) blamed on recodification renumber/relabel witnesses are also
+    source limits: the oracle consolidation still uses the pre-wave numbering frame.
+    """
+    if not blame_op:
+        return None
+    witness = str(blame_op.get("witness_rule_id") or "")
+    if witness not in _RESTRUCTURE_BLAME_WITNESS_RULE_IDS:
+        return None
+    blame_key = section_key_from_compiled_scope_row(blame_op)
+    if not blame_key:
+        return None
+    replay_present = bool(replay_text.strip())
+    oracle_present = bool(oracle_text.strip())
+    if witness == "fi.restructure.relabel_section_snapshot":
+        if blame_key != section_key:
+            return "SOURCE_INCOMPLETE"
+        if replay_present and not oracle_present:
+            return "SOURCE_INCOMPLETE"
+    if witness in {"fi.section_renumber", "fi.jolloin_section_renumber"}:
+        if blame_key != section_key:
+            return "SOURCE_INCOMPLETE"
+        if replay_present and not oracle_present:
+            return "SOURCE_INCOMPLETE"
+        if blame_key == section_key:
+            replay_heading = _section_heading_alpha(replay_text)
+            oracle_heading = _section_heading_alpha(oracle_text)
+            if (
+                replay_heading
+                and oracle_heading
+                and replay_heading != oracle_heading
+                and len(replay_heading) >= 8
+                and len(oracle_heading) >= 8
+            ):
+                return "SOURCE_INCOMPLETE"
+    return None
 
 
 def _section_points_to_empty_body_amendment(
@@ -433,17 +524,6 @@ def _score_pair(r_el: etree._Element, o_el: etree._Element) -> float:
     return Levenshtein.ratio(r, o)
 
 
-def _build_blame_map(compiled_ops: list[CompiledOpRow]) -> dict[str, CompiledOpRow]:
-    blame: dict[str, CompiledOpRow] = {}
-    for op in compiled_ops:
-        key = section_key_from_compiled_scope_row(op)
-        if not key and isinstance(op, dict):
-            key = chapter_key_from_compiled_scope_row(op)
-        if key:
-            blame[key] = op
-    return blame
-
-
 def _section_key_segments(key: str) -> dict[str, str]:
     segments: dict[str, str] = {}
     for part in key.split("/"):
@@ -452,6 +532,119 @@ def _section_key_segments(key: str) -> dict[str, str]:
         kind, label = part.split(":", 1)
         segments[kind] = label
     return segments
+
+
+_BLAME_LINEAGE_LO_WITNESS_RULE_IDS = frozenset(
+    {
+        "fi.restructure.relabel_section_snapshot",
+        "fi.replay.fold_timeline_backfill",
+    }
+)
+
+
+def _legal_op_blame_row(op: object) -> CompiledOpRow | None:
+    """Project one replay LO into a flat compiled-op blame row when it owns section content."""
+    witness_rule_id = str(getattr(op, "witness_rule_id", "") or "")
+    if witness_rule_id not in _BLAME_LINEAGE_LO_WITNESS_RULE_IDS:
+        return None
+    target_text = str(getattr(op, "target", "") or "")
+    if "/section:" not in target_text:
+        return None
+    segments = _section_key_segments(target_text)
+    section = segments.get("section")
+    if not section:
+        return None
+    source = getattr(op, "source", None)
+    action = getattr(op, "action", "")
+    if hasattr(action, "value"):
+        action = action.value
+    return {
+        "sequence": getattr(op, "sequence", 0) or 0,
+        "op_id": str(getattr(op, "op_id", "") or ""),
+        "action": str(action or "").lower(),
+        "source_statute": str(getattr(source, "statute_id", "") or "") if source else "",
+        "source_title": str(getattr(source, "title", "") or "") if source else "",
+        "witness_rule_id": witness_rule_id,
+        "target_unit_kind": "section",
+        "target_norm": section,
+        "target_chapter": segments.get("chapter", ""),
+        "target_part": segments.get("part", ""),
+        "target_paragraph": "",
+        "target_item": "",
+        "target_special": "",
+    }
+
+
+def _build_blame_map(
+    compiled_ops: list[CompiledOpRow],
+    *,
+    lo_ops: list[Any] | None = None,
+) -> dict[str, CompiledOpRow]:
+    blame: dict[str, CompiledOpRow] = {}
+    for op in compiled_ops:
+        key = section_key_from_compiled_scope_row(op)
+        if not key and isinstance(op, dict):
+            key = chapter_key_from_compiled_scope_row(op)
+        if key:
+            blame[key] = op
+    for op in lo_ops or ():
+        row = _legal_op_blame_row(op)
+        if not row:
+            continue
+        key = str(getattr(op, "target", "") or "")
+        if key:
+            blame[key] = row
+    return blame
+
+
+def _migration_predecessor_keys(
+    key: str,
+    migration_events: tuple[Any, ...],
+) -> list[str]:
+    """Return prior address keys reached by reversing renumber/move migration events."""
+    if not migration_events or "/" not in key:
+        return []
+
+    from lawvm.core.ir import LegalAddress
+
+    path: list[tuple[str, str]] = []
+    for part in key.split("/"):
+        if ":" not in part:
+            continue
+        kind, label = part.split(":", 1)
+        path.append((kind, label))
+    if not path:
+        return []
+
+    current = LegalAddress(path=tuple(path))
+    predecessors: list[str] = []
+    seen: set[str] = {key}
+
+    for _ in range(len(migration_events)):
+        matched = False
+        for event in migration_events:
+            kind = str(getattr(event, "kind", "") or "")
+            if kind not in {"renumber", "move"}:
+                continue
+            to_addr = getattr(event, "to_address", None)
+            from_addr = getattr(event, "from_address", None)
+            if to_addr is None or from_addr is None:
+                continue
+            if not current.has_path_prefix(to_addr):
+                continue
+            suffix = current.path[len(to_addr.path) :]
+            new_addr = LegalAddress(path=from_addr.path + suffix, special=current.special)
+            new_key = str(new_addr)
+            if new_key in seen:
+                continue
+            predecessors.append(new_key)
+            seen.add(new_key)
+            current = new_addr
+            matched = True
+            break
+        if not matched:
+            break
+    return predecessors
 
 
 def _unique_blame_match(
@@ -480,10 +673,19 @@ def _unique_non_recovery_blame_match(
     return _unique_blame_match(non_recovery_pairs)
 
 
-def _lookup_blame_op(blame_map: dict[str, CompiledOpRow], key: str) -> BlameRow:
+def _lookup_blame_op(
+    blame_map: dict[str, CompiledOpRow],
+    key: str,
+    *,
+    migration_events: tuple[Any, ...] = (),
+) -> BlameRow:
     exact = blame_map.get(key)
     if isinstance(exact, dict) and not _is_recovery_blame_row(exact):
         return exact
+    for predecessor_key in _migration_predecessor_keys(key, migration_events):
+        pred = blame_map.get(predecessor_key)
+        if isinstance(pred, dict) and not _is_recovery_blame_row(pred):
+            return pred
     if "/" not in key:
         return exact if isinstance(exact, dict) else {}
     target_segments = _section_key_segments(key)
@@ -759,9 +961,11 @@ def _classify_statute(
             master = replay_result
             compiled_ops = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
             failed_ops: list[Any] = []
+            lo_ops = []
         else:
             compiled_ops: list[CompiledOpRow] = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
             failed_ops = []
+            lo_ops: list[Any] = []
             master = call_replay_xml(
                 replay_xml,
                 request=ReplayXmlRequest(
@@ -772,6 +976,7 @@ def _classify_statute(
                 sinks=ReplayXmlSinks(
                     compiled_ops_out=compiled_ops,
                     failed_ops_out=failed_ops,
+                    lo_ops_out=lo_ops,
                 ),
             )
         oracle_ctx = get_consolidated_oracle_context(
@@ -871,7 +1076,8 @@ def _classify_statute(
             if getattr(finding, "kind", "") == "SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE"
             and str((getattr(finding, "detail", {}) or {}).get("chapter_label") or "").strip()
         }
-        blame_map = _build_blame_map(compiled_ops)
+        migration_events = tuple(getattr(master, "migration_events", ()) or ())
+        blame_map = _build_blame_map(compiled_ops, lo_ops=lo_ops)
 
         # Overall score (full body text)
         c_res = _clean(master.serialize_text())
@@ -893,7 +1099,7 @@ def _classify_statute(
             o_el = oracle_secs.get(key)
             r_text = replay_secs_text.get(key, "") if r_node is not None else ""
             o_text = _el_text(o_el) if o_el is not None else ""
-            blame_op = _lookup_blame_op(blame_map, key)
+            blame_op = _lookup_blame_op(blame_map, key, migration_events=migration_events)
             future_version = replay_section_has_future_effective_version(
                 master,
                 key,
@@ -1011,7 +1217,11 @@ def _classify_statute(
         # if the blame op is an INSERT, oracle simply hasn't incorporated it yet.
         for sec in section_results:
             if sec["diagnosis"] == "EXTRA" and sec["blame_source"]:
-                if _lookup_blame_op(blame_map, sec["section"]).get("action", "").lower() == "insert":
+                if _lookup_blame_op(
+                    blame_map,
+                    sec["section"],
+                    migration_events=migration_events,
+                ).get("action", "").lower() == "insert":
                     sec["diagnosis"] = "ORACLE_STALE"
                     sec["oracle_version_amendment_id"] = oracle_version_amendment_id or ""
 
@@ -1128,7 +1338,11 @@ def _classify_statute(
                 pre_r = _clean(pre_text)
                 post_r = _clean(replay_text)
                 ora_r = _clean(oracle_text)
-                blame_action = _lookup_blame_op(blame_map, sec["section"]).get("action", "").lower()
+                blame_action = _lookup_blame_op(
+                    blame_map,
+                    sec["section"],
+                    migration_events=migration_events,
+                ).get("action", "").lower()
                 if (
                     sec["diagnosis"] == "REPLAY_MISSING"
                     and blame_action == "repeal"
@@ -1284,10 +1498,22 @@ def _classify_statute(
                 "EXTRA",
             ):
                 continue
+            blame_op = _lookup_blame_op(
+                blame_map,
+                str(sec["section"]),
+                migration_events=migration_events,
+            )
             diagnosis = _source_pathology_diagnosis_for_blame(
                 master,
-                _lookup_blame_op(blame_map, str(sec["section"])),
+                blame_op,
             )
+            if diagnosis is None:
+                diagnosis = _recodification_blame_frame_diagnosis(
+                    blame_op,
+                    str(sec["section"]),
+                    replay_text=str(sec.get("replay_text") or ""),
+                    oracle_text=str(sec.get("oracle_text") or ""),
+                )
             if diagnosis is not None:
                 sec["diagnosis"] = diagnosis
 
@@ -1416,6 +1642,7 @@ def _classify_statute(
             contingent_effective_sources=contingent_effective_sources,
             replay_result=master,
             compiled_ops=compiled_ops,
+            lo_ops=lo_ops,
             oracle_version_amendment_id=oracle_version_amendment_id or "",
             oracle_sections=oracle_secs,
         )
@@ -1715,6 +1942,31 @@ def _sort_sids_by_chain_length(sids: list[str]) -> list[str]:
     from lawvm.finland.amendment_selection import amendment_children_by_parent as _amendment_children_by_parent
     children = _amendment_children_by_parent()
     return sorted(sids, key=lambda s: len(children.get(s, ())), reverse=True)
+
+
+def _migration_events_from_classify_result(result: ClassifyResult) -> tuple[Any, ...]:
+    replay_result = getattr(result, "replay_result", None)
+    if replay_result is None:
+        return ()
+    return tuple(getattr(replay_result, "migration_events", ()) or ())
+
+
+def _blame_map_for_classify_result(result: ClassifyResult) -> dict[str, CompiledOpRow]:
+    return _build_blame_map(
+        list(result.compiled_ops or ()),
+        lo_ops=list(result.lo_ops or ()),
+    )
+
+
+def _lookup_blame_op_for_classify_result(
+    result: ClassifyResult,
+    section_key: str,
+) -> BlameRow:
+    return _lookup_blame_op(
+        _blame_map_for_classify_result(result),
+        section_key,
+        migration_events=_migration_events_from_classify_result(result),
+    )
 
 
 def _classify_statute_sync(sid: str, mode: Literal["official_consolidation", "legal_pit"]) -> ClassifyResult | None:

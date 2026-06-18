@@ -167,6 +167,8 @@ def evaluate_past_repeal_guard(
     label: str,
     amend_chapter: Optional[str],
     whole_chapter_replace: bool,
+    amend_part: Optional[str] = None,
+    part_insert_labels: Optional[Iterable[str]] = None,
 ) -> PastRepealVerdict:
     """Decide whether a repeal-placeholder slot may be reinstated. Pure.
 
@@ -176,6 +178,14 @@ def evaluate_past_repeal_guard(
     """
     if existing_attrs.get("lawvm_repeal_placeholder") != "1":
         return PastRepealVerdict(applies=False, bypass=False, bypass_reason=None)
+    if amend_part and part_insert_labels:
+        part_norm = _norm_num_token(amend_part)
+        if part_norm and part_norm in {_norm_num_token(p) for p in part_insert_labels}:
+            return PastRepealVerdict(
+                applies=True,
+                bypass=True,
+                bypass_reason="part_insert_subtree",
+            )
     has_insert_op = any(
         op.op_type == "INSERT"
         and op.target_unit_kind == "section"

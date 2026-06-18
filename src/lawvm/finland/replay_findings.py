@@ -188,6 +188,80 @@ def _serialize_observed_write_audit(audit: ObservedWriteAudit) -> dict[str, obje
     return asdict(audit)
 
 
+def fold_timeline_backfill_finding(
+    *,
+    source_statute: str,
+    address: str,
+    effective: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when fold-owned content is grafted into timelines."""
+    return Finding(
+        kind="REPLAY.FOLD_TIMELINE_BACKFILL",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Replay fold carried a section without timeline authority; "
+                "a fold-owned snapshot was grafted before PIT materialization."
+            ),
+            "address": address,
+            "effective": effective,
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
+def materialized_provisions_wrapper_projection_finding(
+    *,
+    source_statute: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a materialized provisions wrapper is projected."""
+    return Finding(
+        kind="REPLAY.MATERIALIZED_PROVISIONS_WRAPPER_PROJECTED",
+        role="observation",
+        stage="replay_products",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Materialized PIT product projected fold-owned "
+                "statuteProvisionsWrapper children into legal topology."
+            ),
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
+def materialized_attachments_wrapper_split_finding(
+    *,
+    source_statute: str,
+    moved_section_labels: tuple[str, ...],
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when operative sections are split out of appendices."""
+    return Finding(
+        kind="REPLAY.MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT",
+        role="observation",
+        stage="replay_products",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Materialized PIT product carried fold-owned operative sections under "
+                "an attachments wrapper; sections were split into a provisions wrapper."
+            ),
+            "witness_rule_id": witness_rule_id,
+            "source_shape": "attachments_hcontainer_with_fold_owned_direct_sections",
+            "target_wrapper": "statuteProvisionsWrapper",
+            "moved_section_labels": moved_section_labels,
+        },
+    )
+
+
 def _structural_dedup_applied_finding(
     *,
     phase: str,

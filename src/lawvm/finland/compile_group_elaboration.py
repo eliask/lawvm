@@ -25,6 +25,9 @@ from lawvm.finland.group_ops import (
 )
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.compile_group_surface import (
+    collect_recodification_omission_only_section_shell_pathologies,
+)
 from lawvm.finland.payload_normalize import elaborate_payload_against_live, prepare_payload_surface
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
@@ -196,6 +199,7 @@ class ElaborateGroupRequest:
     group_ops: list[AmendmentOp]
     standalone_section_targets: set[str]
     foreign_scoped_standalone_section_targets: set[str]
+    foreign_scoped_replace_section_targets: set[str]
     effective_target_part: str | None
     muutos_tree: etree._Element
     johto: str
@@ -213,6 +217,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     foreign_scoped_standalone_section_targets = (
         request.foreign_scoped_standalone_section_targets
     )
+    foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
     target_part = request.effective_target_part
     muutos_tree = request.muutos_tree
     johto = request.johto
@@ -292,12 +297,23 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         surface=surface,
     )
     muutos_ir = payload_norm.muutos_ir
     group_ops = list(payload_norm.group_ops)
 
     local_source_pathologies: list[SourcePathology] = list(payload_norm.source_pathologies or [])
+    local_source_pathologies.extend(
+        collect_recodification_omission_only_section_shell_pathologies(
+            group_ops=group_ops,
+            muutos_tree=muutos_tree,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+    )
     local_elaboration_observations: list[dict[str, object]] = [
         *prepared_payload_observations,
         *[

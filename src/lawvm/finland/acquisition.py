@@ -157,7 +157,11 @@ def amendment_lacks_operative_structure(tree: etree._Element) -> tuple[bool, lis
 
 
 def should_use_sec1_fallback_pre_routing(johto: Optional[str]) -> bool:
-    return not johto or len(johto) < 50
+    if not johto:
+        return True
+    if any(keyword in johto.lower() for keyword in OP_KEYWORDS):
+        return False
+    return len(johto) < 50
 
 
 def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:

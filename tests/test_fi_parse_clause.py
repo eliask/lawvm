@@ -253,6 +253,56 @@ def test_parse_clause_multi_section_reinsert_mid_list_keeps_neighbours() -> None
         assert expected in codes, codes
 
 
+def test_parse_clause_chapter_reinsert_with_descriptive_provenance_keeps_sections() -> None:
+    """``N lukuun <descriptive provenance> kumotun M §:n sijaan uusi M §``.
+
+    Regression for 1973/390: the chapter destination is followed by the title
+    of the repealed 1868 act before the reinstatement sentinel.  The provenance
+    is not a target; the inserts must land in the explicit chapter.
+    """
+    result = parse_clause(
+        "lisätään 9 lukuun määräajasta velkomisasioissa sekä julkisesta "
+        "haasteesta velkojille 9 päivänä marraskuuta 1868 annetulla "
+        "asetuksella kumotun 12 §:n sijaan uusi 12 § sekä uusi 13 § "
+        "seuraavasti:"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == ["L P L:9 12", "L P L:9 13"]
+
+
+def test_parse_clause_historical_passive_preverbal_replace_keeps_section_list() -> None:
+    text = (
+        "Eduskunnan päätöksen mukaisesti säädetään, että 1 päivänä kesäkuuta 1922 "
+        "annetun kielilain 2, 3, 5, 6, 9, 10, 12, 13, 16, 17, 18, 20 sekä 21 §, "
+        "näistä 20 § sellaisena, kuin se on 28 päivänä toukokuuta 1927 annetussa "
+        "laissa, on muutettava näin kuuluviksi:"
+    )
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert codes == [
+        "M P 2",
+        "M P 3",
+        "M P 5",
+        "M P 6",
+        "M P 9",
+        "M P 10",
+        "M P 12",
+        "M P 13",
+        "M P 16",
+        "M P 17",
+        "M P 18",
+        "M P 20",
+        "M P 21",
+    ]
+    assert codes.count("M P 20") == 1
+    assert any(
+        diagnostic.rule_id == "fi.johtolause.historical_passive_preverbal_replace.v1"
+        for diagnostic in result.typed_diagnostics
+    )
+
+
 def test_parse_clause_surface_clause_populated():
     """surface_clause must be a non-None object (Phase 3 SurfaceClause)."""
     from lawvm.finland.johtolause.surface_model import SurfaceClause
@@ -1879,6 +1929,27 @@ def test_parse_clause_pykala_apostrophe_normalization():
     assert ops[0].witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_pykala_short_illative_typo_normalization():
+    """§:än must tokenize as illative §:ään for source-typo amendment clauses.
+
+    Regression for `1993/81 <- 1994/495`: the johtolause has "2 §:än ...
+    uuden 5 momentin", omitting one `ä` from the standard illative suffix.
+    Treating it as WORD dropped the only operation from the amendment.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    tokens = tokenize("lisätään 2 §:än uusi 5 momentti")
+    pykala_toks = [t for t in tokens if t.cat == "PYKALA"]
+    assert len(pykala_toks) == 1
+    assert pykala_toks[0].text == "§:än"
+    assert pykala_toks[0].case == "ILL"
+
+    ops = parse_clause("lisätään 2 §:än uusi 5 momentti seuraavasti:").parsed_ops
+    assert [op.code() for op in ops] == ["L P 2 5"]
+    assert ops[0].witness is not None
+    assert ops[0].witness.rule_id == "fi.insertion_sub_target"
+
+
 def test_parse_clause_skips_glued_nainkuuluva_before_subsection_insert_targets() -> None:
     """Glued ``näinkuuluva`` must not collapse a subsection insert into a chapter insert.
 
@@ -1894,6 +1965,19 @@ def test_parse_clause_skips_glued_nainkuuluva_before_subsection_insert_targets()
         ("L", "4", "2", 3),
     ]
     for op in ops:
+        assert op.witness is not None
+        assert op.witness.rule_id == "fi.insertion_sub_target"
+
+
+def test_parse_clause_accepts_mathematical_minus_in_subsection_range() -> None:
+    """U+2212 minus is a source dash glyph, not an opaque word separator."""
+    ops = parse_clause(
+        "lisätään 3 §:ään, sellaisena kuin se on osaksi asetuksessa 225/2015, "
+        "uusi 8−10 momentti ja asetukseen uusi 5 a § seuraavasti:"
+    ).parsed_ops
+
+    assert [op.code() for op in ops] == ["L P 3 8", "L P 3 9", "L P 3 10", "L P 5a"]
+    for op in ops[:3]:
         assert op.witness is not None
         assert op.witness.rule_id == "fi.insertion_sub_target"
 

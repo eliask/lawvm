@@ -97,15 +97,14 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
         }
 
     def fake_replay_xml(
-        sid: str,
-        mode: str = "legal_pit",
         *,
-        quiet: bool,
-        replay_meta_out: dict[str, object],
+        request: SimpleNamespace,
+        sinks: SimpleNamespace | None = None,
     ) -> SimpleNamespace:
-        assert sid == "1994/1472"
-        assert mode == "legal_pit"
-        assert quiet is True
+        assert request.parent_id == "1994/1472"
+        assert request.mode == "legal_pit"
+        assert request.quiet is True
+        replay_meta_out = sinks.replay_meta_out if sinks is not None else {}
         replay_meta_out["invariant_violations"] = [
             "body/section:1: duplicate section:5a (2 times)",
         ]
@@ -160,6 +159,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "inferred_phase": "replay_fold",
             "phase_scope": "replay_fold_only",
             "detector_family": "pre_dedup_duplicate_label",
+            "actionability": "benign",
         },
         {
             "statute_id": "1994/1472",
@@ -177,7 +177,8 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "oracle_suspect": "",
             "inferred_phase": "replay_fold",
             "phase_scope": "replay_fold_only",
-            "detector_family": "duplicate_label",
+            "detector_family": "pre_dedup_duplicate_label",
+            "actionability": "benign",
         },
         {
             "statute_id": "1994/1472",
@@ -196,6 +197,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "inferred_phase": "materialized",
             "phase_scope": "materialized_only",
             "detector_family": "sort_order",
+            "actionability": "fixable",
         },
     ]
 
@@ -215,12 +217,11 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
         return {"amendment_chain": [], "oracle_suspect": ""}
 
     def fake_replay_xml(
-        sid: str,
-        mode: str = "legal_pit",
         *,
-        quiet: bool,
-        replay_meta_out: dict[str, object],
+        request: SimpleNamespace,
+        sinks: SimpleNamespace | None = None,
     ) -> SimpleNamespace:
+        replay_meta_out = sinks.replay_meta_out if sinks is not None else {}
         replay_meta_out["typed_invariant_violations"] = [
             {
                 "kind": "unexpected_child_kind",
@@ -292,11 +293,9 @@ def test_audit_invariants_error_row_marks_status_error(monkeypatch) -> None:
         return {"amendment_chain": [], "oracle_suspect": ""}
 
     def fake_replay_xml(
-        sid: str,
-        mode: str = "legal_pit",
         *,
-        quiet: bool,
-        replay_meta_out: dict[str, object],
+        request: SimpleNamespace,
+        sinks: SimpleNamespace | None = None,
     ) -> SimpleNamespace:
         raise RuntimeError("boom")
 

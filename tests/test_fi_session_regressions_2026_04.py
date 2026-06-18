@@ -1768,6 +1768,48 @@ def test_1991_1208_1993_994_regional_table_section_14_op_is_preserved() -> None:
     assert targets == ["13", "14", "15"]
 
 
+def test_1868_31_000_1993_1027_section_83_gets_intro_and_item_c() -> None:
+    """Letter-list moments must accept johd prepend plus missing item append."""
+
+    from lawvm.core.ir_helpers import irnode_to_text
+
+    replay = pinned_replay(
+        "1868/31-000",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    text = irnode_to_text(replay.state.find_section("83"))
+
+    assert "Tuomioistuin voi muuttaa tai kumota konkurssipesää koskevan velkojien päätöksen vain" in text
+    assert "c) jos päätös on 59, 71, 71 a, 71 b, 72 tai 73 §:n vastainen." in text
+
+
+def test_1991_1208_1992_1009_partial_province_table_merge_keeps_unclaimed_provinces() -> None:
+    """Sparse province payloads must merge into the live table instead of truncating it."""
+
+    from lawvm.core.ir_helpers import irnode_to_text
+
+    replay = pinned_replay(
+        "1991/1208",
+        mode="official_consolidation",
+        quiet=True,
+        stop_before="1993/994",
+        build_full_products=False,
+    )
+    sec13 = replay.state.find_section("13")
+    text = irnode_to_text(sec13)
+
+    for province in (
+        "Uudenmaan lääni",
+        "Turun ja Porin lääni",
+        "Hämeen lääni",
+        "Kymen lääni",
+        "Lapin lääni",
+    ):
+        assert province in text
+
+
 def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_chapters() -> None:
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections

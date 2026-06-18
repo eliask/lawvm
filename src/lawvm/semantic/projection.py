@@ -285,7 +285,10 @@ def _serialize_ir_semantic_text(node: Any) -> str:
     if kind in {"heading", "intro", "wrapUp"}:
         return _normalize_text(irnode_to_text(node))
     parts: list[str] = []
-    for child in node.children:
+    children = list(node.children)
+    for idx, child in enumerate(children):
+        if _ir_trailing_wrapup_child(child, idx, children):
+            continue
         child_kind = _ir_child_kind(child)
         if child_kind == "table":
             text = _serialize_ir_table_text(child)
@@ -296,6 +299,11 @@ def _serialize_ir_semantic_text(node: Any) -> str:
             if text:
                 parts.append(text)
     if not parts:
+        if any(
+            _ir_child_kind(child) in {"heading", "intro", "paragraph", "item", "subparagraph", "wrapUp"}
+            for child in node.children
+        ):
+            return ""
         text = _normalize_text(getattr(node, "text", ""))
         if text:
             parts.append(text)
@@ -645,9 +653,12 @@ def _serialize_ir_semantic_text_excluding_intro(node: Any, intro_child: Any) -> 
     if kind in {"heading", "intro", "wrapUp"}:
         return _normalize_text(irnode_to_text(node))
     parts: list[str] = []
-    for child in node.children:
+    children = list(node.children)
+    for idx, child in enumerate(children):
         if child is intro_child:
             continue  # already captured as intro facet
+        if _ir_trailing_wrapup_child(child, idx, children):
+            continue
         child_kind = _ir_child_kind(child)
         if child_kind == "table":
             text = _serialize_ir_table_text(child)

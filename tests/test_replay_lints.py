@@ -83,6 +83,33 @@ def test_build_flattened_sublist_findings_replay_fold_phase() -> None:
     assert findings[0].detail["kind"] == "flattened_sublist_interleaved"
 
 
+def test_build_flattened_sublist_findings_detects_mixed_alpha_digit_family() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="78",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("a", "b", "c", "1", "2", "3")
+                ),
+            ),
+        ),
+    )
+
+    findings = build_flattened_sublist_findings(
+        body,
+        phase="replay_fold",
+        source_statute="2004/301",
+    )
+
+    assert len(findings) == 1
+    assert findings[0].kind == "flattened_sublist_family_warning"
+    assert findings[0].detail["kind"] == "flattened_sublist_mixed_family"
+    assert findings[0].detail["families"] == ("alpha", "digit")
+
+
 def test_build_label_sequence_gap_findings_replay_fold_phase() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,

@@ -75,6 +75,9 @@ class SectionEvidenceContext:
     # --- From section_invariant_violations (C3) ---
     invariant_violations: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Apply-phase same-source shadow paths (REPLAY.TRANSITION_DETECTOR witnesses).
+    apply_phase_shadow_paths: frozenset[str] = field(default_factory=frozenset)
+
     # --- Oracle / replay match lookups ---
     alternative_replay_match: Optional[AlternativeReplayMatch] = None
     oracle_range_match: Optional[OracleRangeMatch] = None
@@ -290,6 +293,7 @@ def build_section_contexts(
     section_strict_verdicts: Optional[Dict[str, SectionStrictVerdict]] = None,
     section_invariant_violations: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     chain_completeness_by_section: Optional[Dict[str, ChainCompletenessStatus]] = None,
+    apply_phase_shadow_paths: frozenset[str] | None = None,
 ) -> Dict[str, SectionEvidenceContext]:
     """Build per-section evidence contexts from raw inputs.
 
@@ -366,6 +370,7 @@ def build_section_contexts(
             strict_verdict=ssv,
             strict_payload_confidence=payload_confidence,
             invariant_violations=inv_violations,
+            apply_phase_shadow_paths=apply_phase_shadow_paths or frozenset(),
             alternative_replay_match=cast(AlternativeReplayMatch | None, alt_match if alt_match else None),
             oracle_range_match=cast(OracleRangeMatch | None, range_match if range_match else None),
             cross_chapter_oracle_match=cast(CrossChapterOracleMatch | None, cc_match if cc_match else None),

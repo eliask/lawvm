@@ -23,6 +23,7 @@ from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.tools.explain import (
+    _blame_title_snippet,
     _diagnose,
     _explain_sync,
     _oracle_selector_from_args,
@@ -37,6 +38,11 @@ from lawvm.tools.explain import (
 # ---------------------------------------------------------------------------
 # Minimal stub types to avoid importing heavy grafter internals
 # ---------------------------------------------------------------------------
+
+
+def test_blame_title_snippet_accepts_nullable_metadata() -> None:
+    assert _blame_title_snippet({"source_title": None}) == ""
+    assert _blame_title_snippet({"source_title": "A" * 60}) == "A" * 50
 
 
 @dataclass

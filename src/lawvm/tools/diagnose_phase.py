@@ -29,8 +29,8 @@ Detectors:
   mixed_hierarchy          direct lower-level provisions alongside higher containers
   all_tree                 all check_invariants violations (covers both above)
   text_duplication         large duplicated text blocks (lint-level)
-  flattened_sublist_family repeated letter/roman/digit families suggesting nested
-                           sublists were merged into one flat list (lint-level)
+  flattened_sublist_family repeated or mixed letter/roman/digit families suggesting
+                           nested sublists were merged into one flat list (lint-level)
 
 Usage:
     lawvm diagnose-phase 1995/398 --source 2013/982

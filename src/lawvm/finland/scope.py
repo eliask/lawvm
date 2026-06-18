@@ -473,6 +473,37 @@ def _unique_section_chapter(
     return next(iter(chapters))
 
 
+def infer_letter_suffix_section_chapter_from_stem_host(
+    master: "ReplayState",
+    section_label: str,
+    *,
+    part_label: str | None = None,
+) -> str | None:
+    """Infer chapter scope for §Nα when only the bare stem §N still lives."""
+    section_norm = _norm_num_token(section_label)
+    if master.find_section_path(section_norm, None, part_label) is not None:
+        return None
+    stem_match = re.fullmatch(r"(\d+)([a-z])", section_norm, flags=re.I)
+    if stem_match is None:
+        return None
+    stem = stem_match.group(1)
+    stem_chapter = _unique_section_chapter(
+        master,
+        stem,
+        part_label=part_label,
+    )
+    if stem_chapter is None:
+        return None
+    if not _master_has_section_in_chapter(
+        master,
+        stem,
+        stem_chapter,
+        part_label=part_label,
+    ):
+        return None
+    return stem_chapter
+
+
 def _unique_base_section_chapter(
     master: "ReplayState",
     section_label: str,
@@ -949,6 +980,8 @@ def assign_chapter_scope_from_johtolause(
         section_label = str(pd["section"])
         section_norm = _norm_num_token(section_label)
         part_label = str(pd["part"]) if pd.get("part") else None
+        special = lo.target.special
+        facet = special.value if special is not None else None
         if (
             last_section_norm == section_norm
             and last_section_chapter
@@ -987,6 +1020,44 @@ def assign_chapter_scope_from_johtolause(
                 last_section_chapter = base_chapter
                 continue
 
+        if lo.action is not StructuralAction.INSERT:
+            exact_chapter = _unique_section_chapter(
+                master,
+                section_label,
+                part_label=part_label,
+            )
+            if (
+                exact_chapter is not None
+                and _master_has_section_in_chapter(
+                    master,
+                    section_label,
+                    exact_chapter,
+                    part_label=part_label,
+                )
+            ):
+                lo_new = _lo_with_path_update(lo, chapter=exact_chapter)
+                result[i] = lo_with_added_scope_tag(
+                    lo_new,
+                    "chapter_scope_from_unique_live_section",
+                )
+                last_section_norm = section_norm
+                last_section_chapter = exact_chapter
+                continue
+            stem_host_chapter = infer_letter_suffix_section_chapter_from_stem_host(
+                master,
+                section_label,
+                part_label=part_label,
+            )
+            if stem_host_chapter is not None:
+                lo_new = _lo_with_path_update(lo, chapter=stem_host_chapter)
+                result[i] = lo_with_added_scope_tag(
+                    lo_new,
+                    "chapter_scope_from_letter_suffix_stem_host",
+                )
+                last_section_norm = section_norm
+                last_section_chapter = stem_host_chapter
+                continue
+
         if not chunks:
             last_section_norm = None
             last_section_chapter = None
@@ -995,6 +1066,29 @@ def assign_chapter_scope_from_johtolause(
         for idx in range(cursor, len(chunks)):
             chapter_label, chunk = chunks[idx]
             if _chapter_chunk_mentions_lo(chunk, lo):
+                if lo.action is StructuralAction.INSERT and (
+                    pd.get("subsection")
+                    or pd.get("item")
+                    or pd.get("paragraph")
+                    or facet in {"intro", "heading"}
+                ):
+                    live_path = master.find_section_path(section_norm, None, part_label)
+                    live_chapter = (
+                        next((label for kind, label in live_path if kind == "chapter"), None)
+                        if live_path is not None
+                        else None
+                    )
+                    if (
+                        live_path is not None
+                        and live_chapter is None
+                        and section_norm not in duplicate_labels
+                        and not _johtolause_explicitly_mentions_chaptered_section_target(
+                            johto,
+                            chapter_label,
+                            section_label,
+                        )
+                    ):
+                        continue
                 if (
                     lo.action is not StructuralAction.INSERT
                     and not _master_has_section_in_chapter(

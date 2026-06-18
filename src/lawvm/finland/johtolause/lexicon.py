@@ -73,6 +73,10 @@ _v("muuttaa", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)
 _v("kumota", "kumota", "VERB", verb_code=SourceVerb.KUMOTA)  # also participle stem
 # Verbs — alternative passive forms (rare)
 _v("korvataan", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)  # synonym for muutetaan
+# Verbs — archaic necessive passive predicate in historical formulas:
+# "N § ... on muutettava näin kuuluviksi" names the same replace intent as
+# modern "muutetaan N § ... seuraavasti".
+_v("muutettava", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)
 # Verbs — active 3rd person singular (agency decisions)
 _v("lisää", "lisätä", "VERB", verb_code=SourceVerb.LISATA)  # "Verohallinto lisää..."
 _v("muuttaa", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)  # already registered but confirm
@@ -88,6 +92,10 @@ _v("§:ään", "§", "PYKALA", "ILL")
 _v("§:iin", "§", "PYKALA", "ILL")
 _v("§:aan", "§", "PYKALA", "ILL")
 _v("§:een", "§", "PYKALA", "ILL")
+# Source typo tolerance: 1994/495 prints "2 §:än" where the formula means
+# illative "2 §:ään". Keep the repair lexical so the normal insertion grammar
+# still owns the target and payload binding.
+_v("§:än", "§", "PYKALA", "ILL")
 _v("§.", "§", "PYKALA", "NOM")  # sentence-final
 _v("pykälä", "§", "PYKALA", "NOM")
 _v("pykälän", "§", "PYKALA", "GEN")
@@ -114,6 +122,10 @@ _v("osaan", "osa", "OSA", "ILL")
 
 # Subsection
 _v("momentti", "momentti", "MOMENTTI", "NOM")
+# Source typo tolerance: 1996/473 prints "momenttti" in a long replacement
+# list. Treat it as a subsection noun so the list continues instead of dropping
+# all following targets.
+_v("momenttti", "momentti", "MOMENTTI", "NOM")
 _v("momentin", "momentti", "MOMENTTI", "GEN")
 _v("momenttiin", "momentti", "MOMENTTI", "ILL")
 _v("momenttia", "momentti", "MOMENTTI", "NOM")  # partitive, treat as nom
@@ -206,6 +218,7 @@ _v("seuraavasti:", "seuraavasti", "END")  # with trailing colon
 _v("seuraava", "seuraavasti", "END")
 _v("kuuluvaksi", "seuraavasti", "END")  # archaic
 _v("kuuluviksi", "seuraavasti", "END")  # archaic
+_v("kuuluviksi:", "seuraavasti", "END")  # archaic with trailing colon
 
 # Document type (for insertion patterns)
 _v("lakiin", "laki", "DOC", "ILL")
@@ -287,7 +300,8 @@ _v("pykäliä", "§", "PYKALA", "NOM")  # plural partitive
 
 _CITE_RE = re.compile(r"\(\d+/+\d{2,4}\)")  # (YYYY/NNN) compact
 _YEAR_NUM_RE = re.compile(r"\d+/+\d{2,4}")  # YYYY/NNN bare
-_DASH_CLASS = r"[\-\u2010\u2011\u2012\u2013\u2014\u2015]"
+_DASH_CLASS = r"[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]"
+_DASH_ONLY_RE = re.compile(rf"^{_DASH_CLASS}+$")
 _RANGE_RE = re.compile(rf"^(\d+)\s*{_DASH_CLASS}\s*(\d+)$")  # 21\u201323
 _ROMAN_RE = re.compile(r"^[IVXLCDM]+$")
 _LETTER_RE = re.compile(r"^[a-z]$")
@@ -324,6 +338,6 @@ def _case_from_pykala_suffix(suffix: str) -> str:
         return "NOM"
     if suffix in (":n", ":in", ":en"):
         return "GEN"
-    if suffix in (":ään", ":iin", ":aan", ":een"):
+    if suffix in (":ään", ":iin", ":aan", ":een", ":än"):
         return "ILL"
     return "NOM"

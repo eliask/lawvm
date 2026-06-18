@@ -64,6 +64,7 @@ from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_leg
 from lawvm.finland.johtolause_supplements import (
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
+    _supplement_sparse_osalta_row_omission_repeals,
     _tag_explicit_item_shift_after_repeal_hints,
     _tag_named_table_row_single_clause_ops,
 )
@@ -98,6 +99,8 @@ from lawvm.finland.replay_findings import (
     _serialize_apply_mutation_event,
 )
 from lawvm.finland.replay_horizon import (
+    ReplayHorizonRequest,
+    choose_replay_horizon,
     oracle_version_future_repeal_only_uses_cutoff_date as _oracle_version_future_repeal_only_uses_cutoff_date,
 )
 from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
@@ -115,6 +118,7 @@ from lawvm.finland.scope import (
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
+    group_shadow_pruning_foreign_scoped_replace_section_targets as _group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
 )
@@ -364,6 +368,7 @@ def _compile_group(
     compiled_ops_out: list[dict[str, object]] | None,
     strict_profile: StrictProfile | None,
     foreign_scoped_standalone_section_targets: set[str] | None = None,
+    foreign_scoped_replace_section_targets: set[str] | None = None,
     precomputed_lookups: Any = None,
 ) -> PhaseResult[list[ResolvedOp]]:
     return _compile_group_typed(
@@ -382,6 +387,9 @@ def _compile_group(
             strict_profile=strict_profile,
             foreign_scoped_standalone_section_targets=set(
                 foreign_scoped_standalone_section_targets or ()
+            ),
+            foreign_scoped_replace_section_targets=set(
+                foreign_scoped_replace_section_targets or ()
             ),
             lookups=precomputed_lookups,
         ),
@@ -706,6 +714,31 @@ def test_find_muutos_ir_relabels_sparse_omission_subsection_from_intro_number() 
     assert got is not None
     subs = [c for c in got.children if c.kind is IRNodeKind.SUBSECTION]
     assert [c.label for c in subs] == ["3"]
+
+
+def test_find_muutos_ir_merges_real_unlabeled_adjacent_section_continuation() -> None:
+    corpus = get_corpus()
+    xml_bytes = corpus.read_source("1993/1472")
+    assert xml_bytes is not None
+    root = etree.fromstring(xml_bytes)
+
+    got, _ = _find_muutos_ir(root, "section", "5a")
+
+    assert got is not None
+    assert got.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION",
+    )
+    subsections = [child for child in got.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    text = irnode_to_text(got)
+    assert "Laskelma tulee laatia niin" in text
+    assert "jatkajan puolison tulot" in text
+    assert "Asiakirjat, joista laskelman keskeiset lähtötiedot ilmenevät" in text
+    assert "Laskelma tulee laatia niin" in irnode_to_text(subsections[1])
+    assert "jatkajan puolison tulot" in irnode_to_text(subsections[1])
+    assert "Asiakirjat, joista laskelman keskeiset lähtötiedot ilmenevät" in irnode_to_text(
+        subsections[2]
+    )
 
 
 def test_find_muutos_ir_relabels_nested_sparse_omission_subsection_from_intro_number() -> None:
@@ -4264,6 +4297,38 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_rep
     assert got == set()
 
 
+def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_foreign_replaces() -> None:
+    chapter_replace = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="chapter",
+        target_section="7",
+    )
+    foreign_replace_51 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="51",
+        target_chapter="8",
+        target_paragraph=1,
+    )
+    foreign_replace_61 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="61",
+        target_chapter="8",
+        target_paragraph=1,
+    )
+
+    got = _group_shadow_pruning_foreign_scoped_replace_section_targets(
+        [chapter_replace, foreign_replace_51, foreign_replace_61],
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_part=None,
+        duplicate_section_labels=frozenset(),
+    )
+
+    assert got == {"51", "61"}
+
+
 def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inserts() -> None:
     chapter_insert = AmendmentOp(
         op_type="INSERT",
@@ -6632,6 +6697,36 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     assert cutoff_date == dt.date(2025, 1, 1)
     assert [record["statute_id"] for record in records] == ["1991/806", "1993/872", "1994/1264", "2024/1049"]
     assert records[-1]["selection_basis"] == "oracle_editorial_repeal_stub_override"
+
+
+def test_oracle_ref_body_surface_excludes_amendment_history_metadata() -> None:
+    from lawvm.finland.corpus import _oracle_ref_is_body_surface
+
+    root = etree.fromstring(
+        """
+        <akomaNtoso>
+          <act>
+            <meta>
+              <proprietary>
+                <amendedBy>
+                  <statuteReference><ref href="/akn/fi/act/statute/2023/741">741/2023</ref></statuteReference>
+                </amendedBy>
+              </proprietary>
+            </meta>
+            <preface>
+              <block eId="note_1">
+                Ks. L <ref href="/akn/fi/act/statute/2024/1049">1049/2024</ref> voimaantulosäännös.
+              </block>
+            </preface>
+          </act>
+        </akomaNtoso>
+        """.encode()
+    )
+
+    refs = root.findall(".//ref")
+
+    assert not _oracle_ref_is_body_surface(refs[0])
+    assert _oracle_ref_is_body_surface(refs[1])
 
 
 def test_replay_xml_1986_506_applies_oracle_reflected_cross_statute_vts_repeal() -> None:
@@ -9026,6 +9121,54 @@ def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> No
     )
 
 
+def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_duplicate_labels() -> None:
+    """Same-wave restructure apply may leave transient duplicate labels before fold."""
+    from lawvm.core.invariant_profiles import (
+        collect_tree_invariant_violations,
+        structural_tree_all_profile,
+    )
+
+    corpus = get_corpus()
+    orig = corpus.read_source("2017/320")
+    if orig is None:
+        pytest.skip("corpus archive not available")
+
+    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
+    before = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        stop_before="2019/371",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2019/371",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+        )
+
+    profile = structural_tree_all_profile("process_muutoslaki.post_apply")
+    violations = collect_tree_invariant_violations(phase.output.ir, profile)
+    duplicate_violations = [
+        violation for violation in violations if "duplicate" in violation.message.lower()
+    ]
+    assert duplicate_violations == []
+
+    dedup_findings = [
+        finding
+        for finding in phase.findings()
+        if finding.kind == "APPLY.GLOBAL_LABEL_DEDUP_APPLIED"
+    ]
+    assert len(dedup_findings) == 1
+    assert dedup_findings[0].detail.get("phase") == "process_muutoslaki.post_apply"
+    assert dedup_findings[0].source_statute == "2019/371"
+
+
 def test_replay_xml_2017_320_2018_301_keeps_part_scoped_chapter_4_section_11() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
@@ -11136,6 +11279,27 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
     assert got[0].named_row_targets == ("iisalmen",)
 
 
+def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:
+    got, findings = _supplement_sparse_osalta_row_omission_repeals(
+        [],
+        (
+            "muutetaan valtion oikeusaputoimistojen ja niiden sivutoimistojen sijainnista "
+            "annetun oikeusministeriön päätöksen 1 §:ää Oulunseudun oikeusaputoimiston "
+            "Pudasjärven sivutoimiston osalta seuraavasti:"
+        ),
+        amendment_id="1999/77",
+    )
+
+    assert [(op.op_type, op.target_section, op.named_row_targets) for op in got] == [
+        ("REPEAL", "1", ("Pudasjärven",))
+    ]
+    assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
+    assert got[0].extraction_provenance_tags == ("sparse_osalta_row_omission_repeal",)
+    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"]
+    assert findings[0].detail["source_verb"] == "muutetaan"
+    assert findings[0].detail["lowered_action"] == "REPEAL"
+
+
 def test_tag_named_table_row_single_clause_ops_recovers_regional_table_sections() -> None:
     ops = [
         AmendmentOp(
@@ -13211,6 +13375,96 @@ def test_oracle_version_future_repeal_only_uses_cutoff_date_keeps_future_replace
     )
 
 
+def test_official_consolidation_horizon_uses_oracle_version_non_repeal_op_effective_date() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="snapshot_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "11"),)),
+            source=OperationSource(
+                statute_id="2024/538",
+                effective="2025-01-01",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2024, 9, 26),
+            amendment_records=[
+                {
+                    "statute_id": "2024/538",
+                    "included": True,
+                    "effective_date": dt.date(2024, 10, 1),
+                    "issue_date": dt.date(2024, 9, 26),
+                }
+            ],
+            oracle_version_amendment_id="2024/538",
+            compiled_ops=[
+                {
+                    "source_statute": "2024/538",
+                    "action": "replace",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=("2024/538",),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2025-01-01"
+    assert decision.expires_as_of == "2025-01-01"
+    assert decision.oracle_materialize_as_of == "2025-01-01"
+
+
+def test_official_consolidation_horizon_does_not_use_unreflected_non_repeal_op_effective_date() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="snapshot_section_14",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "14"),)),
+            source=OperationSource(
+                statute_id="2026/410",
+                effective="2026-10-01",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2026, 5, 28),
+            amendment_records=[
+                {
+                    "statute_id": "2026/410",
+                    "included": True,
+                    "effective_date": dt.date(2026, 5, 29),
+                    "issue_date": dt.date(2026, 5, 28),
+                }
+            ],
+            oracle_version_amendment_id="2026/410",
+            compiled_ops=[
+                {
+                    "source_statute": "2026/410",
+                    "action": "replace",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=(),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2026-05-29"
+    assert decision.expires_as_of == "2026-05-29"
+    assert decision.oracle_materialize_as_of == "2026-05-29"
+
+
 def test_extract_temporary_targets_infers_host_section_for_moment_only_scope() -> None:
     """Moment-only temporary clauses must inherit the explicit host section."""
     from lawvm.finland.frontend_compile import _extract_temporary_targets_from_johtolause
@@ -13373,6 +13627,35 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     assert group["ops_after_normalization"] == group["ops_raw"]
 
 
+def test_inspect_amendment_1992_147_1995_337_maps_historical_top_level_kohta_to_subsections() -> None:
+    """Historical top-level `kohta` wording can name direct subsection siblings.
+
+    `1995/337` says `4 §:n kohdan 24` and `uudet (29) ja (30) kohdat`, while
+    the live/source section models `(1)`, `(2)`, ... as direct subsection
+    siblings.  This must not compile as a destructive whole-section replace or
+    as items under subsection 1.
+    """
+    bundle = build_amendment_bundle("1992/147", "1995/337", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "4")
+
+    assert group["ops_raw"] == [
+        "REPLACE 4 § 24 mom",
+        "INSERT 4 § 29 mom",
+        "INSERT 4 § 30 mom",
+    ]
+    assert group["ops_after_normalization"] == group["ops_raw"]
+    assert group["ops_final"] == group["ops_raw"]
+    assert [
+        (row["op"], row["slot_label"], row["target_paragraph"])
+        for row in group["sparse_slot_bindings"]
+    ] == [
+        ("REPLACE 4 § 24 mom", "24", 24),
+        ("INSERT 4 § 29 mom", "29", 29),
+        ("INSERT 4 § 30 mom", "30", 30),
+    ]
+    assert group["elaboration_observations"] == []
+
+
 def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replaces_for_section_9() -> None:
     bundle = build_amendment_bundle("2005/579", "2014/751", mode="official_consolidation")
     group9 = next(
@@ -13468,6 +13751,89 @@ def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_
     )
 
 
+def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_payload() -> None:
+    """Heading-tagged body text may satisfy an explicit subsection replacement."""
+    bundle = build_amendment_bundle("1966/611", "1981/20", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "4")
+
+    assert group["ops_raw"] == ["REPLACE 4 § 1 mom"]
+    assert group["ops_final"] == ["REPLACE 4 § 1 mom"]
+    assert group["source_pathologies"] == []
+    assert group["sparse_slot_bindings"] == [
+        {
+            "op": "REPLACE 4 § 1 mom",
+            "target_paragraph": 1,
+            "target_item": "",
+            "target_special": "",
+            "slot_index": 1,
+            "slot_label": "1",
+        }
+    ]
+    assert group["subsection_map"][0]["mapped_payload"]["kind"] is IRNodeKind.SUBSECTION
+    assert group["subsection_map"][0]["mapped_payload"]["label"] == "1"
+    assert any(
+        observation["kind"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        and observation["detail"]["target_paragraph"] == 1
+        and observation["detail"]["rule"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsection_payload() -> None:
+    """A same-group heading-facet insert is not subsection body authority."""
+    bundle = build_amendment_bundle("1962/420", "2024/247", mode="official_consolidation")
+    group12 = next(
+        group
+        for group in bundle["groups"]
+        if group["target_norm"] == "12" and group["target_chapter"] == "3"
+    )
+
+    assert group12["ops_raw"] == [
+        "REPLACE 3 luku 12 § 1 mom",
+        "INSERT 3 luku 12 § otsikko",
+    ]
+    assert group12["sparse_slot_bindings"] == []
+    assert all(
+        observation["kind"] != "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group12["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_1993_81_1994_495_recovers_short_pykala_illative_typo() -> None:
+    """The source typo `§:än` must not drop an explicit subsection insertion."""
+    bundle = build_amendment_bundle("1993/81", "1994/495", mode="legal_pit")
+
+    assert bundle["compiled_ops"] == ["INSERT 2 § 5 mom"]
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "2")
+
+    assert group["ops_raw"] == ["INSERT 2 § 5 mom"]
+    assert group["ops_final"] == ["INSERT 2 § 5 mom"]
+    assert group["sparse_slot_bindings"] == [
+        {
+            "op": "INSERT 2 § 5 mom",
+            "target_paragraph": 5,
+            "target_item": "",
+            "target_special": "",
+            "slot_index": 1,
+            "slot_label": "5",
+        }
+    ]
+    mapped_payload = group["subsection_map"][0]["mapped_payload"]
+    assert mapped_payload["label"] == "5"
+    assert "Euroopan talousalueen valtioiden kansalaisten" in mapped_payload["text"]
+
+
+def test_inspect_amendment_1988_575_1995_407_applies_after_nojalla_authority_prefix() -> None:
+    """A leading authority citation must not hide the later target statute."""
+    bundle = build_amendment_bundle("1988/575", "1995/407", mode="legal_pit")
+
+    assert bundle["route"] == {"should_apply": True, "reason": "references_parent", "target_amendment_id": ""}
+    assert bundle["compiled_ops"] == ["INSERT 25a §"]
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "25a")
+    assert group["normalized_payload"]["kind"] is IRNodeKind.SECTION
+    assert "Telekuuntelusta, televalvonnasta ja teknisestä tarkkailusta" in group["normalized_payload"]["text"]
+
+
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
     bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 
@@ -13510,6 +13876,167 @@ def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber
     assert lo_ops[0].target == LegalAddress(path=(("section", "73"),))
     assert lo_ops[0].destination == LegalAddress(path=(("chapter", "7"), ("section", "61")))
     assert lo_ops[0].witness_rule_id == FI_RESTRUCTURE_RENUMBER_TIMELINE_RULE_ID
+
+
+def test_emit_restructure_plan_section_snapshot_uses_live_applied_path() -> None:
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID,
+        emit_restructure_plan_section_snapshot_legal_operations,
+    )
+
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="209",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="209 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Renumbered section"),
+        ),
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="V osa"),
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="4",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                            section,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:4/chapter:4/section:1",
+                destination="part:4/chapter:4/section:209",
+                notes=("from_amendment_op",),
+            ),
+            success=True,
+            applied_path=(("part", "5"), ("chapter", "4"), ("section", "209")),
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+    emitted = emit_restructure_plan_section_snapshot_legal_operations(
+        lo_ops_out=lo_ops,
+        state_ir=body,
+        executed_ops=executed,
+        amendment_id="2019/371",
+        source_title="Test relabel snapshot",
+        amendment_issue_date=dt.date(2019, 12, 20),
+        amendment_effective_date=dt.date(2020, 1, 1),
+    )
+
+    assert emitted == 1
+    assert lo_ops[0].action is StructuralAction.INSERT
+    assert lo_ops[0].target == LegalAddress(
+        path=(("part", "5"), ("chapter", "4"), ("section", "209"))
+    )
+    assert lo_ops[0].payload is not None
+    assert lo_ops[0].witness_rule_id == FI_RESTRUCTURE_RELABEL_SECTION_SNAPSHOT_RULE_ID
+
+
+def test_emit_restructure_plan_section_snapshot_resolves_post_part_relabel_live_path() -> None:
+    """Snapshot emission must follow the final live tree, not relabel-time part frames."""
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        emit_restructure_plan_section_snapshot_legal_operations,
+    )
+
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="209",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="209 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Renumbered section"),
+        ),
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="5",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="V osa"),
+                            IRNode(
+                                kind=IRNodeKind.CHAPTER,
+                                label="4",
+                                children=(
+                                    IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                                    section,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:4/chapter:4/section:1",
+                destination="section:209",
+                notes=("from_amendment_op",),
+            ),
+            success=True,
+            applied_path=(("part", "4"), ("chapter", "4"), ("section", "209")),
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+    emitted = emit_restructure_plan_section_snapshot_legal_operations(
+        lo_ops_out=lo_ops,
+        state_ir=body,
+        executed_ops=executed,
+        amendment_id="2019/371",
+        source_title="Test post-part relabel snapshot",
+        amendment_issue_date=dt.date(2019, 12, 20),
+        amendment_effective_date=dt.date(2020, 1, 1),
+    )
+
+    assert emitted == 1
+    assert lo_ops[0].target == LegalAddress(
+        path=(("part", "5"), ("chapter", "4"), ("section", "209"))
+    )
+
+
+def test_chapter_part_move_label_reuse_guard_finding_stamps_guard_rule_id() -> None:
+    from lawvm.finland.restructure_plan_replay import (
+        CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON,
+        FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID,
+        chapter_part_move_label_reuse_guard_finding,
+    )
+
+    finding = chapter_part_move_label_reuse_guard_finding(
+        source_statute="2001/1226",
+        chapter_label="4",
+        old_part_label="2",
+        new_part_label="5",
+    )
+
+    assert finding.kind == "APPLY.MOVE_SKIP"
+    assert finding.detail["reason_code"] == CHAPTER_PART_MOVE_LABEL_REUSE_SKIP_REASON
+    assert (
+        finding.detail["witness_rule_id"]
+        == FI_RESTRUCTURE_CHAPTER_PART_MOVE_LABEL_REUSE_GUARD_RULE_ID
+    )
 
 
 def test_build_chapter_part_move_timeline_ops_stamps_stable_witness_rule_id() -> None:

@@ -34,6 +34,8 @@ from lawvm.tools.oracle_check import (
     _corpus_selection_detail,
     _diagnose,
     _diagnose_oracle_repeal_stub,
+    _recodification_blame_frame_diagnosis,
+    _source_pathology_diagnosis_for_blame,
     _attachment_body_text_ir,
     _attachment_body_text_oracle,
     _el_text,
@@ -164,6 +166,59 @@ def test_classify_statute_1988_451_subsection_repeal_not_extra() -> None:
     row = next(item for item in result.section_results if item["section"] == "section:17")
     assert row["diagnosis"] != "REPLAY_EXTRA"
     assert row["diagnosis"] == "EDITORIAL_CONVENTION"
+
+
+def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source_incomplete() -> None:
+    master = SimpleNamespace(
+        source_pathology_rows=lambda: [
+            {
+                "code": "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+                "source_statute": "2019/371",
+                "target_label": "4 luku 210 §",
+                "detail": {
+                    "target_chapter": "4",
+                    "target_section": "210",
+                    "destination_target_norm": "210",
+                },
+            }
+        ],
+        findings=(),
+    )
+    diagnosis = _source_pathology_diagnosis_for_blame(
+        master,
+        {
+            "source_statute": "2019/371",
+            "target_norm": "210",
+            "target_chapter": "4",
+        },
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_source_pathology_diagnosis_maps_recodification_source_chain_gap_to_source_incomplete() -> None:
+    master = SimpleNamespace(
+        source_pathology_rows=lambda: [
+            {
+                "code": "RECODIFICATION_SOURCE_CHAIN_GAP",
+                "source_statute": "2019/371",
+                "target_label": "2 luku 7 §",
+                "detail": {
+                    "target_chapter": "2",
+                    "diagnostic_reason": "target_leaf_absent_under_existing_parent",
+                },
+            }
+        ],
+        findings=(),
+    )
+    diagnosis = _source_pathology_diagnosis_for_blame(
+        master,
+        {
+            "source_statute": "2019/371",
+            "target_norm": "7",
+            "target_chapter": "2",
+        },
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
 
 
 def test_diagnose_oracle_repeal_stub_source_limit_when_out_of_window() -> None:
@@ -1452,6 +1507,256 @@ def test_blame_map_prefers_unique_matching_chapter_over_unscoped_section() -> No
 
     assert blame_op["source_statute"] == "1968/493"
     assert blame_op["witness_rule_id"] == "fi_body_chapter_scope_from_source_body"
+
+
+def test_blame_map_includes_restructure_snapshot_lo_ops() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_209_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:209",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+
+    blame_map = _build_blame_map(compiled_ops, lo_ops=lo_ops)
+    blame_op = _lookup_blame_op(blame_map, "part:5/chapter:4/section:209")
+
+    assert blame_op["source_statute"] == "2019/371"
+    assert blame_op["witness_rule_id"] == "fi.restructure.relabel_section_snapshot"
+
+
+def test_blame_lookup_follows_restructure_renumber_migration_lineage() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_210_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:210",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+    migration_events = (
+        SimpleNamespace(
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            to_address=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            source_statute="2020/1256",
+        ),
+    )
+
+    blame_map = _build_blame_map(compiled_ops, lo_ops=lo_ops)
+    blame_op = _lookup_blame_op(
+        blame_map,
+        "part:5/chapter:25/section:210",
+        migration_events=migration_events,
+    )
+
+    assert blame_op["source_statute"] == "2019/371"
+    assert blame_op["witness_rule_id"] == "fi.restructure.relabel_section_snapshot"
+
+
+def test_fi_ledger_inputs_attributes_restructure_blame_via_migration_lineage(
+    monkeypatch,
+) -> None:
+    from lawvm.tools.spec_ledger import fi_ledger_inputs
+
+    lo_ops = [
+        SimpleNamespace(
+            op_id="snapshot_section_209_restructure_2019/371",
+            sequence=0,
+            action=SimpleNamespace(value="insert"),
+            target="part:5/chapter:4/section:209",
+            source=SimpleNamespace(
+                statute_id="2019/371",
+                title="Laki liikenteen palveluista annetun lain muuttamisesta",
+            ),
+            witness_rule_id="fi.restructure.relabel_section_snapshot",
+        )
+    ]
+    migration_events = (
+        SimpleNamespace(
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "5"), ("chapter", "4"))),
+            to_address=LegalAddress(path=(("part", "5"), ("chapter", "25"))),
+            source_statute="2020/1256",
+        ),
+    )
+    fake_result = ClassifyResult(
+        sid="2017/320",
+        section_results=[
+            {
+                "section": "part:5/chapter:25/section:209",
+                "diagnosis": "SOURCE_INCOMPLETE",
+                "blame_source": "2019/371",
+            }
+        ],
+        compiled_ops=[],
+        lo_ops=lo_ops,
+        replay_result=SimpleNamespace(migration_events=migration_events),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.oracle_check._classify_statute_sync",
+        lambda _sid, _mode: fake_result,
+    )
+
+    inputs = list(fi_ledger_inputs(["2017/320"], "official_consolidation"))
+
+    assert len(inputs) == 1
+    assert len(inputs[0].divergences) == 1
+    row = inputs[0].divergences[0]
+    assert row.rule_id == "fi.restructure.relabel_section_snapshot"
+    assert row.blame_source == "2019/371"
+    assert row.diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_classify_statute_2017_320_recodification_omission_shell_at_chapter_25_is_source_incomplete() -> None:
+    """2019/371 relabel snapshots for §209-210 omit operative bodies; 2020/1256 renumbers ch.4→ch.25."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:5/chapter:25/section:209",
+        "part:5/chapter:25/section:210",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
+
+
+def test_recodification_blame_frame_diagnosis_maps_relabel_snapshot_frame_mismatch() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.restructure.relabel_section_snapshot",
+            "target_unit_kind": "section",
+            "target_norm": "13",
+            "target_chapter": "1",
+            "target_part": "2",
+            "source_statute": "2019/371",
+        },
+        "part:2/chapter:2/section:13",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_section_renumber_frame_mismatch() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "9",
+            "target_chapter": "3",
+            "target_part": "3",
+            "source_statute": "2019/371",
+        },
+        "part:4/chapter:3/section:9",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_structural_extra_renumber_shell() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "1",
+            "target_chapter": "4",
+            "target_part": "4",
+            "source_statute": "2019/371",
+        },
+        "part:4/chapter:4/section:1",
+        replay_text="1 § Example heading\nBody text retained by replay.",
+        oracle_text="",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_section_renumber_heading_swap() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "5",
+            "target_chapter": "2",
+            "target_part": "2",
+            "source_statute": "2019/371",
+        },
+        "part:2/chapter:2/section:5",
+        replay_text="5 § Liikenteestä vastaava henkilö Taksi- ja henkilöliikenneluvan haltijalla on oltava",
+        oracle_text="5 §                             Henkilö- ja tavaraliikenneluvan myöntäminen",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_classify_statute_2017_320_recodification_frame_wave_is_source_incomplete() -> None:
+    """2019/371 relabel snapshots compare at pre-migration frames; ch.2/ch.4 waves are source limits."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:2/chapter:2/section:4",
+        "part:2/chapter:2/section:5",
+        "part:2/chapter:2/section:6",
+        "part:2/chapter:2/section:9",
+        "part:2/chapter:2/section:11",
+        "part:2/chapter:2/section:13",
+        "part:2/chapter:2/section:14",
+        "part:2/chapter:2/section:16",
+        "part:2/chapter:3/section:22",
+        "part:2/chapter:4/section:25",
+        "part:2/chapter:4/section:27",
+        "part:2/chapter:4/section:30",
+        "part:2/chapter:4/section:31",
+        "part:2/chapter:4/section:36",
+        "part:5/chapter:25/section:211",
+        "part:6/chapter:28/section:230",
+        "part:7/chapter:31/section:247",
+        "part:7/chapter:32/section:264",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
+
+
+def test_classify_statute_2017_320_recodification_extra_shells_are_source_incomplete() -> None:
+    """2019/371 renumber shells present only in replay must not stay bare EXTRA."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:2/chapter:14/section:4",
+        "part:4/chapter:3/section:9",
+        "part:4/chapter:4/section:1",
+        "part:5/chapter:1/section:1",
+        "part:7/chapter:2/section:2",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
+
+    extra_blamed_2019_371 = [
+        item
+        for item in result.section_results
+        if item["diagnosis"] == "EXTRA" and item.get("blame_source") == "2019/371"
+    ]
+    assert extra_blamed_2019_371 == []
 
 
 def test_blame_map_keeps_ambiguous_section_suffix_unattributed() -> None:
@@ -2750,6 +3055,35 @@ def test_is_presentation_structural_diff_geo_list_with_mlk_and_group_labels() ->
         {"kind": "unit_missing_right", "left_text": "Loimaan kunta", "right_text": None},
         {"kind": "wording_text_changed", "left_text": None, "right_text": "1. Rannikon metsäkeskus"},
         {"kind": "unit_missing_right", "left_text": "Dragsfjärd", "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
+def test_is_presentation_structural_diff_office_schedule_grouped_vs_split_rows() -> None:
+    # 1998/132 style: LawVM preserves individual office rows while Finlex groups
+    # them under hovioikeuspiiri rows. The text stream is the same schedule; the
+    # structural mismatch is presentation, not replay authority.
+    sd = {"label": ""}
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Turun hovioikeuspiiri",
+            "right_text": (
+                "Turun hovioikeuspiiri Ahvenanmaa (Maarianhaminassa) Forssa "
+                "Hämeenlinna Kankaanpää Ikaalinen (st) Kokemäki Loimaa"
+            ),
+        },
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Forssa",
+            "right_text": (
+                "Itä-Suomen hovioikeuspiiri Iisalmi Joensuu Joensuunseutu "
+                "(Joensuussa) Ilomantsi (st) Kitee Kajaani"
+            ),
+        },
+        {"kind": "unit_missing_right", "left_text": "Loimaa", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Tampereenseutu (Tampereella)", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Kannus (st)", "right_text": None},
     ]
     assert is_presentation_structural_diff(sd, events) is True
 

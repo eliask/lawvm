@@ -756,6 +756,42 @@ def test_merge_section_targeted_replace_with_trailing_omission_preserves_all_mas
     assert irnode_to_text(result_subsecs[2]).strip() == "old 3 plain"
 
 
+def test_merge_section_with_johto_moment_target_replaces_tail_not_second_slot() -> None:
+    """Single omission subsection must bind to johto-named moment, not slot 2.
+
+    Regression for 2004/301 <- 2023/389 §74: johtolause names ``74 §:n 4
+    momentti`` while the body carries omission + one applicability clause.
+    Without paragraph-scoped merge guidance the payload overwrote moment 2 and
+    left stale moment 4 applicability text live beside the new clause.
+    """
+    master_sec = _sec(
+        "74",
+        _sub("1", _content("main body")),
+        _sub("2", _content("duration rule")),
+        _sub("3", _content("toimeentulo")),
+        _sub("4", _content("Oleskeluluvan myöntämiseen ei sovelleta 72, 72 a ja 72 b §:ää.")),
+    )
+    amend_sec = _sec(
+        "74",
+        _omission(),
+        _sub("1", _content("Oleskeluluvan myöntämiseen ei sovelleta 72 ja 72 b §:ää.")),
+    )
+
+    result = _merge_section_with_omission_ir(
+        master_sec,
+        amend_sec,
+        group_ops=[_op("REPLACE", target_section="74", target_paragraph=4)],
+    )
+
+    assert result is not None
+    result_subsecs = [c for c in result.children if c.kind is IRNodeKind.SUBSECTION]
+    assert [c.label for c in result_subsecs] == ["1", "2", "3", "4"]
+    assert irnode_to_text(result_subsecs[1]).strip() == "duration rule"
+    assert irnode_to_text(result_subsecs[3]).strip() == (
+        "Oleskeluluvan myöntämiseen ei sovelleta 72 ja 72 b §:ää."
+    )
+
+
 def test_merge_section_targeted_replace_with_explicit_child_repeal_skips_repealed_slot() -> None:
     """Targeted omission merge must not preserve a master slot explicitly repealed in the same group.
 

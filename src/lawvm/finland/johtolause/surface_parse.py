@@ -93,6 +93,43 @@ def _skip_archaic_nain_kuuluva(s: Stream) -> None:
         s.pos += 1
 
 
+def _skip_reinstatement_preamble_to_uusi(s: Stream) -> bool:
+    """Skip a bounded reinstatement preamble before ``uusi``.
+
+    Historical sources sometimes put a descriptive provenance phrase between a
+    chapter destination and the actual insertion payload:
+
+      ``9 lukuun määräajasta ... kumotun 12 §:n sijaan uusi 12 §``
+
+    The phrase is safe to skip only when it contains a genitive structural
+    target followed by ``tilalle``/``sijaan`` (or equivalent reinstatement
+    sentinel) before the next ``uusi`` and no verb/end boundary intervenes.
+    """
+    saved = s.save()
+    i = s.pos
+    saw_genitive_target = False
+    saw_reinstatement = False
+    while i < len(s.tokens):
+        tok = s.tokens[i]
+        if tok.cat in {"VERB", "END", "END_SENTINEL_SPAN"}:
+            break
+        if tok.cat == "UUSI":
+            if saw_genitive_target and saw_reinstatement:
+                s.pos = i
+                return True
+            break
+        if tok.cat == "PYKALA" and tok.case == "GEN":
+            saw_genitive_target = True
+        if tok.cat == "REINST_SPAN":
+            saw_genitive_target = True
+            saw_reinstatement = True
+        if saw_genitive_target and tok.cat in _TILALLE_OR_REINST:
+            saw_reinstatement = True
+        i += 1
+    s.restore(saved)
+    return False
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # LAYER 2: Provenance span helper (shared with scan.py annotation layer)
 # ═══════════════════════════════════════════════════════════════════════
@@ -2736,6 +2773,7 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
             )
             if not _heading_placement(s):
                 _heading_placement_luku(s)
+            _skip_reinstatement_preamble_to_uusi(s)
             if _uusi(s):
                 _skip_archaic_nain_kuuluva(s)
                 ins_nums = _number_list(s)
@@ -2961,6 +2999,7 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                 s.pos += 1  # consume LUKU:ILL
                 if (tc := s.peek()) and tc.cat == "COMMA":
                     s.pos += 1
+                _skip_reinstatement_preamble_to_uusi(s)
                 if _uusi(s):
                     _skip_archaic_nain_kuuluva(s)
                     pc_nums = _number_list(s)

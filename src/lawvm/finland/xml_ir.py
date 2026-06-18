@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, cast
 import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
-from lawvm.core.ir_helpers import kind_for_tag as _kind_for_tag
+from lawvm.core.ir_helpers import irnode_to_text, kind_for_tag as _kind_for_tag
 from lawvm.xml_ingest import (
     _POSITIONAL_LABEL_KINDS,
     _STRUCTURAL_TAGS,
@@ -55,6 +55,7 @@ from lawvm.finland.profile.normalize import (
 
 
 _HEADER_TOKENS = ("käräjäoikeus", "kanslia", "istunnot")
+_FI_EMPTY_NUMBERED_SECTION_SHELL_MERGE_RULE = "fi_empty_numbered_section_shell_merge_v1"
 
 
 # _paragraph_has_introducer_signal is imported from lawvm.finland.profile.normalize above.
@@ -246,6 +247,44 @@ def _fi_split_subsection_at_numbered_list_restart(children: List[IRNode]) -> Lis
 def _hoist_inline_content_omissions(children: List[IRNode]) -> List[IRNode]:
     return _apply_hoist_inline_content_omissions(children)
 
+
+def _is_empty_numbered_section_shell(section: IRNode) -> bool:
+    if section.kind is not IRNodeKind.SECTION or section.label is None:
+        return False
+    return all(child.kind is IRNodeKind.NUM for child in section.children)
+
+
+def _is_unlabeled_heading_section(section: IRNode) -> bool:
+    if section.kind is not IRNodeKind.SECTION or section.label is not None:
+        return False
+    return any(child.kind is IRNodeKind.HEADING and irnode_to_text(child).strip() for child in section.children)
+
+
+def _merge_unlabeled_heading_sections_into_empty_numbered_shells(children: List[IRNode]) -> List[IRNode]:
+    """Merge Finlex split section shells with their following unlabeled body.
+
+    Some source XML encodes a numbered section as ``<section><num>11 §</num></section>``
+    followed by a sibling section that contains the heading and substantive
+    content but no ``num``.  The empty numbered shell authorizes the legal
+    identity; the following unlabeled section supplies the body.
+    """
+    merged: List[IRNode] = []
+    for child in children:
+        if merged and _is_empty_numbered_section_shell(merged[-1]) and _is_unlabeled_heading_section(child):
+            prev = merged[-1]
+            attrs = dict(prev.attrs)
+            attrs["lawvm_source_normalization_rule"] = _FI_EMPTY_NUMBERED_SECTION_SHELL_MERGE_RULE
+            merged[-1] = IRNode(
+                kind=prev.kind,
+                label=prev.label,
+                text=prev.text,
+                attrs=attrs,
+                children=prev.children + child.children,
+            )
+            continue
+        merged.append(child)
+    return merged
+
 def fi_xml_to_ir_node(
     el: etree._Element,
     label_postprocessor=None,
@@ -363,6 +402,7 @@ def fi_xml_to_ir_node(
         if tag in (IRNodeKind.BODY, IRNodeKind.CHAPTER, IRNodeKind.PART, IRNodeKind.HCONTAINER):
             children = _absorb_orphaned_subsections_into_preceding_section(children)
             children = _apply_fi_split_embedded_section_restarts(children)
+            children = _merge_unlabeled_heading_sections_into_empty_numbered_shells(children)
         if tag == IRNodeKind.SECTION:
             children = apply_section_rules(children)
         if tag == IRNodeKind.SUBSECTION:

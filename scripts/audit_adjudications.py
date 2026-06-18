@@ -17,132 +17,37 @@ import argparse
 import csv
 import sys
 import time
-import warnings
 from collections import Counter, defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import NamedTuple
 
 LAWVM_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(LAWVM_DIR / "src"))
+
+from lawvm.tools.audit_channels import adjudications_channel_spec, run_audit_channel  # noqa: E402
+from lawvm.tools.fi_adjudication_audit import (  # noqa: E402
+    AdjRow,
+    FailureRow,
+    WorkerResult,
+    compile_one_statute,
+    compile_one_statute as _compile_one,
+)
+
+__all__ = ["AdjRow", "FailureRow", "WorkerResult", "_compile_one", "compile_one_statute"]
 
 DEFAULT_CORPUS = str(LAWVM_DIR / ".tmp" / "diff_triage_corpus.txt")
 DEFAULT_OUTPUT = str(LAWVM_DIR / ".tmp" / "adjudication_audit.csv")
 
 
-# ---------------------------------------------------------------------------
-# Worker (runs in subprocess via ProcessPoolExecutor)
-# ---------------------------------------------------------------------------
-
-class AdjRow(NamedTuple):
-    statute_id: str
-    adj_kind: str
-    message: str
-    source_statute: str
-
-
-class FailureRow(NamedTuple):
-    statute_id: str
-    failure_kind: str
-    description: str
-    source_statute: str
-
-
-class WorkerResult(NamedTuple):
-    sid: str
-    adj_rows: list[AdjRow]
-    failure_rows: list[FailureRow]
-    warning_count: int
-    error: str  # empty string means success
-
-
-def _compile_one(sid: str) -> WorkerResult:
-    """Compile one statute; return projected findings, blocking rows, warning count."""
-    try:
-        from lawvm.core.compile_views import projection_rows_from_findings
-        from lawvm.finland.compile import compile_fi_facade
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            facade = compile_fi_facade(sid, replay_mode="legal_pit", compile_mode="quirks")
-        projection_rows = projection_rows_from_findings(facade.finding_ledger)
-
-        adj_rows: list[AdjRow] = [
-            AdjRow(
-                statute_id=sid,
-                adj_kind=str(row.get("kind") or ""),
-                message=str(row.get("message") or ""),
-                source_statute=str(row.get("source") or ""),
-            )
-            for row in projection_rows
-        ]
-        failure_rows: list[FailureRow] = [
-            FailureRow(
-                statute_id=sid,
-                failure_kind=str(row.get("kind") or ""),
-                description=str(row.get("message") or ""),
-                source_statute=str(row.get("source") or ""),
-            )
-            for row in projection_rows
-            if bool(row.get("blocking"))
-            or str(row.get("role") or "") in {"obligation", "violation"}
-        ]
-        return WorkerResult(
-            sid=sid,
-            adj_rows=adj_rows,
-            failure_rows=failure_rows,
-            warning_count=len(caught),
-            error="",
-        )
-    except Exception as exc:
-        return WorkerResult(
-            sid=sid,
-            adj_rows=[],
-            failure_rows=[],
-            warning_count=0,
-            error=str(exc),
-        )
-
-
-# ---------------------------------------------------------------------------
-# Corpus loading
-# ---------------------------------------------------------------------------
-
 def _load_corpus(path: str) -> list[str]:
-    """Load statute IDs from corpus file. Each line is like '1896/37-000'."""
-    ids: list[str] = []
-    with open(path) as f:
-        for raw in f:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            ids.append(line)
-    return ids
+    from lawvm.tools.corpus_io import load_statute_ids, resolve_line_list_source
 
-
-def _normalize_id(raw_id: str) -> str:
-    """Strip -NNN amendment suffix so '1896/37-000' becomes '1896/37'."""
-    # The corpus contains lines like '1896/37-000' where '-000' is the
-    # amendment index.  compile_fi_facade wants just the parent id.
-    if "-" in raw_id:
-        # Only strip numeric suffixes, not hyphens inside the year/number
-        # corpus format: YEAR/NUMBER-AMENDIDX  e.g. 1896/37-000
-        parts = raw_id.rsplit("-", 1)
-        if parts[1].isdigit():
-            return parts[0]
-    return raw_id
+    return load_statute_ids(resolve_line_list_source(Path(path)))
 
 
 def _deduplicate_ids(raw_ids: list[str]) -> list[str]:
-    """Deduplicate by normalized parent id, preserving order."""
-    seen: set[str] = set()
-    result: list[str] = []
-    for rid in raw_ids:
-        nid = _normalize_id(rid)
-        if nid not in seen:
-            seen.add(nid)
-            result.append(nid)
-    return result
+    from lawvm.tools.corpus_io import deduplicate_parent_ids
+
+    return deduplicate_parent_ids(raw_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -295,62 +200,58 @@ def main() -> None:
         if write_header:
             writer.writeheader()
 
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_compile_one, sid): sid for sid in pending}
-            total_pending = len(futures)
+        def on_progress(done: int, total: int, _sid: str) -> None:
+            if done % 50 == 0 or done == total:
+                elapsed = time.monotonic() - t0
+                rate = done / elapsed if elapsed > 0 else 0
+                eta = (total - done) / rate if rate > 0 else 0
+                print(
+                    f"  {done}/{total}  "
+                    f"{elapsed:.0f}s elapsed  "
+                    f"{rate:.1f} sid/s  "
+                    f"ETA {eta:.0f}s",
+                    end="\r",
+                    flush=True,
+                )
 
-            for fut in as_completed(futures):
-                sid = futures[fut]
-                try:
-                    res: WorkerResult = fut.result()
-                except Exception as exc:
-                    errors[sid] = f"future error: {exc}"
-                    processed += 1
-                    continue
-
-                if res.error:
-                    errors[sid] = res.error
-
-                # Write projected finding rows
-                for row in res.adj_rows:
-                    writer.writerow({
-                        "statute_id": row.statute_id,
-                        "adj_kind": row.adj_kind,
-                        "message": row.message,
-                        "source_statute": row.source_statute,
-                    })
-                    adj_kind_counts[row.adj_kind] += 1
-                    statute_kind_key = (row.statute_id, row.adj_kind)
-                    statute_kind_counts[statute_kind_key] += 1
-                    if len(adj_samples[row.adj_kind]) < 5:
-                        adj_samples[row.adj_kind].append(sid)
-                    if len(statute_kind_samples[statute_kind_key]) < 5:
-                        statute_kind_samples[statute_kind_key].append(
-                            f"{row.message} [{row.source_statute}]"
-                        )
-
-                # Accumulate failure stats (not written to adj CSV)
-                for frow in res.failure_rows:
-                    failure_kind_counts[frow.failure_kind] += 1
-                    if len(failure_samples[frow.failure_kind]) < 5:
-                        failure_samples[frow.failure_kind].append(sid)
-
-                warning_total += res.warning_count
+        sweep = run_audit_channel(
+            adjudications_channel_spec(),
+            pending,
+            workers=workers,
+            on_progress=on_progress,
+        )
+        for sid, res in sweep.rows:
+            if not isinstance(res, WorkerResult):
+                errors[sid] = "invalid worker result"
                 processed += 1
+                continue
+            if res.error:
+                errors[sid] = res.error
 
-                # Progress indicator every 50 statutes
-                if processed % 50 == 0 or processed == total_pending:
-                    elapsed = time.monotonic() - t0
-                    rate = processed / elapsed if elapsed > 0 else 0
-                    eta = (total_pending - processed) / rate if rate > 0 else 0
-                    print(
-                        f"  {processed}/{total_pending}  "
-                        f"{elapsed:.0f}s elapsed  "
-                        f"{rate:.1f} sid/s  "
-                        f"ETA {eta:.0f}s",
-                        end="\r",
-                        flush=True,
+            for row in res.adj_rows:
+                writer.writerow({
+                    "statute_id": row.statute_id,
+                    "adj_kind": row.adj_kind,
+                    "message": row.message,
+                    "source_statute": row.source_statute,
+                })
+                adj_kind_counts[row.adj_kind] += 1
+                statute_kind_key = (row.statute_id, row.adj_kind)
+                statute_kind_counts[statute_kind_key] += 1
+                if len(adj_samples[row.adj_kind]) < 5:
+                    adj_samples[row.adj_kind].append(sid)
+                if len(statute_kind_samples[statute_kind_key]) < 5:
+                    statute_kind_samples[statute_kind_key].append(
+                        f"{row.message} [{row.source_statute}]"
                     )
+
+            for frow in res.failure_rows:
+                failure_kind_counts[frow.failure_kind] += 1
+                if len(failure_samples[frow.failure_kind]) < 5:
+                    failure_samples[frow.failure_kind].append(sid)
+
+            warning_total += res.warning_count
+            processed += 1
 
     print()  # newline after progress line
     total_compiled = len(ids) if args.resume else len(pending)

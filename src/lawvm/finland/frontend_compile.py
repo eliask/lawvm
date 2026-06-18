@@ -58,10 +58,13 @@ from lawvm.finland.johtolause_supplements import (
     _tag_explicit_item_shift_after_repeal_hints,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
+    _supplement_sparse_osalta_row_omission_repeals,
     _tag_named_table_row_single_clause_ops,
 )
 from lawvm.finland.scope import (
     _same_label_move_sections_for_chapter,
+    _unique_section_chapter,
+    infer_letter_suffix_section_chapter_from_stem_host,
     strip_unjustified_chapter_scope_from_unique_sections as _strip_unjustified_chapter_scope_from_unique_sections,
     assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause,
     assign_scope_from_renumber_destinations as _assign_scope_from_renumber_destinations,
@@ -98,6 +101,14 @@ logger = logging.getLogger(__name__)
 # witness; this id makes the lane visible to the spec ledger.  Diagnostic-only
 # metadata with zero replay semantics.
 FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID = "fi.fallback_extraction_recovery"
+FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = (
+    "fi.historical_top_level_kohta_as_subsection"
+)
+_PARENTHESIZED_LEADING_LABEL_RE = re.compile(r"^\s*\((\d+(?:\s*[a-z])?)\)")
+_POSTPOSED_KOHTA_LABELS_RE = re.compile(
+    r"\bkohd(?:an|at|ien)\s+([0-9a-zA-Z\s,–—\-]+)",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # _tree_title — tiny lxml helper, lives here because it was first introduced
@@ -305,6 +316,195 @@ def _reject_overbroad_section_repeals_for_deep_targets(
             continue
         kept.append(op)
     return kept, findings
+
+
+def _parenthesized_payload_labels_for_section(
+    muutos_tree: "etree._Element",
+    *,
+    section_label: str,
+) -> set[str]:
+    labels: set[str] = set()
+    target = _norm_num_token(section_label)
+    for section in muutos_tree.findall(".//{*}section"):
+        if _section_num_label(section) != target:
+            continue
+        for paragraph in section.findall(".//{*}p"):
+            text = etree.tostring(paragraph, method="text", encoding="unicode").strip()
+            match = _PARENTHESIZED_LEADING_LABEL_RE.match(text)
+            if match is not None:
+                labels.add(_norm_num_token(match.group(1)))
+    return labels
+
+
+def _live_direct_subsection_labels(master: "ReplayState | None", op: AmendmentOp) -> set[str]:
+    if master is None or op.target_unit_kind != "section" or not op.target_section:
+        return set()
+    section = master.find_section(
+        _norm_num_token(op.target_section),
+        op.target_chapter,
+        op.target_part,
+    )
+    if section is None:
+        return set()
+    return {
+        _norm_num_token(str(child.label or ""))
+        for child in section.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+
+
+def _postposed_kohta_labels_for_section(johto: str, *, section_label: str) -> set[str]:
+    normalized = _normalize_fi_parse_text(johto)
+    lower = normalized.lower()
+    needle = f"{_norm_num_token(section_label)} §:n"
+    start = lower.find(needle.lower())
+    if start < 0:
+        return set()
+    tail = normalized[start + len(needle) : start + len(needle) + 240]
+    tail = re.split(r"\b(?:lisätään|kumotaan|siirretään)\b|[.;]", tail, maxsplit=1, flags=re.IGNORECASE)[0]
+    labels: set[str] = set()
+    for match in _POSTPOSED_KOHTA_LABELS_RE.finditer(tail):
+        labels.update(_parse_section_list_labels(match.group(1)))
+    return {_norm_num_token(label) for label in labels if _norm_num_token(label).isdigit()}
+
+
+def _retarget_op_to_subsection(
+    op: AmendmentOp,
+    *,
+    subsection_label: str,
+    provenance_tag: str,
+    op_id: str | None = None,
+) -> AmendmentOp:
+    lo = _lo_with_path_update(op.lo, subsection=subsection_label, item=None) if op.lo is not None else None
+    return dc_replace(
+        op,
+        op_id=op_id if op_id is not None else op.op_id,
+        target_paragraph=int(subsection_label),
+        target_item=None,
+        target_special=None,
+        lo=lo,
+        extraction_provenance_tags=tuple(
+            dict.fromkeys((*op.extraction_provenance_tags, provenance_tag))
+        ),
+        witness_rule_id=provenance_tag,
+    )
+
+
+def _normalize_historical_top_level_kohta_subsection_ops(
+    ops: List[AmendmentOp],
+    *,
+    johto: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState | None",
+    amendment_id: str,
+) -> tuple[List[AmendmentOp], List[Finding]]:
+    """Map old top-level ``kohta`` wording onto sibling subsection targets.
+
+    Some historical Finnish definition sections model parenthesized ``(1)``,
+    ``(2)``, ... entries as direct ``subsection`` siblings in the source XML
+    while the johtolause calls them ``kohdat``.  The modern parser otherwise
+    treats ``N §:n kohdan 24`` as a broad section replace and ``uudet (29) ja
+    (30) kohdat`` as item inserts under subsection 1.  Rewrite only when the
+    source payload and live section both prove the top-level subsection lane.
+    """
+    if master is None or not ops:
+        return ops, []
+
+    findings: List[Finding] = []
+    rewrite_sections: dict[str, set[str]] = {}
+    broad_replaces: dict[str, AmendmentOp] = {}
+
+    for op in ops:
+        if (
+            op.target_unit_kind == "section"
+            and op.op_type == "REPLACE"
+            and op.target_section
+            and op.target_paragraph is None
+            and op.target_item is None
+            and op.target_special is None
+        ):
+            section_label = _norm_num_token(op.target_section)
+            replace_labels = _postposed_kohta_labels_for_section(johto, section_label=section_label)
+            payload_labels = _parenthesized_payload_labels_for_section(
+                muutos_tree,
+                section_label=section_label,
+            )
+            live_labels = _live_direct_subsection_labels(master, op)
+            owned_replace_labels = replace_labels & payload_labels & live_labels
+            if owned_replace_labels:
+                rewrite_sections[section_label] = owned_replace_labels
+                broad_replaces[section_label] = op
+                continue
+
+    if not rewrite_sections:
+        return ops, []
+
+    emitted_labels_by_section: dict[str, set[str]] = {section: set() for section in rewrite_sections}
+    output: List[AmendmentOp] = []
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op is broad_replaces.get(section_label):
+            for label in sorted(rewrite_sections[section_label], key=lambda value: int(value)):
+                op_id = op.op_id if len(rewrite_sections[section_label]) == 1 else f"{op.op_id}__histkohta_{label}"
+                output.append(
+                    _retarget_op_to_subsection(
+                        op,
+                        subsection_label=label,
+                        provenance_tag=FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID,
+                        op_id=op_id,
+                    )
+                )
+                emitted_labels_by_section.setdefault(section_label, set()).add(label)
+            continue
+        payload_labels = (
+            _parenthesized_payload_labels_for_section(muutos_tree, section_label=section_label)
+            if section_label in rewrite_sections
+            else set()
+        )
+        if (
+            section_label in rewrite_sections
+            and op.target_unit_kind == "section"
+            and op.op_type in {"INSERT", "REPLACE"}
+            and op.target_paragraph == 1
+            and op.target_item
+            and op.target_special is None
+        ):
+            item_label = _norm_num_token(op.target_item)
+            if item_label.isdigit() and item_label in payload_labels:
+                retargeted = _retarget_op_to_subsection(
+                    op,
+                    subsection_label=item_label,
+                    provenance_tag=FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID,
+                )
+                output.append(retargeted)
+                emitted_labels_by_section.setdefault(section_label, set()).add(item_label)
+                continue
+        output.append(op)
+
+    for section_label, labels in rewrite_sections.items():
+        broad = broad_replaces[section_label]
+        emitted = sorted(emitted_labels_by_section.get(section_label, ()), key=lambda value: int(value))
+        findings.append(
+            Finding(
+                kind="ELAB.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION",
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": (
+                        "Historical top-level kohta wording was mapped to direct subsection targets "
+                        "because source payload and live section expose parenthesized subsection siblings."
+                    ),
+                    "rule_id": FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID,
+                    "target_section": section_label,
+                    "retargeted_labels": emitted,
+                    "broad_replace_description": broad.description(),
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
+
+    return output, findings
 
 
 def _attach_target_version_selectors(
@@ -1169,6 +1369,41 @@ def _is_letter_suffix_section_family_continuation(previous_label: str | None, cu
     return ord(current_suffix.lower()) == ord(previous_suffix.lower()) + 1
 
 
+def _infer_unique_live_section_chapter_scope(
+    *,
+    op: AmendmentOp,
+    master: "ReplayState",
+) -> str | None:
+    """Bind chapter scope when johto cites only §N and live tree has one host."""
+    if (
+        op.target_unit_kind != "section"
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.op_type not in {"REPLACE", "REPEAL"}
+        or op.target_paragraph is not None
+        or op.target_item
+        or op.target_special
+    ):
+        return None
+    section_label = _norm_num_token(op.target_section)
+    unique_chapter = _unique_section_chapter(
+        master,
+        section_label,
+        part_label=op.target_part,
+    )
+    if unique_chapter is not None and master.find_section_path(
+        section_label,
+        unique_chapter,
+        op.target_part,
+    ) is not None:
+        return unique_chapter
+    return infer_letter_suffix_section_chapter_from_stem_host(
+        master,
+        section_label,
+        part_label=op.target_part,
+    )
+
+
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
@@ -1556,6 +1791,22 @@ def _enrich_ops_from_amendment_tree(
                 ):
                     inferred_chapter = last_inferred_section_chapter
                     inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_unique_live_section_chapter_scope(
+                        op=scoped_op,
+                        master=master,
+                    )
+                    if inferred_chapter is not None:
+                        inferred_rule_id = (
+                            "fi_unique_live_section_chapter_scope"
+                            if master.find_section_path(
+                                _norm_num_token(scoped_op.target_section or ""),
+                                inferred_chapter,
+                                scoped_op.target_part,
+                            )
+                            is not None
+                            else "fi_letter_suffix_stem_host_chapter_scope"
+                        )
             if inferred_chapter is not None:
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(
@@ -2414,6 +2665,12 @@ def normalize_and_compile_ops(
         ops = _tag_named_table_row_single_clause_ops(ops, johto)
     else:
         ops = []
+    ops, osalta_findings = _supplement_sparse_osalta_row_omission_repeals(
+        ops,
+        johto,
+        amendment_id=amendment_id,
+    )
+    frontend_findings_out.extend(osalta_findings)
     if ops:
         logger.debug("  %s legal_ops → ops: %s", amendment_id, [op.description() for op in ops])
     if ops:
@@ -2465,6 +2722,14 @@ def normalize_and_compile_ops(
         johto=johto,
         base_ir=base_ir,
     )
+    ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(
+        ops,
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id=amendment_id,
+    )
+    frontend_findings_out.extend(historical_kohta_findings)
     ops = _retime_ops_from_cited_version_effective_dates(ops)
     ops = _dedupe_fallback_ops_ir(ops)
     ops = _tag_explicit_item_shift_after_repeal_hints(ops, johto)

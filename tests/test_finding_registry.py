@@ -345,6 +345,14 @@ def test_base_section_item_subsection_fold_registry_code_is_observation() -> Non
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_base_dotted_paragraph_subsection_promotion_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_source_corrected_by_patch_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.SOURCE_CORRECTED_BY_PATCH")
     assert spec is not None

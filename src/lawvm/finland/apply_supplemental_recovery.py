@@ -55,6 +55,7 @@ from lawvm.finland.restructure_plan_replay import (
     ExecuteRestructurePlanRequest as _ExecuteRestructurePlanRequest,
     ExecuteRestructurePlanSinks as _ExecuteRestructurePlanSinks,
     build_chapter_part_move_timeline_ops as _build_chapter_part_move_timeline_ops,
+    chapter_part_move_label_reuse_guard_finding as _chapter_part_move_label_reuse_guard_finding,
     execute_restructure_plan_with_evidence as _execute_restructure_plan_with_evidence,
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
@@ -426,6 +427,31 @@ def run_apply_supplemental_recovery(
                         continue
                     if old_part not in parts_after:
                         continue
+                    # Same chapter label under a different part is common when a
+                    # genuinely new part is inserted (e.g. 1929/234 part V
+                    # rebirth). Only emit part-move timeline LOs when the
+                    # chapter no longer lives under its pre-amendment part —
+                    # otherwise we silently repeal unrelated legal state.
+                    old_part_path = _tops.find(state.ir, "part", old_part)
+                    if old_part_path is not None:
+                        old_part_node = _tops.resolve(state.ir, old_part_path)
+                        if old_part_node is not None:
+                            old_ch_local = _tops.find(
+                                old_part_node,
+                                "chapter",
+                                chapter_node.label,
+                            )
+                            if old_ch_local is not None:
+                                if sinks.findings_out is not None:
+                                    sinks.findings_out.append(
+                                        _chapter_part_move_label_reuse_guard_finding(
+                                            source_statute=request.amendment_id,
+                                            chapter_label=chapter_node.label,
+                                            old_part_label=old_part,
+                                            new_part_label=part_node.label,
+                                        )
+                                    )
+                                continue
                     part_move_ops = _build_chapter_part_move_timeline_ops(
                         _ChapterPartMoveTimelineRequest(
                             amendment_id=request.amendment_id,

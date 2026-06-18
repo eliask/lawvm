@@ -31,15 +31,24 @@ from lawvm.core.timeline_results import (
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
     TreeInvariantViolation,
+    _kind_str,
     check_invariants,
     default_label_sort_key,
+    find_provisions_parent as _find_provisions_parent,
+    insert_sorted as _insert_sorted,
+    remove_at as _remove_at,
+    resolve as _tops_resolve,
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
-from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.apply_ir_ops import (
+    _strip_redundant_paragraph_label_prefixes_ir,
+    _strip_standalone_subsection_item_prefixes_ir,
+)
 from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
+    from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -111,6 +120,7 @@ class ReplayProducts:
     migration_events: tuple[MigrationEvent, ...] = ()
     materialization_spec: Optional[MaterializationSpec] = None
     source_adjudication: Optional[SourceAdjudication] = None
+    fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
     """Reject Finland replay ops that still depend on core tombstone quirks.
@@ -274,6 +284,390 @@ def fi_product_tree_invariant_dicts(
         fi_product_tree_invariant_violations(tree, profile),
         profile,
     )
+
+
+def _fold_hcontainer_direct_sections(fold: IRNode) -> tuple[IRNode, ...]:
+    """Return section nodes that live directly under the fold provisions wrapper."""
+    provisions_node = _fold_provisions_node(fold)
+    if provisions_node is None:
+        return ()
+    return tuple(
+        child
+        for child in provisions_node.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    )
+
+
+def _fold_provisions_node(fold: IRNode) -> IRNode | None:
+    if (
+        fold.kind is IRNodeKind.BODY
+        and len(fold.children) == 1
+        and fold.children[0].kind is IRNodeKind.HCONTAINER
+        and fold.children[0].attrs.get("name") == "statuteProvisionsWrapper"
+    ):
+        return fold.children[0]
+
+    provisions_parent = _find_provisions_parent(fold)
+    if not provisions_parent:
+        return None
+    return _tops_resolve(fold, provisions_parent)
+
+
+def _fold_provisions_has_hierarchical_roots(fold: IRNode) -> bool:
+    provisions_node = _fold_provisions_node(fold)
+    if provisions_node is None:
+        return False
+    return any(child.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER} for child in provisions_node.children)
+
+
+_FI_PROVISIONS_WRAPPER_NAME = "statuteProvisionsWrapper"
+_FI_CHAPTER_SECTION_EID_RE = re.compile(r"^chp_(?P<chapter>[^_]+)__sec_")
+
+
+def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], ...]]:
+    """Return body IR with an hcontainer child and that container's path."""
+    for child in ir.children:
+        if child.kind is IRNodeKind.HCONTAINER:
+            return ir, (("hcontainer", child.label or ""),)
+    new_hcontainer = IRNode(kind=IRNodeKind.HCONTAINER, children=())
+    return (
+        IRNode(
+            kind=ir.kind,
+            label=ir.label,
+            text=ir.text,
+            attrs=dict(ir.attrs),
+            children=ir.children + (new_hcontainer,),
+        ),
+        (("hcontainer", ""),),
+    )
+
+
+def _iter_sections(node: IRNode) -> tuple[IRNode, ...]:
+    sections: list[IRNode] = []
+
+    def _walk(current: IRNode) -> None:
+        if current.kind is IRNodeKind.SECTION:
+            sections.append(current)
+        for child in current.children:
+            _walk(child)
+
+    _walk(node)
+    return tuple(sections)
+
+
+def _chapter_label_from_section_eid(node: IRNode) -> str:
+    e_id = str(node.attrs.get("eId") or "")
+    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)
+    if match is None:
+        return ""
+    return match.group("chapter").replace("_", " ")
+
+
+def _is_materialized_provisions_wrapper_candidate(node: IRNode, replay_fold: IRNode) -> bool:
+    if node.kind is not IRNodeKind.HCONTAINER:
+        return False
+    if node.attrs.get("name") == "attachments":
+        return False
+    if node.attrs.get("name") not in (None, "", _FI_PROVISIONS_WRAPPER_NAME):
+        return False
+    fold_labels = {
+        section.label for section in _fold_hcontainer_direct_sections(replay_fold) if section.label
+    }
+    if not fold_labels:
+        return False
+    candidate_labels = {
+        child.label for child in node.children if child.kind is IRNodeKind.SECTION and child.label
+    }
+    return bool(candidate_labels & fold_labels)
+
+
+def project_materialized_provisions_wrapper(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+    """Project fold-owned provisions-wrapper children into materialized legal topology.
+
+    Core PIT materialization preserves unlabeled hcontainer path shape but loses
+    the Finland-local ``statuteProvisionsWrapper`` attribute.  For materialized
+    products, that wrapper is only a source/editorial carrier: direct sections
+    either belong directly under the body, or, when the materialized product has
+    chapter shells and the section eId says ``chp_N__sec_X``, under that chapter.
+    """
+    if materialized.kind is not IRNodeKind.BODY:
+        return materialized
+
+    wrapper_index = next(
+        (
+            index
+            for index, child in enumerate(materialized.children)
+            if _is_materialized_provisions_wrapper_candidate(child, replay_fold)
+        ),
+        None,
+    )
+    if wrapper_index is None:
+        return materialized
+    wrapper = materialized.children[wrapper_index]
+
+    has_hierarchical_roots = any(
+        child.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER}
+        for index, child in enumerate(materialized.children)
+        if index != wrapper_index
+    )
+    if not has_hierarchical_roots:
+        rebuilt = tuple(
+            grandchild
+            for index, child in enumerate(materialized.children)
+            for grandchild in ((child.children) if index == wrapper_index else (child,))
+        )
+        return dc_replace(materialized, children=rebuilt)
+
+    chapter_indices = {
+        child.label: index
+        for index, child in enumerate(materialized.children)
+        if child.kind is IRNodeKind.CHAPTER and child.label
+    }
+    if not chapter_indices:
+        return materialized
+
+    children = list(materialized.children)
+    wrapper_children: list[IRNode] = []
+    moved_by_chapter: dict[str, list[IRNode]] = {}
+    for child in wrapper.children:
+        if child.kind is not IRNodeKind.SECTION or not child.label:
+            wrapper_children.append(child)
+            continue
+        chapter_label = _chapter_label_from_section_eid(child)
+        if not chapter_label or chapter_label not in chapter_indices:
+            wrapper_children.append(child)
+            continue
+        moved_by_chapter.setdefault(chapter_label, []).append(child)
+
+    if not moved_by_chapter:
+        return materialized
+
+    for chapter_label, moved in moved_by_chapter.items():
+        chapter_index = chapter_indices[chapter_label]
+        chapter = children[chapter_index]
+        existing_labels = {
+            child.label
+            for child in chapter.children
+            if child.kind is IRNodeKind.SECTION and child.label
+        }
+        chapter_children = list(chapter.children)
+        for moved_section in moved:
+            if moved_section.label in existing_labels:
+                continue
+            target_key = default_label_sort_key(moved_section.label)
+            insert_at = len(chapter_children)
+            for index, existing in enumerate(chapter_children):
+                if existing.kind is not IRNodeKind.SECTION or existing.label is None:
+                    continue
+                if default_label_sort_key(existing.label) > target_key:
+                    insert_at = index
+                    break
+            chapter_children.insert(insert_at, moved_section)
+            existing_labels.add(moved_section.label)
+        children[chapter_index] = dc_replace(chapter, children=tuple(chapter_children))
+
+    if wrapper_children:
+        children[wrapper_index] = dc_replace(wrapper, children=tuple(wrapper_children))
+    else:
+        del children[wrapper_index]
+    return dc_replace(materialized, children=tuple(children))
+
+
+def _split_operatives_from_attachments_wrapper(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+    """Move misplaced operative sections out of a direct attachments wrapper.
+
+    Finland AKN often represents all top-level legal provisions inside an
+    unlabeled ``hcontainer``.  In a malformed PIT product, core timeline
+    materialization can restore fold-owned direct sections into the direct
+    ``name="attachments"`` hcontainer because unlabeled hcontainer paths do not
+    carry attrs.  Split only direct section children whose labels are witnessed
+    by the replay fold's provisions wrapper; actual appendix children remain in
+    ``attachments``.
+    """
+    if materialized.kind is not IRNodeKind.BODY:
+        return materialized
+
+    attachments_index = next(
+        (
+            index
+            for index, child in enumerate(materialized.children)
+            if child.kind is IRNodeKind.HCONTAINER and child.attrs.get("name") == "attachments"
+        ),
+        None,
+    )
+    if attachments_index is None:
+        return materialized
+    attachments = materialized.children[attachments_index]
+
+    fold_labels = {section.label for section in _fold_hcontainer_direct_sections(replay_fold) if section.label}
+    if not fold_labels:
+        return materialized
+    if _fold_provisions_has_hierarchical_roots(replay_fold):
+        return materialized
+
+    labels_outside_attachments = {
+        node.label
+        for index, sibling in enumerate(materialized.children)
+        if index != attachments_index
+        for node in _iter_sections(sibling)
+        if node.label
+    }
+
+    moved: list[IRNode] = []
+    kept: list[IRNode] = []
+    for child in attachments.children:
+        if (
+            child.kind is IRNodeKind.SECTION
+            and child.label in fold_labels
+            and child.label not in labels_outside_attachments
+        ):
+            moved.append(child)
+        else:
+            kept.append(child)
+    if not moved:
+        return materialized
+
+    provisions_index = next(
+        (
+            index
+            for index, child in enumerate(materialized.children)
+            if child.kind is IRNodeKind.HCONTAINER and child.attrs.get("name") == _FI_PROVISIONS_WRAPPER_NAME
+        ),
+        None,
+    )
+    if provisions_index is None:
+        provisions = IRNode(
+            kind=IRNodeKind.HCONTAINER,
+            attrs={"name": _FI_PROVISIONS_WRAPPER_NAME},
+            children=tuple(moved),
+        )
+    else:
+        existing = materialized.children[provisions_index]
+        existing_labels = {
+            child.label for child in existing.children if child.kind is IRNodeKind.SECTION and child.label
+        }
+        provisions = dc_replace(
+            existing,
+            children=existing.children
+            + tuple(child for child in moved if child.label not in existing_labels),
+        )
+
+    repaired_attachments = dc_replace(attachments, children=tuple(kept))
+    rebuilt: list[IRNode] = []
+    if provisions_index is None:
+        for index, child in enumerate(materialized.children):
+            if index == attachments_index:
+                rebuilt.append(provisions)
+                rebuilt.append(repaired_attachments)
+            else:
+                rebuilt.append(child)
+    else:
+        for index, child in enumerate(materialized.children):
+            if index == provisions_index:
+                rebuilt.append(provisions)
+            elif index == attachments_index:
+                rebuilt.append(repaired_attachments)
+            else:
+                rebuilt.append(child)
+    return dc_replace(materialized, children=tuple(rebuilt))
+
+
+def _all_section_paths(tree: IRNode, label: str) -> list[tuple[tuple[str, str], ...]]:
+    """Return all section paths using the same root-relative format as ``find()``."""
+    paths: list[tuple[tuple[str, str], ...]] = []
+
+    def _walk(node: IRNode, prefix: tuple[tuple[str, str], ...]) -> None:
+        for child in node.children:
+            child_path = prefix + ((_kind_str(child.kind), child.label or ""),)
+            if child.kind is IRNodeKind.SECTION and child.label == label:
+                paths.append(child_path)
+            _walk(child, child_path)
+
+    _walk(tree, ())
+    return paths
+
+
+def _reconcile_materialized_fold_hcontainer_sections(
+    materialized: IRNode,
+    replay_fold: IRNode,
+) -> IRNode:
+    """Restore fold-owned hcontainer-direct sections lost during PIT export.
+
+    Timeline materialization can flatten the provisions wrapper and/or misplace
+    orphan sections under inferred chapters.  When replay fold keeps a section
+    as a direct child of the provisions hcontainer, export must preserve that
+    editorial placement instead of hoisting it beside parts or rebinding it to
+    a chapter container.
+    """
+    if materialized.kind is not replay_fold.kind:
+        return materialized
+
+    direct_fold_sections = _fold_hcontainer_direct_sections(replay_fold)
+    if not direct_fold_sections:
+        return materialized
+
+    result = _split_operatives_from_attachments_wrapper(materialized, replay_fold)
+    fold_has_hierarchical_roots = _fold_provisions_has_hierarchical_roots(replay_fold)
+    synthesized_parent_paths: set[tuple[tuple[str, str], ...]] = set()
+    if fold_has_hierarchical_roots:
+        for fold_section in direct_fold_sections:
+            label = fold_section.label or ""
+            if not label:
+                continue
+            for section_path in _all_section_paths(result, label):
+                parent_path = section_path[:-1]
+                parent_node = _tops_resolve(result, parent_path) if parent_path else result
+                if (
+                    parent_node is not None
+                    and parent_node.attrs.get("lawvm_synthesized_container") == "active_descendant"
+                ):
+                    synthesized_parent_paths.add(parent_path)
+    allowed_synthesized_parent_paths = (
+        synthesized_parent_paths if len(synthesized_parent_paths) == 1 else set()
+    )
+    for fold_section in direct_fold_sections:
+        label = fold_section.label or ""
+        section_paths = _all_section_paths(result, label)
+        if not section_paths:
+            continue
+
+        hcontainer_paths: list[tuple[tuple[str, str], ...]] = []
+        misplaced_paths: list[tuple[tuple[str, str], ...]] = []
+        for section_path in section_paths:
+            parent_path = section_path[:-1]
+            parent_node = _tops_resolve(result, parent_path) if parent_path else result
+            if parent_node is not None and parent_node.kind is IRNodeKind.HCONTAINER:
+                hcontainer_paths.append(section_path)
+            elif (
+                parent_path in allowed_synthesized_parent_paths
+                and parent_node is not None
+                and parent_node.attrs.get("lawvm_synthesized_container") == "active_descendant"
+            ):
+                # Core PIT synthesis creates this ancestor because the active
+                # timeline address requires it.  Treating the child as a
+                # misplaced fold-wrapper section would destroy the materialized
+                # legal address and move the text to the end of the body.
+                continue
+            else:
+                misplaced_paths.append(section_path)
+
+        if not misplaced_paths:
+            continue
+
+        canonical_node = _tops_resolve(result, misplaced_paths[0])
+        if canonical_node is None:
+            continue
+
+        for misplaced_path in reversed(misplaced_paths):
+            result = _remove_at(result, misplaced_path)
+
+        if hcontainer_paths:
+            continue
+
+        result, hcontainer_path = _ensure_body_hcontainer(result)
+        result = _insert_sorted(result, hcontainer_path, canonical_node)
+
+    return result
 
 
 def _should_restore_repeal_placeholder(node: IRNode) -> bool:
@@ -817,7 +1211,6 @@ def build_replay_products(
     )
     lo_ops = list(lo_ops_out or [])
     lo_ops = _normalize_repeal_op_sources(lo_ops)
-    _assert_finland_timeline_safe_ops(lo_ops)
     covered_commence_group_ids = frozenset(
         group_id
         for event in resolved_temporal_events
@@ -858,6 +1251,31 @@ def build_replay_products(
     _base_tree = _etree.fromstring(ctx.base_xml_bytes)
     _base_issue_date = _fi_statute_issue_date(_base_tree)
     _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
+    from lawvm.finland.replay_fold_timeline_backfill import append_fold_timeline_backfill_ops
+
+    fold_timeline_backfills = append_fold_timeline_backfill_ops(
+        lo_ops=lo_ops,
+        replay_fold_ir=replay_fold_state.ir,
+        base_ir=ctx.base_ir,
+        base_statute_id=statute_id,
+        migration_events=migration_events,
+        as_of=as_of,
+        temporal_events=resolved_temporal_events,
+        base_enacted_date=_base_enacted_date,
+    )
+    if fold_timeline_backfills:
+        backfill_temporal_events = _temporal_events_from_lo_ops(
+            lo_ops,
+            target_statute=base_ir.statute_id,
+            covered_commence_group_ids=covered_commence_group_ids,
+            covered_expiry_signatures=covered_expiry_signatures,
+        )
+        if backfill_temporal_events:
+            resolved_temporal_events = _merge_temporal_events(
+                resolved_temporal_events,
+                backfill_temporal_events,
+            )
+    _assert_finland_timeline_safe_ops(lo_ops)
     raw_timelines = compile_timelines(
         base_ir,
         lo_ops,
@@ -893,12 +1311,20 @@ def build_replay_products(
     )
     materialized_state = replay_fold_state.with_ir(pit.body)
     materialized_state = materialized_state.with_ir(
-        _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
+        _strip_redundant_paragraph_label_prefixes_ir(
+            _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
+        )
     )
     if synthesize_repeal_placeholders:
         materialized_state = materialized_state.with_ir(
             _restore_replay_fold_repeal_placeholders(materialized_state.ir, replay_fold_state.ir)
         )
+    materialized_state = materialized_state.with_ir(
+        _reconcile_materialized_fold_hcontainer_sections(
+            materialized_state.ir,
+            replay_fold_state.ir,
+        )
+    )
     # Sort labeled children back into canonical order.  PIT materialization can
     # produce out-of-order siblings (e.g. paragraphs within a subsection) for
     # the same reason the replay fold can — amendment ops insert at arbitrary
@@ -917,6 +1343,7 @@ def build_replay_products(
         timelines=timelines,
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
+        fold_timeline_backfills=fold_timeline_backfills,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

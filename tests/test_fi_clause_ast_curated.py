@@ -1017,6 +1017,28 @@ class TestResolutionProvenanceFields:
         assert ("95", 0) in parsed, f"§95 not found: {parsed}"
         assert ("96", 0) in parsed, f"§96 not found: {parsed}"
 
+    def test_misspelled_momentti_does_not_drop_following_replace_targets(self):
+        """1996/473 typo ``momenttti`` must not truncate a long replace list."""
+
+        result = parse_clause(
+            "muutetaan 41 ja 43 §, 46 §:n 2 momenttti, 7 luvun otsikko, "
+            "50―55 §, 56 §:n 1 momentti, 58 §:n 1 momentti, 59 §, "
+            "62 §:n 1 momentin johdantokappale, 66 §:n 2 momentti, "
+            "72 §:n 1 momentti, 113, 125 ja 131 §, "
+            "133 §:n 1 momentin johdantokappale, "
+            "134 §:n 1 momentin johdantokappale, "
+            "135 §:n 1 momentin johdantokappale, 136 §:n 2 momentti, "
+            "142 §, 145 §:n 1 momentti sekä asetuksen A ja B liite"
+        )
+
+        assert not result.is_failed
+        parsed = {(op.number, op.momentti, op.item) for op in result.parsed_ops}
+        assert ("46", 2, "") in parsed
+        assert ("59", 0, "") in parsed
+        assert ("62", 1, "") in parsed
+        assert ("113", 0, "") in parsed
+        assert ("145", 1, "") in parsed
+
     def test_backref_resolution_detail_carries_antecedent(self):
         """resolution_detail must identify the antecedent section label."""
         text = "muutetaan 3 §:n numero 5:ksi ja mainitun pykälän otsikko ja 1 momentti"

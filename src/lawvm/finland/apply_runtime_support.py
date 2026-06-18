@@ -26,6 +26,7 @@ from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
 from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.labels import leaf_label_identity_key
+from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.source_pathology import (
@@ -795,6 +796,69 @@ def _container_replace_prior_child_paths(
     return prior_child_paths
 
 
+def _group_has_item_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> bool:
+    """True when an item-scoped op must not promote a sparse whole-section shell."""
+    return any(rop.effective_target_item_label is not None for rop in group_rops)
+
+
+def _group_has_descendant_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> bool:
+    """Backward-compatible alias for item-scoped snapshot escalation checks."""
+    return _group_has_item_scoped_snapshot_mutations(group_rops)
+
+
+def _normalized_snapshot_text_len(node: IRNode) -> int:
+    return len(" ".join(irnode_to_text(node).split()))
+
+
+def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
+    *,
+    state: "ReplayState",
+    resolved_path: Optional[Path],
+    payload: Optional[IRNode],
+    payload_from_muutos_ir: bool,
+    group_rops: list[ResolvedOp],
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: Optional[str],
+    target_part: Optional[str],
+    source_pathologies_out: Optional[list["SourcePathology"]],
+    source_statute: str,
+) -> tuple[Optional[IRNode], bool]:
+    """Keep the dense replay fold when item/subsection ops own the mutation."""
+    if (
+        payload is None
+        or resolved_path is None
+        or target_unit_kind != "section"
+        or not _group_has_descendant_scoped_snapshot_mutations(group_rops)
+    ):
+        return payload, payload_from_muutos_ir
+
+    live_path = state.find_section_path(_norm_num_token(target_norm), target_chapter, target_part)
+    if live_path is None:
+        return payload, payload_from_muutos_ir
+    live_payload = _tops.resolve(state.ir, live_path)
+    if live_payload is None or live_payload.kind is not IRNodeKind.SECTION:
+        return payload, payload_from_muutos_ir
+
+    live_len = _normalized_snapshot_text_len(live_payload)
+    payload_len = _normalized_snapshot_text_len(payload)
+    if live_len <= payload_len:
+        return payload, payload_from_muutos_ir
+
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_destructive_shape_loss_risk_pathology(
+                source_statute=source_statute,
+                target_unit_kind="section",
+                target_label=f"{target_norm} §",
+                recovery_kind="section_snapshot_preserve_live_fold_for_descendant_scoped_item",
+                live_sibling_count=live_len,
+                payload_sibling_count=payload_len,
+            )
+        )
+    return live_payload, False
+
+
 def _emit_section_snapshot(
     state: "ReplayState",
     target_unit_kind: TargetUnitKind,
@@ -904,12 +968,24 @@ def _emit_section_snapshot(
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
 
+    def _latest_exact_section_snapshot_is_expired_temporary() -> bool:
+        if target_unit_kind != "section" or resolved_path is None or not op_source.effective:
+            return False
+        latest = _latest_section_snapshot_payload(
+            section_path=tuple(resolved_path),
+            replay_history_ops=lo_ops_out,
+        )
+        if latest is None or latest.source is None:
+            return False
+        latest_expires = latest.source.expires or ""
+        return bool(latest_expires and op_source.effective >= latest_expires)
+
     def _complete_whole_section_source_payload() -> Optional[IRNode]:
-        """Return the source-owned section payload for exact whole-section replace.
+        """Return the source-owned section payload for exact whole-section snapshots.
 
         Snapshot emission normally observes post-apply replay state.  If the
         mutable apply fold failed to hit the target, that state may still carry
-        stale descendants.  A complete whole-section replacement payload is the
+        stale descendants.  A complete whole-section source payload is the
         stronger witness: it owns the section child surface and should be the
         timeline snapshot payload.
         """
@@ -917,8 +993,14 @@ def _emit_section_snapshot(
             return None
         candidates: list[IRNode] = []
         descendant_scoped_candidates = 0
+        latest_snapshot_is_expired_temporary = _latest_exact_section_snapshot_is_expired_temporary()
         for rop in group_rops:
-            if not rop.is_replace_action or not rop.targets_whole_unit("section"):
+            if not rop.targets_whole_unit("section"):
+                continue
+            if not rop.is_replace_action and not (
+                rop.is_insert_action and latest_snapshot_is_expired_temporary
+                and not temporary_signal_for_op(rop)
+            ):
                 continue
             source_payload = rop.muutos_ir
             if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
@@ -2556,16 +2638,35 @@ def _emit_section_snapshot(
                 resolved_path = _timeline_path(emitted_path)
 
     if payload is None and not _all_group_ops_are_repeal():
-        expected_kind = _group_payload_kind()
-        if expected_kind is not None:
-            for rop in group_rops:
-                if rop.muutos_ir is None or _kind_str(rop.muutos_ir.kind) != expected_kind:
-                    continue
-                if rop.muutos_ir.label and _norm_num_token(rop.muutos_ir.label) != normalized_target_norm:
-                    continue
-                payload = rop.muutos_ir
-                payload_from_muutos_ir = True
-                break
+        if (
+            target_unit_kind == "section"
+            and _group_has_descendant_scoped_snapshot_mutations(group_rops)
+        ):
+            live_raw_path = state.find_section_path(
+                normalized_target_norm,
+                target_chapter,
+                target_part,
+            )
+            if live_raw_path is not None:
+                live_payload = _tops.resolve(state.ir, live_raw_path)
+                if live_payload is not None:
+                    payload = live_payload
+                    if resolved_path is None:
+                        emitted_path = _project_snapshot_path(live_raw_path) or live_raw_path
+                        resolved_path = _timeline_path(emitted_path)
+        if payload is None:
+            expected_kind = _group_payload_kind()
+            if expected_kind is not None:
+                for rop in group_rops:
+                    if rop.muutos_ir is None or _kind_str(rop.muutos_ir.kind) != expected_kind:
+                        continue
+                    if rop.muutos_ir.label and _norm_num_token(rop.muutos_ir.label) != normalized_target_norm:
+                        continue
+                    if _group_has_descendant_scoped_snapshot_mutations(group_rops):
+                        continue
+                    payload = rop.muutos_ir
+                    payload_from_muutos_ir = True
+                    break
 
     if resolved_path is None:
         if target_unit_kind == "section":
@@ -2638,10 +2739,33 @@ def _emit_section_snapshot(
             return
         resolved_path = ()
         if target_unit_kind == "section":
+            snapshot_chapter = target_chapter
+            if snapshot_chapter is None:
+                unique_chapter = _unique_section_chapter(
+                    state,
+                    normalized_target_norm,
+                    part_label=target_part,
+                )
+                if (
+                    unique_chapter is not None
+                    and state.find_section_path(
+                        normalized_target_norm,
+                        unique_chapter,
+                        target_part,
+                    )
+                    is not None
+                ):
+                    snapshot_chapter = unique_chapter
+                if snapshot_chapter is None:
+                    snapshot_chapter = infer_letter_suffix_section_chapter_from_stem_host(
+                        state,
+                        normalized_target_norm,
+                        part_label=target_part,
+                    )
             if target_part:
                 resolved_path = resolved_path + (("part", target_part),)
-            if target_chapter and not _use_root_address_for_pseudo_chapter_section():
-                resolved_path = resolved_path + (("chapter", target_chapter),)
+            if snapshot_chapter and not _use_root_address_for_pseudo_chapter_section():
+                resolved_path = resolved_path + (("chapter", snapshot_chapter),)
             resolved_path = resolved_path + (("section", normalized_target_norm),)
         elif target_unit_kind == "chapter":
             resolved_path = resolved_path + (("chapter", normalized_target_norm),)
@@ -2817,7 +2941,7 @@ def _emit_section_snapshot(
         action = StructuralAction.INSERT
     complete_source_section_payload = _complete_whole_section_source_payload()
     if (
-        action is StructuralAction.REPLACE
+        action in {StructuralAction.REPLACE, StructuralAction.INSERT}
         and resolved_path is not None
         and complete_source_section_payload is not None
     ):
@@ -2868,6 +2992,19 @@ def _emit_section_snapshot(
         )
     ):
         payload = _stamp_exact_section_snapshot_payload(payload)
+    payload, payload_from_muutos_ir = _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
+        state=state,
+        resolved_path=tuple(resolved_path) if resolved_path is not None else None,
+        payload=payload,
+        payload_from_muutos_ir=payload_from_muutos_ir,
+        group_rops=group_rops,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
+        source_pathologies_out=source_pathologies_out,
+        source_statute=op_source.statute_id,
+    )
     lo_ops_out.append(
         _LegalOperation(
             op_id=_snapshot_op_id(target_unit_kind, target_norm),
@@ -3270,6 +3407,38 @@ def _parent_direct_child_path_with_same_label(
         if _norm_num_token(child.label) == target_label:
             return parent_path + ((_kind_str(child.kind), child.label),)
     return None
+
+
+def _resolve_parallel_container_path(
+    live_ir: IRNode,
+    base_ir: IRNode,
+    container_path: Path,
+) -> Path | None:
+    """Resolve a base-XML container path against the live replay tree."""
+    if not container_path:
+        return ()
+
+    current_live = live_ir
+    current_path: Path = ()
+    for kind, label in container_path:
+        matched: IRNode | None = None
+        for child in current_live.children:
+            child_kind = _kind_str(child.kind)
+            if child_kind != kind:
+                continue
+            if not label or _same_norm_label(child.label or "", label):
+                matched = child
+                break
+        if matched is None and kind == "hcontainer":
+            for child in current_live.children:
+                if child.kind is IRNodeKind.HCONTAINER:
+                    matched = child
+                    break
+        if matched is None:
+            return None
+        current_path = current_path + ((_kind_str(matched.kind), matched.label or ""),)
+        current_live = matched
+    return _tops._as_path(current_path)
 
 
 def _find_insert_parent_path(

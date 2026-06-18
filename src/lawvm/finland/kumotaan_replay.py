@@ -322,7 +322,12 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
     *,
     state: ReplayState,
 ) -> Dict[Optional[str], Set[str]]:
-    """Return live letter-suffix sections covered by explicit numeric repeal ranges."""
+    """Return live letter-suffix sections covered by scoped numeric repeal ranges.
+
+    A bare numeric range may only absorb letter-suffix sections inside the same
+    resolved structural scope.  Without this guard, an unqualified ``67-70 §``
+    range can expire unrelated ``70a``/``70f`` sections in later chapters.
+    """
     text = johto.lower()
     kumotaan_match = re.search(
         r"kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)",
@@ -359,26 +364,54 @@ def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
         _walk(node)
         return labels
 
+    def _chapter_roots(root: IRNode) -> list[tuple[str, IRNode]]:
+        roots: list[tuple[str, IRNode]] = []
+
+        def _walk(cur: IRNode) -> None:
+            if cur.kind is IRNodeKind.CHAPTER and cur.label:
+                roots.append((str(cur.label).lower(), cur))
+                return
+            for child in cur.children:
+                _walk(child)
+
+        _walk(root)
+        return roots
+
+    chapter_roots = _chapter_roots(state.ir)
+
+    def _scope_for_range(chapter: Optional[str], start: int, end: int) -> tuple[Optional[str], Optional[IRNode]]:
+        if chapter is not None:
+            return chapter, state.find_chapter(chapter)
+        numeric_labels = {str(label) for label in range(start, end + 1)}
+        containing_chapters: list[tuple[str, IRNode]] = []
+        for chapter_label, chapter_root in chapter_roots:
+            labels = set(_section_labels(chapter_root))
+            if labels.intersection(numeric_labels):
+                containing_chapters.append((chapter_label, chapter_root))
+        if not containing_chapters:
+            return None, state.ir
+        if len(containing_chapters) == 1:
+            return containing_chapters[0]
+        return None, None
+
     additions: Dict[Optional[str], Set[str]] = {}
     for chapter, block in blocks:
-        live_root = state.find_chapter(chapter) if chapter is not None else state.ir
-        if live_root is None:
-            continue
-        live_labels = _section_labels(live_root)
         ranges = [
             (int(match.group(1)), int(match.group(2)))
             for match in re.finditer(r"\b(\d+)\s*[–—―\-]\s*(\d+)\s*§(?!:)", block)
             if int(match.group(1)) <= int(match.group(2))
         ]
-        if not ranges:
-            continue
-        for label in live_labels:
-            label_match = re.fullmatch(r"(\d+)[a-zäöå]+", label, flags=re.I)
-            if label_match is None:
+        for start, end in ranges:
+            scoped_chapter, live_root = _scope_for_range(chapter, start, end)
+            if live_root is None:
                 continue
-            base = int(label_match.group(1))
-            if any(start <= base <= end for start, end in ranges):
-                additions.setdefault(chapter, set()).add(label)
+            for label in _section_labels(live_root):
+                label_match = re.fullmatch(r"(\d+)[a-zäöå]+", label, flags=re.I)
+                if label_match is None:
+                    continue
+                base = int(label_match.group(1))
+                if start <= base <= end:
+                    additions.setdefault(scoped_chapter, set()).add(label)
     return additions
 
 

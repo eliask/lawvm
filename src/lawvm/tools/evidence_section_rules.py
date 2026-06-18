@@ -1140,7 +1140,13 @@ def rule_timeline_invariant_violation(
     ctx: SectionEvidenceContext,
 ) -> tuple[PositiveClaim, ...]:
     """Timeline invariant violation (C3, line 647-667)."""
-    if not ctx.invariant_violations:
+    from lawvm.core.timeline_invariants import filter_promotable_timeline_invariant_rows
+
+    promotable = filter_promotable_timeline_invariant_rows(
+        ctx.invariant_violations,
+        apply_phase_shadow_paths=ctx.apply_phase_shadow_paths,
+    )
+    if not promotable:
         return ()
     return (
         PositiveClaim(
@@ -1148,20 +1154,20 @@ def rule_timeline_invariant_violation(
             tier=ProofTier.PROVED_REPLAY_BUG,
             kind="timeline_invariant_violation",
             inference_rule=(
-                "section_has_timeline_invariant_violation_"
+                "section_has_robust_timeline_invariant_violation_"
                 "therefore_replay_state_is_inconsistent"
             ),
             observation_sources=("timeline_invariants",),
             support={
-                "violation_count": len(ctx.invariant_violations),
+                "violation_count": len(promotable),
                 "violation_kinds": sorted(
                     {
                         str(v.get("kind", ""))
-                        for v in ctx.invariant_violations
+                        for v in promotable
                         if str(v.get("kind", ""))
                     }
                 ),
-                "violations": ctx.invariant_violations[:5],
+                "violations": promotable[:5],
             },
         ),
     )

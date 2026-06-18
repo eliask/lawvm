@@ -10,6 +10,7 @@ import functools
 import re
 from dataclasses import dataclass
 
+from lawvm.finland.address_parse import parse_legal_addresses
 from lawvm.finland.helpers import _norm_num_token
 
 _DASH_CHARS = r"[-\u2013\u2014\u2015]"  # hyphen, en-dash, em-dash, horizontal bar
@@ -100,6 +101,27 @@ def expand_johto_section_label_range(start: str, end: str) -> tuple[str, ...]:
 
 def collect_johto_mentioned_section_labels(johto_text: str) -> set[str]:
     return set(collect_johto_mentioned_section_labels_frozenset(johto_text))
+
+
+def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
+    """Map johto-mentioned section labels to explicit momentti ordinals.
+
+    Uncovered-body omission merges need these targets when the preamble names
+    ``N §:n M momentti`` but compile emits no paragraph-scoped AmendmentOps.
+    """
+    targets: dict[str, set[int]] = {}
+    for addr in parse_legal_addresses(johto_text):
+        if (
+            not addr.section
+            or addr.subsection is None
+            or addr.item is not None
+            or addr.special
+        ):
+            continue
+        section = _norm_num_token(addr.section)
+        if section:
+            targets.setdefault(section, set()).add(addr.subsection)
+    return {section: frozenset(moments) for section, moments in targets.items()}
 
 
 @functools.lru_cache(maxsize=8192)

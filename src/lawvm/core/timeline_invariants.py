@@ -25,11 +25,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Any, Dict, List, Literal, Mapping, NamedTuple, TypedDict
+from typing import Any, Dict, List, Literal, Mapping, NamedTuple, Sequence, TypedDict
 
 import re
 
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.invariant_profiles import TimelineInvariantFamily
+from lawvm.core.statute_facets import is_statute_title_address
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -60,24 +62,25 @@ class _ExpiryChainViolation(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
-def check_no_overlapping_permanent_versions(timelines: Timelines) -> List[str]:
-    """Check that no two permanent versions are active at the same date.
+def _permanent_version_identity_key(version: ProvisionVersion) -> tuple[str, str, str, str]:
+    """Identity for duplicate-row detection at one timeline address."""
+    source_id = version.source.statute_id if version.source is not None else ""
+    if version.content_hash:
+        content_key = version.content_hash
+    elif version.content is not None:
+        content_key = " ".join(irnode_to_text(version.content).split())
+    else:
+        content_key = ""
+    return (version.effective, version.enacted, source_id, content_key)
 
-    For each address, iterates permanent versions sorted by effective date
-    and verifies that each version's effective range does not overlap with
-    the next. A permanent version's active range is [effective, next_effective)
-    where next_effective is the effective date of the next permanent version
-    (or infinity if it's the last one). Two permanent versions overlap if
-    they share the same effective date (since only one can be authoritative).
-    """
-    violations: List[str] = []
+
+def _collect_permanent_overlap_violations(timelines: Timelines) -> list[TimelineInvariantViolation]:
+    """Classify same-effective permanent groups as duplicate rows vs true ambiguity."""
+    violations: list[TimelineInvariantViolation] = []
 
     for address, tl in timelines.items():
         permanent = [v for v in tl.versions if v.variant_kind == "permanent"]
-        # Sort by effective date (they should already be sorted, but be safe)
         permanent.sort(key=lambda v: (v.effective, v.enacted))
-
-        # Check for same-effective-date duplicates among permanent versions
         i = 0
         while i < len(permanent):
             j = i + 1
@@ -85,21 +88,68 @@ def check_no_overlapping_permanent_versions(timelines: Timelines) -> List[str]:
                 j += 1
             count = j - i
             if count > 1:
-                # Multiple permanent versions at the same effective date.
-                # This is a potential ambiguity but is handled by tie-breaking
-                # (enacted date, substantive-vs-placeholder). Only flag if
-                # they also share the same enacted date, making tie-breaking
-                # rely solely on position — which is fragile.
-                enacted_dates = {v.enacted for v in permanent[i:j]}
+                group = permanent[i:j]
+                enacted_dates = {v.enacted for v in group}
                 if len(enacted_dates) < count:
-                    violations.append(
-                        f"{address}: {count} permanent versions with same "
-                        f"effective={permanent[i].effective!r} and overlapping "
-                        f"enacted dates (ambiguous precedence)"
-                    )
+                    identity_keys = {_permanent_version_identity_key(v) for v in group}
+                    if len(identity_keys) == 1:
+                        violations.append(
+                            _typed_violation_from_address(
+                                kind="duplicate_permanent_version_row",
+                                address=address,
+                                message=(
+                                    f"DUPLICATE_PERMANENT_VERSION_ROW: {address}: "
+                                    f"{count} identical permanent version rows at "
+                                    f"effective={permanent[i].effective!r}"
+                                ),
+                                detail={"duplicate_count": count},
+                            )
+                        )
+                    else:
+                        source_ids = sorted(
+                            {
+                                version.source.statute_id
+                                for version in group
+                                if version.source is not None and version.source.statute_id
+                            }
+                        )
+                        semantic_keys = {
+                            _permanent_version_identity_key(version)[3] for version in group
+                        }
+                        violations.append(
+                            _typed_violation_from_address(
+                                kind="overlapping_permanent",
+                                address=address,
+                                message=(
+                                    f"{address}: {count} permanent versions with same "
+                                    f"effective={permanent[i].effective!r} and overlapping "
+                                    f"enacted dates (ambiguous precedence)"
+                                ),
+                                detail={
+                                    "effective": permanent[i].effective,
+                                    "duplicate_count": count,
+                                    "enacted_dates": sorted(enacted_dates),
+                                    "source_statute_ids": source_ids,
+                                    "distinct_identity_count": len(identity_keys),
+                                    "absent_content_count": sum(
+                                        1 for version in group if version.content is None
+                                    ),
+                                    "semantic_text_equal": len(semantic_keys) == 1,
+                                },
+                            )
+                        )
             i = j
 
     return violations
+
+
+def check_no_overlapping_permanent_versions(timelines: Timelines) -> List[str]:
+    """Check that no two permanent versions are active at the same date.
+
+    Identical duplicate ledger rows are reported separately from true
+    precedence ambiguity between competing permanent versions.
+    """
+    return [violation.message for violation in _collect_permanent_overlap_violations(timelines)]
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +305,144 @@ def _collect_statute_addressed_nodes(statute: IRStatute) -> Dict[LegalAddress, I
     return result
 
 
+TimelineReplayConsistencyMode = Literal["full", "robust"]
+TimelineInvariantTier = Literal["robust", "materialization_variant"]
+
+_ROBUST_TIMELINE_VIOLATION_KINDS = frozenset(
+    {
+        "overlapping_permanent",
+        "temporary_missing_expiry",
+        "temporary_bad_interval",
+        "temporary_overlap",
+        "expiry_chain_non_monotone",
+        "content_mismatch",
+        "same_source_descendant_shadow",
+        "ir_without_timeline",
+        "timeline_without_ir",
+        "active_descendant_not_materialized",
+    }
+)
+
+# Robust timeline hits that prove replay/materialization drift — not temporal-ledger ambiguity.
+# Apply-phase same-source conflicts are owned by REPLAY.TRANSITION_DETECTOR; these are
+# post-materialization consistency witnesses suitable for PROVED_REPLAY_BUG promotion.
+_EVIDENCE_PROMOTABLE_TIMELINE_KINDS = frozenset(
+    {
+        "content_mismatch",
+        "same_source_descendant_shadow",
+    }
+)
+
+_LEGACY_ALL_TIMELINE_INVARIANT_FAMILIES: tuple[TimelineInvariantFamily, ...] = (
+    "temporal_overlap",
+    "temporary_overlay",
+    "expiry_chain",
+    "replay_timeline",
+)
+
+
+def _materialization_roots(ir_node: IRNode | IRStatute) -> tuple[IRNode, ...]:
+    if isinstance(ir_node, IRStatute):
+        roots = [ir_node.body, *ir_node.supplements]
+        return tuple(roots)
+    if ir_node.kind == IRNodeKind.BODY:
+        return (ir_node,)
+    return (ir_node,)
+
+
+def _resolve_nodes_at_path(
+    ir_node: IRNode | IRStatute,
+    path: tuple[tuple[str, str], ...],
+) -> tuple[IRNode, ...]:
+    """Resolve materialized nodes by kind/label path, not only flat addressed indexes."""
+    if not path:
+        return _materialization_roots(ir_node)
+    frontier = list(_materialization_roots(ir_node))
+    for kind, label in path:
+        next_frontier: list[IRNode] = []
+        for node in frontier:
+            for child in node.children:
+                if _kind_str(child.kind) == kind and (child.label or "") == label:
+                    next_frontier.append(child)
+        frontier = next_frontier
+        if not frontier:
+            return ()
+    return tuple(frontier)
+
+
+def _normalized_ir_text(node: IRNode) -> str:
+    return " ".join(irnode_to_text(node).split())
+
+
+def _is_facet_timeline_address(address: LegalAddress) -> bool:
+    """Timeline addresses for facets/title carriers outside the addressed-node walk."""
+    return is_statute_title_address(address) or address.special is not None
+
+
+def _address_present_in_materialized_tree(
+    ir_node: IRNode | IRStatute,
+    address: LegalAddress,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+) -> bool:
+    if address in ir_nodes:
+        return True
+    return bool(_resolve_nodes_at_path(ir_node, address.path))
+
+
+def _materialized_node_for_address(
+    ir_node: IRNode | IRStatute,
+    address: LegalAddress,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+) -> IRNode | None:
+    if address in ir_nodes:
+        return ir_nodes[address]
+    resolved = _resolve_nodes_at_path(ir_node, address.path)
+    if len(resolved) == 1:
+        return resolved[0]
+    return None
+
+
+def _materialized_text_witness(
+    *,
+    ir_node: IRNode | IRStatute,
+    address: LegalAddress,
+    timeline_text: str,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+) -> bool:
+    """Return True when timeline text is already represented in the materialized tree."""
+    norm_tl = " ".join(timeline_text.split())
+    if not norm_tl:
+        return True
+
+    seen: set[int] = set()
+    candidates: list[IRNode] = []
+    if address in ir_nodes:
+        candidates.append(ir_nodes[address])
+    candidates.extend(_resolve_nodes_at_path(ir_node, address.path))
+    for node in candidates:
+        node_id = id(node)
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        if norm_tl in _normalized_ir_text(node):
+            return True
+
+    for depth in range(len(address.path) - 1, 0, -1):
+        prefix = LegalAddress(path=address.path[:depth])
+        prefix_nodes: list[IRNode] = []
+        if prefix in ir_nodes:
+            prefix_nodes.append(ir_nodes[prefix])
+        prefix_nodes.extend(_resolve_nodes_at_path(ir_node, prefix.path))
+        for node in prefix_nodes:
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            if norm_tl in _normalized_ir_text(node):
+                return True
+    return False
+
+
 def check_replay_timeline_consistency(
     ir_node: IRNode | IRStatute,
     timelines: Timelines,
@@ -287,6 +475,8 @@ def check_replay_timeline_consistency(
     # Check 1: IR nodes without corresponding active timeline version
     for address in ir_nodes:
         if address not in active_versions:
+            if _is_facet_timeline_address(address):
+                continue
             # Not necessarily a bug — the IR may contain base content that
             # predates the timeline system (e.g., unlabeled structural nodes).
             # Only flag section-level addresses (depth 1-2) which should
@@ -311,14 +501,14 @@ def check_replay_timeline_consistency(
             # flag as error — the placeholder pattern is valid.
             continue
 
-        if address not in ir_nodes:
-            # Only flag section-level addresses (depth 1-2) where absence
-            # is more likely a real issue. Deeper addresses may be composed
-            # into their parent during materialization.
-            if len(address.path) <= 2:
-                violations.append(
-                    f"TIMELINE_WITHOUT_IR: {address} has active timeline version at {pit_date} but is missing from IR"
-                )
+        if _is_facet_timeline_address(address):
+            continue
+        if _address_present_in_materialized_tree(ir_node, address, ir_nodes):
+            continue
+        if len(address.path) <= 2:
+            violations.append(
+                f"TIMELINE_WITHOUT_IR: {address} has active timeline version at {pit_date} but is missing from IR"
+            )
 
     # Check 3: Content text mismatch between timeline and IR
     for address, version in active_versions.items():
@@ -326,11 +516,12 @@ def check_replay_timeline_consistency(
             continue
         if version.content is None:
             continue  # tombstone
-        if address not in ir_nodes:
-            continue  # already flagged above
+        materialized_node = _materialized_node_for_address(ir_node, address, ir_nodes)
+        if materialized_node is None:
+            continue
 
         timeline_text = irnode_to_text(version.content).strip()
-        ir_text = irnode_to_text(ir_nodes[address]).strip()
+        ir_text = _normalized_ir_text(materialized_node)
 
         # Normalize whitespace for comparison
         timeline_norm = " ".join(timeline_text.split())
@@ -361,6 +552,7 @@ def check_replay_timeline_consistency(
         )
 
     for violation in _active_descendant_materialization_violations(
+        ir_node=ir_node,
         ir_nodes=ir_nodes,
         active_versions=active_versions,
     ):
@@ -408,6 +600,7 @@ def check_all_timeline_invariants(
 
 InvariantKind = Literal[
     "overlapping_permanent",
+    "duplicate_permanent_version_row",
     "temporary_missing_expiry",
     "temporary_bad_interval",
     "temporary_overlap",
@@ -442,6 +635,37 @@ class TimelineInvariantViolation:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
+
+
+def _timeline_violation_tier(kind: InvariantKind, *, mode: TimelineReplayConsistencyMode) -> TimelineInvariantTier:
+    if kind not in _ROBUST_TIMELINE_VIOLATION_KINDS:
+        return "materialization_variant"
+    if mode == "full":
+        return "robust"
+    if kind in {
+        "ir_without_timeline",
+        "timeline_without_ir",
+        "active_descendant_not_materialized",
+    }:
+        return "materialization_variant"
+    return "robust"
+
+
+def _with_timeline_tier(
+    violation: TimelineInvariantViolation,
+    *,
+    mode: TimelineReplayConsistencyMode,
+) -> TimelineInvariantViolation:
+    tier = _timeline_violation_tier(violation.kind, mode=mode)
+    detail = dict(violation.detail)
+    detail["tier"] = tier
+    return TimelineInvariantViolation(
+        kind=violation.kind,
+        section_label=violation.section_label,
+        address_path=violation.address_path,
+        message=violation.message,
+        detail=detail,
+    )
 
 
 def _section_label_from_address_text(address_text: str) -> str:
@@ -634,6 +858,7 @@ def _normalized_ir_text(node: IRNode) -> str:
 
 def _active_descendant_materialization_violations(
     *,
+    ir_node: IRNode | IRStatute,
     ir_nodes: Mapping[LegalAddress, IRNode],
     active_versions: Mapping[LegalAddress, ProvisionVersion],
 ) -> list[_ActiveDescendantMaterializationViolation]:
@@ -643,12 +868,26 @@ def _active_descendant_materialization_violations(
             continue
         if version.content is None:
             continue
-        if address in ir_nodes:
+        if address in ir_nodes or _resolve_nodes_at_path(ir_node, address.path):
             continue
         timeline_text = _normalized_ir_text(version.content)
         if not timeline_text:
             continue
+        if _materialized_text_witness(
+            ir_node=ir_node,
+            address=address,
+            timeline_text=timeline_text,
+            ir_nodes=ir_nodes,
+        ):
+            continue
         ancestor_pair = _nearest_materialized_ancestor(address, ir_nodes)
+        if ancestor_pair is None:
+            for depth in range(len(address.path) - 1, 0, -1):
+                prefix = LegalAddress(path=address.path[:depth])
+                resolved = _resolve_nodes_at_path(ir_node, prefix.path)
+                if resolved:
+                    ancestor_pair = (prefix, resolved[0])
+                    break
         if ancestor_pair is None:
             violations.append(
                 _ActiveDescendantMaterializationViolation(
@@ -662,8 +901,6 @@ def _active_descendant_materialization_violations(
             continue
         ancestor_address, ancestor_node = ancestor_pair
         ancestor_text = _normalized_ir_text(ancestor_node)
-        if timeline_text in ancestor_text:
-            continue
         violations.append(
             _ActiveDescendantMaterializationViolation(
                 address=address,
@@ -746,6 +983,7 @@ def check_all_timeline_invariants_typed(
     ir_node: IRNode | IRStatute,
     timelines: Timelines,
     pit_date: str,
+    families: Sequence[TimelineInvariantFamily] | None = None,
 ) -> List[TimelineInvariantViolation]:
     """Typed version of check_all_timeline_invariants for C3 evidence wiring.
 
@@ -753,219 +991,297 @@ def check_all_timeline_invariants_typed(
     plain strings. Evidence layer consumes these for per-section
     PROVED_REPLAY_BUG promotion.
     """
+    selected = tuple(families) if families is not None else _LEGACY_ALL_TIMELINE_INVARIANT_FAMILIES
+    replay_mode: TimelineReplayConsistencyMode = (
+        "full" if "replay_timeline" in selected else "robust"
+    )
     typed_violations: List[TimelineInvariantViolation] = []
 
+    if "temporal_overlap" not in selected and "temporary_overlay" not in selected and "expiry_chain" not in selected and "replay_timeline" not in selected and "replay_timeline_robust" not in selected:
+        return []
+
+    run_replay_checks = "replay_timeline" in selected or "replay_timeline_robust" in selected
+
+    if "temporal_overlap" in selected:
+        typed_violations.extend(_collect_permanent_overlap_violations(timelines))
+
     for address, tl in timelines.items():
-        permanent = [v for v in tl.versions if v.variant_kind == "permanent"]
-        permanent.sort(key=lambda v: (v.effective, v.enacted))
-        i = 0
-        while i < len(permanent):
-            j = i + 1
-            while j < len(permanent) and permanent[j].effective == permanent[i].effective:
-                j += 1
-            count = j - i
-            if count > 1:
-                enacted_dates = {v.enacted for v in permanent[i:j]}
-                if len(enacted_dates) < count:
+        if "temporary_overlay" in selected:
+            temporaries = [v for v in tl.versions if v.variant_kind == "temporary"]
+            for v in temporaries:
+                if not v.expires:
+                    source_info = f" (source={v.source.statute_id})" if v.source else ""
                     typed_violations.append(
                         _typed_violation_from_address(
-                            kind="overlapping_permanent",
+                            kind="temporary_missing_expiry",
                             address=address,
                             message=(
-                                f"{address}: {count} permanent versions with same "
-                                f"effective={permanent[i].effective!r} and overlapping "
-                                f"enacted dates (ambiguous precedence)"
+                                f"{address}: temporary version effective={v.effective!r} has no expires date{source_info}"
                             ),
                         )
                     )
-            i = j
+                    continue
 
-        temporaries = [v for v in tl.versions if v.variant_kind == "temporary"]
-        for v in temporaries:
-            if not v.expires:
-                source_info = f" (source={v.source.statute_id})" if v.source else ""
-                typed_violations.append(
-                    _typed_violation_from_address(
-                        kind="temporary_missing_expiry",
-                        address=address,
-                        message=(
-                            f"{address}: temporary version effective={v.effective!r} has no expires date{source_info}"
-                        ),
+                if v.expires < v.effective:
+                    source_info = f" (source={v.source.statute_id})" if v.source else ""
+                    typed_violations.append(
+                        _typed_violation_from_address(
+                            kind="temporary_bad_interval",
+                            address=address,
+                            message=(
+                                f"{address}: temporary version has expires="
+                                f"{v.expires!r} < effective={v.effective!r}{source_info}"
+                            ),
+                        )
                     )
-                )
-                continue
 
-            if v.expires < v.effective:
-                source_info = f" (source={v.source.statute_id})" if v.source else ""
-                typed_violations.append(
-                    _typed_violation_from_address(
-                        kind="temporary_bad_interval",
-                        address=address,
-                        message=(
-                            f"{address}: temporary version has expires="
-                            f"{v.expires!r} < effective={v.effective!r}{source_info}"
-                        ),
+            sorted_temps = sorted(temporaries, key=lambda v: (v.effective, v.enacted))
+            for a, b in pairwise(sorted_temps):
+                if a.expires and b.effective < a.expires:
+                    typed_violations.append(
+                        _typed_violation_from_address(
+                            kind="temporary_overlap",
+                            address=address,
+                            message=(
+                                f"{address}: overlapping temporary versions — "
+                                f"v1=[{a.effective}, {a.expires}) vs "
+                                f"v2=[{b.effective}, {b.expires or '...'})"
+                            ),
+                        )
                     )
-                )
 
-        sorted_temps = sorted(temporaries, key=lambda v: (v.effective, v.enacted))
-        for a, b in pairwise(sorted_temps):
-            if a.expires and b.effective < a.expires:
-                typed_violations.append(
-                    _typed_violation_from_address(
-                        kind="temporary_overlap",
-                        address=address,
-                        message=(
-                            f"{address}: overlapping temporary versions — "
-                            f"v1=[{a.effective}, {a.expires}) vs "
-                            f"v2=[{b.effective}, {b.expires or '...'})"
-                        ),
-                    )
-                )
+        if "expiry_chain" in selected:
+            for v in tl.versions:
+                if v.variant_kind != "temporary":
+                    continue
+                if v.source is None:
+                    continue
+                if not v.source.expiry_chain:
+                    continue
 
-        for v in tl.versions:
-            if v.variant_kind != "temporary":
-                continue
-            if v.source is None:
-                continue
-            if not v.source.expiry_chain:
-                continue
-
-            for i, override, previous in _expiry_chain_violations(source=v.source):
-                if previous == "empty":
+                for i, override, previous in _expiry_chain_violations(source=v.source):
+                    if previous == "empty":
+                        typed_violations.append(
+                            _typed_violation_from_address(
+                                kind="expiry_chain_non_monotone",
+                                address=address,
+                                message=(
+                                    f"{address}: expiry_chain[{i}] has empty new_expires "
+                                    f"(source={override.source_statute_id})"
+                                ),
+                            )
+                        )
+                        continue
                     typed_violations.append(
                         _typed_violation_from_address(
                             kind="expiry_chain_non_monotone",
                             address=address,
                             message=(
-                                f"{address}: expiry_chain[{i}] has empty new_expires "
-                                f"(source={override.source_statute_id})"
+                                f"{address}: expiry_chain[{i}] new_expires="
+                                f"{override.new_expires!r} <= previous "
+                                f"{previous!r} (not monotonically increasing)"
                             ),
                         )
                     )
-                    continue
-                typed_violations.append(
-                    _typed_violation_from_address(
-                        kind="expiry_chain_non_monotone",
-                        address=address,
-                        message=(
-                            f"{address}: expiry_chain[{i}] new_expires="
-                            f"{override.new_expires!r} <= previous "
-                            f"{previous!r} (not monotonically increasing)"
-                        ),
-                    )
-                )
 
-    ir_nodes = (
-        _collect_statute_addressed_nodes(ir_node)
-        if isinstance(ir_node, IRStatute)
-        else _collect_addressed_nodes(ir_node)
-    )
-    active_versions, selection_notes = _active_versions_with_selection_notes(timelines, pit_date)
+    if run_replay_checks:
+        ir_nodes = (
+            _collect_statute_addressed_nodes(ir_node)
+            if isinstance(ir_node, IRStatute)
+            else _collect_addressed_nodes(ir_node)
+        )
+        active_versions, selection_notes = _active_versions_with_selection_notes(timelines, pit_date)
 
-    for address in ir_nodes:
-        if address not in active_versions and len(address.path) <= 2:
-            note = selection_notes.get(address)
-            note_text = f" ({_selection_note_from_detail(note)})" if note else ""
-            typed_violations.append(
-                _typed_violation_from_address(
-                    kind="ir_without_timeline",
-                    address=address,
-                    message=(
-                        f"IR_WITHOUT_TIMELINE: {address} present in IR "
-                        f"but has no active timeline version at {pit_date}{note_text}"
-                    ),
-                    detail=note or {},
-                )
-            )
-
-    for address, version in active_versions.items():
-        if version is None or version.content is None:
-            continue
-        if address not in ir_nodes:
+        for address in ir_nodes:
+            if address in active_versions or _is_facet_timeline_address(address):
+                continue
             if len(address.path) <= 2:
+                note = selection_notes.get(address)
+                note_text = f" ({_selection_note_from_detail(note)})" if note else ""
                 typed_violations.append(
                     _typed_violation_from_address(
-                        kind="timeline_without_ir",
+                        kind="ir_without_timeline",
                         address=address,
                         message=(
-                            f"TIMELINE_WITHOUT_IR: {address} has active "
-                            f"timeline version at {pit_date} but is missing from IR"
+                            f"IR_WITHOUT_TIMELINE: {address} present in IR "
+                            f"but has no active timeline version at {pit_date}{note_text}"
+                        ),
+                        detail=note or {},
+                    )
+                )
+
+        for address, version in active_versions.items():
+            if version is None or version.content is None:
+                continue
+            if _is_facet_timeline_address(address):
+                continue
+            materialized_node = _materialized_node_for_address(ir_node, address, ir_nodes)
+            if materialized_node is None:
+                if len(address.path) <= 2:
+                    typed_violations.append(
+                        _typed_violation_from_address(
+                            kind="timeline_without_ir",
+                            address=address,
+                            message=(
+                                f"TIMELINE_WITHOUT_IR: {address} has active "
+                                f"timeline version at {pit_date} but is missing from IR"
+                            ),
+                        )
+                    )
+                continue
+
+            timeline_text = irnode_to_text(version.content).strip()
+            ir_text = _normalized_ir_text(materialized_node)
+            timeline_norm = " ".join(timeline_text.split())
+            ir_norm = " ".join(ir_text.split())
+            if timeline_norm and ir_norm and timeline_norm != ir_norm and _is_section_address(address):
+                typed_violations.append(
+                    _typed_violation_from_address(
+                        kind="content_mismatch",
+                        address=address,
+                        message=(
+                            f"CONTENT_MISMATCH: {address} timeline={timeline_norm[:80]!r}... vs ir={ir_norm[:80]!r}..."
                         ),
                     )
                 )
-            continue
 
-        timeline_text = irnode_to_text(version.content).strip()
-        ir_text = irnode_to_text(ir_nodes[address]).strip()
-        timeline_norm = " ".join(timeline_text.split())
-        ir_norm = " ".join(ir_text.split())
-        if timeline_norm and ir_norm and timeline_norm != ir_norm and _is_section_address(address):
+        for violation in _same_source_descendant_shadow_violations(
+            ir_nodes=ir_nodes,
+            active_versions=active_versions,
+            pit_date=pit_date,
+        ):
             typed_violations.append(
                 _typed_violation_from_address(
-                    kind="content_mismatch",
-                    address=address,
-                    message=(
-                        f"CONTENT_MISMATCH: {address} timeline={timeline_norm[:80]!r}... vs ir={ir_norm[:80]!r}..."
+                    kind="same_source_descendant_shadow",
+                    address=violation.address,
+                    message=_same_source_descendant_shadow_message(
+                        address=violation.address,
+                        ancestor_address=violation.ancestor_address,
+                        descendant_version=violation.descendant_version,
+                        timeline_text=violation.timeline_text,
+                        materialized_text=violation.materialized_text,
+                        pit_date=pit_date,
                     ),
+                    detail={
+                        "ancestor_address": str(violation.ancestor_address),
+                        "source_statute": _source_statute_id(violation.descendant_version),
+                        "descendant_effective": violation.descendant_version.effective,
+                        "descendant_enacted": violation.descendant_version.enacted,
+                        "ancestor_effective": violation.ancestor_version.effective,
+                        "ancestor_enacted": violation.ancestor_version.enacted,
+                        "timeline_preview": violation.timeline_text[:120],
+                        "materialized_preview": violation.materialized_text[:120],
+                    },
                 )
             )
 
-    for violation in _same_source_descendant_shadow_violations(
-        ir_nodes=ir_nodes,
-        active_versions=active_versions,
-        pit_date=pit_date,
-    ):
-        typed_violations.append(
-            _typed_violation_from_address(
-                kind="same_source_descendant_shadow",
-                address=violation.address,
-                message=_same_source_descendant_shadow_message(
+        for violation in _active_descendant_materialization_violations(
+            ir_node=ir_node,
+            ir_nodes=ir_nodes,
+            active_versions=active_versions,
+        ):
+            typed_violations.append(
+                _typed_violation_from_address(
+                    kind="active_descendant_not_materialized",
                     address=violation.address,
-                    ancestor_address=violation.ancestor_address,
-                    descendant_version=violation.descendant_version,
-                    timeline_text=violation.timeline_text,
-                    materialized_text=violation.materialized_text,
-                    pit_date=pit_date,
-                ),
-                detail={
-                    "ancestor_address": str(violation.ancestor_address),
-                    "source_statute": _source_statute_id(violation.descendant_version),
-                    "descendant_effective": violation.descendant_version.effective,
-                    "descendant_enacted": violation.descendant_version.enacted,
-                    "ancestor_effective": violation.ancestor_version.effective,
-                    "ancestor_enacted": violation.ancestor_version.enacted,
-                    "timeline_preview": violation.timeline_text[:120],
-                    "materialized_preview": violation.materialized_text[:120],
-                },
-            )
-        )
-
-    for violation in _active_descendant_materialization_violations(
-        ir_nodes=ir_nodes,
-        active_versions=active_versions,
-    ):
-        typed_violations.append(
-            _typed_violation_from_address(
-                kind="active_descendant_not_materialized",
-                address=violation.address,
-                message=_active_descendant_materialization_message(
-                    violation=violation,
-                    pit_date=pit_date,
-                ),
-                detail={
-                    "ancestor_address": (
-                        str(violation.ancestor_address)
-                        if violation.ancestor_address is not None
-                        else ""
+                    message=_active_descendant_materialization_message(
+                        violation=violation,
+                        pit_date=pit_date,
                     ),
-                    "source_statute": _source_statute_id(violation.descendant_version),
-                    "descendant_effective": violation.descendant_version.effective,
-                    "descendant_enacted": violation.descendant_version.enacted,
-                    "timeline_preview": violation.timeline_text[:120],
-                    "ancestor_materialized_preview": violation.ancestor_materialized_text[:120],
-                },
+                    detail={
+                        "ancestor_address": (
+                            str(violation.ancestor_address)
+                            if violation.ancestor_address is not None
+                            else ""
+                        ),
+                        "source_statute": _source_statute_id(violation.descendant_version),
+                        "descendant_effective": violation.descendant_version.effective,
+                        "descendant_enacted": violation.descendant_version.enacted,
+                        "timeline_preview": violation.timeline_text[:120],
+                        "ancestor_materialized_preview": violation.ancestor_materialized_text[:120],
+                    },
+                )
             )
-        )
 
-    return typed_violations
+    include_variants = replay_mode == "full" or "replay_timeline" in selected
+    filtered: list[TimelineInvariantViolation] = []
+    for violation in typed_violations:
+        tiered = _with_timeline_tier(violation, mode=replay_mode)
+        if include_variants or tiered.detail.get("tier") == "robust":
+            filtered.append(tiered)
+    return filtered
+
+
+def timeline_invariant_violation_row(violation: TimelineInvariantViolation) -> dict[str, Any]:
+    """Serialize a typed violation for evidence and bench diagnostic surfaces."""
+    row = {
+        "kind": violation.kind,
+        "section_label": violation.section_label,
+        "address_path": violation.address_path,
+        "message": violation.message,
+    }
+    row.update(dict(violation.detail))
+    return row
+
+
+def collect_apply_phase_shadow_paths(
+    findings: Sequence[Any],
+) -> frozenset[str]:
+    """Collect descendant paths already witnessed by apply-phase transition detectors."""
+    paths: set[str] = set()
+    for finding in findings:
+        if isinstance(finding, Mapping):
+            kind = str(finding.get("kind") or "")
+            detail = finding.get("detail") or {}
+        else:
+            kind = str(getattr(finding, "kind", "") or "")
+            detail = getattr(finding, "detail", None) or {}
+        if kind != "REPLAY.TRANSITION_DETECTOR":
+            continue
+        if not isinstance(detail, Mapping):
+            continue
+        if str(detail.get("detector") or "") != "same_source_descendant_snapshot_shadow":
+            continue
+        path = str(detail.get("path") or "").strip()
+        if path:
+            paths.add(path)
+    return frozenset(paths)
+
+
+def is_promotable_timeline_invariant_row(
+    row: Mapping[str, Any],
+    *,
+    apply_phase_shadow_paths: frozenset[str] | None = None,
+) -> bool:
+    """Return True when a violation row may promote to PROVED_REPLAY_BUG."""
+    tier = str(row.get("tier") or "").strip()
+    if tier and tier != "robust":
+        return False
+    kind = str(row.get("kind") or "").strip()
+    if kind not in _EVIDENCE_PROMOTABLE_TIMELINE_KINDS:
+        return False
+    if (
+        kind == "same_source_descendant_shadow"
+        and apply_phase_shadow_paths
+        and str(row.get("address_path") or "").strip() in apply_phase_shadow_paths
+    ):
+        return False
+    if tier:
+        return True
+    return kind in _EVIDENCE_PROMOTABLE_TIMELINE_KINDS
+
+
+def filter_promotable_timeline_invariant_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    apply_phase_shadow_paths: frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Keep only robust-tier timeline violations for evidence promotion."""
+    return [
+        dict(row)
+        for row in rows
+        if is_promotable_timeline_invariant_row(
+            row,
+            apply_phase_shadow_paths=apply_phase_shadow_paths,
+        )
+    ]

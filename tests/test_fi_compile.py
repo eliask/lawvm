@@ -696,6 +696,24 @@ def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> No
     assert rows
 
 
+def test_2019_371_compile_records_omission_only_recodification_pathology_for_sections_209_210() -> None:
+    """Renumber-only omission shells are manual-frontier source limits, not apply payloads."""
+    replay = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        quiet=True,
+        stop_before="2020/1256",
+    )
+    omission_shell_labels = {
+        str(row.get("target_label") or "")
+        for row in replay.source_pathology_rows()
+        if row.get("code") == "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL"
+        and row.get("source_statute") == "2019/371"
+    }
+    assert any(" 209 §" in label for label in omission_shell_labels)
+    assert any(" 210 §" in label for label in omission_shell_labels)
+
+
 def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> None:
     from lawvm.tools.inspect_amendment import _working_johtolause
 
@@ -2238,6 +2256,59 @@ def test_replay_xml_1919_1_scopes_flat_replaces_into_live_chapter_gaps() -> None
     assert not (top_level_sections & {"1", "11", "21", "37", "38", "41", "42", "44"})
 
 
+def test_replay_xml_1996_79_preserves_synthesized_chapter_descendant_order() -> None:
+    """Active descendant chapter synthesis must keep children under the chapter."""
+    replay = pinned_replay("1996/79", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:6a/section:23a" in sections
+    assert "chapter:6a/section:23b" in sections
+
+    chapter_6a = next(
+        child
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.CHAPTER and child.label == "6a"
+    )
+    chapter_6a_section_labels = [
+        child.label
+        for child in chapter_6a.children
+        if child.kind is IRNodeKind.SECTION
+    ]
+    assert chapter_6a_section_labels == ["23a", "23b"]
+
+    hcontainer_section_labels = [
+        grandchild.label
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.HCONTAINER
+        for grandchild in child.children
+        if grandchild.kind is IRNodeKind.SECTION
+    ]
+    assert "23a" not in hcontainer_section_labels
+    assert "23b" not in hcontainer_section_labels
+
+    replay_text = replay.serialize_text()
+    assert replay_text.index("23 a §") < replay_text.index("7 luku")
+
+
+def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None:
+    replay = pinned_replay("1966/611", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section4 = sections["section:4"]
+    subsection1 = next(
+        child
+        for child in section4.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    text = " ".join(irnode_to_text(subsection1).split())
+
+    assert subsection1.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD",
+    )
+    assert "kihlakunnantuomarin virka B 4" in text
+    assert "ulosottoapulaisen toimi V 18" in text
+    assert "henkikirjoittajan" not in text
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
@@ -2744,6 +2815,176 @@ def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_s
         and not op.target_chapter
         for op in target_ops
     )
+
+
+def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapter_scope() -> None:
+    before = pinned_replay("1968/360", stop_before="2019/308", mode="official_consolidation", quiet=True)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2019/308")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        amendment_id="2019/308",
+        source_title="Laki elinkeinotulon verottamisesta annetun lain muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1968/360",
+        strict_profile=None,
+    )
+
+    inserted_subsections = {
+        op.target_section: op
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_paragraph == 2
+        and op.target_section in {"1", "2", "7"}
+    }
+    assert inserted_subsections["1"].target_chapter is None
+    assert inserted_subsections["2"].target_chapter is None
+    assert inserted_subsections["7"].target_chapter == "2"
+
+    scoped_whole_section_inserts = {
+        op.target_section: op.target_chapter
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_paragraph is None
+        and op.target_section in {"42a"}
+    }
+    assert scoped_whole_section_inserts["42a"] == "3"
+    assert any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "53"
+        and op.target_paragraph == 3
+        and op.target_chapter == "3"
+        for op in phase2.output
+    )
+
+
+def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsection_inserts() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2017/601")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="3", children=()),
+                IRNode(kind=IRNodeKind.SECTION, label="4", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2017/601",
+        source_title="Valtioneuvoston asetus julkisen talouden suunnitelmasta annetun valtioneuvoston asetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="2014/120",
+        strict_profile=None,
+    )
+
+    section3_inserts = sorted(
+        op.target_paragraph
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "3"
+    )
+    assert section3_inserts == [8, 9, 10]
+    assert any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "5a"
+        and op.target_paragraph is None
+        for op in phase2.output
+    )
+
+
+def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sections() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1973/390")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.CHAPTER, label="9", children=()),
+                IRNode(kind=IRNodeKind.CHAPTER, label="12", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="1973/390",
+        source_title="Laki kauppakaaren muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1734/3-000",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_unit_kind, op.target_chapter, op.target_section)
+        for op in phase2.output
+    ] == [
+        ("REPLACE", "chapter", None, "12"),
+        ("INSERT", "section", "9", "12"),
+        ("INSERT", "section", "9", "13"),
+    ]
+
+
+def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_preamble() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2011/582")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", children=()),
+                IRNode(kind=IRNodeKind.SECTION, label="2", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2011/582",
+        source_title=(
+            "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
+            "ilmoitusvelvollisuuden alkamisesta annetun asetuksen muuttamisesta"
+        ),
+        used_sec1_fallback=False,
+        parent_id="2011/516",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_unit_kind, op.target_section, op.sec1_body_johto_fallback)
+        for op in phase2.output
+    ] == [("REPLACE", "section", "1", False)]
+    assert phase2.output[0].source_statute == "2011/582"
+    assert phase2.output[0].lo is not None
+    assert phase2.output[0].lo.source.raw_text == "muutetaan (516/2011) 1 § seuraavasti:"
 
 
 def test_normalize_and_compile_ops_records_empty_extraction_observation(

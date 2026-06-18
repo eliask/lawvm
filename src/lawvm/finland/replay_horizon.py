@@ -41,6 +41,15 @@ def oracle_version_future_repeal_only_uses_cutoff_date(
     return saw_oracle_version_op
 
 
+def _is_repeal_like_legal_operation(lo: LegalOperation) -> bool:
+    """Return True for replay ops that remove visible legal state."""
+    return lo.action is StructuralAction.REPEAL or (
+        lo.action is StructuralAction.REPLACE
+        and lo.payload is not None
+        and getattr(lo.payload, "attrs", {}).get("lawvm_repeal_placeholder") == "1"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ReplayHorizonRequest:
     """Inputs for choosing replay materialization and expiry horizons."""
@@ -52,6 +61,7 @@ class ReplayHorizonRequest:
     oracle_version_amendment_id: str
     compiled_ops: Iterable[dict[str, object]]
     legal_operations: Iterable[LegalOperation]
+    oracle_reflected_section_original_versions: Iterable[str]
     replay_print: Callable[[str], None]
 
 
@@ -68,6 +78,11 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
     """Choose PIT materialization and expiry horizons using the existing FI policy."""
     oracle_materialize_as_of: Optional[str] = None
     if request.mode == "official_consolidation":
+        reflected_section_original_versions = frozenset(
+            str(source_id)
+            for source_id in request.oracle_reflected_section_original_versions
+            if str(source_id)
+        )
         oracle_cutoff_iso: Optional[str] = (
             request.cutoff_date.isoformat() if request.cutoff_date is not None else None
         )
@@ -104,6 +119,7 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                 and iss_iso >= oracle_cutoff_iso
                 and eff_iso is not None
                 and eff_iso > oracle_cutoff_iso
+                and rec_sid not in reflected_section_original_versions
             ):
                 continue
             if (
@@ -120,24 +136,21 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
 
         if oracle_vid_id:
             for lo in request.legal_operations:
-                is_repeal_like = lo.action is StructuralAction.REPEAL or (
-                    lo.action is StructuralAction.REPLACE
-                    and lo.payload is not None
-                    and getattr(lo.payload, "attrs", {}).get("lawvm_repeal_placeholder") == "1"
-                )
-                if not is_repeal_like:
-                    continue
                 lo_src = lo.source
                 if lo_src is None or lo_src.statute_id != oracle_vid_id:
                     continue
                 lo_eff = lo_src.effective
                 if not lo_eff:
                     continue
+                is_repeal_like = _is_repeal_like_legal_operation(lo)
+                if not is_repeal_like and lo_src.statute_id not in reflected_section_original_versions:
+                    continue
                 if oracle_materialize_as_of is None or lo_eff > oracle_materialize_as_of:
                     oracle_materialize_as_of = lo_eff
+                    op_family = "REPEAL" if is_repeal_like else "non-REPEAL"
                     request.replay_print(
                         f"  oracle_materialize_as_of extended to {lo_eff}"
-                        f" by REPEAL op {lo.op_id!r} from {oracle_vid_id}"
+                        f" by {op_family} op {lo.op_id!r} from {oracle_vid_id}"
                     )
 
     if request.as_of:

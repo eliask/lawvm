@@ -18,6 +18,7 @@ from __future__ import annotations
 import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.tree_ops import check_invariants
 from lawvm.core.semantic_types import (
     IRNodeKind,
@@ -32,6 +33,7 @@ from lawvm.finland.source_normalize import (
 )
 from lawvm.finland.source_normalization_kinds import (
     BASE_DIGIT_RESET_SPLIT,
+    BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
@@ -48,6 +50,10 @@ from lawvm.finland.source_normalization_kinds import (
 def test_source_normalization_fact_finding_kind_resolves_registered_base_codes() -> None:
     assert source_normalization_fact_finding_kind("tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
     assert source_normalization_fact_finding_kind("base_tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
+    assert (
+        source_normalization_fact_finding_kind("base_dotted_paragraph_subsection_promotion")
+        == "BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION"
+    )
     assert source_normalization_fact_finding_kind("") is None
     assert source_normalization_fact_finding_kind("not_registered") is None
 
@@ -289,6 +295,109 @@ class TestTagReclassify:
         assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
         assert "subsection:2" in fold_facts[0].before
         assert "3->2" in fold_facts[0].after
+
+    def test_promotes_dotted_paragraph_rows_to_peer_subsections(self) -> None:
+        """Old decision-style dotted rows are momentit, not kohdat."""
+        xml = etree.fromstring(
+            """
+            <section eId="chp_3__sec_4">
+              <num>4 §</num>
+              <heading>Vaatimukset</heading>
+              <subsection eId="chp_3__sec_4__subsec_1">
+                <paragraph><num>1.</num><content><p>Ensimmäinen momentti.</p></content></paragraph>
+                <paragraph><num>2.</num><content><p>Toinen momentti.</p></content></paragraph>
+                <paragraph><num>3.</num><content><p>Kolmas momentti.</p></content></paragraph>
+              </subsection>
+              <subsection eId="chp_3__sec_4__subsec_2">
+                <intro><p>4. Neljäs momentti sisältää luettelon:</p></intro>
+                <paragraph><num>a)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>b)</num><content><p>toinen kohta.</p></content></paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1990/1207")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3", "4"]
+        assert [irnode_to_text(subsection) for subsection in subsections[:3]] == [
+            "1. Ensimmäinen momentti.",
+            "2. Toinen momentti.",
+            "3. Kolmas momentti.",
+        ]
+        assert [child.label for child in subsections[3].children if child.kind == IRNodeKind.PARAGRAPH] == [
+            "a",
+            "b",
+        ]
+        assert subsections[3].attrs["lawvm_source_subsection_eid"] == "chp_3__sec_4__subsec_2"
+        assert check_invariants(normalized) == []
+
+        dotted_facts = [
+            fact for fact in facts if fact.kind_value == BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION
+        ]
+        assert len(dotted_facts) == 2
+        assert dotted_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "dotted paragraph rows" in dotted_facts[0].before
+        assert "peer subsections" in dotted_facts[0].after
+        assert "dotted intro moment" in dotted_facts[1].before
+        assert "subsection:4" in dotted_facts[1].after
+
+    def test_dotted_paragraph_promotion_ignores_parenthesized_items(self) -> None:
+        """Normal Finnish kohdat use parenthesized labels and must not be promoted."""
+        xml = etree.fromstring(
+            """
+            <section eId="chp_1__sec_2">
+              <num>2 §</num>
+              <subsection eId="chp_1__sec_2__subsec_1">
+                <intro><p>Momentissa säädetään:</p></intro>
+                <paragraph><num>1)</num><content><p>ensimmäinen kohta;</p></content></paragraph>
+                <paragraph><num>2)</num><content><p>toinen kohta.</p></content></paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+        assert [
+            fact for fact in facts if fact.kind_value == BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION
+        ] == []
+
+    def test_dotted_paragraph_promotion_can_be_disabled_for_amendment_payloads(self) -> None:
+        """Amendment payload normalization must not infer base-only moment promotion."""
+        xml = etree.fromstring(
+            """
+            <section eId="chp_3__sec_4">
+              <num>4 §</num>
+              <subsection eId="chp_3__sec_4__subsec_1">
+                <paragraph><num>1.</num><content><p>Ensimmäinen rivi.</p></content></paragraph>
+                <paragraph><num>2.</num><content><p>Toinen rivi.</p></content></paragraph>
+              </subsection>
+            </section>
+            """
+        )
+        raw = fi_xml_to_ir_node(xml, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(
+            raw,
+            "2005/354",
+            allow_dotted_paragraph_subsection_promotion=False,
+        )
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1"]
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1.", "2."]
+        assert [
+            fact for fact in facts if fact.kind_value == BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION
+        ] == []
 
 
 # ---------------------------------------------------------------------------

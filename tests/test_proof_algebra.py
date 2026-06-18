@@ -631,9 +631,10 @@ class TestPromotionRules:
         ctx = _ctx(
             invariant_violations=[
                 {
-                    "kind": "version_gap",
+                    "kind": "content_mismatch",
+                    "tier": "robust",
                     "section_label": "1",
-                    "address_path": "p",
+                    "address_path": "section:1",
                     "message": "test",
                 }
             ],
@@ -642,8 +643,38 @@ class TestPromotionRules:
         assert len(result) == 1
         assert result[0].tier == ProofTier.PROVED_REPLAY_BUG
 
+    def test_timeline_invariant_violation_skips_materialization_variant(self) -> None:
+        ctx = _ctx(
+            invariant_violations=[
+                {
+                    "kind": "timeline_without_ir",
+                    "tier": "materialization_variant",
+                    "section_label": "1",
+                    "address_path": "/heading",
+                    "message": "heading facet",
+                }
+            ],
+        )
+        assert rule_timeline_invariant_violation(ctx) == ()
+
     def test_timeline_invariant_violation_skips_empty(self) -> None:
         ctx = _ctx()
+        assert rule_timeline_invariant_violation(ctx) == ()
+
+    def test_timeline_invariant_violation_skips_apply_phase_shadow(self) -> None:
+        ctx = SectionEvidenceContext(
+            section_label="section:5",
+            invariant_violations=[
+                {
+                    "kind": "same_source_descendant_shadow",
+                    "tier": "robust",
+                    "section_label": "5",
+                    "address_path": "section:5/subsection:2",
+                    "message": "shadow",
+                }
+            ],
+            apply_phase_shadow_paths=frozenset({"section:5/subsection:2"}),
+        )
         assert rule_timeline_invariant_violation(ctx) == ()
 
 
@@ -735,7 +766,13 @@ class TestResolver:
                 "blame_after_score": 0.85,
             },
             invariant_violations=[
-                {"kind": "gap", "section_label": "1", "address_path": "p", "message": "x"}
+                {
+                    "kind": "content_mismatch",
+                    "tier": "robust",
+                    "section_label": "1",
+                    "address_path": "section:1",
+                    "message": "CONTENT_MISMATCH: test",
+                }
             ],
         )
         result = resolve(
@@ -1093,10 +1130,11 @@ class TestParity:
                 section_invariant_violations={
                     "section:1": [
                         {
-                            "kind": "gap",
+                            "kind": "content_mismatch",
+                            "tier": "robust",
                             "section_label": "1",
-                            "address_path": "p",
-                            "message": "x",
+                            "address_path": "section:1",
+                            "message": "CONTENT_MISMATCH: test",
                         }
                     ]
                 },
@@ -1462,10 +1500,11 @@ class TestParity:
                 section_invariant_violations={
                     "section:1": [
                         {
-                            "kind": "gap",
+                            "kind": "content_mismatch",
+                            "tier": "robust",
                             "section_label": "1",
-                            "address_path": "p",
-                            "message": "x",
+                            "address_path": "section:1",
+                            "message": "CONTENT_MISMATCH: test",
                         }
                     ]
                 },

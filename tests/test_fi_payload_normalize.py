@@ -719,6 +719,95 @@ def test_payload_normalize_keeps_mix_of_new_and_existing_standalone_sections() -
     ]
 
 
+def test_container_payload_prunes_sparse_foreign_scoped_replace_nonmembers() -> None:
+    live_container = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="42"),
+            IRNode(kind=IRNodeKind.SECTION, label="43"),
+        ),
+    )
+    ctx = dc_replace(
+        _mock_ctx("chapter", "7", target_chapter="7", live_node=live_container),
+        container_member_labels=frozenset({"42", "43"}),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="42"),
+            IRNode(kind=IRNodeKind.SECTION, label="43"),
+            IRNode(kind=IRNodeKind.SECTION, label="51"),
+            IRNode(kind=IRNodeKind.SECTION, label="61"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "7",
+        muutos_ir,
+        {"51", "61"},
+        foreign_scoped_replace_section_targets={"51", "61"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["51", "61"]
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["42", "43"]
+
+
+def test_container_payload_keeps_dense_foreign_replace_bridge() -> None:
+    live_container = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="9 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="13"),
+            IRNode(kind=IRNodeKind.SECTION, label="17"),
+        ),
+    )
+    ctx = dc_replace(
+        _mock_ctx("chapter", "9", target_chapter="9", live_node=live_container),
+        container_member_labels=frozenset({"13", "17"}),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="9",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="9 luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="13"),
+            IRNode(kind=IRNodeKind.SECTION, label="14"),
+            IRNode(kind=IRNodeKind.SECTION, label="15"),
+            IRNode(kind=IRNodeKind.SECTION, label="16"),
+            IRNode(kind=IRNodeKind.SECTION, label="17"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "9",
+        muutos_ir,
+        {"14", "15", "16"},
+        foreign_scoped_replace_section_targets={"14", "15", "16"},
+    )
+
+    assert changed is False
+    assert isinstance(got, IRNode)
+    assert pruned == []
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == [
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+    ]
+
+
 def test_payload_normalize_aligns_sparse_omission_subsections_to_live() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
@@ -892,6 +981,83 @@ def test_payload_normalize_does_not_relabel_item_only_sparse_omission_payload() 
     assert changed is False
     assert got is muutos_ir
     assert [c.label for c in got.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "5"]
+
+
+def test_build_subsection_slot_assignment_shares_in_place_intro_item_slot() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                attrs={"lawvm_in_place_merge": "1"},
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="new intro"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="new item two"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="new item three"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="different item three"),),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_special="johd",
+        ),
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_item="2",
+        ),
+        AmendmentOp(
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_item="3",
+        ),
+    ]
+
+    assignment = _build_subsection_slot_assignment(muutos_ir, ops)
+    assert assignment.for_op(ops[2]) is not None
+    assert assignment.for_op(ops[2]).label == "1"
+    assert any(obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING" for obs in assignment.binding_observations)
+
+    unmerged_slots = tuple(
+        IRNode(
+            kind=child.kind,
+            label=child.label,
+            text=child.text,
+            attrs={},
+            children=child.children,
+        )
+        if child.kind is IRNodeKind.SUBSECTION
+        else child
+        for child in muutos_ir.children
+    )
+    unmerged_muutos_ir = IRNode(kind=muutos_ir.kind, label=muutos_ir.label, children=unmerged_slots)
+    unmerged_assignment = _build_subsection_slot_assignment(unmerged_muutos_ir, ops)
+    assert unmerged_assignment.for_op(ops[2]) is not None
+    assert unmerged_assignment.for_op(ops[2]).label == "5"
+    assert not any(
+        obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING"
+        for obs in unmerged_assignment.binding_observations
+    )
 
 
 def test_slot_item_matching_does_not_alias_roman_glyph_to_arabic_item() -> None:
@@ -1670,6 +1836,91 @@ def test_normalize_group_payload_rewrites_named_row_repeals_with_genitive_candid
         "REPEAL 1 § 1 mom 3 kohta",
         "REPEAL 1 § 1 mom 34 kohta",
     ]
+
+
+def _province_table_row(header: str, *cells: str) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.ROW,
+        children=tuple(IRNode(kind=IRNodeKind.CELL, text=cell) for cell in (header, *cells)),
+    )
+
+
+def test_normalize_group_payload_merges_named_row_province_table_blocks() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="13 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.TABLE,
+                                children=(
+                                    _province_table_row("Lääni ja kunta", "Veroluokat"),
+                                    _province_table_row("Uudenmaan lääni"),
+                                    _province_table_row("Espoo", "1,0"),
+                                    _province_table_row("Kymen lääni"),
+                                    _province_table_row("Hamina", "2,0"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="13 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.TABLE,
+                                children=(
+                                    _province_table_row("Lääni ja kunta", "Veroluokat"),
+                                    _province_table_row("Kymen lääni"),
+                                    _province_table_row("Hamina", "9,9"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "13", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="13",
+        source_statute="1992/1009",
+        named_row_targets=("kymen",),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+    merged = _muutos_ir(got)
+    text = irnode_to_text(merged)
+
+    assert "Uudenmaan lääni" in text
+    assert "Espoo 1,0" in text
+    assert "Hamina 9,9" in text
+    assert "Hamina 2,0" not in text
+    assert any(
+        o.kind == "ELAB.NAMED_ROW_PROVINCE_TABLE_MERGE"
+        for o in (got.elaboration_observations or ())
+    )
 
 
 def test_normalize_group_payload_rewrites_named_row_replace_with_live_anchor_match() -> None:

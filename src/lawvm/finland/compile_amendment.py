@@ -24,6 +24,7 @@ from lawvm.finland.metadata import _amendment_effective_date, _statute_issue_dat
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.scope import find_body_section_chapter
 from lawvm.finland.standalone_targets import (
+    group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets,
 )
@@ -84,6 +85,13 @@ def compile_amendment_ops(
             target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
+        foreign_scoped_replace_section_targets = group_shadow_pruning_foreign_scoped_replace_section_targets(
+            ops,
+            target_unit_kind=target_unit_kind_value,
+            target_norm=group_key.target_norm,
+            target_part=group_key.target_part,
+            duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
+        )
         group_result = _compile_group_typed(
             CompileGroupRequest(
                 master=master,
@@ -94,6 +102,7 @@ def compile_amendment_ops(
                 group_ops=group_ops,
                 standalone_section_targets=standalone_section_targets,
                 foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+                foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
                 inserted_chapter_labels=inserted_chapter_labels,
                 muutos_tree=muutos_tree,
                 johto=johto,

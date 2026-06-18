@@ -193,7 +193,35 @@ def test_all_signal_types_is_complete() -> None:
     assert "target_absent" in ALL_SIGNAL_TYPES
     assert "coverage_gap" in ALL_SIGNAL_TYPES
     assert "occupancy_violation" in ALL_SIGNAL_TYPES
+    assert "invariant_lint_warning" in ALL_SIGNAL_TYPES
     assert len(set(ALL_SIGNAL_TYPES)) == len(ALL_SIGNAL_TYPES)
+
+
+def test_project_invariant_signals_row_shape() -> None:
+    meta = {
+        "typed_invariant_violations": [
+            {
+                "kind": "duplicate_label",
+                "path": "body/section:1",
+                "child_kind": "section",
+                "label": "5a",
+                "surface": "replay_fold_tree",
+            },
+        ],
+        "flattened_sublist_warnings": [
+            {
+                "kind": "flattened_sublist_mixed_family",
+                "path": "body/section:4/subsection:1",
+                "node_kind": "subsection",
+            },
+        ],
+    }
+    rows = sc._project_invariant_signals("1994/1472", meta, ())
+    assert len(rows) == 2
+    assert rows[0]["signal_type"] == "invariant_violation"
+    assert rows[0]["category"] == "duplicate_label"
+    assert rows[1]["signal_type"] == "invariant_lint_warning"
+    assert rows[1]["category"] == "flattened_sublist_mixed_family"
 
 
 # ---------------------------------------------------------------------------

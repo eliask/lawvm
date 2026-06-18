@@ -43,6 +43,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID = (
+    "fi.restructure.relabel_migration_ledger_lookup"
+)
+FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID = (
+    "fi.restructure.relabel_structural_label_alias_lookup"
+)
+
 OwnedRelabelSignature = tuple[
     tuple[tuple[str, str], ...],
     tuple[tuple[str, str], ...],
@@ -525,12 +532,52 @@ def _parse_address(address: str) -> List[Tuple[str, str]]:
     return parts
 
 
+def _find_paths_by_structural_label(
+    tree: IRNode,
+    kind: str,
+    label: str,
+) -> list[Tuple[Tuple[str, str], ...]]:
+    """Return live paths whose structural label normalizes to the target token."""
+    norm_label = _norm_num_token(label)
+    matches: list[Tuple[Tuple[str, str], ...]] = []
+
+    def _walk(node: IRNode, prefix: Tuple[Tuple[str, str], ...]) -> None:
+        for child in node.children:
+            child_kind = child.kind.value
+            child_label = child.label or ""
+            child_path = prefix + ((child_kind, child_label),)
+            if child_kind == kind and _norm_num_token(child_label) == norm_label:
+                matches.append(child_path)
+            _walk(child, child_path)
+
+    _walk(tree, ())
+    return matches
+
+
+def _found_via_structural_label_alias(
+    tree: IRNode,
+    target_path: List[Tuple[str, str]],
+    found_path: Tuple[Tuple[str, str], ...],
+) -> bool:
+    """True when lookup matched only through Finland structural-label normalization."""
+    if not target_path:
+        return False
+    leaf_kind, leaf_label = target_path[-1]
+    if leaf_kind not in {"part", "chapter", "section"}:
+        return False
+    if _tops.find_all(tree, leaf_kind, leaf_label):
+        return False
+    return _norm_num_token(found_path[-1][1]) == _norm_num_token(leaf_label)
+
+
 def _find_path_by_suffix(tree: IRNode, target_path: List[Tuple[str, str]]) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Find a live tree path whose suffix matches the plan-owned target path."""
     if not target_path:
         return None
     leaf_kind, leaf_label = target_path[-1]
     candidates = _tops.find_all(tree, leaf_kind, leaf_label)
+    if not candidates and leaf_kind in {"part", "chapter", "section"}:
+        candidates = _find_paths_by_structural_label(tree, leaf_kind, leaf_label)
     target_suffix = tuple(target_path)
 
     def _normalize_path(
@@ -550,6 +597,57 @@ def _find_path_by_suffix(tree: IRNode, target_path: List[Tuple[str, str]]) -> Op
             continue
         if _normalize_path(tuple(candidate[-len(target_suffix):])) == normalized_target_suffix:
             return tuple(candidate)
+    return None
+
+
+def _strip_hcontainer_from_path(
+    path: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    """Drop editorial hcontainer wrappers from a legal-address path."""
+    return tuple(step for step in path if step[0] != "hcontainer")
+
+
+def _resolve_live_section_snapshot_path(
+    tree: IRNode,
+    applied_path: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...] | None:
+    """Map a relabel-time path to the live post-plan section address.
+
+    Section relabels can record an amendment-frame or pre-part-relabel path.
+    Later grouped part relabels may move the section container before snapshot
+    emission runs against the final replay-fold tree.
+    """
+    stripped = _strip_hcontainer_from_path(applied_path)
+    if not stripped or stripped[-1][0] != "section":
+        return None
+    if _tops.resolve(tree, stripped) is not None:
+        return stripped
+    internal_prefixes = (("hcontainer", ""), ("hcontainer", "statuteProvisionsWrapper"))
+    for prefix in internal_prefixes:
+        if _tops.resolve(tree, (prefix,) + stripped) is not None:
+            return stripped
+    found = _find_path_by_suffix(tree, list(stripped))
+    if found is not None:
+        return _strip_hcontainer_from_path(found)
+    if len(stripped) >= 3 and stripped[0][0] == "part":
+        found = _find_path_by_suffix(tree, list(stripped[1:]))
+        if found is not None:
+            return _strip_hcontainer_from_path(found)
+    return None
+
+
+def _resolve_section_node_at_live_path(
+    tree: IRNode,
+    live_path: tuple[tuple[str, str], ...],
+) -> IRNode | None:
+    """Resolve one section node from a legal address or internal hcontainer path."""
+    node = _tops.resolve(tree, live_path)
+    if node is not None:
+        return node
+    for prefix in (("hcontainer", ""), ("hcontainer", "statuteProvisionsWrapper")):
+        node = _tops.resolve(tree, (prefix,) + live_path)
+        if node is not None:
+            return node
     return None
 
 
@@ -686,13 +784,13 @@ def _candidate_source_paths_for_relabel_lookup(
     return tuple(candidates)
 
 
-def _resolve_relabel_lookup_path(
+def _resolve_relabel_lookup_path_on_tree(
     tree: IRNode,
     target_path: List[Tuple[str, str]],
     *,
     part_relabel_sources: dict[str, str] | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
-    """Resolve one relabel lookup path using the executor's bounded search rules."""
+    """Resolve one explicit address against the live tree without migration replay."""
     found_path = _find_path_by_suffix(tree, target_path)
     if found_path is None:
         if len(target_path) == 1:
@@ -712,6 +810,41 @@ def _resolve_relabel_lookup_path(
             part_relabel_sources=part_relabel_sources,
         )
     return found_path
+
+
+def _resolve_relabel_lookup_path(
+    tree: IRNode,
+    target_path: List[Tuple[str, str]],
+    *,
+    part_relabel_sources: dict[str, str] | None = None,
+    migration_ledger: "MigrationLedger | None" = None,
+    migration_as_of_date: str = "",
+) -> Optional[Tuple[Tuple[str, str], ...]]:
+    """Resolve one relabel lookup path using the executor's bounded search rules."""
+    found_path = _resolve_relabel_lookup_path_on_tree(
+        tree,
+        target_path,
+        part_relabel_sources=part_relabel_sources,
+    )
+    if found_path is not None or migration_ledger is None or not target_path:
+        return found_path
+
+    # Amendment-frame relabel targets name pre-wave addresses (e.g. part III
+    # after part III→IV). Use as_of_date, not not_before: not_before would
+    # exclude prior-wave migrations because effective < current wave date.
+    source_address = LegalAddress(path=tuple(target_path))
+    migrated = migration_ledger.current_address_with_prefix_migrations(
+        source_address,
+        as_of_date=migration_as_of_date,
+    )
+    if migrated.path == source_address.path:
+        return None
+    migrated_path = list(migrated.path)
+    return _resolve_relabel_lookup_path_on_tree(
+        tree,
+        migrated_path,
+        part_relabel_sources=part_relabel_sources,
+    )
 
 
 def _restore_missing_source_part_alias(
@@ -857,6 +990,8 @@ class ExecutedOp:
     success: bool
     note: str = ""
     reason_code: str = ""
+    witness_rule_id: str = ""
+    applied_path: tuple[tuple[str, str], ...] | None = None
 
 
 def _record_pending_source_chain_relabel_lineage(
@@ -900,6 +1035,68 @@ def _record_pending_source_chain_relabel_lineage(
         },
     )
     return True
+
+
+def relabel_structural_label_alias_lookup_finding(
+    executed: ExecutedOp,
+    *,
+    source_statute: str,
+) -> Finding | None:
+    """Emit observation when a relabel target resolved via structural label aliasing."""
+    if (
+        not executed.success
+        or executed.op.kind is not TransformOpKind.RELABEL
+        or executed.witness_rule_id != FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
+    ):
+        return None
+    return Finding(
+        kind="APPLY.RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP",
+        role="observation",
+        stage="restructure_plan",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Restructure-plan relabel resolved the amendment-frame target through "
+                "Finland structural-label normalization."
+            ),
+            "witness_rule_id": executed.witness_rule_id,
+            "target": executed.op.target,
+            "destination": executed.op.destination or "",
+            "note": executed.note,
+        },
+    )
+
+
+def relabel_migration_ledger_lookup_finding(
+    executed: ExecutedOp,
+    *,
+    source_statute: str,
+) -> Finding | None:
+    """Emit observation when a relabel target resolved via prior migration lineage."""
+    if (
+        not executed.success
+        or executed.op.kind is not TransformOpKind.RELABEL
+        or executed.witness_rule_id != FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID
+    ):
+        return None
+    return Finding(
+        kind="APPLY.RELABEL_MIGRATION_LEDGER_LOOKUP",
+        role="observation",
+        stage="restructure_plan",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Restructure-plan relabel resolved the amendment-frame target through "
+                "prior same-statute migration lineage."
+            ),
+            "witness_rule_id": executed.witness_rule_id,
+            "target": executed.op.target,
+            "destination": executed.op.destination or "",
+            "note": executed.note,
+        },
+    )
 
 
 def relabel_skip_finding(
@@ -1342,6 +1539,8 @@ def _execute_same_parent_relabel_group(
         return tree, []
 
     found_paths: dict[StructuralTransformOp, Tuple[Tuple[str, str], ...]] = {}
+    via_ledger_by_op: dict[StructuralTransformOp, bool] = {}
+    via_alias_by_op: dict[StructuralTransformOp, bool] = {}
     op_by_source: dict[tuple[str, str], StructuralTransformOp] = {}
     dest_by_source: dict[tuple[str, str], str] = {}
     missing_executed: list[ExecutedOp] = []
@@ -1362,6 +1561,23 @@ def _execute_same_parent_relabel_group(
             tree,
             target_path,
             part_relabel_sources=part_relabel_sources,
+            migration_ledger=migration_ledger,
+            migration_as_of_date=effective_date,
+        )
+        via_ledger_by_op[op] = (
+            found_path is not None
+            and _resolve_relabel_lookup_path_on_tree(
+                tree,
+                target_path,
+                part_relabel_sources=part_relabel_sources,
+            )
+            is None
+            and migration_ledger is not None
+        )
+        via_alias_by_op[op] = (
+            found_path is not None
+            and not via_ledger_by_op[op]
+            and _found_via_structural_label_alias(tree, target_path, found_path)
         )
         if found_path is None:
             consumed_reason = _classify_missing_relabel_reason(
@@ -1475,11 +1691,27 @@ def _execute_same_parent_relabel_group(
                     effective=effective_date,
                     source_statute=source_statute,
                 )
+            relabel_op = op_by_source[source_key]
+            applied_path = None
+            if source_key[0] == "section":
+                found_path = found_paths[relabel_op]
+                applied_path = _strip_hcontainer_from_path(
+                    found_path[:-1]
+                    + (("section", dest_by_source[source_key]),)
+                )
             executed.append(
                 ExecutedOp(
-                    op=op_by_source[source_key],
+                    op=relabel_op,
                     success=True,
                     note=f"relabeled to {dest_by_source[source_key]}",
+                    witness_rule_id=(
+                        FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID
+                        if via_ledger_by_op.get(relabel_op, False)
+                        else FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
+                        if via_alias_by_op.get(relabel_op, False)
+                        else ""
+                    ),
+                    applied_path=applied_path,
                 )
             )
         else:
@@ -1690,6 +1922,23 @@ def _execute_relabel(
         tree,
         target_path,
         part_relabel_sources=part_relabel_sources,
+        migration_ledger=migration_ledger,
+        migration_as_of_date=effective_date,
+    )
+    via_migration_ledger_lookup = (
+        found_path is not None
+        and _resolve_relabel_lookup_path_on_tree(
+            tree,
+            target_path,
+            part_relabel_sources=part_relabel_sources,
+        )
+        is None
+        and migration_ledger is not None
+    )
+    via_structural_label_alias_lookup = (
+        found_path is not None
+        and not via_migration_ledger_lookup
+        and _found_via_structural_label_alias(tree, target_path, found_path)
     )
     found_via_pre_part_relabel_frame = False
     if found_path is not None and part_relabel_sources and target_path and target_path[0][0] == "part":
@@ -1826,10 +2075,23 @@ def _execute_relabel(
         "RELABEL executed: %s → %s",
         op.target, new_label,
     )
+    applied_path = (
+        _strip_hcontainer_from_path(applied_to)
+        if applied_to[-1][0] == "section"
+        else None
+    )
     return tree, ExecutedOp(
         op=op,
         success=True,
         note=note,
+        witness_rule_id=(
+            FI_RESTRUCTURE_RELABEL_MIGRATION_LEDGER_LOOKUP_RULE_ID
+            if via_migration_ledger_lookup
+            else FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
+            if via_structural_label_alias_lookup
+            else ""
+        ),
+        applied_path=applied_path,
     )
 
 

@@ -789,6 +789,10 @@ def _slot_ir_has_omission(node: IRNode) -> bool:
     return any(child.kind is IRNodeKind.OMISSION for child in node.children)
 
 
+def _slot_ir_is_in_place_merge(node: IRNode) -> bool:
+    return node.attrs.get("lawvm_in_place_merge") == "1"
+
+
 def _assign_duplicate_target_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -878,6 +882,45 @@ def _assign_item_matched_slot_ops(
             continue
         target_tok = str(op.target_item or "")
         if not target_tok:
+            continue
+        same_target_slot = None
+        has_same_target_intro_op = any(
+            intro.target_paragraph == op.target_paragraph
+            and intro.target_special == "johd"
+            for intro in slot_inputs.intro_subsec_ops
+        )
+        has_plain_subsection_op = any(
+            candidate.target_paragraph is not None
+            and not candidate.target_item
+            and not candidate.target_special
+            for candidate in slot_inputs.payload_subsec_ops
+        )
+        for other in slot_inputs.payload_subsec_ops:
+            if other is op or other.target_paragraph != op.target_paragraph:
+                continue
+            shared_slot = state.subsec_map.for_op(other)
+            if (
+                has_same_target_intro_op
+                and not has_plain_subsection_op
+                and shared_slot is not None
+                and _slot_ir_is_in_place_merge(shared_slot)
+                and _slot_ir_has_item(shared_slot, target_tok)
+            ):
+                same_target_slot = shared_slot
+                break
+        if same_target_slot is not None:
+            state.subsec_map.assign(op, same_target_slot)
+            state.binding_rule_by_op_id[id(op)] = "same_target_item_slot_sharing"
+            state.binding_observations.append(
+                _obs(
+                    "ELAB.SAME_TARGET_ITEM_SLOT_SHARING",
+                    "sparse_subsection_elaboration",
+                    target_paragraph=op.target_paragraph,
+                    target_item=str(op.target_item or ""),
+                    payload_slot_label=str(same_target_slot.label or ""),
+                    op_description=op.description(),
+                )
+            )
             continue
         # First pass: look for the item in an unused slot.
         found = False
@@ -1419,6 +1462,8 @@ def prepare_payload_surface(
         target_unit_kind,
         muutos_ir,
     )
+    if _has_historical_top_level_kohta_subsection_ops(group_ops):
+        return _split_historical_top_level_kohta_payload_ir(target_unit_kind, group_ops, muutos_ir)
     omission_allowed = strict_profile is None or strict_profile.allows_omission_expansion
     if omission_allowed:
         return _pre_resolve_omissions(
@@ -1792,8 +1837,19 @@ class FlattenedListRow:
     is_lettered: bool
 
 
+@dataclass(frozen=True, slots=True)
+class HeadingTaggedSubsectionPayloadResult:
+    """Result for repairing a subsection body mis-tagged as a section heading."""
+
+    muutos_ir: Optional[IRNode]
+    rewritten: bool = False
+    target_paragraph: int | None = None
+    heading_text_chars: int = 0
+
+
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+_HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 
 
 def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
@@ -1921,6 +1977,87 @@ def _with_payload_normalization_rule(node: IRNode, rule_id: str) -> IRNode:
         text=node.text,
         attrs={**dict(node.attrs), _PAYLOAD_NORMALIZATION_RULE_ATTR: tuple(dict.fromkeys((*rules, rule_id)))},
         children=tuple(node.children),
+    )
+
+
+def _normalize_heading_tagged_subsection_payload(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> HeadingTaggedSubsectionPayloadResult:
+    """Admit a body-bearing section heading as an explicitly targeted subsection.
+
+    Historical Finlex XML can encode a changed ``N § M momentti`` body as:
+
+    ``section(num, heading(text), omission)``
+
+    even though the johtolause explicitly targets the subsection, not the
+    section heading facet.  This rule is deliberately narrow: it fires only
+    when there is exactly one plain subsection replacement, no same-group
+    heading-facet op, an omission shell, no subsection slots already, and the
+    only body-bearing source child is one heading node.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if any(child.kind is IRNodeKind.SUBSECTION for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if any(op.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    subsection_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(subsection_ops) != 1:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    allowed_shell_kinds = {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.OMISSION}
+    if any(child.kind not in allowed_shell_kinds for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    heading_children = [
+        child
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.HEADING and irnode_to_text(child).strip()
+    ]
+    if len(heading_children) != 1:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    target_paragraph = subsection_ops[0].target_paragraph
+    heading = heading_children[0]
+    heading_text = " ".join(irnode_to_text(heading).split())
+    subsection = _with_payload_normalization_rule(
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(target_paragraph),
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=heading_text),),
+        ),
+        _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
+    )
+    new_children: list[IRNode] = []
+    replaced_heading = False
+    for child in muutos_ir.children:
+        if child is heading:
+            new_children.append(subsection)
+            replaced_heading = True
+        else:
+            new_children.append(child)
+    if not replaced_heading:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    return HeadingTaggedSubsectionPayloadResult(
+        muutos_ir=_tops._with_children(muutos_ir, new_children),
+        rewritten=True,
+        target_paragraph=target_paragraph,
+        heading_text_chars=len(heading_text),
     )
 
 
@@ -2423,6 +2560,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_targets: Set[str] | None = None,
     expected_heading_only: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
@@ -2435,6 +2573,9 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets = {_norm_num_token(label) for label in standalone_section_targets if label}
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
+    }
+    foreign_scoped_replace_section_targets = {
+        _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
     }
 
     def _scope_label_from_unique_path(section_label: str, scope_kind: str) -> Optional[str]:
@@ -2489,6 +2630,28 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         target_unit_kind,
         target_norm,
     )
+    payload_section_labels = {
+        _norm_num_token(child.label or "")
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    }
+    payload_numeric_labels = {
+        int(label) for label in payload_section_labels if label.isdigit()
+    }
+    foreign_replace_numeric_labels = {
+        int(label)
+        for label in foreign_scoped_replace_section_targets
+        if label in payload_section_labels and label.isdigit()
+    }
+    has_dense_foreign_replace_bridge = False
+    if foreign_replace_numeric_labels:
+        lo_foreign = min(foreign_replace_numeric_labels)
+        hi_foreign = max(foreign_replace_numeric_labels)
+        has_dense_foreign_replace_bridge = (
+            lo_foreign - 1 in payload_numeric_labels
+            and hi_foreign + 1 in payload_numeric_labels
+            and all(n in payload_numeric_labels for n in range(lo_foreign, hi_foreign + 1))
+        )
     new_children: List[IRNode] = []
     for child in muutos_ir.children:
         child_label = _norm_num_token(child.label or "")
@@ -2510,7 +2673,13 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             if child_label not in live_member_labels:
                 # Foreign-scoped section: belongs to another chapter/part.
                 # Prune it even though it's not in the live container.
-                if child_label in foreign_scoped_standalone_section_targets:
+                if (
+                    child_label in foreign_scoped_standalone_section_targets
+                    or (
+                        child_label in foreign_scoped_replace_section_targets
+                        and not has_dense_foreign_replace_bridge
+                    )
+                ):
                     changed = True
                     pruned_labels.append(child_label)
                     pruned_witnesses.append(child_witness)
@@ -2632,6 +2801,82 @@ def _container_pruning_is_expected_frontend_split(
 
 
 _ORIGINAL_SPARSE_SUBSECTION_LABEL_ATTR = "original_sparse_subsection_label"
+_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = "fi.historical_top_level_kohta_as_subsection"
+
+
+def _has_historical_top_level_kohta_subsection_ops(group_ops: Iterable[AmendmentOp]) -> bool:
+    return any(
+        _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+        for op in group_ops
+    )
+
+
+def _split_historical_top_level_kohta_payload_ir(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> Optional[IRNode]:
+    if (
+        target_unit_kind != "section"
+        or muutos_ir is None
+        or muutos_ir.kind is not IRNodeKind.SECTION
+        or not _has_historical_top_level_kohta_subsection_ops(group_ops)
+    ):
+        return muutos_ir
+
+    target_labels = {
+        str(op.target_paragraph)
+        for op in group_ops
+        if (
+            op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+            and _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+        )
+    }
+    if not target_labels:
+        return muutos_ir
+
+    subsections = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return muutos_ir
+
+    source_subsection = subsections[0]
+    split_subsections: list[IRNode] = []
+    for child in source_subsection.children:
+        if child.kind is not IRNodeKind.PARAGRAPH:
+            continue
+        text = irnode_to_text(child).strip()
+        match = re.match(r"^\((\d+(?:\s*[a-z])?)\)", text)
+        if match is None:
+            continue
+        label = _norm_num_token(match.group(1))
+        if label not in target_labels:
+            continue
+        split_subsections.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=label,
+                attrs=dict(child.attrs),
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=text),),
+            )
+        )
+
+    if {str(child.label or "") for child in split_subsections} != target_labels:
+        return muutos_ir
+
+    retained = [
+        child
+        for child in muutos_ir.children
+        if child.kind is not IRNodeKind.SUBSECTION and child.kind is not IRNodeKind.OMISSION
+    ]
+    return IRNode(
+        kind=muutos_ir.kind,
+        label=muutos_ir.label,
+        text=muutos_ir.text,
+        attrs=dict(muutos_ir.attrs),
+        children=tuple(retained + split_subsections),
+    )
 
 
 def _align_sparse_omission_subsections_to_live(
@@ -3521,13 +3766,12 @@ def _collect_subsection_slot_inputs(
     intro_subsec_ops = [op for op in subsec_ops if op.target_special == "johd"]
     if muutos_ir is None or not subsec_ops:
         return None
-    # Use PayloadSurface facts when available, otherwise re-scan
-    if surface is not None and surface.subsection_count > 0:
-        amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
-    elif surface is not None and surface.subsection_count == 0:
+    amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
+    # ``surface`` may describe the pre-normalized body.  Later payload
+    # normalization can create owned subsection slots from malformed source
+    # markup, so only the no-subsection case can short-circuit here.
+    if surface is not None and surface.subsection_count == 0 and not amend_subs:
         return None
-    else:
-        amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
     duplicate_targets = sorted(
         {
             op.target_paragraph
@@ -4092,6 +4336,10 @@ def _row_anchor(paragraph: IRNode) -> str:
     return _norm_row_anchor_text(paragraph.attrs.get("row_anchor", ""))
 
 
+def _paragraph_text_row_anchor(paragraph: IRNode) -> str:
+    return _norm_row_anchor_text(irnode_to_text(paragraph))
+
+
 def _match_live_row_anchor(anchor: str, live_by_anchor: Dict[str, IRNode]) -> Optional[IRNode]:
     key = _norm_row_anchor_text(anchor)
     if not key:
@@ -4151,6 +4399,29 @@ def _single_subsection_row_table(section: Optional[IRNode]) -> Optional[IRNode]:
     return subsection
 
 
+def _single_subsection_paragraph_row_list(section: Optional[IRNode]) -> Optional[IRNode]:
+    """Return a single-subsection paragraph-list when text can be row anchors.
+
+    This is intentionally separate from ``_single_subsection_row_table``:
+    paragraph text anchors are only used by explicit named-row operations, not
+    by generic sparse payload alignment or broad section replacement.
+    """
+    if section is None or section.kind != IRNodeKind.SECTION:
+        return None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return None
+    subsection = subsections[0]
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    if not paragraphs:
+        return None
+    if any(_row_anchor(paragraph) for paragraph in paragraphs):
+        return None
+    if not all(_paragraph_text_row_anchor(paragraph) for paragraph in paragraphs):
+        return None
+    return subsection
+
+
 def _strip_table_header_prefix(text: str) -> str:
     flat = " ".join((text or "").split())
     patterns = [
@@ -4166,6 +4437,196 @@ def _strip_table_header_prefix(text: str) -> str:
     flat = re.sub(r"^\(s\s*=\s*sivukanslia\)\s*", "", flat, flags=re.I)
     flat = re.sub(r"^\(s=sivukanslia\)\s*", "", flat, flags=re.I)
     return flat
+
+
+def _table_row_cell_texts(row: IRNode) -> List[str]:
+    return [irnode_to_text(cell).strip() for cell in row.children if cell.kind == IRNodeKind.CELL]
+
+
+def _province_anchor_from_header(header: str) -> str:
+    norm = _norm_row_anchor_text(header)
+    for suffix in (" lääniä", " lääni"):
+        if norm.endswith(suffix):
+            return norm[: -len(suffix)].strip()
+    return norm
+
+
+def _section_province_table(section: Optional[IRNode]) -> Optional[IRNode]:
+    if section is None or section.kind is not IRNodeKind.SECTION:
+        return None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return None
+    tables: List[IRNode] = []
+    for child in subsections[0].children:
+        if child.kind != IRNodeKind.CONTENT:
+            continue
+        tables.extend(grandchild for grandchild in child.children if grandchild.kind == IRNodeKind.TABLE)
+    if len(tables) != 1:
+        return None
+    table = tables[0]
+    rows = [child for child in table.children if child.kind == IRNodeKind.ROW]
+    if not rows:
+        return None
+    if not any(
+        len(_table_row_cell_texts(row)) == 1 and "lääni" in _table_row_cell_texts(row)[0].lower()
+        for row in rows
+    ):
+        return None
+    return table
+
+
+@dataclass(frozen=True, slots=True)
+class _ProvinceTableLayout:
+    prefix_rows: tuple[IRNode, ...]
+    blocks: tuple[tuple[str, tuple[IRNode, ...]], ...]
+
+
+def _layout_province_table(table: IRNode) -> Optional[_ProvinceTableLayout]:
+    rows = tuple(child for child in table.children if child.kind == IRNodeKind.ROW)
+    prefix_rows: List[IRNode] = []
+    blocks: List[tuple[str, tuple[IRNode, ...]]] = []
+    current_anchor: Optional[str] = None
+    current_block: List[IRNode] = []
+    for row in rows:
+        cells = _table_row_cell_texts(row)
+        if len(cells) == 1 and cells[0] and "lääni" in cells[0].lower():
+            if current_anchor is not None:
+                blocks.append((current_anchor, tuple(current_block)))
+            current_anchor = _province_anchor_from_header(cells[0])
+            current_block = [row]
+            continue
+        if current_anchor is None:
+            prefix_rows.append(row)
+            continue
+        current_block.append(row)
+    if current_anchor is not None:
+        blocks.append((current_anchor, tuple(current_block)))
+    if not blocks:
+        return None
+    return _ProvinceTableLayout(tuple(prefix_rows), tuple(blocks))
+
+
+def _merge_province_table_rows(
+    live_layout: _ProvinceTableLayout,
+    amend_layout: _ProvinceTableLayout,
+    named_rows: tuple[str, ...],
+) -> Optional[tuple[IRNode, ...]]:
+    named_set = {_norm_row_anchor_text(row) for row in named_rows if row}
+    if not named_set:
+        return None
+    amend_by_anchor = {anchor: block for anchor, block in amend_layout.blocks}
+    merged_rows: List[IRNode] = list(live_layout.prefix_rows or amend_layout.prefix_rows)
+    changed = False
+    for anchor, live_block in live_layout.blocks:
+        if anchor in named_set and anchor in amend_by_anchor:
+            merged_rows.extend(amend_by_anchor[anchor])
+            changed = True
+        else:
+            merged_rows.extend(live_block)
+    if not changed:
+        return None
+    return tuple(merged_rows)
+
+
+def _replace_section_table_rows(section: IRNode, merged_rows: tuple[IRNode, ...]) -> IRNode:
+    rebuilt_children: List[IRNode] = []
+    for child in section.children:
+        if child.kind != IRNodeKind.SUBSECTION:
+            rebuilt_children.append(child)
+            continue
+        rebuilt_sub_children: List[IRNode] = []
+        for sub_child in child.children:
+            if sub_child.kind != IRNodeKind.CONTENT:
+                rebuilt_sub_children.append(sub_child)
+                continue
+            rebuilt_content_children: List[IRNode] = []
+            for content_child in sub_child.children:
+                if content_child.kind != IRNodeKind.TABLE:
+                    rebuilt_content_children.append(content_child)
+                    continue
+                rebuilt_content_children.append(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        attrs=dict(content_child.attrs),
+                        children=merged_rows,
+                    )
+                )
+            rebuilt_sub_children.append(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=sub_child.text,
+                    attrs=dict(sub_child.attrs),
+                    children=tuple(rebuilt_content_children),
+                )
+            )
+        rebuilt_children.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=child.label,
+                text=child.text,
+                attrs=dict(child.attrs),
+                children=tuple(rebuilt_sub_children),
+            )
+        )
+    return IRNode(
+        kind=IRNodeKind.SECTION,
+        label=section.label,
+        text=section.text,
+        attrs=dict(section.attrs),
+        children=tuple(rebuilt_children),
+    )
+
+
+def _rewrite_named_row_province_table_replaces(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: Optional[str],
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> TableRowRewriteResult:
+    """Merge partial province-table payloads into the live province layout.
+
+    Regional ``lääniä koskevat kohdat`` formulas often ship sparse table bodies
+    that only carry the claimed province blocks.  When ``named_row_targets`` are
+    already owned on the op, rebuild the amendment section by substituting only
+    those province blocks from the payload and retaining the unclaimed live
+    blocks.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    live_table = _section_province_table(ctx.live_node)
+    amend_table = _section_province_table(muutos_ir)
+    if live_table is None or amend_table is None:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    live_layout = _layout_province_table(live_table)
+    amend_layout = _layout_province_table(amend_table)
+    if live_layout is None or amend_layout is None:
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
+
+    rewritten = False
+    rebuilt_muutos_ir = muutos_ir
+    for op in group_ops:
+        if not (
+            op.op_type == "REPLACE"
+            and op.target_paragraph is None
+            and op.target_item is None
+            and not op.target_special
+        ):
+            continue
+        named_rows = tuple(row for row in op.named_row_targets if row)
+        if not named_rows:
+            continue
+        merged_rows = _merge_province_table_rows(live_layout, amend_layout, named_rows)
+        if merged_rows is None:
+            continue
+        rebuilt_muutos_ir = _replace_section_table_rows(rebuilt_muutos_ir, merged_rows)
+        rewritten = True
+
+    return TableRowRewriteResult(tuple(group_ops), rebuilt_muutos_ir, rewritten)
 
 
 def _rewrite_named_row_table_replaces(
@@ -4430,14 +4891,25 @@ def _rewrite_named_row_table_repeals(
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
     live_sub = _single_subsection_row_table(ctx.live_node)
+    use_text_anchors = False
+    if live_sub is None:
+        live_sub = _single_subsection_paragraph_row_list(ctx.live_node)
+        use_text_anchors = live_sub is not None
     if live_sub is None:
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
-    live_by_anchor = {
-        _row_anchor(paragraph): paragraph
-        for paragraph in live_sub.children
-        if paragraph.kind == IRNodeKind.PARAGRAPH and _row_anchor(paragraph)
-    }
+    if use_text_anchors:
+        live_by_anchor = {
+            _paragraph_text_row_anchor(paragraph): paragraph
+            for paragraph in live_sub.children
+            if paragraph.kind == IRNodeKind.PARAGRAPH and _paragraph_text_row_anchor(paragraph)
+        }
+    else:
+        live_by_anchor = {
+            _row_anchor(paragraph): paragraph
+            for paragraph in live_sub.children
+            if paragraph.kind == IRNodeKind.PARAGRAPH and _row_anchor(paragraph)
+        }
     if not live_by_anchor:
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
@@ -4584,6 +5056,7 @@ def elaborate_payload_against_live(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_targets: Set[str] | None = None,
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -4618,6 +5091,31 @@ def elaborate_payload_against_live(
     )
     group_ops = list(table_row_named_replaces.group_ops)
     muutos_ir = table_row_named_replaces.muutos_ir
+    if not table_row_named_replaces.rewritten:
+        province_table_named_replaces = _rewrite_named_row_province_table_replaces(
+            ctx,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            muutos_ir,
+            group_ops,
+        )
+        group_ops = list(province_table_named_replaces.group_ops)
+        muutos_ir = province_table_named_replaces.muutos_ir
+        if province_table_named_replaces.rewritten:
+            observations.append(
+                _obs(
+                    "ELAB.NAMED_ROW_PROVINCE_TABLE_MERGE",
+                    "payload_elaboration",
+                    target_section=target_norm,
+                    named_row_targets=[
+                        row
+                        for op in group_ops
+                        for row in op.named_row_targets
+                        if row
+                    ],
+                )
+            )
     table_row_payload = _rewrite_partial_whole_section_table_payload(
         ctx,
         target_unit_kind,
@@ -4692,6 +5190,7 @@ def elaborate_payload_against_live(
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
     muutos_ir = pruning_result.muutos_ir
@@ -4786,6 +5285,24 @@ def elaborate_payload_against_live(
                 "group_payload_normalization",
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    heading_tagged_payload = _normalize_heading_tagged_subsection_payload(
+        target_unit_kind,
+        group_ops,
+        muutos_ir,
+    )
+    muutos_ir = heading_tagged_payload.muutos_ir
+    if heading_tagged_payload.rewritten:
+        observations.append(
+            _obs(
+                _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_paragraph=heading_tagged_payload.target_paragraph,
+                heading_text_chars=heading_tagged_payload.heading_text_chars,
+                rule=_HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
             )
         )
     normalized_group_ops: list[AmendmentOp] = []

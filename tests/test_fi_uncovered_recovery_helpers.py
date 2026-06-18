@@ -93,6 +93,19 @@ def test_xml_part_label_none_without_part_ancestor() -> None:
     assert _xml_part_label(sec) is None
 
 
+def test_xml_part_label_reads_preceding_cross_heading_part_marker() -> None:
+    root = etree.fromstring(
+        b"<body><section><num>6 \xc2\xa7</num></section>"
+        b"<crossHeading>V OSA</crossHeading>"
+        b"<chapter><num>1 luku</num><section><num>110 \xc2\xa7</num></section></chapter></body>"
+    )
+    before_part = root.find("./section")
+    in_part = root.find(".//chapter/section")
+    assert before_part is not None and in_part is not None
+    assert _xml_part_label(before_part) is None
+    assert _xml_part_label(in_part) == "5"
+
+
 def test_part_label_from_path_finds_part() -> None:
     path = (("part", "2"), ("chapter", "3"), ("section", "5"))
     assert _part_label_from_path(path) == "2"
@@ -274,6 +287,7 @@ def _empty_run(
     johto_mentioned_labels: set[str] | None = None,
     johto_mentioned_replaced_chapters: set[str] | None = None,
     owned_chapter_labels: set[str] | None = None,
+    part_insert_labels: set[str] | None = None,
 ) -> _UncoveredRecoveryRun:
     rstate = _empty_state(None)
     return _UncoveredRecoveryRun(
@@ -287,9 +301,11 @@ def _empty_run(
         recovery_guards=rstate.guards,
         bp_assignments=None,
         johto_mentioned_labels=johto_mentioned_labels or set(),
+        johto_moment_targets={},
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},
         owned_chapter_labels=owned_chapter_labels or set(),
+        part_insert_labels=part_insert_labels or set(),
     )
 
 
@@ -329,6 +345,44 @@ def test_recovery_run_label_gate_allows_owned_or_replaced_chapter() -> None:
 def test_recovery_run_label_gate_blocks_unmentioned_unowned_section() -> None:
     run = _empty_run(johto_mentioned_labels={"32"}, owned_chapter_labels={"4"})
     assert not run.label_allowed_by_johto("99", "5")
+
+
+def test_recovery_run_label_gate_allows_part_insert_subtree_sections() -> None:
+    run = _empty_run(
+        johto_mentioned_labels={"6", "12", "27"},
+        part_insert_labels={"5"},
+    )
+    assert run.label_allowed_by_johto("110", "1", amend_part_label="5")
+    assert not run.label_allowed_by_johto("110", "1", amend_part_label="4")
+
+
+def test_uncovered_recovery_context_collects_johto_moment_targets() -> None:
+    xml = etree.fromstring(
+        b"<act><preamble>muutetaan 74 \xc2\xa7:n 4 momentti ja 75 \xc2\xa7:n 3 momentti</preamble><body/></act>"
+    )
+    context = build_uncovered_recovery_context(
+        muutos_tree=xml,
+        ops=[],
+        new_chapter_labels=set(),
+    )
+    assert context.johto_moment_targets["74"] == frozenset({4})
+    assert context.johto_moment_targets["75"] == frozenset({3})
+
+
+def test_uncovered_recovery_context_collects_part_insert_labels() -> None:
+    op = SimpleNamespace(
+        op_type="INSERT",
+        target_unit_kind="part",
+        target_section="5",
+        target_part=None,
+    )
+    xml = etree.fromstring(b"<act><body/></act>")
+    context = build_uncovered_recovery_context(
+        muutos_tree=xml,
+        ops=[cast(Any, op)],
+        new_chapter_labels=set(),
+    )
+    assert context.part_insert_labels == frozenset({"5"})
 
 
 # --- PreGuardVerdict invariants + _evaluate_pre_guards ---

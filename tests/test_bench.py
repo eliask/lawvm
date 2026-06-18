@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import warnings
 from collections import Counter
@@ -7,11 +8,28 @@ from collections import Counter
 import pytest
 
 from lawvm.tools import bench
+from lawvm.tools import bench_diagnostic_tiers
 
 
 class _DummyReplay:
     def serialize_text(self) -> str:
         return "foo"
+
+
+def test_fi_bench_worker_count_defaults_to_sequential() -> None:
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 1
+
+
+def test_fi_bench_worker_count_uses_explicit_parallel() -> None:
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=3)) == 3
+
+
+def test_fi_bench_worker_count_rejects_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        bench._fi_bench_worker_count(argparse.Namespace(parallel=0))
+
+    assert raised.value.code == 2
+    assert "--parallel must be a positive integer" in capsys.readouterr().err
 
 
 def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
@@ -32,6 +50,77 @@ def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
     assert seen["quiet"] is True
     assert seen["build_full_products"] is True
     assert seen["oracle_selector"] == bench._BENCH_CONSOLIDATED_SELECTOR
+
+
+def test_diagnostic_replay_enables_timeline_invariants_env(monkeypatch) -> None:
+    import os
+
+    seen: dict[str, object] = {}
+
+    def fake_call_replay_xml(_replay_xml, *, request, sinks=None):
+        seen["timeline"] = os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS")
+        seen["sinks"] = sinks
+        return _DummyReplay()
+
+    monkeypatch.setattr(bench, "call_replay_xml", fake_call_replay_xml)
+    bench._run_replay_with_bench_warning_capture(
+        "2009/953",
+        mode="legal_pit",
+        diagnostic_replay=True,
+        replay_kwargs={"quiet": False},
+    )
+    assert seen["timeline"] == "1"
+    assert os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS") is None
+    assert seen["sinks"] is not None
+    assert seen["sinks"].replay_meta_out == {}
+
+
+def test_quiet_bench_skips_replay_meta_unless_timeline_opt_in(monkeypatch) -> None:
+    monkeypatch.delenv("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS", raising=False)
+    seen: dict[str, object] = {}
+
+    def fake_call_replay_xml(_replay_xml, *, request, sinks=None):
+        seen["sinks"] = sinks
+        return _DummyReplay()
+
+    monkeypatch.setattr(bench, "call_replay_xml", fake_call_replay_xml)
+    bench._run_replay_with_bench_warning_capture(
+        "2000/1",
+        mode="official_consolidation",
+        diagnostic_replay=False,
+        replay_kwargs={"quiet": True},
+    )
+    assert seen["sinks"] is None
+
+
+def test_diagnostic_replay_merges_typed_findings_into_diagnostics(monkeypatch) -> None:
+    from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
+
+    class _ReplayWithFinding:
+        findings = (
+            Finding(
+                kind="timeline_invariant_violation",
+                role=OBSERVATION_ROLE,
+                stage="timeline_invariants",
+                blocking=False,
+                detail={"code": "timeline_without_ir"},
+            ),
+        )
+
+        def serialize_text(self) -> str:
+            return "foo"
+
+    def fake_call_replay_xml(_replay_xml, *, request, sinks=None):
+        return _ReplayWithFinding()
+
+    monkeypatch.setattr(bench, "call_replay_xml", fake_call_replay_xml)
+    _master, counts = bench._run_replay_with_bench_warning_capture(
+        "2009/953",
+        mode="legal_pit",
+        diagnostic_replay=True,
+        replay_kwargs={"quiet": False},
+    )
+    assert counts["timeline_robust:timeline_without_ir"] == 1
 
 
 def test_score_one_can_request_diagnostic_replay(monkeypatch) -> None:
@@ -223,7 +312,7 @@ def test_run_benchmark_prints_warning_summary_per_row(monkeypatch, capsys) -> No
 
     assert results[0][:4] == (1, "2000/1", 0.9, "OK")
     out = capsys.readouterr().out
-    assert "warnings: coverage_degraded×2, same_day_empty_interval×1" in out
+    assert "warnings: temporal: same_day_empty_interval×1 | audit: coverage_degraded×2" in out
 
 
 def test_summarize_bench_replay_result_diagnostics_counts_findings() -> None:
@@ -244,7 +333,98 @@ def test_summarize_bench_replay_result_diagnostics_counts_findings() -> None:
     assert counts["coverage_degraded"] == 1
     assert counts["finding:ELAB.SOURCE_PATHOLOGY"] == 2
     assert counts["source_adjudication:oracle_suspect"] == 1
-    assert bench._format_bench_warning_summary(counts).startswith("  diagnostics: ")
+    summary = bench._format_bench_warning_summary(counts)
+    assert summary.startswith("  diagnostics: ")
+    assert "operative: ELAB.SOURCE_PATHOLOGY×2" in summary
+    assert "oracle: oracle_suspect×1" in summary
+
+
+def test_format_tiered_bench_warning_summary_collapses_registry_stage() -> None:
+    counts = Counter(
+        {
+            "finding:ELAB.REGISTRY_STAGE": 120,
+            "finding:ELAB.REGISTRY_PIPELINE": 30,
+            "timeline_robust:content_mismatch": 2,
+            "coverage_degraded": 1,
+        }
+    )
+    summary = bench_diagnostic_tiers.format_tiered_bench_warning_summary(counts)
+    assert "timeline_robust: content_mismatch×2" in summary
+    assert "audit: registry_stage×150, coverage_degraded×1" in summary
+
+
+def test_save_bench_diagnostic_sidecar_writes_structured_rows(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
+    run_path = tmp_path / "20260619T1200_demo.csv"
+    run_path.write_text("amendments,statute_id,similarity,status,elapsed_s\n", encoding="utf-8")
+
+    sidecar_path = bench._save_bench_diagnostic_sidecar(
+        run_path=run_path,
+        label="demo",
+        results=[(1, "2000/1", 0.9, "OK", 1.0)],
+        diagnostic_counts={
+            "2000/1": {
+                "timeline_robust:content_mismatch": 1,
+                "finding:ELAB.REGISTRY_STAGE": 18,
+            }
+        },
+    )
+
+    assert sidecar_path is not None
+    text = sidecar_path.read_text(encoding="utf-8")
+    assert text.count('"schema": "fi_bench_diagnostic.v1"') == 2
+    assert '"diagnostic_tier": "timeline_robust"' in text
+    assert '"diagnostic_key": "timeline_robust:content_mismatch"' in text
+    assert '"diagnostic_tier": "audit"' in text
+
+
+def test_print_bench_diagnostic_tier_rollup(capsys: pytest.CaptureFixture[str]) -> None:
+    from lawvm.tools import bench_diagnostic_tiers
+
+    bench_diagnostic_tiers.print_bench_diagnostic_tier_rollup(
+        Counter(
+            {
+                "timeline_robust:content_mismatch": 2,
+                "finding:ELAB.REGISTRY_STAGE": 40,
+            }
+        )
+    )
+    out = capsys.readouterr().out
+    assert "Diagnostic tier rollup:" in out
+    assert "timeline_robust: content_mismatch×2" in out
+    assert "audit: registry_stage×40" in out
+
+
+def test_enrich_bench_finding_counts_splits_timeline_by_tier() -> None:
+    from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
+
+    master = type(
+        "ReplayResult",
+        (),
+        {
+            "findings": (
+                Finding(
+                    kind="timeline_invariant_violation",
+                    role=OBSERVATION_ROLE,
+                    stage="timeline_invariants",
+                    blocking=False,
+                    detail={"code": "overlapping_permanent", "tier": "robust"},
+                ),
+                Finding(
+                    kind="timeline_invariant_violation",
+                    role=OBSERVATION_ROLE,
+                    stage="timeline_invariants",
+                    blocking=False,
+                    detail={"code": "duplicate_permanent_version_row", "tier": "materialization_variant"},
+                ),
+            ),
+            "source_adjudication": None,
+        },
+    )()
+
+    counts = bench_diagnostic_tiers.enrich_bench_finding_counts(master)
+    assert counts["timeline_robust:overlapping_permanent"] == 1
+    assert counts["timeline_variant:duplicate_permanent_version_row"] == 1
 
 
 def test_merge_bench_structural_diagnostics_counts_event_families() -> None:
@@ -297,7 +477,7 @@ def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch
     )
 
     assert results[0][:4] == (1, "2000/1", 0.9, "OK")
-    assert diagnostics_out == {"2000/1": "  warnings: coverage_degraded×2"}
+    assert diagnostics_out == {"2000/1": "  warnings: audit: coverage_degraded×2"}
 
 
 def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> None:
@@ -308,11 +488,11 @@ def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> 
         "demo",
         "2026-05-12T12:00:00Z",
         lev_sims={"2000/1": 0.95},
-        diagnostic_summaries={"2000/1": "  diagnostics: finding:ELAB.SOURCE_PATHOLOGY×1"},
+        diagnostic_summaries={"2000/1": "  diagnostics: operative: ELAB.SOURCE_PATHOLOGY×1"},
     )
 
     rows = list(csv.DictReader(path.open(newline="")))
-    assert rows[0]["diagnostics_summary"] == "  diagnostics: finding:ELAB.SOURCE_PATHOLOGY×1"
+    assert rows[0]["diagnostics_summary"] == "  diagnostics: operative: ELAB.SOURCE_PATHOLOGY×1"
     assert rows[0]["lev_similarity"] == "0.950000"
 
 

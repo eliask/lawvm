@@ -16,7 +16,6 @@ Called from export_parquet:
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -85,12 +84,9 @@ def _project_preparatory_refs_for_statute(
 
 
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
-    """Write rows as JSONL, return count written."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-    return len(rows)
+    from lawvm.tools.export_persistence import write_jsonl
+
+    return write_jsonl(path, rows)
 
 
 def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
@@ -202,10 +198,22 @@ def export_fi_preparatory_refs(
         f"{len(statute_ids):,} statutes"
     )
 
+    from lawvm.tools.export_persistence import export_projection_tail
+
+    if use_parquet and compile_metadata is not None:
+        return export_projection_tail(
+            name="fi_preparatory_refs",
+            data_dir=data_dir,
+            rows=all_ref_rows,
+            diag_rows=all_diag_rows,
+            use_parquet=True,
+            compile_metadata=compile_metadata,
+            statute_count=len(statute_ids),
+        ).row_count
+
     out = Path(data_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Always write JSONL (DuckDB can read it)
     jsonl_count = _write_jsonl(out / "fi_preparatory_refs.jsonl", all_ref_rows)
 
     if use_parquet:
@@ -220,7 +228,6 @@ def export_fi_preparatory_refs(
     else:
         print(f"  fi_preparatory_refs: {jsonl_count:,} rows (JSONL)")
 
-    # Write diagnostics for audit trail
     if all_diag_rows:
         _write_jsonl(
             out / "fi_preparatory_refs_diagnostics.jsonl", all_diag_rows

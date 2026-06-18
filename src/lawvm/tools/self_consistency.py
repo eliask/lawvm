@@ -26,7 +26,9 @@ the per-op replay log:
                       targets a different statute, dropped from lineage)
   coverage_gap        per-amendment coverage mismatch (uncovered units, or the
                       johtolause claiming more/fewer targets than the body)
-  invariant_violation post-replay structural tree invariant violations
+  invariant_violation post-replay structural tree/product invariant violations
+  invariant_lint_warning replay lint warnings (flattened sublist family,
+                      label-sequence gaps) — suspicious shapes, not hard fails
   elaboration_finding governed ``ELAB.*`` rejection/observation findings
   occupancy_violation typed ``APPLY.OCCUPANCY_POLICY_VIOLATION`` findings from
                       the AUTHORITATIVE cumulative ``official_consolidation``
@@ -64,6 +66,7 @@ johtolause coverage count — and no FI-specific ``elaboration_finding``).
 Usage:
     lawvm self-consistency                       # FI full corpus, all signal types
     lawvm self-consistency --statutes 1958/370
+    lawvm self-consistency --signal-types invariant_violation,invariant_lint_warning
     lawvm self-consistency --signal-types target_absent,apply_failure
     lawvm self-consistency --limit 200 --workers 8
     lawvm self-consistency --json
@@ -94,6 +97,7 @@ ALL_SIGNAL_TYPES = (
     "skipped_amendment",
     "coverage_gap",
     "invariant_violation",
+    "invariant_lint_warning",
     "elaboration_finding",
     "occupancy_violation",
 )
@@ -350,20 +354,7 @@ def _project_structured(
                 "reason": f"selection_basis={rec.get('selection_basis')}",
             })
 
-    # 4. Post-replay structural tree invariant violations.
-    for v in meta.get("invariant_violations") or []:
-        text = str(v)
-        rows.append({
-            "statute_id": statute_id,
-            "amendment_id": "",
-            "signal_type": "invariant_violation",
-            "category": _category(text),
-            "description": text,
-            "target_scope": "",
-            "reason": text,
-        })
-
-    # 5. Governed ELAB findings denoting a dropped / rejected / unhandled op.
+    # 4. Governed ELAB findings denoting a dropped / rejected / unhandled op.
     for obs in meta.get("elaboration_observations") or []:
         if not isinstance(obs, dict):
             continue
@@ -500,6 +491,21 @@ def _occupancy_rows_from_findings(
 # Per-statute projector (module-level: picklable for the process pool)
 # ---------------------------------------------------------------------------
 
+def _project_invariant_signals(
+    statute_id: str,
+    meta: Dict[str, Any],
+    findings: Any,
+) -> List[Dict[str, Any]]:
+    """Project tree/product invariant violations and lint warnings as rows."""
+    from lawvm.tools.invariant_harvest import (
+        harvest_replay_invariants,
+        records_to_self_consistency_rows,
+    )
+
+    records = harvest_replay_invariants(replay_meta=meta, findings=findings)
+    return records_to_self_consistency_rows(statute_id, records)
+
+
 def _project_self_consistency(
     statute_id: str,
     store: Any,
@@ -521,9 +527,10 @@ def _project_self_consistency(
     pathologies: List[Any] = []
     meta: Dict[str, Any] = {}
     log_buf = io.StringIO()
+    replay_result: Any = None
     try:
         with contextlib.redirect_stdout(log_buf):
-            call_replay_xml(
+            replay_result = call_replay_xml(
                 replay_xml,
                 request=ReplayXmlRequest(
                     parent_id=statute_id,
@@ -540,7 +547,9 @@ def _project_self_consistency(
     except Exception as exc:  # a crashing replay is itself a finding
         return [], [{"statute_id": statute_id, "error": f"{type(exc).__name__}: {exc}"}]
 
+    findings = getattr(replay_result, "findings", ()) if replay_result is not None else ()
     rows = _project_structured(statute_id, failed, pathologies, meta)
+    rows.extend(_project_invariant_signals(statute_id, meta, findings))
     rows.extend(_parse_replay_log(statute_id, log_buf.getvalue()))
     # Occupancy-policy violations come from the SAME authoritative replay above:
     # _check_occupancy_policy records each finding into the replay's findings
@@ -555,15 +564,45 @@ def _project_self_consistency(
 # Corpus selection
 # ---------------------------------------------------------------------------
 
+def _load_statute_ids_from_path(corpus_path: str) -> List[str]:
+    """Load statute ids from a bench CSV or plain-text id list."""
+    from pathlib import Path
+
+    from lawvm.tools.bench import _load_corpus
+
+    path = Path(corpus_path)
+    if path.suffix.lower() == ".csv":
+        return [sid for _, sid in _load_corpus(corpus_path)]
+
+    ids: List[str] = []
+    seen: set[str] = set()
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            sid = line.strip()
+            if not sid or sid.startswith("#"):
+                continue
+            if "-" in sid:
+                base, suffix = sid.rsplit("-", 1)
+                if suffix.isdigit():
+                    sid = base
+            if sid not in seen:
+                seen.add(sid)
+                ids.append(sid)
+    return ids
+
+
 def _resolve_statute_ids(args) -> List[str]:
     explicit = getattr(args, "statutes", None)
     if explicit:
         return [s.strip() for s in explicit.split(",") if s.strip()]
     from pathlib import Path
 
-    from lawvm.tools.bench import _default_corpus_path, _load_corpus
+    from lawvm.tools.bench import _default_corpus_path
 
-    if getattr(args, "full", False):
+    corpus_override = getattr(args, "corpus", None) or ""
+    if corpus_override:
+        corpus_path = corpus_override
+    elif getattr(args, "full", False):
         # The full ~3545-statute curated corpus (coverage-wide confidence),
         # rather than the ~690 bench_core representative subset.
         full = Path(_default_corpus_path()).parent / "bench_corpus.csv"
@@ -571,7 +610,7 @@ def _resolve_statute_ids(args) -> List[str]:
     else:
         corpus_path = _default_corpus_path()
 
-    ids = [sid for _, sid in _load_corpus(corpus_path)]
+    ids = _load_statute_ids_from_path(corpus_path)
     limit = getattr(args, "limit", None)
     if limit:
         ids = ids[:limit]
