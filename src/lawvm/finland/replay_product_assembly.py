@@ -22,6 +22,7 @@ from lawvm.finland.replay_products import (
     _split_operatives_from_attachments_wrapper,
     build_replay_products,
 )
+from lawvm.finland.replay_timeline_diagnostics import fi_timeline_invariants_opt_in_enabled
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.post_process import _consolidate_kumottu_range
@@ -109,6 +110,8 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
     products = _normalize_product_trees(products)
     products = _apply_law_level_patches_if_needed(products, request)
     if request.build_full_products:
+        if request.replay_meta_out is not None and fi_timeline_invariants_opt_in_enabled():
+            request.replay_meta_out["enable_timeline_invariants"] = True
         products = project_replay_products(
             ReplayProductProjectionRequest(
                 ctx=plan.ctx,

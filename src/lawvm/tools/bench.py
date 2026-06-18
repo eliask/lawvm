@@ -38,6 +38,7 @@ import Levenshtein
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.replay_entrypoint import replay_xml
+from lawvm.finland.replay_timeline_diagnostics import fi_bench_timeline_invariants_enabled
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
@@ -127,6 +128,8 @@ def _summarize_bench_warning_diagnostics(
                 _add("text_duplication")
             elif "WARNING source pathology:" in line:
                 _add("source_pathology")
+            elif "WARNING timeline invariant:" in line:
+                _add("timeline_invariant")
             elif "WARNING product invariant:" in line:
                 _add("product_invariant")
             elif "WARNING oracle suspect:" in line:
@@ -161,16 +164,26 @@ def _run_replay_with_bench_warning_capture(
         build_full_products=bool(replay_kwargs.get("build_full_products", True)),
         oracle_selector=replay_kwargs.get("oracle_selector"),
     )
-    if diagnostic_replay:
-        master = call_replay_xml(replay_xml, request=request)
-        return master, Counter()
-
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
-    with py_warnings.catch_warnings(record=True) as caught:
-        py_warnings.simplefilter("always")
-        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+    timeline_env = "LAWVM_FI_ENABLE_TIMELINE_INVARIANTS"
+    prev_timeline_env = os.environ.get(timeline_env)
+    if fi_bench_timeline_invariants_enabled(diagnostic_replay=diagnostic_replay):
+        os.environ[timeline_env] = "1"
+    try:
+        if diagnostic_replay:
             master = call_replay_xml(replay_xml, request=request)
+            return master, Counter()
+
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        with py_warnings.catch_warnings(record=True) as caught:
+            py_warnings.simplefilter("always")
+            with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                master = call_replay_xml(replay_xml, request=request)
+    finally:
+        if prev_timeline_env is None:
+            os.environ.pop(timeline_env, None)
+        else:
+            os.environ[timeline_env] = prev_timeline_env
     warning_counts = _summarize_bench_warning_diagnostics(
         stdout_buf.getvalue(),
         stderr_buf.getvalue(),

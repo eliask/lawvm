@@ -26,9 +26,9 @@ from lawvm.core.compile_result import CompileFailure
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
-from lawvm.finland.proof_surfaces import (
+from lawvm.finland.proof_surfaces import finland_evidence_bundle_evidence_surface
+from lawvm.finland.source_witness_proof_projector import (
     corrigendum_source_witness,
-    finland_evidence_bundle_evidence_surface,
     finlex_html_topology_source_witness,
 )
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only

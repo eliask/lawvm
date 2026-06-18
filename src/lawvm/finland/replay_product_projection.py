@@ -7,6 +7,7 @@ from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
+from lawvm.core.invariant_surface_matrix import FI_REPLAY_FOLD_SURFACE
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import (
     build_flattened_sublist_findings,
@@ -18,6 +19,7 @@ from lawvm.finland.replay_findings import (
     _replay_product_invariant_finding,
     fold_timeline_backfill_finding,
 )
+from lawvm.finland.replay_timeline_diagnostics import project_timeline_invariant_findings
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
@@ -273,5 +275,24 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
             if key not in seen_label_gap_warnings:
                 request.replay_findings.append(finding)
                 seen_label_gap_warnings.add(key)
+
+    if request.replay_meta_out is not None and request.replay_meta_out.get(
+        "enable_timeline_invariants"
+    ):
+        pit_date = (
+            products.materialization_spec.as_of
+            if products.materialization_spec is not None
+            else None
+        )
+        project_timeline_invariant_findings(
+            ir=products.materialized_state.ir,
+            timelines=products.timelines,
+            pit_date=pit_date,
+            profile=FI_REPLAY_FOLD_SURFACE.replay_profile,
+            replay_findings=request.replay_findings,
+            replay_meta_out=request.replay_meta_out,
+            replay_print=request.replay_print,
+            source_statute=request.parent_id,
+        )
 
     return products

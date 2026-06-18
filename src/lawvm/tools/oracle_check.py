@@ -117,7 +117,9 @@ def _el_text(el: etree._Element) -> str:
 
 
 def _clean(text: str) -> str:
-    return re.sub(r'[^a-z0-9äöå]', '', text.lower())
+    from lawvm.tools.divergence_core import clean_comparison_text
+
+    return clean_comparison_text(text)
 
 
 def _extract_sections(root: etree._Element) -> dict[str, etree._Element]:

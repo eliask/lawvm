@@ -38,6 +38,7 @@ from typing import Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING, cas
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
@@ -214,6 +215,36 @@ def validate_merge_invariants(
     return tuple(violations)
 
 
+def build_merge_invariant_findings(
+    violations: Tuple[MergeInvariantViolation, ...],
+    *,
+    source_statute: str = "",
+    op_id: str = "",
+    phase: str = "apply",
+) -> Tuple[Finding, ...]:
+    """Convert merge invariant violations into finding-ledger observations."""
+    findings: list[Finding] = []
+    for violation in violations:
+        findings.append(
+            Finding(
+                kind="merge_invariant_violation",
+                role=OBSERVATION_ROLE,
+                stage="merge",
+                blocking=False,
+                source_statute=source_statute,
+                detail={
+                    "message": violation.message,
+                    "phase": phase,
+                    "code": violation.code,
+                    "severity": violation.severity,
+                    "op_id": op_id,
+                    **violation.detail,
+                },
+            )
+        )
+    return tuple(findings)
+
+
 def build_merge_event(
     result: IRNode,
     master: IRNode,
@@ -247,14 +278,17 @@ def build_merge_event(
         op_id=op_id,
     )
 
-    if violations:
-        for v in violations:
-            logger.warning(
-                "MERGE_INVARIANT_VIOLATION [%s] %s: %s",
-                v.code,
-                v.severity,
-                v.message,
-            )
+    for finding in build_merge_invariant_findings(
+        violations,
+        source_statute=source_statute,
+        op_id=op_id,
+    ):
+        logger.warning(
+            "MERGE_INVARIANT_VIOLATION [%s] %s: %s",
+            finding.detail.get("code"),
+            finding.detail.get("severity"),
+            finding.detail.get("message"),
+        )
 
     return MergeEvent(
         replace_mode=replace_mode,

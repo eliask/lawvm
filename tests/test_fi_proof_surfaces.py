@@ -27,8 +27,33 @@ from lawvm.finland.he_branch_parser import (
     HEParsedBranch,
     HEParseStatus,
 )
-from lawvm.finland.proof_surfaces import (
+from lawvm.finland.pathology_failed_op_projector import (
+    source_pathology_execution_authorization,
+    source_pathology_frontier_work_item,
+    source_pathology_proof_surface_rows,
+)
+from lawvm.finland.source_pathology_proof_registry import (
+    registered_source_pathology_proof_rule_codes,
+    source_pathology_proof_rule,
+)
+from lawvm.finland.agreement_residual_proof_projector import (
+    finlex_editorial_witness_agreement_residual_rows,
+    source_adjudication_agreement_residual_rows,
+)
+from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_certificate_rows
+from lawvm.finland.recovery_temporal_proof_projector import (
+    recovery_execution_authorization_rows_from_projection_rows,
+    source_completeness_status_row,
+    temporal_resolution_evidence_rows_from_projection_rows,
+)
+from lawvm.finland.strict_report_evidence_projector import finland_strict_report_evidence_surface
+from lawvm.finland.source_witness_proof_projector import (
     consolidated_artifact_source_witness,
+    corrigendum_source_witness,
+    finlex_html_topology_source_witness,
+    source_adjudication_lineage_source_witness_rows,
+)
+from lawvm.finland.proof_surfaces import (
     finland_bench_run_evidence_surface,
     finland_corrigendum_manual_template_evidence_surface,
     finland_corrigendum_manual_template_frontier_item,
@@ -37,9 +62,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_unsupported_patch_evidence_surface,
     finland_corrigendum_unsupported_patch_frontier_item,
-    corrigendum_source_witness,
     finland_corrigendum_sources_evidence_surface,
-    finlex_html_topology_source_witness,
     finland_corrigendum_review_evidence_surface,
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
@@ -47,34 +70,26 @@ from lawvm.finland.proof_surfaces import (
     finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_candidate_set_frontier_work_items,
     finland_strict_report_ownership_closure_certificate,
-    finland_strict_report_evidence_surface,
-    finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
-    source_adjudication_agreement_residual_rows,
-    source_adjudication_lineage_source_witness_rows,
-    source_pathology_execution_authorization,
-    source_pathology_frontier_work_item,
-    source_pathology_proof_rule,
-    source_pathology_proof_surface_rows,
-    registered_source_pathology_proof_rule_codes,
-    sparse_slot_candidate_set_certificate_rows,
-    recovery_execution_authorization_rows_from_projection_rows,
-    source_completeness_status_row,
-    temporal_resolution_evidence_rows_from_projection_rows,
 )
 
 
 def test_finland_proof_surface_required_claim_kinds_are_registered() -> None:
     assert fi_claim_kinds is not None
-    proof_surface_path = Path("src/lawvm/finland/proof_surfaces.py")
-    tree = ast.parse(proof_surface_path.read_text(encoding="utf-8"))
-    required = {
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant)
-        and isinstance(node.value, str)
-        and node.value.startswith("fi.v1.")
-    }
+    registry_paths = (
+        Path("src/lawvm/finland/proof_surfaces.py"),
+        Path("src/lawvm/finland/source_pathology_proof_registry.py"),
+    )
+    required: set[str] = set()
+    for proof_surface_path in registry_paths:
+        tree = ast.parse(proof_surface_path.read_text(encoding="utf-8"))
+        required.update(
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("fi.v1.")
+        )
 
     missing = required - set(list_registered_kinds())
 

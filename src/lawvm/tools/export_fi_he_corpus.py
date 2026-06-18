@@ -26,7 +26,6 @@ Schema version: v1 (per NEXT_FEATURES_ROADMAP.md S10 convention).
 from __future__ import annotations
 
 import copy
-import json
 import sys
 import time
 from dataclasses import dataclass
@@ -612,11 +611,9 @@ def project_he_from_xml(
 
 
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-    return len(rows)
+    from lawvm.tools.export_persistence import write_jsonl
+
+    return write_jsonl(path, rows)
 
 
 def _build_parquet_schemas() -> Dict[str, Any]:
@@ -912,36 +909,60 @@ def project_he_corpus(
     finally:
         farchive.close()
 
-    # Write outputs
-    out = Path(data_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    from lawvm.tools.export_persistence import MultiTableExportSpec, export_multi_projection_tail
 
-    counts: Dict[str, int] = {}
-    _tables = [
-        ("fi_he_corpus", all_corpus),
-        ("fi_he_atoms", all_atoms),
-        ("fi_he_law_refs", all_law_refs),
-        ("fi_he_signatures", all_signatures),
-    ]
-    for name, rows in _tables:
-        _write_jsonl(out / f"{name}.jsonl", rows)
-        counts[name] = len(rows)
-        if use_parquet:
-            schema = _PARQUET_SCHEMAS.get(name)
-            ok = _try_write_parquet(out / f"{name}.parquet", rows, schema=schema, compile_metadata=compile_metadata)
-            label = "Parquet+JSONL" if ok else "JSONL"
-            print(f"  {name}: {len(rows):,} rows ({label})", file=sys.stderr)
-        else:
-            print(f"  {name}: {len(rows):,} rows (JSONL)", file=sys.stderr)
-
-    if all_failures:
-        _write_jsonl(out / "fi_he_projection_failures.jsonl", all_failures)
-        print(
-            f"  fi_he_projection_failures: {len(all_failures):,} records",
-            file=sys.stderr,
+    if use_parquet and compile_metadata is not None:
+        counts = export_multi_projection_tail(
+            data_dir=data_dir,
+            tables=[
+                MultiTableExportSpec("fi_he_corpus", all_corpus, _PARQUET_SCHEMAS.get("fi_he_corpus")),
+                MultiTableExportSpec("fi_he_atoms", all_atoms, _PARQUET_SCHEMAS.get("fi_he_atoms")),
+                MultiTableExportSpec("fi_he_law_refs", all_law_refs, _PARQUET_SCHEMAS.get("fi_he_law_refs")),
+                MultiTableExportSpec(
+                    "fi_he_signatures", all_signatures, _PARQUET_SCHEMAS.get("fi_he_signatures")
+                ),
+            ],
+            aux_jsonl=[
+                ("fi_he_projection_failures", all_failures),
+                ("fi_he_projection_observations", all_observations),
+            ],
+            use_parquet=True,
+            compile_metadata=compile_metadata,
+            t_start=t_start,
+            label="HE corpus projection",
         )
-    if all_observations:
-        _write_jsonl(out / "fi_he_projection_observations.jsonl", all_observations)
+    else:
+        out = Path(data_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        counts: Dict[str, int] = {}
+        _tables = [
+            ("fi_he_corpus", all_corpus),
+            ("fi_he_atoms", all_atoms),
+            ("fi_he_law_refs", all_law_refs),
+            ("fi_he_signatures", all_signatures),
+        ]
+        for name, rows in _tables:
+            _write_jsonl(out / f"{name}.jsonl", rows)
+            counts[name] = len(rows)
+            if use_parquet:
+                schema = _PARQUET_SCHEMAS.get(name)
+                ok = _try_write_parquet(
+                    out / f"{name}.parquet", rows, schema=schema, compile_metadata=compile_metadata
+                )
+                label = "Parquet+JSONL" if ok else "JSONL"
+                print(f"  {name}: {len(rows):,} rows ({label})", file=sys.stderr)
+            else:
+                print(f"  {name}: {len(rows):,} rows (JSONL)", file=sys.stderr)
+
+        if all_failures:
+            _write_jsonl(out / "fi_he_projection_failures.jsonl", all_failures)
+            print(
+                f"  fi_he_projection_failures: {len(all_failures):,} records",
+                file=sys.stderr,
+            )
+        if all_observations:
+            _write_jsonl(out / "fi_he_projection_observations.jsonl", all_observations)
 
     elapsed_total = time.time() - t_start
     print(

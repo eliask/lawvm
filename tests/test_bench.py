@@ -34,6 +34,26 @@ def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
     assert seen["oracle_selector"] == bench._BENCH_CONSOLIDATED_SELECTOR
 
 
+def test_diagnostic_replay_enables_timeline_invariants_env(monkeypatch) -> None:
+    import os
+
+    seen: dict[str, str | None] = {}
+
+    def fake_call_replay_xml(_replay_xml, *, request):
+        seen["timeline"] = os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS")
+        return _DummyReplay()
+
+    monkeypatch.setattr(bench, "call_replay_xml", fake_call_replay_xml)
+    bench._run_replay_with_bench_warning_capture(
+        "2009/953",
+        mode="legal_pit",
+        diagnostic_replay=True,
+        replay_kwargs={},
+    )
+    assert seen["timeline"] == "1"
+    assert os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS") is None
+
+
 def test_score_one_can_request_diagnostic_replay(monkeypatch) -> None:
     seen: dict[str, object] = {}
 

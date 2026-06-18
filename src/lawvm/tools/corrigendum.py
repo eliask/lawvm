@@ -90,8 +90,8 @@ from lawvm.finland.corrigendum_records import (
     write_official_records,
     write_source_records,
 )
+from lawvm.finland.source_witness_proof_projector import corrigendum_source_witness
 from lawvm.finland.proof_surfaces import (
-    corrigendum_source_witness,
     finland_corrigendum_manual_template_evidence_surface,
     finland_corrigendum_manual_template_frontier_item,
     finland_corrigendum_open_manual_evidence_surface,

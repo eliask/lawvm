@@ -203,11 +203,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 
     No legacy bridge modules.  No hidden middle authority.
     """
-    from lawvm.finland.johtolause.surface_parse import parse as surface_parse
-    from lawvm.finland.johtolause.grammar.parser import (
-        OutOfScope as _GrammarOutOfScope,
-        parse as _grammar_parse,
-    )
+    from lawvm.finland.parser_facade import parse_tokens_production
     from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
     from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast_with_diagnostics
     from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
@@ -248,27 +244,11 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # the curated contract suite is green under both settings, and the FI replay
     # bench is net-positive (smoke structural 96.18% -> 96.24%, Levenshtein flat).
     # Set LAWVM_FI_NEW_PARSER=0 to force the old surface_parse as primary.
-    _new_parser_enabled = _os.environ.get("LAWVM_FI_NEW_PARSER", "1") not in ("0", "false", "off", "")
     _jolloin_arg = _jolloin_pairs if _jolloin_pairs else None
-    # Parser-lane provenance: which parser actually produced this clause, and —
-    # when the new grammar parser declined — WHY. Recorded on the result + emitted
-    # as a governed finding so consumers cannot mistake a legacy-reference fallback
-    # for new-parser-owned output (the invisible-fallback / guard-liveness
-    # anti-pattern). A legacy_reference_fallback clause carries NONE of the new
-    # parser's no-silent-drop guarantee.
-    parser_lane: str
-    grammar_decline_reason: str | None = None
-    if _new_parser_enabled:
-        try:
-            _parsed = _grammar_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
-            parser_lane = "grammar_owned"
-        except _GrammarOutOfScope as _decline:
-            grammar_decline_reason = str(_decline) or "OutOfScope"
-            _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
-            parser_lane = "legacy_reference_fallback"
-    else:
-        _parsed = surface_parse(tokens, jolloin_renumber_pairs=_jolloin_arg)
-        parser_lane = "old_parser_forced"
+    _production = parse_tokens_production(tokens, jolloin_renumber_pairs=_jolloin_arg)
+    _parsed = _production.clause
+    parser_lane = _production.parser_lane
+    grammar_decline_reason = _production.grammar_decline_reason
     if _parsed.source_text != text:
         original_surface_clause = SurfaceClauseModel(
             verb_groups=_parsed.verb_groups,
