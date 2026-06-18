@@ -3226,7 +3226,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help=(
             "run in strict mode (FINLAND_INGESTION_V1 profile): heuristics that the "
             "profile forbids are skipped and recorded as adjudications. "
-            "Produces lower score than quirks mode where heuristics are blocked."
+            "May produce a lower score than quirks mode, where recoveries can proceed with evidence."
         ),
     )
 

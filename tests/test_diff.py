@@ -6,7 +6,21 @@ from lxml import etree
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.tools.cli import _build_parser
 from lawvm.tools.diff import _diff_sections_ir_vs_xml, _diff_sync, _print_compile_summary
+
+
+def test_diff_strict_help_describes_quirks_mode_correctly(capsys) -> None:
+    parser = _build_parser()
+
+    try:
+        parser.parse_args(["diff", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    out = capsys.readouterr().out
+    assert "where recoveries can proceed with evidence" in out
+    assert "quirks mode where heuristics are blocked" not in out
 
 
 def test_diff_sections_treats_temporary_oracle_stub_as_editorial(capsys) -> None:
