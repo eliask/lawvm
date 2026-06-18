@@ -8,6 +8,7 @@ import lxml.etree as etree
 
 from lawvm.finland.metadata import _chapter_expiry_from_base
 from lawvm.finland.ops import AmendmentOp, _apply_law_level_text_patches
+from lawvm.finland.corpus import get_consolidated_oracle_reflected_section_original_versions
 from lawvm.finland.replay_capture import ReplayCaptureSinks
 from lawvm.finland.replay_horizon import ReplayHorizonRequest, choose_replay_horizon
 from lawvm.finland.replay_pipeline import ReplayPlan, ReplaySignalBuffers
@@ -35,6 +36,8 @@ class ReplayProductAssemblyRequest:
     as_of: str | None
     profile: Any
     plan: ReplayPlan
+    corpus: Any
+    oracle_selector: Any
     replay_fold_state: Any
     capture_sinks: ReplayCaptureSinks
     signals: ReplaySignalBuffers
@@ -66,6 +69,13 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
             oracle_version_amendment_id=plan.oracle_version_amendment_id or "",
             compiled_ops=request.capture_sinks.compiled_ops or (),
             legal_operations=request.capture_sinks.legal_operations or (),
+            oracle_reflected_section_original_versions=(
+                get_consolidated_oracle_reflected_section_original_versions(
+                    request.parent_id,
+                    corpus=request.corpus,
+                    selector=request.oracle_selector,
+                )
+            ),
             replay_print=request.replay_print,
         )
     )

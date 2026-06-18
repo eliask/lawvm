@@ -52,6 +52,7 @@ class ReplayHorizonRequest:
     oracle_version_amendment_id: str
     compiled_ops: Iterable[dict[str, object]]
     legal_operations: Iterable[LegalOperation]
+    oracle_reflected_section_original_versions: Iterable[str]
     replay_print: Callable[[str], None]
 
 
@@ -68,6 +69,11 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
     """Choose PIT materialization and expiry horizons using the existing FI policy."""
     oracle_materialize_as_of: Optional[str] = None
     if request.mode == "official_consolidation":
+        reflected_section_original_versions = frozenset(
+            str(source_id)
+            for source_id in request.oracle_reflected_section_original_versions
+            if str(source_id)
+        )
         oracle_cutoff_iso: Optional[str] = (
             request.cutoff_date.isoformat() if request.cutoff_date is not None else None
         )
@@ -104,6 +110,7 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                 and iss_iso >= oracle_cutoff_iso
                 and eff_iso is not None
                 and eff_iso > oracle_cutoff_iso
+                and rec_sid not in reflected_section_original_versions
             ):
                 continue
             if (

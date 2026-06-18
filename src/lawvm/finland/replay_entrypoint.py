@@ -203,6 +203,8 @@ def replay_xml(
                 as_of=as_of,
                 profile=profile,
                 plan=plan,
+                corpus=corpus,
+                oracle_selector=oracle_selector,
                 replay_fold_state=replay_fold_state,
                 capture_sinks=capture_sinks,
                 signals=signals,

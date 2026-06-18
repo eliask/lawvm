@@ -384,6 +384,55 @@ def get_consolidated_oracle_reflected_source_vts_children(
     return source_vts_children & cited_ids
 
 
+_FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
+_ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
+
+
+def _finlex_original_version_to_statute_id(value: str) -> str:
+    token = value.strip().lstrip("@")
+    if len(token) < 5 or not token.isdigit():
+        return ""
+    return f"{token[:4]}/{int(token[4:])}"
+
+
+def get_consolidated_oracle_reflected_section_original_versions(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> set[str]:
+    """Return source ids reflected by section-level ``finlex:originalVersion``.
+
+    This is a narrow oracle-surface witness for consolidated bodies whose
+    ``dateConsolidated`` lags behind the provision text actually present in the
+    selected artifact.  We intentionally use only section-level originalVersion
+    attributes, and ignore future-repeal overlay sections ("tulee voimaan")
+    because those are editorial notices for a future state rather than current
+    body materialization.
+    """
+    if corpus is None:
+        corpus = _get_corpus_store()
+    oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
+    if oracle_bytes is None:
+        return set()
+    try:
+        tree = etree.fromstring(oracle_bytes)
+    except etree.XMLSyntaxError:
+        return set()
+
+    reflected: set[str] = set()
+    for section_el in tree.findall(".//{*}section"):
+        original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        if not original_version:
+            continue
+        section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
+        if _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):
+            continue
+        statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
+        if statute_id_from_version:
+            reflected.add(statute_id_from_version)
+    return reflected
+
+
 _ORACLE_REF_METADATA_ANCESTOR_TAGS = frozenset(
     {
         "meta",

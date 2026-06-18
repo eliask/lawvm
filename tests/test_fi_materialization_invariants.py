@@ -1157,6 +1157,15 @@ class TestNoDuplicatesInPIT:
         assert replay_meta.get("invariant_violations") in (None, [])
         assert replay_meta.get("product_invariant_violations") in (None, [])
 
+    def test_1953_317_reflected_section_original_version_extends_oracle_horizon(self) -> None:
+        """fin@20050786 embeds §7 from 2003/537 despite dateConsolidated 2003-06-13."""
+        ir = _replay("1953/317")
+        section_7 = _first_descendant(ir, IRNodeKind.SECTION, "7")
+        text = irnode_to_text(section_7)
+
+        assert "rikoslain 6 luvun 13 §:n" in text
+        assert "rikoslain 3 luvun 11 §:n" not in text
+
     def test_1992_785_section_11_not_stripped_by_future_effective_amendment(self) -> None:
         """1992/785 §11 must remain in PIT at oracle date 2023-04-14.
 

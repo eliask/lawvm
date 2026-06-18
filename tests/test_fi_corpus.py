@@ -361,6 +361,30 @@ def test_oracle_reflected_source_vts_children_ignores_unindexed_or_non_vts_refs(
     assert got == set()
 
 
+def test_oracle_reflected_section_original_versions_excludes_future_repeal_overlay() -> None:
+    sid = "1953/317"
+    oracle_path = "akn/fi/act/statute-consolidated/1953/317/fin@20050786/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_7v20030537" finlex:originalVersion="@20030537">
+          <num>7 §</num>
+          <subsection><content><p>Substantive reflected text.</p></content></subsection>
+        </section>
+        <section eId="sec_20v20230704" finlex:originalVersion="@20230704">
+          <num>20 §</num>
+          <subsection><content><p>20 § on kumottu lailla 704/2023, joka tulee voimaan 1.1.2024.</p></content></subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert got == {"2003/537"}
+
+
 # ---------------------------------------------------------------------------
 # _oracle_pending_amendment_suspect tests
 # ---------------------------------------------------------------------------
