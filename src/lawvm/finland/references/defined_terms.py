@@ -663,6 +663,86 @@ def _is_definitional_definiendum(last_word: str) -> bool:
     # (e.g. a mangled token) is not a definiendum.
     if len(low) < 5:
         return False
+    # The CROSS-REFERENCE idiom ``N §:ssä/laissa tarkoitetulla tavalla`` ("in the
+    # manner referred to in § N") puts the adessive PARTICIPLE ``tarkoitetulla``
+    # (and its paradigm ``tarkoitetuilla`` / ``tarkoitetussa``) right before a head
+    # noun.  That participle is itself the reference verb, never a definiendum — it
+    # points at an existing provision.
+    if low.startswith("tarkoitet"):
+        return False
+    return True
+
+
+# Postpositions / cross-reference connectives that, appearing ANYWHERE in a
+# captured run, mark it as a referential clause that spilled across a boundary
+# ("… N §:n MUKAAN katsota …", "… ja niiden NOJALLA annettujen säännösten …", "…
+# olevien alusten OSALTA …"). These never occur inside a genuine defined-term NP.
+# NOTE: plain coordinators (``ja`` / ``tai``) are DELIBERATELY excluded — Finnish
+# definitions routinely coordinate two definienda ("Korkomenolla ja korkotulolla
+# tarkoitetaan …", "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan …"), so a
+# coordinator is NOT evidence of a swept clause.  Likewise adessive nouns such as
+# ``avulla`` ("Henkilökohtaisella avulla") / ``perusteella`` are genuine heads in
+# context and are NOT rejected as heads — only their use as a CONNECTIVE inside a
+# longer swept run (after a genitive) is caught below by ``_BARE_CASE_SUFFIX`` /
+# the verb list.  Matched by exact lowercase token equality (closed set).
+_CLAUSE_BOUNDARY_TOKENS: frozenset[str] = frozenset(
+    {
+        # Cross-reference postpositions governing a genitive ("§:n mukaan",
+        # "niiden nojalla", "säännösten perusteella", "alusten osalta").
+        "mukaan", "nojalla", "perusteella", "osalta", "mukaisesti",
+        # Relative / interrogative pronouns (the referential ", jota … tarkoitetaan"
+        # spill): nominative / partitive / genitive / inessive surfaces.
+        "joka", "jota", "jonka", "jossa", "joita", "joiden", "mikä",
+        # Bare infinitive / finite verbs observed in swept referential clauses.
+        "katsota", "säädetään",
+    }
+)
+
+# A token that is ONLY a Finnish case suffix (no content stem before it) — the
+# tell-tale debris of a split ``§:ssä`` / ``EU:n`` / ``X:llä`` where the colon and
+# the stem were lost to tokenization, leaving a bare suffix fragment as the first
+# "word" of a swept run ("ssä tarkoitetulla …", "n geenivara-asetuksen …"). A
+# genuine definiendum's first token is a content word, never a bare suffix.
+_BARE_CASE_SUFFIX: frozenset[str] = frozenset(
+    {
+        "n", "ssa", "ssä", "sta", "stä", "lla", "llä", "lta", "ltä", "lle",
+        "ksi", "na", "nä", "ta", "tä", "a", "ä", "en", "in", "tta", "ttä",
+        "han", "hän", "kin", "kaan", "kään",
+    }
+)
+
+
+def _is_clean_definiendum_phrase(words: list[str]) -> bool:
+    """True iff the captured ``words`` run is a clean defined-term NP, not a swept
+    clause fragment.
+
+    A genuine multi-word definiendum is a short noun phrase (optional agreeing
+    modifiers + an adessive head): ``palkansaajaan rinnastettavalla yrittäjällä``,
+    ``Palkkatuella katettavilla palkkakustannuksilla``. It
+
+      * begins with a CONTENT word (never a bare case-suffix fragment left by a
+        split ``§:ssä`` / ``EU:n``), and
+      * contains NO clause-boundary token (cross-reference postposition /
+        relative pronoun / finite-or-infinitive verb) — i.e. does not span a
+        clause boundary.  Plain coordinators (``ja`` / ``tai``) are allowed: a
+        coordinated definiendum (``Korkomenolla ja korkotulolla``) is genuine.
+
+    A run failing either test is the cross-reference idiom or a clause fragment
+    swept by a stray ``:`` / ``;`` delimiter (``ssä tarkoitetulla``, ``n mukaan
+    katsota kilpailluilla markkinoilla``, ``n geenivara-asetuksen sekä niiden
+    nojalla``); the recognizer DECLINES it (no garbled term minted, no
+    fabrication), per the tag-don't-guess discipline.
+    """
+    if not words:
+        return False
+    # (a) A bare case-suffix fragment as the leading token = split-token debris.
+    if words[0].lower() in _BARE_CASE_SUFFIX:
+        return False
+    # (b) Any clause-boundary token anywhere in the run = the run spilled across a
+    #     clause boundary (cross-reference postposition / relative pronoun / verb).
+    for w in words:
+        if w.lower() in _CLAUSE_BOUNDARY_TOKENS:
+            return False
     return True
 
 
@@ -790,6 +870,13 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         phrase_words = words[start_idx:]
         if not phrase_words:
             continue
+        # DECLINE a swept clause fragment / cross-reference idiom: a definiendum
+        # that begins with a bare case-suffix fragment (split ``§:ssä`` / ``EU:n``)
+        # or spans a clause boundary (cross-reference postposition / relative
+        # pronoun / verb) is NOT a defined term. Tag-don't-guess: mint no garbled
+        # multi-word term rather than fabricate one.
+        if not _is_clean_definiendum_phrase(phrase_words):
+            continue
         term_surface = " ".join(phrase_words)
         expansion_text = m.group("expansion").strip()
         act_id = _act_id_in_expansion(expansion_text)
@@ -855,6 +942,14 @@ def _recognize_enumerated_definitions(
             # non-definiendum shape exactly as shape 3 does (no fabrication).
             phrase_words = _adessive_phrase_from_run(run_words)
             if phrase_words is None:
+                continue
+            # DECLINE a swept clause fragment / cross-reference idiom. The item
+            # regex anchors on ANY ``:`` / ``;`` (incl. ``EU:`` and a split
+            # ``§:ssä``), so a stray sentence-internal colon can sweep a clause
+            # ("n mukaan katsota kilpailluilla markkinoilla", "ssä tarkoitetulla").
+            # Only a clean definiendum NP (content-word start, no clause-boundary
+            # token) binds; otherwise mint nothing (no fabrication).
+            if not _is_clean_definiendum_phrase(phrase_words):
                 continue
             # Full multi-word definiendum SURFACE preserved (no stem mangling).
             term_surface = " ".join(phrase_words)

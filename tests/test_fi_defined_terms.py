@@ -444,6 +444,106 @@ def test_celex_parenthetical_is_not_minted_as_alias() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Over-capture: cross-reference idiom + swept clause fragments are NOT definienda
+# ---------------------------------------------------------------------------
+
+
+def test_cross_reference_idiom_in_enum_block_is_not_a_definition() -> None:
+    # "… N §:ssä tarkoitetulla tavalla" is the CROSS-REFERENCE idiom ("in the
+    # manner referred to in § N"), not a definition. After tokenization the
+    # "§:" is lost, leaving "ssä tarkoitetulla" — a bare suffix fragment + the
+    # reference participle. It must NOT be minted as a defined term. (2023/371.)
+    text = (
+        "Tässä laissa tarkoitetaan: tuella avustusta; "
+        "laitokselle on osoitettu määrärahaa 7 luvun 15 ssä tarkoitetulla tavalla;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert "ssä tarkoitetulla" not in terms
+    assert not any("tarkoitetulla" in t for t in terms)
+    # The genuine definiendum in the same block survives.
+    assert "tuella" in terms
+
+
+def test_swept_clause_fragment_with_verb_is_not_a_definition() -> None:
+    # A stray sentence-internal colon ("kuntalain (410/2015) …") lets the enum
+    # item regex sweep a clause containing the infinitive "katsota" and a bare
+    # "n" fragment. It spans a clause boundary → declined. (2023/371.)
+    text = (
+        "Tässä laissa tarkoitetaan: hankkeella toimenpidettä; "
+        "toimintaa, jota ei kuntalain (410/2015) 126 n mukaan katsota "
+        "kilpailluilla markkinoilla tapahtuvaksi toiminnaksi;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert not any("katsota" in t for t in terms)
+    assert not any(t.startswith("n ") for t in terms)
+    assert "hankkeella" in terms
+
+
+def test_swept_clause_fragment_with_postposition_is_not_a_definition() -> None:
+    # "… tämän lain ja EU:n geenivara-asetuksen sekä niiden nojalla annettujen …"
+    # — the "EU:" colon sweeps a clause fragment opening with a bare "n" fragment
+    # and containing the cross-reference postposition "nojalla". Declined; no
+    # garbled term. (2016/394.)
+    text = (
+        "Tässä laissa tarkoitetaan: viranomaisella valvovaa virastoa; "
+        "noudatettava tämän lain ja EU:n geenivara-asetuksen sekä niiden "
+        "nojalla annettujen säännösten vaatimuksia;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert "n geenivara-asetuksen sekä niiden nojalla" not in terms
+    assert not any("nojalla" in t for t in terms)
+    assert "viranomaisella" in terms
+
+
+def test_coordinated_definienda_still_bind() -> None:
+    # Finnish definitions routinely coordinate two definienda with "ja" / "tai":
+    # "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan …". A plain
+    # coordinator is NOT a clause-spill signal — the coordinated phrase must
+    # survive. (1982/1116 / 1982/311 legitimate definitions.)
+    text = (
+        "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan ankkuroitua "
+        "verkkoa."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Pintaverkolla ja pintaverkkopyydyksellä" for b in tk)
+
+
+def test_adessive_noun_head_avulla_still_binds() -> None:
+    # "avulla" / "perusteella" are adessive in form but here they are the noun
+    # head of a genuine defined term ("Henkilökohtaisella avulla tarkoitetaan …"),
+    # NOT a postposition. Such a head must NOT be rejected. (1987/380.)
+    text = "Henkilökohtaisella avulla tarkoitetaan vaikeavammaisen henkilön avustamista."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Henkilökohtaisella avulla" for b in tk)
+
+
+def test_inline_cross_reference_participle_is_not_a_definition() -> None:
+    # Inline shape-3: "N §:ssä tarkoitetulla tavalla tarkoitetaan" must not bind
+    # — the head before the verb is the reference participle, not a definiendum.
+    text = "Edellä 5 ssä tarkoitetulla tavalla tarkoitetaan jotain muuta."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert not any("tarkoitetulla" in t for t in terms)
+
+
+def test_clean_multiword_definiendum_still_binds() -> None:
+    # The fix must keep clean multi-word definienda (content-word start, noun
+    # head, no clause-boundary token). (2023/371 legitimate definition.)
+    text = (
+        "Tässä laissa tarkoitetaan: "
+        "Palkkatuella katettavilla palkkakustannuksilla työntekijälle "
+        "maksettavaa palkkaa;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(
+        b.term == "Palkkatuella katettavilla palkkakustannuksilla" for b in tk
+    )
+
+
 def test_jaljempana_alias_markup_is_stripped() -> None:
     # Inline markup "<i>rakennetukilaki</i>" must be stripped to the bare word.
     text = (
