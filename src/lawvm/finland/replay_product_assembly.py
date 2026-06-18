@@ -16,9 +16,13 @@ from lawvm.finland.replay_product_projection import (
     ReplayProductProjectionRequest,
     project_replay_products,
 )
-from lawvm.finland.replay_findings import materialized_attachments_wrapper_split_finding
+from lawvm.finland.replay_findings import (
+    materialized_attachments_wrapper_split_finding,
+    materialized_provisions_wrapper_projection_finding,
+)
 from lawvm.finland.replay_products import (
     ReplayProducts,
+    project_materialized_provisions_wrapper,
     _split_operatives_from_attachments_wrapper,
     build_replay_products,
 )
@@ -29,6 +33,9 @@ from lawvm.finland.post_process import _consolidate_kumottu_range
 from lawvm.finland.temporal_rewrites import _base_chapter_expiry_temporal_events
 
 _FI_MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT_RULE = "fi_materialized_attachments_wrapper_split_v1"
+_FI_MATERIALIZED_PROVISIONS_WRAPPER_PROJECTION_RULE = (
+    "fi_materialized_provisions_wrapper_projection_v1"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +116,20 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
     )
     products = _normalize_product_trees(products)
     products = _apply_law_level_patches_if_needed(products, request)
+    projected_materialized_ir = project_materialized_provisions_wrapper(
+        products.materialized_state.ir,
+        products.replay_fold_state.ir,
+    )
+    if projected_materialized_ir is not products.materialized_state.ir:
+        request.signals.findings.append(
+            materialized_provisions_wrapper_projection_finding(
+                source_statute=request.parent_id,
+                witness_rule_id=_FI_MATERIALIZED_PROVISIONS_WRAPPER_PROJECTION_RULE,
+            )
+        )
+        products.materialized_state = products.materialized_state.with_ir(
+            projected_materialized_ir
+        )
     if request.build_full_products:
         if request.replay_meta_out is not None and fi_timeline_invariants_opt_in_enabled():
             request.replay_meta_out["enable_timeline_invariants"] = True

@@ -321,6 +321,7 @@ def _fold_provisions_has_hierarchical_roots(fold: IRNode) -> bool:
 
 
 _FI_PROVISIONS_WRAPPER_NAME = "statuteProvisionsWrapper"
+_FI_CHAPTER_SECTION_EID_RE = re.compile(r"^chp_(?P<chapter>[^_]+)__sec_")
 
 
 def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], ...]]:
@@ -352,6 +353,124 @@ def _iter_sections(node: IRNode) -> tuple[IRNode, ...]:
 
     _walk(node)
     return tuple(sections)
+
+
+def _chapter_label_from_section_eid(node: IRNode) -> str:
+    e_id = str(node.attrs.get("eId") or "")
+    match = _FI_CHAPTER_SECTION_EID_RE.match(e_id)
+    if match is None:
+        return ""
+    return match.group("chapter").replace("_", " ")
+
+
+def _is_materialized_provisions_wrapper_candidate(node: IRNode, replay_fold: IRNode) -> bool:
+    if node.kind is not IRNodeKind.HCONTAINER:
+        return False
+    if node.attrs.get("name") == "attachments":
+        return False
+    if node.attrs.get("name") not in (None, "", _FI_PROVISIONS_WRAPPER_NAME):
+        return False
+    fold_labels = {
+        section.label for section in _fold_hcontainer_direct_sections(replay_fold) if section.label
+    }
+    if not fold_labels:
+        return False
+    candidate_labels = {
+        child.label for child in node.children if child.kind is IRNodeKind.SECTION and child.label
+    }
+    return bool(candidate_labels & fold_labels)
+
+
+def project_materialized_provisions_wrapper(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+    """Project fold-owned provisions-wrapper children into materialized legal topology.
+
+    Core PIT materialization preserves unlabeled hcontainer path shape but loses
+    the Finland-local ``statuteProvisionsWrapper`` attribute.  For materialized
+    products, that wrapper is only a source/editorial carrier: direct sections
+    either belong directly under the body, or, when the materialized product has
+    chapter shells and the section eId says ``chp_N__sec_X``, under that chapter.
+    """
+    if materialized.kind is not IRNodeKind.BODY:
+        return materialized
+
+    wrapper_index = next(
+        (
+            index
+            for index, child in enumerate(materialized.children)
+            if _is_materialized_provisions_wrapper_candidate(child, replay_fold)
+        ),
+        None,
+    )
+    if wrapper_index is None:
+        return materialized
+    wrapper = materialized.children[wrapper_index]
+
+    has_hierarchical_roots = any(
+        child.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER}
+        for index, child in enumerate(materialized.children)
+        if index != wrapper_index
+    )
+    if not has_hierarchical_roots:
+        rebuilt = tuple(
+            grandchild
+            for index, child in enumerate(materialized.children)
+            for grandchild in ((child.children) if index == wrapper_index else (child,))
+        )
+        return dc_replace(materialized, children=rebuilt)
+
+    chapter_indices = {
+        child.label: index
+        for index, child in enumerate(materialized.children)
+        if child.kind is IRNodeKind.CHAPTER and child.label
+    }
+    if not chapter_indices:
+        return materialized
+
+    children = list(materialized.children)
+    wrapper_children: list[IRNode] = []
+    moved_by_chapter: dict[str, list[IRNode]] = {}
+    for child in wrapper.children:
+        if child.kind is not IRNodeKind.SECTION or not child.label:
+            wrapper_children.append(child)
+            continue
+        chapter_label = _chapter_label_from_section_eid(child)
+        if not chapter_label or chapter_label not in chapter_indices:
+            wrapper_children.append(child)
+            continue
+        moved_by_chapter.setdefault(chapter_label, []).append(child)
+
+    if not moved_by_chapter:
+        return materialized
+
+    for chapter_label, moved in moved_by_chapter.items():
+        chapter_index = chapter_indices[chapter_label]
+        chapter = children[chapter_index]
+        existing_labels = {
+            child.label
+            for child in chapter.children
+            if child.kind is IRNodeKind.SECTION and child.label
+        }
+        chapter_children = list(chapter.children)
+        for moved_section in moved:
+            if moved_section.label in existing_labels:
+                continue
+            target_key = default_label_sort_key(moved_section.label)
+            insert_at = len(chapter_children)
+            for index, existing in enumerate(chapter_children):
+                if existing.kind is not IRNodeKind.SECTION or existing.label is None:
+                    continue
+                if default_label_sort_key(existing.label) > target_key:
+                    insert_at = index
+                    break
+            chapter_children.insert(insert_at, moved_section)
+            existing_labels.add(moved_section.label)
+        children[chapter_index] = dc_replace(chapter, children=tuple(chapter_children))
+
+    if wrapper_children:
+        children[wrapper_index] = dc_replace(wrapper, children=tuple(wrapper_children))
+    else:
+        del children[wrapper_index]
+    return dc_replace(materialized, children=tuple(children))
 
 
 def _split_operatives_from_attachments_wrapper(materialized: IRNode, replay_fold: IRNode) -> IRNode:

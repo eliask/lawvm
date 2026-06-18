@@ -214,6 +214,28 @@ def fold_timeline_backfill_finding(
     )
 
 
+def materialized_provisions_wrapper_projection_finding(
+    *,
+    source_statute: str,
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a materialized provisions wrapper is projected."""
+    return Finding(
+        kind="REPLAY.MATERIALIZED_PROVISIONS_WRAPPER_PROJECTED",
+        role="observation",
+        stage="replay_products",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Materialized PIT product projected fold-owned "
+                "statuteProvisionsWrapper children into legal topology."
+            ),
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
 def materialized_attachments_wrapper_split_finding(
     *,
     source_statute: str,

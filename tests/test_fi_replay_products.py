@@ -45,6 +45,7 @@ from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
 from lawvm.finland.replay_products import build_replay_products
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
+from lawvm.finland.replay_products import project_materialized_provisions_wrapper
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
 from lawvm.core.timeline_addresses import _retarget_root_node
@@ -279,6 +280,77 @@ def test_reconcile_fold_sections_does_not_split_attachments_for_mixed_chapter_wr
     ]
     attachments = next(child for child in reconciled.children if child.attrs.get("name") == "attachments")
     assert [child.label for child in attachments.children if child.kind is IRNodeKind.SECTION] == ["38"]
+
+
+def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without_chapters() -> None:
+    section_1 = IRNode(kind=IRNodeKind.SECTION, label="1")
+    section_2 = IRNode(kind=IRNodeKind.SECTION, label="2")
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(section_1, section_2),
+            ),
+        ),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(section_1, section_2),
+            ),
+        ),
+    )
+
+    projected = project_materialized_provisions_wrapper(materialized, replay_fold)
+
+    assert [child.kind for child in projected.children] == [
+        IRNodeKind.SECTION,
+        IRNodeKind.SECTION,
+    ]
+    assert [child.label for child in projected.children] == ["1", "2"]
+
+
+def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
+    section_17g = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17g",
+        attrs={"eId": "chp_3__sec_17g"},
+    )
+    section_2 = IRNode(kind=IRNodeKind.SECTION, label="2", attrs={"eId": "sec_2"})
+    chapter_3 = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3",
+        attrs={"lawvm_synthesized_container": "active_descendant"},
+        children=(IRNode(kind=IRNodeKind.NUM, text="3"),),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            chapter_3,
+            IRNode(kind=IRNodeKind.HCONTAINER, children=(section_2, section_17g)),
+        ),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(section_2, section_17g),
+            ),
+        ),
+    )
+
+    projected = project_materialized_provisions_wrapper(materialized, replay_fold)
+
+    projected_chapter = next(child for child in projected.children if child.kind is IRNodeKind.CHAPTER)
+    assert [child.label for child in projected_chapter.children if child.kind is IRNodeKind.SECTION] == ["17g"]
+    projected_wrapper = next(child for child in projected.children if child.kind is IRNodeKind.HCONTAINER)
+    assert [child.label for child in projected_wrapper.children if child.kind is IRNodeKind.SECTION] == ["2"]
 
 
 def test_2009_1182_materialized_text_keeps_operatives_outside_attachments() -> None:
