@@ -1076,6 +1076,7 @@ def materialize_pit_ex(
     degraded_dimensions: Set[str] = set()
     selection_states: List[_MaterializationSelectionState] = []
     selection_issues: List[TimelineIssue] = []
+    inactive_expiry_by_address: Dict[LegalAddress, str] = {}
     for address, tl in timelines.items():
         for conflict in _equal_rank_same_source_conflicts(
             tl,
@@ -1134,19 +1135,36 @@ def materialize_pit_ex(
             continue
         # Known but inactive — address has a timeline but no eligible version.
         # Emit tombstone so _overlay_on_container omits base content.
-        if any(v.expires and v.expires <= expiry_horizon for v in tl.versions):
+        expired_versions = [v for v in tl.versions if v.expires and v.expires <= expiry_horizon]
+        if expired_versions:
             selection_states.append(
                 _MaterializationSelectionState(
                     address=address,
                     status="inactive",
                 )
             )
+            inactive_expiry_by_address[address] = max(v.expires or "" for v in expired_versions)
 
     active, active_versions, ambiguous_address_tuple = _project_materialization_selection_states(
         selection_states,
         migration_events,
         as_of=as_of,
     )
+    inactive_expiry_by_projected_address: Dict[LegalAddress, str] = {}
+    for address, expiry in inactive_expiry_by_address.items():
+        projected_address = (
+            _current_address_from_migration_events(
+                address,
+                migration_events,
+                as_of_date=as_of,
+                address_prefix_matches=_address_prefix_matches,
+            )
+            if migration_events
+            else address
+        )
+        current_expiry = inactive_expiry_by_projected_address.get(projected_address, "")
+        if expiry > current_expiry:
+            inactive_expiry_by_projected_address[projected_address] = expiry
     title_address = statute_title_address()
     title = base.title if base else ""
     title_content = active.pop(title_address, None)
@@ -1249,6 +1267,29 @@ def materialize_pit_ex(
             parent_addr = LegalAddress(path=parent_path)
             parent_v = active_versions.get(parent_addr)
             child_v = active_versions.get(addr)
+            if active.get(addr) is None and child_v is None:
+                # Known-but-inactive subsection/item timelines are negative
+                # space from older state. When a selected section snapshot
+                # carries that exact descendant path, the inactive descendant
+                # must not erase newer embedded payload during overlay. A later
+                # child expiry still wins: it is an explicit deletion of stale
+                # carried content.
+                inactive_expiry = inactive_expiry_by_projected_address.get(addr, "")
+                if (
+                    inactive_expiry
+                    and parent_addr.leaf_kind() == "section"
+                    and parent_v
+                    and parent_v.content is not None
+                    and parent_v.effective > inactive_expiry
+                    and _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                    )
+                ):
+                    superseded.add(addr)
+                    break
+                continue
             if not parent_v or not child_v:
                 continue
             if parent_v.content is None:

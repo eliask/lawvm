@@ -2911,6 +2911,43 @@ def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsectio
     )
 
 
+def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sections() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1973/390")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.CHAPTER, label="9", children=()),
+                IRNode(kind=IRNodeKind.CHAPTER, label="12", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="1973/390",
+        source_title="Laki kauppakaaren muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1734/3-000",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_unit_kind, op.target_chapter, op.target_section)
+        for op in phase2.output
+    ] == [
+        ("REPLACE", "chapter", None, "12"),
+        ("INSERT", "section", "9", "12"),
+        ("INSERT", "section", "9", "13"),
+    ]
+
+
 def test_normalize_and_compile_ops_records_empty_extraction_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

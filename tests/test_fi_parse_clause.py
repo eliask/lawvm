@@ -253,6 +253,23 @@ def test_parse_clause_multi_section_reinsert_mid_list_keeps_neighbours() -> None
         assert expected in codes, codes
 
 
+def test_parse_clause_chapter_reinsert_with_descriptive_provenance_keeps_sections() -> None:
+    """``N lukuun <descriptive provenance> kumotun M §:n sijaan uusi M §``.
+
+    Regression for 1973/390: the chapter destination is followed by the title
+    of the repealed 1868 act before the reinstatement sentinel.  The provenance
+    is not a target; the inserts must land in the explicit chapter.
+    """
+    result = parse_clause(
+        "lisätään 9 lukuun määräajasta velkomisasioissa sekä julkisesta "
+        "haasteesta velkojille 9 päivänä marraskuuta 1868 annetulla "
+        "asetuksella kumotun 12 §:n sijaan uusi 12 § sekä uusi 13 § "
+        "seuraavasti:"
+    )
+
+    assert [op.code() for op in result.parsed_ops] == ["L P L:9 12", "L P L:9 13"]
+
+
 def test_parse_clause_surface_clause_populated():
     """surface_clause must be a non-None object (Phase 3 SurfaceClause)."""
     from lawvm.finland.johtolause.surface_model import SurfaceClause
