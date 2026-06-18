@@ -7005,6 +7005,219 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="write generated RULEBOOK.md and RULE_INDEX.json into DIR",
     )
 
+    # --- fi-scope-carrier-census ---
+    fscc_p = sub.add_parser(
+        "fi-scope-carrier-census",
+        help="run Finland scope-carrier grammar differential census",
+        description=(
+            "Measure-only census: grammar_shadow scope projection vs surface_parse "
+            "oracle over chapter/part carrier cues in statute bodies. Requires the "
+            "linked Finlex archive (LAWVM_FARCHIVE_DB / LAWVM_CANONICAL_DATA_ROOT)."
+        ),
+    )
+    fscc_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="cap statutes scanned (0 = all)",
+    )
+    fscc_p.add_argument(
+        "--min-year",
+        type=int,
+        default=0,
+        metavar="YEAR",
+        help="only statutes enacted in/after YEAR (0 = no filter)",
+    )
+    fscc_p.add_argument(
+        "--max-examples",
+        type=int,
+        default=8,
+        metavar="N",
+        help="max example rows per bucket in text report",
+    )
+    fscc_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of text scoreboard",
+    )
+
+    # --- fi-temporal-census ---
+    ftc_p = sub.add_parser(
+        "fi-temporal-census",
+        help="run Finland temporal/applicability grammar differential census",
+        description=(
+            "Measure-only census: temporal construction parse projection vs "
+            "meta_parse + temporal_lowering oracle over cue-bearing statute "
+            "sentences. Requires the linked Finlex archive "
+            "(LAWVM_FARCHIVE_DB / LAWVM_CANONICAL_DATA_ROOT)."
+        ),
+    )
+    ftc_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="cap statutes scanned (0 = all)",
+    )
+    ftc_p.add_argument(
+        "--min-year",
+        type=int,
+        default=0,
+        metavar="YEAR",
+        help="only statutes enacted in/after YEAR (0 = no filter)",
+    )
+    ftc_p.add_argument(
+        "--max-examples",
+        type=int,
+        default=8,
+        metavar="N",
+        help="max example rows per bucket in text report",
+    )
+    ftc_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of text scoreboard",
+    )
+
+    # --- fi-sentence-census ---
+    fsc_p = sub.add_parser(
+        "fi-sentence-census",
+        help="run Finland citation-sentence grammar differential census",
+        description=(
+            "Measure-only census: citation-sentence construction projection vs "
+            "full production reference extractor oracle over (id)-bearing "
+            "sentences. Requires the linked Finlex archive."
+        ),
+    )
+    fsc_p.add_argument("--limit", type=int, default=0, metavar="N", help="cap statutes scanned (0 = all)")
+    fsc_p.add_argument(
+        "--min-year",
+        type=int,
+        default=0,
+        metavar="YEAR",
+        help="only statutes enacted in/after YEAR (0 = no filter)",
+    )
+    fsc_p.add_argument(
+        "--max-examples",
+        type=int,
+        default=8,
+        metavar="N",
+        help="max example rows per bucket in text report",
+    )
+    fsc_p.add_argument(
+        "--legacy-oracle",
+        action="store_true",
+        help="use span-restricted plain-text oracle instead of full extractor",
+    )
+    fsc_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of text scoreboard",
+    )
+
+    # --- fi-definition-census ---
+    fdc_p = sub.add_parser(
+        "fi-definition-census",
+        help="run Finland definition-entry grammar differential census",
+        description=(
+            "Measure-only census: definition construction parse projection vs "
+            "recognize_defined_term_bindings oracle over definition blocks and "
+            "inline sentences. Requires the linked Finlex archive."
+        ),
+    )
+    fdc_p.add_argument("--limit", type=int, default=0, metavar="N", help="cap statutes scanned (0 = all)")
+    fdc_p.add_argument(
+        "--min-year",
+        type=int,
+        default=0,
+        metavar="YEAR",
+        help="only statutes enacted in/after YEAR (0 = no filter)",
+    )
+    fdc_p.add_argument(
+        "--max-examples",
+        type=int,
+        default=8,
+        metavar="N",
+        help="max example rows per bucket in text report",
+    )
+    fdc_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of text scoreboard",
+    )
+
+    # --- fi-timeline-robust-sweep ---
+    fts_p = sub.add_parser(
+        "fi-timeline-robust-sweep",
+        help="sweep corpus for robust-tier timeline invariant hits by amend decile",
+    )
+    fts_p.add_argument(
+        "--corpus",
+        default="data/finland/bench_core.csv",
+        help="bench corpus CSV (default: data/finland/bench_core.csv)",
+    )
+    fts_p.add_argument("--limit", type=int, default=0, metavar="N", help="cap statutes scanned from corpus head (0 = all)")
+    fts_p.add_argument("--tail", type=int, default=0, metavar="N", help="scan highest-amendment tail instead of head")
+    fts_p.add_argument(
+        "--mode",
+        default="legal_pit",
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit)",
+    )
+    fts_p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    fts_p.add_argument(
+        "--json-out",
+        default="",
+        metavar="PATH",
+        help="write machine-readable JSON report to PATH",
+    )
+
+    # --- fi-grammar-census ---
+    fgc_p = sub.add_parser(
+        "fi-grammar-census",
+        help="run unified Finland construction-grammar differential census",
+        description=(
+            "Measure-only rollup over scope-carrier, temporal, citation-sentence, "
+            "and definition-entry family censuses. Requires the linked Finlex archive."
+        ),
+    )
+    fgc_p.add_argument(
+        "--families",
+        default="",
+        metavar="IDS",
+        help=(
+            "comma-separated family ids to run "
+            "(default: all — scope_carrier,temporal_applicability,"
+            "citation_sentence,definition_entry)"
+        ),
+    )
+    fgc_p.add_argument("--limit", type=int, default=0, metavar="N", help="cap statutes scanned (0 = all)")
+    fgc_p.add_argument(
+        "--min-year",
+        type=int,
+        default=0,
+        metavar="YEAR",
+        help="only statutes enacted in/after YEAR (0 = no filter)",
+    )
+    fgc_p.add_argument(
+        "--max-examples",
+        type=int,
+        default=6,
+        metavar="N",
+        help="max example rows per bucket in per-family engines",
+    )
+    fgc_p.add_argument(
+        "--legacy-oracle",
+        action="store_true",
+        help="use span-restricted plain-text oracle for citation-sentence family",
+    )
+    fgc_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of text scoreboard",
+    )
+
     # --- scaffold ---
     scaffold_p = sub.add_parser(
         "scaffold",
@@ -12884,6 +13097,36 @@ def _main_impl() -> None:
         from lawvm.tools.finland_rulebook import main as finland_rulebook_main
 
         finland_rulebook_main(args)
+
+    elif args.command == "fi-scope-carrier-census":
+        from lawvm.tools.fi_scope_carrier_census import main as fi_scope_carrier_census_main
+
+        fi_scope_carrier_census_main(args)
+
+    elif args.command == "fi-temporal-census":
+        from lawvm.tools.fi_temporal_census import main as fi_temporal_census_main
+
+        fi_temporal_census_main(args)
+
+    elif args.command == "fi-sentence-census":
+        from lawvm.tools.fi_sentence_census import main as fi_sentence_census_main
+
+        fi_sentence_census_main(args)
+
+    elif args.command == "fi-definition-census":
+        from lawvm.tools.fi_definition_census import main as fi_definition_census_main
+
+        fi_definition_census_main(args)
+
+    elif args.command == "fi-grammar-census":
+        from lawvm.tools.fi_grammar_census import main as fi_grammar_census_main
+
+        fi_grammar_census_main(args)
+
+    elif args.command == "fi-timeline-robust-sweep":
+        from lawvm.tools.fi_timeline_robust_sweep import main as fi_timeline_robust_sweep_main
+
+        fi_timeline_robust_sweep_main(args)
 
     elif args.command == "drift":
         from lawvm.tools.drift import main as drift_main
