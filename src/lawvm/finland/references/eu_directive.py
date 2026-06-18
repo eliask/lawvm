@@ -235,14 +235,39 @@ _HEAD_CELEX_TYPE: tuple[tuple[str, str], ...] = (
 )
 
 
-# Year-first slash cite "YEAR/NUMBER/FORM" (e.g. "2009/138/EY", "2001/23/EY").
+# Year-first slash cite "YEAR/NUMBER/FORM" (e.g. "2009/138/EY", "2001/23/EY",
+# and the legacy 2-digit-year directives/decisions "96/53/EY", "82/891/ETY").
 # The shared NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE group, so it
-# only reads the number-first order; this picks up the year-first order (4-digit
-# year, ≤3-digit act number — unambiguously year-first). Bounded (§1.11).
+# only reads the number-first order; this picks up the year-first order. The act
+# number is ≤3 digits, so the shape is unambiguously year-first.
+#
+# The YEAR group accepts a 4-digit year ("2009/138/EY") OR a legacy 2-digit year
+# ("96/53/EY"); pre-2000 EU directives/decisions are written year-first with the
+# year abbreviated to its last two digits. The 4-digit alternative is listed
+# FIRST so "2009/138/EY" matches as year "2009" (never as "20" + "09/138"). The
+# trailing ``\b`` after the act number keeps a 3-digit number run from being
+# mis-split, and the ``/FORM`` suffix is the discriminator: a bare "NN/NNN"
+# without the EU form marker never matches here. A 2-digit year is normalised to
+# its full 19xx form in ``_celex_from_formal_cite`` (see ``_normalize_eu_year``).
+# Bounded (§1.11).
 _YEAR_FIRST_SLASH_CITE = re.compile(
-    r"\b(?P<year>\d{4})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b",
+    r"\b(?P<year>\d{4}|\d{2})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b",
     re.IGNORECASE,
 )
+
+
+def _normalize_eu_year(year: int) -> int:
+    """Normalise an EU-act year, expanding a legacy 2-digit year to 19xx.
+
+    EU directive/decision cites written before 2000 abbreviate the year to its
+    last two digits ("96/53/EY" → 1996, "82/891/ETY" → 1982). The 2-digit form
+    is unambiguously pre-2000 in this corpus (the year-first 4-digit form took
+    over from 2000 on), so a value below 100 pivots to the 1900s. A value that is
+    already 4-digit (≥ 1000) is returned unchanged.
+    """
+    if year < 100:
+        return 1900 + year
+    return year
 
 
 def _celex_type_for_head(head: str) -> Optional[str]:
@@ -291,8 +316,11 @@ def _celex_from_formal_cite(window: str, head: str) -> Optional[str]:
         candidates.append((m.start(), int(m.group("year")), int(m.group("num"))))
     if not candidates:
         return None
-    # The cite closest to the article (largest start offset) governs it.
+    # The cite closest to the article (largest start offset) governs it. A legacy
+    # 2-digit year ("96" from "96/53/EY") is expanded to its full 19xx form before
+    # the CELEX is built and range-checked.
     _, year, num = max(candidates, key=lambda c: c[0])
+    year = _normalize_eu_year(year)
     if not (1957 <= year <= 2050):
         return None
     return f"3{year:04d}{type_letter}{num:04d}"

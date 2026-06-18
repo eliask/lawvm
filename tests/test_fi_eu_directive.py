@@ -12,6 +12,7 @@ from __future__ import annotations
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
 from lawvm.finland.references.eu_directive import (
     _ARTIKLA_RE,
+    _celex_from_formal_cite,
     _EU_HEAD_FORMS,
     _expand_articles,
     recognize_eu_directive_refs,
@@ -140,6 +141,57 @@ def test_unknown_bare_head_with_eu_year_cite_resolves_regulation() -> None:
     assert refs[0].status is CiteConfidence.EXACT
     assert refs[0].celex_candidates == ("32018R1805",)
     assert refs[0].article == "30"
+
+
+def test_legacy_two_digit_year_directive_resolves() -> None:
+    # Legacy pre-2000 directive cite written year-first with a 2-digit year:
+    # "direktiivin 96/53/EY 3 artiklan" → year 96 → 1996, directive → L →
+    # 31996L0053. Without the 2-digit-year relaxation this yielded no CELEX.
+    refs = recognize_eu_directive_refs("direktiivin 96/53/EY 3 artiklan")
+    assert len(refs) == 1
+    r = refs[0]
+    assert r.status is CiteConfidence.EXACT
+    assert r.celex_candidates == ("31996L0053",)
+    assert r.article == "3"
+    assert r.mention.target_provision_ref is not None
+    assert r.mention.target_provision_ref.statute_id == "celex:31996L0053"
+
+
+def test_legacy_two_digit_year_directive_82_resolves() -> None:
+    # Second legacy directive: "direktiivin 82/891/ETY 4 artiklan" → year 82 →
+    # 1982, directive → L → 31982L0891.
+    refs = recognize_eu_directive_refs("direktiivin 82/891/ETY 4 artiklan")
+    assert len(refs) == 1
+    r = refs[0]
+    assert r.status is CiteConfidence.EXACT
+    assert r.celex_candidates == ("31982L0891",)
+
+
+def test_legacy_two_digit_year_decision_celex_letter_via_helper() -> None:
+    # The CELEX type letter is supplied by the governing head word, so a 2-digit
+    # year-first cite under a decision head resolves to the D type. ``päätös`` is
+    # not a nickname head this lane scans for, so the head→type mapping is
+    # exercised directly through the formal-cite helper: "85/432/ETY" under a
+    # decision head → year 85 → 1985, D → 31985D0432.
+    assert _celex_from_formal_cite("85/432/ETY", "päätöksen") == "31985D0432"
+    # The same cite under a directive head takes the L type.
+    assert _celex_from_formal_cite("85/432/ETY", "direktiivin") == "31985L0432"
+
+
+def test_four_digit_year_directive_still_resolves() -> None:
+    # Regression guard: the 4-digit year-first form must keep matching as a single
+    # 4-digit year (never split "20" + "09/138"): "direktiivin 2009/138/EY".
+    refs = recognize_eu_directive_refs("direktiivin 2009/138/EY 268 artiklan")
+    assert len(refs) == 1
+    assert refs[0].celex_candidates == ("32009L0138",)
+
+
+def test_two_digit_slash_pair_without_eu_form_yields_nothing() -> None:
+    # FP guard: a bare "NN/NNN" with no EU form marker is not a CELEX-bearing cite.
+    # The head has no registry hit and the bare slash pair carries no /FORM suffix,
+    # so nothing is emitted.
+    refs = recognize_eu_directive_refs("direktiivin 96/53 3 artiklan")
+    assert refs == []
 
 
 def test_bare_domestic_asetus_anaphora_not_emitted() -> None:
