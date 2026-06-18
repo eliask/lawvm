@@ -66,6 +66,7 @@ from lawvm.finland.references.cross_refs import (
     CrossRefDiagnostic,
     CrossRefEdge,
     _make_statute_id,
+    extract_affected_document_refs,
     extract_cross_refs,
     extract_eu_refs,
 )
@@ -744,6 +745,12 @@ def _edge_to_cite_kind(
         return CiteKind.NON_STATUTORY_INSTRUMENT
     if edge_type == "REPEALS":
         return CiteKind.CROSS_STATUTE
+    if edge_type == "AMENDS":
+        # The johtolause <affectedDocument> names the enacted act THIS statute
+        # amends — always another Finnish statute/decree (CROSS_STATUTE). The
+        # amendment ROLE is carried by edge_subtype="AMENDS", not by widening the
+        # cite_kind.
+        return CiteKind.CROSS_STATUTE
     # Unknown edge_type: default CROSS_STATUTE, emitter will flag
     return CiteKind.CROSS_STATUTE
 
@@ -796,9 +803,12 @@ def _edge_to_mention(
     tgt_ref = _target_provision_ref(edge)
 
     # For CITES edges, phrase_lemma is "ref_element" (AKN <ref> element).
-    # For metadata edges, it is the edge_type name.
+    # AMENDS edges come from the johtolause <affectedDocument> element, so carry
+    # its own syntactic class. For metadata edges, it is the edge_type name.
     if edge.edge_type == "CITES":
         phrase_lemma = "ref_element"
+    elif edge.edge_type == "AMENDS":
+        phrase_lemma = "affected_document"
     else:
         phrase_lemma = edge.edge_type  # REPEALS / ISSUED_UNDER / ISSUES
 
@@ -1025,6 +1035,44 @@ def extract_reference_mentions(
         if rej is not None:
             result.rejected.append(rej)
 
+    return result
+
+
+def extract_affected_document_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+) -> ExtractionResult:
+    """Extract johtolause amendment-target ReferenceMention records.
+
+    Wraps :func:`extract_affected_document_refs` and lifts each AMENDS
+    ``CrossRefEdge`` (one per distinct ``<affectedDocument>`` target) to a
+    ReferenceMention. Each mention is ``cite_kind=CROSS_STATUTE`` /
+    ``edge_subtype="AMENDS"`` / ``phrase_lemma="affected_document"`` — the surface
+    link to the act this statute amends, which lives in the preamble enacting
+    clause OUTSIDE ``<body>`` and so is invisible to the inline-``<ref>`` lane.
+
+    Args:
+        xml_bytes:         Raw XML bytes of the statute.
+        statute_id:        Canonical statute ID of the source.
+        valid_at_interval: Date range for which these references hold.
+
+    Returns:
+        ExtractionResult with the amendment-target mentions (+ self-reference
+        skip diagnostics).
+    """
+    result = ExtractionResult()
+
+    diag_list: List[CrossRefDiagnostic] = []
+    edges: List[CrossRefEdge] = extract_affected_document_refs(
+        xml_bytes, statute_id, diagnostics_out=diag_list
+    )
+    result.diagnostics.extend(diag_list)
+    for edge in edges:
+        result.mentions.append(
+            _edge_to_mention(edge, statute_id, valid_at_interval)
+        )
     return result
 
 
@@ -1778,6 +1826,37 @@ def extract_all_reference_mentions(
             if m.target_provision_ref is not None and m.edge_subtype == "CITES"
         }
 
+    # Johtolause amendment-target lane: the act this statute amends, named by an
+    # AKN <affectedDocument> in the preamble enacting clause — OUTSIDE <body>, so
+    # invisible to the inline-<ref> body lane above. This is the single most
+    # important cross-statute link in an amending statute; pure-amendment statutes
+    # (whose whole substance is the johtolause) otherwise surface zero references.
+    # Deduplicated against the body <ref> CITES targets (``ref_covered``) so a
+    # target named both by an <affectedDocument> AND a body <ref> element yields
+    # ONE amendment-target surface — the body <ref> CITES already owns that
+    # occurrence, so the johtolause surface is suppressed there. The plain-text /
+    # by-name body lanes are intentionally NOT touched: a body prose cite to the
+    # amended act is a genuine, distinct surface occurrence and stays a separate
+    # reference_expr (the surface graph collapses both to one legal_work_entity by
+    # work_id, so this is one entity, two surface nodes — no double-emission of the
+    # same occurrence). Skipped entirely in annotation-independence measurement
+    # mode (ref_covered empty), like the rest of the <ref>-annotation lane.
+    affected = ExtractionResult()
+    if not ignore_annotations:
+        affected_raw = extract_affected_document_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+        )
+        affected.diagnostics = affected_raw.diagnostics
+        for m in affected_raw.mentions:
+            tgt = m.target_provision_ref
+            if tgt is not None and tgt.statute_id in ref_covered:
+                # Already an inline-<ref> CITES occurrence for this act — keep the
+                # single body <ref> surface, drop the duplicate johtolause one.
+                continue
+            affected.mentions.append(m)
+
     eu = extract_eu_reference_mentions(
         xml_bytes,
         statute_id,
@@ -1816,7 +1895,8 @@ def extract_all_reference_mentions(
 
     combined = ExtractionResult()
     combined.mentions = (
-        domestic.mentions + eu.mentions + plain.mentions + surface.mentions + preparatory.mentions
+        domestic.mentions + affected.mentions + eu.mentions + plain.mentions
+        + surface.mentions + preparatory.mentions
     )
     combined.rejected = (
         domestic.rejected + eu.rejected + plain.rejected + surface.rejected + preparatory.rejected
@@ -1834,7 +1914,7 @@ def extract_all_reference_mentions(
         + surface.approximate_findings + preparatory.approximate_findings
     )
     combined.diagnostics = (
-        domestic.diagnostics + eu.diagnostics + plain.diagnostics
+        domestic.diagnostics + affected.diagnostics + eu.diagnostics + plain.diagnostics
         + surface.diagnostics + preparatory.diagnostics
     )
     return combined

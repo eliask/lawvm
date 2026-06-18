@@ -1,6 +1,89 @@
 from __future__ import annotations
 
-from lawvm.finland.cross_refs import CrossRefDiagnostic, extract_cross_refs
+from lawvm.finland.cross_refs import (
+    CrossRefDiagnostic,
+    extract_affected_document_refs,
+    extract_cross_refs,
+)
+
+
+_AMENDING_PREAMBLE = (
+    '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    "<act><preamble>"
+    '<formula name="enactingClause">'
+    "<p>Valtioneuvoston päätöksen mukaisesti</p>"
+    "<blockContainer>"
+    '<block name="substitutions"><i>muutetaan</i>'
+    " ammattikorkeakouluista annetun valtioneuvoston asetuksen ("
+    '<affectedDocument href="/akn/fi/act/statute/2014/1129">1129/2014</affectedDocument>'
+    ") 3 §, sellaisena kuin se on asetuksessa 1438/2014, seuraavasti:</block>"
+    "</blockContainer></formula></preamble>"
+    "<body><section><num>3 §</num><paragraph><content><p>Uusi teksti.</p>"
+    "</content></paragraph></section></body></act></akomaNtoso>"
+).encode("utf-8")
+
+
+def test_extract_affected_document_refs_emits_amends_edge() -> None:
+    edges = extract_affected_document_refs(_AMENDING_PREAMBLE, "2019/1294")
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.edge_type == "AMENDS"
+    assert edge.source_statute_id == "2019/1294"
+    assert edge.target_statute_id == "2014/1129"
+    assert edge.count == 1
+    # The byte span slices exactly the displayed citation phrase.
+    assert edge.source_byte_offset is not None
+    sliced = _AMENDING_PREAMBLE[
+        edge.source_byte_offset : edge.source_byte_offset + edge.source_byte_len
+    ]
+    assert sliced == b"1129/2014"
+
+
+def test_affected_document_target_is_absent_from_body_cites() -> None:
+    # The amendment target lives ONLY in the preamble enacting clause, so the
+    # inline-<ref> body lane (extract_cross_refs) never sees it — the gap this
+    # AMENDS lane closes.
+    body_edges = extract_cross_refs(_AMENDING_PREAMBLE, "2019/1294")
+    assert all(e.target_statute_id != "2014/1129" for e in body_edges)
+
+
+def test_extract_affected_document_refs_dedups_repeated_target() -> None:
+    # A statute may name the SAME affectedDocument in several enacting-clause
+    # blocks (kumotaan / muutetaan) — one amendment relation → one edge.
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<act><preamble>"
+        '<formula name="enactingClause">'
+        "<blockContainer>"
+        '<block name="repeals"><i>kumotaan</i> lain ('
+        '<affectedDocument href="/akn/fi/act/statute/2012/916">916/2012</affectedDocument>'
+        ") 11 luvun 4 §,</block></blockContainer>"
+        "<blockContainer>"
+        '<block name="substitutions"><i>muutetaan</i> '
+        '<affectedDocument href="/akn/fi/act/statute/2012/916">916/2012</affectedDocument>'
+        " 1 luvun 3 §,</block></blockContainer>"
+        "</formula></preamble><body/></act></akomaNtoso>"
+    ).encode("utf-8")
+    edges = extract_affected_document_refs(xml, "2023/371")
+    assert len(edges) == 1
+    assert edges[0].target_statute_id == "2012/916"
+    assert edges[0].count == 2
+
+
+def test_extract_affected_document_refs_skips_self_reference() -> None:
+    xml = (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<act><preamble>"
+        '<formula name="enactingClause"><blockContainer>'
+        '<block name="substitutions"><i>muutetaan</i> ('
+        '<affectedDocument href="/akn/fi/act/statute/2000/1">1/2000</affectedDocument>'
+        ")</block></blockContainer></formula></preamble><body/></act></akomaNtoso>"
+    ).encode("utf-8")
+    diagnostics: list[CrossRefDiagnostic] = []
+    edges = extract_affected_document_refs(xml, "2000/1", diagnostics_out=diagnostics)
+    assert edges == []
+    assert [d.rule_id for d in diagnostics] == ["fi_cross_ref_self_reference_skipped"]
+    assert diagnostics[0].edge_type == "AMENDS"
 
 
 def test_extract_cross_refs_records_xml_parse_failure_when_diagnostics_requested() -> None:

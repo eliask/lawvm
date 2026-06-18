@@ -637,6 +637,149 @@ def _merge_authority_basis(
 
 
 # ---------------------------------------------------------------------------
+# Johtolause amendment-target (<affectedDocument>) references
+# ---------------------------------------------------------------------------
+#
+# Every amending statute names the act it amends in the preamble enacting clause
+# (``<formula name="enactingClause">``) via one or more AKN ``<affectedDocument
+# href="/akn/fi/act/statute/YEAR/NUMBER">`` elements — the johtolause
+# "muutetaan … annetun … asetuksen (NNN/YYYY) …" / "kumotaan … lain (NNN/YYYY)"
+# construction. This is the single most important cross-statute link in an
+# amending statute, yet it lives OUTSIDE ``<body>`` and so is never seen by the
+# inline-``<ref>`` body scan in ``extract_cross_refs`` (which scopes to the body
+# range). Pure-amendment statutes — whose entire substance is the johtolause plus
+# quoted replacement text — therefore surface ZERO cross-statute references.
+#
+# This extractor scans the ``<affectedDocument>`` elements and emits one
+# AMENDS-typed edge per distinct amendment target. AMENDS is the surface
+# reference/entity for the amendment relation; the replay/apply engine already
+# knows the amendment target independently from the same johtolause, so this is
+# purely the surface link, not a replay input.
+
+# Match the inner ``<affectedDocument …>`` start tag (followed by a space or
+# ``>``) so it cannot latch onto a longer tag that merely shares the prefix.
+_AFFECTED_DOC_START = re.compile(rb"<(?:[A-Za-z0-9_]+:)?affectedDocument(?=[\s>])")
+_AFFECTED_DOC_CLOSE = re.compile(rb"</(?:[A-Za-z0-9_]+:)?affectedDocument>")
+
+
+def _locate_affected_document_span(
+    xml_bytes: bytes,
+    href: str,
+    *,
+    search_from: int = 0,
+) -> Optional[tuple[int, int]]:
+    """Locate the inner-phrase byte span of an ``<affectedDocument href=HREF>``.
+
+    Mirrors :func:`_locate_ref_byte_span` but for ``<affectedDocument>``: returns
+    the span of the bytes BETWEEN the start tag's ``>`` and the matching
+    ``</affectedDocument>`` close — the displayed citation phrase ("1129/2014"),
+    not the markup envelope. ``None`` if it cannot be located. The search starts
+    at ``search_from`` so repeated identical hrefs are walked left-to-right.
+    """
+    if not href:
+        return None
+    needle_dq = b'href="' + href.encode("utf-8") + b'"'
+    needle_sq = b"href='" + href.encode("utf-8") + b"'"
+    attr_pos = xml_bytes.find(needle_dq, search_from)
+    if attr_pos < 0:
+        attr_pos = xml_bytes.find(needle_sq, search_from)
+    if attr_pos < 0:
+        return None
+    start_match = None
+    for m in _AFFECTED_DOC_START.finditer(xml_bytes, 0, attr_pos + 1):
+        start_match = m
+    if start_match is None:
+        return None
+    gt = xml_bytes.find(b">", attr_pos)
+    if gt < 0:
+        return None
+    inner_start = gt + 1
+    close = _AFFECTED_DOC_CLOSE.search(xml_bytes, inner_start)
+    if close is None:
+        return None
+    return (inner_start, close.start() - inner_start)
+
+
+def extract_affected_document_refs(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+) -> List[CrossRefEdge]:
+    """Extract johtolause amendment-target edges from ``<affectedDocument>``.
+
+    Scans the preamble ``<formula name="enactingClause">`` for AKN
+    ``<affectedDocument href="/akn/fi/act/statute/YEAR/NUMBER">`` elements and
+    emits one ``AMENDS`` edge per distinct amendment target. The edge carries the
+    canonical target id (via :func:`_parse_ref_href`), the displayed citation
+    surface, and the inner-phrase byte span into ``xml_bytes``.
+
+    Self-references are skipped (an amending statute never lists itself as its own
+    amendment target; a recorded self-reference would be a source pathology) and,
+    when ``diagnostics_out`` is provided, recorded as
+    ``fi_cross_ref_self_reference_skipped``.
+
+    Targets are deduplicated: a statute may repeat the same ``<affectedDocument>``
+    across several enacting-clause blocks (kumotaan / muutetaan / lisätään), but
+    that is one amendment relation → one edge. ``count`` records the number of
+    ``<affectedDocument>`` occurrences; the byte span anchors the first.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        # Parse failure is already reported by extract_cross_refs; stay silent
+        # here rather than double-reporting the same pathology.
+        return []
+
+    # The element lives under <preamble><formula name="enactingClause">; scan the
+    # whole document for robustness (it appears nowhere else in the envelope).
+    target_count: dict[str, int] = {}
+    target_surface: dict[str, str] = {}
+    target_span: dict[str, tuple[int, int]] = {}
+    href_search_cursor: dict[str, int] = {}
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "affectedDocument":
+            continue
+        href = el.get("href", "")
+        parsed = _parse_ref_href(href)
+        if not parsed:
+            continue
+        target_id, _prov_path = parsed
+        if target_id == statute_id:
+            _record_self_reference_skip(
+                diagnostics_out,
+                statute_id=statute_id,
+                edge_type="AMENDS",
+                href=href,
+            )
+            continue
+        surface = " ".join("".join(el.itertext()).split())
+        located = _locate_affected_document_span(
+            xml_bytes, href, search_from=href_search_cursor.get(href, 0)
+        )
+        if located is not None:
+            href_search_cursor[href] = located[0] + 1
+            target_span.setdefault(target_id, located)
+        target_count[target_id] = target_count.get(target_id, 0) + 1
+        target_surface.setdefault(target_id, surface)
+
+    edges: List[CrossRefEdge] = []
+    for target_id, count in target_count.items():
+        span = target_span.get(target_id)
+        edges.append(CrossRefEdge(
+            source_statute_id=statute_id,
+            target_statute_id=target_id,
+            edge_type="AMENDS",
+            count=count,
+            surface_text=target_surface.get(target_id, ""),
+            source_byte_offset=span[0] if span is not None else None,
+            source_byte_len=span[1] if span is not None else 0,
+        ))
+    return edges
+
+
+# ---------------------------------------------------------------------------
 # Phase 10.3: EU cross-jurisdiction references
 # ---------------------------------------------------------------------------
 

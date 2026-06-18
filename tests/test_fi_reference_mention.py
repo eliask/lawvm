@@ -2273,3 +2273,74 @@ class TestEntryIntoForceDateRefNotTypedCrossStatute:
         result = extract_plain_text_statute_mentions(xml, "1734/3-000")
         plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         assert plain == [], plain
+
+
+# ===========================================================================
+# Johtolause amendment-target (<affectedDocument>) lane
+# ===========================================================================
+
+
+class TestAffectedDocumentMentions:
+    """The preamble <affectedDocument> amendment-target surfaces as a mention."""
+
+    _PURE_AMENDMENT = (
+        b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        b"<act><preamble>"
+        b'<formula name="enactingClause">'
+        b"<p>Valtioneuvoston paatoksen mukaisesti</p>"
+        b"<blockContainer>"
+        b'<block name="substitutions"><i>muutetaan</i>'
+        b" jonkin asetuksen ("
+        b'<affectedDocument href="/akn/fi/act/statute/2014/1129">1129/2014'
+        b"</affectedDocument>) 3 \xc2\xa7, seuraavasti:</block>"
+        b"</blockContainer></formula></preamble>"
+        b"<body><section><num>3 \xc2\xa7</num><paragraph><content>"
+        b"<p>Uusi teksti.</p></content></paragraph></section></body>"
+        b"</act></akomaNtoso>"
+    )
+
+    def test_pure_amendment_gains_amends_cross_statute_mention(self) -> None:
+        result = extract_all_reference_mentions(self._PURE_AMENDMENT, "2019/1294")
+        amends = [m for m in result.mentions if m.edge_subtype == "AMENDS"]
+        assert len(amends) == 1
+        m = amends[0]
+        assert m.target_provision_ref is not None
+        assert m.target_provision_ref.statute_id == "2014/1129"
+        assert m.cite_kind is CiteKind.CROSS_STATUTE
+        assert m.cite_confidence is CiteConfidence.EXACT
+        assert m.phrase_lemma == "affected_document"
+        # Byte span anchors the displayed citation phrase in xml_bytes.
+        assert m.source_span is not None
+        sliced = self._PURE_AMENDMENT[
+            m.source_span.byte_offset : m.source_span.byte_offset + m.source_span.byte_len
+        ]
+        assert sliced == b"1129/2014"
+
+    def test_amends_target_also_in_body_ref_yields_one_mention(self) -> None:
+        # Same target named both by <affectedDocument> AND a body <ref> CITES:
+        # the body <ref> owns that occurrence, the johtolause surface is
+        # suppressed → exactly one mention for that target.
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><preamble>"
+            b'<formula name="enactingClause"><blockContainer>'
+            b'<block name="substitutions"><i>muutetaan</i> ('
+            b'<affectedDocument href="/akn/fi/act/statute/2014/1129">1129/2014'
+            b"</affectedDocument>) 3 \xc2\xa7,</block></blockContainer>"
+            b"</formula></preamble>"
+            b"<body><section><num>3 \xc2\xa7</num><paragraph><content>"
+            b'<p>Katso <ref href="/akn/fi/act/statute/2014/1129#sec_5">'
+            b"toinen saados</ref>.</p></content></paragraph></section></body>"
+            b"</act></akomaNtoso>"
+        )
+        result = extract_all_reference_mentions(xml, "2019/1294")
+        to_target = [
+            m
+            for m in result.mentions
+            if m.target_provision_ref is not None
+            and m.target_provision_ref.statute_id == "2014/1129"
+        ]
+        assert len(to_target) == 1
+        # The surviving occurrence is the richer body <ref> CITES.
+        assert to_target[0].edge_subtype == "CITES"
+        assert all(m.edge_subtype != "AMENDS" for m in result.mentions)
