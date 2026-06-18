@@ -1,0 +1,488 @@
+"""Definition-entry construction parse — Pilot B of the SourceSyntaxGraph.
+
+The FIRST net-new construction-grammar island after the citation-sentence pilot:
+the **definition family**. A definition is a formulaic Finnish construction that
+introduces a local term and ties it to a definiens:
+
+  * chapeau + enumerated list — ``Tässä laissa tarkoitetaan: 1) X:llä Y…; 2) …``;
+    a ``definition_list`` (a colon chapeau governing ``N) <definiendum-adessive>
+    <definiens>;`` items);
+  * single-sentence — ``X:llä tarkoitetaan tässä laissa Y:tä.`` / ``X tarkoittaa
+    Y.``.
+
+Position in the stack
+======================
+Same discipline as the Pilot-A citation-sentence parse, one family over: a
+sentence/block-frame construction with TOTAL TOKEN OWNERSHIP (every char is a
+typed construction span, the binding cue, or an EXPLICIT residual; the invariant
+is "no silent drop", NOT "no residue"). It is purely ADDITIVE and surface-only —
+it makes NO attachment/composition decisions, authorizes NO replay, and is NOT
+wired into the production extractor. The CENSUS compares its projection against
+the PRODUCTION definition oracle
+(``references.defined_terms.recognize_defined_term_bindings``); it does NOT
+reimplement the production binding logic — it deliberately MIRRORS the production
+enumerated-block item segmentation so where the grammar matches the oracle, the
+projection is in parity by construction, and genuine divergences surface as
+census miss / superset.
+
+The construction
+================
+A definition parse over a block/sentence span carries:
+
+  * zero or more **definition entries** — each a ``term_span`` (the definiendum,
+    in the adessive/translative as written), a ``definiens_span`` (the right-hand
+    side), the **binding cue** (closed list: ``tarkoitetaan`` / ``tarkoittaa``),
+    and the **entry marker role** inherited from the ``definition_list`` segment
+    (the ``N)`` / ``a)`` list label is NOT in the decoded ``<p>`` coordinate
+    space, so the marker is recorded as a role tag, never fabricated);
+  * an explicit **residual** span list — every char NOT owned by an entry or the
+    chapeau cue, typed by reason. The no-silent-drop invariant is satisfied
+    because the residual is EXPLICIT.
+
+A statute-wide ``tarkoitetaan`` definition entry's definiens may itself contain a
+cross-statute act cite (``sivutuoteasetuksella tarkoitetaan asetusta (EY) N:o
+1069/2009``); the act-cite recognition REUSES the shared act-id recognizers from
+the production binder (``_act_id_in_expansion``) — it does NOT reimplement
+reference parsing.
+
+:func:`assert_total_ownership` is the checkable postcondition (the union of the
+entry spans, the chapeau-cue span, and the residual spans partitions the block
+char range exactly).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from lawvm.finland.references.defined_terms import (
+    _ENUM_HEADER,
+    _ENUM_ITEM,
+    _SCOPE_CUE_UNITS,
+    _TARKOITETAAN,
+    _act_id_in_expansion,
+    _adessive_phrase_from_run,
+    _is_definitional_definiendum,
+    _scope_cue_before,
+)
+
+# ---------------------------------------------------------------------------
+# Parser-lane provenance — mirrors sentence_parse.parser_lane.
+# ---------------------------------------------------------------------------
+#: The definition-construction grammar owned the frame (the in-scope, no-silent-
+#: drop path).
+DEFINITION_LANE_CONSTRUCTION_OWNED = "definition_construction_owned"
+#: The frame declined: the span carried a definition cue (``tarkoitetaan`` /
+#: ``tarkoittaa``) the family discriminator keyed on, but NO recognizable
+#: definiendum entry parsed. Handed back as typed residue, never a guessed parse.
+DEFINITION_LANE_DECLINED = "definition_construction_declined"
+
+#: Closed list of definition binding cues (casefolded). Surface-only tags. The
+#: enumerated-block + single-sentence definitional idiom anchors on
+#: ``tarkoitetaan``; ``tarkoittaa`` is the bare-verb single-sentence variant.
+_BINDING_CUES: tuple[str, ...] = ("tarkoitetaan", "tarkoittaa")
+
+#: Role tag recorded when the entry's ``N)`` / ``a)`` enumeration marker is not in
+#: the decoded ``<p>`` coordinate space (mirrors the SegmentationGraph's
+#: ``definition_entry_marker_not_in_tape`` role).
+ENTRY_MARKER_NOT_IN_TAPE = "definition_entry_marker_not_in_tape"
+
+
+@dataclass(frozen=True)
+class Residual:
+    """An explicit unowned span of the block (no-silent-drop typed residue)."""
+
+    char_start: int
+    char_end: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class DefinitionEntry:
+    """One defined-term entry the block/sentence carries.
+
+    Attributes:
+        term:          The definiendum SURFACE (as written, typically adessive
+                       ``-llä``/``-lla``), e.g. ``sivutuotteella``.
+        term_start:    Char offset (block-local) where the definiendum begins.
+        term_end:      One-past the definiendum.
+        definiens:     The definiens (right-hand side) surface text.
+        definiens_start: Char offset (block-local) where the definiens begins.
+        definiens_end:   One-past the definiens.
+        binding_cue:   The closed-list cue (``tarkoitetaan`` / ``tarkoittaa``).
+        entry_marker_role: ``ENTRY_MARKER_NOT_IN_TAPE`` for an enumerated entry
+                       (the ``N)`` label lives in the dropped ``<num>`` markup),
+                       ``""`` for a single-sentence definition.
+        scope:         The binding scope inherited from the governing header cue
+                       (closed vocabulary: statute/chapter/section/subsection).
+        target_ref:    Canonical act id when the definiens is/contains an act cite
+                       (shared act-id recognizer), else ``None``.
+    """
+
+    term: str
+    term_start: int
+    term_end: int
+    definiens: str
+    definiens_start: int
+    definiens_end: int
+    binding_cue: str
+    entry_marker_role: str
+    scope: str
+    target_ref: str | None
+
+
+@dataclass(frozen=True)
+class DefinitionParse:
+    """A definition-block/sentence construction parse (the DefinitionParse-lite IR).
+
+    Attributes:
+        seg_start / seg_end: Block char range (block-local coordinates; the parse
+                             runs on ``text`` so ``seg_start == 0``).
+        text:                The exact block/sentence text.
+        kind:                ``"definition_block"`` when >=1 entry parsed from an
+                             enumerated header; ``"single_sentence"`` for an inline
+                             definition; ``"declined"`` when a definition cue was
+                             present but no entry parsed.
+        chapeau_cue:         The header cue stem (``tarkoitetaan`` / ``tarkoittaa``)
+                             governing the block, or ``""``.
+        chapeau_span:        (start, end) of the header cue occurrence, or None.
+        entries:             The recognized definition entries, in order.
+        residuals:           Explicit unowned spans (the no-silent-drop residue).
+        parser_lane:         Which lane produced this frame (closed set above).
+    """
+
+    seg_start: int
+    seg_end: int
+    text: str
+    kind: str
+    chapeau_cue: str
+    chapeau_span: tuple[int, int] | None
+    entries: tuple[DefinitionEntry, ...]
+    residuals: tuple[Residual, ...] = field(default_factory=tuple)
+    parser_lane: str = DEFINITION_LANE_CONSTRUCTION_OWNED
+
+
+def _has_binding_cue(text_low: str) -> bool:
+    return any(cue in text_low for cue in _BINDING_CUES)
+
+
+def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    for s, e in sorted(intervals):
+        if e <= s:
+            continue
+        if out and s <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], e))
+        else:
+            out.append((s, e))
+    return out
+
+
+def _fill_residuals(n: int, owned: list[tuple[int, int]], reason: str) -> list[Residual]:
+    residuals: list[Residual] = []
+    cursor = 0
+    for s, e in _merge_intervals(owned):
+        if s > cursor:
+            residuals.append(Residual(cursor, s, reason))
+        cursor = max(cursor, e)
+    if cursor < n:
+        residuals.append(Residual(cursor, n, reason))
+    return residuals
+
+
+def _parse_enumerated_block(text: str) -> DefinitionParse | None:
+    """Parse a header-governed enumerated definitions block, or ``None``.
+
+    MIRRORS the production binder's enumerated-block recognizer
+    (``_recognize_enumerated_definitions``) item segmentation: anchored on a
+    ``Tässä <unit> tarkoitetaan:`` header, each following ``[:;] <definiendum-run>
+    <expansion>;`` item whose leading run is a genuine adessive definiendum
+    (``_adessive_phrase_from_run``) becomes an entry inheriting the header scope.
+    The entry spans are block-local char offsets. Returns ``None`` when no header
+    is present (not this sub-shape).
+    """
+    h = _ENUM_HEADER.search(text)
+    if h is None:
+        return None
+    scope = _SCOPE_CUE_UNITS[h.group("unit").lower()]
+    # Chapeau span: the WHOLE matched header (``Tässä <unit> tarkoitetaan:``) is
+    # the construction's owned chapeau — total-ownership checks this same span the
+    # residual fill treats as owned. (The bare ``tarkoitetaan`` cue is surfaced
+    # separately as ``chapeau_cue`` for reporting.)
+    chapeau_span = (h.start(), h.end())
+
+    # Items begin at the header colon (so the first item's ':' delimiter is in
+    # scope), exactly like the production binder.
+    block_start = h.end() - 1
+    entries: list[DefinitionEntry] = []
+    # ``owned`` accumulates the EXACT spans :func:`assert_total_ownership` checks
+    # (the header cue span + each entry's term span + each entry's definiens span),
+    # so the residual fill covers every gap BETWEEN them — the no-silent-drop
+    # invariant holds against the same spans the postcondition inspects.
+    owned: list[tuple[int, int]] = [(h.start(), h.end())]
+    for it in _ENUM_ITEM.finditer(text, block_start):
+        run = it.group("run").strip()
+        rest = it.group("rest")
+        if not run:
+            continue
+        run_words = run.split()
+        phrase_words = _adessive_phrase_from_run(run_words)
+        if phrase_words is None:
+            continue  # not a definiendum (no fabrication)
+        term_surface = " ".join(phrase_words)
+        # Locate the definiendum surface inside the matched run for a precise span.
+        run_abs_start = it.start("run")
+        term_start = run_abs_start
+        term_end = run_abs_start + len(run)  # whole run; conservative ownership
+        # Definiens = any trailing run words after the head + the regex rest.
+        trailing = run_words[len(phrase_words):]
+        definiens_text = (
+            " ".join(trailing) + (" " if trailing else "") + rest.strip()
+        ).strip()
+        rest_start = it.start("rest")
+        definiens_start = run_abs_start if trailing else rest_start
+        definiens_end = it.end("rest")
+        target_ref = _act_id_in_expansion(definiens_text)
+        entries.append(
+            DefinitionEntry(
+                term=term_surface,
+                term_start=term_start,
+                term_end=term_end,
+                definiens=definiens_text,
+                definiens_start=definiens_start,
+                definiens_end=definiens_end,
+                binding_cue="tarkoitetaan",
+                entry_marker_role=ENTRY_MARKER_NOT_IN_TAPE,
+                scope=scope,
+                target_ref=target_ref,
+            )
+        )
+        owned.append((term_start, term_end))
+        owned.append((definiens_start, definiens_end))
+
+    # MERGE inline ``X:llä tarkoitetaan Y`` entries the enum-item segmentation did
+    # not produce — production runs BOTH arms over the same block and merges, so a
+    # definiendum the enumerated-item delimiter split missed (but the inline
+    # recognizer catches) must be owned too, or it surfaces as a census MISS.
+    # Dedup by definition key (the production dedup identity); the enum arm wins
+    # for a term it already bound.
+    enum_keys = {definition_key(e.term, e.scope, e.target_ref) for e in entries}
+    for ie in _inline_entries(text):
+        k = definition_key(ie.term, ie.scope, ie.target_ref)
+        if k in enum_keys:
+            continue
+        enum_keys.add(k)
+        entries.append(ie)
+        owned.append((ie.term_start, ie.term_end))
+        owned.append((ie.definiens_start, ie.definiens_end))
+
+    if not entries:
+        # header present but no entry parsed → decline (typed residue)
+        return DefinitionParse(
+            seg_start=0,
+            seg_end=len(text),
+            text=text,
+            kind="declined",
+            chapeau_cue="tarkoitetaan",
+            chapeau_span=chapeau_span,
+            entries=(),
+            residuals=(Residual(0, len(text), "definition_block_no_entries"),),
+            parser_lane=DEFINITION_LANE_DECLINED,
+        )
+
+    residuals = _fill_residuals(len(text), owned, "benign_uninterpreted_prose")
+    return DefinitionParse(
+        seg_start=0,
+        seg_end=len(text),
+        text=text,
+        kind="definition_block",
+        chapeau_cue="tarkoitetaan",
+        chapeau_span=chapeau_span,
+        entries=tuple(entries),
+        residuals=tuple(residuals),
+        parser_lane=DEFINITION_LANE_CONSTRUCTION_OWNED,
+    )
+
+
+def _inline_entries(text: str) -> list[DefinitionEntry]:
+    """Recognize INLINE ``X:llä tarkoitetaan Y`` definition entries in ``text``.
+
+    MIRRORS the production binder's inline ``tarkoitetaan`` recognizer
+    (``_recognize_tarkoitetaan``): the definiendum is the adessive-headed run
+    directly before ``tarkoitetaan`` (rejecting the referential idiom via
+    ``_is_definitional_definiendum``), leading scope locatives / pronoun-adessives
+    trimmed; scope inherits from the nearest preceding definitions-header cue.
+    Returns the entries in source order (possibly empty). No DefinitionParse
+    framing — that is the caller's job.
+    """
+    from lawvm.finland.references.defined_terms import (
+        _PRONOUN_ADESSIVE_FORMS,
+        _SCOPE_LEADERS,
+    )
+
+    entries: list[DefinitionEntry] = []
+    for m in _TARKOITETAAN.finditer(text):
+        raw_term = m.group("term").strip()
+        if not raw_term:
+            continue
+        words = raw_term.split()
+        if not _is_definitional_definiendum(words[-1]):
+            continue
+        start_idx = 0
+        for i, w in enumerate(words[:-1]):
+            low = w.lower()
+            if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
+                start_idx = i + 1
+        phrase_words = words[start_idx:]
+        if not phrase_words:
+            continue
+        term_surface = " ".join(phrase_words)
+        expansion_text = m.group("expansion").strip()
+        target_ref = _act_id_in_expansion(expansion_text)
+        scope = _scope_cue_before(text, m.start("expansion"))
+        # term span: the trailing phrase inside the matched group; approximate to
+        # the whole captured-term group (conservative ownership; precise enough).
+        entries.append(
+            DefinitionEntry(
+                term=term_surface,
+                term_start=m.start("term"),
+                term_end=m.end("term"),
+                definiens=expansion_text,
+                definiens_start=m.start("expansion"),
+                definiens_end=m.end("expansion"),
+                binding_cue="tarkoitetaan",
+                entry_marker_role="",
+                scope=scope,
+                target_ref=target_ref,
+            )
+        )
+    return entries
+
+
+def _parse_single_sentence(text: str) -> DefinitionParse:
+    """Parse a single-sentence inline definition (``X:llä tarkoitetaan Y``).
+
+    Declines (no entry, typed residue) when the cue is present but no definitional
+    definiendum precedes it.
+    """
+    n = len(text)
+    entries = _inline_entries(text)
+    owned: list[tuple[int, int]] = []
+    chapeau_span: tuple[int, int] | None = None
+    for e in entries:
+        owned.append((e.term_start, e.term_end))
+        owned.append((e.definiens_start, e.definiens_end))
+        if chapeau_span is None:
+            # the binding cue verb between the term and the definiens
+            verb_idx = text.casefold().find("tarkoitetaan", e.term_end - 1)
+            if verb_idx >= 0:
+                chapeau_span = (verb_idx, verb_idx + len("tarkoitetaan"))
+
+    if chapeau_span is not None:
+        owned.append(chapeau_span)
+
+    if not entries:
+        return DefinitionParse(
+            seg_start=0,
+            seg_end=n,
+            text=text,
+            kind="declined",
+            chapeau_cue="",
+            chapeau_span=chapeau_span,
+            entries=(),
+            residuals=(Residual(0, n, "definition_cue_no_definiendum"),),
+            parser_lane=DEFINITION_LANE_DECLINED,
+        )
+
+    residuals = _fill_residuals(n, owned, "benign_uninterpreted_prose")
+    return DefinitionParse(
+        seg_start=0,
+        seg_end=n,
+        text=text,
+        kind="single_sentence",
+        chapeau_cue="tarkoitetaan",
+        chapeau_span=chapeau_span,
+        entries=tuple(entries),
+        residuals=tuple(residuals),
+        parser_lane=DEFINITION_LANE_CONSTRUCTION_OWNED,
+    )
+
+
+def parse_definition_block(text: str) -> DefinitionParse:
+    """Parse one definition block/sentence span into a construction frame.
+
+    ``text`` is the EXACT span (a ``definition_list`` block — the chapeau plus its
+    enumerated entries — or a single-sentence inline definition), in its own local
+    coordinate system. Single deterministic dispatch: an enumerated
+    ``Tässä <unit> tarkoitetaan:`` header → the enumerated-block arm; otherwise the
+    single-sentence inline arm. Declines (typed residue, never a guessed parse)
+    when a binding cue is present but no definitional definiendum entry parses; the
+    caller's family discriminator guarantees the cue is present for in-scope spans.
+    """
+    if not _has_binding_cue(text.casefold()):
+        # Out of family entirely: no binding cue. The whole span is residue.
+        return DefinitionParse(
+            seg_start=0,
+            seg_end=len(text),
+            text=text,
+            kind="declined",
+            chapeau_cue="",
+            chapeau_span=None,
+            entries=(),
+            residuals=(Residual(0, len(text), "not_definition_bearing"),),
+            parser_lane=DEFINITION_LANE_DECLINED,
+        )
+    enum = _parse_enumerated_block(text)
+    if enum is not None:
+        return enum
+    return _parse_single_sentence(text)
+
+
+def assert_total_ownership(dp: DefinitionParse) -> None:
+    """Checkable postcondition: the frame's spans partition ``[seg_start, seg_end)``.
+
+    The union of entry spans (term + definiens), the chapeau-cue span, and the
+    explicit residual spans must cover every char of the block with NO gap and NO
+    silent drop. Raises ``AssertionError`` on violation.
+    """
+    n = dp.seg_end - dp.seg_start
+    covered = [False] * n
+    spans: list[tuple[int, int]] = []
+    for e in dp.entries:
+        spans.append((e.term_start, e.term_end))
+        spans.append((e.definiens_start, e.definiens_end))
+    if dp.chapeau_span is not None:
+        spans.append(dp.chapeau_span)
+    spans.extend((r.char_start, r.char_end) for r in dp.residuals)
+    for s, e in spans:
+        for i in range(max(0, s), min(n, e)):
+            covered[i] = True
+    missing = [i for i, c in enumerate(covered) if not c]
+    if missing:
+        raise AssertionError(
+            f"total-ownership violation: {len(missing)} unowned chars in block "
+            f"(first gap at {missing[0]}); SILENT DROP. text={dp.text!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Projection: DefinitionParse -> [production definition binding key]
+# ---------------------------------------------------------------------------
+
+
+def definition_key(term: str, scope: str, target_ref: str | None) -> str:
+    """Canonical census key for one definition entry.
+
+    Keyed on the load-bearing IDENTITY of a definition the production binder emits:
+    the definiendum SURFACE (casefolded, whitespace-normalized — the binder's own
+    canonical-term key in ``lenses.definitions._canonical_term_id``), its scope,
+    and the bound act target (if any). This is the same identity production keys a
+    ``DefinedTermBinding`` on, so the projected set is directly comparable to the
+    production oracle for the same span.
+    """
+    norm_term = " ".join(term.strip().lower().split())
+    tail = f"|{target_ref}" if target_ref else ""
+    return f"{norm_term}|{scope}{tail}"
+
+
+def projection_definition_keys(dp: DefinitionParse) -> set[str]:
+    """The projected definition set as canonical census keys."""
+    return {definition_key(e.term, e.scope, e.target_ref) for e in dp.entries}

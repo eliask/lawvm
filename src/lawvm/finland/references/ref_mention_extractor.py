@@ -69,6 +69,7 @@ from lawvm.finland.references.cross_refs import (
 )
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
+    chapter_akn_path,
     parse_body_provision_tail,
 )
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
@@ -180,11 +181,8 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-# Substring guards for the plain-text extractor:
-#   - "§" (section mark, always present in Finnish statute citations)
-#   - "(" (parenthetical statute ID)
-# Both must be present; if either is absent, skip the full regex scan.
-_PLAIN_TEXT_GUARD_SECTION = "\xa7"  # §
+# Substring guard for the plain-text extractor: "(" (parenthetical statute ID).
+# The "§" is NOT required — a citation to a whole act names no section.
 _PLAIN_TEXT_GUARD_PAREN = "("
 
 
@@ -201,12 +199,15 @@ class PlainTextStatuteHit:
         subsection_num: Momentti number (int) or None when the citation stops
                         at the §.
         item_label:     Kohta label (e.g. "3", "3a") or None.
+        chapter:        Chapter label when the citation is chapter-qualified, or
+                        None.
     """
 
     statute_id: str
     section_label: str = ""
     subsection_num: Optional[int] = None
     item_label: Optional[str] = None
+    chapter: Optional[str] = None
     # Literal matched anchor surface (e.g. "lannoitelain (711/2022)"), used by
     # the caller to locate the citation's byte span in the source xml_bytes.
     surface_text: str = ""
@@ -312,10 +313,8 @@ class PlainTextStatuteCitationRecognizer:
         if not text:
             return []
 
-        # Substring guards (fast path — eliminates ~99% of non-matching calls)
+        # Substring guard (fast path — eliminates ~99% of non-matching calls).
         if _PLAIN_TEXT_GUARD_PAREN not in text:
-            return []
-        if _PLAIN_TEXT_GUARD_SECTION not in text:
             return []
 
         results: List[PlainTextStatuteHit] = []
@@ -324,6 +323,12 @@ class PlainTextStatuteCitationRecognizer:
         for m in _PLAIN_TEXT_FI_STATUTE_RE.finditer(text):
             num_raw = m.group(1)
             year = m.group(2)
+
+            if len(year) == 2:
+                yy = int(year)
+                current_yy = date.today().year % 100
+                century = 2000 if yy <= current_yy else 1900
+                year = str(century + yy)
 
             # Sanity: year must be plausible
             year_int = int(year)
@@ -361,6 +366,7 @@ class PlainTextStatuteCitationRecognizer:
                 key = "/".join(
                     part for part in (
                         statute_id,
+                        tgt.chapter or "",
                         tgt.section_label,
                         str(tgt.subsection_num) if tgt.subsection_num is not None else "",
                         tgt.item_label or "",
@@ -375,6 +381,7 @@ class PlainTextStatuteCitationRecognizer:
                     section_label=tgt.section_label,
                     subsection_num=tgt.subsection_num,
                     item_label=tgt.item_label,
+                    chapter=tgt.chapter,
                     surface_text=m.group(0),
                 ))
 
@@ -888,20 +895,25 @@ def extract_plain_text_statute_mentions(
                 provision_path="",
                 section_label="",
             )
+            target_provision_path = (
+                chapter_akn_path(hit.chapter, hit.section_label)
+                if hit.chapter is not None
+                else ""
+            )
             tgt_ref = ProvisionRef(
                 statute_id=target_statute_id,
-                provision_path="",
+                provision_path=target_provision_path,
                 section_label=hit.section_label,
                 subsection_num=hit.subsection_num,
                 item_label=hit.item_label,
             )
             # Resolution status (Tier 1, no registry): the statute id is always
             # explicit in this lane (the ``(NUMBER/YEAR)`` anchor). When the
-            # structural tail parsed to a concrete provision path (a section),
-            # the citation resolves EXACT. When the anchor matched an explicit id
-            # but NO section path parsed (a bare statute-level reference), the act
-            # is fixed but the in-act target is deferred → STATUTE_ONLY, never
-            # silently widened to "whole statute" as if EXACT.
+            # structural tail parsed to a concrete provision (a section — possibly
+            # chapter-qualified), the citation resolves EXACT. When the anchor
+            # matched an explicit id but only a chapter or no provision parsed,
+            # the act/chapter is fixed but the in-act section is deferred →
+            # STATUTE_ONLY, never silently widened to "whole statute" as if EXACT.
             cite_confidence = (
                 CiteConfidence.EXACT
                 if hit.section_label
