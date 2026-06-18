@@ -46,6 +46,16 @@ def _replay_ir_and_meta(sid: str) -> tuple[IRNode, dict[str, object]]:
     return master.ir, replay_meta
 
 
+def _first_descendant(node: IRNode, kind: IRNodeKind, label: str) -> IRNode:
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.kind is kind and current.label == label:
+            return current
+        stack.extend(reversed(current.children))
+    raise LookupError(f"missing {kind.value}:{label}")
+
+
 @pytest.fixture(scope="module")
 def replay_2012_746() -> ReplayResult:
     return cast(ReplayResult, pinned_replay("2012/746", quiet=True))
@@ -86,6 +96,32 @@ def _subsection_text(
         if child.kind is IRNodeKind.SUBSECTION and child.label == subsection
     )
     return " ".join(irnode_to_text(subsection_node).split())
+
+
+def test_2017_966_sparse_intro_item_insert_uses_owned_item_payload() -> None:
+    replay = pinned_replay(
+        "2017/966",
+        oracle_version="20250047",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    section_1 = _first_descendant(replay.ir, IRNodeKind.SECTION, "1")
+    subsection_1 = next(
+        child
+        for child in section_1.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    item_3 = next(
+        child
+        for child in subsection_1.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "3"
+    )
+    item_3_text = " ".join(irnode_to_text(item_3).split())
+
+    assert "A 02300 Luonnon tuotteiden keruu (pl. polttopuu)." in item_3_text
+    assert "I Majoitus- ja ravitsemistoiminta" not in item_3_text
 
 
 def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> None:

@@ -894,6 +894,83 @@ def test_payload_normalize_does_not_relabel_item_only_sparse_omission_payload() 
     assert [c.label for c in got.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "5"]
 
 
+def test_build_subsection_slot_assignment_shares_in_place_intro_item_slot() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                attrs={"lawvm_in_place_merge": "1"},
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="new intro"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="new item two"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="new item three"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="3", text="different item three"),),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_special="johd",
+        ),
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_item="2",
+        ),
+        AmendmentOp(
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_section="1",
+            target_paragraph=1,
+            target_item="3",
+        ),
+    ]
+
+    assignment = _build_subsection_slot_assignment(muutos_ir, ops)
+    assert assignment.for_op(ops[2]) is not None
+    assert assignment.for_op(ops[2]).label == "1"
+    assert any(obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING" for obs in assignment.binding_observations)
+
+    unmerged_slots = tuple(
+        IRNode(
+            kind=child.kind,
+            label=child.label,
+            text=child.text,
+            attrs={},
+            children=child.children,
+        )
+        if child.kind is IRNodeKind.SUBSECTION
+        else child
+        for child in muutos_ir.children
+    )
+    unmerged_muutos_ir = IRNode(kind=muutos_ir.kind, label=muutos_ir.label, children=unmerged_slots)
+    unmerged_assignment = _build_subsection_slot_assignment(unmerged_muutos_ir, ops)
+    assert unmerged_assignment.for_op(ops[2]) is not None
+    assert unmerged_assignment.for_op(ops[2]).label == "5"
+    assert not any(
+        obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING"
+        for obs in unmerged_assignment.binding_observations
+    )
+
+
 def test_slot_item_matching_does_not_alias_roman_glyph_to_arabic_item() -> None:
     slot = IRNode(
         kind=IRNodeKind.SUBSECTION,

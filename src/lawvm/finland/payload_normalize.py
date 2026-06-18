@@ -789,6 +789,10 @@ def _slot_ir_has_omission(node: IRNode) -> bool:
     return any(child.kind is IRNodeKind.OMISSION for child in node.children)
 
 
+def _slot_ir_is_in_place_merge(node: IRNode) -> bool:
+    return node.attrs.get("lawvm_in_place_merge") == "1"
+
+
 def _assign_duplicate_target_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -878,6 +882,45 @@ def _assign_item_matched_slot_ops(
             continue
         target_tok = str(op.target_item or "")
         if not target_tok:
+            continue
+        same_target_slot = None
+        has_same_target_intro_op = any(
+            intro.target_paragraph == op.target_paragraph
+            and intro.target_special == "johd"
+            for intro in slot_inputs.intro_subsec_ops
+        )
+        has_plain_subsection_op = any(
+            candidate.target_paragraph is not None
+            and not candidate.target_item
+            and not candidate.target_special
+            for candidate in slot_inputs.payload_subsec_ops
+        )
+        for other in slot_inputs.payload_subsec_ops:
+            if other is op or other.target_paragraph != op.target_paragraph:
+                continue
+            shared_slot = state.subsec_map.for_op(other)
+            if (
+                has_same_target_intro_op
+                and not has_plain_subsection_op
+                and shared_slot is not None
+                and _slot_ir_is_in_place_merge(shared_slot)
+                and _slot_ir_has_item(shared_slot, target_tok)
+            ):
+                same_target_slot = shared_slot
+                break
+        if same_target_slot is not None:
+            state.subsec_map.assign(op, same_target_slot)
+            state.binding_rule_by_op_id[id(op)] = "same_target_item_slot_sharing"
+            state.binding_observations.append(
+                _obs(
+                    "ELAB.SAME_TARGET_ITEM_SLOT_SHARING",
+                    "sparse_subsection_elaboration",
+                    target_paragraph=op.target_paragraph,
+                    target_item=str(op.target_item or ""),
+                    payload_slot_label=str(same_target_slot.label or ""),
+                    op_description=op.description(),
+                )
+            )
             continue
         # First pass: look for the item in an unused slot.
         found = False
