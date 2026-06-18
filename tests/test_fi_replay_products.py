@@ -1075,6 +1075,26 @@ def test_replay_xml_applies_1935_141_passive_replacements_for_1922_148() -> None
     assert "Valtionrautateiden viranomaisten virkakielestä" not in text
 
 
+def test_replay_xml_2019_610_uses_section_specific_oracle_version_horizon() -> None:
+    """fin@20240538 reflects §11/§11a from 2024/538 effective 2025-01-01."""
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    replay = replay_xml_for_test("2019/610", mode="official_consolidation", quiet=True)
+
+    assert replay.materialization_spec is not None
+    assert replay.materialization_spec.as_of == "2025-01-01"
+    section_11 = replay.materialized_state.find_section("11")
+    section_11a = replay.materialized_state.find_section("11a")
+    assert section_11 is not None
+    assert section_11a is not None
+
+    section_11_text = " ".join(irnode_to_text(section_11).split())
+    section_11a_text = " ".join(irnode_to_text(section_11a).split())
+
+    assert "Kansainvälinen järjestö ja kansainvälisen järjestön Suomessa sijaitseva toimipaikka" in section_11_text
+    assert "Kansainvälisen järjestön Suomessa sijaitsevan toimipaikan merkittävät julkiset tehtävät" in section_11a_text
+
+
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:
     """1999/1249 must preserve both the migrated 5 c § and the new native 5 b §."""
     replay = pinned_replay("1958/496", mode="legal_pit", quiet=True, stop_before="2004/697")

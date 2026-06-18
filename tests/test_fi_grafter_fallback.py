@@ -99,6 +99,8 @@ from lawvm.finland.replay_findings import (
     _serialize_apply_mutation_event,
 )
 from lawvm.finland.replay_horizon import (
+    ReplayHorizonRequest,
+    choose_replay_horizon,
     oracle_version_future_repeal_only_uses_cutoff_date as _oracle_version_future_repeal_only_uses_cutoff_date,
 )
 from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
@@ -13346,6 +13348,96 @@ def test_oracle_version_future_repeal_only_uses_cutoff_date_keeps_future_replace
         oracle_version_amendment_id="2021/1199",
         oracle_cutoff_iso="2021-12-17",
     )
+
+
+def test_official_consolidation_horizon_uses_oracle_version_non_repeal_op_effective_date() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="snapshot_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "11"),)),
+            source=OperationSource(
+                statute_id="2024/538",
+                effective="2025-01-01",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2024, 9, 26),
+            amendment_records=[
+                {
+                    "statute_id": "2024/538",
+                    "included": True,
+                    "effective_date": dt.date(2024, 10, 1),
+                    "issue_date": dt.date(2024, 9, 26),
+                }
+            ],
+            oracle_version_amendment_id="2024/538",
+            compiled_ops=[
+                {
+                    "source_statute": "2024/538",
+                    "action": "replace",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=("2024/538",),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2025-01-01"
+    assert decision.expires_as_of == "2025-01-01"
+    assert decision.oracle_materialize_as_of == "2025-01-01"
+
+
+def test_official_consolidation_horizon_does_not_use_unreflected_non_repeal_op_effective_date() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="snapshot_section_14",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "14"),)),
+            source=OperationSource(
+                statute_id="2026/410",
+                effective="2026-10-01",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2026, 5, 28),
+            amendment_records=[
+                {
+                    "statute_id": "2026/410",
+                    "included": True,
+                    "effective_date": dt.date(2026, 5, 29),
+                    "issue_date": dt.date(2026, 5, 28),
+                }
+            ],
+            oracle_version_amendment_id="2026/410",
+            compiled_ops=[
+                {
+                    "source_statute": "2026/410",
+                    "action": "replace",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=(),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2026-05-29"
+    assert decision.expires_as_of == "2026-05-29"
+    assert decision.oracle_materialize_as_of == "2026-05-29"
 
 
 def test_extract_temporary_targets_infers_host_section_for_moment_only_scope() -> None:
