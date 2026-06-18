@@ -202,7 +202,11 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
                     )
                 )
     if muutos_ir is not None and source_statute:
-        muutos_ir, _ = normalize_source_ir(muutos_ir, source_statute)
+        muutos_ir, _ = normalize_source_ir(
+            muutos_ir,
+            source_statute,
+            allow_dotted_paragraph_subsection_promotion=False,
+        )
     group_surface = _build_group_surface_factory(
         body_ir=muutos_ir,
         cross_heading_ir=cross_ir,

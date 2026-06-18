@@ -266,6 +266,44 @@ def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() ->
     assert "Valtiovarainministeri oi erityisistä" not in section_text
 
 
+def test_1990_1207_dotted_paragraph_rows_materialize_as_peer_moments() -> None:
+    """Base §4 dotted paragraph rows are momentit, not items under 1 momentti."""
+
+    replay = pinned_replay(
+        "1990/1207",
+        oracle_version="19921639",
+        quiet=True,
+        build_full_products=False,
+    )
+    section_node = replay.find_section("4", "3", None)
+    assert section_node is not None
+    subsections = [
+        child
+        for child in section_node.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    ]
+
+    assert [child.label for child in subsections] == ["1", "2", "3", "4"]
+    assert "Asunto-osan pituuden tulee olla vähintään puolet auton kokonaispituudesta" in irnode_to_text(
+        subsections[0]
+    )
+    assert "Ohjaamon ja asunto-osan välillä tulee olla näköyhteys" in irnode_to_text(subsections[2])
+    assert "Matkailuautossa tulee olla vähintään seuraavat kiinteät varusteet" in irnode_to_text(
+        subsections[3]
+    )
+    assert [child.label for child in subsections[3].children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+    ]
+
+
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 

@@ -101,6 +101,7 @@ from lawvm.finland.helpers import _norm_num_token, may_attach_post_list_loppukap
 from lawvm.xml_ingest import _paragraph_is_content_only
 from lawvm.finland.source_normalization_kinds import (
     BASE_DIGIT_RESET_SPLIT,
+    BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
@@ -117,6 +118,8 @@ from lawvm.finland.source_normalization_kinds import (
 # ---------------------------------------------------------------------------
 
 _ITEM_NUM_RE = re.compile(r"^\d+[a-z]?\)$")
+_DOTTED_MOMENT_NUM_RE = re.compile(r"^(\d+)\.$")
+_DOTTED_MOMENT_INTRO_RE = re.compile(r"^\s*(\d+)\.\s+")
 _LETTER_LABEL_RE = re.compile(r"^[a-z]$")
 _ARABIC_LABEL_RE = re.compile(r"^\d+[a-z]?$")
 
@@ -321,6 +324,182 @@ def _section_item_style_subsection_payload_nodes(node: IRNode) -> Tuple[IRNode, 
         children=tuple(item_children),
     )
     return (converted, *trailing_siblings)
+
+
+def _dotted_paragraph_num_value(paragraph: IRNode) -> int | None:
+    if paragraph.kind != IRNodeKind.PARAGRAPH:
+        return None
+    num_child = next((child for child in paragraph.children if child.kind == IRNodeKind.NUM), None)
+    if num_child is None:
+        return None
+    match = _DOTTED_MOMENT_NUM_RE.match((num_child.text or "").strip())
+    if match is None:
+        return None
+    value = int(match.group(1))
+    label_value = _numeric_label_value(paragraph.label)
+    if label_value is not None and label_value != value:
+        return None
+    return value
+
+
+def _dotted_intro_moment_value(subsection: IRNode) -> int | None:
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return None
+    for child in subsection.children:
+        if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
+            continue
+        match = _DOTTED_MOMENT_INTRO_RE.match(irnode_to_text(child).strip())
+        if match is not None:
+            return int(match.group(1))
+    return None
+
+
+def _subsection_payload_children_from_dotted_paragraph(paragraph: IRNode) -> tuple[IRNode, ...]:
+    if paragraph.children:
+        return paragraph.children
+    if paragraph.text:
+        return (IRNode(kind=IRNodeKind.CONTENT, text=paragraph.text),)
+    return ()
+
+
+def _promoted_dotted_paragraph_subsections(subsection: IRNode) -> list[IRNode] | None:
+    source_label = _numeric_label_value(subsection.label)
+    if source_label is None:
+        return None
+    semantic_children = [child for child in subsection.children if child.kind != IRNodeKind.NUM]
+    if not semantic_children or any(child.kind != IRNodeKind.PARAGRAPH for child in semantic_children):
+        return None
+
+    promoted: list[IRNode] = []
+    expected = source_label
+    for paragraph in semantic_children:
+        value = _dotted_paragraph_num_value(paragraph)
+        if value != expected:
+            return None
+        attrs = dict(subsection.attrs) if value == source_label else {}
+        source_eid = paragraph.attrs.get("eId")
+        if source_eid:
+            attrs["lawvm_source_paragraph_eid"] = source_eid
+        attrs["lawvm_source_normalization_rule"] = "fi_dotted_paragraph_subsection_promotion_v1"
+        promoted.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=str(value),
+                attrs=attrs,
+                children=_subsection_payload_children_from_dotted_paragraph(paragraph),
+            )
+        )
+        expected += 1
+    return promoted
+
+
+def _with_dotted_intro_subsection_label(subsection: IRNode, label: int) -> IRNode:
+    attrs = dict(subsection.attrs)
+    source_eid = attrs.pop("eId", None)
+    if source_eid:
+        attrs["lawvm_source_subsection_eid"] = source_eid
+    if subsection.label is not None:
+        attrs["lawvm_source_subsection_label"] = str(subsection.label)
+    attrs["lawvm_source_normalization_rule"] = "fi_dotted_paragraph_subsection_promotion_v1"
+    return IRNode(
+        kind=subsection.kind,
+        label=str(label),
+        text=subsection.text,
+        attrs=attrs,
+        children=subsection.children,
+    )
+
+
+def _promote_dotted_paragraph_subsections(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Promote old dotted-number paragraph rows into peer momentti subsections.
+
+    Historical decision-style Finnish source XML may encode printed moments as
+    ``<paragraph><num>1.</num>`` rows under one subsection wrapper.  These are
+    peer momentit, not kohdat under moment 1.
+    """
+    if len(children) < 1:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    expected_next: int | None = None
+    for idx, child in enumerate(children):
+        if child.kind != IRNodeKind.SUBSECTION:
+            rewritten.append(child)
+            expected_next = None
+            continue
+
+        promoted = _promoted_dotted_paragraph_subsections(child)
+        if promoted is not None:
+            next_child = children[idx + 1] if idx + 1 < len(children) else None
+            next_intro_value = (
+                _dotted_intro_moment_value(next_child)
+                if next_child is not None and next_child.kind == IRNodeKind.SUBSECTION
+                else None
+            )
+            last_promoted = int(promoted[-1].label or "0")
+            if len(promoted) > 1 or next_intro_value == last_promoted + 1:
+                rewritten.extend(promoted)
+                facts.append(
+                    SourceNormalizationFact(
+                        statute_id=statute_id,
+                        kind=BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
+                        basis=SourceNormalizationBasis.PROFILE_INVALID,
+                        before=(
+                            f"{_node_path_label(child)} carried dotted paragraph rows "
+                            f"{[p.label for p in promoted]!r}"
+                        ),
+                        after=f"promoted to peer subsections {[p.label for p in promoted]!r}",
+                        explanation=(
+                            "The source encoded printed decision-style moment numbers "
+                            "as paragraph rows inside one subsection wrapper. Finnish "
+                            "kohdat are numbered with closing-parenthesis labels; dotted "
+                            "integer rows here are peer momentti subsections."
+                        ),
+                        path=parent_path + (_node_path_label(child),),
+                        confidence=0.96,
+                    )
+                )
+                expected_next = last_promoted + 1
+                changed = True
+                continue
+
+        intro_value = _dotted_intro_moment_value(child)
+        if expected_next is not None and intro_value == expected_next:
+            rewritten_child = _with_dotted_intro_subsection_label(child, intro_value)
+            rewritten.append(rewritten_child)
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
+                    basis=SourceNormalizationBasis.PROFILE_INVALID,
+                    before=(
+                        f"{_node_path_label(child)} carried dotted intro moment "
+                        f"{intro_value}."
+                    ),
+                    after=f"relabelled as subsection:{intro_value}",
+                    explanation=(
+                        "The preceding subsection wrapper was split into printed "
+                        "dotted-number momentti peers, and this following sibling's "
+                        "intro starts with the next printed moment number."
+                    ),
+                    path=parent_path + (_node_path_label(child),),
+                    confidence=0.95,
+                )
+            )
+            expected_next = intro_value + 1
+            changed = True
+            continue
+
+        rewritten.append(child)
+        expected_next = None
+
+    return rewritten if changed else children
 
 
 def _fold_section_scoped_item_style_subsections(
@@ -2026,6 +2205,7 @@ def normalize_source_ir(
     statute_id: str,
     *,
     _parent_path: Optional[Tuple[str, ...]] = None,
+    allow_dotted_paragraph_subsection_promotion: bool = True,
 ) -> Tuple[IRNode, List[SourceNormalizationFact]]:
     """Apply source normalization to an already-parsed IR tree.
 
@@ -2084,6 +2264,10 @@ def normalize_source_ir(
     # numbering cleanup runs; otherwise the child subsection loses real items as
     # apparent duplicates before the moment boundary is restored.
     initial_children: List[IRNode] = list(ir.children)
+    if ir.kind == IRNodeKind.SECTION and allow_dotted_paragraph_subsection_promotion:
+        initial_children = _promote_dotted_paragraph_subsections(
+            initial_children, statute_id, current_path, facts
+        )
     if ir.kind == IRNodeKind.SECTION:
         initial_children = _split_intro_then_numbered_list_subsections(
             initial_children, statute_id, current_path, facts
@@ -2100,7 +2284,10 @@ def normalize_source_ir(
     children_changed = False
     for child in initial_children:
         normalized_child, child_facts = normalize_source_ir(
-            child, statute_id, _parent_path=current_path
+            child,
+            statute_id,
+            _parent_path=current_path,
+            allow_dotted_paragraph_subsection_promotion=allow_dotted_paragraph_subsection_promotion,
         )
         facts.extend(child_facts)
         new_children.append(normalized_child)
