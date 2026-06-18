@@ -127,6 +127,8 @@ def group_shadow_pruning_section_targets(
         section_label = _norm_num_token(op.target_section or "")
         if op.target_unit_kind != "section" or not section_label:
             continue
+        if op.target_paragraph is not None or op.target_item or op.target_special:
+            continue
         if section_label in duplicate_section_labels:
             continue
         if op.target_part == target_part and op.target_chapter == target_norm:
@@ -157,8 +159,10 @@ def group_shadow_pruning_foreign_scoped_section_targets(
         section_label = _norm_num_token(op.target_section or "")
         if op.target_unit_kind != "section" or not section_label:
             continue
-        # Only INSERT ops can shadow carry-forward content; REPLACE ops act on
-        # already-existing sections and must not suppress container payload.
+        # Only INSERT ops can shadow carry-forward content for new-container
+        # payloads.  Foreign REPLACE ops use the live-container-only carrier
+        # below so they do not preserve unrelated carried sections in newly
+        # inserted chapters.
         if op.op_type != "INSERT":
             continue
         # Carry-forward INSERTs have inferred/stale chapter scope; they should
@@ -168,6 +172,37 @@ def group_shadow_pruning_foreign_scoped_section_targets(
             op.scope_confidence is not None
             and op.scope_confidence.source == "carry_forward"
         ):
+            continue
+        if section_label in duplicate_section_labels:
+            continue
+        if op.target_part == target_part and op.target_chapter == target_norm:
+            continue
+        if op.target_chapter is None and target_unit_kind == "chapter":
+            continue
+        if op.target_part is None and target_unit_kind == "part":
+            continue
+        out.add(section_label)
+    return out
+
+
+def group_shadow_pruning_foreign_scoped_replace_section_targets(
+    ops: list[AmendmentOp],
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_part: str | None,
+    duplicate_section_labels: frozenset[str],
+) -> set[str]:
+    """Return foreign-scoped REPLACE labels for live-container pruning only."""
+    if target_unit_kind not in {"chapter", "part"}:
+        return set()
+
+    out: set[str] = set()
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op.target_unit_kind != "section" or not section_label:
+            continue
+        if op.op_type != "REPLACE":
             continue
         if section_label in duplicate_section_labels:
             continue
