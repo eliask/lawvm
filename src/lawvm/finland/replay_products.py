@@ -488,6 +488,24 @@ def _reconcile_materialized_fold_hcontainer_sections(
         return materialized
 
     result = _split_operatives_from_attachments_wrapper(materialized, replay_fold)
+    fold_has_hierarchical_roots = _fold_provisions_has_hierarchical_roots(replay_fold)
+    synthesized_parent_paths: set[tuple[tuple[str, str], ...]] = set()
+    if fold_has_hierarchical_roots:
+        for fold_section in direct_fold_sections:
+            label = fold_section.label or ""
+            if not label:
+                continue
+            for section_path in _all_section_paths(result, label):
+                parent_path = section_path[:-1]
+                parent_node = _tops_resolve(result, parent_path) if parent_path else result
+                if (
+                    parent_node is not None
+                    and parent_node.attrs.get("lawvm_synthesized_container") == "active_descendant"
+                ):
+                    synthesized_parent_paths.add(parent_path)
+    allowed_synthesized_parent_paths = (
+        synthesized_parent_paths if len(synthesized_parent_paths) == 1 else set()
+    )
     for fold_section in direct_fold_sections:
         label = fold_section.label or ""
         section_paths = _all_section_paths(result, label)
@@ -501,6 +519,16 @@ def _reconcile_materialized_fold_hcontainer_sections(
             parent_node = _tops_resolve(result, parent_path) if parent_path else result
             if parent_node is not None and parent_node.kind is IRNodeKind.HCONTAINER:
                 hcontainer_paths.append(section_path)
+            elif (
+                parent_path in allowed_synthesized_parent_paths
+                and parent_node is not None
+                and parent_node.attrs.get("lawvm_synthesized_container") == "active_descendant"
+            ):
+                # Core PIT synthesis creates this ancestor because the active
+                # timeline address requires it.  Treating the child as a
+                # misplaced fold-wrapper section would destroy the materialized
+                # legal address and move the text to the end of the body.
+                continue
             else:
                 misplaced_paths.append(section_path)
 

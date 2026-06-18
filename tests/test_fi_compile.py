@@ -2256,6 +2256,40 @@ def test_replay_xml_1919_1_scopes_flat_replaces_into_live_chapter_gaps() -> None
     assert not (top_level_sections & {"1", "11", "21", "37", "38", "41", "42", "44"})
 
 
+def test_replay_xml_1996_79_preserves_synthesized_chapter_descendant_order() -> None:
+    """Active descendant chapter synthesis must keep children under the chapter."""
+    replay = pinned_replay("1996/79", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:6a/section:23a" in sections
+    assert "chapter:6a/section:23b" in sections
+
+    chapter_6a = next(
+        child
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.CHAPTER and child.label == "6a"
+    )
+    chapter_6a_section_labels = [
+        child.label
+        for child in chapter_6a.children
+        if child.kind is IRNodeKind.SECTION
+    ]
+    assert chapter_6a_section_labels == ["23a", "23b"]
+
+    hcontainer_section_labels = [
+        grandchild.label
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.HCONTAINER
+        for grandchild in child.children
+        if grandchild.kind is IRNodeKind.SECTION
+    ]
+    assert "23a" not in hcontainer_section_labels
+    assert "23b" not in hcontainer_section_labels
+
+    replay_text = replay.serialize_text()
+    assert replay_text.index("23 a §") < replay_text.index("7 luku")
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
