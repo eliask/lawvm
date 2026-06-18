@@ -78,6 +78,13 @@ PRE_BLAME_IMPROVEMENT_EPS = 0.01
 _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_editorial()
 
 
+def _blame_title_snippet(blame_op: dict[str, Any], limit: int = 50) -> str:
+    title = blame_op.get("source_title")
+    if title is None:
+        return ""
+    return str(title)[:limit]
+
+
 def _oracle_suspect_value(master: object) -> str:
     if not hasattr(master, "source_adjudication"):
         return ""
@@ -1162,7 +1169,7 @@ def _explain_sync(
 
         if blame_op:
             src = blame_op.get("source_statute", "?")
-            title = blame_op.get("source_title", "")[:50]
+            title = _blame_title_snippet(blame_op)
             witness_rid = blame_op.get("witness_rule_id")
             witness_suffix = f"  [{witness_rid}]" if witness_rid else ""
             print(f"    Last modified: {src}  {title}{witness_suffix}")
