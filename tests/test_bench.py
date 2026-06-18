@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import warnings
 from collections import Counter
@@ -12,6 +13,22 @@ from lawvm.tools import bench
 class _DummyReplay:
     def serialize_text(self) -> str:
         return "foo"
+
+
+def test_fi_bench_worker_count_defaults_to_sequential() -> None:
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 1
+
+
+def test_fi_bench_worker_count_uses_explicit_parallel() -> None:
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=3)) == 3
+
+
+def test_fi_bench_worker_count_rejects_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        bench._fi_bench_worker_count(argparse.Namespace(parallel=0))
+
+    assert raised.value.code == 2
+    assert "--parallel must be a positive integer" in capsys.readouterr().err
 
 
 def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:

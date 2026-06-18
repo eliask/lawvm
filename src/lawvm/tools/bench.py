@@ -2235,6 +2235,17 @@ def _warm_sources(sids: list[str]) -> int:
     return fetched
 
 
+def _fi_bench_worker_count(args: Any) -> int:
+    """Return the Finland bench worker count requested by CLI args."""
+    explicit = getattr(args, "parallel", None)
+    if explicit is None:
+        return 1
+    if explicit < 1:
+        print("ERROR: --parallel must be a positive integer", file=sys.stderr)
+        raise SystemExit(2)
+    return explicit
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -2371,10 +2382,7 @@ def main(args) -> None:
     )
     print()
 
-    import os as _os
-
-    _par = getattr(args, "parallel", None)
-    workers = _par if _par is not None else max(8, _os.cpu_count() or 4)
+    workers = _fi_bench_worker_count(args)
 
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None
     lev_sims: Optional[Dict[str, float]] = None
@@ -2515,7 +2523,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     bench_p.add_argument(
         "--corpus",
         metavar="CSV_PATH",
-        help="path to corpus CSV (default: .tmp/batch_test_list.csv)",
+        help="path to corpus CSV (default: data/finland/bench_corpus.csv; fallback: .tmp/batch_test_list.csv)",
     )
     bench_p.add_argument(
         "--top",
@@ -2570,8 +2578,8 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: 1=sequential; UK/EE default: "
-            "min(cpu_count, 8); per-worker peak RSS ~860 MB after source-root "
+            "parallel workers (FI default: 1=sequential; UK/EE use "
+            "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),
     )
