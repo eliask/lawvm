@@ -519,6 +519,11 @@ class ReplayResult:
         return self.products.migration_events
 
     @property
+    def identity_ledger(self):
+        """Frozen read-only lineage ledger over replay migration events."""
+        return self.products.identity_ledger
+
+    @property
     def tree(self):
         """Lazy lxml parse of base_xml_bytes.
 

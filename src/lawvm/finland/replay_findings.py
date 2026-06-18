@@ -188,6 +188,39 @@ def _serialize_observed_write_audit(audit: ObservedWriteAudit) -> dict[str, obje
     return asdict(audit)
 
 
+def timeline_version_dedupe_finding(
+    *,
+    source_statute: str,
+    address: str,
+    effective: str,
+    enacted: str,
+    variant_kind: str,
+    witness_rule_id: str,
+    removed_count: int,
+) -> Finding:
+    """Build the observation emitted when owned timeline dedupe collapses ledger rows."""
+    return Finding(
+        kind="REPLAY.TIMELINE_VERSION_DEDUPE",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Same-source timeline bucket carried competing version rows; "
+                "an owned dedupe rule collapsed redundant ledger entries "
+                "before PIT materialization."
+            ),
+            "address": address,
+            "effective": effective,
+            "enacted": enacted,
+            "variant_kind": variant_kind,
+            "witness_rule_id": witness_rule_id,
+            "removed_count": removed_count,
+        },
+    )
+
+
 def fold_timeline_backfill_finding(
     *,
     source_statute: str,

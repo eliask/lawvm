@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, replace as dc_replace
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
+from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
@@ -49,6 +50,7 @@ from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
     from lawvm.finland.replay_fold_timeline_backfill import FoldTimelineBackfillRecord
+    from lawvm.finland.timeline_version_dedupe import TimelineVersionDedupeRecord
     from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -121,6 +123,13 @@ class ReplayProducts:
     materialization_spec: Optional[MaterializationSpec] = None
     source_adjudication: Optional[SourceAdjudication] = None
     fold_timeline_backfills: tuple["FoldTimelineBackfillRecord", ...] = ()
+    timeline_version_dedupes: tuple["TimelineVersionDedupeRecord", ...] = ()
+
+    @property
+    def identity_ledger(self) -> IdentityLedger:
+        """Frozen read-only lineage snapshot over replay migration events."""
+        return IdentityLedger.from_events(self.migration_events)
+
 
 def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
     """Reject Finland replay ops that still depend on core tombstone quirks.
@@ -1288,6 +1297,9 @@ def build_replay_products(
         migration_events,
         as_of=as_of,
     )
+    from lawvm.finland.timeline_version_dedupe import dedupe_finland_timelines
+
+    timelines, timeline_version_dedupes = dedupe_finland_timelines(timelines)
     bridge_classification = _classify_finland_lineage_bridge(
         raw_timelines,
         migration_events,
@@ -1344,6 +1356,7 @@ def build_replay_products(
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
         fold_timeline_backfills=fold_timeline_backfills,
+        timeline_version_dedupes=timeline_version_dedupes,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

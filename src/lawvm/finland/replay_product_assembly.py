@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Any, Callable, Dict, Literal, Optional, cast
 
 import lxml.etree as etree
 
@@ -26,7 +26,10 @@ from lawvm.finland.replay_products import (
     _split_operatives_from_attachments_wrapper,
     build_replay_products,
 )
-from lawvm.finland.replay_timeline_diagnostics import fi_timeline_invariants_opt_in_enabled
+from lawvm.finland.replay_timeline_diagnostics import (
+    fi_bench_timeline_invariants_enabled,
+    fi_timeline_invariants_opt_in_enabled,
+)
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.post_process import _consolidate_kumottu_range
@@ -56,6 +59,7 @@ class ReplayProductAssemblyRequest:
     replay_print: Callable[[str], None]
     debug_enabled: bool
     debug_log: Callable[[str, object], None]
+    quiet: bool = True
 
 
 def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayProducts:
@@ -71,8 +75,8 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
     )
     horizon = choose_replay_horizon(
         ReplayHorizonRequest(
-            mode=request.mode,
-            as_of=request.as_of,
+            mode=cast(Literal["official_consolidation", "legal_pit"], request.mode),
+            as_of=request.as_of or "",
             cutoff_date=plan.cutoff_date,
             amendment_records=plan.amendment_records,
             oracle_version_amendment_id=plan.oracle_version_amendment_id or "",
@@ -131,7 +135,10 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
             projected_materialized_ir
         )
     if request.build_full_products:
-        if request.replay_meta_out is not None and fi_timeline_invariants_opt_in_enabled():
+        if request.replay_meta_out is not None and (
+            fi_timeline_invariants_opt_in_enabled()
+            or fi_bench_timeline_invariants_enabled(diagnostic_replay=not request.quiet)
+        ):
             request.replay_meta_out["enable_timeline_invariants"] = True
         products = project_replay_products(
             ReplayProductProjectionRequest(
@@ -186,6 +193,7 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         temporal_events=products.temporal_events,
         migration_events=products.migration_events,
         fold_timeline_backfills=products.fold_timeline_backfills,
+        timeline_version_dedupes=products.timeline_version_dedupes,
         materialization_spec=products.materialization_spec,
         source_adjudication=products.source_adjudication,
     )

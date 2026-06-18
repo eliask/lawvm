@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import logging
 
+from typing import Optional, cast
+
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
 from lawvm.finland.amendment_selection import resolve_applicable_amendment_records
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
 from lawvm.finland.consolidated_store import (
+    ConsolidatedArtifactSelector,
     select_cached_consolidated_artifact_with_info as _select_artifact_with_info,
 )
 from lawvm.finland.corpus import _get_corpus_store, get_consolidated_oracle_suspect
@@ -214,6 +217,7 @@ def replay_xml(
                 replay_print=_replay_print,
                 debug_enabled=logger.isEnabledFor(logging.DEBUG),
                 debug_log=logger.debug,
+                quiet=quiet,
             )
         )
 
@@ -245,7 +249,7 @@ def _oracle_selector_info(
     _artifact, provenance = _select_artifact_with_info(
         archive,
         parent_id,
-        selector=oracle_selector,
+        selector=cast(Optional[ConsolidatedArtifactSelector], oracle_selector),
     )
     return OracleSelectorInfo(
         selector_mode=provenance.selector_mode,

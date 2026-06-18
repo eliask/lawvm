@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, cast
+from typing import Callable, Dict, Optional
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
-from lawvm.core.invariant_surface_matrix import FI_REPLAY_FOLD_SURFACE
-from lawvm.core.phase_result import Finding
-from lawvm.core.replay_lints import (
-    build_flattened_sublist_findings,
-    build_label_sequence_gap_findings,
-    build_text_duplication_findings,
+from lawvm.core.invariant_surface_matrix import (
+    FI_MATERIALIZED_PRODUCT_SURFACE,
+    FI_REPLAY_FOLD_SURFACE,
+    project_replay_warning_findings,
+    record_replay_profile,
 )
+from lawvm.core.phase_result import Finding
+
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
     fold_timeline_backfill_finding,
+    timeline_version_dedupe_finding,
 )
 from lawvm.finland.replay_timeline_diagnostics import project_timeline_invariant_findings
 from lawvm.finland.replay_products import ReplayProducts
@@ -68,6 +70,40 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
                 )
             )
             seen_backfills.add(key)
+    if products.timeline_version_dedupes:
+        seen_dedupes = {
+            (
+                finding.kind,
+                str(finding.detail.get("address") or ""),
+                str(finding.detail.get("witness_rule_id") or ""),
+                str(finding.detail.get("effective") or ""),
+                str(finding.detail.get("enacted") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "REPLAY.TIMELINE_VERSION_DEDUPE"
+        }
+        for record in products.timeline_version_dedupes:
+            key = (
+                "REPLAY.TIMELINE_VERSION_DEDUPE",
+                record.address,
+                record.witness_rule_id,
+                record.effective,
+                record.enacted,
+            )
+            if key in seen_dedupes:
+                continue
+            request.replay_findings.append(
+                timeline_version_dedupe_finding(
+                    source_statute=record.source_statute,
+                    address=record.address,
+                    effective=record.effective,
+                    enacted=record.enacted,
+                    variant_kind=record.variant_kind,
+                    witness_rule_id=record.witness_rule_id,
+                    removed_count=record.removed_count,
+                )
+            )
+            seen_dedupes.add(key)
     typed_product_tree_violations = {
         "replay_fold_tree": list(
             fi_product_tree_invariant_dicts(
@@ -130,151 +166,17 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
         replay_meta_out=request.replay_meta_out,
     )
     products.materialized_state = products.materialized_state.with_ir(deduped_materialized_ir)
-    materialized_text_duplication_findings = build_text_duplication_findings(
-        deduped_materialized_ir,
+    if request.replay_meta_out is not None:
+        record_replay_profile(request.replay_meta_out, FI_MATERIALIZED_PRODUCT_SURFACE)
+    project_replay_warning_findings(
+        tree=deduped_materialized_ir,
         phase="materialized",
         source_statute=request.parent_id,
+        warnings=FI_MATERIALIZED_PRODUCT_SURFACE.replay_profile.warnings,
+        replay_findings=request.replay_findings,
+        replay_meta_out=request.replay_meta_out,
+        replay_print=request.replay_print,
     )
-    if request.replay_meta_out is not None and materialized_text_duplication_findings:
-        warnings = request.replay_meta_out.setdefault("text_duplication_warnings", [])
-        cast(list[dict[str, object]], warnings).extend(
-            {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            for finding in materialized_text_duplication_findings
-        )
-    if materialized_text_duplication_findings:
-        seen_text_warnings = {
-            (
-                finding.kind,
-                str(finding.detail.get("phase") or ""),
-                str(finding.detail.get("kind") or ""),
-                str(finding.detail.get("left") or ""),
-                str(finding.detail.get("right") or ""),
-            )
-            for finding in request.replay_findings
-            if finding.kind == "text_duplication_warning"
-        }
-        for finding in materialized_text_duplication_findings:
-            warning = {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            request.replay_print(
-                f"WARNING text duplication: {warning['kind']} {warning['left']} <-> {warning['right']}"
-            )
-            key = (
-                "text_duplication_warning",
-                "materialized",
-                str(warning.get("kind") or ""),
-                str(warning.get("left") or ""),
-                str(warning.get("right") or ""),
-            )
-            if key not in seen_text_warnings:
-                request.replay_findings.append(finding)
-                seen_text_warnings.add(key)
-
-    materialized_flattened_sublist_findings = build_flattened_sublist_findings(
-        deduped_materialized_ir,
-        phase="materialized",
-        source_statute=request.parent_id,
-    )
-    if request.replay_meta_out is not None and materialized_flattened_sublist_findings:
-        warnings = request.replay_meta_out.setdefault("flattened_sublist_warnings", [])
-        cast(list[dict[str, object]], warnings).extend(
-            {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            for finding in materialized_flattened_sublist_findings
-        )
-    if materialized_flattened_sublist_findings:
-        seen_flattened_sublist_warnings = {
-            (
-                finding.kind,
-                str(finding.detail.get("phase") or ""),
-                str(finding.detail.get("kind") or ""),
-                str(finding.detail.get("path") or ""),
-                str(finding.detail.get("node_kind") or ""),
-            )
-            for finding in request.replay_findings
-            if finding.kind == "flattened_sublist_family_warning"
-        }
-        for finding in materialized_flattened_sublist_findings:
-            warning = {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            request.replay_print(
-                "WARNING flattened sublist: "
-                f"{warning['kind']} {warning['path']} {warning['node_kind']} "
-                f"{warning.get('label_sample', [])}"
-            )
-            key = (
-                "flattened_sublist_family_warning",
-                "materialized",
-                str(warning.get("kind") or ""),
-                str(warning.get("path") or ""),
-                str(warning.get("node_kind") or ""),
-            )
-            if key not in seen_flattened_sublist_warnings:
-                request.replay_findings.append(finding)
-                seen_flattened_sublist_warnings.add(key)
-
-    materialized_label_gap_findings = build_label_sequence_gap_findings(
-        deduped_materialized_ir,
-        phase="materialized",
-        source_statute=request.parent_id,
-    )
-    if request.replay_meta_out is not None and materialized_label_gap_findings:
-        warnings = request.replay_meta_out.setdefault("label_sequence_gap_warnings", [])
-        cast(list[dict[str, object]], warnings).extend(
-            {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            for finding in materialized_label_gap_findings
-        )
-    if materialized_label_gap_findings:
-        seen_label_gap_warnings = {
-            (
-                finding.kind,
-                str(finding.detail.get("phase") or ""),
-                str(finding.detail.get("kind") or ""),
-                str(finding.detail.get("path") or ""),
-                str(finding.detail.get("node_kind") or ""),
-                str(finding.detail.get("next_label") or ""),
-            )
-            for finding in request.replay_findings
-            if finding.kind == "label_sequence_gap_warning"
-        }
-        for finding in materialized_label_gap_findings:
-            warning = {
-                key: value
-                for key, value in finding.detail.items()
-                if key != "message"
-            }
-            missing = ", ".join(str(item) for item in warning.get("missing_labels", [])[:8])
-            request.replay_print(
-                f"WARNING label sequence gap: {warning['path']} {warning['node_kind']} missing {missing}"
-            )
-            key = (
-                "label_sequence_gap_warning",
-                "materialized",
-                str(warning.get("kind") or ""),
-                str(warning.get("path") or ""),
-                str(warning.get("node_kind") or ""),
-                str(warning.get("next_label") or ""),
-            )
-            if key not in seen_label_gap_warnings:
-                request.replay_findings.append(finding)
-                seen_label_gap_warnings.add(key)
 
     if request.replay_meta_out is not None and request.replay_meta_out.get(
         "enable_timeline_invariants"

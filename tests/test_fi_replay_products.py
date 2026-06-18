@@ -613,7 +613,7 @@ def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None
     replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
     sections = extract_ir_sections(replay.materialized_state.ir)
     section_1_text = " ".join(irnode_to_text(sections["section:1"]).split())
-    observations = replay_meta.get("elaboration_observations") or []
+    observations = cast(list[dict[str, object]], replay_meta.get("elaboration_observations") or [])
 
     assert "Oulunseutu (Oulussa)" in section_1_text
     assert "Pudasjärvi (st)" not in section_1_text
@@ -1479,7 +1479,7 @@ def test_kumotaan_numeric_range_suffix_expansion_stays_in_resolved_chapter_scope
 
     labels = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
         "kumotaan 61 §:n 2 momentti, 63 §:n 3 momentti sekä 64 ja 67-70 §, muutetaan 26 §",
-        state=state,  # type: ignore[arg-type]
+        state=state,  # type: ignore
     )
 
     assert labels == {}
@@ -1501,7 +1501,7 @@ def test_kumotaan_numeric_range_suffix_expansion_preserves_explicit_chapter_case
 
     labels = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
         "kumotaan 4 luvun otsikko 27-39 §, muutetaan 1 §",
-        state=state,  # type: ignore[arg-type]
+        state=state,  # type: ignore
     )
 
     assert labels == {"4": {"27a"}}
@@ -1678,6 +1678,7 @@ def test_replay_xml_surfaces_migration_events_for_renumbered_statute() -> None:
 
     assert replay.migration_events
     assert any(event.kind == "renumber" for event in replay.migration_events)
+    assert len(replay.identity_ledger) == len(replay.migration_events)
 
 
 def test_replay_xml_can_skip_full_products_for_fast_bench() -> None:
@@ -1872,7 +1873,7 @@ def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery
         stop_before="2020/1256",
         replay_meta_out=replay_meta,
     )
-    audits = replay_meta.get("uncovered_body_candidate_audits") or []
+    audits = cast(list[dict[str, object]], replay_meta.get("uncovered_body_candidate_audits") or [])
     guarded = {
         str(row.get("target_section"))
         for row in audits
@@ -3590,6 +3591,13 @@ def test_build_replay_products_carries_migration_events() -> None:
     )
 
     assert products.migration_events == (migration_event,)
+    assert len(products.identity_ledger) == 1
+    resolved = products.identity_ledger.current_address(
+        LegalAddress(path=(("section", "1"),)),
+        as_of_date="2021-01-01",
+    )
+    assert resolved == LegalAddress(path=(("section", "2"),))
+
 
 def test_rekey_timelines_prefers_destination_native_lineage_over_migrated_source_history() -> None:
     source_addr = LegalAddress(path=(("section", "5"),))

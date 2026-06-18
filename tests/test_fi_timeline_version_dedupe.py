@@ -1,0 +1,78 @@
+"""Tests for owned Finland timeline version dedupe before materialization."""
+
+from __future__ import annotations
+
+from lawvm.core.invariant_profiles import core_replay_strict_profile
+from lawvm.core.ir import LegalAddress, OperationSource, ProvisionTimeline, ProvisionVersion
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.ir import IRNode
+from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
+from lawvm.finland.timeline_version_dedupe import (
+    FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID,
+    dedupe_finland_timelines,
+)
+from tests.corpus_pin_helpers import replay_xml_for_test
+
+
+def _pv(
+    *,
+    effective: str,
+    enacted: str,
+    source_id: str,
+    text: str | None,
+) -> ProvisionVersion:
+    content = None
+    if text is not None:
+        content = IRNode(kind=IRNodeKind.SECTION, label="12", text=text)
+    return ProvisionVersion(
+        effective=effective,
+        enacted=enacted,
+        variant_kind="permanent",
+        content=content,
+        source=OperationSource(statute_id=source_id, enacted=enacted),
+    )
+
+
+def test_absent_content_shadow_collapse_removes_competing_none_row() -> None:
+    address = LegalAddress(path=(("section", "12"),))
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                _pv(
+                    effective="2005-01-01",
+                    enacted="2004-08-20",
+                    source_id="2004/821",
+                    text="12 §",
+                ),
+                _pv(
+                    effective="2005-01-01",
+                    enacted="2004-08-20",
+                    source_id="2004/821",
+                    text=None,
+                ),
+            ],
+        )
+    }
+    deduped, records = dedupe_finland_timelines(timelines)
+    assert len(deduped[address].versions) == 1
+    assert deduped[address].versions[0].content is not None
+    assert len(records) == 1
+    assert records[0].witness_rule_id == FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID
+
+
+def test_1993_1054_corpus_no_longer_reports_overlapping_permanent() -> None:
+    master = replay_xml_for_test("1993/1054", mode="legal_pit", quiet=True)
+    products = master.products
+    assert products.timelines is not None
+    assert products.materialization_spec is not None
+
+    violations = check_all_timeline_invariants_typed(
+        products.materialized_state.ir,
+        products.timelines,
+        str(products.materialization_spec.as_of),
+        families=core_replay_strict_profile("corpus_pin").timeline_invariants,
+    )
+    overlap = [v for v in violations if v.kind == "overlapping_permanent"]
+    assert overlap == []
+    assert products.timeline_version_dedupes
