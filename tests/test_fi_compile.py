@@ -2290,6 +2290,25 @@ def test_replay_xml_1996_79_preserves_synthesized_chapter_descendant_order() -> 
     assert replay_text.index("23 a §") < replay_text.index("7 luku")
 
 
+def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None:
+    replay = pinned_replay("1966/611", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section4 = sections["section:4"]
+    subsection1 = next(
+        child
+        for child in section4.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    text = " ".join(irnode_to_text(subsection1).split())
+
+    assert subsection1.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD",
+    )
+    assert "kihlakunnantuomarin virka B 4" in text
+    assert "ulosottoapulaisen toimi V 18" in text
+    assert "henkikirjoittajan" not in text
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]

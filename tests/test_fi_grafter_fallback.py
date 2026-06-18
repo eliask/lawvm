@@ -13605,6 +13605,54 @@ def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_
     )
 
 
+def test_inspect_amendment_1966_611_1981_20_recovers_heading_tagged_subsection_payload() -> None:
+    """Heading-tagged body text may satisfy an explicit subsection replacement."""
+    bundle = build_amendment_bundle("1966/611", "1981/20", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "4")
+
+    assert group["ops_raw"] == ["REPLACE 4 § 1 mom"]
+    assert group["ops_final"] == ["REPLACE 4 § 1 mom"]
+    assert group["source_pathologies"] == []
+    assert group["sparse_slot_bindings"] == [
+        {
+            "op": "REPLACE 4 § 1 mom",
+            "target_paragraph": 1,
+            "target_item": "",
+            "target_special": "",
+            "slot_index": 1,
+            "slot_label": "1",
+        }
+    ]
+    assert group["subsection_map"][0]["mapped_payload"]["kind"] is IRNodeKind.SUBSECTION
+    assert group["subsection_map"][0]["mapped_payload"]["label"] == "1"
+    assert any(
+        observation["kind"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        and observation["detail"]["target_paragraph"] == 1
+        and observation["detail"]["rule"] == "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group["elaboration_observations"]
+    )
+
+
+def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsection_payload() -> None:
+    """A same-group heading-facet insert is not subsection body authority."""
+    bundle = build_amendment_bundle("1962/420", "2024/247", mode="official_consolidation")
+    group12 = next(
+        group
+        for group in bundle["groups"]
+        if group["target_norm"] == "12" and group["target_chapter"] == "3"
+    )
+
+    assert group12["ops_raw"] == [
+        "REPLACE 3 luku 12 § 1 mom",
+        "INSERT 3 luku 12 § otsikko",
+    ]
+    assert group12["sparse_slot_bindings"] == []
+    assert all(
+        observation["kind"] != "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+        for observation in group12["elaboration_observations"]
+    )
+
+
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
     bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 

@@ -1835,8 +1835,19 @@ class FlattenedListRow:
     is_lettered: bool
 
 
+@dataclass(frozen=True, slots=True)
+class HeadingTaggedSubsectionPayloadResult:
+    """Result for repairing a subsection body mis-tagged as a section heading."""
+
+    muutos_ir: Optional[IRNode]
+    rewritten: bool = False
+    target_paragraph: int | None = None
+    heading_text_chars: int = 0
+
+
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+_HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 
 
 def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
@@ -1964,6 +1975,87 @@ def _with_payload_normalization_rule(node: IRNode, rule_id: str) -> IRNode:
         text=node.text,
         attrs={**dict(node.attrs), _PAYLOAD_NORMALIZATION_RULE_ATTR: tuple(dict.fromkeys((*rules, rule_id)))},
         children=tuple(node.children),
+    )
+
+
+def _normalize_heading_tagged_subsection_payload(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> HeadingTaggedSubsectionPayloadResult:
+    """Admit a body-bearing section heading as an explicitly targeted subsection.
+
+    Historical Finlex XML can encode a changed ``N § M momentti`` body as:
+
+    ``section(num, heading(text), omission)``
+
+    even though the johtolause explicitly targets the subsection, not the
+    section heading facet.  This rule is deliberately narrow: it fires only
+    when there is exactly one plain subsection replacement, no same-group
+    heading-facet op, an omission shell, no subsection slots already, and the
+    only body-bearing source child is one heading node.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if any(child.kind is IRNodeKind.SUBSECTION for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    if any(op.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    subsection_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(subsection_ops) != 1:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    allowed_shell_kinds = {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.OMISSION}
+    if any(child.kind not in allowed_shell_kinds for child in muutos_ir.children):
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    heading_children = [
+        child
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.HEADING and irnode_to_text(child).strip()
+    ]
+    if len(heading_children) != 1:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+
+    target_paragraph = subsection_ops[0].target_paragraph
+    heading = heading_children[0]
+    heading_text = " ".join(irnode_to_text(heading).split())
+    subsection = _with_payload_normalization_rule(
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(target_paragraph),
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=heading_text),),
+        ),
+        _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
+    )
+    new_children: list[IRNode] = []
+    replaced_heading = False
+    for child in muutos_ir.children:
+        if child is heading:
+            new_children.append(subsection)
+            replaced_heading = True
+        else:
+            new_children.append(child)
+    if not replaced_heading:
+        return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
+    return HeadingTaggedSubsectionPayloadResult(
+        muutos_ir=_tops._with_children(muutos_ir, new_children),
+        rewritten=True,
+        target_paragraph=target_paragraph,
+        heading_text_chars=len(heading_text),
     )
 
 
@@ -3596,13 +3688,12 @@ def _collect_subsection_slot_inputs(
     intro_subsec_ops = [op for op in subsec_ops if op.target_special == "johd"]
     if muutos_ir is None or not subsec_ops:
         return None
-    # Use PayloadSurface facts when available, otherwise re-scan
-    if surface is not None and surface.subsection_count > 0:
-        amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
-    elif surface is not None and surface.subsection_count == 0:
+    amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
+    # ``surface`` may describe the pre-normalized body.  Later payload
+    # normalization can create owned subsection slots from malformed source
+    # markup, so only the no-subsection case can short-circuit here.
+    if surface is not None and surface.subsection_count == 0 and not amend_subs:
         return None
-    else:
-        amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
     duplicate_targets = sorted(
         {
             op.target_paragraph
@@ -5116,6 +5207,24 @@ def elaborate_payload_against_live(
                 "group_payload_normalization",
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
+            )
+        )
+    heading_tagged_payload = _normalize_heading_tagged_subsection_payload(
+        target_unit_kind,
+        group_ops,
+        muutos_ir,
+    )
+    muutos_ir = heading_tagged_payload.muutos_ir
+    if heading_tagged_payload.rewritten:
+        observations.append(
+            _obs(
+                _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_paragraph=heading_tagged_payload.target_paragraph,
+                heading_text_chars=heading_tagged_payload.heading_text_chars,
+                rule=_HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE,
             )
         )
     normalized_group_ops: list[AmendmentOp] = []
