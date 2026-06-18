@@ -294,6 +294,19 @@ def _bare_on_is_necessive(text: str, after_cue: int) -> bool:
     return _NECESSIVE_PARTICIPLE_RE.match(m.group(1)) is not None
 
 
+def _tulee_is_commencement(text: str, after_cue: int) -> bool:
+    """True iff ``tulee`` heads the come-into-force idiom (``tulee voimaan``).
+
+    ``X tulee voimaan`` = "comes into force" is a TEMPORAL construction (owned by
+    the temporal island), NOT the deontic necessive ``X:n tulee tehdä`` ("X must
+    do"). Gate it out so the commencement formula is not mis-keyed as obligation.
+    """
+    m = re.match(r"\s*(\w+)", text[after_cue:])
+    if m is None:
+        return False
+    return m.group(1).casefold() == "voimaan"
+
+
 def _refine_kind(token: str, polarity: str) -> str:
     """Refine the deontic kind by polarity: a negated permission/power is a
     PROHIBITION. (``ei saa`` / ``ei voida`` are already mapped to prohibition;
@@ -377,6 +390,10 @@ def parse_modal_sentence(text: str) -> ModalParse:
         if token not in _MARKER_POL_VOICE:
             continue
         if token == "on" and not _bare_on_is_necessive(text, m.end()):
+            continue
+        if token == "tulee" and _tulee_is_commencement(text, m.end()):
+            # ``tulee voimaan`` (comes into force) is temporal, owned by the
+            # temporal island — not the necessive obligation ``X:n tulee tehdä``.
             continue
         polarity, voice = _MARKER_POL_VOICE[token]
         kind = _refine_kind(token, polarity)

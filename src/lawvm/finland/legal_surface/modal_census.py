@@ -168,7 +168,7 @@ def _modal_miss_shape(missing_keys: set[str], declared_marker: str) -> str:
 #: forms a bare ``on`` governs) so they are a genuine independent signal.
 _CHEAP_SIGNALS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bon\b[^.;:\n]{0,40}?\w*t[aä]v[aä]\b", re.IGNORECASE),  # on … -ttava
-    re.compile(r"\btulee\b", re.IGNORECASE),
+    re.compile(r"\btulee\b(?!\s+voimaan)", re.IGNORECASE),  # excl. ``tulee voimaan`` (temporal)
     re.compile(r"\btäytyy\b", re.IGNORECASE),
     re.compile(r"\bei\s+saa\b", re.IGNORECASE),
     re.compile(r"\bsaa\b", re.IGNORECASE),

@@ -128,6 +128,23 @@ def test_prohibition_ei_saa() -> None:
     assert core.voice == VOICE_ACTIVE
 
 
+def test_obligation_tulee_necessive_still_fires() -> None:
+    # The necessive obligation ``X:n tulee tehdä`` must still produce a core.
+    mp = parse_modal_sentence("Hakijan tulee toimittaa selvitys viipymättä.")
+    (core,) = mp.cores
+    assert core.kind == KIND_OBLIGATION
+    assert core.cue == "tulee"
+
+
+def test_tulee_voimaan_commencement_not_obligation() -> None:
+    # ``tulee voimaan`` is the temporal come-into-force idiom (owned by the
+    # temporal island), NOT a deontic obligation — it must be gated out so the
+    # commencement formula is not mis-keyed as a modal core.
+    mp = parse_modal_sentence("Tämä laki tulee voimaan 1 päivänä tammikuuta 2016.")
+    assert all(c.cue != "tulee" for c in mp.cores)
+    assert mp.kind == "declined"
+
+
 # ---------------------------------------------------------------------------
 # Polarity + voice are first-class
 # ---------------------------------------------------------------------------
