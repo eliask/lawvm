@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from lawvm.finland.replay_pipeline import ReplaySignalBuffers
 from lawvm.finland.source_normalize import source_normalization_fact_finding_kind
@@ -35,12 +35,11 @@ def seed_replay_base_evidence_signals(
             "detail": dict(base_obs.detail or {}),
         })
 
-    source_normalization_facts = (
-        ctx.source_normalization_facts
-        if hasattr(ctx, "source_normalization_facts")
-        else ()
+    source_normalization_facts = cast(
+        tuple[Any, ...],
+        getattr(ctx, "source_normalization_facts", ()) or (),
     )
-    for norm_fact in (source_normalization_facts or ()):
+    for norm_fact in source_normalization_facts:
         finding_kind = source_normalization_fact_finding_kind(str(norm_fact.kind_value or ""))
         if finding_kind is None:
             continue

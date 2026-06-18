@@ -519,8 +519,9 @@ async def verify_statute(
             oracle_provs = extract_provisions(oracle_tree)
 
     # Load replay output (import here to avoid top-level async issues)
-    from lawvm.finland.grafter import replay_xml
-    master = await replay_xml(statute_id)
+    from lawvm.finland.replay_entrypoint import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest
+    master = replay_xml(request=ReplayXmlRequest(parent_id=statute_id))
     replay_provs = extract_provisions(master.tree)
 
     # Build cumulative consolidated state from base

@@ -89,13 +89,13 @@ def _old_group_and_builder_group(
     tokens, pairs = apply_annotations_with_jolloin_pairs(raw)
     assert pairs, f"expected jolloin pairs for: {text!r}"
 
-    surface_parse.Stream = _CapturingStream  # type: ignore[assignment, misc]
+    surface_parse.Stream = _CapturingStream  # type: ignore
     _CapturingStream._last_positions = None
     _CapturingStream._last_contexts = None
     try:
         old_model = surface_parse.parse(tokens, jolloin_renumber_pairs=pairs)
     finally:
-        surface_parse.Stream = _OrigStream  # type: ignore[misc]
+        surface_parse.Stream = _OrigStream
 
     positions = list(_CapturingStream._last_positions or [])
     contexts = {pos: (sec, ch) for pos, sec, ch in (_CapturingStream._last_contexts or [])}

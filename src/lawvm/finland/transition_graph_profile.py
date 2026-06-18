@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from typing import cast
 
+from lawvm.core.ir import LegalAddress, ProvisionTimeline
+from lawvm.corpus_store import CorpusStore
 from lawvm.finland.statute_id import canonical_statute_id, engine_statute_id
 from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 
@@ -27,7 +31,8 @@ def fi_amendment_url(_canonical_id: str, engine_id: str) -> str:
 def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:
     """Return the first Finnish HE reference attached to an amendment source."""
     try:
-        amendment_xml = corpus.read_amendment(engine_source_id)
+        store = cast(CorpusStore, corpus)
+        amendment_xml = store.read_amendment(engine_source_id)
     except Exception:
         return ""
     if not amendment_xml:
@@ -54,7 +59,8 @@ def fi_transition_graph_corpus() -> object:
 def fi_transition_graph_commencement_date(timelines: object) -> str:
     from lawvm.finland.fixed_term_expiry import _scan_statute_commencements
 
-    commencements = _scan_statute_commencements(timelines)
+    typed_timelines = cast(Mapping[LegalAddress, ProvisionTimeline], timelines)
+    commencements = _scan_statute_commencements(typed_timelines)
     if len(commencements) == 1:
         return commencements[0]
     return ""

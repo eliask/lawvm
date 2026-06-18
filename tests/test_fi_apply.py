@@ -1921,7 +1921,9 @@ def test_emit_section_snapshot_preserves_live_fold_for_sparse_item_scoped_muutos
     assert lo_ops
     section_snapshot = lo_ops[0]
     assert section_snapshot.target.path == (("section", "2"),)
-    snapshot_text = " ".join(irnode_to_text(section_snapshot.payload).split())
+    payload = section_snapshot.payload
+    assert payload is not None
+    snapshot_text = " ".join(irnode_to_text(payload).split())
     assert "A. Eläimen ruumiinavaus" in snapshot_text
     assert "H. Poronlihan" in snapshot_text
     assert len(snapshot_text) > len(" ".join(sparse_text.split()))
@@ -15510,7 +15512,7 @@ def test_johd_replace_reports_intro_list_shape_rebound_when_carrier_subsection_i
     ]
     assert pathologies[0].detail["rebound_kind"] == "intro_list_moment_shape"
     assert pathologies[1].detail["recovery_kind"] == "intro_prepend_letter_list_moment"
-    new_sec = result.resolve(sec_path)
+    new_sec = result.resolve(tuple(sec_path))
     assert new_sec is not None
     carrier = [c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "3"][0]
     assert [c.kind for c in carrier.children] == [

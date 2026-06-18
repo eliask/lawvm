@@ -8,7 +8,7 @@ import sys
 from argparse import Namespace
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from lawvm.core.invariant_profiles import core_replay_strict_profile
 from lawvm.core.timeline_invariants import (
@@ -84,7 +84,7 @@ def sweep_robust_timeline_invariants(
     for amend_count, sid in corpus:
         request = ReplayXmlRequest(
             parent_id=sid,
-            mode=mode,  # type: ignore[arg-type]
+            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
             quiet=True,
             build_full_products=True,
         )

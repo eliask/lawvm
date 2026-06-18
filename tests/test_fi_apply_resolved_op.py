@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -37,10 +37,10 @@ def _rop(
     muutos_ir: IRNode | None = None,
 ) -> ResolvedOp:
     op = AmendmentOp(
-        op_type=op_type,
+        op_id=f"{op_type.lower()}_1",
+        op_type=cast(Any, op_type),
         target_kind=TargetKind.SECTION,
         target_section="1",
-        op_id=f"{op_type.lower()}_1",
     )
     return ResolvedOp.from_amendment_op(
         op,

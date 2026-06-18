@@ -268,6 +268,7 @@ def test_heading_edelle_luvun_otsikko_anchor_letter_suffix():
     parsed = recognize_heading_edelle_luvun_otsikko(scan)
     assert parsed is not None
     node = emit_headings_nodes(parsed)[0]
+    assert isinstance(node, SurfaceHeadingPlacement)
     assert node.target_section == "12a"
     assert node == old
 
@@ -282,6 +283,7 @@ def test_heading_edelle_luvun_otsikko_num_chapter_payload():
     parsed = recognize_heading_edelle_luvun_otsikko(scan)
     assert parsed is not None
     node = emit_headings_nodes(parsed)[0]
+    assert isinstance(node, SurfaceHeadingPlacement)
     assert node.target_section == "4"
     assert node == old
 

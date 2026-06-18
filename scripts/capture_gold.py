@@ -23,14 +23,13 @@ sys.path.insert(0, str(LAWVM_DIR / "src"))
 def _capture_one(statute_id: str) -> list:
     """Capture intermediates for one statute using existing pipeline."""
     from lawvm.core.pipeline_capture import AmendmentCapture
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        _get_corpus_store,
-        get_johtolause,
-        _normalize_johtolause_verbs,
-        _is_omission_ir,
-        _fi_label_postprocessor,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.citation_routing import OP_KEYWORDS, _johtolause_references_parent
+    from lawvm.finland.corpus import _get_corpus_store
+    from lawvm.finland.frontend_compile import _tree_title
+    from lawvm.finland.helpers import _fi_label_postprocessor, _is_omission_ir
+    from lawvm.finland.metadata import get_johtolause, _normalize_johtolause_verbs
+    from lawvm.finland.normalize import parse_ops_fallback_heuristic, parse_ops_title_fallback
     from lawvm.finland.johtolause import extract_legal_ops
     from lawvm.xml_ingest import xml_to_ir_node
     from lawvm.finland.corrigendum import get_patch_table
@@ -59,7 +58,6 @@ def _capture_one(statute_id: str) -> list:
         cap.preamble_normalized = _normalize_johtolause_verbs(johto) if johto else ""
 
         # Check if sec1 fallback would be needed
-        from lawvm.finland.grafter import OP_KEYWORDS
         has_op_keywords = any(kw in cap.preamble_normalized.lower() for kw in OP_KEYWORDS)
         if not has_op_keywords and johto and len(johto) < 50:
             cap.used_sec1_fallback = True
@@ -78,14 +76,12 @@ def _capture_one(statute_id: str) -> list:
 
         if not cap.peg_ops and cap.preamble_normalized:
             # Check fallback paths
-            from lawvm.finland.grafter import parse_ops_fallback_heuristic, _tree_title
             tree = etree.fromstring(xml)
             fallback = parse_ops_fallback_heuristic(cap.preamble_normalized)
             if fallback:
                 cap.peg_ops = [{"action": op.op_type, "section": op.target_section} for op in fallback]
                 cap.extraction_path = "fallback_heuristic"
             else:
-                from lawvm.finland.grafter import parse_ops_title_fallback
                 title = _tree_title(tree)
                 title_ops = parse_ops_title_fallback(title)
                 if title_ops:
@@ -96,7 +92,6 @@ def _capture_one(statute_id: str) -> list:
 
         # Step 3: citation routing (check what the grafter would do)
         if statute_id and amendment_id:
-            from lawvm.finland.grafter import _johtolause_references_parent
             citation_johto = _normalize_johtolause_verbs(get_johtolause(xml) or "")
             refs_match = _johtolause_references_parent(citation_johto, statute_id) if citation_johto else True
             cap.citation_match = refs_match

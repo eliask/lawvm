@@ -4,6 +4,7 @@ import argparse
 import csv
 import warnings
 from collections import Counter
+from typing import Any, cast
 
 import pytest
 
@@ -72,7 +73,8 @@ def test_diagnostic_replay_enables_timeline_invariants_env(monkeypatch) -> None:
     assert seen["timeline"] == "1"
     assert os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS") is None
     assert seen["sinks"] is not None
-    assert seen["sinks"].replay_meta_out == {}
+    sinks = cast(Any, seen["sinks"])
+    assert sinks.replay_meta_out == {}
 
 
 def test_quiet_bench_skips_replay_meta_unless_timeline_opt_in(monkeypatch) -> None:

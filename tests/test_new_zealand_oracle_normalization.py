@@ -312,23 +312,23 @@ class TestEdgeCases:
 class TestFailLoud:
     def test_candidate_none_raises_type_error(self) -> None:
         with pytest.raises(TypeError, match="candidate_text must be str"):
-            classify_oracle_divergence(None, "oracle")  # type: ignore[arg-type]
+            classify_oracle_divergence(None, "oracle")  # type: ignore
 
     def test_oracle_none_raises_type_error(self) -> None:
         with pytest.raises(TypeError, match="oracle_text must be str"):
-            classify_oracle_divergence("candidate", None)  # type: ignore[arg-type]
+            classify_oracle_divergence("candidate", None)  # type: ignore
 
     def test_candidate_int_raises_type_error(self) -> None:
         with pytest.raises(TypeError, match="candidate_text must be str"):
-            classify_oracle_divergence(42, "oracle")  # type: ignore[arg-type]
+            classify_oracle_divergence(42, "oracle")  # type: ignore
 
     def test_oracle_int_raises_type_error(self) -> None:
         with pytest.raises(TypeError, match="oracle_text must be str"):
-            classify_oracle_divergence("candidate", 42)  # type: ignore[arg-type]
+            classify_oracle_divergence("candidate", 42)  # type: ignore
 
     def test_both_none_raises_type_error(self) -> None:
         with pytest.raises(TypeError, match="candidate_text must be str"):
-            classify_oracle_divergence(None, None)  # type: ignore[arg-type]
+            classify_oracle_divergence(None, None)  # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +342,7 @@ class TestReturnTypeContracts:
         assert isinstance(result, NZDivergenceClass)
         # frozen: mutation must raise
         with pytest.raises(dataclasses.FrozenInstanceError):
-            result.sub_family = NZDivergenceSubFamily.substantive  # type: ignore[misc]
+            result.sub_family = NZDivergenceSubFamily.substantive  # type: ignore
 
     def test_is_editorial_consistent_with_sub_family(self) -> None:
         """is_editorial must match the sub_family enum value in every case."""

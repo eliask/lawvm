@@ -1034,8 +1034,9 @@ def test_build_subsection_slot_assignment_shares_in_place_intro_item_slot() -> N
     ]
 
     assignment = _build_subsection_slot_assignment(muutos_ir, ops)
-    assert assignment.for_op(ops[2]) is not None
-    assert assignment.for_op(ops[2]).label == "1"
+    op2_node = assignment.for_op(ops[2])
+    assert op2_node is not None
+    assert op2_node.label == "1"
     assert any(obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING" for obs in assignment.binding_observations)
 
     unmerged_slots = tuple(
@@ -1052,8 +1053,9 @@ def test_build_subsection_slot_assignment_shares_in_place_intro_item_slot() -> N
     )
     unmerged_muutos_ir = IRNode(kind=muutos_ir.kind, label=muutos_ir.label, children=unmerged_slots)
     unmerged_assignment = _build_subsection_slot_assignment(unmerged_muutos_ir, ops)
-    assert unmerged_assignment.for_op(ops[2]) is not None
-    assert unmerged_assignment.for_op(ops[2]).label == "5"
+    unmerged_op2_node = unmerged_assignment.for_op(ops[2])
+    assert unmerged_op2_node is not None
+    assert unmerged_op2_node.label == "5"
     assert not any(
         obs.kind == "ELAB.SAME_TARGET_ITEM_SLOT_SHARING"
         for obs in unmerged_assignment.binding_observations

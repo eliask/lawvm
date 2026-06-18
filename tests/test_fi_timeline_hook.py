@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any, cast
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_timeline_invariants_env_sets_replay_meta_flag(monkeypatch) -> None:
         mode="legal_pit",
         as_of=None,
         profile=_Profile(),
-        plan=_Plan(),
+        plan=cast(Any, _Plan()),
         corpus=None,
         oracle_selector=None,
         replay_fold_state=object(),
@@ -146,6 +147,8 @@ def test_timeline_invariants_corpus_pin_2009_953_robust_skips_title_facet(
     )
 
     rows = meta.get("timeline_invariant_violations") or []
+    assert isinstance(rows, list)
+    rows = cast(list[dict[str, object]], rows)
     assert not any(str(row.get("address")) == "/heading" for row in rows)
     assert not any(row.get("kind") == "timeline_without_ir" for row in rows)
     assert all(row.get("tier") == "robust" for row in rows)

@@ -563,7 +563,7 @@ def _proof(**kwargs: object) -> NZMutationBoundaryProof:
         oracle_match_rule_id="rid",
     )
     base.update(kwargs)
-    return NZMutationBoundaryProof(**base)  # type: ignore[arg-type]
+    return NZMutationBoundaryProof(**base)  # type: ignore
 
 
 def test_candidate_predicate_true_for_substantive_commensurable_residual() -> None:

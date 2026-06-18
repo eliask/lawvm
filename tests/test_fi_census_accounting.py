@@ -229,6 +229,7 @@ def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
 
     store = TransparentCorpusStore(Farchive(_archive_path()))
     xb = store.read_source("2002/723") or store.read_amendment("2002/723")
+    assert xb is not None
     johto = get_johtolause(xb)
     old = parse_text_with(johto, surface_parse.parse)
     new = parse_text_with(johto, new_parser.parse)

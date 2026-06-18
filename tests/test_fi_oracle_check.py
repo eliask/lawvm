@@ -3127,9 +3127,12 @@ def test_strip_editorial_note_containers_catches_block_form_noteAuthorial_in_ora
       <block name="noteAuthorial"><p>Another note.</p></block>
     </body>'''
     root = etree.fromstring(xml.encode("utf-8"))
-    assert len(root.xpath('.//*[local-name()="block" and @name="noteAuthorial"]')) == 2
+    xpath_result = root.xpath('.//*[local-name()="block" and @name="noteAuthorial"]')
+    assert isinstance(xpath_result, list)
+    assert len(xpath_result) == 2
     _strip_editorial_note_containers(root)
     remaining = root.xpath('.//*[local-name()="block" and @name="noteAuthorial"]')
+    assert isinstance(remaining, list)
     assert len(remaining) == 0
     # Real content survives
     assert "Real law text here" in etree.tostring(root, method="text", encoding="unicode")

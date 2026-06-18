@@ -159,12 +159,12 @@ def fi_interlink_from_reference_mention(
     """Adapt a Finnish ReferenceMention-like object into the neutral contract."""
     from lawvm.core.reference_mention import CiteConfidence, CiteKind
 
-    src = mention.source_provision_ref
-    tgt = mention.target_provision_ref
+    src = getattr(mention, "source_provision_ref", None)
+    tgt = getattr(mention, "target_provision_ref", None)
     phrase_lemma = str(getattr(mention, "phrase_lemma", "") or "")
     edge_subtype = str(getattr(mention, "edge_subtype", "") or "")
-    cite_kind = mention.cite_kind
-    cite_confidence = mention.cite_confidence
+    cite_kind = getattr(mention, "cite_kind", None)
+    cite_confidence = getattr(mention, "cite_confidence", None)
 
     source_statute_id = str(getattr(src, "statute_id", "") or "")
     source_work = fi_work_ref(source_statute_id)
@@ -240,7 +240,7 @@ def fi_interlink_from_inline_citation(
 
     source_doc_id = str(getattr(citation, "source_doc_id", "") or "")
     source_doc_kind = str(getattr(citation, "source_doc_kind", "") or "")
-    kind = citation.kind
+    kind = getattr(citation, "kind", None)
     canonical_id = str(getattr(citation, "canonical_id", "") or "")
 
     source_work_kind = "government_proposal" if source_doc_kind == "he" else "normative_act"
@@ -287,7 +287,7 @@ def fi_interlink_from_preparatory_reference(
     source_statute_id = str(getattr(ref, "source_statute_id", "") or "")
     canonical_id = str(getattr(ref, "canonical_id", "") or "")
     target_work = fi_work_ref_from_canonical_id(canonical_id) if canonical_id else None
-    confidence_value = ref.confidence
+    confidence_value = getattr(ref, "confidence", None)
     status = InterlinkResolutionStatus.RESOLVED if target_work is not None else InterlinkResolutionStatus.UNRESOLVED
     confidence = InterlinkConfidence.EXACT if confidence_value == PreparatoryReferenceConfidence.EXACT else InterlinkConfidence.HEURISTIC
     if confidence_value == PreparatoryReferenceConfidence.UNRESOLVED:

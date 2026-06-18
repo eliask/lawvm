@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 
 import lxml.etree as etree
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.payload_surface import GroupSurface, build_group_surface as _build_group_surface_factory
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
@@ -211,7 +212,7 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
         body_ir=muutos_ir,
         cross_heading_ir=cross_ir,
         source_statute=source_statute,
-        target_unit_kind=target_unit_kind,
+        target_unit_kind=cast(TargetUnitKind, target_unit_kind),
         target_norm=target_norm,
         target_chapter=target_chapter,
     )

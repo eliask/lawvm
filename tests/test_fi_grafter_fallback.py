@@ -16,6 +16,7 @@ from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
 from lawvm.core.canonical_intent import ExecutionContract, IntentKind, Move, NodeTarget, OccupancyPolicy, Relabel
 from lawvm.core.elaboration_context import (
+    TargetUnitKind,
     build_payload_elaboration_context,
     snapshot_replay_lookups,
     snapshot_target_context,
@@ -200,7 +201,7 @@ from lawvm.tools.trace_section import build_trace_bundle
 
 def _prune_container_payload_sections_shadowed_by_standalone_targets(
     master: "ReplayState",
-    target_unit_kind: str,
+    target_unit_kind: TargetUnitKind,
     target_norm: str,
     muutos_ir: IRNode | None,
     standalone_section_targets: set[str],
@@ -3915,6 +3916,7 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
             group_ops=[op],
             standalone_section_targets=set(),
             foreign_scoped_standalone_section_targets=set(),
+            foreign_scoped_replace_section_targets=set(),
             effective_target_part=None,
             muutos_tree=muutos_tree,
             johto="ruotsinkielinen sanamuoto",

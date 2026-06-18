@@ -1431,8 +1431,10 @@ def export_transition_graph(
                 source_statute_id=canonical_id,
                 corpus=corpus,
             )
+            resolve_target = interlink_provider.resolve_target
+            assert resolve_target is not None
             def target_resolver(target_ref: Any) -> Any:
-                return interlink_provider.resolve_target(
+                return resolve_target(
                     target_ref,
                     preview_context,
                 )

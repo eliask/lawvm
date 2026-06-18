@@ -60,9 +60,10 @@ def _scope_keys_from_text(text: str, *, lane: str) -> set[str]:
             return set()
     else:
         from lawvm.finland.johtolause import surface_parse as legacy_surface_parse
+        from lawvm.finland.johtolause.lexer import tokenize
 
         try:
-            tokens = legacy_surface_parse.tokenize(text)
+            tokens = tokenize(text)
             clause = legacy_surface_parse.parse(tokens)
         except Exception:
             return set()

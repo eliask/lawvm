@@ -33,7 +33,8 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     from lawvm.finland.amendment_index import get_amendment_children
     from lawvm.finland.cross_refs import extract_cross_refs
     from lawvm.finland.delegation import extract_delegations
-    from lawvm.finland.corpus import get_corpus, _fi_label_postprocessor
+    from lawvm.finland.corpus import get_corpus
+    from lawvm.finland.helpers import _fi_label_postprocessor
     from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.finland.statute_id import engine_statute_id

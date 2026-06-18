@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import lxml.etree as etree
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply_ir_ops import _relabel_subsection_ir
 from lawvm.finland.constraints import _find_muutos_node
@@ -27,6 +28,7 @@ from lawvm.finland.helpers import (
     _roman_label_to_arabic,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
+
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _UNLABELED_ADJACENT_SECTION_CONTINUATION_RULE_ID = (
@@ -242,7 +244,7 @@ def _split_unlabeled_continuation_subsection(
     wrap_up_subsection = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label=str(int(first_label) + 1),
-        text=None,
+        text=continuation.text or "",
         attrs=dict(continuation.attrs),
         children=tuple(suffix_children),
     )
@@ -323,7 +325,7 @@ def _find_muutos_ir(
     """
     muutos_sec = _find_muutos_node(
         muutos_tree,
-        target_unit_kind,
+        cast(TargetUnitKind, target_unit_kind),
         target_norm,
         target_chapter,
         target_part,

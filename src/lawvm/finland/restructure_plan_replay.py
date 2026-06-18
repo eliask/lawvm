@@ -279,7 +279,7 @@ def emit_restructure_plan_section_snapshot_legal_operations(
 
 
 def emit_restructure_skip_findings(
-    exec_ops: Iterable[object],
+    exec_ops: Iterable[ExecutedOp],
     findings_out: Optional[list[Finding]],
     amendment_id: str,
 ) -> None:

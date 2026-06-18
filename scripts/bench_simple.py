@@ -44,14 +44,15 @@ def _clean(text: str) -> str:
 def _score_one(args):
     sid, variant = args
     try:
-        from lawvm.finland.grafter import get_ground_truth
-        from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.corpus import get_ground_truth
+        from lawvm.finland.replay_entrypoint import replay_xml
+        from lawvm.finland.replay_request import ReplayXmlRequest
 
         # Suppress replay output
         old_stdout = sys.stdout
         sys.stdout = io.StringIO()
         try:
-            master = replay_xml(sid, mode="legal_pit", quiet=True)
+            master = replay_xml(request=ReplayXmlRequest(parent_id=sid, mode="legal_pit", quiet=True))
         finally:
             sys.stdout = old_stdout
 

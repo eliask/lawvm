@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 # Patterns for classifying violation strings produced by check_invariants()
 _DUPLICATE_RE = re.compile(r"duplicate\s+(\w+):(\S+)", re.IGNORECASE)
@@ -373,9 +373,10 @@ def harvest_replay_invariants(
         for warning in warnings_raw:
             if not isinstance(warning, Mapping):
                 continue
-            lint_kind = str(warning.get("kind") or meta_key)
-            path = str(warning.get("path") or "")
-            node_kind = str(warning.get("node_kind") or "")
+            warning_dict = cast(dict[str, object], warning)
+            lint_kind = str(warning_dict.get("kind") or meta_key)
+            path = str(warning_dict.get("path") or "")
+            node_kind = str(warning_dict.get("node_kind") or "")
             detail = f"{node_kind}:{lint_kind}" if node_kind else lint_kind
             _append_record(
                 records,
@@ -385,7 +386,7 @@ def harvest_replay_invariants(
                 detail=detail,
                 source="replay_meta_lint",
                 adj_kind=adj_kind,
-                phase=str(warning.get("phase") or "materialized"),
+                phase=str(warning_dict.get("phase") or "materialized"),
                 severity="warning",
             )
 

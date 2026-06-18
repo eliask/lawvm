@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from typing import Protocol, cast
 
 from lawvm.finland.section_text_extractor import extract_sections_text
 from lawvm.finland.statute_id import engine_statute_id
@@ -21,6 +22,12 @@ from lawvm.tools.transition_graph_interlinks import (
     default_interlink_target_row,
 )
 
+
+class _PreviewCorpus(Protocol):
+    def read_source(self, statute_id: str, /) -> bytes | None: ...
+    def read_oracle(self, statute_id: str, /) -> bytes | None: ...
+
+
 _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 _CHAPTER_EID_RE = re.compile(r"chp_(\d{1,6})(?:__|$)", re.IGNORECASE)
 _SECTION_LOCATOR_RE = re.compile(r"(?:^|/)section:([^/]+)")
@@ -30,7 +37,7 @@ _SUBSECTION_LOCATOR_RE = re.compile(r"(?:^|/)subsection:([^/]+)")
 def build_fi_interlink_target_row(
     target_ref: LawvmInterlinkTargetRef,
     *,
-    corpus: object,
+    corpus: _PreviewCorpus,
 ) -> LawvmInterlinkTargetRow:
     """Build a Finnish preview row for one neutral interlink target."""
     if target_ref.jurisdiction != "fi" or target_ref.work_kind != "normative_act":
@@ -73,7 +80,9 @@ def project_fi_interlinks_for_transition_graph(
     """Project Finnish citation/interlink rows for transition-graph export."""
     from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
 
-    rows, _diagnostics = _project_interlinks_for_statute(statute_id, corpus)
+    rows, _diagnostics = _project_interlinks_for_statute(
+        statute_id, cast(_PreviewCorpus, corpus)
+    )
     return [LawvmInterlinkRow.from_mapping(row) for row in rows]
 
 
@@ -83,7 +92,9 @@ def resolve_fi_interlink_target_row(
 ) -> LawvmInterlinkTargetRow:
     if context.corpus is None:
         return _unsupported_fi_target_row(target_ref, status="missing_local_corpus")
-    return build_fi_interlink_target_row(target_ref, corpus=context.corpus)
+    return build_fi_interlink_target_row(
+        target_ref, corpus=cast(_PreviewCorpus, context.corpus)
+    )
 
 
 def fi_transition_graph_interlink_provider() -> LawvmInterlinkExportProvider:
@@ -164,7 +175,7 @@ def _target_preview_payload(
     target_ref: LawvmInterlinkTargetRef,
     *,
     engine_id: str,
-    corpus: object,
+    corpus: _PreviewCorpus,
 ) -> dict[str, object]:
     locator_label = _locator_label(target_ref.locator)
     base_payload: dict[str, object] = {

@@ -256,11 +256,15 @@ def project_transition_detector_findings(
         if runner is None:
             continue
         if detector == "descendant_sibling_loss":
-            results = runner(before_ir, operations)
+            results = cast(
+                Callable[[IRNode, Sequence[LegalOperation]], list[object]], runner
+            )(before_ir, operations)
         else:
-            results = runner(operations)
+            results = cast(
+                Callable[[Sequence[LegalOperation]], list[object]], runner
+            )(operations)
         for result in results:
-            replay_print(f"WARNING transition detector: {result.message}")
+            replay_print(f"WARNING transition detector: {getattr(result, 'message', '')}")
             finding = _transition_detector_finding(
                 result=result,
                 detector=detector,
@@ -273,11 +277,11 @@ def project_transition_detector_findings(
             rows.append(dict(finding.detail))
 
     if replay_meta_out is not None and rows:
-        existing = replay_meta_out.setdefault("transition_detector_violations", [])
-        if isinstance(existing, list):
-            existing.extend(rows)
-        else:
-            replay_meta_out["transition_detector_violations"] = rows
+        existing = cast(
+            list[dict[str, object]],
+            replay_meta_out.setdefault("transition_detector_violations", []),
+        )
+        existing.extend(rows)
 
 
 __all__ = [

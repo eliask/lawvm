@@ -17,7 +17,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from zoneinfo import ZoneInfo
 
 from lawvm.core.ir import IRNode
@@ -32,6 +32,7 @@ from lawvm.tools.transition_graph_interlinks import (
     place_lawvm_interlinks,
     rendered_text_segments,
 )
+from lawvm.corpus_store import CorpusStore
 from lawvm.tools.transition_graph_jurisdictions import transition_graph_adapter_for_jurisdiction
 
 _ADDRESSABLE_KINDS = frozenset(
@@ -239,9 +240,10 @@ def statute_ids_from_manifest(path: Path, *, jurisdiction: str) -> tuple[str, ..
 
 def statute_ids_from_fi_corpus(*, substantive_body_only: bool = True) -> tuple[str, ...]:
     adapter = transition_graph_adapter_for_jurisdiction("fi")
-    corpus = adapter.profile.corpus()
-    if corpus is None:
+    corpus_obj = adapter.profile.corpus()
+    if corpus_obj is None:
         raise ValueError("Finland transition-graph profile has no corpus")
+    corpus = cast(CorpusStore, corpus_obj)
     raw_statute_ids = _fi_base_law_ids_from_corpus(corpus)
     accepted_ids: list[str] = []
     for raw_id in raw_statute_ids:
@@ -256,26 +258,24 @@ def statute_ids_from_fi_corpus(*, substantive_body_only: bool = True) -> tuple[s
     )
 
 
-def _fi_base_law_ids_from_corpus(corpus: object) -> tuple[str, ...]:
-    oracle_path_index = getattr(corpus, "oracle_path_index", None)
-    if callable(oracle_path_index):
-        return tuple(str(statute_id) for statute_id in oracle_path_index())
-    list_statute_ids = getattr(corpus, "list_statute_ids", None)
-    if callable(list_statute_ids):
-        return tuple(str(statute_id) for statute_id in list_statute_ids())
+def _fi_base_law_ids_from_corpus(corpus: CorpusStore) -> tuple[str, ...]:
+    oracle = corpus.oracle_path_index()
+    if oracle:
+        return tuple(str(statute_id) for statute_id in oracle)
+    statute_ids = corpus.list_statute_ids()
+    if statute_ids:
+        return tuple(str(statute_id) for statute_id in statute_ids)
     raise ValueError("Finland corpus exposes neither oracle_path_index nor list_statute_ids")
 
 
-def _corpus_base_law_has_substantive_body(corpus: object, statute_id: str) -> bool:
-    read_oracle = getattr(corpus, "read_oracle", None)
-    if callable(read_oracle):
-        xml_bytes = read_oracle(statute_id)
-        if xml_bytes:
-            return _source_xml_has_substantive_body(xml_bytes)
+def _corpus_base_law_has_substantive_body(corpus: CorpusStore, statute_id: str) -> bool:
+    xml_bytes = corpus.read_oracle(statute_id)
+    if xml_bytes:
+        return _source_xml_has_substantive_body(xml_bytes)
     return _corpus_source_has_substantive_body(corpus, statute_id)
 
 
-def _corpus_source_has_substantive_body(corpus: object, statute_id: str) -> bool:
+def _corpus_source_has_substantive_body(corpus: CorpusStore, statute_id: str) -> bool:
     xml_bytes = corpus.read_source(statute_id)
     if not xml_bytes:
         return False
@@ -1622,7 +1622,7 @@ def _import_into_bare_repo(
     )
     if proc.stdin is None:
         raise RuntimeError("git fast-import stdin was not opened")
-    byte_count = _write_fast_import_chunks(proc.stdin, commits)
+    byte_count = _write_fast_import_chunks(cast(BinaryIO, proc.stdin), commits)
     proc.stdin.close()
     return_code = proc.wait()
     if return_code:
@@ -1676,7 +1676,7 @@ def _import_spool_into_bare_repo(
     if proc.stdin is None:
         raise RuntimeError("git fast-import stdin was not opened")
     byte_count = _write_spooled_fast_import_chunks(
-        proc.stdin,
+        cast(BinaryIO, proc.stdin),
         db_path,
         jurisdiction=jurisdiction,
         timestamp_zone=timestamp_zone,

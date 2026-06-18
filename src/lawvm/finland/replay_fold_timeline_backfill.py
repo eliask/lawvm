@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, cast
 
-from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import compile_timelines, select_active_version
 from lawvm.finland.apply_runtime_support import _stamp_exact_section_snapshot_payload
 
@@ -93,7 +94,7 @@ def _migration_source_for_address(
 
 
 def _active_timeline_content(
-    timelines: dict[LegalAddress, object],
+    timelines: dict[LegalAddress, ProvisionTimeline],
     address: LegalAddress,
     *,
     as_of: str,
@@ -115,7 +116,7 @@ def _container_includes_section_label(container: IRNode, section_label: str) -> 
 
 
 def _timeline_intentionally_absent(
-    timelines: dict[LegalAddress, object],
+    timelines: dict[LegalAddress, ProvisionTimeline],
     address: LegalAddress,
     *,
     as_of: str,
@@ -136,7 +137,7 @@ def _timeline_intentionally_absent(
 
 
 def _has_timeline_authority(
-    timelines: dict[LegalAddress, object],
+    timelines: dict[LegalAddress, ProvisionTimeline],
     address: LegalAddress,
     *,
     as_of: str,
@@ -168,7 +169,7 @@ def _preview_rekeyed_timelines(
     as_of: str,
     temporal_events: tuple[object, ...],
     base_enacted_date: str,
-) -> dict[LegalAddress, object]:
+) -> dict[LegalAddress, ProvisionTimeline]:
     from lawvm.finland.replay_products import (
         _rekey_timelines_with_migration_events,
         fi_label_norm,
@@ -179,7 +180,7 @@ def _preview_rekeyed_timelines(
         lo_ops,
         base_enacted_date=base_enacted_date,
         label_norm=fi_label_norm,
-        temporal_events=temporal_events,
+        temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
     )
     return _rekey_timelines_with_migration_events(
         raw_timelines,

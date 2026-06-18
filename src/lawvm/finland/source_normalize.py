@@ -470,7 +470,7 @@ def _promote_dotted_paragraph_subsections(
                 continue
 
         intro_value = _dotted_intro_moment_value(child)
-        if expected_next is not None and intro_value == expected_next:
+        if expected_next is not None and intro_value is not None and intro_value == expected_next:
             rewritten_child = _with_dotted_intro_subsection_label(child, intro_value)
             rewritten.append(rewritten_child)
             facts.append(

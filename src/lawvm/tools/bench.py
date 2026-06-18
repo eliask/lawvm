@@ -984,13 +984,14 @@ def _oracle_stale_adjusted_stats(
 # ---------------------------------------------------------------------------
 
 
-def _score_one_with_meta(args: Tuple) -> Tuple[int, str, float, str, float, str, float]:
-    """Wrapper for parallel execution — takes (count, sid, diagnostic_replay, mode[, fast]).
+def _score_one_with_meta(
+    args: Tuple[int, str, Any, Literal["official_consolidation", "legal_pit"], bool],
+) -> Tuple[int, str, float, str, float, str, float, Dict[str, int]]:
+    """Wrapper for parallel execution — takes (count, sid, diagnostic_replay, mode, fast).
 
-    Returns (count, sid, struct_sim, status, elapsed, warning_summary, lev_sim).
+    Returns (count, sid, struct_sim, status, elapsed, warning_summary, lev_sim, warning_counts).
     """
-    count, sid, diagnostic_replay, mode = args[:4]
-    fast = args[4] if len(args) > 4 else False
+    count, sid, diagnostic_replay, mode, fast = args
     t0 = time.time()
     sid, sim, status, lev_sim, warning_counts = _score_one_with_warning_summary(
         sid,
@@ -1011,11 +1012,13 @@ def _score_one_with_meta(args: Tuple) -> Tuple[int, str, float, str, float, str,
     )
 
 
-def _score_one_with_meta_section(args: Tuple[int, str, bool, Literal["official_consolidation", "legal_pit"]]) -> Tuple[int, str, float, float, str, float, str]:
+def _score_one_with_meta_section(
+    args: Tuple[int, str, bool, Literal["official_consolidation", "legal_pit"]],
+) -> Tuple[int, str, float, float, str, float, str, Dict[str, int]]:
     """Wrapper for parallel execution with --section-score.
 
     Takes (count, sid, diagnostic_replay, mode); returns
-    (count, sid, text_sim, section_sim, status, elapsed).
+    (count, sid, text_sim, section_sim, status, elapsed, warning_summary, warning_counts).
     """
     count, sid, diagnostic_replay, _mode = args
     t0 = time.time()
@@ -2487,7 +2490,7 @@ def main(args) -> None:
         )
 
     if diagnostic_counts:
-        print_bench_diagnostic_tier_rollup(merge_diagnostic_counter_dicts(diagnostic_counts.values()))
+        print_bench_diagnostic_tier_rollup(merge_diagnostic_counter_dicts(list(diagnostic_counts.values())))
 
     flat = [(sid, sim, st) for _, sid, sim, st, _ in results]
     stats = _compute_stats(flat)

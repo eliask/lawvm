@@ -472,7 +472,8 @@ def project_materialized_provisions_wrapper(materialized: IRNode, replay_fold: I
                     insert_at = index
                     break
             chapter_children.insert(insert_at, moved_section)
-            existing_labels.add(moved_section.label)
+            if moved_section.label is not None:
+                existing_labels.add(moved_section.label)
         children[chapter_index] = dc_replace(chapter, children=tuple(chapter_children))
 
     if wrapper_children:

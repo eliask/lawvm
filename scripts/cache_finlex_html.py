@@ -28,7 +28,7 @@ from lawvm.finland.finlex_html import (
     _finlex_html_url,
     _html_locator,
 )
-from lawvm.finland.grafter import get_corpus
+from lawvm.finland.corpus import get_corpus
 
 # ---------------------------------------------------------------------------
 # Progress tracking

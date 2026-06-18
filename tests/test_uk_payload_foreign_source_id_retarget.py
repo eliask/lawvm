@@ -11,6 +11,7 @@ matches the affected act's structural eIds.
 from __future__ import annotations
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.payload_identity import (
@@ -44,19 +45,19 @@ def _effect() -> UKEffectRecord:
 def _section_payload(*, root_id_key: str, root_id_value: str) -> UKMutableNode:
     """An inserted section whose root carries an identity under *root_id_key*."""
     return UKMutableNode(
-        kind="section",
+        kind=IRNodeKind.SECTION,
         label="138A",
         attrs={root_id_key: root_id_value},
         children=[
             UKMutableNode(
-                kind="subsection",
+                kind=IRNodeKind.SUBSECTION,
                 label="1",
                 children=[
-                    UKMutableNode(kind="paragraph", label="a"),
-                    UKMutableNode(kind="paragraph", label="b"),
+                    UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+                    UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="b"),
                 ],
             ),
-            UKMutableNode(kind="subsection", label="2"),
+            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2"),
         ],
     )
 
@@ -140,10 +141,10 @@ def test_whole_chapter_target_reanchored_to_container_eid() -> None:
     id is re-anchored to that derived eId, and the foreign id is dropped.
     """
     payload = UKMutableNode(
-        kind="chapter",
+        kind=IRNodeKind.CHAPTER,
         label="Chapter 5C",
         attrs={"id": "p03769"},
-        children=[UKMutableNode(kind="section", label="41C")],
+        children=[UKMutableNode(kind=IRNodeKind.SECTION, label="41C")],
     )
     target = LegalAddress((("part", "2"), ("chapter", "5c")))
     records: list[dict[str, object]] = []
@@ -176,26 +177,26 @@ def test_whole_chapter_child_section_gets_flat_eid() -> None:
     descendant namespace rather than inherit the container eId.
     """
     payload = UKMutableNode(
-        kind="chapter",
+        kind=IRNodeKind.CHAPTER,
         label="Chapter 7A",
         attrs={"eId": "part-4-chapter-7A"},
         children=[
             UKMutableNode(
-                kind="section",
+                kind=IRNodeKind.SECTION,
                 label="289A",
                 children=[
                     UKMutableNode(
-                        kind="subsection",
+                        kind=IRNodeKind.SUBSECTION,
                         label="1",
                         children=[
-                            UKMutableNode(kind="paragraph", label="a"),
-                            UKMutableNode(kind="paragraph", label="b"),
+                            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+                            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="b"),
                         ],
                     ),
-                    UKMutableNode(kind="subsection", label="2"),
+                    UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2"),
                 ],
             ),
-            UKMutableNode(kind="section", label="289B"),
+            UKMutableNode(kind=IRNodeKind.SECTION, label="289B"),
         ],
     )
     target = LegalAddress((("part", "4"), ("chapter", "7a")))

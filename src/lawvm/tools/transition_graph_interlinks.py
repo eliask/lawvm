@@ -202,9 +202,18 @@ def _optional_text(value: object) -> str | None:
 
 
 def _optional_int(value: object) -> int | None:
-    if value is None or value == "":
+    if value is None:
         return None
-    return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        return int(text)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
 
 
 def enrich_lawvm_interlink_targets(

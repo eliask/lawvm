@@ -4,6 +4,7 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 from lawvm.core.invariant_surface_matrix import FI_REPLAY_FOLD_SURFACE
 from lawvm.tools.invariant_harvest import (
@@ -162,8 +163,9 @@ def _replay_profile_ids_by_surface(raw: object) -> dict[str, str]:
     for profile in raw:
         if not isinstance(profile, dict):
             continue
-        surface = str(profile.get("tree_surface") or profile.get("surface_id") or "")
-        profile_id = str(profile.get("profile_id") or "")
+        profile_dict = cast(dict[str, object], profile)
+        surface = str(profile_dict.get("tree_surface") or profile_dict.get("surface_id") or "")
+        profile_id = str(profile_dict.get("profile_id") or "")
         if surface and profile_id:
             grouped.setdefault(surface, []).append(profile_id)
     return {surface: ids[0] for surface, ids in grouped.items() if ids}

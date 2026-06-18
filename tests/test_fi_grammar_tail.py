@@ -35,7 +35,7 @@ from lawvm.finland.johtolause.grammar.tail import (
 )
 from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
-from lawvm.finland.johtolause.surface_model import SurfaceNode
+from lawvm.finland.johtolause.surface_model import SurfaceNode, SurfaceWitness
 
 
 def _canon(node: SurfaceNode) -> Any:
@@ -104,7 +104,10 @@ def _our_postfix(
 def test_exception_byte_identical(text: str, inherited_chapter: str) -> None:
     olds = _old_nodes(text, "fi.lukuun_ottamatta_exception")
     assert olds, "fixture must trigger the exception witness in the OLD parser"
-    anchor = olds[0].witness.source_span[0]
+    witness = olds[0].witness
+    assert isinstance(witness, SurfaceWitness)
+    assert witness.source_span is not None
+    anchor = witness.source_span[0]
     ours = _our_exception(text, anchor, chapter=inherited_chapter)
     assert ours is not None, "recognizer declined an OLD-classified exception"
     assert [_canon(n) for n in ours] == [_canon(n) for n in olds]
@@ -117,7 +120,10 @@ def test_exception_descendant_coordination_branch() -> None:
     text = "muutetaan 1-5 §, lukuun ottamatta 3 §:n 1 ja 2 momenttia"
     olds = _old_nodes(text, "fi.lukuun_ottamatta_exception")
     assert olds
-    anchor = olds[0].witness.source_span[0]
+    witness = olds[0].witness
+    assert isinstance(witness, SurfaceWitness)
+    assert witness.source_span is not None
+    anchor = witness.source_span[0]
     ours = _our_exception(text, anchor)
     assert ours is not None
     assert [_canon(n) for n in ours] == [_canon(n) for n in olds]
@@ -147,7 +153,10 @@ def test_exception_declines_non_exception() -> None:
 def test_postfix_insert_byte_identical(text: str) -> None:
     olds = _old_nodes(text, "fi.insertion_section_postfix_chapter")
     assert olds, "fixture must trigger the postfix-chapter witness in the OLD parser"
-    anchor = olds[0].witness.source_span[0]
+    witness = olds[0].witness
+    assert isinstance(witness, SurfaceWitness)
+    assert witness.source_span is not None
+    anchor = witness.source_span[0]
     ours = _our_postfix(text, anchor)
     assert ours is not None, "recognizer declined an OLD-classified postfix insert"
     assert [_canon(n) for n in ours] == [_canon(n) for n in olds]

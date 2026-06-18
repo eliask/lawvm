@@ -27,7 +27,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.corpus_store import get_corpus_store
 from lawvm.core.pipeline_capture import CaptureStore
-from lawvm.finland.grafter import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.xml_ingest import xml_to_ir_node
 
 # ---------------------------------------------------------------------------

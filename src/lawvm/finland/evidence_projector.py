@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, cast
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +38,7 @@ class EvidenceProjectionResult:
 
 
 def project_meta_rows(
-    rows: list[Mapping[str, Any]],
+    rows: Sequence[Mapping[str, Any]],
     *,
     meta_key: str,
     replay_meta_out: dict[str, object] | None,
@@ -49,15 +50,14 @@ def project_meta_rows(
         return projected
 
     existing = replay_meta_out.get(meta_key)
-    if existing is None:
-        replay_meta_out[meta_key] = projected
-        return projected
-
-    merged = list(existing) if isinstance(existing, list) else []
+    merged: list[Mapping[str, Any]] = []
+    if isinstance(existing, list):
+        for row in existing:
+            if isinstance(row, dict):
+                merged.append(cast(Mapping[str, Any], row))
     seen = {
         tuple(str(row.get(key) or "") for key in dedup_keys)
         for row in merged
-        if isinstance(row, dict)
     }
     for row in projected:
         if dedup_keys:

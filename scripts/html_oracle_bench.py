@@ -53,10 +53,11 @@ def _normalize_label(raw: str) -> str:
 
 def _replay_section_labels(sid: str) -> list[str] | None:
     """Run replay and extract section labels from IR tree."""
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_entrypoint import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest
 
     try:
-        master = replay_xml(sid)
+        master = replay_xml(request=ReplayXmlRequest(parent_id=sid))
     except Exception:
         return None
 

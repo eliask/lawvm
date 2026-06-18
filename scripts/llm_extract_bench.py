@@ -22,7 +22,7 @@ import asyncio
 
 from lawvm.core.ir import IRNode
 from lawvm.xml_ingest import xml_to_ir_node
-from lawvm.finland.grafter import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor
 
 LAWVM_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(LAWVM_DIR / "src"))
@@ -151,11 +151,8 @@ def _extract_amendment_body_sections(xml_bytes: bytes) -> dict[str, IRNode]:
 
 def _get_peg_ops(amendment_id: str, parent_id: str) -> List[Dict[str, Any]]:
     """Extract ops via PEG parser (existing grafter path)."""
-    from lawvm.finland.grafter import (
-        get_johtolause,
-        _normalize_johtolause_verbs,
-        _get_corpus_store,
-    )
+    from lawvm.finland.corpus import _get_corpus_store
+    from lawvm.finland.metadata import get_johtolause, _normalize_johtolause_verbs
     from lawvm.finland.johtolause import extract_legal_ops
 
     cs = _get_corpus_store()
@@ -241,11 +238,9 @@ async def _process_statute(
     verbose: bool,
 ) -> Dict[str, Any]:
     """Process one statute: extract ops via LLM for each amendment, score."""
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        get_johtolause,
-        _get_corpus_store,
-    )
+    from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+    from lawvm.finland.corpus import _get_corpus_store
+    from lawvm.finland.metadata import get_johtolause
 
     cs = _get_corpus_store()
 

@@ -5,7 +5,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 import lxml.etree as etree
 
@@ -17,6 +17,7 @@ from lawvm.finland.body_coverage import (
     extract_body_coverage,
 )
 from lawvm.finland.body_pairing import (
+    PayloadAssignment,
     assign_body_units_subtree_aware,
     build_chapter_subtree_coverage,
     build_clause_claims as _bp_build_clause_claims,
@@ -281,7 +282,7 @@ def _prepare_body_pairing(
     inventory = build_observed_body_inventory(muutos_tree)
     ast = _bp_clause_ast_from_ops(ops)
     claims = _bp_build_clause_claims(ast, statute_id)
-    assignments = assign_body_units_fn(inventory, claims, statute_id)
+    assignments = cast(List[PayloadAssignment], assign_body_units_fn(inventory, claims, statute_id))
     findings = enforce_pairing_invariants(assignments, statute_id, amendment_id)
     if findings:
         for finding in findings:

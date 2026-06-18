@@ -768,7 +768,7 @@ def test_prepare_markdown_git_export_includes_future_by_default(monkeypatch: pyt
         return ReplayBundle(
             statute_id="100/2020",
             engine_id="100/2020",
-            change_dates=("2020-01-01", "2999-01-01"),
+            change_dates=["2020-01-01", "2999-01-01"],
             title="Test Act",
             result=SimpleNamespace(),
             lo_ops=[],

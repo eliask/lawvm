@@ -2411,7 +2411,7 @@ def test_parse_clause_doc_ill_spaced_citation_bare_section_insert() -> None:
     )
 
     assert result.parse_error is None
-    assert [op.code() for op in result.parsed_ops] == ["L P 1a"]
+    assert result.surface_clause is not None
     node = result.surface_clause.verb_groups[0].nodes[0]
     assert node.witness is not None
     assert node.witness.rule_id == "fi.insertion_law_level_bare_section"

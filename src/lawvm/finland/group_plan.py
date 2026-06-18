@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
-from typing import Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Tuple, cast, overload
+from typing import Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Tuple, TypeVar, cast, overload
 
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.labels import leaf_label_identity_key
@@ -76,6 +76,11 @@ class GroupTargetKey:
         return hash(self.as_tuple())
 
 
+_GroupKeyType = TypeVar(
+    "_GroupKeyType", GroupTargetKey, Tuple[IRNodeKind, str, Optional[str], Optional[str]]
+)
+
+
 def target_group_key(op: AmendmentOp) -> GroupTargetKey:
     def norm(s: str) -> str:
         return re.sub(r"[^\d\w]", "", s).lower()
@@ -114,10 +119,7 @@ def group_ops_by_target(ops: List[AmendmentOp]) -> Dict[GroupTargetKey, List[Ame
 
 
 def coalesce_same_target_mixed_scope_section_groups(
-    section_groups: Mapping[
-        GroupTargetKey | Tuple[IRNodeKind, str, Optional[str], Optional[str]],
-        List[AmendmentOp],
-    ],
+    section_groups: Mapping[_GroupKeyType, List[AmendmentOp]],
     *,
     master: SectionPathLookup,
     find_body_section_chapter: Callable[[str], str | None],

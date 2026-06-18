@@ -24,7 +24,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
-from lawvm.finland.ops import FailedOp, XMLStatute
+from lawvm.finland.ops import FailedOp
+from lawvm.finland.xml_statute import XMLStatute
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.source_pathology_proof_registry import source_pathology_proof_rule
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml

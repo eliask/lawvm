@@ -1523,7 +1523,10 @@ class TestPlainTextMomenttiPrecision:
         assert len(plain) == 1
         interlink = fi_interlink_from_reference_mention(plain[0], interlink_id="t23")
         assert interlink.target.locator is not None
-        kinds = [seg.kind for seg in interlink.target.locator.locator.segments]
-        labels = [seg.label for seg in interlink.target.locator.locator.segments]
+        locator = interlink.target.locator.locator
+        assert locator is not None
+        segments = locator.segments
+        kinds = [seg.kind for seg in segments]
+        labels = [seg.label for seg in segments]
         assert kinds == ["section", "subsection"], (kinds, labels)
         assert labels == ["7", "2"], (kinds, labels)
