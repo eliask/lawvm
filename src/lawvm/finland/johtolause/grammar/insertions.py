@@ -233,6 +233,16 @@ def _skip_nain_kuuluva(scan: _Scan) -> None:
         scan.advance()
 
 
+def _skip_optional_comma_nain_kuuluva(scan: _Scan) -> None:
+    """Skip ``[, ] näin kuuluva`` after ``uusi`` without accepting bare commas."""
+    saved = scan.pos
+    _optional_comma(scan)
+    before_nain = scan.pos
+    _skip_nain_kuuluva(scan)
+    if scan.pos == before_nain:
+        scan.goto(saved)
+
+
 # Reinstatement / citation / provenance sentinel spans skipped between a §:ILL
 # target and ``uusi`` (the old parser's ``_TILALLE_OR_REINST | {PROVENANCE_SPAN}``;
 # the ``§:ILL`` arm DOES skip a bare ``tilalle`` token here).
@@ -392,7 +402,7 @@ def _recognize_sub_target(scan: _Scan, sec: str, chapter: str, part: str, mom_ct
     declined (returns None). An archaic ``näin kuuluva`` lead-in between ``uusi``
     and the sub-target is skipped (faithful to the old parser, line 1891).
     """
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
 
     if _at(scan, "OTSIKKO"):
         # Heading insertion is out of scope for this slice.
@@ -954,7 +964,7 @@ def recognize_insertion(
     saved_auth = scan.pos
     if _skip_authority_nojalla_lead_in(scan, started_with_citation_span) and _at(scan, "UUSI"):
         scan.advance()
-        _skip_nain_kuuluva(scan)
+        _skip_optional_comma_nain_kuuluva(scan)
         post_uusi = scan.pos
         auth_nodes = _recognize_whole_target_list(scan, chapter, part)
         if auth_nodes:
@@ -1340,7 +1350,7 @@ def _dispatch(
     # M §`` whole-section insert is chapter-less. Thread ``inherited_*`` here.
     if _at(scan, "UUSI"):
         scan.advance()
-        _skip_nain_kuuluva(scan)
+        _skip_optional_comma_nain_kuuluva(scan)
         whole = _recognize_whole_target_list(scan, inherited_chapter, inherited_part)
         if whole is not None:
             return whole
@@ -1379,7 +1389,7 @@ def _try_osa_scoped(scan: _Scan, effective_part: str) -> Optional[list[InsNode]]
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
     ins_nums = _number_list(scan)
     t = scan.peek()
     if ins_nums and t is not None and t.cat in ("PYKALA", "LUKU") and t.case != "GEN":
@@ -1455,7 +1465,7 @@ def _try_section_ill_sub_target(
     _skip_ill_reinst_preamble(scan)
     # An archaic ``näin kuuluva`` lead-in can sit between the §:ään target (and
     # its skipped provenance) and ``uusi`` (old _insertion line 2421).
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
@@ -1626,7 +1636,7 @@ def _try_luku_scoped(
                 ]
         scan.goto(saved)
         return None
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
     ins_nums = _number_list(scan)
     t = scan.peek()
     if ins_nums and t is not None and t.cat in ("PYKALA", "LUKU"):
@@ -1801,7 +1811,7 @@ def _try_doc_ill_liite(scan: _Scan) -> Optional[list[InsNode]]:
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
     if not _at(scan, "LIITE"):
         scan.goto(saved)
         return None
@@ -1923,7 +1933,7 @@ def _try_doc_ill(
         scan.advance()
         _optional_comma(scan)
         if _consume_uusi(scan):
-            _skip_nain_kuuluva(scan)
+            _skip_optional_comma_nain_kuuluva(scan)
             pc2 = _number_list(scan)
             t = scan.peek()
             if pc2 and t is not None and t.cat == "PYKALA" and t.case != "GEN":
@@ -1949,7 +1959,7 @@ def _try_doc_ill(
             return fb
         scan.goto(saved)
         return None
-    _skip_nain_kuuluva(scan)
+    _skip_optional_comma_nain_kuuluva(scan)
 
     nums2 = _number_list(scan)
     if not nums2:
@@ -1965,6 +1975,7 @@ def _try_doc_ill(
     while True:
         saved_chain = scan.pos
         if _sep(scan) is not None and _consume_uusi(scan):
+            _skip_optional_comma_nain_kuuluva(scan)
             more = _number_list(scan)
             if more:
                 all_nums.extend(more)

@@ -368,6 +368,20 @@ def test_nain_kuuluva_whole_section_label_and_witness() -> None:
     assert node.witness.rule_id == "fi.insertion_section"
 
 
+def test_nain_kuuluva_comma_variant_emits_45a_insert() -> None:
+    model = parse_text_with(
+        "lisätään sotilasvammalakiin (404/48) uusi, näin kuuluva 45 a §:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    node = _as_insertion(vg.nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "45a"
+    assert node.sub_target is None
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_section"
+
+
 def test_gen_momentti_sub_target_after_uusi_is_zero_delta() -> None:
     # ``uusi N §:GEN M momentti`` — a §:GEN sub-target insert reached via the
     # whole-target dispatch (the genitive §:n carries a momentti/kohta sub-target).
