@@ -25,6 +25,7 @@ from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.kumotaan_replay import _live_suffix_section_labels_for_numeric_kumotaan_ranges
 from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
@@ -1326,6 +1327,87 @@ def test_replay_xml_1972_66_repeals_live_suffix_section_in_numeric_range() -> No
     assert selected.effective == "1984-01-01"
     assert "kumotaan" in selected.source.raw_text
     assert "4 luvun otsikko 27-39 §" in selected.source.raw_text
+
+
+class _RangeExpansionState:
+    def __init__(self, ir: IRNode) -> None:
+        self.ir = ir
+
+    def find_chapter(self, chapter: str | None) -> IRNode | None:
+        if chapter is None:
+            return None
+        for child in self.ir.children:
+            if child.kind is IRNodeKind.CHAPTER and str(child.label).lower() == chapter.lower():
+                return child
+        return None
+
+
+def _chapter(label: str, section_labels: list[str]) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label=label,
+        text="",
+        attrs={},
+        children=tuple(
+            IRNode(kind=IRNodeKind.SECTION, label=section, text="", attrs={}, children=())
+            for section in section_labels
+        ),
+    )
+
+
+def test_kumotaan_numeric_range_suffix_expansion_stays_in_resolved_chapter_scope() -> None:
+    state = _RangeExpansionState(
+        IRNode(
+            kind=IRNodeKind.HCONTAINER,
+            label="",
+            text="",
+            attrs={},
+            children=(
+                _chapter("9", ["67", "68", "69", "70"]),
+                _chapter("9a", ["70a", "70c", "70e"]),
+                _chapter("9b", ["70f", "70j"]),
+            ),
+        )
+    )
+
+    labels = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
+        "kumotaan 61 §:n 2 momentti, 63 §:n 3 momentti sekä 64 ja 67-70 §, muutetaan 26 §",
+        state=state,  # type: ignore[arg-type]
+    )
+
+    assert labels == {}
+
+
+def test_kumotaan_numeric_range_suffix_expansion_preserves_explicit_chapter_case() -> None:
+    state = _RangeExpansionState(
+        IRNode(
+            kind=IRNodeKind.HCONTAINER,
+            label="",
+            text="",
+            attrs={},
+            children=(
+                _chapter("4", ["27", "27a", "28", "39"]),
+                _chapter("5", ["27b"]),
+            ),
+        )
+    )
+
+    labels = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
+        "kumotaan 4 luvun otsikko 27-39 §, muutetaan 1 §",
+        state=state,  # type: ignore[arg-type]
+    )
+
+    assert labels == {"4": {"27a"}}
+
+
+def test_replay_xml_1967_550_kumotaan_numeric_range_does_not_repeal_later_chapter_suffix_sections() -> None:
+    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True)
+
+    assert replay.materialized_state.find_section("70a", chapter_num="9a") is not None
+    assert replay.materialized_state.find_section("70c", chapter_num="9a") is not None
+    assert replay.materialized_state.find_section("70e", chapter_num="9a") is not None
+    assert replay.materialized_state.find_section("70f", chapter_num="9b") is not None
+    assert replay.materialized_state.find_section("70j", chapter_num="9b") is not None
 
 
 def test_replay_xml_nests_simple_digit_subparagraphs_for_1997_108() -> None:
