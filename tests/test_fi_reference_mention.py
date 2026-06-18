@@ -2068,3 +2068,131 @@ class TestIssuedUnderAuthorityKindEndToEnd:
             _edge_to_cite_kind(issued["1977/702"], "1979/86")
             == CiteKind.NON_STATUTORY_INSTRUMENT
         )
+
+
+class TestExplicitIdTextRecoveryAcrossRefBoundary:
+    """Annotation-independence: the by-id text lane must recover a cite whose
+    statute-name prose and ``(NNN/YYYY)`` id are SPLIT across a ``<ref>`` boundary.
+
+    On consolidated/oracle bodies Finlex wraps the id parenthetical in a ``<ref>``
+    element, leaving the name head in the surrounding ``<p>`` text and the id in
+    the ``<ref>`` inner text, separated by the element's pretty-print indentation
+    (a long whitespace run). With the ``<ref>`` lane suppressed
+    (``ignore_annotations=True``) and its inner text folded into the plain-text
+    scan (``include_ref_text=True``), the recogniser must still bind name+id from
+    text alone — the markup whitespace run is collapsed so the gap fits the
+    name→id anchor. This proves the text lane STANDS ALONE for these cites.
+
+    The default (annotation-ON, no fold) behaviour is byte-identical: the fold and
+    whitespace-collapse only happen on the measurement path.
+    """
+
+    def _p(self, body: str):  # type: ignore[no-untyped-def]
+        import xml.etree.ElementTree as ET
+        return ET.fromstring(
+            '<p xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            + body
+            + "</p>"
+        )
+
+    def test_name_id_split_across_ref_recovered_when_folded(self) -> None:
+        """``annetun lain </ref-split>(688/1988)`` → recovered in fold mode."""
+        # Statute name in the <p> text, id parenthetical inside the <ref>, with a
+        # newline + deep indentation between them (the Finlex pretty-print split).
+        p = self._p(
+            "elinkeinonharjoittajan oikeudesta annetun lain\n"
+            "                                    "
+            '<ref href="/akn/fi/act/statute/1988/688">(688/1988)</ref>'
+            "\n                                     4 \xa7:ssa."
+        )
+        recognizer = PlainTextStatuteCitationRecognizer()
+
+        # Default (no fold): the <ref> inner text is excluded, so the id is not in
+        # the scanned text and nothing is recovered from the body text alone.
+        assert recognizer.scan_precise(p, include_ref_text=False) == []
+
+        # Fold mode: the inner text is folded in and the markup whitespace run is
+        # collapsed, so the name head binds its id — recovered from text alone.
+        hits = recognizer.scan_precise(p, include_ref_text=True)
+        assert any(h.statute_id == "688/1988" for h in hits), hits
+
+    def test_name_id_adjacent_no_fold_needed(self) -> None:
+        """When the name+id are already adjacent, fold mode changes nothing."""
+        p = self._p("annetun lain (361/1999) nojalla.")
+        recognizer = PlainTextStatuteCitationRecognizer()
+        ids_on = {h.statute_id for h in recognizer.scan_precise(p, include_ref_text=False)}
+        ids_fold = {h.statute_id for h in recognizer.scan_precise(p, include_ref_text=True)}
+        assert "361/1999" in ids_on
+        assert "361/1999" in ids_fold
+
+    def test_distant_noun_id_not_bound(self) -> None:
+        """Whitespace collapse must NOT bind an id to an unrelated distant noun.
+
+        Intervening WORDS (not just markup whitespace) keep the name head and the
+        id non-adjacent, so the recogniser declines — collapsing whitespace never
+        merges across real tokens.
+        """
+        p = self._p(
+            "lain mukaan asia ratkaistaan myohemmin erikseen mainitulla tavalla "
+            "ja sovelletaan tarvittaessa (688/1988)."
+        )
+        recognizer = PlainTextStatuteCitationRecognizer()
+        # No name head is adjacent to the id, so no by-id hit binds to "lain".
+        hits = recognizer.scan_precise(p, include_ref_text=True)
+        assert all(h.statute_id != "688/1988" for h in hits) or hits == [], hits
+
+
+class TestEntryIntoForceDateRefNotTypedCrossStatute:
+    """An ``#entryIntoForce`` editorial date-ref (``13.6.1929/228``) must NOT be
+    typed as a CROSS_STATUTE cite by the by-id text lane.
+
+    Finlex consolidation commencement footnotes glue a date (``d.m.YYYY``) to the
+    amendment's running number. The ``YYYY/NNN`` tail superficially resembles a
+    statute id, so once the ``<ref>`` inner text is folded into the plain-text
+    scan a preceding name head could otherwise bind the date as a bogus cite. The
+    recogniser declines any id immediately preceded by a ``d.m.YYYY`` date.
+    """
+
+    def _p(self, body: str):  # type: ignore[no-untyped-def]
+        import xml.etree.ElementTree as ET
+        return ET.fromstring(
+            '<p xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            + body
+            + "</p>"
+        )
+
+    def test_bare_date_ref_not_recovered(self) -> None:
+        """``tulee voimaan 13.6.1929/228`` yields no by-id cite (no parens)."""
+        p = self._p("Tama laki tulee voimaan 13.6.1929/228.")
+        recognizer = PlainTextStatuteCitationRecognizer()
+        assert recognizer.scan_precise(p, include_ref_text=True) == []
+
+    def test_date_ref_folded_from_ref_not_typed_cross_statute(self) -> None:
+        """``laissa </ref-split>13.6.1929/228`` editorial date-ref is declined.
+
+        Even if a name head precedes a folded ``#entryIntoForce`` date-ref, the
+        date prefix marks it editorial; the recogniser must not promote it to a
+        CROSS_STATUTE cite to 1929/228.
+        """
+        p = self._p(
+            "mita mainitussa laissa\n"
+            "                          "
+            '<ref href="#entryIntoForce_19290228">13.6.1929/228</ref>'
+            "\n                          saadetaan."
+        )
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan_precise(p, include_ref_text=True)
+        assert all(h.statute_id not in ("1929/228", "228/1929") for h in hits), hits
+
+    def test_annotation_on_default_excludes_ref_date_text(self) -> None:
+        """Production (annotation-ON) never sees the folded date-ref at all."""
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body><section><num>1 \xc2\xa7</num><paragraph><content>"
+            b"<p>Tama laki tulee voimaan "
+            b'<ref href="#entryIntoForce_19290228">13.6.1929/228</ref>.</p>'
+            b"</content></paragraph></section></body></act></akomaNtoso>"
+        )
+        result = extract_plain_text_statute_mentions(xml, "1734/3-000")
+        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        assert plain == [], plain

@@ -238,6 +238,29 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
 # ("…annetussa laissa (205/2000)") carry no §, and gating on it dropped them.
 _PLAIN_TEXT_GUARD_PAREN = "("
 
+# Whitespace-run collapse used ONLY when folding ``<ref>`` inner text into the
+# plain-text scan (annotation-independence measurement). Finlex pretty-prints the
+# AKN body, so the ``<ref>`` boundary that SPLITS a statute name from its
+# ``(NNN/YYYY)`` id leaves a newline + deep indentation between them; collapsing
+# the run to one space restores the name→id adjacency the recogniser needs. It
+# only ever shrinks whitespace, so two tokens separated by real words stay apart.
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+# Entry-into-force editorial date-ref guard. Finlex wraps a consolidation's
+# commencement footnotes as ``<ref href="#entryIntoForce_...">13.6.1929/228</ref>``
+# — a DATE (``d.m.YYYY``) glued to the amendment's running number, NOT a
+# cross-statute citation. The ``YYYY/NNN`` tail looks like a statute id, so once
+# the ``<ref>`` inner text is folded into the plain-text scan a name head that
+# happens to precede it could otherwise bind the date as a bogus CROSS_STATUTE
+# cite. This recognises the ``d.m.YYYY/NNN`` editorial date-ref so the by-id lane
+# can decline it (it is an editorial/temporal marker, owned by the temporal lane,
+# never a statute reference). Anchored at the ``(`` paren the by-id anchor needs:
+# a genuine cite is ``name (NNN/YYYY)`` with parens; the date-ref has none, so the
+# guard is a belt-and-braces decline for any future relaxation of the anchor.
+_ENTRY_INTO_FORCE_DATEREF_RE = re.compile(
+    r"\d{1,2}\.\d{1,2}\.\d{4}\s*/\s*\d{1,6}"
+)
+
 
 @dataclass(frozen=True)
 class PlainTextStatuteHit:
@@ -385,13 +408,29 @@ class PlainTextStatuteCitationRecognizer:
         hit with ``subsection_num=None`` (section-level fallback).
 
         ``include_ref_text`` (annotation-independence measurement) folds the
-        ``<ref>`` inner text into the scanned text; OFF by default.
+        ``<ref>`` inner text into the scanned text; OFF by default. When folding,
+        Finlex's habit of SPLITTING the statute-name prose from the ``(NNN/YYYY)``
+        id across the ``<ref>`` boundary leaves a long whitespace run (the XML
+        indentation around the element) between the name head and the id — far
+        more than the recogniser's ``\\s{0,5}`` name→id gap allows. So in folding
+        mode the inter-token whitespace runs are first collapsed to a single space
+        (``annetun lain \\n<indent>(688/1988)`` → ``annetun lain (688/1988)``),
+        letting the SAME by-name+id anchor bind the cite from text alone. This is
+        bounded: it only removes markup whitespace, so a name and id separated by
+        intervening WORDS stay non-adjacent and never bind. It applies ONLY in the
+        fold path; the default (production) text is unchanged byte-for-byte.
 
         Per AGENTS.md §1.11: substring guards applied before regex scan.
         """
         text = self._collect_non_ref_text(p_el, include_ref_text=include_ref_text)
         if not text:
             return []
+
+        if include_ref_text:
+            # Collapse markup whitespace runs so a name head split from its
+            # ``(id)`` by the ``<ref>`` boundary becomes adjacent again. Bounded
+            # (whitespace only — never merges across intervening words).
+            text = _WHITESPACE_RUN_RE.sub(" ", text)
 
         # Substring guard (fast path — eliminates ~99% of non-matching calls).
         # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,
@@ -408,6 +447,17 @@ class PlainTextStatuteCitationRecognizer:
         for m in _PLAIN_TEXT_FI_STATUTE_RE.finditer(text):
             num_raw = m.group(1)
             year = m.group(2)
+
+            # Entry-into-force editorial date-ref decline. Finlex commencement
+            # footnotes read ``…tulee voimaan 13.6.1929/228`` — a date glued to a
+            # running number, which the by-id anchor must NOT promote to a
+            # CROSS_STATUTE cite. If the matched ``(NNN/YYYY)``/``NNN/YYYY`` id is
+            # immediately preceded (modulo whitespace) by a ``d.m.YYYY`` date, the
+            # whole token is an editorial date-ref owned by the temporal lane;
+            # skip it. Bounded back-scan over a short window before the match.
+            preceding = text[max(0, m.start() - 16) : m.start()]
+            if _ENTRY_INTO_FORCE_DATEREF_RE.search(preceding + m.group(0)):
+                continue
 
             # Two-digit year ids ("(307/86)") are common in pre-2000 statutes.
             # Expand to a full century: a 2-digit year <= the current 2-digit
