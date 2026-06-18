@@ -94,6 +94,18 @@ _FI_META_REPEAL_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_FI_BARE_LEADING_META_REPEAL_RE = re.compile(
+    r"^\s*kumotaan\s*\(\s*\d{1,4}\s*/\s*\d{2,4}\s*\)\s*,\s*(?P<rest>.{0,2500})",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FI_VERBOSE_LEADING_META_REPEAL_RE = re.compile(
+    r"^\s*kumotaan\b.{0,800}?muuttamisesta\s+"
+    r"(?:annettu\s+(?:laki|asetus)|annetun\s+(?:lain|asetuksen))"
+    r"\s*\(\s*\d{1,4}\s*/\s*\d{2,4}\s*\)\s*,\s*(?P<rest>.{0,2500})",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def _looks_like_fi_meta_repeal(text: str) -> bool:
     """Return True when *text* is a meta-repeal of a prior amendment act.
@@ -150,6 +162,59 @@ def _target_head_matches_parent_metadata(
 
 def _looks_like_nojalla_authority_clause(johto: str) -> bool:
     return parse_routing_surface(johto).delegated_authority is not None
+
+
+def _single_target_amending_act_title(source_title: str) -> bool:
+    """Return True for a title naming one statute's amendment act."""
+    source_norm = re.sub(r"\s+", " ", (source_title or "").strip().lower())
+    if not source_norm:
+        return False
+    if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
+        return False
+    return bool(
+        re.match(
+            r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+"
+            r".+?\s+annetun\s+(?:lain|asetuksen)\s+muuttamisesta$",
+            source_norm,
+        )
+    )
+
+
+def _leading_meta_repeal_rest(johto: str) -> str | None:
+    """Return base-operation text after a leading prior-amendment repeal."""
+    if "kumotaan" not in johto.lower():
+        return None
+    for pattern in (_FI_BARE_LEADING_META_REPEAL_RE, _FI_VERBOSE_LEADING_META_REPEAL_RE):
+        match = pattern.match(johto)
+        if match is not None:
+            rest = match.group("rest").strip()
+            return rest or None
+    return None
+
+
+def _leading_meta_repeal_then_parent_ops(
+    *,
+    johto: str,
+    parent_id: str,
+    source_title: str,
+) -> bool:
+    """Return True when a prior-amendment repeal precedes base-statute ops.
+
+    Finnish preambles can begin by repealing an earlier amending act, e.g.
+    ``kumotaan (579/1994), muutetaan lain nimike ...``.  The citation belongs
+    to the repealed amending act, not the base statute target.  Accept only
+    when the source title is a single-target amendment title and the remaining
+    operative text has no foreign target citation.
+    """
+    if not _single_target_amending_act_title(source_title):
+        return False
+    rest = _leading_meta_repeal_rest(johto)
+    if rest is None:
+        return False
+    rest_lower = rest.lower()
+    if not any(keyword in rest_lower for keyword in OP_KEYWORDS):
+        return False
+    return _johtolause_references_parent(rest, parent_id)
 
 
 def _parent_title_reference_variants(parent_title: str) -> set[str]:
@@ -388,6 +453,9 @@ def route_amendment(
       "citation_typo_rewrite_parent_validated"
                                — citation token disagrees, but parent metadata
                                  validates the affected-statute head
+      "leading_meta_repeal_then_parent_ops"
+                               — a leading repealed-amendment citation was not
+                                 treated as the base-statute target citation
     """
     # Guard condition: only run routing check when both IDs are present and
     # the amendment year is a digit string (replicates the inline condition).
@@ -406,6 +474,7 @@ def route_amendment(
         if citation_guard_johto
         else True
     )
+    apply_reason = "references_parent"
 
     # Secondary fallback: if preamble has no op keywords but sec1 cites the
     # parent, treat as a match (omnibus repeal acts with terse preamble).
@@ -418,30 +487,38 @@ def route_amendment(
         _refs_match = True
 
     if not _refs_match:
-        if _title_targets_pending_amendment_of_parent(source_title, parent_title):
-            return False, "pending_amendment_of_parent_skip"
-        if _looks_like_nojalla_authority_clause(citation_guard_johto or johto):
-            return False, "delegated_authority_nojalla_skip"
-        if _target_head_matches_parent_metadata(
+        if _leading_meta_repeal_then_parent_ops(
             johto=citation_guard_johto or johto,
-            parent_title=parent_title,
-            parent_issue_date=parent_issue_date,
+            parent_id=parent_id,
+            source_title=source_title,
         ):
-            return True, "citation_typo_rewrite_parent_validated"
-        if amendment_num and amendment_num == parent_num:
-            # Tier 1: NUM collision — high confidence misroute (same number,
-            # different year → amendment_parents.csv false-mapped by NUM).
-            return False, "num_collision_skip"
+            _refs_match = True
+            apply_reason = "leading_meta_repeal_then_parent_ops"
         else:
-            # Tier 2: johtolause explicitly cites a different statute.
-            # Sub-case: meta-repeal targets a prior amendment act, not the parent.
-            if _looks_like_fi_meta_repeal(johto):
+            if _title_targets_pending_amendment_of_parent(source_title, parent_title):
+                return False, "pending_amendment_of_parent_skip"
+            if _looks_like_nojalla_authority_clause(citation_guard_johto or johto):
+                return False, "delegated_authority_nojalla_skip"
+            if _target_head_matches_parent_metadata(
+                johto=citation_guard_johto or johto,
+                parent_title=parent_title,
+                parent_issue_date=parent_issue_date,
+            ):
+                return True, "citation_typo_rewrite_parent_validated"
+            if amendment_num and amendment_num == parent_num:
+                # Tier 1: NUM collision — high confidence misroute (same number,
+                # different year → amendment_parents.csv false-mapped by NUM).
+                return False, "num_collision_skip"
+            else:
+                # Tier 2: johtolause explicitly cites a different statute.
+                # Sub-case: meta-repeal targets a prior amendment act, not the parent.
+                if _looks_like_fi_meta_repeal(johto):
+                    return False, "citation_mismatch_skip"
                 return False, "citation_mismatch_skip"
-            return False, "citation_mismatch_skip"
 
     # Even when the citation check passes, a title-based check can still
     # override: if the amendment title explicitly names a different statute.
     if _title_explicitly_targets_other_statute(source_title, parent_title):
         return False, "citation_mismatch_skip"
 
-    return True, "references_parent"
+    return True, apply_reason

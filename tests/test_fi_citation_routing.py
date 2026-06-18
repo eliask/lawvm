@@ -189,6 +189,59 @@ class TestRouteAmendmentReferencesParent:
         assert should_apply is True
         assert reason == "references_parent"
 
+    def test_leading_prior_amendment_repeal_does_not_hide_base_statute_ops(self) -> None:
+        johto_raw = (
+            "kumotaan (579/1994), muutetaan lain nimike, 1 ja 2 §, "
+            "3 §:n 1 momentti, 4 ja 5 §, 6 §:n 3 momentti, 7 §, "
+            "8 §:n 1 ja 2 momentti, 9 §, 12 §:n 1 momentti ja 13 §,"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1992/1597",
+            "1997/419",
+            source_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten koulutuksen "
+                "ja ammatillisen harjoittelun tunnustamisesta annetun lain "
+                "muuttamisesta"
+            ),
+            parent_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten "
+                "tutkintotodistusten tunnustamisesta"
+            ),
+        )
+
+        assert should_apply is True
+        assert reason == "leading_meta_repeal_then_parent_ops"
+
+    def test_leading_prior_amendment_repeal_recovery_rejects_foreign_rest_citation(self) -> None:
+        johto_raw = (
+            "kumotaan (579/1994), muutetaan toisen lain (999/1992) "
+            "1 § seuraavasti:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1992/1597",
+            "1997/419",
+            source_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten koulutuksen "
+                "ja ammatillisen harjoittelun tunnustamisesta annetun lain "
+                "muuttamisesta"
+            ),
+            parent_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten "
+                "tutkintotodistusten tunnustamisesta"
+            ),
+        )
+
+        assert should_apply is False
+        assert reason == "citation_mismatch_skip"
+
 
 class TestRouteAmendmentNumCollisionSkip:
     """NUM-collision: amendment and parent share the same statute number
@@ -545,6 +598,7 @@ class TestRouteAmendmentReturnType:
     _KNOWN_REASONS = frozenset({
         "references_parent",
         "citation_typo_rewrite_parent_validated",
+        "leading_meta_repeal_then_parent_ops",
         "delegated_authority_nojalla_skip",
         "pending_amendment_of_parent_skip",
         "no_guard_needed",
