@@ -111,8 +111,13 @@ def family_of(mention: ReferenceMention) -> str:
             return "eu"
         return "explicit_id"
 
-    # Text-derived lanes.
-    if lemma == "plain_text":
+    # Text-derived lanes. The inline-(id) plain-text family is, post citation-flip,
+    # produced primarily by the construction parse (``citation_construction``); the
+    # demoted regex lane survives as a typed residue fallback
+    # (``plain_text_fallback``) and the measurement (``ignore_annotations``) path
+    # still uses the original ``plain_text``. All three are the SAME explicit-id
+    # text family.
+    if lemma in ("plain_text", "citation_construction", "plain_text_fallback"):
         return "explicit_id"
     if lemma == "internal_section_ref":
         return "internal"

@@ -331,7 +331,7 @@ BODY_SECTION_RANGE = CorpusFixture(
             "target_provision_ref_str": "2022/711/108",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
@@ -339,7 +339,7 @@ BODY_SECTION_RANGE = CorpusFixture(
             "target_provision_ref_str": "2022/711/109",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
@@ -347,7 +347,7 @@ BODY_SECTION_RANGE = CorpusFixture(
             "target_provision_ref_str": "2022/711/110",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
     ],
     expected_rejected=[],
@@ -382,7 +382,7 @@ BODY_SECTION_COORDINATION = CorpusFixture(
             "target_provision_ref_str": "2022/711/6",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
@@ -390,7 +390,7 @@ BODY_SECTION_COORDINATION = CorpusFixture(
             "target_provision_ref_str": "2022/711/8",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
     ],
     expected_rejected=[],
@@ -428,7 +428,7 @@ BODY_BYID_MOMENTTI = CorpusFixture(
             "target_provision_ref_str": "2003/424/6/1",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         }
     ],
     expected_rejected=[],

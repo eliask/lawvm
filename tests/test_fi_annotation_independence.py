@@ -153,13 +153,17 @@ def test_dedup_guard_removal_surfaces_ref_covered_cite() -> None:
     assert any(m.phrase_lemma == "ref_element" for m in with_731)
     assert not any(m.phrase_lemma == "plain_text" for m in with_731)
 
-    # WITHOUT: the SAME target re-surfaces via the plain_text text lane.
+    # WITHOUT: the SAME target re-surfaces via the plain_text text lane. The text
+    # lane keys the cited act in the canonical corpus orientation YEAR/NUMBER
+    # ("1999/731") via _make_statute_id — the SAME id the <ref> lane mints — so the
+    # re-surfaced mention carries "1999/731" (not the visible NUMBER/YEAR surface).
     without_731 = [
         m
         for m in without_res.mentions
-        if m.target_provision_ref and m.target_provision_ref.statute_id == "731/1999"
+        if m.target_provision_ref
+        and m.target_provision_ref.statute_id in ("1999/731", "731/1999")
     ]
-    assert without_731, "731/1999 should re-surface via the text lane WHEN <ref> ignored"
+    assert without_731, "1999/731 should re-surface via the text lane WHEN <ref> ignored"
     assert any(m.phrase_lemma == "plain_text" for m in without_731)
 
 

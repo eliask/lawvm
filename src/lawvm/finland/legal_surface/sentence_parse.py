@@ -98,6 +98,52 @@ _DECLARATION_CUE_STEMS: tuple[str, ...] = (
 #: keys on). Bounded quantifiers only (§1.11).
 _ID_PAREN_RE = re.compile(r"\(\s*(\d{1,6})\s*/\s*(\d{2,4})\s*\)")
 
+#: Parenthetical FRACTION surface decline. A ``(N/M)`` paren is NOT a statute id
+#: when it spells a Finnish fraction — ``kymmenesosalla (1/10)`` ("one tenth"),
+#: ``kahdeskymmenesosalla (1/20)``, ``kuusitoista seitsemättätoista (16/17) osaa``.
+#: The construction anchor keys on the bare ``(N/Y)`` shape (it does NOT require the
+#: production plain-text lane's statute-name HEAD), so without this guard a fraction
+#: parenthetical would be read as a cross-statute id. The discriminator is a closed,
+#: audited SURFACE fact — a fraction-noun (``-osa`` family) sits IMMEDIATELY against
+#: the paren — never a numeric-magnitude heuristic (genuine low-numbered cites like
+#: ``ampuma-aselaki (1/1998)`` / ``tavaramerkkilaki (7/1964)`` keep their statute
+#: name against the paren and never match). Two adjacency shapes are declined:
+#:   - LEFT:  a fraction-denominator word directly precedes the ``(`` —
+#:            ``…kymmenesosalla (1/10)`` (the word ends in an ``-osa`` case form).
+#:   - RIGHT: a fraction-numerator/part noun directly follows the ``)`` —
+#:            ``(16/17) osaa`` ("sixteen seventeenths of a part").
+#: Bounded look-around windows (§1.11): a short fixed slice either side of the paren.
+_FRACTION_LEFT_RE = re.compile(
+    r"osa(?:lla|lle|sta|ssa|an|a|n|ksi|lta|t)?\s*$",
+    re.IGNORECASE,
+)
+_FRACTION_RIGHT_RE = re.compile(
+    r"^\s*osa(?:lla|lle|sta|ssa|an|a|n|ksi|lta|t)?\b",
+    re.IGNORECASE,
+)
+#: Look-around window (chars) scanned either side of the ``(N/Y)`` paren for the
+#: fraction-noun adjacency. A fraction noun is glued to its paren in practice, so a
+#: short window suffices and keeps the guard from reaching across intervening words.
+_FRACTION_WINDOW = 24
+
+
+def _is_fraction_paren(text: str, paren_start: int, paren_end: int) -> bool:
+    """Whether a ``(N/Y)`` paren spells a Finnish fraction, not a statute id.
+
+    Closed audited surface decline (see ``_FRACTION_LEFT_RE``/``_FRACTION_RIGHT_RE``):
+    a fraction-denominator word (``-osa`` family) sits directly against the paren on
+    the left (``kymmenesosalla (1/10)``) OR a part noun follows it on the right
+    (``(16/17) osaa``). Never a magnitude heuristic — a statute name against the
+    paren (``ampuma-aselaki (1/1998)``) is untouched.
+    """
+    left = text[max(0, paren_start - _FRACTION_WINDOW) : paren_start]
+    if _FRACTION_LEFT_RE.search(left):
+        return True
+    right = text[paren_end : paren_end + _FRACTION_WINDOW]
+    if _FRACTION_RIGHT_RE.search(right):
+        return True
+    return False
+
 
 def _expand_year(year_raw: str) -> str:
     """Expand a 2-digit paren year to 4-digit (``95`` -> ``1995``); 4-digit as-is.
@@ -241,6 +287,11 @@ def parse_citation_sentence(text: str) -> SentenceParse:
         year = _expand_year(m.group(2))
         year_int = int(year)
         if year_int < 1700 or year_int > 2100 or num <= 0 or num > 999999:
+            continue
+        # Fraction decline: ``kymmenesosalla (1/10)`` / ``(16/17) osaa`` is not a
+        # statute id. Closed audited surface adjacency, never a magnitude rule, so
+        # genuine low-numbered cites (``ampuma-aselaki (1/1998)``) are untouched.
+        if _is_fraction_paren(text, m.start(), m.end()):
             continue
         statute_id = f"{num}/{year}"
 

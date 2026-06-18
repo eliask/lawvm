@@ -382,25 +382,27 @@ def test_collapse_redundant_statute_only_keeps_lone_statute_key() -> None:
     ) == {"fi-name:x", "fi-name:x/5"}
 
 
-def test_full_oracle_surfaces_genuine_kaari_inline_id_superset() -> None:
+def test_full_oracle_surfaces_genuine_kaari_inline_id_now_bound_in_production() -> None:
     # The witness shape from the corpus: a ``-kaari`` INESSIVE citation with an
-    # inline (id). The production by-name head lane binds only the GENITIVE
-    # ``-kaaren`` form (and without reading an inline id), so it does NOT catch the
-    # inessive-with-id site. The construction frame DOES (it keys on the (id)
-    # paren). The legacy plain-text-only oracle also misses it. This stays a
-    # SUPERSET even under the full oracle -> a genuine construction-frame win, NOT
-    # an oracle artifact.
+    # inline (id). Before the citation production-flip the regex plain-text lane
+    # could not anchor this head, so the full production oracle MISSED it and the
+    # construction frame scored a SUPERSET. AFTER the flip the construction parse is
+    # the PRIMARY inline-(id) producer in production, so the full extractor — and
+    # therefore the full oracle built from it — NOW binds ``917/2014`` directly.
+    # The legacy plain-text-ONLY span oracle (just the regex recognizer) still
+    # misses it, evidencing the strangle: the regex's Finding-B gap is now covered
+    # by construction in the live pipeline. Projection and full oracle AGREE.
     seg = "Turvallisuusverkko on tietoyhteiskuntakaaressa (917/2014) tarkoitettu verkko."
     xml = _akn(seg)
     sid = "999/2025"
     body = decode_body_text(xml)
-    assert oracle_reference_keys_for_span(seg) == set()  # legacy artifact
+    assert oracle_reference_keys_for_span(seg) == set()  # regex-only lane still misses
     ctx = _bucket_full_extractor_oracle(sid, xml, body)
     proj = projection_reference_keys(parse_citation_sentence(seg), sid)
     oracle = full_oracle_reference_keys(seg, ctx)
     assert proj == {"917/2014"}
-    assert oracle == set()  # full oracle still does not bind this -kaari site
-    assert _classify(proj, oracle, False) == "superset"
+    assert oracle == {"917/2014"}  # post-flip: production now binds this -kaari site
+    assert _classify(proj, oracle, False) == "match"
 
 
 # --------------------------------------------------------------------------

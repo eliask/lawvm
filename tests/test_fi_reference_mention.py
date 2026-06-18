@@ -388,12 +388,23 @@ class TestConformanceFixtures:
                 f"Fixture {fid}: expected ExtractionResult, got {type(result)}"
             )
 
+    # The inline-(id) plain-text citation family is, post citation-flip, produced
+    # PRIMARILY by the construction parse (``citation_construction``); the demoted
+    # regex lane survives only as a typed residue fallback (``plain_text_fallback``).
+    # Conformance fixtures assert the SAME provisions regardless of which inline-(id)
+    # lane emitted them, so they accept the whole inline-(id) lemma set.
+    _INLINE_ID_LEMMAS = frozenset(
+        {"citation_construction", "plain_text", "plain_text_fallback"}
+    )
+
     def _assert_body_fixture(self, fixture_id: str) -> None:
         fixture = ALL_FIXTURES[fixture_id]
         result = extract_all_reference_mentions(
             fixture.xml_bytes, fixture.source_statute_id
         )
-        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
+        plain = [
+            m for m in result.mentions if m.phrase_lemma in self._INLINE_ID_LEMMAS
+        ]
         actual_paths = {
             m.target_provision_ref.serialized()
             for m in plain
@@ -1495,7 +1506,13 @@ class TestPlainTextStatuteCitations:
         assert result.mentions == []
 
     def test_plain_text_phrase_lemma_distinct_from_ref_element(self) -> None:
-        """phrase_lemma='plain_text' is distinct from 'ref_element' in combined output."""
+        """The inline-(id) prose lane is distinct from the <ref>-element lane.
+
+        Post citation-flip the inline-(id) prose cite is produced primarily by the
+        construction parse (``citation_construction``), not the demoted regex lane
+        (``plain_text``). Either way it must be a SEPARATE lemma from the AKN
+        ``<ref>``-element lane (``ref_element``).
+        """
         xml = (
             b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
             b"<act><body>"
@@ -1510,11 +1527,17 @@ class TestPlainTextStatuteCitations:
         )
         result = extract_all_reference_mentions(xml, "2003/314")
         lemmas = {m.phrase_lemma for m in result.mentions}
-        # ref_element from AKN <ref>, plain_text from prose
+        # ref_element from AKN <ref>, inline-(id) prose lemma from prose
         assert "ref_element" in lemmas, f"Expected ref_element, got {lemmas}"
-        # plain_text from terveydenhuoltolain citation (different statute ID, so not deduped)
-        plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
-        assert len(plain) >= 1, f"Expected plain_text mention, got lemmas={lemmas}"
+        # The terveydenhuoltolain prose citation (different statute id, so not
+        # deduped against the <ref>) surfaces via the inline-(id) prose lane.
+        inline = [
+            m
+            for m in result.mentions
+            if m.phrase_lemma
+            in {"citation_construction", "plain_text", "plain_text_fallback"}
+        ]
+        assert len(inline) >= 1, f"Expected inline-(id) prose mention, got lemmas={lemmas}"
 
 
 class TestPlainTextNominativeAnnettuFrame:
