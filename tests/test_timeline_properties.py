@@ -2781,6 +2781,166 @@ def test_materialize_pit_preserves_later_inactive_descendant_tombstone() -> None
     assert _find_node_by_label(section, IRNodeKind.SUBSECTION, "7") is None
 
 
+def test_materialize_pit_preserves_chapter_payload_over_inactive_section_descendant() -> None:
+    base = IRStatute(
+        statute_id="test/materialize-chapter-payload-over-inactive-section",
+        title="Chapter payload over inactive section",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8a",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="72a", text="old section"),),
+                ),
+            ),
+        ),
+    )
+    chapter_addr = LegalAddress(path=(("chapter", "8a"),))
+    section_addr = LegalAddress(path=(("chapter", "8a"), ("section", "72a")))
+    timelines = {
+        chapter_addr: ProvisionTimeline(
+            address=chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2002-01-01",
+                    enacted="2002-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="8a",
+                        children=(
+                            IRNode(kind=IRNodeKind.HEADING, text="Chapter heading"),
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="72a",
+                                children=(
+                                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new subsection"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="2002/1", effective="2002-01-01"),
+                )
+            ],
+        ),
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    expires="1999-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="72a",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="base", effective="0000-00-00", expires="1999-01-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2003-01-01", base=base)
+
+    chapter = _find_node_by_label(pit.body, IRNodeKind.CHAPTER, "8a")
+    assert chapter is not None
+    section = _find_node_by_label(chapter, IRNodeKind.SECTION, "72a")
+    assert section is not None
+    subsection = _find_node_by_label(section, IRNodeKind.SUBSECTION, "1")
+    assert subsection is not None
+    assert subsection.text == "new subsection"
+
+
+def test_materialize_pit_preserves_part_payload_over_inactive_section_descendant() -> None:
+    base = IRStatute(
+        statute_id="test/materialize-part-payload-over-inactive-section",
+        title="Part payload over inactive section",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="3",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(IRNode(kind=IRNodeKind.SECTION, label="10", text="old section"),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    part_addr = LegalAddress(path=(("part", "3"),))
+    section_addr = LegalAddress(path=(("part", "3"), ("chapter", "2"), ("section", "10")))
+    timelines = {
+        part_addr: ProvisionTimeline(
+            address=part_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2002-01-01",
+                    enacted="2002-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.PART,
+                        label="3",
+                        children=(
+                            IRNode(kind=IRNodeKind.HEADING, text="Part heading"),
+                            IRNode(
+                                kind=IRNodeKind.CHAPTER,
+                                label="2",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.SECTION,
+                                        label="10",
+                                        children=(
+                                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new subsection"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="2002/1", effective="2002-01-01"),
+                )
+            ],
+        ),
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    expires="1999-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="10",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="base", effective="0000-00-00", expires="1999-01-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2003-01-01", base=base)
+
+    part = _find_node_by_label(pit.body, IRNodeKind.PART, "3")
+    assert part is not None
+    chapter = _find_node_by_label(part, IRNodeKind.CHAPTER, "2")
+    assert chapter is not None
+    section = _find_node_by_label(chapter, IRNodeKind.SECTION, "10")
+    assert section is not None
+    subsection = _find_node_by_label(section, IRNodeKind.SUBSECTION, "1")
+    assert subsection is not None
+    assert subsection.text == "new subsection"
+
+
 def test_materialize_body_preserves_descendant_override_under_inserted_root() -> None:
     base = IRStatute(
         statute_id="test/materialize-inserted-root-descendant-override",

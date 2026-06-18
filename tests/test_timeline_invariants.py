@@ -22,6 +22,7 @@ from lawvm.core.ir import (
     ProvisionVersion,
     ScopePredicate,
 )
+from lawvm.core.statute_facets import statute_title_address
 from lawvm.core.provenance import ExpiryOverride
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_invariants import (
@@ -145,6 +146,34 @@ def test_overlap_detected() -> None:
     assert len(violations) == 1
     assert "2 permanent versions" in violations[0]
     assert "2020-01-01" in violations[0]
+    assert "DUPLICATE_PERMANENT_VERSION_ROW" not in violations[0]
+
+
+def test_identical_permanent_rows_downgraded_to_duplicate_kind() -> None:
+    """Identical ledger rows are duplicate rows, not precedence ambiguity."""
+    addr = _addr(("section", "2a"))
+    source = OperationSource(statute_id="2020/100", enacted="2020-01-01")
+    shared = _pv("2020-01-01", enacted="2020-01-01", text="same", source=source)
+    timelines = {
+        addr: _tl(
+            addr,
+            [
+                shared,
+                _pv("2020-01-01", enacted="2020-01-01", text="same", source=source),
+            ],
+        ),
+    }
+    violations = check_no_overlapping_permanent_versions(timelines)
+    assert len(violations) == 1
+    assert "DUPLICATE_PERMANENT_VERSION_ROW" in violations[0]
+
+    typed = check_all_timeline_invariants_typed(
+        IRNode(kind=IRNodeKind.BODY),
+        timelines,
+        "2024-01-01",
+        families=("temporal_overlap", "replay_timeline_robust"),
+    )
+    assert typed == []
 
 
 def test_same_effective_different_enacted_is_clean() -> None:
@@ -813,3 +842,153 @@ def test_typed_invariants_classify_without_string_prefix_guessing() -> None:
 
     assert any(v.kind == "temporary_overlap" for v in typed)
     assert all(v.kind != "content_mismatch" for v in typed)
+
+
+def test_replay_timeline_skips_statute_title_facet_carrier() -> None:
+    body = IRNode(kind=IRNodeKind.BODY, children=())
+    title_addr = statute_title_address()
+    timelines = {
+        title_addr: _tl(
+            title_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    text="Law title",
+                    content=IRNode(kind=IRNodeKind.HEADING, text="Law title"),
+                ),
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+    typed = check_all_timeline_invariants_typed(
+        body,
+        timelines,
+        "2025-01-01",
+        families=(
+            "temporal_overlap",
+            "temporary_overlay",
+            "expiry_chain",
+            "replay_timeline_robust",
+        ),
+    )
+
+    assert violations == []
+    assert typed == []
+
+
+def test_robust_profile_filters_negative_space_materialization_variants() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="10", text="section intro"),),
+    )
+    section_addr = _addr(("section", "10"))
+    item_addr = _addr(("section", "10"), ("subsection", "1"), ("item", "1"))
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="10", text="section intro"),
+                )
+            ],
+        ),
+        item_addr: _tl(
+            item_addr,
+            [
+                _pv(
+                    "2021-01-01",
+                    content=IRNode(kind=IRNodeKind.ITEM, label="1", text="missing item text"),
+                )
+            ],
+        ),
+    }
+
+    robust = check_all_timeline_invariants_typed(
+        body,
+        timelines,
+        "2025-01-01",
+        families=(
+            "temporal_overlap",
+            "temporary_overlay",
+            "expiry_chain",
+            "replay_timeline_robust",
+        ),
+    )
+    full = check_all_timeline_invariants_typed(
+        body,
+        timelines,
+        "2025-01-01",
+        families=(
+            "temporal_overlap",
+            "temporary_overlay",
+            "expiry_chain",
+            "replay_timeline",
+        ),
+    )
+
+    assert all(v.kind != "active_descendant_not_materialized" for v in robust)
+    assert any(v.kind == "active_descendant_not_materialized" for v in full)
+
+
+def test_replay_timeline_accepts_path_resolved_subsection_without_address_index() -> None:
+    """Subsection text may exist in-tree without a flat addressed-node entry."""
+    section_addr = _addr(("section", "16"))
+    subsection_addr = _addr(("section", "16"), ("subsection", "1"))
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="16",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text="Päätettyään avustuksen tai lainan myöntämisestä",
+                    ),
+                ),
+            ),
+        ),
+    )
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="16", text=""),
+                )
+            ],
+        ),
+        subsection_addr: _tl(
+            subsection_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text="Päätettyään avustuksen tai lainan myöntämisestä",
+                    ),
+                )
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+    typed = check_all_timeline_invariants_typed(
+        body,
+        timelines,
+        "2025-01-01",
+        families=(
+            "temporal_overlap",
+            "temporary_overlay",
+            "expiry_chain",
+            "replay_timeline",
+        ),
+    )
+
+    assert violations == []
+    assert typed == []

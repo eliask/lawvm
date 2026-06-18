@@ -1268,8 +1268,8 @@ def materialize_pit_ex(
             parent_v = active_versions.get(parent_addr)
             child_v = active_versions.get(addr)
             if active.get(addr) is None and child_v is None:
-                # Known-but-inactive subsection/item timelines are negative
-                # space from older state. When a selected section snapshot
+                # Known-but-inactive descendant timelines are negative space from
+                # older state. When a selected section/chapter/part snapshot
                 # carries that exact descendant path, the inactive descendant
                 # must not erase newer embedded payload during overlay. A later
                 # child expiry still wins: it is an explicit deletion of stale
@@ -1277,7 +1277,7 @@ def materialize_pit_ex(
                 inactive_expiry = inactive_expiry_by_projected_address.get(addr, "")
                 if (
                     inactive_expiry
-                    and parent_addr.leaf_kind() == "section"
+                    and parent_addr.leaf_kind() in {"section", "chapter", "part"}
                     and parent_v
                     and parent_v.content is not None
                     and parent_v.effective > inactive_expiry

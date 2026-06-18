@@ -7,17 +7,24 @@ and provides shared projection helpers for replay_fold and audit scripts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Callable, Iterable, Optional, cast
 
+from lawvm.core.invariant_detectors import (
+    run_descendant_sibling_loss_detector,
+    run_same_source_descendant_snapshot_shadow_detector,
+)
 from lawvm.core.invariant_profiles import (
     ReplayInvariantProfile,
+    ReplayTransitionDetectorName,
     ReplayWarningFamily,
     TreeInvariantProfile,
     core_replay_strict_profile,
+    structural_product_hierarchical_profile,
     structural_tree_all_profile,
 )
-from lawvm.core.ir import IRNode
-from lawvm.core.phase_result import Finding
+from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.replay_lints import (
     build_flattened_sublist_findings,
     build_label_sequence_gap_findings,
@@ -73,6 +80,29 @@ FI_REPLAY_FOLD_SURFACE = ReplayDiagnosticSurface(
     tree_profile=structural_tree_all_profile("replay_fold_tree"),
     replay_profile=core_replay_strict_profile("replay_fold_tree"),
 )
+
+FI_REPLAY_PRODUCT_SURFACE = ReplayDiagnosticSurface(
+    surface_id="replay_product_tree",
+    tree_profile=structural_product_hierarchical_profile("replay_product_tree"),
+    replay_profile=core_replay_strict_profile("replay_product_tree"),
+)
+
+FI_MATERIALIZED_PRODUCT_SURFACE = ReplayDiagnosticSurface(
+    surface_id="materialized_tree",
+    tree_profile=structural_product_hierarchical_profile("materialized_tree"),
+    replay_profile=core_replay_strict_profile("materialized_tree"),
+)
+
+FI_REPLAY_DIAGNOSTIC_SURFACES: tuple[ReplayDiagnosticSurface, ...] = (
+    FI_REPLAY_FOLD_SURFACE,
+    FI_REPLAY_PRODUCT_SURFACE,
+    FI_MATERIALIZED_PRODUCT_SURFACE,
+)
+
+_TRANSITION_DETECTOR_RUNNERS = {
+    "descendant_sibling_loss": run_descendant_sibling_loss_detector,
+    "same_source_descendant_snapshot_shadow": run_same_source_descendant_snapshot_shadow_detector,
+}
 
 
 def record_replay_profile(
@@ -175,9 +205,88 @@ def project_replay_warning_findings(
                 seen.add(key)
 
 
+def _transition_detector_finding(
+    *,
+    result: object,
+    detector: ReplayTransitionDetectorName,
+    phase: str,
+    source_statute: str,
+    surface_id: str,
+    profile_id: str,
+) -> Finding:
+    detail = dict(getattr(result, "detail", {}) or {})
+    return Finding(
+        kind="REPLAY.TRANSITION_DETECTOR",
+        role=OBSERVATION_ROLE,
+        stage="replay_apply",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "detector": detector,
+            "kind": str(getattr(result, "kind", "") or ""),
+            "path": str(getattr(result, "path_text", "") or ""),
+            "message": str(getattr(result, "message", "") or ""),
+            "phase": phase,
+            "surface": surface_id,
+            "profile_id": profile_id,
+            **detail,
+        },
+    )
+
+
+def project_transition_detector_findings(
+    *,
+    before_ir: IRNode,
+    operations: Sequence[LegalOperation],
+    profile: ReplayInvariantProfile,
+    surface: ReplayDiagnosticSurface,
+    replay_findings: list[Finding],
+    replay_meta_out: dict[str, object] | None,
+    replay_print: Callable[[str], None],
+    source_statute: str = "",
+    phase: str = "replay_apply",
+) -> None:
+    """Project declared transition detectors for one amendment wave."""
+    if not profile.transition_detectors or not operations:
+        return
+
+    rows: list[dict[str, object]] = []
+    for detector in profile.transition_detectors:
+        runner = _TRANSITION_DETECTOR_RUNNERS.get(detector)
+        if runner is None:
+            continue
+        if detector == "descendant_sibling_loss":
+            results = runner(before_ir, operations)
+        else:
+            results = runner(operations)
+        for result in results:
+            replay_print(f"WARNING transition detector: {result.message}")
+            finding = _transition_detector_finding(
+                result=result,
+                detector=detector,
+                phase=phase,
+                source_statute=source_statute,
+                surface_id=surface.surface_id,
+                profile_id=profile.profile_id,
+            )
+            replay_findings.append(finding)
+            rows.append(dict(finding.detail))
+
+    if replay_meta_out is not None and rows:
+        existing = replay_meta_out.setdefault("transition_detector_violations", [])
+        if isinstance(existing, list):
+            existing.extend(rows)
+        else:
+            replay_meta_out["transition_detector_violations"] = rows
+
+
 __all__ = [
+    "FI_MATERIALIZED_PRODUCT_SURFACE",
+    "FI_REPLAY_DIAGNOSTIC_SURFACES",
     "FI_REPLAY_FOLD_SURFACE",
+    "FI_REPLAY_PRODUCT_SURFACE",
     "ReplayDiagnosticSurface",
     "project_replay_warning_findings",
+    "project_transition_detector_findings",
     "record_replay_profile",
 ]

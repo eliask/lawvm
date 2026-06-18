@@ -3606,12 +3606,18 @@ def build_evidence_bundle(
     _rr2 = ctx.replay_result
     if _rr2 is not None and hasattr(_rr2, "timelines") and _rr2.timelines and hasattr(_rr2, "ir") and _rr2.ir:
         try:
-            from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
+            from lawvm.core.invariant_profiles import core_replay_strict_profile
+            from lawvm.core.timeline_invariants import (
+                check_all_timeline_invariants_typed,
+                timeline_invariant_violation_row,
+            )
 
+            _evidence_profile = core_replay_strict_profile("evidence")
             _typed_violations = check_all_timeline_invariants_typed(
                 _rr2.ir,
                 _rr2.timelines,
                 str(getattr(ctx, "cutoff_date", "") or ""),
+                families=_evidence_profile.timeline_invariants,
             )
             if _typed_violations:
                 _section_inv_violations = {}
@@ -3619,12 +3625,7 @@ def build_evidence_bundle(
                     _sl = _tv.section_label
                     if _sl:
                         _section_inv_violations.setdefault(_sl, []).append(
-                            {
-                                "kind": _tv.kind,
-                                "section_label": _sl,
-                                "address_path": _tv.address_path,
-                                "message": _tv.message,
-                            }
+                            timeline_invariant_violation_row(_tv)
                         )
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
@@ -3677,6 +3678,25 @@ def build_evidence_bundle(
         except Exception as exc:
             _evidence_context_diagnostics.append(_evidence_context_degradation("chain_completeness", exc))
 
+    # Suppress timeline shadow promotion when apply-phase transition detector
+    # already witnessed the same descendant path in this replay wave.
+    _apply_phase_shadow_paths: frozenset[str] = frozenset()
+    try:
+        from lawvm.core.timeline_invariants import collect_apply_phase_shadow_paths
+
+        _shadow_findings: list[Any] = []
+        if compile_facade is not None:
+            _shadow_findings.extend(list(compile_facade.finding_ledger))
+        if _rr2 is not None and getattr(_rr2, "findings", None):
+            _shadow_findings.extend(list(_rr2.findings))
+        _apply_phase_shadow_paths = collect_apply_phase_shadow_paths(_shadow_findings)
+    except (NameError, TypeError, AttributeError):
+        raise
+    except Exception as exc:
+        _evidence_context_diagnostics.append(
+            _evidence_context_degradation("apply_phase_shadow_paths", exc)
+        )
+
     # A1 proof algebra: typed section claim path (primary, since session 9).
     from lawvm.tools.evidence_claims import build_section_claims_typed
 
@@ -3694,6 +3714,7 @@ def build_evidence_bundle(
         section_strict_verdicts=_section_strict_verdicts,
         section_invariant_violations=_section_inv_violations,
         chain_completeness_by_section=_chain_completeness_by_section,
+        apply_phase_shadow_paths=_apply_phase_shadow_paths,
     )
     section_claims = [r.to_legacy_row() for r in _typed_results]
     # Content-based version drift detection.

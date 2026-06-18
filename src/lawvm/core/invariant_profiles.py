@@ -37,6 +37,7 @@ TimelineInvariantFamily = Literal[
     "temporary_overlay",
     "expiry_chain",
     "replay_timeline",
+    "replay_timeline_robust",
 ]
 ReplayWarningFamily = Literal[
     "text_duplication",
@@ -224,7 +225,7 @@ def core_replay_strict_profile(surface: str) -> ReplayInvariantProfile:
             "temporal_overlap",
             "temporary_overlay",
             "expiry_chain",
-            "replay_timeline",
+            "replay_timeline_robust",
         ),
         warnings=("text_duplication", "flattened_sublist_family", "label_sequence_gap"),
         local_allowance_policy="frontend_required",

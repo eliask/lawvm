@@ -24,6 +24,11 @@ def fi_timeline_invariants_opt_in_enabled() -> bool:
     return os.environ.get("LAWVM_FI_ENABLE_TIMELINE_INVARIANTS", "") in _TIMELINE_INVARIANTS_ON
 
 
+def fi_timeline_invariants_full_mode_enabled() -> bool:
+    """When set, diagnostic replay also runs negative-space materialization checks."""
+    return os.environ.get("LAWVM_FI_TIMELINE_INVARIANTS_FULL", "") in _TIMELINE_INVARIANTS_ON
+
+
 def fi_bench_timeline_invariants_enabled(*, diagnostic_replay: bool) -> bool:
     """Bench policy: diagnostic replay enables timeline invariants unless explicitly off."""
     if fi_timeline_invariants_opt_in_enabled():
@@ -63,7 +68,16 @@ def project_timeline_invariant_findings(
     from lawvm.core.timeline_invariants import check_all_timeline_invariants_typed
 
     pit_iso = _pit_date_iso(pit_date)
-    violations = check_all_timeline_invariants_typed(ir, timelines, pit_iso)
+    families = tuple(profile.timeline_invariants)
+    if fi_timeline_invariants_full_mode_enabled():
+        if "replay_timeline_robust" in families and "replay_timeline" not in families:
+            families = (*families, "replay_timeline")
+    violations = check_all_timeline_invariants_typed(
+        ir,
+        timelines,
+        pit_iso,
+        families=families,
+    )
     if not violations:
         return
 
@@ -122,6 +136,7 @@ def project_timeline_invariant_findings(
 
 __all__ = [
     "fi_bench_timeline_invariants_enabled",
+    "fi_timeline_invariants_full_mode_enabled",
     "fi_timeline_invariants_opt_in_enabled",
     "project_timeline_invariant_findings",
 ]

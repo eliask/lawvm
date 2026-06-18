@@ -124,8 +124,10 @@ def replay_2009_953_legal_pit():
     return pinned_replay("2009/953", mode="legal_pit", quiet=True)
 
 
-def test_timeline_invariants_corpus_pin_2009_953(replay_2009_953_legal_pit) -> None:
-    """Pinned legal_pit replay: timeline hook emits one known heading witness."""
+def test_timeline_invariants_corpus_pin_2009_953_robust_skips_title_facet(
+    replay_2009_953_legal_pit,
+) -> None:
+    """Robust profile skips statute-title facet timeline carriers as variants."""
     products = replay_2009_953_legal_pit.products
     assert products.timelines is not None
     assert products.materialization_spec is not None
@@ -143,11 +145,7 @@ def test_timeline_invariants_corpus_pin_2009_953(replay_2009_953_legal_pit) -> N
         source_statute="2009/953",
     )
 
-    rows = meta.get("timeline_invariant_violations")
-    assert isinstance(rows, list)
-    assert len(rows) == 1
-    assert rows[0]["kind"] == "timeline_without_ir"
-    assert rows[0]["address"] == "/heading"
-    assert len(findings) == 1
-    assert findings[0].kind == "timeline_invariant_violation"
-    assert findings[0].detail.get("code") == "timeline_without_ir"
+    rows = meta.get("timeline_invariant_violations") or []
+    assert not any(str(row.get("address")) == "/heading" for row in rows)
+    assert not any(row.get("kind") == "timeline_without_ir" for row in rows)
+    assert all(row.get("tier") == "robust" for row in rows)

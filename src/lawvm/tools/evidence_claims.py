@@ -121,6 +121,7 @@ def _build_section_claims(
     oracle_suspect_detail: str = "",
     section_strict_verdicts: Optional[Dict[str, Any]] = None,
     section_invariant_violations: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    apply_phase_shadow_paths: frozenset[str] | None = None,
 ) -> List[Dict]:
     support_by_section = {
         str(item.get("section") or ""): item
@@ -747,17 +748,21 @@ def _build_section_claims(
                                 },
                             }
                         )
-            # C3: Section-local invariant breach → PROVED_REPLAY_BUG.
-            # Timeline invariant violations are direct proof of replay bugs.
+            # C3: Robust timeline invariant breach → PROVED_REPLAY_BUG.
             if section_invariant_violations:
-                _inv_violations = section_invariant_violations.get(section, [])
+                from lawvm.core.timeline_invariants import filter_promotable_timeline_invariant_rows
+
+                _inv_violations = filter_promotable_timeline_invariant_rows(
+                    section_invariant_violations.get(section, []),
+                    apply_phase_shadow_paths=apply_phase_shadow_paths,
+                )
                 if _inv_violations:
                     candidates.append(
                         {
                             "tier": "PROVED_REPLAY_BUG",
                             "kind": "timeline_invariant_violation",
                             "inference_rule": (
-                                "section_has_timeline_invariant_violation_"
+                                "section_has_robust_timeline_invariant_violation_"
                                 "therefore_replay_state_is_inconsistent"
                             ),
                             "observation_sources": ["timeline_invariants"],
@@ -2227,6 +2232,7 @@ def build_section_claims_typed(
     section_strict_verdicts: Optional[Dict[str, Any]] = None,
     section_invariant_violations: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     chain_completeness_by_section: Optional[Dict[str, Any]] = None,
+    apply_phase_shadow_paths: frozenset[str] | None = None,
 ) -> list["ResolvedSectionClaims"]:
     """Typed section claim construction — produces identical output to legacy.
 
@@ -2279,6 +2285,7 @@ def build_section_claims_typed(
         section_strict_verdicts=section_strict_verdicts,
         section_invariant_violations=section_invariant_violations,
         chain_completeness_by_section=chain_completeness_by_section,
+        apply_phase_shadow_paths=apply_phase_shadow_paths,
     )
 
     results: List[ResolvedSectionClaims] = []
