@@ -1462,6 +1462,8 @@ def prepare_payload_surface(
         target_unit_kind,
         muutos_ir,
     )
+    if _has_historical_top_level_kohta_subsection_ops(group_ops):
+        return _split_historical_top_level_kohta_payload_ir(target_unit_kind, group_ops, muutos_ir)
     omission_allowed = strict_profile is None or strict_profile.allows_omission_expansion
     if omission_allowed:
         return _pre_resolve_omissions(
@@ -2799,6 +2801,82 @@ def _container_pruning_is_expected_frontend_split(
 
 
 _ORIGINAL_SPARSE_SUBSECTION_LABEL_ATTR = "original_sparse_subsection_label"
+_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = "fi.historical_top_level_kohta_as_subsection"
+
+
+def _has_historical_top_level_kohta_subsection_ops(group_ops: Iterable[AmendmentOp]) -> bool:
+    return any(
+        _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+        for op in group_ops
+    )
+
+
+def _split_historical_top_level_kohta_payload_ir(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> Optional[IRNode]:
+    if (
+        target_unit_kind != "section"
+        or muutos_ir is None
+        or muutos_ir.kind is not IRNodeKind.SECTION
+        or not _has_historical_top_level_kohta_subsection_ops(group_ops)
+    ):
+        return muutos_ir
+
+    target_labels = {
+        str(op.target_paragraph)
+        for op in group_ops
+        if (
+            op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+            and _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+        )
+    }
+    if not target_labels:
+        return muutos_ir
+
+    subsections = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return muutos_ir
+
+    source_subsection = subsections[0]
+    split_subsections: list[IRNode] = []
+    for child in source_subsection.children:
+        if child.kind is not IRNodeKind.PARAGRAPH:
+            continue
+        text = irnode_to_text(child).strip()
+        match = re.match(r"^\((\d+(?:\s*[a-z])?)\)", text)
+        if match is None:
+            continue
+        label = _norm_num_token(match.group(1))
+        if label not in target_labels:
+            continue
+        split_subsections.append(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=label,
+                attrs=dict(child.attrs),
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=text),),
+            )
+        )
+
+    if {str(child.label or "") for child in split_subsections} != target_labels:
+        return muutos_ir
+
+    retained = [
+        child
+        for child in muutos_ir.children
+        if child.kind is not IRNodeKind.SUBSECTION and child.kind is not IRNodeKind.OMISSION
+    ]
+    return IRNode(
+        kind=muutos_ir.kind,
+        label=muutos_ir.label,
+        text=muutos_ir.text,
+        attrs=dict(muutos_ir.attrs),
+        children=tuple(retained + split_subsections),
+    )
 
 
 def _align_sparse_omission_subsections_to_live(

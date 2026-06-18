@@ -13602,6 +13602,35 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     assert group["ops_after_normalization"] == group["ops_raw"]
 
 
+def test_inspect_amendment_1992_147_1995_337_maps_historical_top_level_kohta_to_subsections() -> None:
+    """Historical top-level `kohta` wording can name direct subsection siblings.
+
+    `1995/337` says `4 §:n kohdan 24` and `uudet (29) ja (30) kohdat`, while
+    the live/source section models `(1)`, `(2)`, ... as direct subsection
+    siblings.  This must not compile as a destructive whole-section replace or
+    as items under subsection 1.
+    """
+    bundle = build_amendment_bundle("1992/147", "1995/337", mode="legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "4")
+
+    assert group["ops_raw"] == [
+        "REPLACE 4 § 24 mom",
+        "INSERT 4 § 29 mom",
+        "INSERT 4 § 30 mom",
+    ]
+    assert group["ops_after_normalization"] == group["ops_raw"]
+    assert group["ops_final"] == group["ops_raw"]
+    assert [
+        (row["op"], row["slot_label"], row["target_paragraph"])
+        for row in group["sparse_slot_bindings"]
+    ] == [
+        ("REPLACE 4 § 24 mom", "24", 24),
+        ("INSERT 4 § 29 mom", "29", 29),
+        ("INSERT 4 § 30 mom", "30", 30),
+    ]
+    assert group["elaboration_observations"] == []
+
+
 def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replaces_for_section_9() -> None:
     bundle = build_amendment_bundle("2005/579", "2014/751", mode="official_consolidation")
     group9 = next(
