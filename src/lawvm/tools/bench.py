@@ -38,9 +38,12 @@ import Levenshtein
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.replay_entrypoint import replay_xml
-from lawvm.finland.replay_timeline_diagnostics import fi_bench_timeline_invariants_enabled
+from lawvm.finland.replay_timeline_diagnostics import (
+    fi_bench_timeline_invariants_enabled,
+    fi_timeline_invariants_opt_in_enabled,
+)
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
-from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
 from lawvm.semantic.projection import get_oracle_text_normalizer
 from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
@@ -49,6 +52,14 @@ from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
+from lawvm.tools.bench_diagnostic_tiers import (
+    bench_diagnostic_sidecar_rows,
+    enrich_bench_finding_counts,
+    format_tiered_bench_warning_summary,
+    merge_bench_diagnostic_counts,
+    merge_diagnostic_counter_dicts,
+    print_bench_diagnostic_tier_rollup,
+)
 from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 # ---------------------------------------------------------------------------
@@ -72,28 +83,12 @@ _BENCH_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.bench_comparable()
 
 
 def _format_bench_warning_summary(diagnostics: Counter[str]) -> str:
-    if not diagnostics:
-        return ""
-    parts = [f"{kind}×{count}" for kind, count in sorted(diagnostics.items(), key=lambda item: (-item[1], item[0]))]
-    label = (
-        "diagnostics"
-        if any(kind.startswith(("finding:", "source_adjudication:")) for kind in diagnostics)
-        else "warnings"
-    )
-    return f"  {label}: " + ", ".join(parts)
+    return format_tiered_bench_warning_summary(diagnostics)
 
 
 def _summarize_bench_replay_result_diagnostics(master: Any, captured_counts: Counter[str]) -> Counter[str]:
     """Merge captured warnings with typed replay evidence that bench otherwise drops."""
-    counts = Counter(captured_counts)
-    for finding in getattr(master, "findings", ()) or ():
-        kind = str(getattr(finding, "kind", "") or "").strip()
-        if kind:
-            counts[f"finding:{kind}"] += 1
-    source_adjudication = getattr(master, "source_adjudication", None)
-    if source_adjudication is not None and getattr(source_adjudication, "oracle_suspect", ""):
-        counts["source_adjudication:oracle_suspect"] += 1
-    return counts
+    return merge_bench_diagnostic_counts(captured_counts, enrich_bench_finding_counts(master))
 
 
 def _merge_bench_structural_diagnostics(diagnostics: Counter[str], event_counts: Dict[str, int]) -> Counter[str]:
@@ -147,6 +142,21 @@ def _summarize_bench_warning_diagnostics(
     return counts
 
 
+def _bench_should_allocate_replay_meta(*, quiet: bool, diagnostic_replay: bool) -> bool:
+    """Timeline invariant hook needs a live replay_meta_out dict to arm itself."""
+    return (
+        fi_timeline_invariants_opt_in_enabled()
+        or fi_bench_timeline_invariants_enabled(diagnostic_replay=diagnostic_replay)
+        or fi_bench_timeline_invariants_enabled(diagnostic_replay=not quiet)
+    )
+
+
+def _bench_replay_sinks(*, quiet: bool, diagnostic_replay: bool) -> ReplayXmlSinks | None:
+    if not _bench_should_allocate_replay_meta(quiet=quiet, diagnostic_replay=diagnostic_replay):
+        return None
+    return ReplayXmlSinks(replay_meta_out={})
+
+
 def _run_replay_with_bench_warning_capture(
     sid: str,
     *,
@@ -157,10 +167,11 @@ def _run_replay_with_bench_warning_capture(
     unexpected_keys = set(replay_kwargs) - {"quiet", "build_full_products", "oracle_selector"}
     if unexpected_keys:
         raise TypeError(f"unexpected bench replay kwargs: {sorted(unexpected_keys)}")
+    quiet = bool(replay_kwargs.get("quiet", False))
     request = ReplayXmlRequest(
         parent_id=sid,
         mode=mode,
-        quiet=bool(replay_kwargs.get("quiet", False)),
+        quiet=quiet,
         build_full_products=bool(replay_kwargs.get("build_full_products", True)),
         oracle_selector=replay_kwargs.get("oracle_selector"),
     )
@@ -168,17 +179,14 @@ def _run_replay_with_bench_warning_capture(
     prev_timeline_env = os.environ.get(timeline_env)
     if fi_bench_timeline_invariants_enabled(diagnostic_replay=diagnostic_replay):
         os.environ[timeline_env] = "1"
+    sinks = _bench_replay_sinks(quiet=quiet, diagnostic_replay=diagnostic_replay)
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
     try:
-        if diagnostic_replay:
-            master = call_replay_xml(replay_xml, request=request)
-            return master, Counter()
-
-        stdout_buf = io.StringIO()
-        stderr_buf = io.StringIO()
         with py_warnings.catch_warnings(record=True) as caught:
             py_warnings.simplefilter("always")
             with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                master = call_replay_xml(replay_xml, request=request)
+                master = call_replay_xml(replay_xml, request=request, sinks=sinks)
     finally:
         if prev_timeline_env is None:
             os.environ.pop(timeline_env, None)
@@ -991,7 +999,16 @@ def _score_one_with_meta(args: Tuple) -> Tuple[int, str, float, str, float, str,
         fast=fast,
     )
     elapsed = time.time() - t0
-    return (count, sid, sim, status, elapsed, _format_bench_warning_summary(warning_counts), lev_sim)
+    return (
+        count,
+        sid,
+        sim,
+        status,
+        elapsed,
+        _format_bench_warning_summary(warning_counts),
+        lev_sim,
+        dict(warning_counts),
+    )
 
 
 def _score_one_with_meta_section(args: Tuple[int, str, bool, Literal["official_consolidation", "legal_pit"]]) -> Tuple[int, str, float, float, str, float, str]:
@@ -1007,7 +1024,16 @@ def _score_one_with_meta_section(args: Tuple[int, str, bool, Literal["official_c
         diagnostic_replay=diagnostic_replay,
     )
     elapsed = time.time() - t0
-    return (count, sid, text_sim, section_sim, status, elapsed, _format_bench_warning_summary(warning_counts))
+    return (
+        count,
+        sid,
+        text_sim,
+        section_sim,
+        status,
+        elapsed,
+        _format_bench_warning_summary(warning_counts),
+        dict(warning_counts),
+    )
 
 
 def _run_benchmark_section(
@@ -1017,6 +1043,7 @@ def _run_benchmark_section(
     diagnostic_replay: bool = False,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
+    diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> List[Tuple[int, str, float, float, str, float]]:
     """Run benchmark with section-level scoring.
 
@@ -1042,8 +1069,10 @@ def _run_benchmark_section(
                 done += 1
                 if diagnostic_summaries_out is not None:
                     diagnostic_summaries_out[result[1]] = result[6]
+                if diagnostic_counts_out is not None:
+                    diagnostic_counts_out[result[1]] = result[7]
                 if verbose:
-                    count, sid, text_sim, section_sim, status, elapsed, warning_summary = result
+                    count, sid, text_sim, section_sim, status, elapsed, warning_summary, _counts = result
                     t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
                     s_err = f"{(1 - section_sim) * 100:.2f}%" if section_sim >= 0 else "---"
                     extra = "" if status == "OK" else f"  {status}"
@@ -1066,6 +1095,8 @@ def _run_benchmark_section(
         warning_summary = _format_bench_warning_summary(warning_counts)
         if diagnostic_summaries_out is not None:
             diagnostic_summaries_out[sid] = warning_summary
+        if diagnostic_counts_out is not None:
+            diagnostic_counts_out[sid] = dict(warning_counts)
         if verbose:
             t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
             s_err = f"{(1 - section_sim) * 100:.2f}%" if section_sim >= 0 else "---"
@@ -1085,6 +1116,7 @@ def _run_benchmark(
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     fast: bool = False,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
+    diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Tuple[List[Tuple[int, str, float, str, float]], Dict[str, float]]:
     """Run benchmark, optionally parallel with ProcessPoolExecutor.
 
@@ -1129,11 +1161,13 @@ def _run_benchmark(
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 result = future.result()
-                count, sid, sim, status, elapsed, warning_summary, lev_sim = result
+                count, sid, sim, status, elapsed, warning_summary, lev_sim, warning_counts = result
                 results[idx] = (count, sid, sim, status, elapsed)
                 lev_sims[sid] = lev_sim
                 if diagnostic_summaries_out is not None:
                     diagnostic_summaries_out[sid] = warning_summary
+                if diagnostic_counts_out is not None:
+                    diagnostic_counts_out[sid] = warning_counts
                 done += 1
                 if verbose:
                     err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
@@ -1158,12 +1192,49 @@ def _run_benchmark(
         warning_summary = _format_bench_warning_summary(warning_counts)
         if diagnostic_summaries_out is not None:
             diagnostic_summaries_out[sid] = warning_summary
+        if diagnostic_counts_out is not None:
+            diagnostic_counts_out[sid] = dict(warning_counts)
         if verbose:
             err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
             lev_str = f" lev {(1 - lev_sim) * 100:.2f}%" if lev_sim >= 0 else ""
             extra = "" if status == "OK" else f"  {status}"
             print(f"[{i}/{total}] {count:2d}amend {sid:12s} → err {err:>7s}{lev_str} ({elapsed:.1f}s){extra}{warning_summary}")
     return results, lev_sims
+
+
+def _bench_diagnostics_sidecar_path(run_path: Path) -> Path:
+    return run_path.with_suffix(".diagnostics.jsonl")
+
+
+def _save_bench_diagnostic_sidecar(
+    *,
+    run_path: Path,
+    label: str,
+    results: List[Tuple[int, str, float, str, float]],
+    diagnostic_counts: Dict[str, Dict[str, int]],
+) -> Path | None:
+    """Persist structured per-statute diagnostic rows beside the bench CSV."""
+    if not diagnostic_counts:
+        return None
+    out_path = _bench_diagnostics_sidecar_path(run_path)
+    row_count = 0
+    with out_path.open("w", encoding="utf-8") as handle:
+        for amend_count, sid, _sim, _status, _elapsed in results:
+            counts = diagnostic_counts.get(sid) or {}
+            for row in bench_diagnostic_sidecar_rows(
+                label=label,
+                statute_id=sid,
+                amendment_count=amend_count,
+                counts=counts,
+            ):
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+                row_count += 1
+    if row_count == 0:
+        if out_path.exists():
+            out_path.unlink()
+        return None
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -2387,6 +2458,7 @@ def main(args) -> None:
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None
     lev_sims: Optional[Dict[str, float]] = None
     diagnostic_summaries: Dict[str, str] = {}
+    diagnostic_counts: Dict[str, Dict[str, int]] = {}
     if section_score_mode:
         section_results = _run_benchmark_section(
             corpus,
@@ -2395,6 +2467,7 @@ def main(args) -> None:
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
             diagnostic_summaries_out=diagnostic_summaries,
+            diagnostic_counts_out=diagnostic_counts,
         )
         # Extract standard (text) results from section_results for summary/history
         results = [
@@ -2410,7 +2483,11 @@ def main(args) -> None:
             mode=bench_mode,
             fast=fast_mode,
             diagnostic_summaries_out=diagnostic_summaries,
+            diagnostic_counts_out=diagnostic_counts,
         )
+
+    if diagnostic_counts:
+        print_bench_diagnostic_tier_rollup(merge_diagnostic_counter_dicts(diagnostic_counts.values()))
 
     flat = [(sid, sim, st) for _, sid, sim, st, _ in results]
     stats = _compute_stats(flat)
@@ -2481,9 +2558,18 @@ def main(args) -> None:
         oracle_stale_adjusted=oracle_adjusted_summary,
     )
 
+    diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(
+        run_path=run_path,
+        label=label,
+        results=results,
+        diagnostic_counts=diagnostic_counts,
+    )
+
     print(f"\nRun saved: {run_path}")
     print(f"History  : {_history_path()}")
     print(f"Evidence : {evidence_report_path}")
+    if diagnostics_sidecar_path is not None:
+        print(f"Diagnostics: {diagnostics_sidecar_path}")
 
     # Show errors last — the most visible position for tail output
     _show_errors(results)
