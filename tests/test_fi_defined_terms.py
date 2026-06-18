@@ -587,3 +587,61 @@ def test_jaljempana_alias_markup_is_stripped() -> None:
     assert "<" not in jal[0].term
     # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(1476/2007)").
     assert jal[0].target_ref == "2007/1476"
+
+
+# ---------------------------------------------------------------------------
+# Definiendum-boundary precision (sentence boundary / coordinated head /
+# leading adverbial / prior-entry connector)
+# ---------------------------------------------------------------------------
+
+
+def test_jaljempana_alias_stops_at_sentence_boundary() -> None:
+    # An unquoted alias is a single naming token; it must terminate at the
+    # sentence-ending period and never swallow the following sentence's first
+    # word. (Observed: "…laissa (1137/2016), jäljempänä markkinavalvontalaki.
+    # Markkinavalvonnan …".)
+    text = (
+        "annetussa laissa (1137/2016), jäljempänä markkinavalvontalaki. "
+        "Markkinavalvonnan, talouden toimijoiden tehtävät."
+    )
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "markkinavalvontalaki"
+    assert "." not in jal[0].term
+
+
+def test_dangling_hyphen_compound_head_is_kept_in_coordination() -> None:
+    # An elliptical coordination "Lammas- ja vuohirekisterillä" (= lammasrekisteri
+    # + vuohirekisteri) must keep the clipped compound prefix "Lammas-"; the head
+    # must not be clipped to "ja vuohirekisterillä". (2010/233.)
+    text = "Lammas- ja vuohirekisterillä tarkoitetaan lammas- ja vuohieläinten rekisteriä."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Lammas- ja vuohirekisterillä" for b in tk)
+
+
+def test_leading_adverbial_clause_is_trimmed_from_definiendum() -> None:
+    # A leading adverbial clause ("… huomioon ottaen") modifies the definition
+    # sentence, not the definiendum NP; the term is the adessive head alone.
+    # (2010/233: "… rajausmahdollisuus huomioon ottaen kasvulohkolla tarkoitetaan
+    # …" → "kasvulohkolla".)
+    text = (
+        "viljelylohkon rajausmahdollisuus huomioon ottaen kasvulohkolla "
+        "tarkoitetaan yhtenäistä viljelyaluetta."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "kasvulohkolla" for b in tk)
+    assert not any("ottaen" in b.term for b in tk)
+
+
+def test_leading_prior_entry_connector_is_stripped() -> None:
+    # In an enumerated block a prior item's trailing "sekä" must not be prepended
+    # to the next item's definiendum ("…komissiota; sekä [\n] tavaralla …" →
+    # "tavaralla", not "sekä tavaralla"). (1997/231 shape.)
+    text = (
+        "Tässä laissa tarkoitetaan: "
+        "jollakin Euroopan yhteisön komissiota; sekä "
+        "tavaralla sukusoluja, alkioita ja siitoseläimiä;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "tavaralla" for b in tk)
+    assert not any(b.term.startswith("sekä") for b in tk)

@@ -223,11 +223,17 @@ _PAREN_ALIAS = re.compile(
 # Anchored on the cue word "jäljempänä".  Captures the term up to a closing
 # paren / comma / quote / end-of-window.  Bounded term body.
 
+# A sentence-ending '.' BOUNDS an unquoted alias: the alias is a single naming
+# token, never a clause, so it can never span a period into the next sentence.
+# (Observed: "…laissa (1137/2016), jäljempänä markkinavalvontalaki. Markkinavalvonnan
+# …" must yield ``markkinavalvontalaki``, not ``markkinavalvontalaki. Markkinavalvonnan``.)
+# The period is excluded from the term body AND admitted as a terminator so the
+# lazy capture stops at it.  A quoted alias is bounded by its closing quote.
 _JALJEMPANA = re.compile(
     r"jäljempänä\s{1,3}"
     r"(?P<q>[\"“”])?"
-    r"(?P<term>[^\")(,;]{1,80}?)"
-    r"(?(q)[\"“”]|(?=[),;]|\s*$))",
+    r"(?P<term>[^\")(,;.]{1,80}?)"
+    r"(?(q)[\"“”]|(?=[).,;]|\s*$))",
 )
 
 # ---------------------------------------------------------------------------
@@ -242,8 +248,17 @@ _JALJEMPANA = re.compile(
 # before the verb, and the expansion Y is the clause after it up to a sentence
 # boundary.  Bounded windows throughout.
 
+# A term-run token that also admits a DANGLING-HYPHEN compound prefix
+# ("Lammas-" in "Lammas- ja vuohirekisterillä", an elliptical coordination of
+# ``lammasrekisteri`` + ``vuohirekisteri``).  A bare ``_TERM_WORD`` requires a
+# letter after every hyphen, so it silently dropped the clipped head; the trailing
+# ``-?`` lets the head be captured as part of the coordinated definiendum.  The
+# left-boundary trim (`_trim_to_definiendum_np`) still removes any leading
+# non-definiendum material, so widening the capture never over-binds.
+_TERM_RUN_WORD = r"[a-zA-ZäöåÄÖÅ]+(?:-[a-zA-ZäöåÄÖÅ]+)*-?"
+
 _TARKOITETAAN = re.compile(
-    rf"(?P<term>(?:{_TERM_WORD}\s+){{0,3}}{_TERM_WORD})\s+tarkoitetaan\b"
+    rf"(?P<term>(?:{_TERM_RUN_WORD}\s+){{0,3}}{_TERM_RUN_WORD})\s+tarkoitetaan\b"
     r"(?P<expansion>[^.;]{0,200})",
     re.IGNORECASE,
 )
@@ -761,6 +776,89 @@ def _is_clean_definiendum_phrase(words: list[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Definiendum LEFT-boundary trim (adverbial / connector strip)
+# ---------------------------------------------------------------------------
+#
+# A captured run may carry NON-definiendum material on its LEFT edge that the
+# regex window swept in:
+#
+#   * a PRIOR-ENTRY trailing connector — a leading ``ja`` / ``tai`` / ``sekä`` that
+#     terminated the PREVIOUS list item, not part of this definiendum
+#     ("…komissiota; sekä [\n] tavaralla …" → term is ``tavaralla``, not
+#     ``sekä tavaralla``); and
+#   * a leading ADVERBIAL CLAUSE — an adverb / pro-form / gerund / temporal
+#     infinitive that modifies the definition sentence, not the definiendum NP
+#     ("… rajausmahdollisuus huomioon ottaen kasvulohkolla …" → ``kasvulohkolla``;
+#     "Tällöin maatilan yritystoiminnan tulolla …" → ``maatilan yritystoiminnan
+#     tulolla``).
+#
+# CRITICAL — this MUST NOT eat a legitimate COORDINATED head.  A coordinator that
+# sits BETWEEN two definienda ("Pienellä ja keskisuurella yrityksellä",
+# "Lammas- ja vuohirekisterillä") is INSIDE the term and is kept; only a coordinator
+# that LEADS the whole run (a prior-entry connector) is stripped.  The adverbial cut
+# is anchored on a CLOSED set of clause markers (exact lowercase equality) plus the
+# unambiguous temporal-infinitive suffix ``-ttaessa`` / ``-ttäessä`` (a finite
+# subordinate clause, never a noun case), so a genitive modifier ending in ``-en``
+# ("Rakennuksen", "Maataloustuotteiden") is NEVER misread as a gerund.
+
+#: Plain coordinators.  A LEADING one is a prior-entry connector and is stripped;
+#: a MEDIAL one (between two definienda) is genuine coordination and is kept.
+_LEADING_COORDINATORS: frozenset[str] = frozenset({"ja", "tai", "sekä", "taikka"})
+
+#: Closed adverb / pro-form / gerund markers that open an adverbial clause and are
+#: never part of a definiendum noun phrase.  Matched by exact lowercase equality
+#: (no suffix guessing) — the only morphological rule admitted is the temporal
+#: second-infinitive inessive (``-ttaessa`` / ``-ttäessä``) handled separately.
+_ADVERBIAL_CLAUSE_MARKERS: frozenset[str] = frozenset(
+    {
+        # leading adverbs / pro-forms
+        "tällöin", "jolloin", "muuten", "muutoin", "kuitenkin", "kuitenkaan",
+        "siten", "näin", "lisäksi", "mitä",
+        # "huomioon ottaen" idiom (illative + gerund) and bare -en gerunds
+        "huomioon", "ottaen", "lukien", "noudattaen", "ottamatta", "lukematta",
+    }
+)
+
+#: Temporal second-infinitive inessive suffix ("sovellettaessa", "laskettaessa"):
+#: a subordinate-clause verb, never a noun case.  Distinct from any genitive (a
+#: genitive never ends ``-ttaessa`` / ``-ttäessä``), so this is safe to strip.
+_TEMPORAL_INFINITIVE = re.compile(r"(ttaessa|ttäessä)$", re.IGNORECASE)
+
+
+def _trim_to_definiendum_np(words: list[str]) -> Optional[list[str]]:
+    """Strip leading non-definiendum material (prior-entry connector / adverbial
+    clause) from a captured definiendum run, preserving genuine coordination.
+
+    Returns the trimmed definiendum word list, or ``None`` if nothing survives.
+    The HEAD (last word) is never touched; only the LEFT edge is trimmed:
+
+      1. drop leading plain coordinators (``ja`` / ``tai`` / ``sekä``) — a
+         prior-entry connector;
+      2. cut everything up to and including the LAST adverbial-clause marker
+         (closed set / temporal infinitive), so a leading adverbial clause is
+         removed but a medial coordinator between two definienda is kept;
+      3. drop any coordinator the cut newly exposed at the left edge.
+    """
+    ws = list(words)
+    while ws and ws[0].lower() in _LEADING_COORDINATORS:
+        ws = ws[1:]
+    if not ws:
+        return None
+    # Find the LAST adverbial-clause marker in the prefix (never the head itself);
+    # everything up to and including it is the adverbial clause, not the term.
+    cut = -1
+    for i, w in enumerate(ws[:-1]):
+        low = w.lower()
+        if low in _ADVERBIAL_CLAUSE_MARKERS or _TEMPORAL_INFINITIVE.search(low):
+            cut = i
+    if cut >= 0:
+        ws = ws[cut + 1 :]
+    while ws and ws[0].lower() in _LEADING_COORDINATORS:
+        ws = ws[1:]
+    return ws or None
+
+
+# ---------------------------------------------------------------------------
 # Recognizers
 # ---------------------------------------------------------------------------
 
@@ -882,8 +980,13 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
             if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
                 start_idx = i + 1
         phrase_words = words[start_idx:]
-        if not phrase_words:
+        # Strip a leading prior-entry connector or adverbial clause swept into the
+        # run ("sekä tavaralla" → ``tavaralla``; "rajausmahdollisuus huomioon ottaen
+        # kasvulohkolla" → ``kasvulohkolla``), preserving medial coordination.
+        trimmed = _trim_to_definiendum_np(phrase_words)
+        if trimmed is None:
             continue
+        phrase_words = trimmed
         # DECLINE a swept clause fragment / cross-reference idiom: a definiendum
         # that begins with a bare case-suffix fragment (split ``§:ssä`` / ``EU:n``)
         # or spans a clause boundary (cross-reference postposition / relative
@@ -954,7 +1057,16 @@ def _recognize_enumerated_definitions(
             # The enumerated definiendum is the LEADING adessive-headed phrase
             # ("X:llä" / "<modifier> <head>:llä"); reject the referential /
             # non-definiendum shape exactly as shape 3 does (no fabrication).
-            phrase_words = _adessive_phrase_from_run(run_words)
+            head_phrase = _adessive_phrase_from_run(run_words)
+            if head_phrase is None:
+                continue
+            # The definiendum head is the LAST word of ``head_phrase``; words AFTER
+            # it belong to the expansion (computed from the head index, BEFORE any
+            # left-trim, so the expansion boundary is unaffected by the trim).
+            head_len = len(head_phrase)
+            # Strip a leading prior-entry connector ("…komissiota; sekä tavaralla …"
+            # → ``tavaralla``) or adverbial clause, preserving medial coordination.
+            phrase_words = _trim_to_definiendum_np(head_phrase)
             if phrase_words is None:
                 continue
             # DECLINE a swept clause fragment / cross-reference idiom. The item
@@ -969,7 +1081,7 @@ def _recognize_enumerated_definitions(
             term_surface = " ".join(phrase_words)
             # Any word-run tokens AFTER the definiendum head belong to the
             # expansion (prepended to the regex's tail).
-            trailing = run_words[len(phrase_words):]
+            trailing = run_words[head_len:]
             expansion_text = (" ".join(trailing) + (" " if trailing else "") + rest).strip()
             act_id = _act_id_in_expansion(expansion_text)
             # The definiendum surface is an INFLECTED (adessive) form; M1 is
