@@ -2948,6 +2948,45 @@ def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sectio
     ]
 
 
+def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_preamble() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2011/582")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", children=()),
+                IRNode(kind=IRNodeKind.SECTION, label="2", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2011/582",
+        source_title=(
+            "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
+            "ilmoitusvelvollisuuden alkamisesta annetun asetuksen muuttamisesta"
+        ),
+        used_sec1_fallback=False,
+        parent_id="2011/516",
+        strict_profile=None,
+    )
+
+    assert [
+        (op.op_type, op.target_unit_kind, op.target_section, op.sec1_body_johto_fallback)
+        for op in phase2.output
+    ] == [("REPLACE", "section", "1", False)]
+    assert phase2.output[0].source_statute == "2011/582"
+    assert phase2.output[0].lo is not None
+    assert phase2.output[0].lo.source.raw_text == "muutetaan (516/2011) 1 § seuraavasti:"
+
+
 def test_normalize_and_compile_ops_records_empty_extraction_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

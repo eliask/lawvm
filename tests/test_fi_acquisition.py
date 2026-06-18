@@ -102,6 +102,48 @@ def test_build_amendment_acquisition_result_uses_sec1_pre_routing_fallback() -> 
     assert result.decision.should_apply is True
 
 
+def test_build_amendment_acquisition_result_keeps_short_operative_preamble() -> None:
+    xml = """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <preamble>
+        <formula name="enactingClause">
+          <p>muutetaan (516/2011) 1 § seuraavasti:</p>
+        </formula>
+      </preamble>
+      <body>
+        <section eId="sec_1">
+          <num>1 §</num>
+          <subsection>
+            <content>
+              <p>Tuomioistuimen on tehtävä ilmoitukset ulosottoviranomaiselle.</p>
+            </content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+
+    result = build_amendment_acquisition_result(
+        xml_bytes=xml,
+        parent_id="2011/516",
+        amendment_id="2011/582",
+        source_title=(
+            "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
+            "ilmoitusvelvollisuuden alkamisesta annetun asetuksen muuttamisesta"
+        ),
+        parent_title=(
+            "Oikeusministeriön asetus ulosottoperustetta koskevan tuomioistuimen "
+            "ilmoitusvelvollisuuden alkamisesta"
+        ),
+    )
+
+    assert result.decision.selected_lane == "preamble"
+    assert result.decision.pre_routing_sec1_requested is False
+    assert result.decision.chosen_normalized_text == "muutetaan (516/2011) 1 § seuraavasti:"
+    assert result.decision.should_apply is True
+    assert result.decision.route_reason == "references_parent"
+
+
 def test_build_amendment_acquisition_result_accepts_parent_validated_citation_typo() -> None:
     result = build_amendment_acquisition_result(
         xml_bytes=_corrupt_citation_rewrite_xml(),
