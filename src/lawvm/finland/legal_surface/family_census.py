@@ -142,7 +142,18 @@ def classify(projection: set[str], oracle: set[str], declined: bool) -> str:
 # Type aliases for the family plug-points.
 SegmentSelector = Callable[[str, str], Iterator[CensusUnit]]
 ProjectionFn = Callable[[CensusUnit, str], set[str]]
-OracleFn = Callable[[CensusUnit], set[str]]
+#: The oracle plug-point. Receives the unit AND a per-statute oracle context
+#: (whatever ``oracle_prepare_fn`` returned for this statute, or ``None`` when no
+#: prepare hook is wired). The context lets a family run a WHOLE-STATUTE oracle
+#: once per statute and bucket its results to units, instead of re-running the
+#: oracle per unit on the unit text alone (e.g. the citation family runs the full
+#: production reference extractor over the statute XML, which the unit text cannot
+#: reproduce, then buckets the mentions to segments by source-span overlap).
+OracleFn = Callable[[CensusUnit, object], set[str]]
+#: Optional per-statute oracle preparation. Called once per statute with
+#: ``(statute_id, body)`` BEFORE its units are classified; its return value is
+#: threaded to every ``oracle_fn`` call for that statute as the oracle context.
+OraclePrepareFn = Callable[[str, str], object]
 MissShapeFn = Callable[[set[str], str], str]
 
 
@@ -153,6 +164,7 @@ def run_family_census(
     projection_fn: ProjectionFn,
     oracle_fn: OracleFn,
     miss_shape_fn: MissShapeFn,
+    oracle_prepare_fn: OraclePrepareFn | None = None,
     limit: int = 0,
     min_year: int = 0,
     check_totality: bool | None = None,
@@ -223,13 +235,22 @@ def run_family_census(
         except Exception:
             continue
 
+        # Per-statute oracle context: families whose oracle needs the WHOLE
+        # statute (not just the unit text) build it once here. None when no hook.
+        oracle_ctx: object = None
+        if oracle_prepare_fn is not None and units:
+            try:
+                oracle_ctx = oracle_prepare_fn(sid, body)
+            except Exception:
+                oracle_ctx = None
+
         for unit in units:
             in_scope_units += 1
             if check_totality and not unit.totality_ok:
                 totality_violations += 1
 
             projection = projection_fn(unit, sid)
-            oracle = oracle_fn(unit)
+            oracle = oracle_fn(unit, oracle_ctx)
             bucket = classify(projection, oracle, unit.declined)
             counts[bucket] += 1
 

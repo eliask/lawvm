@@ -464,3 +464,313 @@ def projection_reference_keys(sp: SentenceParse, source_statute_id: str) -> set[
         if m.target_provision_ref is not None:
             keys.add(m.target_provision_ref.serialized())
     return keys
+
+
+# ---------------------------------------------------------------------------
+# Full production reference-extraction oracle (whole statute, span-bucketed).
+#
+# The span-restricted ``oracle_reference_keys_for_span`` above runs ONLY the
+# plain-text statute-citation recognizer — it EXCLUDES the ``<ref>``-element lane,
+# the by-name (``-lain``/``-kaaren``) lanes, etc. That under-counts what
+# production actually finds, which INFLATES the census ``superset`` bucket with
+# citations production already binds via another lane (an ORACLE ARTIFACT, not a
+# genuine construction-frame win).
+#
+# This oracle runs the FULL production extractor (``extract_all_reference_mentions``)
+# over the whole statute XML once, keeps only the CROSS-STATUTE citations (the same
+# family the construction projection emits — INTERNAL self-refs, EU, treaty and
+# preparatory mentions are out of family and would otherwise create phantom
+# misses), buckets each mention into a citation segment by SOURCE-SPAN OVERLAP, and
+# keys it by ``ProvisionRef.serialized()`` (the same key-fn the projection uses).
+#
+# Offset basis: a mention's ``source_span.byte_offset`` is a byte offset into the
+# raw statute ``xml_bytes`` (UTF-8), NOT a char offset into the decoded body text
+# the SegmentationGraph segments. Rather than reconstruct a byte→char map, each
+# mention is RE-LOCATED in the decoded body text by its ``surface_text`` (the exact
+# substring the recognizer matched), advancing a per-surface char cursor
+# left-to-right (the same fail-loud-by-absence discipline as
+# ``bundle.locate_span`` / the extractor's own ``_find_with_left_boundary``). The
+# located char span is then overlap-tested against each segment's char range.
+#
+# Redundant statute-only collapse: for ONE citation the production extractor
+# commonly emits BOTH a coarse statute-only mention (``527/2014``) AND the
+# section/chapter-precise mentions (``527/2014/142``). The construction projection
+# emits only the precise key for that citation, never the redundant coarse one.
+# Keeping both in the oracle would score the coarse ``527/2014`` a phantom ``miss``
+# against a projection that found the SAME citation MORE precisely. So a bare
+# resolved statute-only key ``S`` is dropped from a segment's oracle IFF the same
+# segment's oracle also carries a strictly-more-precise key ``S/…`` (see
+# :func:`_collapse_redundant_statute_only`). A statute-only key with no precise
+# sibling is a real statute-level citation and is kept (a genuine miss if the
+# projection lacks it).
+#
+# Same-site by-name dedup: the production by-name HEAD lane emits an UNRESOLVED
+# ``fi-name:NAME`` key for a citation EVEN WHEN the resolved-id lane binds the SAME
+# ``name (id)`` site to ``NUMBER/YEAR`` (``Valmiuslaissa (1552/2011)`` → both
+# ``1552/2011`` AND ``fi-name:valmiuslaki``). The two describe ONE citation; the
+# projection keys it only by the resolved id. So a ``fi-name:`` key whose located
+# char span OVERLAPS a resolved-id span is dropped (same site, resolved key wins) —
+# this is a span-overlap fact, never a name-guess. A ``fi-name:`` key with NO
+# overlapping resolved id is a genuine by-name-WITHOUT-inline-id citation (e.g.
+# ``hallintolainkäyttölaissa säädetään``): it is OUT of the inline-(id) construction
+# family the projection serves and is KEPT as an honest miss/frontier item.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _FullOracleContext:
+    """Per-statute prepared full-extractor oracle (built once per statute).
+
+    ``by_segment`` maps a citation segment's exact text to the set of
+    cross-statute reference keys the full production extractor binds within that
+    segment (after redundant statute-only collapse). Segment texts are the keys
+    because the census engine threads only the unit text to the oracle plug-point.
+    """
+
+    by_segment: dict[str, set[str]]
+
+
+def _locate_surface_char_span(
+    body: str, surface: str, cursor_by_surface: dict[str, int]
+) -> tuple[int, int] | None:
+    """Locate ``surface`` in ``body`` (char space) left-to-right; fail-loud by absence.
+
+    Repeated identical surfaces map to successive occurrences via a per-surface
+    cursor. Returns ``(char_start, char_end)`` or ``None`` when the surface does
+    not round-trip into the decoded body text (e.g. whitespace-normalized by the
+    recognizer) — never a fabricated offset.
+    """
+    if not surface:
+        return None
+    start = body.find(surface, cursor_by_surface.get(surface, 0))
+    if start < 0:
+        return None
+    cursor_by_surface[surface] = start + 1
+    return start, start + len(surface)
+
+
+def build_full_extractor_oracle(statute_id: str, body: str) -> _FullOracleContext:
+    """Build the whole-statute full-extractor citation oracle, bucketed to segments.
+
+    Runs the FULL production extractor over the statute XML, keeps the
+    cross-statute citations, re-locates each in the decoded body text by surface,
+    buckets to citation segments by char-span overlap, collapses redundant
+    statute-only keys, and keys by ``ProvisionRef.serialized()``.
+
+    Requires the canonical corpus to read the statute XML (the extractor's
+    ``<ref>``/by-name lanes need the markup; the segment text alone cannot
+    reproduce them). Fails closed to an empty oracle for any statute whose XML is
+    unavailable or unparseable — the census then treats every segment as
+    oracle-empty for that statute (an honest under-count, never a fabrication).
+    """
+    from farchive import Farchive
+
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+    from lawvm.tools.parse_bench import _archive_path
+
+    try:
+        store = TransparentCorpusStore(Farchive(_archive_path()))
+        xb = store.read_source(statute_id) or store.read_amendment(statute_id)
+    except Exception:
+        xb = None
+    if not xb:
+        return _FullOracleContext(by_segment={})
+    return _bucket_full_extractor_oracle(statute_id, xb, body)
+
+
+def _bucket_full_extractor_oracle(
+    statute_id: str, xml_bytes: bytes, body: str
+) -> _FullOracleContext:
+    """Pure full-extractor oracle bucketing for explicit ``(xml_bytes, body)``.
+
+    Split out from :func:`build_full_extractor_oracle` so the extraction +
+    span-bucketing + redundant statute-only collapse can be exercised with
+    synthetic XML (no corpus). See the module-level oracle docstring for the design.
+    """
+    from lawvm.core.reference_mention import CiteKind
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_all_reference_mentions,
+    )
+
+    by_segment: dict[str, set[str]] = {}
+
+    try:
+        result = extract_all_reference_mentions(xml_bytes, statute_id)
+    except Exception:
+        return _FullOracleContext(by_segment=by_segment)
+
+    # Segment the body the SAME way the census selector does, so the segment text
+    # keys line up exactly with the units the engine will hand the oracle.
+    from lawvm.finland.legal_surface.clause_segment import build_clause_index
+
+    index = build_clause_index(statute_id, body)
+    segments: list[tuple[int, int, str]] = []
+    for sent in index.sentences:
+        seg_text = body[sent.char_start : sent.char_end]
+        segments.append((sent.char_start, sent.char_end, seg_text))
+
+    # Collect the in-family (cross-statute) mentions and locate each in body
+    # char-space. A mention's ``source_span.byte_offset`` is a byte offset into the
+    # raw xml_bytes; several mentions sharing one citation anchor (coordinated
+    # ``8 ja 27 §`` -> two targets) share that byte offset, so we locate ONE char
+    # span PER DISTINCT byte offset (ascending, left-to-right) and reuse it for
+    # every mention at that offset — this matches the extractor's per-anchor span
+    # caching and stops a per-mention cursor from skipping past shared surfaces.
+    @dataclass(frozen=True)
+    class _Cross:
+        surface: str
+        byte_offset: int | None
+        key: str
+
+    crosses: list[_Cross] = []
+    for m in result.mentions:
+        if m.cite_kind != CiteKind.CROSS_STATUTE:
+            continue
+        tgt = m.target_provision_ref
+        if tgt is None:
+            continue
+        key = tgt.serialized()
+        if not key:
+            continue
+        crosses.append(
+            _Cross(
+                surface=m.surface_text or "",
+                byte_offset=m.source_span.byte_offset if m.source_span else None,
+                key=_canonicalize_statute_key(key),
+            )
+        )
+
+    # Char location, byte-offset-ordered. Per (surface) char cursor advances once
+    # per DISTINCT byte offset for that surface. Mentions with no byte offset fall
+    # back to a from-zero find on the surface (fail-loud by absence — an
+    # unlocatable surface is simply not bucketed, an honest under-count).
+    cursor_by_surface: dict[str, int] = {}
+    span_by_offset: dict[tuple[str, int], tuple[int, int] | None] = {}
+    # entry: (char_start, char_end, key)
+    located: list[tuple[int, int, str]] = []
+    for c in sorted(
+        crosses, key=lambda c: (c.byte_offset if c.byte_offset is not None else 1 << 62)
+    ):
+        if not c.surface:
+            continue
+        if c.byte_offset is not None:
+            ck = (c.surface, c.byte_offset)
+            if ck not in span_by_offset:
+                span_by_offset[ck] = _locate_surface_char_span(
+                    body, c.surface, cursor_by_surface
+                )
+            cspan = span_by_offset[ck]
+        else:
+            pos = body.find(c.surface)
+            cspan = (pos, pos + len(c.surface)) if pos >= 0 else None
+        if cspan is None:
+            continue
+        located.append((cspan[0], cspan[1], c.key))
+
+    # Same-site by-name dedup: the production by-name HEAD lane emits an UNRESOLVED
+    # ``fi-name:NAME`` key for a citation EVEN WHEN the resolved-id lane also binds
+    # the SAME ``name (id)`` site to ``NUMBER/YEAR`` (e.g. ``Valmiuslaissa
+    # (1552/2011)`` -> both ``1552/2011`` and ``fi-name:valmiuslaki``). The two
+    # describe ONE citation; the projection keys it only by the resolved id. A
+    # by-name located span whose char range OVERLAPS a resolved-id located span is
+    # therefore the SAME citation site and its ``fi-name:`` key is dropped (the
+    # resolved key wins). A by-name span with NO overlapping resolved id is a
+    # genuine by-name-WITHOUT-inline-id citation (out of the inline-(id)
+    # construction family) and is KEPT — a real miss/frontier reported honestly.
+    resolved_spans = [
+        (s, e) for (s, e, k) in located if not k.startswith("fi-name:")
+    ]
+
+    def _by_name_is_same_site(s: int, e: int) -> bool:
+        return any(s < re_ and rs < e for (rs, re_) in resolved_spans)
+
+    for seg_start, seg_end, seg_text in segments:
+        keys: set[str] = set()
+        for c_start, c_end, key in located:
+            # overlap test (half-open intervals)
+            if not (c_start < seg_end and seg_start < c_end):
+                continue
+            if key.startswith("fi-name:") and _by_name_is_same_site(c_start, c_end):
+                continue
+            keys.add(key)
+        if keys:
+            by_segment[seg_text] = _collapse_redundant_statute_only(keys)
+
+    return _FullOracleContext(by_segment=by_segment)
+
+
+def _canonicalize_statute_key(key: str) -> str:
+    """Canonicalize a resolved statute-id key head to ``NUMBER/YEAR``.
+
+    The production ``<ref>``-element lane keys a citation from the AKN eId/href,
+    which encodes the statute as ``YEAR/NUMBER`` (``(1385/2015)`` -> ``2015/1385``)
+    and may carry a trailing instance suffix on the number (``(39/1889)`` ->
+    ``1889/39-001``). The construction projection keys from the inline surface text,
+    which is the canonical Finnish ``NUMBER/YEAR`` (``1385/2015`` / ``39/1889``).
+    They are the SAME statute in two conventions. So when a resolved key's HEAD is
+    ``A/B`` with ``A`` a plausible enactment year (1700–2100) and ``B`` NOT a
+    plausible year, the head is the eId ``YEAR/NUMBER`` form: it is swapped to
+    ``NUMBER/YEAR`` (``B/A``), stripping any ``-NNN`` instance suffix off the number;
+    any provision tail is preserved. Non-statute keys (``fi-name:``…) and
+    already-canonical heads are returned unchanged.
+    """
+    if key.startswith("fi-name:") or "/" not in key:
+        return key
+    parts = key.split("/")
+    a, b = parts[0], parts[1]
+    # strip a trailing eId instance suffix (``39-001`` -> ``39``) for the test/swap
+    b_num = b.split("-", 1)[0]
+    if not (a.isdigit() and b_num.isdigit()):
+        return key
+
+    def _year(x: str) -> bool:
+        return 1700 <= int(x) <= 2100
+
+    if _year(a) and not _year(b_num):
+        return "/".join([b_num, a, *parts[2:]])
+    return key
+
+
+def _collapse_redundant_statute_only(keys: set[str]) -> set[str]:
+    """Drop a bare statute-only oracle key when a same-statute precise key exists.
+
+    For ONE citation the production extractor commonly emits BOTH a coarse
+    statute-only mention (``527/2014``) AND the section/chapter-precise mentions
+    (``527/2014/142``). The construction projection emits only the precise key for
+    that citation, never the redundant coarse one. Keeping both in the oracle would
+    score the redundant ``527/2014`` a phantom ``miss`` against a projection that
+    found the SAME citation more precisely. So a bare statute-only key ``S`` is
+    dropped IFF the same key set contains a strictly-more-precise key ``S/…`` for
+    the same statute — they describe one citation. A statute-only key with NO
+    precise sibling is a genuine statute-level citation and is KEPT (a real miss if
+    the projection lacks it).
+    """
+    def _is_resolved_statute_only(k: str) -> bool:
+        # ``NUMBER/YEAR`` resolved id, no provision tail. Excludes ``fi-name:`` and
+        # other prefixed (EU/treaty) keys — only resolved statute ids collapse.
+        parts = k.split("/")
+        return (
+            len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
+        )
+
+    statute_only = {k for k in keys if _is_resolved_statute_only(k)}
+    # statute-id prefix of every precise resolved key (``S/Y/…`` -> ``S/Y``)
+    precise_prefixes = {
+        parts[0] + "/" + parts[1]
+        for k in keys
+        if len((parts := k.split("/"))) >= 3 and parts[0].isdigit() and parts[1].isdigit()
+    }
+    redundant = statute_only & precise_prefixes
+    return keys - redundant
+
+
+def full_oracle_reference_keys(unit_text: str, ctx: object) -> set[str]:
+    """Oracle plug-point: the full-extractor cross-statute key set for a segment.
+
+    Looks the unit's segment text up in the per-statute :class:`_FullOracleContext`
+    the engine prepared. Returns the empty set for a segment the full extractor
+    bound no cross-statute citation in (or when the context is absent).
+    """
+    if not isinstance(ctx, _FullOracleContext):
+        return set()
+    return set(ctx.by_segment.get(unit_text, set()))

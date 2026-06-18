@@ -54,6 +54,8 @@ from lawvm.finland.legal_surface.family_census import (
 from lawvm.finland.legal_surface.sentence_parse import (
     SENTENCE_LANE_DECLINED,
     assert_total_ownership,
+    build_full_extractor_oracle,
+    full_oracle_reference_keys,
     oracle_reference_keys_for_span,
     parse_citation_sentence,
     projection_reference_keys,
@@ -176,8 +178,23 @@ def _citation_projection(unit: CensusUnit, sid: str) -> set[str]:
     return projection_reference_keys(parse_citation_sentence(unit.text), sid)
 
 
-def _citation_oracle(unit: CensusUnit) -> set[str]:
+def _citation_oracle_span(unit: CensusUnit, _ctx: object = None) -> set[str]:
+    """Span-restricted oracle: PLAIN-TEXT lane only (the legacy oracle).
+
+    EXCLUDES the ``<ref>``-element / by-name lanes, so it under-counts what
+    production finds and inflates the ``superset`` bucket. Kept available for
+    comparison; ``full_oracle=False`` selects it.
+    """
     return oracle_reference_keys_for_span(unit.text)
+
+
+def _citation_oracle_full(unit: CensusUnit, ctx: object) -> set[str]:
+    """Full-extractor oracle: the whole-statute cross-statute key set for the span.
+
+    Uses the per-statute :class:`_FullOracleContext` the engine prepared via
+    :func:`build_full_extractor_oracle`. This is the FLIP-GATE oracle.
+    """
+    return full_oracle_reference_keys(unit.text, ctx)
 
 
 def run_sentence_census(
@@ -186,6 +203,7 @@ def run_sentence_census(
     min_year: int = 0,
     check_totality: bool | None = None,
     max_examples: int = 6,
+    full_oracle: bool = True,
 ) -> SentenceCensusResult:
     """Run the citation-bearing-sentence differential census over the corpus.
 
@@ -197,13 +215,20 @@ def run_sentence_census(
     (inline ``(NUMBER/YEAR)`` cross-statute citations are a MODERN convention);
     ``limit`` caps the count taken from that slice. ``check_totality`` defaults to
     ``LAWVM_PARSE_TOTALITY``.
+
+    ``full_oracle`` (default True) selects the FLIP-GATE oracle: the FULL
+    production extractor (``extract_all_reference_mentions``) run over the whole
+    statute and bucketed to segments by source-span overlap — it includes the
+    ``<ref>`` / by-name lanes the legacy span-restricted oracle excluded. Set False
+    to use the legacy plain-text-only oracle (for comparing the two oracles).
     """
     res: FamilyCensusResult = run_family_census(
         family=SENTENCE_FAMILY,
         segment_selector=_citation_segment_selector,
         projection_fn=_citation_projection,
-        oracle_fn=_citation_oracle,
+        oracle_fn=_citation_oracle_full if full_oracle else _citation_oracle_span,
         miss_shape_fn=_miss_shape,
+        oracle_prepare_fn=build_full_extractor_oracle if full_oracle else None,
         limit=limit,
         min_year=min_year,
         check_totality=check_totality,

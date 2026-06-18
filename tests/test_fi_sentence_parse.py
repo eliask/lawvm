@@ -8,11 +8,17 @@ produces (the decoded body text). Does NOT touch the corpus.
 from __future__ import annotations
 
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
+from lawvm.finland.legal_surface.bundle import decode_body_text
+from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.sentence_census import _classify, _miss_shape
 from lawvm.finland.legal_surface.sentence_parse import (
     SENTENCE_LANE_CONSTRUCTION_OWNED,
     SENTENCE_LANE_DECLINED,
+    _bucket_full_extractor_oracle,
+    _canonicalize_statute_key,
+    _collapse_redundant_statute_only,
     assert_total_ownership,
+    full_oracle_reference_keys,
     oracle_reference_keys_for_span,
     parse_citation_sentence,
     projection_reference_keys,
@@ -171,6 +177,109 @@ def test_oracle_and_projection_agree_on_simple_citation() -> None:
 def test_oracle_empty_on_non_citation() -> None:
     text = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2025."
     assert oracle_reference_keys_for_span(text) == set()
+
+
+# --------------------------------------------------------------------------
+# Full-extractor oracle: whole-statute extraction, bucketed to segments by
+# source-span overlap (the flip-gate oracle).
+# --------------------------------------------------------------------------
+
+
+def _akn(*paragraphs: str) -> bytes:
+    body = "".join(f"<p>{p}</p>" for p in paragraphs)
+    return f"<akomaNtoso><body>{body}</body></akomaNtoso>".encode("utf-8")
+
+
+def test_full_oracle_buckets_mention_into_its_own_segment() -> None:
+    # Two citation paragraphs; each cross-statute citation must bucket into the
+    # SEGMENT that actually contains its surface, not the other one.
+    xml = _akn(
+        "Ensimmainen kappale ilman viittauksia.",
+        "Sovelletaan, mita osakeyhtiolaissa (624/2006) 5 §:ssa saadetaan.",
+        "Toinen on tassa: kuten valtionavustuslaissa (688/2001) 9 §:ssa.",
+    )
+    sid = "999/2025"
+    body = decode_body_text(xml)
+    ctx = _bucket_full_extractor_oracle(sid, xml, body)
+
+    seg_a = next(s for s in ctx.by_segment if "624/2006" in "".join(ctx.by_segment[s]))
+    seg_b = next(s for s in ctx.by_segment if "688/2001" in "".join(ctx.by_segment[s]))
+    # the 624/2006 key lands ONLY in the osakeyhtiolaissa segment
+    assert ctx.by_segment[seg_a] == {"624/2006"}
+    assert "624/2006" in seg_a and "688/2001" not in seg_a
+    assert ctx.by_segment[seg_b] == {"688/2001"}
+    assert "688/2001" in seg_b and "624/2006" not in seg_b
+
+
+def test_full_oracle_matches_projection_per_segment() -> None:
+    # Each citation segment's full-oracle key set equals the construction
+    # projection key set -> every in-scope segment is a MATCH.
+    xml = _akn(
+        "Sovelletaan, mita osakeyhtiolaissa (624/2006) 5 §:ssa saadetaan.",
+        "Tehdaan kuten valtionavustuslaissa (688/2001) 9 §:ssa.",
+    )
+    sid = "999/2025"
+    body = decode_body_text(xml)
+    ctx = _bucket_full_extractor_oracle(sid, xml, body)
+    index = build_clause_index(sid, body)
+    matched = 0
+    for sent in index.sentences:
+        seg = body[sent.char_start : sent.char_end]
+        proj = projection_reference_keys(parse_citation_sentence(seg), sid)
+        oracle = full_oracle_reference_keys(seg, ctx)
+        if proj or oracle:
+            assert proj == oracle
+            matched += 1
+    assert matched == 2
+
+
+def test_canonicalize_year_number_key_to_number_year() -> None:
+    # <ref>-element eId convention YEAR/NUMBER -> canonical NUMBER/YEAR.
+    assert _canonicalize_statute_key("2015/1385") == "1385/2015"
+    assert _canonicalize_statute_key("1992/150") == "150/1992"
+    # eId instance suffix on the number is stripped on swap
+    assert _canonicalize_statute_key("1889/39-001") == "39/1889"
+    # provision tail preserved
+    assert _canonicalize_statute_key("2015/1385/5") == "1385/2015/5"
+    # already-canonical NUMBER/YEAR is unchanged (year is the 2nd component)
+    assert _canonicalize_statute_key("1385/2015") == "1385/2015"
+    assert _canonicalize_statute_key("39/1889/ch38/1") == "39/1889/ch38/1"
+    # by-name and non-statute keys untouched
+    assert _canonicalize_statute_key("fi-name:valmiuslaki") == "fi-name:valmiuslaki"
+
+
+def test_collapse_redundant_statute_only_keeps_lone_statute_key() -> None:
+    # a statute-only key with a same-statute precise sibling is dropped
+    assert _collapse_redundant_statute_only({"527/2014", "527/2014/142"}) == {
+        "527/2014/142"
+    }
+    # a lone statute-only key (no precise sibling) is kept
+    assert _collapse_redundant_statute_only({"688/2001"}) == {"688/2001"}
+    # by-name keys are never treated as statute-only collapse targets
+    assert _collapse_redundant_statute_only(
+        {"fi-name:x", "fi-name:x/5"}
+    ) == {"fi-name:x", "fi-name:x/5"}
+
+
+def test_full_oracle_surfaces_genuine_kaari_inline_id_superset() -> None:
+    # The witness shape from the corpus: a ``-kaari`` INESSIVE citation with an
+    # inline (id). The production by-name head lane binds only the GENITIVE
+    # ``-kaaren`` form (and without reading an inline id), so it does NOT catch the
+    # inessive-with-id site. The construction frame DOES (it keys on the (id)
+    # paren). The legacy plain-text-only oracle also misses it. This stays a
+    # SUPERSET even under the full oracle -> a genuine construction-frame win, NOT
+    # an oracle artifact.
+    seg = "Turvallisuusverkko on tietoyhteiskuntakaaressa (917/2014) tarkoitettu verkko."
+    xml = _akn(seg)
+    sid = "999/2025"
+    body = decode_body_text(xml)
+    assert oracle_reference_keys_for_span(seg) == set()  # legacy artifact
+    ctx = _bucket_full_extractor_oracle(sid, xml, body)
+    proj = projection_reference_keys(parse_citation_sentence(seg), sid)
+    oracle = full_oracle_reference_keys(seg, ctx)
+    assert proj == {"917/2014"}
+    assert oracle == set()  # full oracle still does not bind this -kaari site
+    assert _classify(proj, oracle, False) == "superset"
 
 
 # --------------------------------------------------------------------------

@@ -178,7 +178,10 @@ def _definition_projection(unit: CensusUnit, sid: str) -> set[str]:
     return projection_definition_keys(parse_definition_block(unit.text))
 
 
-def _definition_oracle(unit: CensusUnit) -> set[str]:
+def _definition_oracle(unit: CensusUnit, _ctx: object = None) -> set[str]:
+    # The definition family's oracle is span-local (it runs the production
+    # definition recognizer over the unit text), so it ignores the per-statute
+    # oracle context the engine threads through.
     return _definition_oracle_keys_for_span(unit.text)
 
 

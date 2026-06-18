@@ -68,7 +68,7 @@ def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
             family="synthetic",
             segment_selector=lambda sid, body: iter(units_by_statute[sid]),
             projection_fn=lambda unit, sid: projections[unit.text],
-            oracle_fn=lambda unit: oracles[unit.text],
+            oracle_fn=lambda unit, _ctx=None: oracles[unit.text],
             miss_shape_fn=lambda missing, marker: "shape",
             check_totality=check_totality,
         )
@@ -123,3 +123,67 @@ def test_engine_totality_counting() -> None:
     orc = {"ok": {"a"}, "bad": {"a"}}
     res = _engine_on(units, proj, orc, check_totality=True)
     assert res.totality_violations == 1
+
+
+def test_engine_threads_oracle_prepare_context_per_statute() -> None:
+    # The optional oracle_prepare_fn is called once per statute with (sid, body)
+    # and its result is threaded to every oracle_fn call for that statute — the
+    # hook the citation family uses to run a WHOLE-STATUTE oracle once.
+    import lawvm.finland.legal_surface.family_census as fc
+
+    units = {"7/2025": [CensusUnit(text="u", parser_lane="L")]}
+    projections = {"u": {"a"}}
+    prepare_calls: list[tuple[str, str]] = []
+
+    class _FakeStore:
+        def list_statute_ids(self):
+            return list(units)
+
+        def read_source(self, sid):
+            return sid.encode()
+
+        def read_amendment(self, sid):
+            return None
+
+    import sys
+    import types
+
+    sys.modules.setdefault("farchive", types.ModuleType("farchive"))
+    sys.modules["farchive"].Farchive = lambda *_a, **_k: object()
+
+    import lawvm.finland.legal_surface.bundle as bundle_mod
+    import lawvm.finland.transparent_store as ts_mod
+    import lawvm.tools.parse_bench as pb_mod
+
+    saved = (
+        ts_mod.TransparentCorpusStore,
+        bundle_mod.decode_body_text,
+        pb_mod._archive_path,
+    )
+    ts_mod.TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
+    bundle_mod.decode_body_text = lambda xb: xb.decode()
+    pb_mod._archive_path = lambda: "unused"
+
+    def _prepare(sid: str, body: str) -> object:
+        prepare_calls.append((sid, body))
+        return {"a"}  # the per-statute oracle context
+
+    try:
+        res = fc.run_family_census(
+            family="synthetic",
+            segment_selector=lambda sid, body: iter(units[sid]),
+            projection_fn=lambda unit, sid: projections[unit.text],
+            # oracle reads the threaded per-statute context, ignoring the unit
+            oracle_fn=lambda unit, ctx: set(ctx) if ctx else set(),
+            miss_shape_fn=lambda missing, marker: "shape",
+            oracle_prepare_fn=_prepare,
+        )
+    finally:
+        (
+            ts_mod.TransparentCorpusStore,
+            bundle_mod.decode_body_text,
+            pb_mod._archive_path,
+        ) = saved
+
+    assert prepare_calls == [("7/2025", "7/2025")]
+    assert res.buckets["match"] == 1  # projection {a} == oracle-from-context {a}
