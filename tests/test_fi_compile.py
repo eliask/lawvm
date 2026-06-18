@@ -2867,6 +2867,50 @@ def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapt
     )
 
 
+def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsection_inserts() -> None:
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2017/601")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="3", children=()),
+                IRNode(kind=IRNodeKind.SECTION, label="4", children=()),
+            ),
+        )
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2017/601",
+        source_title="Valtioneuvoston asetus julkisen talouden suunnitelmasta annetun valtioneuvoston asetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="2014/120",
+        strict_profile=None,
+    )
+
+    section3_inserts = sorted(
+        op.target_paragraph
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "3"
+    )
+    assert section3_inserts == [8, 9, 10]
+    assert any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "5a"
+        and op.target_paragraph is None
+        for op in phase2.output
+    )
+
+
 def test_normalize_and_compile_ops_records_empty_extraction_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

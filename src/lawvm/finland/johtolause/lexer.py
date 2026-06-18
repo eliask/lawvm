@@ -18,6 +18,7 @@ from lawvm.finland.johtolause.lexicon import (
     _VOCAB,
     _CITE_RE,
     _YEAR_NUM_RE,
+    _DASH_ONLY_RE,
     _RANGE_RE,
     _ROMAN_RE,
     _LETTER_RE,
@@ -400,7 +401,7 @@ def _emit_token(raw: str, out: list[Token], char_offset: int = -1) -> None:
     if raw == ",":
         out.append(_tok(",", ",", "COMMA", "", None, 0, 1))
         return
-    if raw and all(c in "\u2010\u2011\u2012\u2014\u2013\u2015-" for c in raw):
+    if _DASH_ONLY_RE.match(raw):
         # A single dash OR a run of them (``--`` / ``---``, a Finlex/OCR variant
         # of an en-dash range such as ``21--23 \u00a7``).  Canonicalize the lemma to
         # en-dash (U+2013), matching the central _normalize_fi_parse_text

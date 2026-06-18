@@ -1919,6 +1919,19 @@ def test_parse_clause_skips_glued_nainkuuluva_before_subsection_insert_targets()
         assert op.witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_accepts_mathematical_minus_in_subsection_range() -> None:
+    """U+2212 minus is a source dash glyph, not an opaque word separator."""
+    ops = parse_clause(
+        "lisätään 3 §:ään, sellaisena kuin se on osaksi asetuksessa 225/2015, "
+        "uusi 8−10 momentti ja asetukseen uusi 5 a § seuraavasti:"
+    ).parsed_ops
+
+    assert [op.code() for op in ops] == ["L P 3 8", "L P 3 9", "L P 3 10", "L P 5a"]
+    for op in ops[:3]:
+        assert op.witness is not None
+        assert op.witness.rule_id == "fi.insertion_sub_target"
+
+
 def test_parse_clause_keeps_inherited_part_scope_for_chapter_insert_continuation() -> None:
     """Inherited ``osaan uusi`` continuation must keep the current part scope.
 

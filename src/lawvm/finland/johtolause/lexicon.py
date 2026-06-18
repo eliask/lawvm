@@ -295,7 +295,8 @@ _v("pykäliä", "§", "PYKALA", "NOM")  # plural partitive
 
 _CITE_RE = re.compile(r"\(\d+/+\d{2,4}\)")  # (YYYY/NNN) compact
 _YEAR_NUM_RE = re.compile(r"\d+/+\d{2,4}")  # YYYY/NNN bare
-_DASH_CLASS = r"[\-\u2010\u2011\u2012\u2013\u2014\u2015]"
+_DASH_CLASS = r"[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]"
+_DASH_ONLY_RE = re.compile(rf"^{_DASH_CLASS}+$")
 _RANGE_RE = re.compile(rf"^(\d+)\s*{_DASH_CLASS}\s*(\d+)$")  # 21\u201323
 _ROMAN_RE = re.compile(r"^[IVXLCDM]+$")
 _LETTER_RE = re.compile(r"^[a-z]$")
