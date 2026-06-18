@@ -716,6 +716,31 @@ def test_find_muutos_ir_relabels_sparse_omission_subsection_from_intro_number() 
     assert [c.label for c in subs] == ["3"]
 
 
+def test_find_muutos_ir_merges_real_unlabeled_adjacent_section_continuation() -> None:
+    corpus = get_corpus()
+    xml_bytes = corpus.read_source("1993/1472")
+    assert xml_bytes is not None
+    root = etree.fromstring(xml_bytes)
+
+    got, _ = _find_muutos_ir(root, "section", "5a")
+
+    assert got is not None
+    assert got.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION",
+    )
+    subsections = [child for child in got.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    text = irnode_to_text(got)
+    assert "Laskelma tulee laatia niin" in text
+    assert "jatkajan puolison tulot" in text
+    assert "Asiakirjat, joista laskelman keskeiset lähtötiedot ilmenevät" in text
+    assert "Laskelma tulee laatia niin" in irnode_to_text(subsections[1])
+    assert "jatkajan puolison tulot" in irnode_to_text(subsections[1])
+    assert "Asiakirjat, joista laskelman keskeiset lähtötiedot ilmenevät" in irnode_to_text(
+        subsections[2]
+    )
+
+
 def test_find_muutos_ir_relabels_nested_sparse_omission_subsection_from_intro_number() -> None:
     root = etree.fromstring(
         """

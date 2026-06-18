@@ -28,6 +28,11 @@ from lawvm.finland.helpers import (
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 
+_PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+_UNLABELED_ADJACENT_SECTION_CONTINUATION_RULE_ID = (
+    "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION"
+)
+
 
 def _tag(el: etree._Element) -> str:
     return str(el.tag).split("}")[-1]
@@ -158,6 +163,152 @@ def _embedded_letter_suffix_section_ir(
     )
 
 
+def _has_direct_num_or_heading(el: etree._Element) -> bool:
+    for child in el:
+        if _tag(child) in {"num", "heading"}:
+            return True
+    return False
+
+
+def _with_payload_normalization_rule(node: IRNode, rule_id: str) -> IRNode:
+    existing = node.attrs.get(_PAYLOAD_NORMALIZATION_RULE_ATTR, ())
+    rules = (
+        tuple(existing)
+        if isinstance(existing, tuple)
+        else ((str(existing),) if existing else ())
+    )
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=node.text,
+        attrs={
+            **dict(node.attrs),
+            _PAYLOAD_NORMALIZATION_RULE_ATTR: tuple(dict.fromkeys((*rules, rule_id))),
+        },
+        children=node.children,
+    )
+
+
+def _next_numeric_subsection_label(children: list[IRNode]) -> Optional[str]:
+    numeric_labels = [
+        int(child.label)
+        for child in children
+        if child.kind is IRNodeKind.SUBSECTION and child.label and child.label.isdigit()
+    ]
+    if not numeric_labels:
+        return None
+    return str(max(numeric_labels) + 1)
+
+
+def _renumber_ir_node(node: IRNode, label: str) -> IRNode:
+    return IRNode(
+        kind=node.kind,
+        label=label,
+        text=node.text,
+        attrs=dict(node.attrs),
+        children=node.children,
+    )
+
+
+def _split_unlabeled_continuation_subsection(
+    continuation: IRNode,
+    *,
+    first_label: str,
+) -> tuple[IRNode, ...]:
+    if not continuation.children:
+        return (_renumber_ir_node(continuation, first_label),)
+
+    split_children: list[IRNode] = []
+    suffix_children: list[IRNode] = []
+    reached_suffix = False
+    for child in continuation.children:
+        if child.kind is IRNodeKind.WRAP_UP:
+            reached_suffix = True
+        if reached_suffix:
+            suffix_children.append(child)
+        else:
+            split_children.append(child)
+
+    if not suffix_children:
+        return (_renumber_ir_node(continuation, first_label),)
+
+    body_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=first_label,
+        text=continuation.text,
+        attrs=dict(continuation.attrs),
+        children=tuple(split_children),
+    )
+    wrap_up_subsection = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=str(int(first_label) + 1),
+        text=None,
+        attrs=dict(continuation.attrs),
+        children=tuple(suffix_children),
+    )
+    return (body_subsection, wrap_up_subsection)
+
+
+def _merge_unlabeled_adjacent_section_continuation_ir(
+    muutos_sec: etree._Element,
+    muutos_ir: IRNode,
+    *,
+    target_unit_kind: str,
+) -> IRNode:
+    """Attach a following unlabeled source section as continuation payload.
+
+    Historical Finlex amendment XML sometimes splits one legal section across
+    adjacent ``<section>`` siblings: the first has ``<num>N §</num>`` and a
+    substantive body, while the next has no ``num`` or heading and contains the
+    continuation prose/list for that same section.  The unlabeled sibling has no
+    independent legal identity, so keeping it outside the selected payload drops
+    source-owned text.
+    """
+    if (
+        target_unit_kind != "section"
+        or muutos_ir.kind is not IRNodeKind.SECTION
+        or not muutos_ir.label
+    ):
+        return muutos_ir
+
+    next_el = muutos_sec.getnext()
+    if next_el is None or _tag(next_el) != "section" or _has_direct_num_or_heading(next_el):
+        return muutos_ir
+
+    next_ir = fi_xml_to_ir_node(copy.deepcopy(next_el), _fi_label_postprocessor)
+    continuation_subsections = [
+        child for child in next_ir.children if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if (
+        next_ir.label is not None
+        or len(continuation_subsections) != 1
+        or any(child.kind in {IRNodeKind.NUM, IRNodeKind.HEADING} for child in next_ir.children)
+    ):
+        return muutos_ir
+
+    children = list(muutos_ir.children)
+    next_label = _next_numeric_subsection_label(children)
+    if next_label is None:
+        return muutos_ir
+
+    continuation = continuation_subsections[0]
+    continuation_children = _split_unlabeled_continuation_subsection(
+        continuation,
+        first_label=next_label,
+    )
+    merged = IRNode(
+        kind=muutos_ir.kind,
+        label=muutos_ir.label,
+        text=muutos_ir.text,
+        attrs=dict(muutos_ir.attrs),
+        children=(*children, *continuation_children),
+    )
+    return _with_payload_normalization_rule(
+        merged,
+        _UNLABELED_ADJACENT_SECTION_CONTINUATION_RULE_ID,
+    )
+
+
 def _find_muutos_ir(
     muutos_tree: etree._Element,
     target_unit_kind: str,
@@ -187,6 +338,11 @@ def _find_muutos_ir(
     )
     if muutos_ir is None:
         muutos_ir = fi_xml_to_ir_node(muutos_sec, _fi_label_postprocessor)
+        muutos_ir = _merge_unlabeled_adjacent_section_continuation_ir(
+            muutos_sec,
+            muutos_ir,
+            target_unit_kind=str(target_unit_kind),
+        )
         muutos_ir = _relabel_sparse_omission_subsections_from_intro_ir(muutos_ir)
         # If this chapter is wrapped in a <part> element in the amendment body,
         # record the part label as a routing hint for multi-part statutes.
