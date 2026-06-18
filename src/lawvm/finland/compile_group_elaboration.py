@@ -199,7 +199,6 @@ class ElaborateGroupRequest:
     group_ops: list[AmendmentOp]
     standalone_section_targets: set[str]
     foreign_scoped_standalone_section_targets: set[str]
-    foreign_scoped_replace_section_targets: set[str]
     effective_target_part: str | None
     muutos_tree: etree._Element
     johto: str
@@ -217,7 +216,6 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     foreign_scoped_standalone_section_targets = (
         request.foreign_scoped_standalone_section_targets
     )
-    foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
     target_part = request.effective_target_part
     muutos_tree = request.muutos_tree
     johto = request.johto
@@ -297,7 +295,6 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-        foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         surface=surface,
     )
     muutos_ir = payload_norm.muutos_ir

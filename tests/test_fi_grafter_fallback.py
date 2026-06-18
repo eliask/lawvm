@@ -115,7 +115,6 @@ from lawvm.finland.scope import (
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
-    group_shadow_pruning_foreign_scoped_replace_section_targets as _group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
 )
@@ -365,7 +364,6 @@ def _compile_group(
     compiled_ops_out: list[dict[str, object]] | None,
     strict_profile: StrictProfile | None,
     foreign_scoped_standalone_section_targets: set[str] | None = None,
-    foreign_scoped_replace_section_targets: set[str] | None = None,
     precomputed_lookups: Any = None,
 ) -> PhaseResult[list[ResolvedOp]]:
     return _compile_group_typed(
@@ -384,9 +382,6 @@ def _compile_group(
             strict_profile=strict_profile,
             foreign_scoped_standalone_section_targets=set(
                 foreign_scoped_standalone_section_targets or ()
-            ),
-            foreign_scoped_replace_section_targets=set(
-                foreign_scoped_replace_section_targets or ()
             ),
             lookups=precomputed_lookups,
         ),
@@ -3887,7 +3882,6 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
             group_ops=[op],
             standalone_section_targets=set(),
             foreign_scoped_standalone_section_targets=set(),
-            foreign_scoped_replace_section_targets=set(),
             effective_target_part=None,
             muutos_tree=muutos_tree,
             johto="ruotsinkielinen sanamuoto",
@@ -4263,61 +4257,6 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_rep
         [chapter_insert, foreign_replace_20, foreign_replace_21],
         target_unit_kind="chapter",
         target_norm="3a",
-        target_part=None,
-        duplicate_section_labels=frozenset(),
-    )
-
-    assert got == set()
-
-
-def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_foreign_replaces() -> None:
-    chapter_replace = AmendmentOp(
-        op_type="REPLACE",
-        target_unit_kind="chapter",
-        target_section="7",
-    )
-    foreign_replace_51 = AmendmentOp(
-        op_type="REPLACE",
-        target_unit_kind="section",
-        target_section="51",
-        target_chapter="8",
-    )
-    foreign_replace_61 = AmendmentOp(
-        op_type="REPLACE",
-        target_unit_kind="section",
-        target_section="61",
-        target_chapter="8",
-    )
-
-    got = _group_shadow_pruning_foreign_scoped_replace_section_targets(
-        [chapter_replace, foreign_replace_51, foreign_replace_61],
-        target_unit_kind="chapter",
-        target_norm="7",
-        target_part=None,
-        duplicate_section_labels=frozenset(),
-    )
-
-    assert got == {"51", "61"}
-
-
-def test_group_shadow_pruning_section_targets_ignores_descendant_only_replaces() -> None:
-    chapter_replace = AmendmentOp(
-        op_type="REPLACE",
-        target_unit_kind="chapter",
-        target_section="9",
-    )
-    foreign_subsection_replace = AmendmentOp(
-        op_type="REPLACE",
-        target_unit_kind="section",
-        target_section="14",
-        target_chapter="10",
-        target_paragraph="1",
-    )
-
-    got = _group_shadow_pruning_section_targets(
-        [chapter_replace, foreign_subsection_replace],
-        target_unit_kind="chapter",
-        target_norm="9",
         target_part=None,
         duplicate_section_labels=frozenset(),
     )
@@ -5644,13 +5583,13 @@ def test_build_amendment_bundle_folds_terminal_continuation_subsection_for_2018_
 
     group48 = next(group for group in bundle["groups"] if group["target_norm"] == "48")
 
-    assert group48["subsection_map"][0]["op"] == "REPLACE 6 luku 48 § otsikko"
+    assert group48["subsection_map"][0]["op"] == "REPLACE 48 § otsikko"
     assert group48["subsection_map"][0]["mapped_payload"] is None
-    assert group48["subsection_map"][1]["op"] == "REPLACE 6 luku 48 § 1 mom"
+    assert group48["subsection_map"][1]["op"] == "REPLACE 48 § 1 mom"
     assert group48["subsection_map"][1]["mapped_payload"]["label"] == "1"
     assert group48["sparse_slot_bindings"] == [
         {
-            "op": "REPLACE 6 luku 48 § 1 mom",
+            "op": "REPLACE 48 § 1 mom",
             "slot_index": 1,
             "slot_label": "1",
             "target_paragraph": 1,
@@ -5667,11 +5606,8 @@ def test_build_amendment_bundle_splits_fused_restarted_subsection_for_2018_441(
 
     group51 = next(group for group in bundle["groups"] if group["target_norm"] == "51")
 
-    assert set(group51["ops_final"]) == {"REPLACE 7 luku 51 § 1 mom", "REPLACE 7 luku 51 § 2 mom"}
-    assert [entry["op"] for entry in group51["subsection_map"]] == [
-        "REPLACE 7 luku 51 § 1 mom",
-        "REPLACE 7 luku 51 § 2 mom",
-    ]
+    assert set(group51["ops_final"]) == {"REPLACE 51 § 1 mom", "REPLACE 51 § 2 mom"}
+    assert [entry["op"] for entry in group51["subsection_map"]] == ["REPLACE 51 § 1 mom", "REPLACE 51 § 2 mom"]
     assert group51["subsection_map"][0]["mapped_payload"]["label"] == "1"
     assert group51["subsection_map"][1]["mapped_payload"]["label"] == "2"
 
@@ -13507,10 +13443,10 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
 
     assert group["ops_raw"] == [
-        "REPLACE 11 luku 149 § 1 mom 1 kohta",
-        "REPLACE 11 luku 149 § 1 mom 2 kohta",
-        "REPLACE 11 luku 149 § 1 mom 3 kohta",
-        "REPLACE 11 luku 149 § 4 mom",
+        "REPLACE 149 § 1 mom 1 kohta",
+        "REPLACE 149 § 1 mom 2 kohta",
+        "REPLACE 149 § 1 mom 3 kohta",
+        "REPLACE 149 § 4 mom",
     ]
     assert group["ops_after_normalization"] == group["ops_raw"]
 
@@ -13549,11 +13485,11 @@ def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_con
     bundle = build_amendment_bundle("2014/527", "2022/490", mode="official_consolidation")
     group221c = next(group for group in bundle["groups"] if group["target_norm"] == "221c")
 
-    assert group221c["ops_raw"] == ["REPLACE 20 luku 221c § otsikko", "REPLACE 20 luku 221c § 1 mom"]
-    assert set(group221c["ops_final"]) == {"REPLACE 20 luku 221c § otsikko", "REPLACE 20 luku 221c § 1 mom"}
-    assert group221c["subsection_map"][0]["op"] == "REPLACE 20 luku 221c § otsikko"
+    assert group221c["ops_raw"] == ["REPLACE 221c § otsikko", "REPLACE 221c § 1 mom"]
+    assert set(group221c["ops_final"]) == {"REPLACE 221c § otsikko", "REPLACE 221c § 1 mom"}
+    assert group221c["subsection_map"][0]["op"] == "REPLACE 221c § otsikko"
     assert group221c["subsection_map"][0]["mapped_payload"] is None
-    assert group221c["subsection_map"][1]["op"] == "REPLACE 20 luku 221c § 1 mom"
+    assert group221c["subsection_map"][1]["op"] == "REPLACE 221c § 1 mom"
     assert group221c["subsection_map"][1]["mapped_payload"]["label"] == "1"
     assert group221c["rejected_ops_pre_constraints"] == []
     assert group221c["rejected_ops_post_constraints"] == []
@@ -13615,8 +13551,8 @@ def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum
 
     descriptions = bundle["compiled_ops"]
 
-    assert "REPEAL 1 luku 2 § 3 mom" in descriptions
-    assert "REPEAL 1 luku 2 § 2 mom" not in descriptions
+    assert "REPEAL 2 § 3 mom" in descriptions
+    assert "REPEAL 2 § 2 mom" not in descriptions
 
 
 def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber_lo() -> None:
@@ -14165,9 +14101,14 @@ def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trail
 ) -> None:
     bundle = amendment_bundle_2013_588_2025_201
     group21b = next(group for group in bundle["groups"] if group["target_norm"] == "21b")
-    group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87" and group["target_chapter"] == "13")
+    group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87" and group["target_part"] == "5")
+    group87_insert = next(
+        group
+        for group in bundle["groups"]
+        if group["target_norm"] == "87" and group["ops_final"] == ["INSERT 13 luku 87 § 6 mom"]
+    )
 
-    assert group21b["ops_final"] == ["REPLACE 4 luku 21b § 2 mom"]
+    assert group21b["ops_final"] == ["REPLACE 21b § 2 mom"]
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"
         for observation in group21b["elaboration_observations"]
@@ -14177,12 +14118,11 @@ def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trail
         for observation in group21b["elaboration_observations"]
     )
 
-    assert group87["target_part"] == ""
+    assert group87["target_part"] == "5"
     assert group87["target_chapter"] == "13"
-    assert group87["ops_final"] == [
-        "REPLACE 13 luku 87 § 1 mom",
-        "INSERT 13 luku 87 § 6 mom",
-    ]
+    assert group87["ops_final"] == ["REPLACE 13 luku 87 § 1 mom"]
+    assert group87_insert["target_chapter"] == "13"
+    assert group87_insert["ops_final"] == ["INSERT 13 luku 87 § 6 mom"]
     assert group87["rejected_ops_pre_constraints"] == []
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"
@@ -14318,8 +14258,8 @@ def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_s
     bundle = build_amendment_bundle("1996/1266", "2012/963", mode="official_consolidation")
     group30 = next(group for group in bundle["groups"] if group["target_norm"] == "30")
 
-    assert group30["ops_raw"] == ["REPLACE 3 luku 30 §"]
-    assert group30["ops_final"] == ["REPLACE 3 luku 30 §"]
+    assert group30["ops_raw"] == ["REPLACE 30 §"]
+    assert group30["ops_final"] == ["REPLACE 30 §"]
 
 
 def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:
@@ -14394,7 +14334,7 @@ def test_inspect_amendment_2013_588_2019_108_keeps_section_87_subsection_replace
     group11a = next(group for group in bundle["groups"] if group["target_unit_kind"] == "chapter" and group["target_norm"] == "11a")
     group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87")
 
-    assert group87["ops_final"] == ["REPLACE 13 luku 87 § 2 mom"]
+    assert group87["ops_final"] == ["REPLACE 87 § 2 mom"]
     assert any(
         observation["kind"] == "ELAB.CONTAINER_PRUNED_SHADOWED"
         and "87" in observation.get("detail", {}).get("pruned_sections", [])
@@ -14414,7 +14354,7 @@ def test_inspect_amendment_2013_588_2023_497_owns_sparse_higher_moment_binding_f
     bundle = build_amendment_bundle("2013/588", "2023/497", mode="official_consolidation")
     group93 = next(group for group in bundle["groups"] if group["target_norm"] == "93")
 
-    assert group93["ops_final"] == ["REPLACE 13 luku 93 § 4 mom"]
+    assert group93["ops_final"] == ["REPLACE 93 § 4 mom"]
     assert group93["sparse_slot_bindings"][0]["slot_label"] == "4"
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"

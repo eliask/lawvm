@@ -30,7 +30,6 @@ class CompileGroupRequest:
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
     foreign_scoped_standalone_section_targets: Set[str]
-    foreign_scoped_replace_section_targets: Set[str]
     lookups: Optional[ReplayLookups] = None
 
 

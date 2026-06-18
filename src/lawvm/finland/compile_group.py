@@ -38,9 +38,6 @@ def compile_group_typed(
     foreign_scoped_standalone_section_targets = set(
         request.foreign_scoped_standalone_section_targets
     )
-    foreign_scoped_replace_section_targets = set(
-        request.foreign_scoped_replace_section_targets
-    )
     compiled_ops_out = sinks.compiled_ops_out
 
     recovery_result = resolve_compile_group_scope_recovery(
@@ -90,7 +87,6 @@ def compile_group_typed(
             group_ops=recovery.group_ops,
             standalone_section_targets=standalone_section_targets,
             foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-            foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
             effective_target_part=recovery.effective_target_part,
             muutos_tree=muutos_tree,
             johto=johto,

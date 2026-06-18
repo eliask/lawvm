@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing_extensions import override
 
 from collections.abc import MutableMapping, Iterator
-import os
 import re
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
@@ -2467,7 +2466,6 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
-    foreign_scoped_replace_section_targets: Set[str] | None = None,
     expected_heading_only: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
@@ -2475,21 +2473,12 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     Uses ``ctx.live_node`` (Class 2: local subtree) for the container, and
     ``ctx.lookups`` (Class 3: topology) for fallback section scope resolution.
     """
-    if muutos_ir is None or target_unit_kind not in ("chapter", "part"):
+    if muutos_ir is None or target_unit_kind not in ("chapter", "part") or not standalone_section_targets:
         return ContainerPayloadPruningResult(muutos_ir=muutos_ir, changed=False)
     standalone_section_targets = {_norm_num_token(label) for label in standalone_section_targets if label}
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
     }
-    foreign_scoped_replace_section_targets = {
-        _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
-    }
-    if not (
-        standalone_section_targets
-        or foreign_scoped_standalone_section_targets
-        or foreign_scoped_replace_section_targets
-    ):
-        return ContainerPayloadPruningResult(muutos_ir=muutos_ir, changed=False)
 
     def _scope_label_from_unique_path(section_label: str, scope_kind: str) -> Optional[str]:
         """Look up a section's enclosing scope label from lookups.
@@ -2543,59 +2532,10 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         target_unit_kind,
         target_norm,
     )
-    payload_section_labels = {
-        _norm_num_token(child.label or "")
-        for child in muutos_ir.children
-        if child.kind is IRNodeKind.SECTION and child.label
-    }
-    if os.environ.get("LAWVM_DEBUG_CONTAINER_PRUNE") == "1" and target_norm == "9":
-        print(
-            "DEBUG_PRUNE",
-            "target",
-            target_unit_kind,
-            target_norm,
-            "master",
-            master_container is not None,
-            "live",
-            sorted(live_member_labels),
-            "payload",
-            sorted(payload_section_labels),
-            "standalone",
-            sorted(standalone_section_targets),
-            "foreign_insert",
-            sorted(foreign_scoped_standalone_section_targets),
-            "foreign_replace",
-            sorted(foreign_scoped_replace_section_targets),
-        )
-    has_unowned_new_container_members = bool(
-        master_container is not None
-        and live_member_labels
-        and any(
-            label
-            and label not in live_member_labels
-            and label not in standalone_section_targets
-            for label in payload_section_labels
-        )
-    )
     new_children: List[IRNode] = []
     for child in muutos_ir.children:
         child_label = _norm_num_token(child.label or "")
-        is_standalone_section_target = child_label in standalone_section_targets
-        is_foreign_scoped_standalone_target = (
-            child_label in foreign_scoped_standalone_section_targets
-        )
-        is_foreign_scoped_replace_target = (
-            child_label in foreign_scoped_replace_section_targets
-        )
-        if (
-            child.kind is not IRNodeKind.SECTION
-            or not child_label
-            or not (
-                is_standalone_section_target
-                or is_foreign_scoped_standalone_target
-                or is_foreign_scoped_replace_target
-            )
-        ):
+        if child.kind is not IRNodeKind.SECTION or not child_label or child_label not in standalone_section_targets:
             new_children.append(child)
             continue
 
@@ -2613,13 +2553,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             if child_label not in live_member_labels:
                 # Foreign-scoped section: belongs to another chapter/part.
                 # Prune it even though it's not in the live container.
-                if (
-                    is_foreign_scoped_standalone_target
-                    or (
-                        is_foreign_scoped_replace_target
-                        and not has_unowned_new_container_members
-                    )
-                ):
+                if child_label in foreign_scoped_standalone_section_targets:
                     changed = True
                     pruned_labels.append(child_label)
                     pruned_witnesses.append(child_witness)
@@ -2628,9 +2562,6 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                 # by the amendment.  The standalone PEG op handles its own
                 # targeting, but the container payload is the authoritative
                 # source for new sections being added to the chapter.
-                new_children.append(child)
-                continue
-            if not is_standalone_section_target:
                 new_children.append(child)
                 continue
             changed = True
@@ -2643,7 +2574,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         # Foreign-scoped standalone section targets elsewhere in the amendment
         # (for example another chapter's "1 §") must not delete a new
         # container member that just happens to share the same section label.
-        if is_foreign_scoped_standalone_target or is_foreign_scoped_replace_target:
+        if child_label in foreign_scoped_standalone_section_targets:
             new_children.append(child)
             continue
         changed = True
@@ -4886,7 +4817,6 @@ def elaborate_payload_against_live(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
-    foreign_scoped_replace_section_targets: Set[str] | None = None,
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -5020,7 +4950,6 @@ def elaborate_payload_against_live(
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-        foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
     muutos_ir = pruning_result.muutos_ir
