@@ -6,11 +6,19 @@ validating that the common type system works across jurisdictions.
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 from typing import Any, cast
 
-from lawvm.core.clause_ast import RefAmend, TextAmend, LabelAmend, LabelAction, legal_op_to_clause_node, clause_node_to_legal_operation
+from lawvm.core.clause_ast import (
+    ClauseAST,
+    RefAmend,
+    TextAmend,
+    LabelAmend,
+    LabelAction,
+    VerbGroup,
+    legal_op_to_clause_node,
+    clause_ast_to_legal_ops,
+    clause_node_to_legal_operation,
+)
 from lawvm.core.ir import (
     LegalAddress,
     LegalOperation,
@@ -20,7 +28,6 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
-from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
 
 
 def _ee_source() -> OperationSource:
@@ -285,9 +292,6 @@ class TestEEParserIntegration:
     def test_ee_clause_ast_round_trip(self):
         """EE ops round-trip through ClauseAST."""
         from lawvm.estonia.peg import extract_ee_ops
-        from lawvm.core.clause_ast import clause_ast_to_legal_ops
-        from lawvm.finland.johtolause.types import ParsedOp
-        from typing import Optional
 
         # Extract EE ops
         text = "paragrahvi 26 lõike 4 muudetakse ja sõnastatakse järgmiselt:\n\u201enew text\u201c"
@@ -295,28 +299,16 @@ class TestEEParserIntegration:
         ee_ops = extract_ee_ops(text, src)
         assert len(ee_ops) >= 1
 
-        # Wrap as ParsedOps
-        parsed_ops = []
-        verb_map: dict[str, str] = {"replace": "M", "repeal": "K", "insert": "L"}
-        for op in ee_ops:
-            facet: Optional[FacetKind] = None
-            if op.target.special == FacetKind.HEADING:
-                facet = FacetKind.HEADING
-            verb = verb_map.get(str(op.action), "M")
-            pop = ParsedOp(
-                verb=verb,
-                kind="P",
-                chapter=dict(op.target.path).get("chapter", ""),
-                number=dict(op.target.path).get("section", ""),
-                momentti=int(dict(op.target.path).get("subsection", "0") or "0"),
-                item=dict(op.target.path).get("item", ""),
-                facet=facet,
-                raw="",
-            )
-            pop.raw = pop.code()
-            parsed_ops.append(pop)
-
-        # Build ClauseAST from ParsedOps and round-trip
-        ast = build_clause_ast(parsed_ops, text)
+        ast = ClauseAST(
+            source_text=text,
+            verb_groups=(
+                VerbGroup(
+                    verb=ee_ops[0].action,
+                    nodes=tuple(legal_op_to_clause_node(op) for op in ee_ops),
+                ),
+            ),
+        )
         legal_ops = clause_ast_to_legal_ops(ast)
-        assert len(legal_ops) == len(parsed_ops)
+        assert len(legal_ops) == len(ee_ops)
+        assert [op.action for op in legal_ops] == [op.action for op in ee_ops]
+        assert [op.target.path for op in legal_ops] == [op.target.path for op in ee_ops]

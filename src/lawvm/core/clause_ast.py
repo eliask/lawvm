@@ -40,7 +40,8 @@ from lawvm.core.semantic_types import FacetKind, LabelAction, MetaClauseKind, St
 class ScopedBlock:
     """Wraps child ops that share a containing scope (chapter, part, etc.).
 
-    Represents clauses like "2 luvun 3 ja 4 §" as:
+    Represents clauses that apply one shared container to multiple child
+    targets, such as:
         ScopedBlock(scope=LegalAddress([("chapter", "2")]),
                     children=(RefAmend("replace", section:3),
                                RefAmend("replace", section:4)))
@@ -49,8 +50,8 @@ class ScopedBlock:
     elements themselves). Children are the ops performed within that scope.
     """
 
-    # ParsedOp mapping: chapter/part fields that establish a shared context
-    # for multiple ops — currently implicit in ParsedOp, explicit here.
+    # Adapter mapping: jurisdiction parser fields that establish a shared
+    # container context for multiple operations are explicit here.
     scope: LegalAddress
     children: Tuple["ClauseNode", ...]
 
@@ -69,26 +70,24 @@ class ScopedBlock:
 class RefAmend:
     """Structural reference amendment — the most common clause node type.
 
-    Covers kumotaan, muutetaan, lisätään targeting whole provisions
-    (sections, chapters, subsections, items, appendices).
+    Covers structural repeal, replace, and insert clauses targeting whole
+    provisions (sections, chapters, subsections, items, appendices).
 
-    ParsedOp mapping:
-      verb=K → action=StructuralAction.REPEAL
-      verb=M → action=StructuralAction.REPLACE
-      verb=L → action=StructuralAction.INSERT
-      kind=P/L/O/N/A + number → target (address built from ParsedOp fields)
-      anchor: insertion point for insert ops (not in ParsedOp; added later)
+    Adapter mapping:
+      parser-local repeal/replace/insert markers → StructuralAction
+      parser-local provision kind + label fields → LegalAddress target
+      anchor fields → insertion anchor for insert operations
     """
 
     action: StructuralAction  # StructuralAction.REPLACE | REPEAL | INSERT
     target: LegalAddress
     anchor: Optional[LegalAddress] = None  # insertion anchor (for insert ops)
     notes: Tuple[str, ...] = ()  # annotation notes (e.g. renumber_clause)
-    is_exception: bool = False  # True when target is a "lukuun ottamatta" exclusion from a broader range
+    is_exception: bool = False  # True when target is an exclusion from a broader range
     source_tokens: Optional[Tuple[int, int]] = None  # (start, end) in filtered stream
     witness_rule_id: Optional[str] = None  # construction rule that produced this op (diagnostic)
     resolution_kind: Optional[str] = None  # how the target was resolved (e.g. "backref_singular", "pass_through")
-    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading (väliotsikko) resolutions
+    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading resolutions
 
     def __post_init__(self) -> None:
         if self.action not in {
@@ -110,10 +109,9 @@ class TextAmend:
     Used for word-level replacement clauses. Future use; one adapter already
     emits these.
 
-    ParsedOp mapping:
-      No direct equivalent in current ParsedOp (text ops are not yet parsed
-      by the current parse layers). This node type exists for text-level
-      operations and future text patch support.
+    Adapter mapping:
+      Some frontends do not yet emit text operations through their clause
+      parser. This node type is the shared carrier for text-level operations.
     """
 
     action: StructuralAction  # StructuralAction.TEXT_REPLACE or TEXT_REPEAL
@@ -134,7 +132,7 @@ class TextAmend:
 class LabelAmend:
     """Label, heading, or renumber/move change.
 
-    Covers verb=S (renumber/move) and special="otsikko" (heading (otsikko) replace).
+    Covers renumber/move and heading-replacement clauses.
 
     Move semantics (from → to):
       target:      the SOURCE address — where the provision currently lives.
@@ -148,12 +146,12 @@ class LabelAmend:
     This ensures that move operations are explicit from→to pairs, not
     address mutations that lose the source address.
 
-    ParsedOp mapping:
-      verb=S                    → action="renumber"
-      special="otsikko"         → action="heading_replace"  # heading (otsikko)
-      number/chapter/etc.       → target (source address from ParsedOp fields)
-      renumber_dest/etc.        → destination (built from dest fields)
-      new_label: the leaf label of the destination
+    Adapter mapping:
+      parser-local renumber/move marker → LabelAction.RENUMBER
+      parser-local heading marker       → LabelAction.HEADING_REPLACE
+      source provision fields           → target source address
+      destination provision fields      → destination address
+      new_label                         → destination leaf label
     """
 
     action: LabelAction  # LabelAction.RENUMBER | LabelAction.HEADING_REPLACE
@@ -164,7 +162,7 @@ class LabelAmend:
     source_tokens: Optional[Tuple[int, int]] = None
     witness_rule_id: Optional[str] = None  # construction rule that produced this op (diagnostic)
     resolution_kind: Optional[str] = None  # how the target was resolved (e.g. "backref_singular", "pass_through")
-    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading (väliotsikko) resolutions
+    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading resolutions
 
     def __post_init__(self) -> None:
         if not self.target.path:
@@ -207,10 +205,10 @@ class MetaClause:
     that is not a direct structural amendment op.
     These clauses have legal significance but do not map to tree_ops.
 
-    ParsedOp mapping:
-      No direct equivalent — MetaClause captures content that the current
-      Some parse stages either ignore or emit as a non-structural note annotation. It is the explicit
-      representation of "something important that is not a structural op."
+    Adapter mapping:
+      MetaClause captures content that some parse stages either ignore or emit
+      as a non-structural note annotation. It is the explicit representation of
+      "something important that is not a structural op."
     """
 
     kind: MetaClauseKind  # MetaClauseKind.COMMENCEMENT | .TRANSITION | .DELEGATION | .OTHER etc.
@@ -228,9 +226,10 @@ class ItemShiftClause:
     This remains in core as an explicit bridge contract while frontend lowering
     owns the bridge policy (including how to expand source/target ranges).
 
-    Captures clauses like ``jolloin kohdat e–h muuttuvat kohdiksi d–g``
-    (``when items e–h become items d–g``). This is a structural amendment
-    that renumbers existing items after one or more items have been repealed.
+    Captures clauses where one or more existing items are renumbered after a
+    repeal, for example items e-h becoming items d-g. This is a structural
+    amendment that renumbers existing items after one or more items have been
+    repealed.
 
     The semantic meaning is: after the repeal(s) in the same verb group,
     shift the lettered items in the given range down by the appropriate
@@ -244,7 +243,7 @@ class ItemShiftClause:
 
     source_items: Tuple[str, ...]  # items being shifted (e.g. ("e", "f", "g", "h"))
     target_items: Tuple[str, ...]  # target labels (e.g. ("d", "e", "f", "g"))
-    target_paragraph: Optional[int] = None  # which moment/paragraph
+    target_paragraph: Optional[int] = None  # which subsection/paragraph
     target_section: Optional[str] = None  # which section (if not current)
 
     def __post_init__(self) -> None:
@@ -262,10 +261,6 @@ class NamedRowClause:
 
     This remains in core as an explicit bridge contract while frontend lowering
     owns the bridge policy for named-row matching and row-level effects.
-
-    Captures clauses like:
-    ``kumotaan päätöksen 1 §:n Iitin ja Juvan käräjäoikeuksia koskevat kohdat
-    sekä muutetaan Kouvolan ja Mikkelin käräjäoikeuksia koskevat kohdat``
 
     The targets are named entities (court names, municipality names, etc.)
     that must be matched against ``row_anchor`` attributes in the live
@@ -500,8 +495,8 @@ def clause_node_to_legal_operation(
 
     if isinstance(node, LabelAmend):
         # Typed destination from new_label (Phase 3: replaces note reparsing).
-        # For verb=S (siirtää) the action is "renumber"; for NUMERO-based
-        # renumber ("muutetaan §:n numero N:ksi") the action is "renumber".
+        # Move and explicit number-change clauses both lower through the
+        # shared renumber action.
         # Heading-replace nodes carry LabelAction.HEADING_REPLACE.
         notes = list(node.notes)
         if node.action == LabelAction.HEADING_REPLACE:
