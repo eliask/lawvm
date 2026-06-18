@@ -44,6 +44,7 @@ Promotion from: ``lawvm.finland.cross_refs`` (CrossRefEdge, CrossRefDiagnostic).
 """
 from __future__ import annotations
 
+import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
@@ -292,8 +293,10 @@ class PlainTextStatuteCitationRecognizer:
         - Bounded quantifiers; no adjacent unbounded repeats.
     """
 
-    def _collect_non_ref_text(self, p_el: ET.Element[str]) -> str:
-        """Collect text of <p> element excluding text inside <ref> children.
+    def _collect_non_ref_text(
+        self, p_el: ET.Element[str], *, include_ref_text: bool = False
+    ) -> str:
+        """Collect text of <p> element, by default excluding <ref> inner text.
 
         Returns the concatenated text content of:
           - p_el.text (direct text before first child)
@@ -301,8 +304,14 @@ class PlainTextStatuteCitationRecognizer:
           - For each <ref> child: ONLY child.tail (the text AFTER the ref,
             not inside it — since it's already captured by the <ref> extractor)
 
-        This ensures we do NOT double-count text that was already covered by
-        an AKN <ref> element.
+        This default ensures we do NOT double-count text that was already
+        covered by an AKN <ref> element.
+
+        ``include_ref_text`` is the annotation-independence MEASUREMENT path
+        (grammar7 §13-C/E): when True the ``<ref>`` inner text is treated as
+        ordinary plain text so the text lane gets a real shot at the cite the
+        production pipeline hid inside the editorial markup. It is OFF by default,
+        so production behaviour is unchanged.
         """
         ref_local = "ref"  # AKN local name
 
@@ -313,8 +322,19 @@ class PlainTextStatuteCitationRecognizer:
         for child in p_el:
             local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if local == ref_local:
-                # Skip the ref's own text content (already in structured extraction).
-                # BUT include the tail (text immediately after the </ref> tag).
+                if include_ref_text:
+                    # MEASUREMENT mode: treat the <ref> inner text as plain text
+                    # so the text lane can recover the cite the markup carried.
+                    if child.text:
+                        parts.append(child.text)
+                    for gc in child.iter():
+                        if gc is child:
+                            continue
+                        if gc.text:
+                            parts.append(gc.text)
+                        if gc.tail:
+                            parts.append(gc.tail)
+                # Always include the tail (text immediately after the </ref> tag).
                 if child.tail:
                     parts.append(child.tail)
             else:
@@ -354,6 +374,8 @@ class PlainTextStatuteCitationRecognizer:
     def scan_precise(
         self,
         p_el: ET.Element[str],
+        *,
+        include_ref_text: bool = False,
     ) -> List[PlainTextStatuteHit]:
         """Scan a <p> element returning provision-precise statute citation hits.
 
@@ -362,9 +384,12 @@ class PlainTextStatuteCitationRecognizer:
         provision rather than only the §. Citations that stop at the § yield a
         hit with ``subsection_num=None`` (section-level fallback).
 
+        ``include_ref_text`` (annotation-independence measurement) folds the
+        ``<ref>`` inner text into the scanned text; OFF by default.
+
         Per AGENTS.md §1.11: substring guards applied before regex scan.
         """
-        text = self._collect_non_ref_text(p_el)
+        text = self._collect_non_ref_text(p_el, include_ref_text=include_ref_text)
         if not text:
             return []
 
@@ -800,6 +825,44 @@ def _diagnostic_to_rejected(
 
 
 # ---------------------------------------------------------------------------
+# Annotation-independence measurement toggle (grammar7 §13-C/E)
+# ---------------------------------------------------------------------------
+#
+# The principle (grammar7): LawVM should delete annotation DEPENDENCE, not
+# annotation USE — parse deterministically from text, treat ``<ref>`` as a
+# fallible witness. This toggle is the cheapest decisive experiment for the
+# annotation-independence question: when ON, ``extract_all_reference_mentions``
+# SKIPS the AKN ``<ref>``-element semantic-annotation lane
+# (``extract_reference_mentions`` → ``extract_cross_refs``, which lifts inline
+# ``<ref>`` elements AND finlex: metadata edges) and runs ONLY the text-derived
+# lanes (EU text scan, plain-text statute citations, surface-grammar, and the
+# preparatory chain — all of which parse from source text, not editorial
+# markup). It ALSO drops the ``<ref>``-derived ``ref_covered_statute_ids`` dedup
+# guard so the plain-text lane is not suppressed by annotations that are now
+# being ignored (else the measurement is contaminated: a cite the text lane
+# WOULD recover stays hidden behind a now-ignored ``<ref>``).
+#
+# This is a MEASUREMENT mode, NOT a new default. Fail-closed to OFF (current
+# behaviour) on any unset / empty / falsy value, so the production replay /
+# parquet projection are byte-identical to today unless explicitly opted in.
+
+_IGNORE_ANNOTATIONS_ENV = "LAWVM_IGNORE_SEMANTIC_ANNOTATIONS"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def ignore_semantic_annotations() -> bool:
+    """Whether the ``<ref>``-element semantic-annotation lane is suppressed.
+
+    Reads ``LAWVM_IGNORE_SEMANTIC_ANNOTATIONS`` from the environment each call
+    (so a test / census can flip it per-invocation). Fail-closed: any unset,
+    empty, or non-truthy value means OFF = current production behaviour. Only an
+    explicit truthy value (``1`` / ``true`` / ``yes`` / ``on``, case-insensitive)
+    turns the measurement mode ON.
+    """
+    return os.environ.get(_IGNORE_ANNOTATIONS_ENV, "").strip().lower() in _TRUTHY
+
+
+# ---------------------------------------------------------------------------
 # Main extraction entry points
 # ---------------------------------------------------------------------------
 
@@ -916,6 +979,7 @@ def extract_plain_text_statute_mentions(
     *,
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
     ref_covered_statute_ids: Optional[set[str]] = None,
+    include_ref_text: bool = False,
 ) -> ExtractionResult:
     """Extract plain-text Finnish statute citations NOT covered by <ref> markup.
 
@@ -941,6 +1005,12 @@ def extract_plain_text_statute_mentions(
                                  at the statute level.
                                  Note: provision-level deduplication is more precise
                                  but requires span tracking; this is the statute-level guard.
+        include_ref_text:        Annotation-independence MEASUREMENT mode
+                                 (grammar7 §13-C/E). When True the ``<ref>`` inner
+                                 text is folded into the scanned plain text so the
+                                 text lane can recover a cite the production
+                                 pipeline hid inside the editorial markup. OFF by
+                                 default — production behaviour is unchanged.
 
     Returns:
         ExtractionResult with plain-text ReferenceMention records.
@@ -1012,7 +1082,9 @@ def extract_plain_text_statute_mentions(
             p_elements.append(el)
 
     for p_el in p_elements:
-        hits = _PLAIN_TEXT_RECOGNIZER.scan_precise(p_el)
+        hits = _PLAIN_TEXT_RECOGNIZER.scan_precise(
+            p_el, include_ref_text=include_ref_text
+        )
         # Per-<p> span cache so multiple targets from one anchor share a span.
         p_span_cache: dict[str, Optional[SourceSpan]] = {}
         for hit in hits:
@@ -1572,6 +1644,7 @@ def extract_all_reference_mentions(
     *,
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
     strict: bool = False,
+    ignore_annotations: Optional[bool] = None,
 ) -> ExtractionResult:
     """Extract all ReferenceMention records (domestic + EU + plain-text) from a statute.
 
@@ -1584,32 +1657,58 @@ def extract_all_reference_mentions(
     EU and plain-text mentions are appended after domestic mentions.
 
     This is the primary entry point for the ``fi_refs.parquet`` projection.
+
+    Annotation-independence measurement (grammar7 §13-C/E):
+        When ``ignore_annotations`` is True (or, when left None, when
+        ``LAWVM_IGNORE_SEMANTIC_ANNOTATIONS`` is set truthy), the AKN
+        ``<ref>``-element semantic-annotation lane (``extract_reference_mentions``)
+        is SKIPPED and the ``<ref>``-derived ``ref_covered_statute_ids`` dedup
+        guard is dropped, so ONLY the text-derived lanes run and the plain-text
+        lane is no longer suppressed by now-ignored annotations. Default
+        (None → env, fail-closed OFF) is byte-identical to current behaviour.
+        This is a MEASUREMENT mode, not a new default.
     """
-    domestic = extract_reference_mentions(
-        xml_bytes,
-        statute_id,
-        valid_at_interval=valid_at_interval,
-        strict=strict,
-    )
+    if ignore_annotations is None:
+        ignore_annotations = ignore_semantic_annotations()
+
+    if ignore_annotations:
+        # Suppress the <ref>-element semantic-annotation lane entirely: no
+        # domestic <ref>/metadata mentions, and — crucially — an EMPTY
+        # ref_covered set so the plain-text lane's would-be-<ref>-covered hits
+        # are NOT suppressed (else the measurement is contaminated by the very
+        # annotations we are ignoring).
+        domestic = ExtractionResult()
+        ref_covered: set[str] = set()
+    else:
+        domestic = extract_reference_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            strict=strict,
+        )
+        # Build the set of statute IDs already covered by <ref>-element
+        # extraction to pass as the dedup guard to the plain-text pass.
+        ref_covered = {
+            m.target_provision_ref.statute_id
+            for m in domestic.mentions
+            if m.target_provision_ref is not None and m.edge_subtype == "CITES"
+        }
+
     eu = extract_eu_reference_mentions(
         xml_bytes,
         statute_id,
         valid_at_interval=valid_at_interval,
     )
 
-    # Build the set of statute IDs already covered by <ref>-element extraction
-    # to pass as the dedup guard to the plain-text pass.
-    ref_covered: set[str] = {
-        m.target_provision_ref.statute_id
-        for m in domestic.mentions
-        if m.target_provision_ref is not None and m.edge_subtype == "CITES"
-    }
-
     plain = extract_plain_text_statute_mentions(
         xml_bytes,
         statute_id,
         valid_at_interval=valid_at_interval,
         ref_covered_statute_ids=ref_covered,
+        # In measurement mode the plain-text lane also reads <ref> INNER text
+        # (which production hides inside the markup), so the text lane gets a
+        # real shot at the cite the dropped annotation lane carried.
+        include_ref_text=ignore_annotations,
     )
 
     # Surface-grammar lane: treaty (SopS), vague-OPEN, EU-by-nickname directive
