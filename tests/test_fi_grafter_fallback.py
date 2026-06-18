@@ -13677,6 +13677,17 @@ def test_inspect_amendment_1993_81_1994_495_recovers_short_pykala_illative_typo(
     assert "Euroopan talousalueen valtioiden kansalaisten" in mapped_payload["text"]
 
 
+def test_inspect_amendment_1988_575_1995_407_applies_after_nojalla_authority_prefix() -> None:
+    """A leading authority citation must not hide the later target statute."""
+    bundle = build_amendment_bundle("1988/575", "1995/407", mode="legal_pit")
+
+    assert bundle["route"] == {"should_apply": True, "reason": "references_parent", "target_amendment_id": ""}
+    assert bundle["compiled_ops"] == ["INSERT 25a §"]
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "25a")
+    assert group["normalized_payload"]["kind"] is IRNodeKind.SECTION
+    assert "Telekuuntelusta, televalvonnasta ja teknisestä tarkkailusta" in group["normalized_payload"]["text"]
+
+
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
     bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 

@@ -65,6 +65,21 @@ class TestJohtolauseCitedTargetIds:
         assert surface.delegated_authority is not None
         assert surface.normalized_target_ids() == ("1987/487",)
 
+    def test_nojalla_authority_prefix_does_not_hide_later_target_citation(self) -> None:
+        johto = (
+            "lisätään 30 päivänä huhtikuuta 1987 annetun pakkokeinolain "
+            "(450/87) 5 a luvun 8 §:n nojalla, sellaisena kuin se on "
+            "24 päivänä maaliskuuta 1995 annetussa laissa (402/95), "
+            "esitutkinnasta ja pakkokeinoista 17 päivänä kesäkuuta 1988 "
+            "annettuun asetukseen (575/88) uusi 25 a § ja sen edellä "
+            "väliotsikko seuraavasti:"
+        )
+        surface = parse_routing_surface(johto, source_year=1995)
+
+        assert surface.normalized_target_ids() == ("1988/575",)
+        assert surface.references_statute("1988/575")
+        assert not surface.references_statute("1987/450")
+
     def test_dropped_digit_typo_surfaces_cited_statute(self) -> None:
         # 1965/301 johtolause: a dropped digit makes rakennuslaki (370/58)
         # read as (70/58). The helper must surface the 1958/70 it cites so the
@@ -151,6 +166,28 @@ class TestRouteAmendmentReferencesParent:
         treated as non-operative and skipped.
         """
         assert "lisää" in OP_KEYWORDS
+
+    def test_nojalla_authority_prefix_with_later_parent_target_applies(self) -> None:
+        johto_raw = (
+            "lisätään 30 päivänä huhtikuuta 1987 annetun pakkokeinolain "
+            "(450/87) 5 a luvun 8 §:n nojalla, sellaisena kuin se on "
+            "24 päivänä maaliskuuta 1995 annetussa laissa (402/95), "
+            "esitutkinnasta ja pakkokeinoista 17 päivänä kesäkuuta 1988 "
+            "annettuun asetukseen (575/88) uusi 25 a § ja sen edellä "
+            "väliotsikko seuraavasti:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1988/575",
+            "1995/407",
+            source_title="Asetus esitutkinnasta ja pakkokeinoista annetun asetuksen muuttamisesta",
+            parent_title="Asetus esitutkinnasta ja pakkokeinoista",
+        )
+        assert should_apply is True
+        assert reason == "references_parent"
 
 
 class TestRouteAmendmentNumCollisionSkip:

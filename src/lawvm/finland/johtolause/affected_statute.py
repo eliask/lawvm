@@ -22,6 +22,7 @@ _AFFECTED_HEAD_RE = re.compile(
     re.IGNORECASE,
 )
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")
+_NOJALLA_RE = re.compile(r"\bnojalla\b", re.IGNORECASE)
 
 _FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
     "tammikuuta": 1,
@@ -111,10 +112,42 @@ class JohtolauseRoutingSurface:
         return tuple(out)
 
 
+def _strip_delegated_authority_prefix_when_target_follows(compact: str) -> str:
+    """Drop an authority ``nojalla`` lead-in when a later target citation exists.
+
+    Example: ``lisätään [authority statute] nojalla, sellaisena kuin ...,
+    [target statute] (575/88) uusi 25 a §``.  The first citation is enabling
+    authority, not the amended statute.  Pure ``säädetään ... nojalla`` clauses
+    have no later target citation, so they are left intact for authority-skip
+    routing.
+    """
+
+    match = _NOJALLA_RE.search(compact)
+    if match is None:
+        return compact
+    tail = compact[match.end() :].lstrip()
+    if not tail.startswith(","):
+        return compact
+
+    candidate = tail[1:].lstrip()
+    candidate_lower = candidate.lower()
+    if candidate_lower.startswith(("sellaisena kuin", "sellaisina kuin")):
+        provenance_citation = _CITATION_RE.search(candidate)
+        if provenance_citation is not None:
+            comma_after_provenance = candidate.find(",", provenance_citation.end())
+            if comma_after_provenance != -1:
+                candidate = candidate[comma_after_provenance + 1 :].lstrip()
+
+    if _CITATION_RE.search(candidate) is None:
+        return compact
+    return candidate
+
+
 def target_zone(text: str) -> str:
     """Return the part of a johtolause where target-statute citations live."""
 
     compact = re.sub(r"\s+", " ", text or "")
+    compact = _strip_delegated_authority_prefix_when_target_follows(compact)
     cut = _TARGET_ZONE_CUT_RE.search(compact)
     return compact[: cut.start()] if cut else compact
 
