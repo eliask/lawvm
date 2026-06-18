@@ -16,6 +16,7 @@ from lawvm.finland.legal_surface.sentence_parse import (
     SENTENCE_LANE_DECLINED,
     _bucket_full_extractor_oracle,
     _canonicalize_statute_key,
+    _canonicalize_statute_key_in_segment,
     _collapse_redundant_statute_only,
     assert_total_ownership,
     full_oracle_reference_keys,
@@ -24,6 +25,7 @@ from lawvm.finland.legal_surface.sentence_parse import (
     projection_reference_keys,
     sentence_parse_to_mentions,
 )
+from lawvm.finland.references.ref_mention_extractor import _PLAIN_TEXT_FI_STATUTE_RE
 
 
 # --------------------------------------------------------------------------
@@ -246,6 +248,125 @@ def test_canonicalize_year_number_key_to_number_year() -> None:
     assert _canonicalize_statute_key("39/1889/ch38/1") == "39/1889/ch38/1"
     # by-name and non-statute keys untouched
     assert _canonicalize_statute_key("fi-name:valmiuslaki") == "fi-name:valmiuslaki"
+
+
+def test_canonicalize_statute_key_in_segment_disambiguates_both_years() -> None:
+    # The <ref>-lane key ``1995/1774`` (YEAR/NUMBER) cannot be oriented by number
+    # alone — the statute NUMBER 1774 is itself in the 1700–2100 enactment-year
+    # range, so the number-only rule leaves it un-swapped (ambiguous). The SEGMENT
+    # carries the author-written inline ``(1774/1995)`` paren (NUMBER/YEAR), which
+    # disambiguates: 1995 is the year, 1774 the number -> swap to ``1774/1995``.
+    seg_parens = {"1774/1995"}
+    assert _canonicalize_statute_key("1995/1774") == "1995/1774"  # number-only: stuck
+    assert (
+        _canonicalize_statute_key_in_segment("1995/1774", seg_parens) == "1774/1995"
+    )
+    # provision tail preserved across the segment-aware swap
+    assert (
+        _canonicalize_statute_key_in_segment("1995/1774/48c/2", seg_parens)
+        == "1774/1995/48c/2"
+    )
+    # chapter-qualified tail preserved
+    assert (
+        _canonicalize_statute_key_in_segment("1995/1774/ch5/42/4", seg_parens)
+        == "1774/1995/ch5/42/4"
+    )
+    # with NO matching inline paren, the ambiguous key is left as-is (honest
+    # non-swap, never an orientation guess).
+    assert _canonicalize_statute_key_in_segment("1995/1774", set()) == "1995/1774"
+    # the unambiguous case is still handled by the number-only rule (year/non-year)
+    assert (
+        _canonicalize_statute_key_in_segment("2015/1385", {"9999/9999"}) == "1385/2015"
+    )
+    # by-name keys are never reoriented
+    assert (
+        _canonicalize_statute_key_in_segment("fi-name:x", {"1/2"}) == "fi-name:x"
+    )
+
+
+def test_full_oracle_orientation_two_digit_year_paren_matches_projection() -> None:
+    # The author wrote a TWO-DIGIT-year paren ``(1767/95)``; the projection expands
+    # it to ``1767/1995`` and the <ref> lane keys ``1995/1767`` (4-digit YEAR/NUMBER,
+    # both year-plausible). The segment-paren orientation lookup must compare against
+    # the EXPANDED 4-digit form, else the swap silently fails -> orientation miss.
+    seg = "Verohallinto on arvonlisäverolain (1767/95) 128 §:n nojalla määrännyt."
+    xml = _akn(seg)
+    sid = "999/2025"
+    body = decode_body_text(xml)
+    ctx = _bucket_full_extractor_oracle(sid, xml, body)
+    index = build_clause_index(sid, body)
+    seen = 0
+    for sent in index.sentences:
+        s = body[sent.char_start : sent.char_end]
+        proj = projection_reference_keys(parse_citation_sentence(s), sid)
+        oracle = full_oracle_reference_keys(s, ctx)
+        if proj or oracle:
+            seen += 1
+            assert proj == oracle, (proj, oracle)
+            assert "1767/1995/128" in proj
+    assert seen == 1
+
+
+def test_full_oracle_orientation_matches_projection_for_year_plausible_number() -> None:
+    # End-to-end: a citation whose statute NUMBER is year-plausible (1774). The
+    # <ref> lane keys it YEAR/NUMBER (``1995/1774``); the construction projection
+    # keys it from the inline surface (``1774/1995``). The segment-aware oracle
+    # canonicalization must make these AGREE -> a MATCH, not an orientation miss.
+    seg = "Eläkesäätiölain (1774/1995) 43 §:n 2 momentin 3 kohdan mukaista."
+    xml = _akn(seg)
+    sid = "999/2025"
+    body = decode_body_text(xml)
+    ctx = _bucket_full_extractor_oracle(sid, xml, body)
+    index = build_clause_index(sid, body)
+    seen = 0
+    for sent in index.sentences:
+        s = body[sent.char_start : sent.char_end]
+        proj = projection_reference_keys(parse_citation_sentence(s), sid)
+        oracle = full_oracle_reference_keys(s, ctx)
+        if proj or oracle:
+            seen += 1
+            assert proj == oracle, (proj, oracle)
+            # the canonical NUMBER/YEAR orientation won on both sides
+            assert any(k.startswith("1774/1995") for k in proj)
+    assert seen == 1
+
+
+# --------------------------------------------------------------------------
+# Finding B: the construction parse subsumes the regex-anchor class. The
+# production plain-text regex (_PLAIN_TEXT_FI_STATUTE_RE) anchors on a known
+# inflected statute-name head IMMEDIATELY before the (id) paren; an intervening
+# genitive modifier or a descriptive ``-kaari`` title with no recognized suffix
+# DEFEATS it. The construction parse keys on the (id) anchor itself, so it catches
+# every inline-(id) citation regardless of the head morphology.
+# --------------------------------------------------------------------------
+
+
+def test_construction_catches_intervening_modifier_regex_misses() -> None:
+    # ``annettu opetusministeriön asetus (253/2001)``: the genitive modifier
+    # ``opetusministeriön`` sits BETWEEN the ``annettu`` participle and the
+    # nominative head ``asetus``, breaking the regex's ``annettu (laki|asetus)``
+    # adjacency. The regex finds nothing; the construction parse gets ``253/2001``.
+    seg = "Tämä korvaa annettu opetusministeriön asetus (253/2001)."
+    assert _PLAIN_TEXT_FI_STATUTE_RE.search(seg) is None  # regex DEFEATED
+    sp = parse_citation_sentence(seg)
+    assert projection_reference_keys(sp, "999/2025") == {"253/2001"}
+    assert_total_ownership(sp)
+
+
+def test_construction_catches_kaari_descriptive_title_regex_misses() -> None:
+    # ``tietoyhteiskuntakaaressa (917/2014)``: a ``-kaari`` descriptive title with
+    # no ``laki``/``asetus``/``päätös`` suffix the regex knows -> regex misses.
+    seg = "Turvallisuusverkko on tietoyhteiskuntakaaressa (917/2014) tarkoitettu verkko."
+    assert _PLAIN_TEXT_FI_STATUTE_RE.search(seg) is None  # regex DEFEATED
+    sp = parse_citation_sentence(seg)
+    assert projection_reference_keys(sp, "999/2025") == {"917/2014"}
+    assert_total_ownership(sp)
+    # also the genitive ``-kaaren`` form
+    seg2 = "Maakaaren (540/1995) mukaista kiinteistöä koskee tämä säännös."
+    assert _PLAIN_TEXT_FI_STATUTE_RE.search(seg2) is None
+    sp2 = parse_citation_sentence(seg2)
+    assert projection_reference_keys(sp2, "999/2025") == {"540/1995"}
+    assert_total_ownership(sp2)
 
 
 def test_collapse_redundant_statute_only_keeps_lone_statute_key() -> None:
