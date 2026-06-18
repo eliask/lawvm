@@ -58,6 +58,7 @@ from lawvm.finland.johtolause_supplements import (
     _tag_explicit_item_shift_after_repeal_hints,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
+    _supplement_sparse_osalta_row_omission_repeals,
     _tag_named_table_row_single_clause_ops,
 )
 from lawvm.finland.scope import (
@@ -2467,6 +2468,12 @@ def normalize_and_compile_ops(
         ops = _tag_named_table_row_single_clause_ops(ops, johto)
     else:
         ops = []
+    ops, osalta_findings = _supplement_sparse_osalta_row_omission_repeals(
+        ops,
+        johto,
+        amendment_id=amendment_id,
+    )
+    frontend_findings_out.extend(osalta_findings)
     if ops:
         logger.debug("  %s legal_ops → ops: %s", amendment_id, [op.description() for op in ops])
     if ops:

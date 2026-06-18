@@ -535,6 +535,23 @@ def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() ->
     assert " ".join(irnode_to_text(untouched).split()).startswith("5 d § Pääomalainalle")
 
 
+def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
+    replay_meta: dict[str, object] = {}
+    replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_1_text = " ".join(irnode_to_text(sections["section:1"]).split())
+    observations = replay_meta.get("elaboration_observations") or []
+
+    assert "Oulunseutu (Oulussa)" in section_1_text
+    assert "Pudasjärvi (st)" not in section_1_text
+    assert any(
+        isinstance(row, dict)
+        and row.get("kind") == "ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"
+        and row.get("source_statute") == "1999/77"
+        for row in observations
+    )
+
+
 def test_replay_xml_1987_1203_preserves_jolloin_section_renumber_chain() -> None:
     replay = pinned_replay("1987/1203", mode="official_consolidation", quiet=True)
 

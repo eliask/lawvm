@@ -64,6 +64,7 @@ from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_leg
 from lawvm.finland.johtolause_supplements import (
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
+    _supplement_sparse_osalta_row_omission_repeals,
     _tag_explicit_item_shift_after_repeal_hints,
     _tag_named_table_row_single_clause_ops,
 )
@@ -11249,6 +11250,27 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
 
     assert [(op.op_type, op.target_section) for op in got] == [("REPLACE", "1")]
     assert got[0].named_row_targets == ("iisalmen",)
+
+
+def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:
+    got, findings = _supplement_sparse_osalta_row_omission_repeals(
+        [],
+        (
+            "muutetaan valtion oikeusaputoimistojen ja niiden sivutoimistojen sijainnista "
+            "annetun oikeusministeriön päätöksen 1 §:ää Oulunseudun oikeusaputoimiston "
+            "Pudasjärven sivutoimiston osalta seuraavasti:"
+        ),
+        amendment_id="1999/77",
+    )
+
+    assert [(op.op_type, op.target_section, op.named_row_targets) for op in got] == [
+        ("REPEAL", "1", ("Pudasjärven",))
+    ]
+    assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
+    assert got[0].extraction_provenance_tags == ("sparse_osalta_row_omission_repeal",)
+    assert [finding.kind for finding in findings] == ["ELAB.SPARSE_OSALTA_ROW_OMISSION_REPEAL"]
+    assert findings[0].detail["source_verb"] == "muutetaan"
+    assert findings[0].detail["lowered_action"] == "REPEAL"
 
 
 def test_tag_named_table_row_single_clause_ops_recovers_regional_table_sections() -> None:

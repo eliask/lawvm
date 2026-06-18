@@ -4167,6 +4167,10 @@ def _row_anchor(paragraph: IRNode) -> str:
     return _norm_row_anchor_text(paragraph.attrs.get("row_anchor", ""))
 
 
+def _paragraph_text_row_anchor(paragraph: IRNode) -> str:
+    return _norm_row_anchor_text(irnode_to_text(paragraph))
+
+
 def _match_live_row_anchor(anchor: str, live_by_anchor: Dict[str, IRNode]) -> Optional[IRNode]:
     key = _norm_row_anchor_text(anchor)
     if not key:
@@ -4222,6 +4226,29 @@ def _single_subsection_row_table(section: Optional[IRNode]) -> Optional[IRNode]:
     if not paragraphs:
         return None
     if not all(_row_anchor(paragraph) for paragraph in paragraphs):
+        return None
+    return subsection
+
+
+def _single_subsection_paragraph_row_list(section: Optional[IRNode]) -> Optional[IRNode]:
+    """Return a single-subsection paragraph-list when text can be row anchors.
+
+    This is intentionally separate from ``_single_subsection_row_table``:
+    paragraph text anchors are only used by explicit named-row operations, not
+    by generic sparse payload alignment or broad section replacement.
+    """
+    if section is None or section.kind != IRNodeKind.SECTION:
+        return None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    if len(subsections) != 1:
+        return None
+    subsection = subsections[0]
+    paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+    if not paragraphs:
+        return None
+    if any(_row_anchor(paragraph) for paragraph in paragraphs):
+        return None
+    if not all(_paragraph_text_row_anchor(paragraph) for paragraph in paragraphs):
         return None
     return subsection
 
@@ -4695,14 +4722,25 @@ def _rewrite_named_row_table_repeals(
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
     live_sub = _single_subsection_row_table(ctx.live_node)
+    use_text_anchors = False
+    if live_sub is None:
+        live_sub = _single_subsection_paragraph_row_list(ctx.live_node)
+        use_text_anchors = live_sub is not None
     if live_sub is None:
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
-    live_by_anchor = {
-        _row_anchor(paragraph): paragraph
-        for paragraph in live_sub.children
-        if paragraph.kind == IRNodeKind.PARAGRAPH and _row_anchor(paragraph)
-    }
+    if use_text_anchors:
+        live_by_anchor = {
+            _paragraph_text_row_anchor(paragraph): paragraph
+            for paragraph in live_sub.children
+            if paragraph.kind == IRNodeKind.PARAGRAPH and _paragraph_text_row_anchor(paragraph)
+        }
+    else:
+        live_by_anchor = {
+            _row_anchor(paragraph): paragraph
+            for paragraph in live_sub.children
+            if paragraph.kind == IRNodeKind.PARAGRAPH and _row_anchor(paragraph)
+        }
     if not live_by_anchor:
         return TableRowRewriteResult(tuple(group_ops), None, False)
 
