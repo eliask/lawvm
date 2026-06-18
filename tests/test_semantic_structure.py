@@ -1563,6 +1563,38 @@ def test_wrapup_alignment_produces_no_events_when_text_matches() -> None:
     )
 
 
+def test_ir_projection_structured_wrapup_does_not_duplicate_aggregate_text_as_wording() -> None:
+    """Structured replay nodes may carry trailing content that projection owns as wrapUp."""
+    tail = (
+        "Sellaisia yhdistelmäpelejä, joihin on pelisääntöjen antamisen yhteydessä "
+        "todettu liittyvän erityinen rahapelihaittojen vaara."
+    )
+    ir_node = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="Seuraavia rahapelejä ei saa markkinoida:"),
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="1)"),
+                    IRNode(kind=IRNodeKind.CONTENT, text="raha-arpajaiset;"),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.CONTENT, text=tail),
+        ),
+    )
+
+    got = semantic_structure_from_ir(ir_node)
+
+    assert got is not None
+    facet_texts = {facet.kind: facet.text for facet in got.facets}
+    assert facet_texts["intro"] == "Seuraavia rahapelejä ei saa markkinoida:"
+    assert facet_texts["wrapUp"] == tail
+    assert "wording" not in facet_texts
+
+
 def test_wrapup_diff_fires_event_when_text_differs() -> None:
     """Diff test: IR and oracle with different wrapUp text → wrapup_text_changed event fires.
 
