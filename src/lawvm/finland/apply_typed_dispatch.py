@@ -1,8 +1,9 @@
 """Typed dispatch layer for Finland apply.
 
 This module owns the CanonicalIntent-driven section/container dispatch and the
-top-level typed action routing. `apply.py` keeps the public `apply_op` entry
-point plus the legacy fallback path for now.
+typed action routing helpers. Lane selection lives in
+:mod:`lawvm.finland.apply_intent_facade`; ``apply.py`` keeps the public
+``apply_op`` compatibility entrypoint.
 """
 
 from __future__ import annotations
