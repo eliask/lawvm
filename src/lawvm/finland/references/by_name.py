@@ -545,6 +545,89 @@ def _is_elative_attr_participle(word: str) -> bool:
     return word.endswith(_ELATIVE_ATTR_PARTICIPLE_SUFFIXES)
 
 
+# Genitive premodifier suffixes. A Finnish statute-title NP stacks genitive
+# premodifiers on the (elative) head — ``[sähköisen]gen [viestinnän]gen
+# [palveluista]ela`` (``Laki sähköisen viestinnän palveluista``), ``[viranomaisten]gen
+# [toiminnan]gen [julkisuudesta]ela``, ``[terveydenhuollon]gen [asiakasmaksuista]ela``,
+# ``[yksityishenkilön]gen [velkajärjestelystä]ela``. The elative-only left walk drops
+# them, truncating the title to its head and degrading the key to an over-broad
+# ``laki <head>``. We re-admit a genitive premodifier that is contiguously
+# left-adjacent to an already-admitted title member. Singular genitive is plain
+# ``-n``; the plural genitive surfaces are ``-jen/-ien/-den/-ten``. All end in
+# ``-n``, so an ``-n`` test — gated by the chain cap, the stopword/shape guards,
+# and the verb/clitic ``-n`` exclusion below — is the admission rule.
+_GENITIVE_PREMODIFIER_MIN_LEN = 3
+
+# ``-n``-final suffixes that are NOT a genitive: they mark a VERB or a clitic, and
+# are the dominant prior-clause polluters seen when a bare ``-n`` test walks left
+# past the title (``säädetään``/``käytetään`` = passive present; ``pitämään`` = 3rd
+# infinitive illative; ``kuitenkin`` = ``-kin`` clitic). Finnish has no genitive
+# that produces these endings, so excluding them removes the verb/adverb
+# pollution while keeping every genuine genitive premodifier (singular ``-n`` on a
+# vowel stem; plural ``-jen/-ien/-den/-ten``). Ordered longest-first only matters
+# for readability; ``str.endswith`` takes the tuple as an OR.
+_NON_GENITIVE_N_SUFFIXES: tuple[str, ...] = (
+    # passive present (``säädetään``, ``käytetään``, ``noudatetaan``)
+    "taan",
+    "tään",
+    "daan",
+    "dään",
+    # 3rd-infinitive illative (``pitämään``, ``tekemään``)
+    "maan",
+    "mään",
+    # focus/question clitics (``kuitenkin``, ``eikään``, ``onkin``)
+    "kin",
+    "kään",
+)
+
+# Function words (adverbs / conjunctions) that end in ``-n`` but are NOT genitive
+# nouns: they slip the suffix test (no verb/clitic ending) yet are prior-clause
+# connective tissue, not title premodifiers (``… siten kuin X:stä annetun lain``,
+# ``… sovelletaan vain X:stä annetun``). Listed explicitly because they are a
+# closed set and short enough to pass the min-length gate.
+_GENITIVE_FUNCTION_WORD_STOPS: frozenset[str] = frozenset(
+    {"kuin", "siten", "vain", "näin", "miten", "kuten", "joten"}
+)
+
+
+def _is_genitive_premodifier(word: str) -> bool:
+    """True when ``word`` is a clean genitive (``-n``) title premodifier.
+
+    Genitive ``-n`` is ALSO the singular total-object/accusative marker, so a
+    preceding clause's verb object (``antaa luvan …`` -> ``luvan``) likewise ends
+    ``-n``; that residual ambiguity is bounded by the caller's chain cap. This
+    predicate screens SHAPE: a lower-case common-noun token ending in genitive
+    ``-n`` (not a determiner stopword, not a verb/clitic ``-n`` form). The
+    verb/clitic exclusion is the load-bearing guard — empirically the dominant
+    ``-n`` polluters are the passive present (``säädetään``) and 3rd-infinitive
+    illative (``pitämään``), not nominal total objects.
+    """
+    if word in _COMPLEMENT_STOPWORDS or word in _GENITIVE_FUNCTION_WORD_STOPS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    # A 2-letter ``-n`` token (``en``, ``on``) is far more likely a clause word
+    # than a title premodifier; require a real noun-length stem.
+    if len(word) < _GENITIVE_PREMODIFIER_MIN_LEN:
+        return False
+    if not word.endswith("n"):
+        return False
+    # Reject verb / clitic ``-n`` forms — no genitive produces these endings.
+    return not word.endswith(_NON_GENITIVE_N_SUFFIXES)
+
+
+# Max consecutive genitive premodifiers admitted into a title NP
+# (``[sähköisen] [viestinnän] palveluista`` = a 2-genitive chain). Capped to bound
+# the prior-clause-object risk: genitive ``-n`` is also the singular total-object
+# marker, so an unbounded ``-n`` run could walk left into a preceding clause's
+# object NP (``antaa luvan …`` -> ``luvan``). A statute title's genitive
+# premodifier stack is short in practice — the corpus's observed witness shapes
+# top out at a 2-genitive chain — so a cap of 2 recovers every observed title
+# while refusing to chain a third ``-n`` token, which is far more likely a
+# stranded prior-clause object than a genuine title premodifier.
+_GENITIVE_CHAIN_CAP = 2
+
+
 def _descriptive_complement(left: str) -> tuple[str, int] | None:
     """Extract the ``annettu`` complement NP at the END of ``left``.
 
@@ -608,6 +691,12 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
     # (``neuvoa-antavissa kunnallisissa kansanäänestyksissä noudatettavasta …``),
     # so within that span the permissive complement-case test applies.
     open_complement = False
+    # Consecutive genitive premodifiers admitted so far (``[sähköisen] [viestinnän]
+    # palveluista`` = a 2-chain). Bounded by ``_GENITIVE_CHAIN_CAP`` so a stranded
+    # prior-clause total-object ``-n`` is not chained into the title. The run resets
+    # when a non-genitive title member (an elative head / participle complement) is
+    # crossed, so a long elative-coordinated title is not penalised.
+    genitive_run = 0
     while start - 1 >= 0:
         prev = words[start - 1]
         if prev in _COMPLEMENT_JOINERS:
@@ -615,6 +704,7 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
             # itself an elative title member; otherwise it is a clause coordinator.
             if start - 2 >= 0 and _is_elative(words[start - 2]):
                 start -= 1
+                genitive_run = 0
                 continue
             break
         if prev in _COMPLEMENT_STOPWORDS:
@@ -624,11 +714,22 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
             open_complement = True
         if _is_elative(prev):
             start -= 1
+            genitive_run = 0
             continue
         # A non-elative word is a title member only inside an open participle
         # complement span (its modifiers / the participle's own complement).
         if open_complement and _complement_word_ok(prev):
             start -= 1
+            genitive_run = 0
+            continue
+        # A genitive (``-n``) premodifier contiguously left-adjacent to an admitted
+        # title member is part of the title NP (``[sähköisen viestinnän]
+        # palveluista``). Bounded by the chain cap so a prior-clause total-object
+        # ``-n`` is not chained into the title. The premodifier terminates the NP on
+        # its left at the first non-genitive, non-elative, non-open-complement token.
+        if genitive_run < _GENITIVE_CHAIN_CAP and _is_genitive_premodifier(prev):
+            start -= 1
+            genitive_run += 1
             continue
         break
     # Trim a leading joiner left dangling at the NP start (defensive; the joiner

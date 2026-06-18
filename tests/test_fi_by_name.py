@@ -788,6 +788,131 @@ def test_g2_intervening_date_phrase_stripped() -> None:
     assert m.target_provision_ref.section_label == "6"
 
 
+def test_g2_genitive_premodifier_chain_kept_in_full() -> None:
+    """Genitive (``-n``) premodifiers stacked on the elative head are part of the
+    title NP and must be recovered, not truncated to the bare elative head.
+
+    Finnish statute titles stack genitive premodifiers on the elative subject
+    (``Laki sähköisen viestinnän palveluista``); the elative-only left walk
+    previously dropped them, degrading the key to over-broad ``laki palveluista``.
+    """
+    # Two-genitive chain (witness 2019/587 / Laki sähköisen viestinnän palveluista).
+    two = recognize_by_name_refs(
+        "sähköisen viestinnän palveluista annetun lain 3 §:ssä"
+    )
+    assert len(two) == 1
+    assert two[0].target_provision_ref is not None
+    assert (
+        two[0].target_provision_ref.statute_id
+        == "fi-name:laki sähköisen viestinnän palveluista"
+    )
+
+    # Plural genitive ``-ten`` + singular genitive (Laki viranomaisten toiminnan
+    # julkisuudesta).
+    pub = recognize_by_name_refs(
+        "viranomaisten toiminnan julkisuudesta annetun lain 24 §:ssä"
+    )
+    assert len(pub) == 1
+    assert pub[0].target_provision_ref is not None
+    assert (
+        pub[0].target_provision_ref.statute_id
+        == "fi-name:laki viranomaisten toiminnan julkisuudesta"
+    )
+
+    # Single genitive premodifier (Laki terveydenhuollon asiakasmaksuista).
+    amk = recognize_by_name_refs(
+        "terveydenhuollon asiakasmaksuista annetun lain 1 §:ssä"
+    )
+    assert len(amk) == 1
+    assert amk[0].target_provision_ref is not None
+    assert (
+        amk[0].target_provision_ref.statute_id
+        == "fi-name:laki terveydenhuollon asiakasmaksuista"
+    )
+
+    # Single genitive premodifier (Laki yksityishenkilön velkajärjestelystä).
+    velka = recognize_by_name_refs(
+        "yksityishenkilön velkajärjestelystä annetun lain 30 §:ssä"
+    )
+    assert len(velka) == 1
+    assert velka[0].target_provision_ref is not None
+    assert (
+        velka[0].target_provision_ref.statute_id
+        == "fi-name:laki yksityishenkilön velkajärjestelystä"
+    )
+
+
+def test_g2_genitive_premodifier_stops_at_verb_n_form() -> None:
+    """A clause verb ending in ``-n`` is the dominant prior-clause polluter and
+    must NOT be chained as a genitive premodifier.
+
+    ``… säädetään moottoriajoneuvoverosta annetun lain …`` — the passive present
+    ``säädetään`` ends ``-n`` but is a verb, not a genitive noun. The walk stops
+    at it; only the elative head survives.
+    """
+    mentions = recognize_by_name_refs(
+        "verosta säädetään moottoriajoneuvoverosta annetun lain 3 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    # ``säädetään`` is NOT swallowed — passive verb, not a genitive premodifier.
+    assert m.target_provision_ref.statute_id == "fi-name:laki moottoriajoneuvoverosta"
+
+
+def test_g2_genitive_premodifier_stops_at_function_word_n() -> None:
+    """A ``-n``-final function word (``siten``/``kuin``) from the prior clause is
+    connective tissue, not a title premodifier — the walk stops at it."""
+    mentions = recognize_by_name_refs(
+        "korvataan siten kuin sijoituspalveluyrityksistä annetun lain 1 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    # Neither ``kuin`` nor ``siten`` is chained.
+    assert m.target_provision_ref.statute_id == "fi-name:laki sijoituspalveluyrityksistä"
+
+
+def test_g2_genitive_premodifier_chain_capped() -> None:
+    """The genitive chain is capped so a stranded prior-clause total object (a
+    genuine genitive noun) cannot be chained past the title's own premodifiers.
+
+    ``antaa luvan sähköisen viestinnän palveluista annetun lain …`` — ``luvan``
+    is the verb ``antaa``'s nominal total object (genitive ``-n``), but it sits
+    THIRD in the ``-n`` run behind the two genuine title premodifiers
+    (``sähköisen viestinnän``), so the cap (2) refuses it. The genuine 2-genitive
+    title is recovered in full; the prior-clause object is left out.
+    """
+    mentions = recognize_by_name_refs(
+        "viranomainen voi antaa luvan sähköisen viestinnän palveluista "
+        "annetun lain 3 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    # Full 2-genitive title kept; ``luvan`` beyond the cap is NOT swallowed.
+    assert (
+        m.target_provision_ref.statute_id
+        == "fi-name:laki sähköisen viestinnän palveluista"
+    )
+
+
+def test_g2_genitive_premodifier_stops_at_determiner() -> None:
+    """A determiner (``sen``/``tämän``) ending in ``-n`` before the genitive
+    premodifier chain is a stopword, not a title member — the walk stops at it."""
+    mentions = recognize_by_name_refs(
+        "noudatetaan sen terveydenhuollon asiakasmaksuista annetun lain 1 §:ssä"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    # ``sen`` (determiner stopword) is not chained; chain stops after it.
+    assert (
+        m.target_provision_ref.statute_id
+        == "fi-name:laki terveydenhuollon asiakasmaksuista"
+    )
+
+
 # ── -kaari (code) heads: oikeudenkäymiskaari, maakaari, … (gap [2]) ──────────
 #
 # The historical Finnish CODES are statutes named by inflected title exactly like
