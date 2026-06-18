@@ -1,0 +1,438 @@
+"""Construction-derived deontic NORM edges — the first real Layer-2 composition.
+
+This is the FIRST Layer-2 ("middle semantics") composition step of the Finnish
+SourceSyntaxGraph: it composes the condition / exception construction parse
+(:mod:`lawvm.finland.legal_surface.condition_exception_parse`) into deontic NORM
+edges in the :class:`~lawvm.core.legal_surface_graph.LegalSurfaceGraph`, replacing
+the over-generating proximity join the EXPERIMENTAL
+:class:`~lawvm.finland.legal_surface.frame_relations.ExceptionScopesFramePass`
+performs.
+
+Where the proximity pass joins EVERY ``exception_condition_cue`` to EVERY frame
+within a 120-char window (a near-complete bipartite mesh — proximity is NOT
+attachment), this pass consumes the construction island's already-computed
+ATTACHMENT: each :class:`~lawvm.finland.legal_surface.condition_exception_parse.Qualifier`
+carries an ``attached_core_index`` + ``attachment_status`` pointing at the modal
+core it scopes (from :func:`parse_modal_sentence`). That attachment IS the deontic
+edge — this pass wires it into the graph, it does NOT recompute it.
+
+Edge kinds (the Layer-2 ``condition_attachment`` / ``excepted_by`` precursors):
+
+  * ``condition_attaches_norm`` — a CONDITION qualifier → the deontic core node it
+    attaches to ("this provision applies WHEN/IF X").
+  * ``exception_excepts_norm`` — an EXCEPTION qualifier → the deontic core node it
+    attaches to ("this provision does NOT apply in case X").
+
+Attachment status → edge status (tag-don't-guess; never a silent pick):
+
+  * ``resolved`` (exactly one deontic core in the sentence) → ONE edge,
+    edge ``status="asserted"`` (the closed ``EDGE_STATUSES`` vocabulary has no
+    ``"resolved"`` member; the construction's ``attachment_status="resolved"``
+    rides in the payload so the confidence is never lost).
+  * ``ambiguous`` (several candidate cores) → ONE edge PER candidate core,
+    edge ``status="ambiguous"``, each carrying the full candidate set in payload.
+    The construction never silently commits to one of several plausible targets;
+    the graph mirrors that by emitting the whole candidate set, not the nearest.
+  * ``candidate`` (no deontic core to attach to, OR the construction core has no
+    corresponding ``actor_modal_frame`` node in the graph) → NO asserted edge. The
+    qualifier exists but its target is not a typed graph node; it is recorded as a
+    typed diagnostic, never an invented edge.
+
+THE AUTHORITY FIREWALL (§D7) is preserved unconditionally: every edge is minted by
+the assembler with ``surface_only=True`` / ``replay_authorized=False``. A NORM edge
+is a SURFACE candidate ("the construction grammar attaches this qualifier to that
+deontic core"), NOT a legal conclusion that the norm is conditioned/excepted as a
+matter of law — that conclusion must LEAVE the graph through a named
+authorization/proof object.
+
+Coordinate-space bridge
+========================
+The construction parse runs PER SENTENCE in sentence-local coordinates; the graph
+nodes carry ``raw_text``-relative char spans. This pass therefore needs the source
+text to (a) re-derive the sentences (the shared clause-segmentation authority,
+:func:`build_clause_index`) and (b) translate each qualifier/core sentence-local
+span back to ``raw_text`` coordinates so it can be matched to the EXISTING
+``exception_condition_cue`` / ``actor_modal_frame`` graph nodes by span. Because an
+edge pass only receives the assembled graph, the pass is constructed per-statute
+from the bundle (see :func:`condition_attachment_passes`), holding the units it
+needs. It mints NO new nodes — it only joins nodes other lenses already produced.
+
+The construction's deontic cores come from :func:`parse_modal_sentence`, a DIFFERENT
+recognizer from the production ``actor_modal`` lens that emits the
+``actor_modal_frame`` nodes (the construction recognizes a core from the modal cue
+alone; the production frame additionally requires a registered actor within 60
+chars). So a construction core often has NO matching ``actor_modal_frame`` node.
+That is exactly the ``candidate`` case above — recorded honestly as a diagnostic,
+never forced into an edge. This is WHY the construction edge set is far smaller and
+more precise than the proximity mesh, not merely a re-labelling of it.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping
+
+from lawvm.core.legal_surface_graph import (
+    LegalSurfaceGraph,
+    SourceSpanRef,
+    SurfaceNode,
+)
+from lawvm.core.legal_surface_lens import (
+    SourceSurfaceBundle,
+    SourceSurfaceUnit,
+    SurfaceEdgeSeed,
+)
+from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.finland.legal_surface.clause_segment import build_clause_index
+from lawvm.finland.legal_surface.condition_exception_parse import (
+    ATTACH_AMBIGUOUS,
+    ATTACH_CANDIDATE,
+    ATTACH_RESOLVED,
+    KIND_CONDITION,
+    KIND_EXCEPTION,
+    ConditionExceptionParse,
+    Qualifier,
+    parse_condition_exception_sentence,
+)
+
+JURISDICTION = "fi"
+
+# Edge kinds — the Layer-2 condition_attachment / excepted_by precursors.
+EDGE_CONDITION_ATTACHES = "condition_attaches_norm"
+EDGE_EXCEPTION_EXCEPTS = "exception_excepts_norm"
+
+PASS_ID = "fi.norm_composition.v0"
+RULE_CONDITION = "fi.norm_composition.condition_attaches_norm"
+RULE_EXCEPTION = "fi.norm_composition.exception_excepts_norm"
+
+# The graph node kinds this pass joins. The qualifier (source) is the H6
+# exception_condition_cue node; the deontic core (target) is the H4
+# actor_modal_frame node. The pass mints NO nodes — it only links these.
+CUE_NODE_KIND = "exception_condition_cue"
+CORE_NODE_KIND = "actor_modal_frame"
+
+#: Map the qualifier kind to its NORM edge kind.
+_KIND_EDGE: dict[str, str] = {
+    KIND_CONDITION: EDGE_CONDITION_ATTACHES,
+    KIND_EXCEPTION: EDGE_EXCEPTION_EXCEPTS,
+}
+_KIND_RULE: dict[str, str] = {
+    KIND_CONDITION: RULE_CONDITION,
+    KIND_EXCEPTION: RULE_EXCEPTION,
+}
+
+#: Why a qualifier produced no asserted edge (the typed candidate/diagnostic set).
+NO_CORE_IN_SENTENCE = "no_deontic_core_in_sentence"
+NO_GRAPH_NODE_FOR_CUE = "no_exception_condition_cue_node_for_qualifier"
+NO_GRAPH_NODE_FOR_CORE = "no_actor_modal_frame_node_for_attached_core"
+
+
+@dataclass(frozen=True)
+class UnattachedQualifier:
+    """A construction qualifier that produced NO asserted NORM edge (tagged).
+
+    Carried for the differential report / debugging — never an edge. The reason
+    distinguishes the genuinely target-less qualifier (no deontic core in the
+    sentence) from the coordinate-bridge miss (the construction core or the cue
+    has no corresponding graph node — the production recognizer did not emit one).
+    """
+
+    source_unit_id: str
+    kind: str
+    cue: str
+    cue_char_start: int
+    cue_char_end: int
+    reason: str
+
+
+def _node_index_by_unit_kind(
+    nodes: Mapping[str, SurfaceNode], kind: str
+) -> dict[str, list[tuple[str, SourceSpanRef]]]:
+    """Index source-fact nodes of one kind by source unit, sorted by char_start.
+
+    Returns ``{source_unit_id: [(node_id, source_ref), …]}`` for nodes carrying a
+    ``source_ref``. Entity-handle nodes (no ``source_ref``) are skipped — they have
+    no span to match a construction span against.
+    """
+    index: dict[str, list[tuple[str, SourceSpanRef]]] = {}
+    for nid, node in nodes.items():
+        if node.node_kind != kind:
+            continue
+        ref = node.source_ref
+        if ref is None:
+            continue
+        index.setdefault(ref.source_unit_id, []).append((nid, ref))
+    for unit_id in index:
+        index[unit_id].sort(key=lambda kv: (kv[1].char_start, kv[1].char_end, kv[0]))
+    return index
+
+
+def _find_node_covering(
+    candidates: list[tuple[str, SourceSpanRef]], start: int, end: int
+) -> str | None:
+    """Find the graph node whose span best matches ``[start, end)`` (raw_text).
+
+    The construction cue/core span and the lens node span are both anchored in the
+    SAME ``raw_text`` coordinate space, but they need not be byte-identical (the
+    construction cue span is the matched marker; the ``actor_modal_frame`` span is
+    the WHOLE actor..object frame, which CONTAINS the modal cue). A match is the
+    node whose span OVERLAPS ``[start, end)`` and whose ``char_start`` is the
+    closest at-or-before the query start — i.e. the frame/cue node that owns this
+    construction span. Returns the node id, or ``None`` when nothing overlaps
+    (fail-loud by absence: no fabricated link).
+    """
+    best: str | None = None
+    best_start = -1
+    for nid, ref in candidates:
+        # overlap test in the same source unit / coordinate space
+        if ref.char_end <= start or end <= ref.char_start:
+            continue
+        # prefer the node whose span starts closest at-or-before the query start
+        if ref.char_start <= end and ref.char_start > best_start:
+            best_start = ref.char_start
+            best = nid
+    return best
+
+
+def _core_candidate_indices(qualifier: Qualifier, parse: ConditionExceptionParse) -> list[int]:
+    """The deontic-core indices a qualifier attaches to, by attachment status.
+
+    * ``resolved`` / ``ambiguous`` carry an ``attached_core_index``. For
+      ``ambiguous`` the construction records the NEAREST as that index but flags
+      the ambiguity; here we surface the FULL candidate set (every modal core in
+      the sentence) so the graph never silently commits to the nearest one.
+    * ``candidate`` carries no index (no core) → empty.
+    """
+    if qualifier.attachment_status == ATTACH_RESOLVED:
+        return [] if qualifier.attached_core_index is None else [qualifier.attached_core_index]
+    if qualifier.attachment_status == ATTACH_AMBIGUOUS:
+        # the whole candidate set — every core in the sentence is a candidate
+        return list(range(len(parse.cores)))
+    return []
+
+
+@dataclass
+class ConditionAttachmentPass:
+    """Edge pass: construction qualifier → attached deontic core NORM edge.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`.
+    Constructed per-statute from the bundle units (the construction parse needs the
+    source text to re-derive sentences and translate sentence-local spans to
+    ``raw_text``). Mints NO nodes; it only joins the EXISTING
+    ``exception_condition_cue`` (source) and ``actor_modal_frame`` (target) nodes
+    that the H6 / H4 lenses already produced.
+
+    Determinism: a single left-to-right pass over the units' sentences (the shared
+    :func:`build_clause_index` authority); qualifiers in source order; ambiguous
+    candidate cores in core order. The assembler recomputes the graph_id over the
+    edge set.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID
+    reads_node_kinds: tuple[str, ...] = (CUE_NODE_KIND, CORE_NODE_KIND)
+    emits_edge_kinds: tuple[str, ...] = (
+        EDGE_CONDITION_ATTACHES,
+        EDGE_EXCEPTION_EXCEPTS,
+    )
+    # Typed diagnostics for qualifiers that produced no asserted edge. Populated on
+    # run(); read by the differential report. NOT a graph element.
+    unattached: list[UnattachedQualifier] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        cue_index = _node_index_by_unit_kind(graph.nodes, CUE_NODE_KIND)
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            cue_nodes = cue_index.get(unit_id, [])
+            core_nodes = core_index.get(unit_id, [])
+            # Reuse the unit's populated token tape when present (the bundle sets
+            # it); fall back to building one on demand. The tape view is typed
+            # ``object | None`` on the unit, so narrow it before passing.
+            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+            try:
+                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+            except Exception:
+                # raw_text unparseable for this unit → no sentences, no edges.
+                continue
+            for sent in index.sentences:
+                base = sent.char_start
+                seg_text = unit.raw_text[sent.char_start : sent.char_end]
+                parse = parse_condition_exception_sentence(seg_text)
+                seeds.extend(
+                    self._sentence_edges(
+                        parse,
+                        base=base,
+                        unit_id=unit_id,
+                        cue_nodes=cue_nodes,
+                        core_nodes=core_nodes,
+                    )
+                )
+        return tuple(seeds)
+
+    def _sentence_edges(
+        self,
+        parse: ConditionExceptionParse,
+        *,
+        base: int,
+        unit_id: str,
+        cue_nodes: list[tuple[str, SourceSpanRef]],
+        core_nodes: list[tuple[str, SourceSpanRef]],
+    ) -> list[SurfaceEdgeSeed]:
+        out: list[SurfaceEdgeSeed] = []
+        for q in parse.qualifiers:
+            cue_abs_start = base + q.cue_start
+            cue_abs_end = base + q.cue_end
+            src_id = _find_node_covering(cue_nodes, cue_abs_start, cue_abs_end)
+            if src_id is None:
+                # The construction matched a cue the H6 lens did not emit a node
+                # for (coordinate-bridge miss). Tag it; never invent a src.
+                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_GRAPH_NODE_FOR_CUE)
+                continue
+
+            if q.attachment_status == ATTACH_CANDIDATE:
+                # No deontic core in the sentence → no asserted edge (tagged).
+                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_CORE_IN_SENTENCE)
+                continue
+
+            core_idx_set = _core_candidate_indices(q, parse)
+            if not core_idx_set:
+                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_CORE_IN_SENTENCE)
+                continue
+
+            # Map the construction attachment confidence onto the CLOSED edge
+            # status vocabulary (EDGE_STATUSES has no "resolved" member): a
+            # resolved (single-core) attachment is a settled surface fact →
+            # "asserted"; a multi-core attachment is "ambiguous". The construction's
+            # own ``attachment_status`` ("resolved"/"ambiguous") rides in the
+            # payload so the distinction is never lost.
+            edge_status = (
+                "asserted" if q.attachment_status == ATTACH_RESOLVED else "ambiguous"
+            )
+            candidate_payload = self._candidate_payload(parse, base, core_idx_set)
+
+            emitted_any = False
+            for core_idx in core_idx_set:
+                core = parse.cores[core_idx]
+                core_abs_start = base + core.cue_start
+                core_abs_end = base + core.cue_end
+                dst_id = _find_node_covering(core_nodes, core_abs_start, core_abs_end)
+                if dst_id is None:
+                    # The construction core has no production actor_modal_frame
+                    # node (different recognizer). No asserted edge for THIS core.
+                    continue
+                out.append(
+                    self._edge_seed(
+                        q,
+                        src_id=src_id,
+                        dst_id=dst_id,
+                        edge_status=edge_status,
+                        cue_span=[cue_abs_start, cue_abs_end],
+                        core_span=[core_abs_start, core_abs_end],
+                        attachment_status=q.attachment_status,
+                        candidate_payload=candidate_payload,
+                    )
+                )
+                emitted_any = True
+            if not emitted_any:
+                # The construction attached to a core, but no graph node backs it.
+                self._tag(
+                    unit_id, q, cue_abs_start, cue_abs_end, NO_GRAPH_NODE_FOR_CORE
+                )
+        return out
+
+    def _candidate_payload(
+        self, parse: ConditionExceptionParse, base: int, core_idx_set: list[int]
+    ) -> list[list[int]]:
+        """The full candidate-core span set (raw_text), for the ambiguous payload."""
+        return [
+            [base + parse.cores[i].cue_start, base + parse.cores[i].cue_end]
+            for i in core_idx_set
+        ]
+
+    def _edge_seed(
+        self,
+        q: Qualifier,
+        *,
+        src_id: str,
+        dst_id: str,
+        edge_status: str,
+        cue_span: list[int],
+        core_span: list[int],
+        attachment_status: str,
+        candidate_payload: list[list[int]],
+    ) -> SurfaceEdgeSeed:
+        edge_kind = _KIND_EDGE[q.kind]
+        rule_id = _KIND_RULE[q.kind]
+        payload: dict[str, object] = {
+            "qualifier_kind": q.kind,
+            "cue": q.cue,
+            "attachment_status": attachment_status,
+            "cue_span": cue_span,
+            "core_span": core_span,
+            "source": "construction_attachment",
+            "experimental": True,
+        }
+        if attachment_status == ATTACH_AMBIGUOUS:
+            # Carry the full candidate set so a consumer sees this edge is one of
+            # several plausible attachments — never a silent pick.
+            payload["candidate_core_spans"] = candidate_payload
+        return SurfaceEdgeSeed(
+            edge_kind=edge_kind,
+            src_local=src_id,
+            dst_local=dst_id,
+            rule_id=rule_id,
+            status=edge_status,
+            payload=payload,
+        )
+
+    def _tag(
+        self,
+        unit_id: str,
+        q: Qualifier,
+        cue_abs_start: int,
+        cue_abs_end: int,
+        reason: str,
+    ) -> None:
+        self.unattached.append(
+            UnattachedQualifier(
+                source_unit_id=unit_id,
+                kind=q.kind,
+                cue=q.cue,
+                cue_char_start=cue_abs_start,
+                cue_char_end=cue_abs_end,
+                reason=reason,
+            )
+        )
+
+
+def condition_attachment_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[ConditionAttachmentPass, ...]:
+    """Build the per-statute condition/exception attachment edge pass(es).
+
+    The pass needs the source text (it runs the construction parse), so it is
+    constructed from the bundle units rather than registered as a stateless module
+    default. Returns a one-tuple (one pass over all units) so the caller can splice
+    it into the edge-pass sequence additively.
+    """
+    return (ConditionAttachmentPass(units=bundle.units),)
+
+
+__all__ = [
+    "CORE_NODE_KIND",
+    "CUE_NODE_KIND",
+    "ConditionAttachmentPass",
+    "EDGE_CONDITION_ATTACHES",
+    "EDGE_EXCEPTION_EXCEPTS",
+    "NO_CORE_IN_SENTENCE",
+    "NO_GRAPH_NODE_FOR_CORE",
+    "NO_GRAPH_NODE_FOR_CUE",
+    "PASS_ID",
+    "RULE_CONDITION",
+    "RULE_EXCEPTION",
+    "UnattachedQualifier",
+    "condition_attachment_passes",
+]

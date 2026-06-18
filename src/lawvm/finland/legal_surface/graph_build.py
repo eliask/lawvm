@@ -65,6 +65,9 @@ from lawvm.finland.legal_surface.cross_lens_passes import (
     FrameReferenceColocationPass,
     FrameTemporalColocationPass,
 )
+from lawvm.finland.legal_surface.norm_composition import (
+    condition_attachment_passes,
+)
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
     AmbiguousReferenceLintPass,
@@ -181,12 +184,19 @@ def build_legal_surface_graph(
         results.append(result)
         lens_runs.append(_lens_run(lens, result))
 
+    # ADDITIVE Layer-2 strangle: the construction-derived deontic NORM edge pass
+    # runs ALONGSIDE the proximity ExceptionScopesFramePass (which stays in
+    # ``edge_passes``), never replacing it. It is built per-statute from the
+    # bundle because the construction parse needs the source text. The proximity
+    # pass remains the incumbent until the construction edge is proven superior.
+    all_edge_passes = edge_passes + condition_attachment_passes(bundle)
+
     return assemble_surface_graph(
         subject=bundle.subject,
         source_units=_source_unit_refs(bundle),
         lens_results=tuple(results),
         lens_runs=tuple(lens_runs),
-        edge_passes=edge_passes,
+        edge_passes=all_edge_passes,
     )
 
 

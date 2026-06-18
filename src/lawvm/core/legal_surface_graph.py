@@ -127,6 +127,20 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # in/near this frame's text" — who acts in/near this frame), NOT a claim
         # that the actor is the legal subject of the frame.
         "frame_has_colocated_actor",  # EXPERIMENTAL
+        # ── Layer-2 construction-derived deontic NORM edges ───────────────────
+        # The FIRST real Layer-2 composition: a condition/exception qualifier
+        # (exception_condition_cue node) -> the deontic core (actor_modal_frame
+        # node) the CONSTRUCTION parse attaches it to (not a proximity window).
+        # condition_attaches_norm: a CONDITION qualifier scopes that core ("the
+        # norm applies WHEN/IF X"); exception_excepts_norm: an EXCEPTION qualifier
+        # scopes that core ("the norm does NOT apply in case X"). status carries
+        # the construction's attachment confidence: "resolved" (one core) or
+        # "ambiguous" (one edge per candidate core, full set in payload). Still a
+        # SURFACE candidate, never a legal conclusion (§D7) — the legal reading
+        # that the norm is conditioned/excepted must leave the graph through a
+        # named authorization object.
+        "condition_attaches_norm",
+        "exception_excepts_norm",
     }
 )
 
