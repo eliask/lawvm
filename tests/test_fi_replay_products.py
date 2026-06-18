@@ -50,6 +50,7 @@ from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
+from lawvm.finland.xml_ir import fi_xml_to_ir_node
 
 
 @pytest.fixture(scope="module")
@@ -239,6 +240,46 @@ def test_reconcile_fold_sections_does_not_restore_into_attachments() -> None:
     assert all(child.kind is not IRNodeKind.SECTION for child in reconciled.children[1].children)
 
 
+def test_reconcile_fold_sections_does_not_split_attachments_for_mixed_chapter_wrapper() -> None:
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="38",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Trailing direct section"),),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="8"),
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "attachments"},
+                children=(section,),
+            ),
+        ),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(
+                    IRNode(kind=IRNodeKind.CHAPTER, label="8"),
+                    section,
+                ),
+            ),
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+
+    assert [child.attrs.get("name") for child in reconciled.children if child.kind is IRNodeKind.HCONTAINER] == [
+        "attachments"
+    ]
+    attachments = next(child for child in reconciled.children if child.attrs.get("name") == "attachments")
+    assert [child.label for child in attachments.children if child.kind is IRNodeKind.SECTION] == ["38"]
+
+
 def test_2009_1182_materialized_text_keeps_operatives_outside_attachments() -> None:
     replay = replay_xml_for_test("2009/1182", mode="official_consolidation", quiet=True)
 
@@ -260,6 +301,73 @@ def test_2009_1182_materialized_text_keeps_operatives_outside_attachments() -> N
     assert findings
     assert findings[0].detail.get("witness_rule_id") == "fi_materialized_attachments_wrapper_split_v1"
     assert findings[0].detail.get("moved_section_labels") == ("1", "2", "3", "4")
+
+
+def test_fi_xml_ingest_merges_unlabeled_heading_section_into_empty_numbered_shell() -> None:
+    body = etree.fromstring(
+        """
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section eId="sec_11"><num>11 §</num></section>
+            <section eId="entryIntoForce">
+              <heading>Voimaantulo</heading>
+              <subsection><content>Tämä asetus tulee voimaan 1 päivänä tammikuuta.</content></subsection>
+            </section>
+          </hcontainer>
+        </body>
+        """.encode()
+    )
+
+    ir = fi_xml_to_ir_node(body)
+
+    wrapper = ir.children[0]
+    sections = [child for child in wrapper.children if child.kind is IRNodeKind.SECTION]
+    assert len(sections) == 1
+    section = sections[0]
+    assert section.label == "11"
+    assert section.attrs.get("lawvm_source_normalization_rule") == "fi_empty_numbered_section_shell_merge_v1"
+    assert "Voimaantulo" in irnode_to_text(section)
+
+
+def test_fi_xml_ingest_does_not_merge_unlabeled_heading_section_after_nonempty_section() -> None:
+    body = etree.fromstring(
+        """
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section><num>10 §</num><heading>Already complete</heading></section>
+            <section><heading>Standalone heading</heading></section>
+          </hcontainer>
+        </body>
+        """.encode()
+    )
+
+    ir = fi_xml_to_ir_node(body)
+
+    wrapper = ir.children[0]
+    sections = [child for child in wrapper.children if child.kind is IRNodeKind.SECTION]
+    assert len(sections) == 2
+    assert sections[0].label == "10"
+    assert sections[1].label is None
+
+
+def test_2001_621_materialized_state_keeps_operatives_outside_attachments_and_merges_section_11() -> None:
+    replay = replay_xml_for_test("2001/621", mode="official_consolidation", quiet=True)
+
+    section_11 = replay.materialized_state.find_section("11")
+    attachments = [
+        child for child in replay.materialized_state.ir.children if child.attrs.get("name") == "attachments"
+    ]
+    root_subsections = [
+        child for child in replay.materialized_state.ir.children if child.kind is IRNodeKind.SUBSECTION
+    ]
+
+    assert section_11 is not None
+    section_11_text = " ".join(irnode_to_text(section_11).split())
+    assert section_11_text.startswith("11 § Voimaantulo")
+    assert "Tämä asetus tulee voimaan 3 päivänä tammikuuta 2002." in section_11_text
+    assert not root_subsections
+    assert attachments
+    assert all(child.kind is not IRNodeKind.SECTION for child in attachments[0].children)
 
 
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:

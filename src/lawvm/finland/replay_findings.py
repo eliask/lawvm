@@ -230,10 +230,10 @@ def materialized_attachments_wrapper_split_finding(
         detail={
             "message": (
                 "Materialized PIT product carried fold-owned operative sections under "
-                "a sole attachments wrapper; sections were split into a provisions wrapper."
+                "an attachments wrapper; sections were split into a provisions wrapper."
             ),
             "witness_rule_id": witness_rule_id,
-            "source_shape": "sole_attachments_hcontainer_with_direct_sections",
+            "source_shape": "attachments_hcontainer_with_fold_owned_direct_sections",
             "target_wrapper": "statuteProvisionsWrapper",
             "moved_section_labels": moved_section_labels,
         },

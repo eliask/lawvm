@@ -365,7 +365,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 ("preservation", "lineage"), role="observation"),
     FindingSpec("REPLAY.MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT", "replay_products",
                 "recovery", "warn", "grafter",
-                "materialized PIT product split fold-owned operative sections out of a sole attachments wrapper",
+                "materialized PIT product split fold-owned operative sections out of an attachments wrapper",
                 ("preservation", "safety_invariant"), role="observation"),
     FindingSpec("APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET", "process_muutoslaki",
                 "recovery", "warn", "grafter",

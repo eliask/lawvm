@@ -18,7 +18,7 @@ from lawvm.finland.replay_product_projection import (
 from lawvm.finland.replay_findings import materialized_attachments_wrapper_split_finding
 from lawvm.finland.replay_products import (
     ReplayProducts,
-    _split_operatives_from_sole_attachments_wrapper,
+    _split_operatives_from_attachments_wrapper,
     build_replay_products,
 )
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
@@ -101,7 +101,7 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
                 debug_log=request.debug_log,
             )
         )
-    split_materialized_ir = _split_operatives_from_sole_attachments_wrapper(
+    split_materialized_ir = _split_operatives_from_attachments_wrapper(
         products.materialized_state.ir,
         products.replay_fold_state.ir,
     )
