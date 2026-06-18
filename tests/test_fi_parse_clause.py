@@ -1879,6 +1879,27 @@ def test_parse_clause_pykala_apostrophe_normalization():
     assert ops[0].witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_pykala_short_illative_typo_normalization():
+    """§:än must tokenize as illative §:ään for source-typo amendment clauses.
+
+    Regression for `1993/81 <- 1994/495`: the johtolause has "2 §:än ...
+    uuden 5 momentin", omitting one `ä` from the standard illative suffix.
+    Treating it as WORD dropped the only operation from the amendment.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    tokens = tokenize("lisätään 2 §:än uusi 5 momentti")
+    pykala_toks = [t for t in tokens if t.cat == "PYKALA"]
+    assert len(pykala_toks) == 1
+    assert pykala_toks[0].text == "§:än"
+    assert pykala_toks[0].case == "ILL"
+
+    ops = parse_clause("lisätään 2 §:än uusi 5 momentti seuraavasti:").parsed_ops
+    assert [op.code() for op in ops] == ["L P 2 5"]
+    assert ops[0].witness is not None
+    assert ops[0].witness.rule_id == "fi.insertion_sub_target"
+
+
 def test_parse_clause_skips_glued_nainkuuluva_before_subsection_insert_targets() -> None:
     """Glued ``näinkuuluva`` must not collapse a subsection insert into a chapter insert.
 

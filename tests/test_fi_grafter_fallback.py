@@ -13653,6 +13653,30 @@ def test_inspect_amendment_1962_420_2024_247_keeps_heading_insert_out_of_subsect
     )
 
 
+def test_inspect_amendment_1993_81_1994_495_recovers_short_pykala_illative_typo() -> None:
+    """The source typo `§:än` must not drop an explicit subsection insertion."""
+    bundle = build_amendment_bundle("1993/81", "1994/495", mode="legal_pit")
+
+    assert bundle["compiled_ops"] == ["INSERT 2 § 5 mom"]
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "2")
+
+    assert group["ops_raw"] == ["INSERT 2 § 5 mom"]
+    assert group["ops_final"] == ["INSERT 2 § 5 mom"]
+    assert group["sparse_slot_bindings"] == [
+        {
+            "op": "INSERT 2 § 5 mom",
+            "target_paragraph": 5,
+            "target_item": "",
+            "target_special": "",
+            "slot_index": 1,
+            "slot_label": "5",
+        }
+    ]
+    mapped_payload = group["subsection_map"][0]["mapped_payload"]
+    assert mapped_payload["label"] == "5"
+    assert "Euroopan talousalueen valtioiden kansalaisten" in mapped_payload["text"]
+
+
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
     bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 

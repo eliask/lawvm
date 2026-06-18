@@ -88,6 +88,10 @@ _v("§:ään", "§", "PYKALA", "ILL")
 _v("§:iin", "§", "PYKALA", "ILL")
 _v("§:aan", "§", "PYKALA", "ILL")
 _v("§:een", "§", "PYKALA", "ILL")
+# Source typo tolerance: 1994/495 prints "2 §:än" where the formula means
+# illative "2 §:ään". Keep the repair lexical so the normal insertion grammar
+# still owns the target and payload binding.
+_v("§:än", "§", "PYKALA", "ILL")
 _v("§.", "§", "PYKALA", "NOM")  # sentence-final
 _v("pykälä", "§", "PYKALA", "NOM")
 _v("pykälän", "§", "PYKALA", "GEN")
@@ -328,6 +332,6 @@ def _case_from_pykala_suffix(suffix: str) -> str:
         return "NOM"
     if suffix in (":n", ":in", ":en"):
         return "GEN"
-    if suffix in (":ään", ":iin", ":aan", ":een"):
+    if suffix in (":ään", ":iin", ":aan", ":een", ":än"):
         return "ILL"
     return "NOM"
