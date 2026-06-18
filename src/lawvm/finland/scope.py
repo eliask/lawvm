@@ -980,6 +980,8 @@ def assign_chapter_scope_from_johtolause(
         section_label = str(pd["section"])
         section_norm = _norm_num_token(section_label)
         part_label = str(pd["part"]) if pd.get("part") else None
+        special = lo.target.special
+        facet = special.value if special is not None else None
         if (
             last_section_norm == section_norm
             and last_section_chapter
@@ -1064,6 +1066,29 @@ def assign_chapter_scope_from_johtolause(
         for idx in range(cursor, len(chunks)):
             chapter_label, chunk = chunks[idx]
             if _chapter_chunk_mentions_lo(chunk, lo):
+                if lo.action is StructuralAction.INSERT and (
+                    pd.get("subsection")
+                    or pd.get("item")
+                    or pd.get("paragraph")
+                    or facet in {"intro", "heading"}
+                ):
+                    live_path = master.find_section_path(section_norm, None, part_label)
+                    live_chapter = (
+                        next((label for kind, label in live_path if kind == "chapter"), None)
+                        if live_path is not None
+                        else None
+                    )
+                    if (
+                        live_path is not None
+                        and live_chapter is None
+                        and section_norm not in duplicate_labels
+                        and not _johtolause_explicitly_mentions_chaptered_section_target(
+                            johto,
+                            chapter_label,
+                            section_label,
+                        )
+                    ):
+                        continue
                 if (
                     lo.action is not StructuralAction.INSERT
                     and not _master_has_section_in_chapter(

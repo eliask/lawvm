@@ -2817,6 +2817,56 @@ def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_s
     )
 
 
+def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapter_scope() -> None:
+    before = pinned_replay("1968/360", stop_before="2019/308", mode="official_consolidation", quiet=True)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2019/308")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        amendment_id="2019/308",
+        source_title="Laki elinkeinotulon verottamisesta annetun lain muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1968/360",
+        strict_profile=None,
+    )
+
+    inserted_subsections = {
+        op.target_section: op
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_paragraph == 2
+        and op.target_section in {"1", "2", "7"}
+    }
+    assert inserted_subsections["1"].target_chapter is None
+    assert inserted_subsections["2"].target_chapter is None
+    assert inserted_subsections["7"].target_chapter == "2"
+
+    scoped_whole_section_inserts = {
+        op.target_section: op.target_chapter
+        for op in phase2.output
+        if op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_paragraph is None
+        and op.target_section in {"42a"}
+    }
+    assert scoped_whole_section_inserts["42a"] == "3"
+    assert any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section == "53"
+        and op.target_paragraph == 3
+        and op.target_chapter == "3"
+        for op in phase2.output
+    )
+
+
 def test_normalize_and_compile_ops_records_empty_extraction_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
