@@ -2176,6 +2176,15 @@ def test_replay_xml_1988_161_pseudo_chapter_marker_moves_section_55_to_7c() -> N
     assert sec55_in_7 is None, "§55 must not remain in chapter 7 after move to 7c"
 
 
+def test_replay_xml_1988_161_unscoped_replaces_do_not_become_7c_inserts() -> None:
+    """1996/473 bare REPLACE payloads after 7c must not be inserted into 7c."""
+
+    replay = pinned_replay("1988/161", mode="legal_pit", quiet=True)
+
+    for label in ("59", "62", "66", "72", "113", "125", "131", "133", "134", "135", "142", "145"):
+        assert replay.materialized_state.find_section(label, "7c") is None
+
+
 def test_replay_xml_2009_617_moves_sections_39_to_41_into_inserted_chapter_4a() -> None:
     """Regression: 2016/533 splits chapter 4 and moves §§39–41 under 4 a luku.
 

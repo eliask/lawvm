@@ -114,6 +114,10 @@ _v("osaan", "osa", "OSA", "ILL")
 
 # Subsection
 _v("momentti", "momentti", "MOMENTTI", "NOM")
+# Source typo tolerance: 1996/473 prints "momenttti" in a long replacement
+# list. Treat it as a subsection noun so the list continues instead of dropping
+# all following targets.
+_v("momenttti", "momentti", "MOMENTTI", "NOM")
 _v("momentin", "momentti", "MOMENTTI", "GEN")
 _v("momenttiin", "momentti", "MOMENTTI", "ILL")
 _v("momenttia", "momentti", "MOMENTTI", "NOM")  # partitive, treat as nom
