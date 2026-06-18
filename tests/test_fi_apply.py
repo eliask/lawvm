@@ -11235,10 +11235,10 @@ class TestApplyItemReplace:
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2019/1468", "", False, parent_id="2006/395")
         descriptions = [op.description() for op in phase.output if op.target_section == "70"]
-        assert "REPLACE 70 § 2 mom" in descriptions
-        assert "REPLACE 70 § 3 mom 4 kohta" in descriptions
-        assert "REPLACE 70 § 3 mom 5 kohta" in descriptions
-        assert "REPLACE 70 § 3 mom 12 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 2 mom" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 4 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 5 kohta" in descriptions
+        assert "REPLACE 4 luku 70 § 3 mom 12 kohta" in descriptions
         path = state.find_section_path("70", None, "2")
         assert path is not None
         sec = state.resolve(path)
@@ -11296,10 +11296,10 @@ class TestApplyItemReplace:
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2022/572", "", False, parent_id="2006/395")
         descriptions = [op.description() for op in phase.output if op.target_section == "123"]
-        assert "REPLACE 123 § johd" in descriptions
-        assert "REPLACE 123 § 1 mom 8 kohta" in descriptions
-        assert "REPLACE 123 § 1 mom 9 kohta" in descriptions
-        assert "REPLACE 123 § 1 mom 15 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § johd" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 8 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 9 kohta" in descriptions
+        assert "REPLACE 8 luku 123 § 1 mom 15 kohta" in descriptions
         assert "INSERT 8 luku 123 § 2 mom" in descriptions
         path = state.find_section_path("123", None, "2")
         assert path is not None
@@ -15503,12 +15503,21 @@ def test_johd_replace_reports_intro_list_shape_rebound_when_carrier_subsection_i
         source_pathologies_out=pathologies,
     )
 
-    assert result is None
+    assert result is not None
     assert [p.code for p in pathologies] == [
         "SUBSECTION_TARGET_REBOUND",
-        "ITEM_TARGET_STRUCTURE_ABSENT",
+        "DESTRUCTIVE_SHAPE_LOSS_RISK",
     ]
     assert pathologies[0].detail["rebound_kind"] == "intro_list_moment_shape"
+    assert pathologies[1].detail["recovery_kind"] == "intro_prepend_letter_list_moment"
+    new_sec = result.resolve(sec_path)
+    assert new_sec is not None
+    carrier = [c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "3"][0]
+    assert [c.kind for c in carrier.children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
 
 
 def test_johd_replace_rejects_intro_list_shape_rebound_in_strict_mode() -> None:
