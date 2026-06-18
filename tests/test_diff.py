@@ -6,7 +6,7 @@ from lxml import etree
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.tools.diff import _diff_sections_ir_vs_xml, _diff_sync
+from lawvm.tools.diff import _diff_sections_ir_vs_xml, _diff_sync, _print_compile_summary
 
 
 def test_diff_sections_treats_temporary_oracle_stub_as_editorial(capsys) -> None:
@@ -31,6 +31,30 @@ def test_diff_sections_treats_temporary_oracle_stub_as_editorial(capsys) -> None
     out = capsys.readouterr().out
     assert "editorial (stub)" in out
     assert "MISSING" not in out
+
+
+def test_diff_compile_summary_accepts_report_record_dict(capsys) -> None:
+    _print_compile_summary(
+        report_record={
+            "canonical_ops": (SimpleNamespace(op_id="replace_1"),),
+            "failed_ops": (),
+            "projection_rows": (
+                {
+                    "kind": "ELAB.SOURCE_PATHOLOGY",
+                    "detail": {"code": "DESTRUCTIVE_SHAPE_LOSS_RISK"},
+                },
+            ),
+            "source_pathologies": (
+                {"code": "DESTRUCTIVE_SHAPE_LOSS_RISK"},
+            ),
+            "strict_fail_reasons": (),
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert "Compile summary: strict=YES  canonical=1  failed=0  projection_rows=1" in out
+    assert "Projection rows: ELAB.SOURCE_PATHOLOGY" in out
+    assert "Pathologies  : DESTRUCTIVE_SHAPE_LOSS_RISK" in out
 
 
 def test_diff_sync_replays_quietly(monkeypatch, capsys) -> None:

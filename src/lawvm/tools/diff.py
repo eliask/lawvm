@@ -476,26 +476,23 @@ def _print_compile_summary(
     report_record: Any,
 ) -> None:
     """Print the short summary from the facade-backed report record."""
-    projection = getattr(report_record, "projection_rows", None)
-    if not callable(projection):
-        raise TypeError("report_record must expose projection_rows()")
-    projection_rows = list(projection() or [])
-    canonical_ops = list(getattr(report_record, "canonical_ops", []) or [])
-    failed_ops = list(getattr(report_record, "failed_ops", []) or [])
-    source_pathologies = [
-        {
-            "code": str((row.get("detail") or {}).get("code") or ""),
-        }
-        for row in projection_rows
-        if isinstance(row, dict)
-        and str(row.get("kind") or "") == "source_pathology"
-        and isinstance(row.get("detail"), dict)
-        and str((row.get("detail") or {}).get("code") or "")
-    ]
+    def _field(name: str, default: Any = None) -> Any:
+        if isinstance(report_record, dict):
+            return report_record.get(name, default)
+        return getattr(report_record, name, default)
+
+    projection_value = _field("projection_rows", ())
+    if callable(projection_value):
+        projection_rows = list(projection_value() or [])
+    else:
+        projection_rows = list(projection_value or [])
+    canonical_ops = list(_field("canonical_ops", []) or [])
+    failed_ops = list(_field("failed_ops", []) or [])
+    source_pathologies = list(_field("source_pathologies", []) or [])
     n_canonical = len(canonical_ops)
     n_failed = len(failed_ops)
     n_projection_rows = len(projection_rows)
-    strict_fail_reasons = list(getattr(report_record, "strict_fail_reasons", []) or [])
+    strict_fail_reasons = list(_field("strict_fail_reasons", []) or [])
     pass_label = "YES" if not bool(strict_fail_reasons) else "NO"
     print(
         f"Compile summary: strict={pass_label}  canonical={n_canonical}  "
