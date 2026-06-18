@@ -483,8 +483,10 @@ def _complement_word_ok(word: str) -> bool:
 
     A title word (lower-case name token, not a determiner stopword) ending in a
     case the participle's NP carries (elative / inessive / partitive), or a
-    coordinating joiner BETWEEN complement words. A word failing this breaks the
-    NP — the leftward walk stops before it.
+    coordinating joiner BETWEEN complement words. Used for the trailing modifiers
+    AFTER the elative anchor (``työsuojeluasioissa``) and, in the leftward walk,
+    only within an open participle-complement span — NOT as a general left-boundary
+    test (that would re-admit prior-clause pollution).
     """
     if word in _COMPLEMENT_JOINERS:
         return True
@@ -495,6 +497,54 @@ def _complement_word_ok(word: str) -> bool:
     return word.endswith(_COMPLEMENT_CASE_SUFFIXES)
 
 
+def _is_elative(word: str) -> bool:
+    """True when ``word`` is a clean title word in the elative (``-sta/-stä``).
+
+    The elative is the case the participle governs; an elative pre-modifier (incl.
+    plural ``-ista``, adjective ``-isesta`` and the elative attributive participle
+    forms ``koskevasta``/``säädetyistä``) always agrees with the head, so it is an
+    unconditionally safe member of the title NP.
+    """
+    if word in _COMPLEMENT_STOPWORDS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(("sta", "stä"))
+
+
+# Elative attributive participle suffixes: present passive (``koskevasta``,
+# ``vaadittavasta``) and past passive (``säädetyistä``, ``noudatettavista``). When
+# the elative HEAD is pre-modified by such a participle, the participle's own
+# complement to its LEFT is a genuine title member EVEN IF that complement is not
+# itself elative (``hakukoneita koskevasta …``, ``henkilöstöltä vaadittavasta …``).
+# This licenses the ``[complement] [elative participle] [elative head]`` shape
+# without re-admitting the prior-clause pollution a bare case-suffix test let in.
+_ELATIVE_ATTR_PARTICIPLE_SUFFIXES: tuple[str, ...] = (
+    # present passive (``koskevasta``/``koskevista``, ``vaadittavasta``)
+    "vasta",
+    "västä",
+    "vista",
+    "vistä",
+    # past passive, singular (``säädetystä``, ``noudatetusta``)
+    "tusta",
+    "tystä",
+    "dusta",
+    "dystä",
+    # past passive, plural (``säädetyistä``, ``noudatetuista``)
+    "tuista",
+    "tyistä",
+    "duista",
+    "dyistä",
+)
+
+
+def _is_elative_attr_participle(word: str) -> bool:
+    """True when ``word`` is an elative attributive participle (``koskevasta``)."""
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(_ELATIVE_ATTR_PARTICIPLE_SUFFIXES)
+
+
 def _descriptive_complement(left: str) -> tuple[str, int] | None:
     """Extract the ``annettu`` complement NP at the END of ``left``.
 
@@ -502,11 +552,15 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
     peeled). Returns ``(complement_surface, start_offset_in_left)`` or ``None``.
 
     The walk anchors on the LAST elative (``…sta/…stä``) word — the head case the
-    participle governs — then extends LEFT over contiguous complement-NP words
-    (case-agreeing modifiers / joiners), stopping at the NP boundary (a
-    determiner, verb, or nominative/genitive word that is not complement-cased).
-    A trailing joiner is trimmed. Anchoring on the elative (rather than a greedy
-    left run) is what keeps ``… sitä luottolaitostoiminnasta annetun`` → just
+    participle governs — then extends LEFT over genuine title members only,
+    stopping at the clause boundary. A left word is admitted iff it is (a) an
+    elative title word, (b) the complement (or modifier chain) of an immediately
+    following elative attributive participle (``hakukoneita koskevasta …``,
+    ``henkilöstöltä vaadittavasta …``), or (c) a coordinator joining two elative
+    title members. A determiner/pronoun (``mitä``), a verb (``sovelleta``), a
+    prior-clause locative + clause coordinator (``momentissa tai …``) or a phrase
+    like ``tässä laissa ja …`` is NOT a title member — the walk stops before it,
+    so ``… sitä luottolaitostoiminnasta annetun`` yields just
     ``luottolaitostoiminnasta`` and never swallows the preceding clause.
     """
     # Tokenize the tail of ``left`` into (word, start_offset) pairs.
@@ -533,12 +587,52 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
     for j in range(anchor + 1, len(words)):
         if not _complement_word_ok(words[j]):
             return None
-    # Extend LEFT over contiguous complement-NP words (case-agreeing pre-modifiers
-    # like the partitive participle ``valvotusta``), stopping at the NP boundary.
+    # Extend LEFT over the title NP's pre-modifiers, stopping at the clause boundary.
+    # A bare case-suffix test over-captures the preceding clause (a negative verb
+    # ``sovelleta``, a locative ``momentissa``, a determiner ``mitä``). Instead a
+    # left word is admitted only when it is a genuine title member:
+    #   * an elative (``-sta/-stä``) word — agrees with the head, always safe; or
+    #   * the complement of an immediately-following elative attributive participle
+    #     (``hakukoneita`` before ``koskevasta``; ``henkilöstöltä`` before
+    #     ``vaadittavasta``) — the ``[complement] [elative participle] [head]``
+    #     title shape, where the complement need not itself be elative; or
+    #   * a coordinator (``ja``/``tai``/``sekä``) ONLY when it joins two elative
+    #     title members (``julkisista hankinnoista ja käyttöoikeussopimuksista``) —
+    #     a coordinator whose left neighbour is NOT an elative title member
+    #     coordinates two CLAUSES (``momentissa tai luottolaitostoiminnasta``,
+    #     ``tässä laissa ja finanssivalvonnasta``), so the walk stops there.
     start = anchor
-    while start - 1 >= 0 and _complement_word_ok(words[start - 1]):
-        start -= 1
-    # Trim a leading joiner (``ja luottolaitostoiminnasta`` → drop ``ja``).
+    # ``open_complement`` is set once the walk crosses an elative attributive
+    # participle: its complement to the LEFT is a (possibly multi-word) NP whose
+    # members carry locative/partitive cases rather than the elative
+    # (``neuvoa-antavissa kunnallisissa kansanäänestyksissä noudatettavasta …``),
+    # so within that span the permissive complement-case test applies.
+    open_complement = False
+    while start - 1 >= 0:
+        prev = words[start - 1]
+        if prev in _COMPLEMENT_JOINERS:
+            # Internal title coordination iff the word to the coordinator's LEFT is
+            # itself an elative title member; otherwise it is a clause coordinator.
+            if start - 2 >= 0 and _is_elative(words[start - 2]):
+                start -= 1
+                continue
+            break
+        if prev in _COMPLEMENT_STOPWORDS:
+            break
+        if _is_elative_attr_participle(words[start]):
+            # Crossing a participle opens its complement span to the left.
+            open_complement = True
+        if _is_elative(prev):
+            start -= 1
+            continue
+        # A non-elative word is a title member only inside an open participle
+        # complement span (its modifiers / the participle's own complement).
+        if open_complement and _complement_word_ok(prev):
+            start -= 1
+            continue
+        break
+    # Trim a leading joiner left dangling at the NP start (defensive; the joiner
+    # guard above already stops before a clause coordinator).
     while start < anchor and words[start] in _COMPLEMENT_JOINERS:
         start += 1
     start_off = toks[start][1]

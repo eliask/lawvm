@@ -638,6 +638,103 @@ def test_g2_descriptive_complement_does_not_overcapture_preceding_clause() -> No
     assert m.target_provision_ref.section_label == "16"
 
 
+def test_g2_descriptive_premodifier_stops_at_negative_verb() -> None:
+    """A bare-partitive verb before the elative head is not a title pre-modifier.
+
+    ``ei sovelleta osuuspankeista annetun lain 5 §`` (shape of 2014/697): the
+    negative verb ``sovelleta`` ends ``-ta`` but NOT ``-sta``, so it does not
+    agree with the elative head ``osuuspankeista`` and must not be swallowed.
+    """
+    mentions = recognize_by_name_refs(
+        "Tätä lakia ei sovelleta osuuspankeista annetun lain 5 §:ssä tarkoitettuun"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:laki osuuspankeista"
+    assert m.target_provision_ref.section_label == "5"
+    assert m.surface_text == "osuuspankeista annetun lain 5 §:ssä"
+
+
+def test_g2_descriptive_premodifier_stops_at_inessive_locative() -> None:
+    """An inessive locative + joiner from the prior clause is not a pre-modifier.
+
+    ``1 momentissa tai luottolaitostoiminnasta annetun lain 3 §`` (shape of
+    2014/1194): ``momentissa`` is inessive (``-ssa``), which does not pre-modify
+    an elative head, and the coordinator ``tai`` belongs to the prior clause.
+    Only ``luottolaitostoiminnasta`` survives in the title key.
+    """
+    mentions = recognize_by_name_refs(
+        "Edellä 1 momentissa tai luottolaitostoiminnasta annetun lain 3 §:ssä tarkoitettua"
+    )
+    assert len(mentions) == 1
+    m = mentions[0]
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "fi-name:laki luottolaitostoiminnasta"
+    assert m.target_provision_ref.section_label == "3"
+    assert m.surface_text == "luottolaitostoiminnasta annetun lain 3 §:ssä"
+
+
+def test_g2_descriptive_participle_premodified_title_kept_in_full() -> None:
+    """A genuine ``[complement] [elative participle] [elative head]`` title is NOT
+    over-trimmed.
+
+    ``hakukoneita koskevasta kieltomenettelystä`` — ``hakukoneita`` is partitive
+    (``-ta``), not elative, but it is the complement of the immediately-following
+    elative attributive participle ``koskevasta``, so it is a genuine title member
+    and must be kept (tightening the clause-pollution must not eat real titles).
+    A longer locative modifier chain before the participle is likewise preserved.
+    """
+    one = recognize_by_name_refs(
+        "hakukoneita koskevasta kieltomenettelystä annetun lain 2 §:ssä"
+    )
+    assert len(one) == 1
+    assert one[0].target_provision_ref is not None
+    assert (
+        one[0].target_provision_ref.statute_id
+        == "fi-name:laki hakukoneita koskevasta kieltomenettelystä"
+    )
+
+    chain = recognize_by_name_refs(
+        "neuvoa-antavissa kunnallisissa kansanäänestyksissä noudatettavasta "
+        "menettelystä annetun lain 1 §:ssä"
+    )
+    assert len(chain) == 1
+    assert chain[0].target_provision_ref is not None
+    assert chain[0].target_provision_ref.statute_id == (
+        "fi-name:laki neuvoa-antavissa kunnallisissa kansanäänestyksissä "
+        "noudatettavasta menettelystä"
+    )
+
+
+def test_g2_descriptive_internal_coordination_kept_clause_coordinator_dropped() -> None:
+    """A coordinator joining two elative title members is kept; a coordinator
+    joining the citation to the PRIOR clause is dropped.
+
+    ``julkisista hankinnoista ja käyttöoikeussopimuksista`` — both sides elative,
+    so the whole coordinated title survives. ``eläkekassa tai lisäeläkesäätiöistä
+    …`` — ``eläkekassa`` is not an elative title member, so the clause coordinator
+    ``tai`` and everything left of it is dropped.
+    """
+    kept = recognize_by_name_refs(
+        "julkisista hankinnoista ja käyttöoikeussopimuksista annetun lain 5 §:ssä"
+    )
+    assert len(kept) == 1
+    assert kept[0].target_provision_ref is not None
+    assert kept[0].target_provision_ref.statute_id == (
+        "fi-name:laki julkisista hankinnoista ja käyttöoikeussopimuksista"
+    )
+
+    dropped = recognize_by_name_refs(
+        "eläkekassa tai lisäeläkesäätiöistä ja lisäeläkekassoista annetun lain 1 §:ssä"
+    )
+    assert len(dropped) == 1
+    assert dropped[0].target_provision_ref is not None
+    assert dropped[0].target_provision_ref.statute_id == (
+        "fi-name:laki lisäeläkesäätiöistä ja lisäeläkekassoista"
+    )
+
+
 def test_g2_descriptive_two_citations_one_sentence() -> None:
     """Two descriptive citations in one sentence yield two clean, distinct nodes."""
     mentions = recognize_by_name_refs(
