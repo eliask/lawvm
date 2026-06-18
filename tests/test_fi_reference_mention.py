@@ -1440,6 +1440,93 @@ class TestPlainTextStatuteCitations:
         assert len(plain) >= 1, f"Expected plain_text mention, got lemmas={lemmas}"
 
 
+class TestPlainTextNominativeAnnettuFrame:
+    """The NOMINATIVE ``annettu asetus/laki (NNN/YYYY)`` repeal/description form.
+
+    The plain-text recognizer keys on inflected heads (``asetuksen``, ``lain``,
+    ``laissa``, …) but historically NOT the nominative ``asetus`` / ``laki`` — so
+    the pervasive repeal-johtolause form ``kumotaan … annettu asetus (875/1983)``
+    extracted nothing. The nominative is recognized ONLY inside the
+    discriminating ``annettu``-participle frame (participle + trailing
+    ``(NNN/YYYY)`` id); a bare nominative without that frame must NOT fire (the
+    words ``laki`` / ``asetus`` are far too common to anchor on alone).
+    """
+
+    def _p(self, body: str):  # type: ignore[no-untyped-def]
+        import xml.etree.ElementTree as ET
+        return ET.fromstring(f"<p>{body}</p>")
+
+    def test_nominative_annettu_asetus_id_extracted(self) -> None:
+        """``annettu asetus (875/1983)`` → ref to 875/1983."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(
+            self._p("Kumotaan jostakin annettu asetus (875/1983).")
+        )
+        assert ("875/1983", "") in hits, f"Got {hits}"
+
+    def test_nominative_annettu_laki_id_extracted(self) -> None:
+        """``annettu laki (1295/1992) 5 §`` → ref to 1295/1992 § 5."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(
+            self._p("lannoitteista annettu laki (1295/1992) 5 \xa7.")
+        )
+        assert ("1295/1992", "5") in hits, f"Got {hits}"
+
+    def test_nominative_annetun_oblique_participle_with_nominative_head(self) -> None:
+        """The participle alone (``annetun``) before a nominative head + id fires.
+
+        The participle inflects (``annettu``/``annettua``/``annetun``); any of
+        them in front of the nominative head with the trailing id is the frame.
+        """
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(self._p("X:stä annettua asetus (169/2000)."))
+        assert ("169/2000", "") in hits, f"Got {hits}"
+
+    def test_bare_nominative_laki_without_frame_yields_nothing(self) -> None:
+        """``tämä laki`` (no annettu, no id) → no hit (FP guard)."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(self._p("T\xe4m\xe4 laki tulee voimaan."))
+        assert hits == [], f"Got {hits}"
+
+    def test_bare_nominative_asetus_annetaan_yields_nothing(self) -> None:
+        """``Asetus annetaan …`` (no annettu participle, no id) → no hit."""
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(
+            self._p("Asetus annetaan valtioneuvoston p\xe4\xe4t\xf6ksell\xe4.")
+        )
+        assert hits == [], f"Got {hits}"
+
+    def test_nominative_laki_with_id_but_no_annettu_yields_nothing(self) -> None:
+        """``laki (123/2020)`` WITHOUT the ``annettu`` participle → no hit.
+
+        The id alone must not promote a bare nominative head: only the inflected
+        heads (``lain``/``laissa``/…) match an id without the participle frame.
+        """
+        recognizer = PlainTextStatuteCitationRecognizer()
+        hits = recognizer.scan(self._p("T\xe4m\xe4 laki (123/2020) on jo katettu."))
+        assert hits == [], f"Got {hits}"
+
+    def test_nominative_annettu_frame_emits_mention(self) -> None:
+        """End-to-end: the nominative frame surfaces a CROSS_STATUTE mention."""
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body>"
+            b"<section><num>1 \xc2\xa7</num>"
+            b"<paragraph><content>"
+            b"<p>Kumotaan kasvinsuojelusta annettu asetus (875/1983).</p>"
+            b"</content></paragraph>"
+            b"</section>"
+            b"</body></act></akomaNtoso>"
+        )
+        result = extract_plain_text_statute_mentions(xml, "2016/141")
+        targets = [
+            m.target_provision_ref.statute_id
+            for m in result.mentions
+            if m.target_provision_ref
+        ]
+        assert "875/1983" in targets, f"Got targets {targets}"
+
+
 # ===========================================================================
 # Task 23: momentti/kohta sub-section precision for deeplink consumers
 # ===========================================================================

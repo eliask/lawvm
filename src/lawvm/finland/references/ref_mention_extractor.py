@@ -156,6 +156,12 @@ _SECTION_NUM_LABEL_RE = re.compile(
 #     -lain          (also short: "lain (711/2022)")
 #     -asetuksen     (also short: "asetuksen (964/2023)")
 #   ...
+#   NOMINATIVE head ``laki`` / ``asetus`` — ONLY inside the ``annettu``-participle
+#   repeal/description frame ``[…sta/stä] annettu asetus/laki (NNN/YYYY)``
+#   ("kumotaan … annettu asetus (875/1983)"). The bare nominative is too common
+#   to anchor alone, so the discriminating ``annettu`` participle + trailing
+#   ``(NNN/YYYY)`` id are both required; ``tämä laki`` / ``asetus annetaan``
+#   (no participle, no id) never match.
 #   Followed by: (NUMBER/YEAR) or (YEAR/NUMBER) in parentheses
 #   Optionally followed by: SECTION § and SUBSECTION momentti/momentin
 #
@@ -202,6 +208,18 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
         (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
       | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
       | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
+      # NOMINATIVE head ``laki`` / ``asetus`` — the repeal/description johtolause
+      # form ``[…sta/stä] annettu asetus/laki (NNN/YYYY)`` (``kumotaan … annettu
+      # asetus (875/1983)``). The nominative heads are extremely common bare
+      # words, so this arm fires ONLY inside the discriminating ``annettu``-
+      # participle frame: the participle (``annettu``/``annettua``/``annetun``,
+      # agreeing with / governing the head) IMMEDIATELY precedes the nominative
+      # head, and the trailing ``(NNN/YYYY)`` id is required by the shared id tail
+      # below. ``tämä laki`` / ``asetus annetaan`` (no participle, no id) never
+      # matches. The participle prefix is non-capturing so groups 1/2 stay the
+      # statute number/year. ``\b`` before the participle anchors it on a word
+      # boundary (not a glued ``-annettu`` compound).
+      | \bannet(?:tu|tua|un)\s+(?:laki|asetus)
     )
     \s{0,5}
     \(
