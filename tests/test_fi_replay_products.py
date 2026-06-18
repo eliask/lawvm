@@ -3024,7 +3024,7 @@ def test_replay_fold_projection_typed_invariants_include_profile_metadata() -> N
                 "temporal_overlap",
                 "temporary_overlay",
                 "expiry_chain",
-                "replay_timeline",
+                "replay_timeline_robust",
             ),
             "warnings": ("text_duplication", "flattened_sublist_family", "label_sequence_gap"),
             "local_allowance_policy": "frontend_required",
