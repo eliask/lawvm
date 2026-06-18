@@ -2608,7 +2608,7 @@ def test_replay_fold_projection_typed_invariants_include_profile_metadata() -> N
                 "expiry_chain",
                 "replay_timeline",
             ),
-            "warnings": ("text_duplication", "flattened_sublist_family"),
+            "warnings": ("text_duplication", "flattened_sublist_family", "label_sequence_gap"),
             "local_allowance_policy": "frontend_required",
             "local_classifier_policy": "frontend_required",
             "safe_default": "profile_is_declarative_not_replay_authorization",
@@ -4749,6 +4749,47 @@ def test_replay_xml_2004_301_section_142_item_three_has_no_duplicate_kohta_marke
     assert item3.text is not None
     assert not item3.text.lstrip().startswith("3)")
     assert item3.text.startswith("kolmannen maan kansalaisen")
+
+
+def test_replay_xml_2004_301_section_78_moment_three_nests_abc_under_item_four() -> None:
+    """2018/121 §78 3 mom must keep a–c under 4) jos:, not flat siblings before 1–7."""
+    replay = replay_xml_for_test("2004/301", quiet=True, stop_before="2018/720")
+    section78 = replay.materialized_state.find_section("78", "5")
+    assert section78 is not None
+    subsection3 = next(
+        child
+        for child in section78.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "3"
+    )
+    top_paragraph_labels = [
+        child.label
+        for child in subsection3.children
+        if child.kind is IRNodeKind.PARAGRAPH
+    ]
+    assert top_paragraph_labels == ["1", "2", "3", "4", "5", "6", "7"]
+    item_four = next(
+        child
+        for child in subsection3.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "4"
+    )
+    nested_labels = [
+        child.label
+        for child in item_four.children
+        if child.kind is IRNodeKind.SUBPARAGRAPH
+    ]
+    assert nested_labels == ["a", "b", "c"]
+
+
+def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublist_warning() -> None:
+    """Part II ch.2 §19 subs:1 is a legitimate definitions list, not a nesting bug."""
+    replay = replay_xml_for_test("2017/320", mode="legal_pit", quiet=True)
+    flat_warnings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "flattened_sublist_family_warning"
+        and "section:19" in str(finding.detail.get("path") or "")
+    ]
+    assert flat_warnings == []
 
 
 def test_replay_xml_2004_301_2023_389_does_not_duplicate_applicability_subsections() -> None:

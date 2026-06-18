@@ -11,7 +11,11 @@ from lawvm.core.invariant_profiles import core_replay_strict_profile
 from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.invariant_profiles import structural_tree_all_profile
 from lawvm.core.phase_result import Finding
-from lawvm.core.replay_lints import build_label_sequence_gap_findings, build_text_duplication_findings
+from lawvm.core.replay_lints import (
+    build_flattened_sublist_findings,
+    build_label_sequence_gap_findings,
+    build_text_duplication_findings,
+)
 from lawvm.finland.apply_ir_ops import (
     _strip_redundant_paragraph_label_prefixes_ir,
     _strip_standalone_subsection_item_prefixes_ir,
@@ -156,6 +160,54 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
             if key not in seen_text_warnings:
                 request.replay_findings.append(finding)
                 seen_text_warnings.add(key)
+
+    replay_flattened_sublist_findings = build_flattened_sublist_findings(
+        replay_fold_state.ir,
+        phase="replay_fold",
+        source_statute=request.parent_id,
+    )
+    if request.replay_meta_out is not None and replay_flattened_sublist_findings:
+        request.replay_meta_out["flattened_sublist_warnings"] = [
+            {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            for finding in replay_flattened_sublist_findings
+        ]
+    if replay_flattened_sublist_findings:
+        seen_flattened_sublist_warnings = {
+            (
+                finding.kind,
+                str(finding.detail.get("phase") or ""),
+                str(finding.detail.get("kind") or ""),
+                str(finding.detail.get("path") or ""),
+                str(finding.detail.get("node_kind") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "flattened_sublist_family_warning"
+        }
+        for finding in replay_flattened_sublist_findings:
+            warning = {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            request.replay_print(
+                "WARNING flattened sublist: "
+                f"{warning['kind']} {warning['path']} {warning['node_kind']} "
+                f"{warning.get('label_sample', [])}"
+            )
+            key = (
+                "flattened_sublist_family_warning",
+                "replay_fold",
+                str(warning.get("kind") or ""),
+                str(warning.get("path") or ""),
+                str(warning.get("node_kind") or ""),
+            )
+            if key not in seen_flattened_sublist_warnings:
+                request.replay_findings.append(finding)
+                seen_flattened_sublist_warnings.add(key)
 
     replay_label_gap_findings = build_label_sequence_gap_findings(
         replay_fold_state.ir,

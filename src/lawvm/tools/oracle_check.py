@@ -189,7 +189,10 @@ def _source_pathology_diagnosis_for_blame(
     if not matched_codes:
         return None
 
-    if "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL" in matched_codes:
+    if matched_codes & {
+        "RECODIFICATION_OMISSION_ONLY_SECTION_SHELL",
+        "RECODIFICATION_SOURCE_CHAIN_GAP",
+    }:
         return "SOURCE_INCOMPLETE"
 
     findings = tuple(getattr(master, "findings", ()) or ())
@@ -212,6 +215,85 @@ def _source_pathology_diagnosis_for_blame(
     if not has_degraded_coverage and not has_failed_no_deterministic:
         return None
     return "SOURCE_PATHOLOGY"
+
+
+_RESTRUCTURE_BLAME_WITNESS_RULE_IDS = frozenset(
+    {
+        "fi.restructure.relabel_section_snapshot",
+        "fi.section_renumber",
+        "fi.jolloin_section_renumber",
+    }
+)
+
+_SECTION_HEADING_RE = re.compile(
+    r"^\d+\s*[a-zäöå]?\s*§\s*(.+?)(?:\s{2,}|\n|$)",
+    re.IGNORECASE,
+)
+
+
+def _section_heading_alpha(text: str) -> str:
+    squashed = re.sub(r"\s+", " ", (text or "").strip())
+    match = _SECTION_HEADING_RE.match(squashed)
+    if not match:
+        return ""
+    return re.sub(r"[^a-z0-9äöå]", "", match.group(1).lower())
+
+
+def _recodification_blame_frame_diagnosis(
+    blame_op: BlameRow | None,
+    section_key: str,
+    *,
+    replay_text: str = "",
+    oracle_text: str = "",
+) -> str | None:
+    """Reclassify recodification-frame divergences that compare at the wrong address.
+
+    Large recodification waves snapshot section bodies at pre-migration addresses
+    (``fi.restructure.relabel_section_snapshot``) while the oracle consolidation
+    compares at post-renumber addresses.  When the blamed op frame differs from the
+    compared section key, the divergence is a source-chain placement limit rather
+    than a replay apply bug.
+
+    Same-address ``fi.section_renumber`` rows can still swap which provision owns a
+    label; when replay and oracle headings disagree under that witness, treat the
+    mismatch as source-incomplete rather than REPLAY_MISSING/REPLAY_EXTRA.
+
+    Structural ``EXTRA`` rows (replay has a section shell, oracle has no section at
+    the compared key) blamed on recodification renumber/relabel witnesses are also
+    source limits: the oracle consolidation still uses the pre-wave numbering frame.
+    """
+    if not blame_op:
+        return None
+    witness = str(blame_op.get("witness_rule_id") or "")
+    if witness not in _RESTRUCTURE_BLAME_WITNESS_RULE_IDS:
+        return None
+    blame_key = section_key_from_compiled_scope_row(blame_op)
+    if not blame_key:
+        return None
+    replay_present = bool(replay_text.strip())
+    oracle_present = bool(oracle_text.strip())
+    if witness == "fi.restructure.relabel_section_snapshot":
+        if blame_key != section_key:
+            return "SOURCE_INCOMPLETE"
+        if replay_present and not oracle_present:
+            return "SOURCE_INCOMPLETE"
+    if witness in {"fi.section_renumber", "fi.jolloin_section_renumber"}:
+        if blame_key != section_key:
+            return "SOURCE_INCOMPLETE"
+        if replay_present and not oracle_present:
+            return "SOURCE_INCOMPLETE"
+        if blame_key == section_key:
+            replay_heading = _section_heading_alpha(replay_text)
+            oracle_heading = _section_heading_alpha(oracle_text)
+            if (
+                replay_heading
+                and oracle_heading
+                and replay_heading != oracle_heading
+                and len(replay_heading) >= 8
+                and len(oracle_heading) >= 8
+            ):
+                return "SOURCE_INCOMPLETE"
+    return None
 
 
 def _section_points_to_empty_body_amendment(
@@ -1414,14 +1496,22 @@ def _classify_statute(
                 "EXTRA",
             ):
                 continue
+            blame_op = _lookup_blame_op(
+                blame_map,
+                str(sec["section"]),
+                migration_events=migration_events,
+            )
             diagnosis = _source_pathology_diagnosis_for_blame(
                 master,
-                _lookup_blame_op(
-                    blame_map,
-                    str(sec["section"]),
-                    migration_events=migration_events,
-                ),
+                blame_op,
             )
+            if diagnosis is None:
+                diagnosis = _recodification_blame_frame_diagnosis(
+                    blame_op,
+                    str(sec["section"]),
+                    replay_text=str(sec.get("replay_text") or ""),
+                    oracle_text=str(sec.get("oracle_text") or ""),
+                )
             if diagnosis is not None:
                 sec["diagnosis"] = diagnosis
 

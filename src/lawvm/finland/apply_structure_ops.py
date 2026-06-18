@@ -59,11 +59,13 @@ from lawvm.finland.apply_ir_ops import (
     _build_repeal_placeholder_from_label_ir,
     _relabel_section_ir,
 )
+from lawvm.finland.profile.normalize import apply_subsection_post_rules_b
 from lawvm.finland.apply_runtime_support import (
     _expired_temporary_section_merge_base,
     _expired_temporary_section_merge_base_rebase_info,
     _find_insert_parent_path,
     _find_chapter_insert_parent_path,
+    _resolve_parallel_container_path,
     _legacy_target_section_for_scope,
     _legacy_target_special_for_scope,
     _parent_direct_child_path_with_same_label,
@@ -423,6 +425,39 @@ def _merge_unique_payload_sections_after_live_duplicate_skip(
     )
 
 
+def _renormalize_section_payload_subsections(payload: IRNode) -> IRNode:
+    """Re-run subsection post-normalization on a whole-section payload before apply."""
+    new_children: list[IRNode] = []
+    changed = False
+    for child in payload.children:
+        if child.kind is not IRNodeKind.SUBSECTION:
+            new_children.append(child)
+            continue
+        old_children = list(child.children)
+        normalized_children = apply_subsection_post_rules_b(old_children)
+        if normalized_children is old_children:
+            new_children.append(child)
+            continue
+        changed = True
+        child = IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(normalized_children),
+            )
+        new_children.append(child)
+    if not changed:
+        return payload
+    return IRNode(
+        kind=payload.kind,
+        label=payload.label,
+        text=payload.text,
+        attrs=payload.attrs,
+        children=tuple(new_children),
+    )
+
+
 def _prepare_section_root_payload_for_replay(
     payload: IRNode,
     *,
@@ -436,6 +471,7 @@ def _prepare_section_root_payload_for_replay(
         rop=rop,
         view=view,
     )
+    payload = _renormalize_section_payload_subsections(payload)
     has_heading = any(c.kind == IRNodeKind.HEADING for c in payload.children)
     if has_heading:
         prepared = payload
@@ -2019,6 +2055,30 @@ def _apply_whole_section_op(
                         scope_kind="chapter" if _target_chapter else None,
                         scope_label=_target_chapter,
                     )
+            if base_path is not None and base_ir is not None:
+                base_parent_path = _tops._as_path(base_path[:-1])
+                live_parent_path = _resolve_parallel_container_path(
+                    state.ir,
+                    base_ir,
+                    base_parent_path,
+                )
+                if live_parent_path is not None:
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=f"{_ts} §",
+                                recovery_kind="section_replace_bootstrap_base_prior_parent_insert",
+                                live_sibling_count=0,
+                                payload_sibling_count=len(
+                                    [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                                ),
+                            )
+                        )
+                    logger.debug("  %s → section replace-as-insert (base prior parent)", ctx_label)
+                    return state.with_ir(_tops.insert_sorted(state.ir, live_parent_path, muutos_ir))
+
             if base_path is None:
                 parent_path = _find_scoped_section_insert_parent_path(
                     state,

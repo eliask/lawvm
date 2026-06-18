@@ -3391,6 +3391,38 @@ def _parent_direct_child_path_with_same_label(
     return None
 
 
+def _resolve_parallel_container_path(
+    live_ir: IRNode,
+    base_ir: IRNode,
+    container_path: Path,
+) -> Path | None:
+    """Resolve a base-XML container path against the live replay tree."""
+    if not container_path:
+        return ()
+
+    current_live = live_ir
+    current_path: Path = ()
+    for kind, label in container_path:
+        matched: IRNode | None = None
+        for child in current_live.children:
+            child_kind = _kind_str(child.kind)
+            if child_kind != kind:
+                continue
+            if not label or _same_norm_label(child.label or "", label):
+                matched = child
+                break
+        if matched is None and kind == "hcontainer":
+            for child in current_live.children:
+                if child.kind is IRNodeKind.HCONTAINER:
+                    matched = child
+                    break
+        if matched is None:
+            return None
+        current_path = current_path + ((_kind_str(matched.kind), matched.label or ""),)
+        current_live = matched
+    return _tops._as_path(current_path)
+
+
 def _find_insert_parent_path(
     master_ir: IRNode, chapter_label: Optional[str], label_index: Optional[_tops.LabelIndex] = None
 ) -> Path:

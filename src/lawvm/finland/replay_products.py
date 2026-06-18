@@ -31,8 +31,13 @@ from lawvm.core.timeline_results import (
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
     TreeInvariantViolation,
+    _kind_str,
     check_invariants,
     default_label_sort_key,
+    find_provisions_parent as _find_provisions_parent,
+    insert_sorted as _insert_sorted,
+    remove_at as _remove_at,
+    resolve as _tops_resolve,
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
@@ -279,6 +284,121 @@ def fi_product_tree_invariant_dicts(
         fi_product_tree_invariant_violations(tree, profile),
         profile,
     )
+
+
+def _fold_hcontainer_direct_sections(fold: IRNode) -> tuple[IRNode, ...]:
+    """Return section nodes that live directly under the fold provisions wrapper."""
+    if (
+        fold.kind is IRNodeKind.BODY
+        and len(fold.children) == 1
+        and fold.children[0].kind is IRNodeKind.HCONTAINER
+        and fold.children[0].attrs.get("name") == "statuteProvisionsWrapper"
+    ):
+        return tuple(
+            child
+            for child in fold.children[0].children
+            if child.kind is IRNodeKind.SECTION and child.label
+        )
+
+    provisions_parent = _find_provisions_parent(fold)
+    if not provisions_parent:
+        return ()
+    provisions_node = _tops_resolve(fold, provisions_parent)
+    if provisions_node is None:
+        return ()
+    return tuple(
+        child
+        for child in provisions_node.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    )
+
+
+def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], ...]]:
+    """Return body IR with an hcontainer child and that container's path."""
+    for child in ir.children:
+        if child.kind is IRNodeKind.HCONTAINER:
+            return ir, (("hcontainer", child.label or ""),)
+    new_hcontainer = IRNode(kind=IRNodeKind.HCONTAINER, children=())
+    return (
+        IRNode(
+            kind=ir.kind,
+            label=ir.label,
+            text=ir.text,
+            attrs=dict(ir.attrs),
+            children=ir.children + (new_hcontainer,),
+        ),
+        (("hcontainer", ""),),
+    )
+
+
+def _all_section_paths(tree: IRNode, label: str) -> list[tuple[tuple[str, str], ...]]:
+    """Return all section paths using the same root-relative format as ``find()``."""
+    paths: list[tuple[tuple[str, str], ...]] = []
+
+    def _walk(node: IRNode, prefix: tuple[tuple[str, str], ...]) -> None:
+        for child in node.children:
+            child_path = prefix + ((_kind_str(child.kind), child.label or ""),)
+            if child.kind is IRNodeKind.SECTION and child.label == label:
+                paths.append(child_path)
+            _walk(child, child_path)
+
+    _walk(tree, ())
+    return paths
+
+
+def _reconcile_materialized_fold_hcontainer_sections(
+    materialized: IRNode,
+    replay_fold: IRNode,
+) -> IRNode:
+    """Restore fold-owned hcontainer-direct sections lost during PIT export.
+
+    Timeline materialization can flatten the provisions wrapper and/or misplace
+    orphan sections under inferred chapters.  When replay fold keeps a section
+    as a direct child of the provisions hcontainer, export must preserve that
+    editorial placement instead of hoisting it beside parts or rebinding it to
+    a chapter container.
+    """
+    if materialized.kind is not replay_fold.kind:
+        return materialized
+
+    direct_fold_sections = _fold_hcontainer_direct_sections(replay_fold)
+    if not direct_fold_sections:
+        return materialized
+
+    result = materialized
+    for fold_section in direct_fold_sections:
+        label = fold_section.label or ""
+        section_paths = _all_section_paths(result, label)
+        if not section_paths:
+            continue
+
+        hcontainer_paths: list[tuple[tuple[str, str], ...]] = []
+        misplaced_paths: list[tuple[tuple[str, str], ...]] = []
+        for section_path in section_paths:
+            parent_path = section_path[:-1]
+            parent_node = _tops_resolve(result, parent_path) if parent_path else result
+            if parent_node is not None and parent_node.kind is IRNodeKind.HCONTAINER:
+                hcontainer_paths.append(section_path)
+            else:
+                misplaced_paths.append(section_path)
+
+        if not misplaced_paths:
+            continue
+
+        canonical_node = _tops_resolve(result, misplaced_paths[0])
+        if canonical_node is None:
+            continue
+
+        for misplaced_path in reversed(misplaced_paths):
+            result = _remove_at(result, misplaced_path)
+
+        if hcontainer_paths:
+            continue
+
+        result, hcontainer_path = _ensure_body_hcontainer(result)
+        result = _insert_sorted(result, hcontainer_path, canonical_node)
+
+    return result
 
 
 def _should_restore_repeal_placeholder(node: IRNode) -> bool:
@@ -930,6 +1050,12 @@ def build_replay_products(
         materialized_state = materialized_state.with_ir(
             _restore_replay_fold_repeal_placeholders(materialized_state.ir, replay_fold_state.ir)
         )
+    materialized_state = materialized_state.with_ir(
+        _reconcile_materialized_fold_hcontainer_sections(
+            materialized_state.ir,
+            replay_fold_state.ir,
+        )
+    )
     # Sort labeled children back into canonical order.  PIT materialization can
     # produce out-of-order siblings (e.g. paragraphs within a subsection) for
     # the same reason the replay fold can — amendment ops insert at arbitrary

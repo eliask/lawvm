@@ -1250,3 +1250,42 @@ class Test1981_555Section11Split:
             "Lupapäätöksen sisällöstä ja luvan edellyttämien toimenpiteiden määräajasta säädetään "
             "tarkemmin valtioneuvoston asetuksella."
         )
+
+
+class TestFoldHcontainerOrphanSectionReconcile:
+    """Materialized PIT must preserve fold-owned hcontainer-direct orphan sections."""
+
+    def _section_parent_path(self, ir: IRNode, label: str) -> str:
+        from lawvm.core import tree_ops as tops
+
+        def walk(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> str | None:
+            if node.kind is IRNodeKind.SECTION and node.label == label:
+                return "/".join(f"{kind}:{lbl or '?'}" for kind, lbl in path + (("section", node.label),))
+            for child in node.children:
+                found = walk(
+                    child,
+                    path + ((tops._kind_str(node.kind), node.label or ""),),
+                )
+                if found is not None:
+                    return found
+            return None
+
+        return walk(ir) or ""
+
+    def test_2017_320_section_270_stays_under_hcontainer(
+        self,
+        replay_2017_320_legal_pit_with_meta: tuple[ReplayResult, dict[str, object]],
+    ) -> None:
+        replay, _replay_meta = replay_2017_320_legal_pit_with_meta
+        assert self._section_parent_path(replay.materialized_state.ir, "270").startswith(
+            "body:?/hcontainer:"
+        )
+
+    def test_1868_31_section_46_stays_under_hcontainer(self) -> None:
+        replay = cast(
+            ReplayResult,
+            pinned_replay("1868/31-000", mode="official_consolidation", quiet=True),
+        )
+        assert self._section_parent_path(replay.materialized_state.ir, "46").startswith(
+            "body:?/hcontainer:"
+        )

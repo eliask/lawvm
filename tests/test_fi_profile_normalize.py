@@ -267,6 +267,26 @@ def test_nest_lettered_subparagraphs_no_change_on_unique_labels():
     assert result is children
 
 
+def test_nest_lettered_subparagraphs_nests_unique_letters_under_introducer_digit_parent() -> None:
+    """Unique a–c subclauses under 4) jos: must not remain flat paragraph siblings."""
+    children = [
+        _para(label="1", children=(_content("first"),)),
+        _para(label="2", children=(_content("second"),)),
+        _para(label="3", children=(_content("third"),)),
+        _para(label="4", children=(_content("opiskelua varten, jos:"),)),
+        _para(label="a", children=(_content("työharjoittelua"),)),
+        _para(label="b", children=(_content("25 tuntia"),)),
+        _para(label="c", children=(_content("kokoaikainen työ"),)),
+        _para(label="5", children=(_content("fifth"),)),
+    ]
+    result = _apply_nest_lettered_subparagraphs(children)
+    top_labels = [child.label for child in result if child.kind == IRNodeKind.PARAGRAPH]
+    assert top_labels == ["1", "2", "3", "4", "5"]
+    parent_four = next(child for child in result if child.label == "4")
+    sub_labels = [child.label for child in parent_four.children if child.kind == IRNodeKind.SUBPARAGRAPH]
+    assert sub_labels == ["a", "b", "c"]
+
+
 def test_nest_repeated_alpha_subparagraphs_under_alpha_parents_fires():
     """Rule nests repeated alpha-labeled paras under alpha parent with introducer."""
     parent_d = _para(label="d", children=(_content("parent d:"),))

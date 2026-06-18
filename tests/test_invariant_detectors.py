@@ -373,6 +373,31 @@ def test_run_label_sequence_gap_detector_projects_message_and_detail() -> None:
     assert result.detail["missing_labels"] == ("a", "b", "c", "d", "e", "f")
 
 
+def test_run_flattened_sublist_detector_projects_mixed_family_message() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="78",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("a", "b", "c", "1", "2", "3")
+                ),
+            ),
+        ),
+    )
+
+    results = run_invariant_detector(tree, "flattened_sublist_family", target_path="section:78")
+
+    assert len(results) == 1
+    assert results[0].kind == "flattened_sublist_mixed_family"
+    assert results[0].message == (
+        "body/section:78: flattened paragraph mixed alpha, digit families "
+        "[a, b, c, 1, 2, 3]"
+    )
+
+
 def test_run_invariant_detector_rejects_unknown_detector() -> None:
     tree = IRNode(kind=IRNodeKind.BODY)
 

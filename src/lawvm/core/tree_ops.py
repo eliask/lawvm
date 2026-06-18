@@ -1472,6 +1472,46 @@ def find_text_duplication_warnings(
 # Flattened-sublist-family detection (lint-level heuristic)
 # ---------------------------------------------------------------------------
 
+_FI_DEFINITION_INTRO_PHRASES = (
+    "tarkoitetaan",
+    "joilla tarkoitetaan",
+    "jolla tarkoitetaan",
+)
+
+
+def _node_intro_text(node: IRNode) -> str:
+    """Return visible intro/content text from one IR node."""
+    parts: List[str] = []
+    if node.text and node.text.strip():
+        parts.append(node.text.strip())
+    for child in node.children:
+        if _kind_str(child.kind) in {"intro", "content"} and child.text and child.text.strip():
+            parts.append(child.text.strip())
+    return " ".join(parts).strip()
+
+
+def _has_definition_list_introducer(parent: IRNode) -> bool:
+    """Return True when a subsection-style parent opens a definitions list.
+
+    Finnish chapter/section definitions commonly use an intro line ending with
+    ``:`` (``Tässä luvussa tarkoitetaan:``) followed by lettered items and
+    separate numbered clauses.  That flat ``a b c 1 2`` shape is legitimate and
+    must not be treated as a flattened nested sublist replay bug.
+    """
+    for child in parent.children:
+        if _kind_str(child.kind) != "intro":
+            continue
+        text = _node_intro_text(child)
+        if not text:
+            continue
+        lowered = text.lower()
+        if text.rstrip().endswith(":"):
+            return True
+        if any(phrase in lowered for phrase in _FI_DEFINITION_INTRO_PHRASES):
+            return True
+    return False
+
+
 def _fs_label_family(label: str) -> str:
     """Classify a label into: 'digit', 'alpha', 'roman', or 'mixed'."""
     s = label.strip().rstrip(".")
@@ -1480,12 +1520,27 @@ def _fs_label_family(label: str) -> str:
     if re.fullmatch(r"\d+[a-zA-Z]?", s):
         return "digit"
     if re.fullmatch(r"[ivxlcdm]+", s, re.IGNORECASE):
-        # Subset that's all roman-numeral chars.  Exclude single letters that
-        # are also alpha (i, v, x, etc.) when the context looks alphabetical.
-        return "roman"
+        # Multi-letter roman tokens only.  Single glyphs such as i/v/x/c are
+        # almost always alphabetic subitems in legal corpora, not roman numerals.
+        if len(s) > 1:
+            return "roman"
+        return "alpha"
     if re.fullmatch(r"[a-zA-Z]+\d*", s):
         return "alpha"
     return "mixed"
+
+
+def _fs_family_runs(families: Sequence[str]) -> list[tuple[str, int]]:
+    """Collapse consecutive identical label families into (family, run_length) pairs."""
+    runs: list[tuple[str, int]] = []
+    for family in families:
+        if family == "mixed":
+            continue
+        if runs and runs[-1][0] == family:
+            runs[-1] = (family, runs[-1][1] + 1)
+        else:
+            runs.append((family, 1))
+    return runs
 
 
 def _fs_ordinal(label: str, family: str) -> int:
@@ -1535,6 +1590,12 @@ def find_flattened_sublist_warnings(
        ordinal ≤ 2 (restart from near the beginning), to avoid false positives
        from unusual legal numbering schemes.
 
+    3. **Mixed alpha+digit families**: same-kind siblings contain runs of both
+       lettered and digit labels with length ≥ 2 each.  Example: ``a b c 1 2 3``
+       where lettered subitems were not nested under their introducer digit
+       parent.  Single-letter introducers such as ``jos`` between digit runs do
+       not satisfy the ≥ 2 alpha-run threshold.
+
     These are lint-style warnings, not hard invariants.  They are useful for
     detecting replay/apply bugs where sections from separate subsections have been
     collapsed to the same structural level.
@@ -1542,6 +1603,8 @@ def find_flattened_sublist_warnings(
     warnings: List[Dict[str, object]] = []
 
     def _walk(node: IRNode, path: str) -> None:
+        skip_mixed_family_lint = _has_definition_list_introducer(node)
+
         # Group labeled children by kind (preserving order)
         by_kind: Dict[str, List[str]] = {}
         for child in node.children:
@@ -1574,6 +1637,39 @@ def find_flattened_sublist_warnings(
                     "path": path,
                     "node_kind": kind,
                     "repeated_families": sorted(repeated_families),
+                    "label_sample": labels[:14],
+                })
+                continue  # don't double-report with pattern 2/3
+
+            # --- Pattern 3: mixed alpha+digit sibling families ---
+            ordinal_runs = [
+                (family, run_length)
+                for family, run_length in _fs_family_runs(families)
+                if family in {"alpha", "digit", "roman"}
+            ]
+            alpha_run = max(
+                (
+                    run_length
+                    for family, run_length in ordinal_runs
+                    if family in {"alpha", "roman"}
+                ),
+                default=0,
+            )
+            digit_run = max(
+                (run_length for family, run_length in ordinal_runs if family == "digit"),
+                default=0,
+            )
+            if alpha_run >= 2 and digit_run >= 2:
+                if skip_mixed_family_lint and kind in {"paragraph", "subparagraph", "item"}:
+                    continue
+                mixed_families = sorted({family for family, _run_length in ordinal_runs})
+                warnings.append({
+                    "kind": "flattened_sublist_mixed_family",
+                    "path": path,
+                    "node_kind": kind,
+                    "families": mixed_families,
+                    "alpha_run": alpha_run,
+                    "digit_run": digit_run,
                     "label_sample": labels[:14],
                 })
                 continue  # don't double-report with pattern 2
@@ -1733,6 +1829,21 @@ def find_label_sequence_gap_warnings(
             ordinals = [ordinal for _child, _family, _label, ordinal in entries]
             present_ordinals = set(ordinals)
             tombstone_labels = tombstone_labels_by_kind.get(child_kind, [])
+            for tombstone_label in tombstone_labels:
+                parsed_tombstone = _label_sequence_family_and_ordinal(tombstone_label)
+                if parsed_tombstone is not None and parsed_tombstone[0] == family:
+                    present_ordinals.add(parsed_tombstone[1])
+
+            if (
+                child_kind == "section"
+                and path in {"body", "hcontainer"}
+                and any(
+                    _kind_str(sibling.kind) in {"part", "chapter", "hcontainer"}
+                    for sibling in node.children
+                    if sibling.label is not None or _kind_str(sibling.kind) == "hcontainer"
+                )
+            ):
+                continue
 
             first = ordinals[0]
             if child_kind in _LOCAL_SEQUENCE_START_KINDS and first > 1:
@@ -1758,6 +1869,8 @@ def find_label_sequence_gap_warnings(
                     continue
                 missing_ordinals = [ordinal for ordinal in range(left + 1, right) if ordinal not in present_ordinals]
                 if not missing_ordinals:
+                    continue
+                if child_kind == "section" and len(missing_ordinals) == 1:
                     continue
                 warnings.append(
                     {

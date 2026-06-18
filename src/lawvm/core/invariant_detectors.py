@@ -593,6 +593,13 @@ def run_invariant_detector(
                     f"{path}: flattened {node_kind} {dominant}-family reset at "
                     f"{reset_label!r} (max was {max_before}) [{sample_str}]"
                 )
+            elif kind == "flattened_sublist_mixed_family":
+                raw_families = warning.get("families")
+                families = ", ".join(str(item) for item in _detail_sequence(raw_families))
+                message = (
+                    f"{path}: flattened {node_kind} mixed {families} families "
+                    f"[{sample_str}]"
+                )
             else:
                 message = f"{path}: {kind} {node_kind} [{sample_str}]"
             if path_matches_target(path, target_path):

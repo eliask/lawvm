@@ -646,6 +646,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "self-consistency signal: typed apply-failures, silently-swallowed "
             "target-absent ops, unhandled/dropped ops, source pathologies, "
             "skipped amendments, coverage gaps, structural invariant violations, "
+            "replay lint warnings (flattened sublist / label-sequence gaps), "
             "and governed ELAB findings.  Grouped by signal type then category. "
             "Use -j uk / -j ee to route to the UK/EE harness (replay "
             "adjudications + compile rejections), or -j us for the U.S. federal "
@@ -666,7 +667,17 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help=(
             "comma-separated signal types to keep (default: all). Choices: "
             "apply_failure,target_absent,unhandled_op,source_pathology,"
-            "skipped_amendment,coverage_gap,invariant_violation,elaboration_finding"
+            "skipped_amendment,coverage_gap,invariant_violation,"
+            "invariant_lint_warning,elaboration_finding,occupancy_violation"
+        ),
+    )
+    self_consistency_p.add_argument(
+        "--corpus",
+        metavar="PATH",
+        default="",
+        help=(
+            "corpus CSV or plain-text statute-id list (default: bench_core subset; "
+            "use --full for the full bench_corpus.csv)"
         ),
     )
     self_consistency_p.add_argument(

@@ -429,25 +429,7 @@ def _apply_recover_intro_labeled_paragraphs(children: List[IRNode]) -> List[IRNo
 
 def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     """Nest letter-labeled paragraphs as subparagraph children of the correct digit paragraph."""
-    para_label_counts: Dict[str, int] = {}
-    for child in children:
-        if child.kind == IRNodeKind.PARAGRAPH and child.label:
-            para_label_counts[child.label] = para_label_counts.get(child.label, 0) + 1
-    duplicate_labels = {lbl for lbl, cnt in para_label_counts.items() if cnt > 1}
-    if not duplicate_labels:
-        return children
-
     _letter_re = re.compile(r"^[a-z]+$")
-
-    def _is_roman_label(lbl: Optional[str]) -> bool:
-        return bool(lbl and _roman_to_arabic(lbl) is not None)
-
-    if not any(_letter_re.match(lbl) for lbl in duplicate_labels):
-        return children
-
-    has_mixed_compound_family = any(
-        len(lbl) == 1 and cnt > 1 for lbl, cnt in para_label_counts.items() if _letter_re.match(lbl)
-    ) and any(len(lbl) > 1 for lbl in para_label_counts if _letter_re.match(lbl))
 
     def _is_digit_label(lbl: Optional[str]) -> bool:
         return bool(lbl and lbl.rstrip(".)").isdigit())
@@ -455,8 +437,38 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     def _is_letter_label(lbl: Optional[str]) -> bool:
         return bool(lbl and _letter_re.match(lbl))
 
+    para_label_counts: Dict[str, int] = {}
+    for child in children:
+        if child.kind == IRNodeKind.PARAGRAPH and child.label:
+            para_label_counts[child.label] = para_label_counts.get(child.label, 0) + 1
+    duplicate_labels = {lbl for lbl, cnt in para_label_counts.items() if cnt > 1}
     digit_labels = [lbl for lbl in para_label_counts if _is_digit_label(lbl)]
     has_dense_digit_family = len(digit_labels) >= 3
+    has_letter_paragraphs = any(_is_letter_label(lbl) for lbl in para_label_counts)
+    has_introducer_digit_parent = any(
+        child.kind == IRNodeKind.PARAGRAPH
+        and _is_digit_label(child.label)
+        and _paragraph_has_introducer_signal(child)
+        for child in children
+    )
+    can_nest_unique_letters_under_introducer = (
+        has_dense_digit_family
+        and has_letter_paragraphs
+        and has_introducer_digit_parent
+    )
+    if not duplicate_labels and not can_nest_unique_letters_under_introducer:
+        return children
+
+    def _is_roman_label(lbl: Optional[str]) -> bool:
+        return bool(lbl and _roman_to_arabic(lbl) is not None)
+
+    if duplicate_labels and not any(_letter_re.match(lbl) for lbl in duplicate_labels):
+        if not can_nest_unique_letters_under_introducer:
+            return children
+
+    has_mixed_compound_family = any(
+        len(lbl) == 1 and cnt > 1 for lbl, cnt in para_label_counts.items() if _letter_re.match(lbl)
+    ) and any(len(lbl) > 1 for lbl in para_label_counts if _letter_re.match(lbl))
     duplicate_roman_labels = {
         lbl for lbl, cnt in para_label_counts.items()
         if cnt > 1 and _is_roman_label(lbl)

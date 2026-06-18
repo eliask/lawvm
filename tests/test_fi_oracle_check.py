@@ -34,6 +34,7 @@ from lawvm.tools.oracle_check import (
     _corpus_selection_detail,
     _diagnose,
     _diagnose_oracle_repeal_stub,
+    _recodification_blame_frame_diagnosis,
     _source_pathology_diagnosis_for_blame,
     _attachment_body_text_ir,
     _attachment_body_text_oracle,
@@ -189,6 +190,32 @@ def test_source_pathology_diagnosis_maps_recodification_omission_shell_to_source
             "source_statute": "2019/371",
             "target_norm": "210",
             "target_chapter": "4",
+        },
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_source_pathology_diagnosis_maps_recodification_source_chain_gap_to_source_incomplete() -> None:
+    master = SimpleNamespace(
+        source_pathology_rows=lambda: [
+            {
+                "code": "RECODIFICATION_SOURCE_CHAIN_GAP",
+                "source_statute": "2019/371",
+                "target_label": "2 luku 7 §",
+                "detail": {
+                    "target_chapter": "2",
+                    "diagnostic_reason": "target_leaf_absent_under_existing_parent",
+                },
+            }
+        ],
+        findings=(),
+    )
+    diagnosis = _source_pathology_diagnosis_for_blame(
+        master,
+        {
+            "source_statute": "2019/371",
+            "target_norm": "7",
+            "target_chapter": "2",
         },
     )
     assert diagnosis == "SOURCE_INCOMPLETE"
@@ -1608,6 +1635,128 @@ def test_classify_statute_2017_320_recodification_omission_shell_at_chapter_25_i
         row = by_section[label]
         assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
         assert row["blame_source"] == "2019/371"
+
+
+def test_recodification_blame_frame_diagnosis_maps_relabel_snapshot_frame_mismatch() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.restructure.relabel_section_snapshot",
+            "target_unit_kind": "section",
+            "target_norm": "13",
+            "target_chapter": "1",
+            "target_part": "2",
+            "source_statute": "2019/371",
+        },
+        "part:2/chapter:2/section:13",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_section_renumber_frame_mismatch() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "9",
+            "target_chapter": "3",
+            "target_part": "3",
+            "source_statute": "2019/371",
+        },
+        "part:4/chapter:3/section:9",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_structural_extra_renumber_shell() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "1",
+            "target_chapter": "4",
+            "target_part": "4",
+            "source_statute": "2019/371",
+        },
+        "part:4/chapter:4/section:1",
+        replay_text="1 § Example heading\nBody text retained by replay.",
+        oracle_text="",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_recodification_blame_frame_diagnosis_maps_section_renumber_heading_swap() -> None:
+    diagnosis = _recodification_blame_frame_diagnosis(
+        {
+            "witness_rule_id": "fi.section_renumber",
+            "target_unit_kind": "section",
+            "target_norm": "5",
+            "target_chapter": "2",
+            "target_part": "2",
+            "source_statute": "2019/371",
+        },
+        "part:2/chapter:2/section:5",
+        replay_text="5 § Liikenteestä vastaava henkilö Taksi- ja henkilöliikenneluvan haltijalla on oltava",
+        oracle_text="5 §                             Henkilö- ja tavaraliikenneluvan myöntäminen",
+    )
+    assert diagnosis == "SOURCE_INCOMPLETE"
+
+
+def test_classify_statute_2017_320_recodification_frame_wave_is_source_incomplete() -> None:
+    """2019/371 relabel snapshots compare at pre-migration frames; ch.2/ch.4 waves are source limits."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:2/chapter:2/section:4",
+        "part:2/chapter:2/section:5",
+        "part:2/chapter:2/section:6",
+        "part:2/chapter:2/section:9",
+        "part:2/chapter:2/section:11",
+        "part:2/chapter:2/section:13",
+        "part:2/chapter:2/section:14",
+        "part:2/chapter:2/section:16",
+        "part:2/chapter:3/section:22",
+        "part:2/chapter:4/section:25",
+        "part:2/chapter:4/section:27",
+        "part:2/chapter:4/section:30",
+        "part:2/chapter:4/section:31",
+        "part:2/chapter:4/section:36",
+        "part:5/chapter:25/section:211",
+        "part:6/chapter:28/section:230",
+        "part:7/chapter:31/section:247",
+        "part:7/chapter:32/section:264",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
+
+
+def test_classify_statute_2017_320_recodification_extra_shells_are_source_incomplete() -> None:
+    """2019/371 renumber shells present only in replay must not stay bare EXTRA."""
+    result = _classify_statute_sync("2017/320", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+
+    for label in (
+        "part:2/chapter:14/section:4",
+        "part:4/chapter:3/section:9",
+        "part:4/chapter:4/section:1",
+        "part:5/chapter:1/section:1",
+        "part:7/chapter:2/section:2",
+    ):
+        row = by_section[label]
+        assert row["diagnosis"] == "SOURCE_INCOMPLETE", (label, row["diagnosis"])
+        assert row["blame_source"] == "2019/371"
+
+    extra_blamed_2019_371 = [
+        item
+        for item in result.section_results
+        if item["diagnosis"] == "EXTRA" and item.get("blame_source") == "2019/371"
+    ]
+    assert extra_blamed_2019_371 == []
 
 
 def test_blame_map_keeps_ambiguous_section_suffix_unattributed() -> None:
