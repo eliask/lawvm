@@ -8,6 +8,12 @@ if TYPE_CHECKING:
     import argparse
 
 
+def _parse_type_filter(raw: str | None) -> set[str]:
+    if not raw:
+        return set()
+    return {part.strip().upper() for part in raw.split(",") if part.strip()}
+
+
 def main(args: "argparse.Namespace") -> None:
     from lawvm.finland.delegation import extract_delegations, extract_asetus_authority
     from lawvm.finland.corpus import get_corpus
@@ -37,10 +43,15 @@ def main(args: "argparse.Namespace") -> None:
             print(f"{sid}: no delegation clauses found.")
             return
 
-        # Filter by type if requested
-        if args.type:
-            wanted = {t.upper() for t in args.type.split(",")}
+        wanted = _parse_type_filter(args.type)
+        if wanted:
             edges = [e for e in edges if e.delegation_type in wanted]
+            if not edges:
+                print(
+                    f"{sid}: no delegation clauses found for type filter "
+                    f"{','.join(sorted(wanted))}."
+                )
+                return
 
         print(f"{sid}: {len(edges)} delegation clause(s)\n")
         for e in edges:
