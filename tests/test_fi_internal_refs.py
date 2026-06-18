@@ -336,6 +336,48 @@ def test_name_head_with_id_excluded() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Case-mismatched demonstrative does NOT make a by-name head "this act"
+# (phantom foreign-chapter internal leak regression — statute 2006/479)
+# ---------------------------------------------------------------------------
+
+
+def test_case_mismatched_demonstrative_before_named_chapter_section_excluded() -> None:
+    # ``tähän``(illative) does NOT agree in case with the genitive
+    # ``arvopaperimarkkinalain`` head — it binds the downstream ``suhteessa``
+    # (``tähän … suhteessa olevan henkilön``), not the law name. The chapter+§
+    # tail is therefore a CROSS-STATUTE citation to arvopaperimarkkinalaki, NOT
+    # an internal self-reference. It must emit NOTHING here (previously it leaked
+    # a phantom internal ref carrying the FOREIGN chapter 6).
+    text = (
+        "tähän arvopaperimarkkinalain 6 luvun 10 §:n 2 momentissa "
+        "tarkoitetussa suhteessa olevan henkilön"
+    )
+    assert recognize_internal_refs(text, _SID) == []
+
+
+def test_case_mismatched_demonstrative_before_named_section_excluded() -> None:
+    # Same defect without a chapter between name and §: ``tähän``(ill) +
+    # genitive name head → still cross-statute, still nothing internal.
+    assert recognize_internal_refs("tähän verolain 5 §:ssä", _SID) == []
+
+
+def test_case_agreeing_demonstrative_chapter_qualified_still_internal() -> None:
+    # ``tähän``(ill) + ``lakiin``(ill) DOES agree → genuine "this act" → the
+    # demonstrative-override fires and the chapter-qualified § is INTERNAL (no
+    # over-exclusion from the case gate).
+    assert _paths("tähän lakiin 3 luvun 5 §") == ["chp_3__sec_5"]
+
+
+def test_genuine_internal_chapter_section_no_name_head_still_emits() -> None:
+    # A genuine internal ``N luvun M §`` with NO preceding external name head is
+    # still recognized as internal (chapter carried) — the case gate only narrows
+    # the demonstrative-override path, never the no-name-head path.
+    assert _paths("noudatetaan 6 luvun 10 §:n 2 momentissa säädettyä") == [
+        "chp_6__sec_10__subsec_2"
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Fail-loud / no false positives
 # ---------------------------------------------------------------------------
 

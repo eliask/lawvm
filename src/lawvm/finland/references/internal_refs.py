@@ -257,17 +257,94 @@ _PRECEDING_NAME_HEAD_RE = re.compile(
 # A self-referential demonstrative makes ``… lain / … laissa`` mean "THIS act" →
 # INTERNAL → ours (overrides the name-head exclusion). ``tämän lain``,
 # ``tässä laissa``, ``tähän lakiin`` …
-_SELF_DEMONSTRATIVES = frozenset(
-    {
-        "t\xe4m\xe4n",
-        "t\xe4m\xe4",
-        "t\xe4ss\xe4",
-        "t\xe4st\xe4",
-        "t\xe4h\xe4n",
-        "t\xe4t\xe4",
-        "t\xe4ll\xe4",
-    }
+#
+# A demonstrative in a LOCAL (spatial) case binds the law-name head only when it
+# AGREES with the head's case. A local-case demonstrative that DISAGREES does NOT
+# qualify the name — it reaches a DOWNSTREAM noun, leaving the name a genuine
+# EXTERNAL cross-statute anchor. The body shape that exposed this: ``tähän``(ill)
+# ``arvopaperimarkkinalain``(gen) ``6 luvun 10 §:n 2 momentissa tarkoitetussa
+# suhteessa`` — ``tähän`` agrees with ``suhteessa`` (``tähän … suhteessa olevan
+# henkilön``), NOT with the genitive ``…lain`` head, so the citation is
+# cross-statute (arvopaperimarkkinalaki), not internal. The grammatical-case
+# (nom / gen / par) demonstratives carry no such directional reach, so they still
+# bind even on a case mismatch — that mismatch is a drafting/source spelling of
+# "this act" (``Tämä lain 8 a §`` for ``Tämän lain``), and excluding it would
+# drop a genuine internal self-reference. See ``_demonstrative_binds_name``.
+_DEMONSTRATIVE_CASE = {
+    "t\xe4m\xe4": "nom",
+    "t\xe4m\xe4n": "gen",
+    "t\xe4t\xe4": "par",
+    "t\xe4ss\xe4": "ine",
+    "t\xe4st\xe4": "ela",
+    "t\xe4h\xe4n": "ill",
+    "t\xe4ll\xe4": "ade",
+}
+_SELF_DEMONSTRATIVES = frozenset(_DEMONSTRATIVE_CASE)
+
+# Case of a statute-NAME head, by inflection suffix, so a preceding demonstrative
+# can be checked for AGREEMENT. Mirrors the suffixes in ``_NAME_SUFFIX``; an
+# unrecognized suffix yields ``None`` (treated as non-agreeing → no override).
+_NAME_HEAD_CASE_SUFFIXES = (
+    ("ssa", "ine"),  # laissa / asetuksessa / järjestyksessä / muodossa / kaaressa
+    ("ss\xe4", "ine"),
+    ("sta", "ela"),  # laista / asetuksesta / muodosta / kaaresta
+    ("st\xe4", "ela"),
+    ("lla", "ade"),  # lailla / asetuksella / kaarella
+    ("ll\xe4", "ade"),
+    ("een", "ill"),  # kaareen
+    ("iin", "ill"),  # lakiin / asetukseen-style long-vowel illative
+    ("n", "gen"),  # lain / asetuksen / järjestyksen / muodon / kaaren
+    ("a", "par"),  # lakia / asetusta / muotoa / kaartta / kaarta
+    ("\xe4", "par"),  # järjestystä
 )
+
+
+def _name_head_case(head: str) -> Optional[str]:
+    """Grammatical case of a statute-name head from its inflection suffix.
+
+    Returns ``"nom" / "gen" / "par" / "ine" / "ela" / "ill" / "ade"`` or ``None``
+    when the suffix is not one of the recognized ``…lain``/``…laissa``/… forms.
+    Longest distinctive suffix first so ``laissa`` (ine) is not mis-read as the
+    ``…a`` partitive and ``lain`` (gen) is not mis-read as a bare ``…n``.
+    """
+    h = head.lower()
+    for suffix, case in _NAME_HEAD_CASE_SUFFIXES:
+        if h.endswith(suffix):
+            return case
+    # Bare nominative heads (``laki`` / ``asetus`` / ``muoto`` / ``järjestys``).
+    return "nom"
+
+
+# The LOCAL (spatial / directional) cases. A demonstrative in one of these is
+# the tell of a DOWNSTREAM bind: ``tähän``(ill) reaches forward to a later noun
+# (``tähän … suhteessa olevan henkilön``). A genuine "this act" qualifier in a
+# local case ALWAYS agrees with the law form (``tässä laissa`` ine+ine, ``tähän
+# lakiin`` ill+ill), so a local-case demonstrative that DISAGREES with the head
+# never means "this act". The grammatical (nom / gen / par) demonstratives do not
+# carry this directional reach, so a nom/gen/par mismatch is left binding — it is
+# overwhelmingly a drafting/source spelling of "this act" (``Tämä lain 8 a §`` for
+# ``Tämän lain``), not a downstream bind, and excluding it would drop a genuine
+# internal self-reference.
+_LOCAL_CASES = frozenset({"ine", "ela", "ill", "ade"})
+
+
+def _demonstrative_binds_name(prev: str, head: str) -> bool:
+    """True iff a leading demonstrative ``prev`` makes ``head`` mean "this act".
+
+    Binds (→ INTERNAL self-reference) UNLESS the demonstrative is in a LOCAL case
+    that DISAGREES with the law-name head's case — that combination is the
+    downstream-bind tell (``tähän``(ill) ``…lain``(gen) ``… suhteessa``), where
+    the demonstrative reaches a later noun and the name is a genuine external
+    cross-statute anchor. A grammatical-case (nom/gen/par) demonstrative, or one
+    that AGREES with the head (``tässä``+``laissa``, ``tähän``+``lakiin``), still
+    binds.
+    """
+    dem_case = _DEMONSTRATIVE_CASE.get(prev)
+    if dem_case is None:
+        return False
+    if dem_case in _LOCAL_CASES and dem_case != _name_head_case(head):
+        return False
+    return True
 
 # How far back to look for a preceding name head / statute id.
 _LOOKBACK = 80
@@ -418,7 +495,9 @@ def _is_excluded(text: str, start: int) -> bool:
         if _PRECEDING_STATUTE_ID_RE.search(head_ctx):
             return True
         hm = _PRECEDING_NAME_HEAD_RE.search(head_ctx)
-        if hm is not None and (hm.group("prev") or "").lower() not in _SELF_DEMONSTRATIVES:
+        if hm is not None and not _demonstrative_binds_name(
+            (hm.group("prev") or "").lower(), hm.group("head")
+        ):
             return True
 
     before = text[max(0, start - _LOOKBACK) : start]
@@ -431,10 +510,12 @@ def _is_excluded(text: str, start: int) -> bool:
     if m is not None:
         # A name head (``…lain`` / ``…laissa`` / ``…asetuksen`` …) immediately
         # before the citation is a cross-statute by-name case — EXCLUDED —
-        # UNLESS a self-referential demonstrative makes it "THIS act"
-        # (``tämän lain`` / ``tässä laissa``), which is an internal self-ref.
+        # UNLESS a self-referential demonstrative AGREEING IN CASE with the head
+        # makes it "THIS act" (``tämän lain`` / ``tässä laissa``), an internal
+        # self-ref. A case-mismatched demonstrative (``tähän …lain``) binds a
+        # downstream noun, not the name → stays cross-statute → EXCLUDED.
         prev = (m.group("prev") or "").lower()
-        if prev in _SELF_DEMONSTRATIVES:
+        if _demonstrative_binds_name(prev, m.group("head")):
             return False
         return True
     return False
