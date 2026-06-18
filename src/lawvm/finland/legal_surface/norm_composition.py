@@ -33,10 +33,10 @@ Attachment status → edge status (tag-don't-guess; never a silent pick):
     edge ``status="ambiguous"``, each carrying the full candidate set in payload.
     The construction never silently commits to one of several plausible targets;
     the graph mirrors that by emitting the whole candidate set, not the nearest.
-  * ``candidate`` (no deontic core to attach to, OR the construction core has no
-    corresponding ``actor_modal_frame`` node in the graph) → NO asserted edge. The
-    qualifier exists but its target is not a typed graph node; it is recorded as a
-    typed diagnostic, never an invented edge.
+  * ``candidate`` (no deontic core to attach to, OR — now rare — the construction
+    core has no corresponding ``deontic_core`` node in the graph) → NO asserted
+    edge. The qualifier exists but its target is not a typed graph node; it is
+    recorded as a typed diagnostic, never an invented edge.
 
 THE AUTHORITY FIREWALL (§D7) is preserved unconditionally: every edge is minted by
 the assembler with ``surface_only=True`` / ``replay_authorized=False``. A NORM edge
@@ -52,19 +52,21 @@ nodes carry ``raw_text``-relative char spans. This pass therefore needs the sour
 text to (a) re-derive the sentences (the shared clause-segmentation authority,
 :func:`build_clause_index`) and (b) translate each qualifier/core sentence-local
 span back to ``raw_text`` coordinates so it can be matched to the EXISTING
-``exception_condition_cue`` / ``actor_modal_frame`` graph nodes by span. Because an
+``exception_condition_cue`` (cue) / ``deontic_core`` (target) graph nodes by span. Because an
 edge pass only receives the assembled graph, the pass is constructed per-statute
 from the bundle (see :func:`condition_attachment_passes`), holding the units it
 needs. It mints NO new nodes — it only joins nodes other lenses already produced.
 
-The construction's deontic cores come from :func:`parse_modal_sentence`, a DIFFERENT
-recognizer from the production ``actor_modal`` lens that emits the
-``actor_modal_frame`` nodes (the construction recognizes a core from the modal cue
-alone; the production frame additionally requires a registered actor within 60
-chars). So a construction core often has NO matching ``actor_modal_frame`` node.
-That is exactly the ``candidate`` case above — recorded honestly as a diagnostic,
-never forced into an edge. This is WHY the construction edge set is far smaller and
-more precise than the proximity mesh, not merely a re-labelling of it.
+The construction's deontic cores come from :func:`parse_modal_sentence`. The
+``deontic_core`` lens mints a graph node for EVERY such core (recognising it from
+the modal cue alone), so the attachment the construction already computed maps onto
+a backing node directly — the DENSE substrate that unblocks this edge set. This is
+re-pointed off the production ``actor_modal_frame`` node (which the production lens
+mints only when a registered actor sits within 60 chars), which backed only a
+sparse minority of construction cores, leaving most attachments edgeless. With the
+dense ``deontic_core`` substrate the ``candidate`` (no backing node) case is now
+rare. The construction edge set is still far smaller and more precise than the
+proximity mesh: it attaches each qualifier to its OWN sentence's core(s).
 """
 from __future__ import annotations
 
@@ -105,10 +107,20 @@ RULE_CONDITION = "fi.norm_composition.condition_attaches_norm"
 RULE_EXCEPTION = "fi.norm_composition.exception_excepts_norm"
 
 # The graph node kinds this pass joins. The qualifier (source) is the H6
-# exception_condition_cue node; the deontic core (target) is the H4
-# actor_modal_frame node. The pass mints NO nodes — it only links these.
+# exception_condition_cue node; the deontic core (target) is the DENSE
+# construction ``deontic_core`` node (minted by the deontic_core lens from
+# parse_modal_sentence — one node per modal core). The pass mints NO nodes — it
+# only links these.
+#
+# Re-pointed off the sparse production ``actor_modal_frame`` (which the production
+# recognizer mints only when a registered actor sits within 60 chars of the modal):
+# the construction attachment already refers to the construction modal core, and
+# the deontic_core lens now mints a node for EVERY such core, so the attachment
+# index maps onto a backing node directly. This is what unblocks the dense Layer-2
+# deontic edge set (previously most construction cores had no backing node, so
+# their attachments produced no edge).
 CUE_NODE_KIND = "exception_condition_cue"
-CORE_NODE_KIND = "actor_modal_frame"
+CORE_NODE_KIND = "deontic_core"
 
 #: Map the qualifier kind to its NORM edge kind.
 _KIND_EDGE: dict[str, str] = {
@@ -123,7 +135,7 @@ _KIND_RULE: dict[str, str] = {
 #: Why a qualifier produced no asserted edge (the typed candidate/diagnostic set).
 NO_CORE_IN_SENTENCE = "no_deontic_core_in_sentence"
 NO_GRAPH_NODE_FOR_CUE = "no_exception_condition_cue_node_for_qualifier"
-NO_GRAPH_NODE_FOR_CORE = "no_actor_modal_frame_node_for_attached_core"
+NO_GRAPH_NODE_FOR_CORE = "no_deontic_core_node_for_attached_core"
 
 
 @dataclass(frozen=True)
@@ -173,8 +185,10 @@ def _find_node_covering(
 
     The construction cue/core span and the lens node span are both anchored in the
     SAME ``raw_text`` coordinate space, but they need not be byte-identical (the
-    construction cue span is the matched marker; the ``actor_modal_frame`` span is
-    the WHOLE actor..object frame, which CONTAINS the modal cue). A match is the
+    construction cue span is the matched marker; an ``exception_condition_cue``
+    node may differ, and historically the ``actor_modal_frame`` span was the WHOLE
+    actor..object frame containing the modal cue — the ``deontic_core`` node span IS
+    the cue span, so it matches exactly). A match is the
     node whose span OVERLAPS ``[start, end)`` and whose ``char_start`` is the
     closest at-or-before the query start — i.e. the frame/cue node that owns this
     construction span. Returns the node id, or ``None`` when nothing overlaps
@@ -218,8 +232,8 @@ class ConditionAttachmentPass:
     Constructed per-statute from the bundle units (the construction parse needs the
     source text to re-derive sentences and translate sentence-local spans to
     ``raw_text``). Mints NO nodes; it only joins the EXISTING
-    ``exception_condition_cue`` (source) and ``actor_modal_frame`` (target) nodes
-    that the H6 / H4 lenses already produced.
+    ``exception_condition_cue`` (source) and ``deontic_core`` (target) nodes that
+    the H6 / deontic_core lenses already produced.
 
     Determinism: a single left-to-right pass over the units' sentences (the shared
     :func:`build_clause_index` authority); qualifiers in source order; ambiguous
@@ -320,8 +334,9 @@ class ConditionAttachmentPass:
                 core_abs_end = base + core.cue_end
                 dst_id = _find_node_covering(core_nodes, core_abs_start, core_abs_end)
                 if dst_id is None:
-                    # The construction core has no production actor_modal_frame
-                    # node (different recognizer). No asserted edge for THIS core.
+                    # The construction core has no backing deontic_core node
+                    # (coordinate-bridge miss — should be rare now the deontic_core
+                    # lens mints one per core). No asserted edge for THIS core.
                     continue
                 out.append(
                     self._edge_seed(

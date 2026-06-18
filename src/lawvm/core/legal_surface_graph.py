@@ -68,6 +68,11 @@ NODE_KINDS: frozenset[str] = frozenset(
         "term_use",
         "temporal_expr",
         "actor_modal_frame",
+        # Construction-grammar deontic core (the DENSE Layer-2 substrate). Minted
+        # by the deontic_core lens from parse_modal_sentence — one node per modal
+        # core (cue alone), so it is dense where the actor_modal_frame oracle (a
+        # registered actor within 60 chars) is sparse. Surface-only; no legal force.
+        "deontic_core",
         # H5/H6 frame families (Pro r5 Phase 8 — nodes only; edge/lint passes
         # deferred). condition + exception share one cue kind from the recognizer.
         "delegation_frame",

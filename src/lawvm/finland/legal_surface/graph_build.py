@@ -38,6 +38,7 @@ from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
 from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
+from lawvm.finland.legal_surface.lenses.deontic_core import DeonticCoreLens
 from lawvm.finland.legal_surface.lenses.exception_condition import (
     ExceptionConditionLens,
 )
@@ -84,6 +85,12 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     DefinitionLens(),
     TemporalLens(),
     ActorModalLens(),
+    # ADDITIVE strangle: the DENSE construction deontic-core node lens runs
+    # ALONGSIDE the sparse production ActorModalLens (never replacing it). It mints
+    # one deontic_core node per construction modal core — the substrate Layer-2
+    # deontic edges attach to (the actor_modal_frame oracle is too sparse to back
+    # most attachments).
+    DeonticCoreLens(),
     DelegationLens(),
     ProcedureLens(),
     SanctionLens(),

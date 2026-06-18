@@ -86,7 +86,7 @@ def test_resolved_condition_attaches_to_its_core() -> None:
     assert resolved, "expected a resolved condition attachment"
     for edge in resolved:
         assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
-        assert graph.nodes[edge.dst].node_kind == "actor_modal_frame"
+        assert graph.nodes[edge.dst].node_kind == "deontic_core"
         assert edge.status == "asserted"
         assert edge.payload.get("source") == "construction_attachment"
         assert edge.payload.get("qualifier_kind") == "condition"
@@ -107,7 +107,7 @@ def test_exception_qualifier_emits_excepts_edge() -> None:
     assert excs, "expected an exception_excepts_norm edge"
     for edge in excs:
         assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
-        assert graph.nodes[edge.dst].node_kind == "actor_modal_frame"
+        assert graph.nodes[edge.dst].node_kind == "deontic_core"
         assert edge.payload.get("qualifier_kind") == "exception"
         assert edge.payload.get("cue") == "ei kuitenkaan"
 
@@ -138,11 +138,11 @@ def test_ambiguous_attachment_emits_candidate_set_not_a_pick() -> None:
 
 def test_ambiguous_carries_full_set_but_only_backed_cores_get_edges() -> None:
     # An ambiguous qualifier carries the FULL candidate set in payload, but emits
-    # an asserted edge ONLY for candidate cores that have a backing
-    # actor_modal_frame node. The construction recognizer finds cores the
-    # production frame lens does not (it needs a registered actor within 60 chars),
-    # so the edge count <= candidate count — never an invented edge to a core with
-    # no graph node. This is the honest coordinate-bridge behaviour.
+    # an asserted edge ONLY for candidate cores that have a backing deontic_core
+    # node. The deontic_core lens mints one per construction core, so every
+    # candidate is normally backed; the edge count <= candidate count — never an
+    # invented edge to a core with no graph node. This is the honest
+    # coordinate-bridge behaviour.
     graph = _build()
     amb = [
         e
@@ -263,4 +263,4 @@ def test_pass_declares_its_kinds() -> None:
     assert isinstance(pass_, ConditionAttachmentPass)
     assert set(pass_.emits_edge_kinds) == _NORM_KINDS
     assert "exception_condition_cue" in pass_.reads_node_kinds
-    assert "actor_modal_frame" in pass_.reads_node_kinds
+    assert "deontic_core" in pass_.reads_node_kinds
