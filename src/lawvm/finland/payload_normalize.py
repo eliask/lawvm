@@ -2466,6 +2466,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_targets: Set[str] | None = None,
     expected_heading_only: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
@@ -2478,6 +2479,9 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets = {_norm_num_token(label) for label in standalone_section_targets if label}
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
+    }
+    foreign_scoped_replace_section_targets = {
+        _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
     }
 
     def _scope_label_from_unique_path(section_label: str, scope_kind: str) -> Optional[str]:
@@ -2532,6 +2536,28 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         target_unit_kind,
         target_norm,
     )
+    payload_section_labels = {
+        _norm_num_token(child.label or "")
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    }
+    payload_numeric_labels = {
+        int(label) for label in payload_section_labels if label.isdigit()
+    }
+    foreign_replace_numeric_labels = {
+        int(label)
+        for label in foreign_scoped_replace_section_targets
+        if label in payload_section_labels and label.isdigit()
+    }
+    has_dense_foreign_replace_bridge = False
+    if foreign_replace_numeric_labels:
+        lo_foreign = min(foreign_replace_numeric_labels)
+        hi_foreign = max(foreign_replace_numeric_labels)
+        has_dense_foreign_replace_bridge = (
+            lo_foreign - 1 in payload_numeric_labels
+            and hi_foreign + 1 in payload_numeric_labels
+            and all(n in payload_numeric_labels for n in range(lo_foreign, hi_foreign + 1))
+        )
     new_children: List[IRNode] = []
     for child in muutos_ir.children:
         child_label = _norm_num_token(child.label or "")
@@ -2553,7 +2579,13 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             if child_label not in live_member_labels:
                 # Foreign-scoped section: belongs to another chapter/part.
                 # Prune it even though it's not in the live container.
-                if child_label in foreign_scoped_standalone_section_targets:
+                if (
+                    child_label in foreign_scoped_standalone_section_targets
+                    or (
+                        child_label in foreign_scoped_replace_section_targets
+                        and not has_dense_foreign_replace_bridge
+                    )
+                ):
                     changed = True
                     pruned_labels.append(child_label)
                     pruned_witnesses.append(child_witness)
@@ -4817,6 +4849,7 @@ def elaborate_payload_against_live(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_targets: Set[str] | None = None,
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -4950,6 +4983,7 @@ def elaborate_payload_against_live(
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
     muutos_ir = pruning_result.muutos_ir

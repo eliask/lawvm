@@ -115,6 +115,7 @@ from lawvm.finland.scope import (
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
+    group_shadow_pruning_foreign_scoped_replace_section_targets as _group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
 )
@@ -364,6 +365,7 @@ def _compile_group(
     compiled_ops_out: list[dict[str, object]] | None,
     strict_profile: StrictProfile | None,
     foreign_scoped_standalone_section_targets: set[str] | None = None,
+    foreign_scoped_replace_section_targets: set[str] | None = None,
     precomputed_lookups: Any = None,
 ) -> PhaseResult[list[ResolvedOp]]:
     return _compile_group_typed(
@@ -382,6 +384,9 @@ def _compile_group(
             strict_profile=strict_profile,
             foreign_scoped_standalone_section_targets=set(
                 foreign_scoped_standalone_section_targets or ()
+            ),
+            foreign_scoped_replace_section_targets=set(
+                foreign_scoped_replace_section_targets or ()
             ),
             lookups=precomputed_lookups,
         ),
@@ -4262,6 +4267,38 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_rep
     )
 
     assert got == set()
+
+
+def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_foreign_replaces() -> None:
+    chapter_replace = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="chapter",
+        target_section="7",
+    )
+    foreign_replace_51 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="51",
+        target_chapter="8",
+        target_paragraph=1,
+    )
+    foreign_replace_61 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="61",
+        target_chapter="8",
+        target_paragraph=1,
+    )
+
+    got = _group_shadow_pruning_foreign_scoped_replace_section_targets(
+        [chapter_replace, foreign_replace_51, foreign_replace_61],
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_part=None,
+        duplicate_section_labels=frozenset(),
+    )
+
+    assert got == {"51", "61"}
 
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inserts() -> None:
