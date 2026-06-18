@@ -1,0 +1,125 @@
+"""Unit tests for the family-agnostic differential-census engine.
+
+Exercises the generalized 4-bucket machinery (match/superset/miss/decline,
+partition, miss-shape ranking, totality counting) extracted from the Pilot-A
+citation census, on synthetic in-memory plug-points — no corpus.
+"""
+from __future__ import annotations
+
+from lawvm.finland.legal_surface.family_census import (
+    CENSUS_BUCKETS,
+    CensusUnit,
+    classify,
+)
+
+
+def test_classify_buckets() -> None:
+    assert classify({"a"}, {"a"}, False) == "match"
+    assert classify({"a", "b"}, {"a"}, False) == "superset"
+    assert classify({"a"}, {"a", "b"}, False) == "miss"
+    # symmetric difference both ways -> conservative miss
+    assert classify({"a", "x"}, {"a", "b"}, False) == "miss"
+    assert classify(set(), set(), True) == "decline"
+
+
+def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
+    """Drive the engine with synthetic plug-points (monkeypatching the corpus).
+
+    ``units_by_statute`` maps a synthetic statute id to its CensusUnit list;
+    ``projections``/``oracles`` map a unit's text to its key set.
+    """
+    import lawvm.finland.legal_surface.family_census as fc
+
+    # Patch the corpus access the engine performs (store + decode + archive path)
+    # so the test runs entirely in-memory.
+    class _FakeStore:
+        def list_statute_ids(self):
+            return list(units_by_statute)
+
+        def read_source(self, sid):
+            return sid.encode()
+
+        def read_amendment(self, sid):  # pragma: no cover - read_source always hits
+            return None
+
+    import sys
+    import types
+
+    fake_farchive = types.ModuleType("farchive")
+    fake_farchive.Farchive = lambda *_a, **_k: object()
+    sys.modules.setdefault("farchive", fake_farchive)
+
+    # Monkeypatch the three lazily-imported symbols inside run_family_census by
+    # injecting fakes into the modules it imports from.
+    import lawvm.finland.legal_surface.bundle as bundle_mod
+    import lawvm.finland.transparent_store as ts_mod
+    import lawvm.tools.parse_bench as pb_mod
+
+    saved = (
+        ts_mod.TransparentCorpusStore,
+        bundle_mod.decode_body_text,
+        pb_mod._archive_path,
+    )
+    ts_mod.TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
+    bundle_mod.decode_body_text = lambda xb: xb.decode()
+    pb_mod._archive_path = lambda: "unused"
+    try:
+        return fc.run_family_census(
+            family="synthetic",
+            segment_selector=lambda sid, body: iter(units_by_statute[sid]),
+            projection_fn=lambda unit, sid: projections[unit.text],
+            oracle_fn=lambda unit: oracles[unit.text],
+            miss_shape_fn=lambda missing, marker: "shape",
+            check_totality=check_totality,
+        )
+    finally:
+        (
+            ts_mod.TransparentCorpusStore,
+            bundle_mod.decode_body_text,
+            pb_mod._archive_path,
+        ) = saved
+
+
+def test_engine_partition_and_buckets() -> None:
+    units = {
+        "s1": [
+            CensusUnit(text="u_match", parser_lane="L"),
+            CensusUnit(text="u_super", parser_lane="L"),
+            CensusUnit(text="u_miss", parser_lane="L"),
+            CensusUnit(text="u_decl", parser_lane="LD", declined=True),
+        ]
+    }
+    projections = {
+        "u_match": {"a"},
+        "u_super": {"a", "b"},
+        "u_miss": {"a"},
+        "u_decl": set(),
+    }
+    oracles = {
+        "u_match": {"a"},
+        "u_super": {"a"},
+        "u_miss": {"a", "b"},
+        "u_decl": set(),
+    }
+    res = _engine_on(units, projections, oracles)
+    assert res.in_scope_units == 4
+    assert res.buckets["match"] == 1
+    assert res.buckets["superset"] == 1
+    assert res.buckets["miss"] == 1
+    assert res.buckets["decline"] == 1
+    assert res.is_partition()
+    assert set(res.buckets) == set(CENSUS_BUCKETS)
+    assert res.miss_shape_counts == {"shape": 1}
+
+
+def test_engine_totality_counting() -> None:
+    units = {
+        "s1": [
+            CensusUnit(text="ok", parser_lane="L", totality_ok=True),
+            CensusUnit(text="bad", parser_lane="L", totality_ok=False),
+        ]
+    }
+    proj = {"ok": {"a"}, "bad": {"a"}}
+    orc = {"ok": {"a"}, "bad": {"a"}}
+    res = _engine_on(units, proj, orc, check_totality=True)
+    assert res.totality_violations == 1
