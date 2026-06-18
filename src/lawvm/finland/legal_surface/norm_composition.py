@@ -436,18 +436,322 @@ def condition_attachment_passes(
     return (ConditionAttachmentPass(units=bundle.units),)
 
 
+# ── delegates_to / sanctioned_by — the next two Layer-2 deontic NORM edges ────
+#
+# Same Layer-2 family as the condition/exception attachment above, on the SAME
+# dense ``deontic_core`` substrate, with the SAME discipline (per-statute,
+# SENTENCE-LOCAL, candidate-not-asserted, additive, surface_only firewall). The
+# difference is the join shape: instead of consuming a construction-computed
+# attachment index (qualifier → core), this pass joins a deontic core to a
+# co-SENTENCE FRAME node another lens already minted:
+#
+#   * ``delegates_to``  — a ``power``-kind deontic core (the delegating verb
+#     register: ``säädetään`` / ``annetaan`` / ``valtuus`` … → ``KIND_POWER``,
+#     whose ``object_span`` IS the delegation instrument) → the ``delegation_frame``
+#     in the same sentence whose instrument it grants.
+#   * ``sanctioned_by`` — a ``prohibition`` / ``obligation`` deontic core (a duty
+#     or ban) → the ``sanction_frame`` in the same sentence that backs it.
+#
+# Why a sentence-local span join, not a construction attachment index: there is no
+# construction parse that emits a (core → delegation_frame) or (core →
+# sanction_frame) attachment the way ``parse_condition_exception_sentence`` emits
+# (qualifier → core). The frame nodes come from independent production recognizers
+# (delegation / sanction lenses). The deterministic, conservative join is
+# SENTENCE membership: a deontic core and a frame that fall in the SAME sentence
+# (the shared ``build_clause_index`` authority) co-occur in one provision. This is
+# NOT a proximity window over the whole body (which would mesh across sentences —
+# the very over-generation the condition pass was built to replace); it is bound
+# to one sentence, the smallest deterministic provision unit.
+#
+# Candidate-not-asserted (never a silent pick):
+#   * a core with exactly ONE co-sentence frame target → ONE edge, status
+#     ``"candidate"`` (a sentence-local co-occurrence affordance, never an asserted
+#     legal conclusion that the power validly delegates / the norm is enforceably
+#     sanctioned — that reading leaves the graph through a named authorization
+#     object);
+#   * a core with SEVERAL co-sentence frame targets → ONE edge PER candidate
+#     frame, status ``"ambiguous"``, each carrying the full candidate-frame set in
+#     payload (the graph never commits to the nearest frame);
+#   * a core with NO co-sentence frame target → NO edge; recorded as a typed
+#     ``UnattachedCore`` diagnostic (``NO_FRAME_IN_SENTENCE``), never an invented
+#     edge.
+
+# Edge kinds — the delegates_to / sanctioned_by Layer-2 deontic NORM edges.
+EDGE_DELEGATES_TO = "delegates_to"
+EDGE_SANCTIONED_BY = "sanctioned_by"
+
+PASS_ID_DEONTIC_FRAME = "fi.norm_composition.deontic_frame.v0"
+RULE_DELEGATES_TO = "fi.norm_composition.delegates_to"
+RULE_SANCTIONED_BY = "fi.norm_composition.sanctioned_by"
+
+#: Graph node kinds this pass joins. Source is the dense ``deontic_core`` node;
+#: targets are the production ``delegation_frame`` / ``sanction_frame`` nodes.
+DELEGATION_FRAME_KIND = "delegation_frame"
+SANCTION_FRAME_KIND = "sanction_frame"
+
+#: deontic-core ``kind`` (payload) that licenses each edge family.
+_POWER_KIND = "power"
+_SANCTIONABLE_KINDS = frozenset({"prohibition", "obligation"})
+
+#: Why a deontic core produced no asserted edge (the typed diagnostic set).
+NO_FRAME_IN_SENTENCE = "no_target_frame_in_sentence"
+
+
+@dataclass(frozen=True)
+class UnattachedCore:
+    """A deontic core that produced NO deontic-frame edge (tagged, never an edge).
+
+    Carried for the differential report / debugging. ``edge_kind`` is the edge
+    family the core was eligible for (``delegates_to`` / ``sanctioned_by``);
+    ``reason`` is why no edge was minted (no co-sentence frame target).
+    """
+
+    source_unit_id: str
+    edge_kind: str
+    core_kind: str
+    core_char_start: int
+    core_char_end: int
+    reason: str
+
+
+def _sentence_of(start: int, sentences: list[tuple[int, int]]) -> int:
+    """Index of the sentence whose ``[char_start, char_end)`` contains ``start``.
+
+    Returns ``-1`` when ``start`` falls in no sentence (a defensive guard; the
+    clause index spans the whole unit, so a core/frame span should always land).
+    Used to place a deontic CORE (whose span is the tiny modal-cue span) in its
+    sentence.
+    """
+    for i, (s, e) in enumerate(sentences):
+        if s <= start < e:
+            return i
+    return -1
+
+
+def _sentences_overlapped(
+    span_start: int, span_end: int, sentences: list[tuple[int, int]]
+) -> list[int]:
+    """Indices of every sentence the ``[span_start, span_end)`` span OVERLAPS.
+
+    A frame span (delegation / sanction) is NOT a tiny cue — it is the whole
+    recognised clause (target..trigger), which often starts in an earlier sentence
+    than its deontic marker and can straddle a clause boundary. Anchoring a frame
+    to the single sentence of its ``char_start`` therefore mis-files it. Instead a
+    frame belongs to every sentence its span overlaps, so a core is linked to a
+    frame iff the frame's text overlaps the CORE's sentence (true sentence-local
+    co-occurrence, not a whole-body proximity mesh).
+    """
+    out: list[int] = []
+    for i, (s, e) in enumerate(sentences):
+        if span_end <= s or e <= span_start:
+            continue
+        out.append(i)
+    return out
+
+
+@dataclass
+class DeonticFrameAttachmentPass:
+    """Edge pass: deontic core → co-sentence delegation/sanction frame NORM edge.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`.
+    Constructed per-statute from the bundle units (it re-derives sentence
+    boundaries via :func:`build_clause_index` to bound the join to one sentence).
+    Mints NO nodes; it only joins EXISTING ``deontic_core`` (source) and
+    ``delegation_frame`` / ``sanction_frame`` (target) nodes other lenses produced.
+
+    For each unit, each sentence:
+      * ``power`` cores → each ``delegation_frame`` in the sentence (``delegates_to``);
+      * ``prohibition`` / ``obligation`` cores → each ``sanction_frame`` in the
+        sentence (``sanctioned_by``).
+    One target → ``"candidate"``; several → one edge per target, ``"ambiguous"``,
+    full set in payload; none → typed :class:`UnattachedCore` diagnostic.
+
+    Determinism: units in declared order; sentences left-to-right; cores by
+    char_start; candidate frames by char_start. The assembler recomputes graph_id.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_DEONTIC_FRAME
+    reads_node_kinds: tuple[str, ...] = (
+        CORE_NODE_KIND,
+        DELEGATION_FRAME_KIND,
+        SANCTION_FRAME_KIND,
+    )
+    emits_edge_kinds: tuple[str, ...] = (EDGE_DELEGATES_TO, EDGE_SANCTIONED_BY)
+    # Typed diagnostics for cores that produced no edge. Populated on run(); read by
+    # the differential report. NOT a graph element.
+    unattached: list[UnattachedCore] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+        deleg_index = _node_index_by_unit_kind(graph.nodes, DELEGATION_FRAME_KIND)
+        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            cores = core_index.get(unit_id, [])
+            if not cores:
+                continue
+            delegs = deleg_index.get(unit_id, [])
+            sancts = sanct_index.get(unit_id, [])
+            if not delegs and not sancts:
+                continue
+            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+            try:
+                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+            except Exception:
+                continue
+            sentences = [(s.char_start, s.char_end) for s in index.sentences]
+            if not sentences:
+                continue
+            # Bucket the target frames by sentence (deterministic, by char_start).
+            deleg_by_sent = self._bucket_by_sentence(delegs, sentences)
+            sanct_by_sent = self._bucket_by_sentence(sancts, sentences)
+            for nid, ref in cores:
+                node = graph.nodes[nid]
+                core_kind = node.payload.get("kind")
+                sent_i = _sentence_of(ref.char_start, sentences)
+                if sent_i < 0:
+                    continue
+                if core_kind == _POWER_KIND:
+                    seeds.extend(
+                        self._core_edges(
+                            unit_id=unit_id,
+                            core_id=nid,
+                            core_ref=ref,
+                            core_kind=str(core_kind),
+                            targets=deleg_by_sent.get(sent_i, []),
+                            edge_kind=EDGE_DELEGATES_TO,
+                            rule_id=RULE_DELEGATES_TO,
+                        )
+                    )
+                elif core_kind in _SANCTIONABLE_KINDS:
+                    seeds.extend(
+                        self._core_edges(
+                            unit_id=unit_id,
+                            core_id=nid,
+                            core_ref=ref,
+                            core_kind=str(core_kind),
+                            targets=sanct_by_sent.get(sent_i, []),
+                            edge_kind=EDGE_SANCTIONED_BY,
+                            rule_id=RULE_SANCTIONED_BY,
+                        )
+                    )
+                # permission cores (and any other kind) license neither edge.
+        return tuple(seeds)
+
+    def _bucket_by_sentence(
+        self,
+        frames: list[tuple[str, SourceSpanRef]],
+        sentences: list[tuple[int, int]],
+    ) -> dict[int, list[tuple[str, SourceSpanRef]]]:
+        """Group frame (id, ref) pairs by EVERY sentence their span overlaps.
+
+        A frame span is the whole recognised clause and can straddle a sentence
+        boundary, so it may appear in more than one bucket (see
+        :func:`_sentences_overlapped`). Frames within each bucket stay sorted by
+        (char_start, char_end, id) — the order ``_node_index_by_unit_kind`` already
+        imposes — so the candidate set and per-candidate edges are deterministic.
+        """
+        buckets: dict[int, list[tuple[str, SourceSpanRef]]] = {}
+        for fid, fref in frames:
+            for si in _sentences_overlapped(fref.char_start, fref.char_end, sentences):
+                buckets.setdefault(si, []).append((fid, fref))
+        return buckets
+
+    def _core_edges(
+        self,
+        *,
+        unit_id: str,
+        core_id: str,
+        core_ref: SourceSpanRef,
+        core_kind: str,
+        targets: list[tuple[str, SourceSpanRef]],
+        edge_kind: str,
+        rule_id: str,
+    ) -> list[SurfaceEdgeSeed]:
+        if not targets:
+            self.unattached.append(
+                UnattachedCore(
+                    source_unit_id=unit_id,
+                    edge_kind=edge_kind,
+                    core_kind=core_kind,
+                    core_char_start=core_ref.char_start,
+                    core_char_end=core_ref.char_end,
+                    reason=NO_FRAME_IN_SENTENCE,
+                )
+            )
+            return []
+        # candidate-not-asserted: one target → "candidate"; several → one edge per
+        # candidate, "ambiguous", each carrying the full candidate-frame set.
+        ambiguous = len(targets) > 1
+        edge_status = "ambiguous" if ambiguous else "candidate"
+        candidate_spans = [[fref.char_start, fref.char_end] for _, fref in targets]
+        core_span = [core_ref.char_start, core_ref.char_end]
+        out: list[SurfaceEdgeSeed] = []
+        for frame_id, frame_ref in targets:
+            payload: dict[str, object] = {
+                "core_kind": core_kind,
+                "core_span": core_span,
+                "frame_span": [frame_ref.char_start, frame_ref.char_end],
+                "source": "deontic_frame_sentence_local",
+                "experimental": True,
+            }
+            if ambiguous:
+                # full candidate set so a consumer sees this is one of several
+                # plausible co-sentence frames — never a silent pick.
+                payload["candidate_frame_spans"] = candidate_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=edge_kind,
+                    src_local=core_id,
+                    dst_local=frame_id,
+                    rule_id=rule_id,
+                    status=edge_status,
+                    payload=payload,
+                )
+            )
+        return out
+
+
+def deontic_frame_attachment_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[DeonticFrameAttachmentPass, ...]:
+    """Build the per-statute deontic-core → frame (delegates_to / sanctioned_by) pass.
+
+    Constructed from the bundle units (the pass needs the source text to re-derive
+    sentence boundaries). Returns a one-tuple so the caller can splice it into the
+    edge-pass sequence ADDITIVELY (alongside the condition/exception pass and the
+    proximity incumbents).
+    """
+    return (DeonticFrameAttachmentPass(units=bundle.units),)
+
+
 __all__ = [
     "CORE_NODE_KIND",
     "CUE_NODE_KIND",
+    "DELEGATION_FRAME_KIND",
+    "SANCTION_FRAME_KIND",
     "ConditionAttachmentPass",
+    "DeonticFrameAttachmentPass",
     "EDGE_CONDITION_ATTACHES",
+    "EDGE_DELEGATES_TO",
     "EDGE_EXCEPTION_EXCEPTS",
+    "EDGE_SANCTIONED_BY",
     "NO_CORE_IN_SENTENCE",
+    "NO_FRAME_IN_SENTENCE",
     "NO_GRAPH_NODE_FOR_CORE",
     "NO_GRAPH_NODE_FOR_CUE",
     "PASS_ID",
+    "PASS_ID_DEONTIC_FRAME",
     "RULE_CONDITION",
+    "RULE_DELEGATES_TO",
     "RULE_EXCEPTION",
+    "RULE_SANCTIONED_BY",
+    "UnattachedCore",
     "UnattachedQualifier",
     "condition_attachment_passes",
+    "deontic_frame_attachment_passes",
 ]

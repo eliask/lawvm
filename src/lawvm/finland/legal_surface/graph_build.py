@@ -68,6 +68,7 @@ from lawvm.finland.legal_surface.cross_lens_passes import (
 )
 from lawvm.finland.legal_surface.norm_composition import (
     condition_attachment_passes,
+    deontic_frame_attachment_passes,
 )
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
@@ -196,7 +197,16 @@ def build_legal_surface_graph(
     # ``edge_passes``), never replacing it. It is built per-statute from the
     # bundle because the construction parse needs the source text. The proximity
     # pass remains the incumbent until the construction edge is proven superior.
-    all_edge_passes = edge_passes + condition_attachment_passes(bundle)
+    #
+    # The deontic-frame attachment pass (delegates_to / sanctioned_by) is spliced
+    # in ADDITIVELY too: it joins power cores to co-sentence delegation_frames and
+    # prohibition/obligation cores to co-sentence sanction_frames, alongside (never
+    # replacing) the proximity FrameActorColocationPass / ExceptionScopesFramePass.
+    all_edge_passes = (
+        edge_passes
+        + condition_attachment_passes(bundle)
+        + deontic_frame_attachment_passes(bundle)
+    )
 
     return assemble_surface_graph(
         subject=bundle.subject,

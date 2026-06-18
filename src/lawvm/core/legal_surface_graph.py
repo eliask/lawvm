@@ -146,6 +146,20 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # named authorization object.
         "condition_attaches_norm",
         "exception_excepts_norm",
+        # A power-register deontic core (deontic_core node, kind="power" — the
+        # delegating verb register: säädetään/annetaan/valtuus…) -> the
+        # delegation_frame in the SAME sentence whose instrument it grants ("this
+        # power delegates rulemaking via that asetus"). A prohibition/obligation
+        # deontic core (deontic_core node, kind in {prohibition,obligation}) ->
+        # the sanction_frame in the SAME sentence that backs it ("this duty/ban is
+        # sanctioned by that consequence"). Sentence-local, candidate-not-asserted:
+        # one target -> status "candidate"; several -> one edge per candidate with
+        # the full candidate set in payload, status "ambiguous"; never a silent
+        # pick. Still a SURFACE candidate, never a legal conclusion (§D7) — the
+        # reading that the power validly delegates / the norm is enforceably
+        # sanctioned must leave the graph through a named authorization object.
+        "delegates_to",
+        "sanctioned_by",
     }
 )
 
