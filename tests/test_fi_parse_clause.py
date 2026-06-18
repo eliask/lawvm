@@ -270,6 +270,39 @@ def test_parse_clause_chapter_reinsert_with_descriptive_provenance_keeps_section
     assert [op.code() for op in result.parsed_ops] == ["L P L:9 12", "L P L:9 13"]
 
 
+def test_parse_clause_historical_passive_preverbal_replace_keeps_section_list() -> None:
+    text = (
+        "Eduskunnan päätöksen mukaisesti säädetään, että 1 päivänä kesäkuuta 1922 "
+        "annetun kielilain 2, 3, 5, 6, 9, 10, 12, 13, 16, 17, 18, 20 sekä 21 §, "
+        "näistä 20 § sellaisena, kuin se on 28 päivänä toukokuuta 1927 annetussa "
+        "laissa, on muutettava näin kuuluviksi:"
+    )
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert codes == [
+        "M P 2",
+        "M P 3",
+        "M P 5",
+        "M P 6",
+        "M P 9",
+        "M P 10",
+        "M P 12",
+        "M P 13",
+        "M P 16",
+        "M P 17",
+        "M P 18",
+        "M P 20",
+        "M P 21",
+    ]
+    assert codes.count("M P 20") == 1
+    assert any(
+        diagnostic.rule_id == "fi.johtolause.historical_passive_preverbal_replace.v1"
+        for diagnostic in result.typed_diagnostics
+    )
+
+
 def test_parse_clause_surface_clause_populated():
     """surface_clause must be a non-None object (Phase 3 SurfaceClause)."""
     from lawvm.finland.johtolause.surface_model import SurfaceClause

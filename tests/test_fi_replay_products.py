@@ -1060,6 +1060,21 @@ def test_replay_xml_recovers_1935_419_full_section_replace_for_1922_312_section_
     assert "sekä alipäällystöltä" in third_text
 
 
+def test_replay_xml_applies_1935_141_passive_replacements_for_1922_148() -> None:
+    """Historical ``on muutettava`` formulas must pass the live replay gate."""
+    from tests.corpus_pin_helpers import replay_xml_for_test
+
+    replay = replay_xml_for_test("1922/148", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("20")
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+
+    assert "Valtionrautateiden virka-alueet" in text
+    assert "Liikennepaikat ovat yksikielisiä" in text
+    assert "Valtionrautateiden viranomaisten virkakielestä" not in text
+
+
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:
     """1999/1249 must preserve both the migrated 5 c § and the new native 5 b §."""
     replay = pinned_replay("1958/496", mode="legal_pit", quiet=True, stop_before="2004/697")

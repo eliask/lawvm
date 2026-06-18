@@ -84,6 +84,26 @@ FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY = FrontendCapability(
     ),
 )
 
+_HISTORICAL_PASSIVE_REPLACE_RULE_ID = (
+    "fi.johtolause.historical_passive_preverbal_replace.v1"
+)
+_HISTORICAL_PASSIVE_ANAPHORS = frozenset({"näistä", "niistä", "joista"})
+_PREVERBAL_REPLACE_ENUM_CATS = frozenset(
+    {
+        "NUM",
+        "LETTER",
+        "COMMA",
+        "CONJ",
+        "SEKA",
+        "DASH",
+        "PYKALA",
+        "LUKU",
+        "OSA",
+        "MOMENTTI",
+        "KOHTA",
+    }
+)
+
 
 def infer_move_clause_target_unit_kind(
     destination: LegalAddress | None,
@@ -102,6 +122,85 @@ def infer_move_clause_target_unit_kind(
     if destination_parts.get("chapter"):
         return "chapter"
     return None
+
+
+def _normalize_historical_passive_preverbal_replace(
+    tokens: list["Token"],
+) -> tuple[list["Token"], tuple[str, ...]]:
+    """Parse archaic ``N § ... on muutettava`` formulas as replace targets.
+
+    Some early Finnish acts place the full target enumeration before the
+    predicate, e.g. ``kielilain 2, 3 ... 21 § ... on muutettava näin
+    kuuluviksi``. The structural parser is verb-led, so this source-local rule
+    moves only the witnessed structural enumeration in front of ``muutettava``.
+    Provenance re-mentions such as ``näistä 20 § sellaisena ...`` stay outside
+    the operative target set.
+    """
+    for verb_idx, token in enumerate(tokens):
+        if (
+            token.cat != "VERB"
+            or token.lemma != "muuttaa"
+            or (token.text or "").lower() != "muutettava"
+        ):
+            continue
+        if verb_idx == 0:
+            continue
+        previous = tokens[verb_idx - 1]
+        if (previous.text or "").lower() != "on" and previous.cat != "PROVENANCE_SPAN":
+            continue
+
+        end_token = next(
+            (
+                candidate
+                for candidate in tokens[verb_idx + 1 :]
+                if candidate.cat in {"END", "END_SENTINEL_SPAN"}
+            ),
+            None,
+        )
+        if end_token is None:
+            continue
+
+        predicate_lead_idx = verb_idx - 1
+        target_stop = predicate_lead_idx
+        for idx, candidate in enumerate(tokens[:predicate_lead_idx]):
+            if (
+                candidate.cat == "WORD"
+                and (candidate.text or "").lower() in _HISTORICAL_PASSIVE_ANAPHORS
+            ):
+                target_stop = idx
+                break
+
+        pykala_idx = None
+        for idx in range(target_stop - 1, -1, -1):
+            if tokens[idx].cat == "PYKALA":
+                pykala_idx = idx
+                break
+        if pykala_idx is None:
+            continue
+
+        target_start = pykala_idx
+        while (
+            target_start > 0
+            and tokens[target_start - 1].cat in _PREVERBAL_REPLACE_ENUM_CATS
+        ):
+            target_start -= 1
+
+        target_tokens = list(tokens[target_start:target_stop])
+        while target_tokens and target_tokens[-1].cat in {"COMMA", "CONJ", "SEKA", "DASH"}:
+            target_tokens.pop()
+        if not target_tokens:
+            continue
+        if not any(candidate.cat == "PYKALA" for candidate in target_tokens):
+            continue
+        if not any(candidate.cat == "NUM" for candidate in target_tokens):
+            continue
+
+        return (
+            [token, *target_tokens, end_token],
+            (_HISTORICAL_PASSIVE_REPLACE_RULE_ID,),
+        )
+
+    return tokens, ()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -220,6 +319,11 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     core_token_tape = _core_token_tape_from_finland_tokens(text, raw_tokens)
     target_version_bindings = extract_target_version_bindings(raw_tokens)
     tokens, _jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
+    parser_tokens, parser_normalization_rule_ids = (
+        _normalize_historical_passive_preverbal_replace(tokens)
+        if not _jolloin_pairs
+        else (tokens, ())
+    )
 
     # -- Phase 1: Parse -> real SurfaceClause --
     # This is the ORIGINAL parser output — preserved unmodified, except that
@@ -245,7 +349,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # bench is net-positive (smoke structural 96.18% -> 96.24%, Levenshtein flat).
     # Set LAWVM_FI_NEW_PARSER=0 to force the old surface_parse as primary.
     _jolloin_arg = _jolloin_pairs if _jolloin_pairs else None
-    _production = parse_tokens_production(tokens, jolloin_renumber_pairs=_jolloin_arg)
+    _production = parse_tokens_production(parser_tokens, jolloin_renumber_pairs=_jolloin_arg)
     _parsed = _production.clause
     parser_lane = _production.parser_lane
     grammar_decline_reason = _production.grammar_decline_reason
@@ -323,6 +427,8 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 
     # -- Collect diagnostics (initialized early for error paths) --
     diagnostics: list[str] = []
+    for rule_id in parser_normalization_rule_ids:
+        diagnostics.append(f"parser_normalization={rule_id}")
 
     # -- Phase 2: Resolve -> ResolvedSurfaceClause --
     # RuntimeError is a known internal pipeline error — caught and reported
@@ -371,8 +477,8 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # -- Collect token residuals (tokens beyond consumed_count) --
     # consumed_count is set on the ORIGINAL surface clause (not the enriched one,
     # which may have injected synthetic nodes that don't correspond to input tokens).
-    if original_surface_clause.consumed_count < len(tokens):
-        leftover_tokens = list(tokens[original_surface_clause.consumed_count :])
+    if original_surface_clause.consumed_count < len(parser_tokens):
+        leftover_tokens = list(parser_tokens[original_surface_clause.consumed_count :])
         residuals.append({"kind": "unconsumed_tokens", "tokens": leftover_tokens})
 
     # -- Totality invariant: surface a SILENT mid-stream drop as a residual. --
@@ -447,7 +553,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         text=text,
         token_tape=core_token_tape,
         raw_token_count=len(raw_tokens),
-        structural_token_count=len(tokens),
+        structural_token_count=len(parser_tokens),
         jolloin_pair_count=len(_jolloin_pairs),
         target_version_binding_count=len(target_version_bindings),
         original_surface_clause=original_surface_clause,
@@ -466,6 +572,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         supplementary_clause_count=len(supplementary_nodes),
         parser_lane=parser_lane,
         grammar_decline_reason=grammar_decline_reason,
+        parser_normalization_rule_ids=parser_normalization_rule_ids,
     )
     surface_result = _build_finland_surface_parse_result(
         source_hash=core_token_tape.source_hash,
@@ -526,6 +633,7 @@ def _build_finland_clause_phase_surface(
     supplementary_clause_count: int,
     parser_lane: str,
     grammar_decline_reason: str | None,
+    parser_normalization_rule_ids: tuple[str, ...],
 ) -> FrontendPhaseSurface:
     typed_diagnostics = _build_finland_frontend_diagnostics(
         diagnostics=diagnostics,
@@ -535,6 +643,7 @@ def _build_finland_clause_phase_surface(
         lowering_diagnostics=lowering_diagnostics,
         parser_lane=parser_lane,
         grammar_decline_reason=grammar_decline_reason,
+        parser_normalization_rule_ids=parser_normalization_rule_ids,
     )
     diagnostic_ids_by_phase: dict[str, list[str]] = {}
     for diagnostic in typed_diagnostics:
@@ -827,8 +936,33 @@ def _build_finland_frontend_diagnostics(
     lowering_diagnostics: tuple[Any, ...],
     parser_lane: str,
     grammar_decline_reason: str | None,
+    parser_normalization_rule_ids: tuple[str, ...],
 ) -> tuple[FrontendDiagnostic, ...]:
     out: list[FrontendDiagnostic] = []
+    for rule_id in parser_normalization_rule_ids:
+        out.append(
+            FrontendDiagnostic(
+                diagnostic_id="fi-johtolause-parser-normalization-historical-passive-preverbal-replace",
+                jurisdiction="fi",
+                frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
+                phase="surface_parse",
+                severity="info",
+                rule_id=rule_id,
+                message=(
+                    "Historical Finnish passive replacement formula with "
+                    "pre-verbal targets was normalized to verb-led target order."
+                ),
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition="record",
+                safe_default="preserve_only_the_witnessed_preverbal_target_enumeration",
+                forbidden_shortcuts=(
+                    "treat_provenance_rementions_as_additional_targets",
+                    "infer_unlisted_targets_from_payload_body",
+                ),
+                detail={"human_diagnostics": tuple(diagnostics)},
+            )
+        )
     # Parser-lane provenance: when the new grammar parser DECLINED and the old
     # surface_parse produced this clause, surface a governed, non-blocking record
     # so consumers cannot mistake a legacy-reference fallback for new-parser-owned

@@ -111,7 +111,7 @@ def _looks_like_fi_meta_repeal(text: str) -> bool:
 
 
 OP_KEYWORDS = {
-    'muutetaan', 'muutettu', 'muuttaa', 'muuttanut',
+    'muutetaan', 'muutettu', 'muuttaa', 'muuttanut', 'muutettava',
     'kumotaan', 'kumottu', 'kumoaa', 'kumonnut',
     'lisätään', 'lisätty', 'lisää', 'lisännyt',
     'siirretään', 'siirretty', 'siirtää', 'siirtänyt',

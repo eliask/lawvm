@@ -73,6 +73,10 @@ _v("muuttaa", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)
 _v("kumota", "kumota", "VERB", verb_code=SourceVerb.KUMOTA)  # also participle stem
 # Verbs — alternative passive forms (rare)
 _v("korvataan", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)  # synonym for muutetaan
+# Verbs — archaic necessive passive predicate in historical formulas:
+# "N § ... on muutettava näin kuuluviksi" names the same replace intent as
+# modern "muutetaan N § ... seuraavasti".
+_v("muutettava", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)
 # Verbs — active 3rd person singular (agency decisions)
 _v("lisää", "lisätä", "VERB", verb_code=SourceVerb.LISATA)  # "Verohallinto lisää..."
 _v("muuttaa", "muuttaa", "VERB", verb_code=SourceVerb.MUUTTAA)  # already registered but confirm
@@ -214,6 +218,7 @@ _v("seuraavasti:", "seuraavasti", "END")  # with trailing colon
 _v("seuraava", "seuraavasti", "END")
 _v("kuuluvaksi", "seuraavasti", "END")  # archaic
 _v("kuuluviksi", "seuraavasti", "END")  # archaic
+_v("kuuluviksi:", "seuraavasti", "END")  # archaic with trailing colon
 
 # Document type (for insertion patterns)
 _v("lakiin", "laki", "DOC", "ILL")
