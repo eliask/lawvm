@@ -47,6 +47,11 @@ from lawvm.finland.recovery_temporal_proof_projector import (
     temporal_resolution_evidence_rows_from_projection_rows,
 )
 from lawvm.finland.strict_report_evidence_projector import finland_strict_report_evidence_surface
+from lawvm.finland.strict_report_proof_projector import (
+    finland_strict_report_candidate_set_execution_authorizations,
+    finland_strict_report_candidate_set_frontier_work_items,
+    finland_strict_report_ownership_closure_certificate,
+)
 from lawvm.finland.source_witness_proof_projector import (
     consolidated_artifact_source_witness,
     corrigendum_source_witness,
@@ -67,9 +72,6 @@ from lawvm.finland.proof_surfaces import (
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
     finland_he_branch_evidence_surface,
-    finland_strict_report_candidate_set_execution_authorizations,
-    finland_strict_report_candidate_set_frontier_work_items,
-    finland_strict_report_ownership_closure_certificate,
     mutation_boundary_proof_rows,
 )
 
@@ -77,7 +79,7 @@ from lawvm.finland.proof_surfaces import (
 def test_finland_proof_surface_required_claim_kinds_are_registered() -> None:
     assert fi_claim_kinds is not None
     registry_paths = (
-        Path("src/lawvm/finland/proof_surfaces.py"),
+        Path("src/lawvm/finland/corrigendum_proof_projector.py"),
         Path("src/lawvm/finland/source_pathology_proof_registry.py"),
     )
     required: set[str] = set()

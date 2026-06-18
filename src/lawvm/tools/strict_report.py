@@ -45,16 +45,16 @@ from lawvm.finland.agreement_residual_proof_projector import source_adjudication
 from lawvm.finland.source_witness_proof_projector import source_adjudication_lineage_source_witness_rows
 from lawvm.finland.sparse_slot_certificate_projector import sparse_slot_candidate_set_certificate_rows
 from lawvm.finland.strict_report_evidence_projector import finland_strict_report_evidence_surface
-from lawvm.finland.proof_surfaces import (
-    finland_strict_report_potential_operation_rows,
-    finland_strict_report_source_unit_coverage_rows,
+from lawvm.finland.strict_report_proof_projector import (
+    finland_strict_report_candidate_set_certificates,
     finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_candidate_set_frontier_work_items,
-    finland_strict_report_candidate_set_certificates,
     finland_strict_report_ownership_closure_certificate,
     finland_strict_report_ownership_closure_report,
-    mutation_boundary_proof_rows,
+    finland_strict_report_potential_operation_rows,
+    finland_strict_report_source_unit_coverage_rows,
 )
+from lawvm.finland.proof_surfaces import mutation_boundary_proof_rows
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.ops import FailedOp
 from lawvm.replay_adjudication import SourceAdjudication

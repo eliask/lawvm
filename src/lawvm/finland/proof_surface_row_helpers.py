@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from typing import Any, Mapping
 
+from lawvm.core.frontier_work_item import FrontierWorkItem, frontier_work_item_with_claim_template
 from lawvm.core.source_witness import DigestWitness
+
+
+def with_finland_claim_template(item: FrontierWorkItem) -> FrontierWorkItem:
+    importlib.import_module("lawvm.finland.claim_kinds")
+    return frontier_work_item_with_claim_template(item)
 
 def kind_slug(kind: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "_" for ch in str(kind or "")).strip("_") or "unknown"
@@ -109,11 +116,45 @@ def preview_digest_witness(text: str) -> DigestWitness | None:
 def bounded_bytes_preview(data: bytes, *, limit: int = 512) -> str:
     return data[:limit].decode("utf-8", errors="replace")
 
+
+def field(record: Any, name: str, default: Any = None) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def frontier_claim_template_status_counts(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    return count_values(
+        tuple(
+            str(item.get("suggested_claim_template_status") or "__none__")
+            for item in frontier_items
+        )
+    )
+
+
+def frontier_claim_template_kind_counts(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    kinds: list[str] = []
+    for item in frontier_items:
+        template = item.get("suggested_claim_template") or {}
+        if isinstance(template, Mapping):
+            kinds.append(str(template.get("claim_kind") or "__none__"))
+        else:
+            kinds.append("__none__")
+    return count_values(tuple(kinds))
+
+
 __all__ = [
     "authorization_rows_with_report",
     "bounded_bytes_preview",
     "count_by_field",
     "count_values",
+    "field",
+    "frontier_claim_template_kind_counts",
+    "frontier_claim_template_status_counts",
     "kind_slug",
     "mapping_or_empty",
     "mapping_sequence",
@@ -123,4 +164,5 @@ __all__ = [
     "positive_int",
     "preview_digest_witness",
     "string_sequence",
+    "with_finland_claim_template",
 ]
