@@ -5923,6 +5923,65 @@ def test_compile_timelines_temporal_events_override_effective_and_expiry() -> No
     assert active_2013.content.text == "Base text"
 
 
+def test_compile_timelines_standalone_expire_caps_background_versions() -> None:
+    """A standalone end event sunsets the unit; it is not a temporary overlay expiry."""
+    base = IRStatute(
+        statute_id="test/standalone-expire-cap",
+        title="Standalone expire cap test",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base text"),)),
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    timelines = _compile_timelines_with_explicit_temporal_authority(
+        base,
+        [
+            LegalOperation(
+                op_id="replace_1",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=addr,
+                payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Updated text"),
+                group_id="g:update",
+                source=OperationSource(
+                    statute_id="2010/101",
+                    enacted="2010-01-01",
+                    effective="2010-01-01",
+                ),
+            )
+        ],
+        base_date="2000-01-01",
+        temporal_events=(
+            TemporalEvent(
+                event_id="ev:update-commence",
+                group_id="g:update",
+                kind="commence",
+                effective="2010-01-01",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+                scope=TemporalScope(target_statute="test/standalone-expire-cap"),
+            ),
+            TemporalEvent(
+                event_id="ev:standalone-expire",
+                kind="expire",
+                expires="2012-01-01",
+                scope=TemporalScope(
+                    target_statute="test/standalone-expire-cap",
+                    exact_addresses=(addr,),
+                ),
+            ),
+        ),
+    )
+
+    active_2011 = select_active_version(timelines[addr], "2011-01-01")
+    assert active_2011 is not None
+    assert active_2011.content is not None
+    assert active_2011.content.text == "Updated text"
+
+    assert select_active_version(timelines[addr], "2012-01-01") is None
+    assert [version.expires for version in timelines[addr].versions] == [
+        "2012-01-01",
+        "2012-01-01",
+    ]
+
+
 def test_compile_timelines_matched_temporal_events_do_not_inherit_legacy_expiry() -> None:
     """Matched TemporalEvents must stop source.expires from remaining authoritative."""
     base = IRStatute(

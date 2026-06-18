@@ -25,6 +25,7 @@ from lawvm.finland.replay_products import (
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.post_process import _consolidate_kumottu_range
+from lawvm.finland.temporal_rewrites import _base_chapter_expiry_temporal_events
 
 _FI_MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT_RULE = "fi_materialized_attachments_wrapper_split_v1"
 
@@ -80,7 +81,16 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
         )
     )
 
-    _report_base_chapter_expiry(plan.ctx.base_xml_bytes, request.replay_print)
+    base_chapter_expiries = _base_chapter_expiries_from_base(
+        plan.ctx.base_xml_bytes,
+        request.replay_print,
+    )
+    request.signals.temporal_events.extend(
+        _base_chapter_expiry_temporal_events(
+            target_statute=request.parent_id,
+            chapter_expiries=base_chapter_expiries,
+        )
+    )
     products = build_replay_products(
         ctx=plan.ctx,
         statute_id=request.parent_id,
@@ -127,16 +137,17 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
     return products
 
 
-def _report_base_chapter_expiry(
+def _base_chapter_expiries_from_base(
     base_xml_bytes: bytes,
     replay_print: Callable[[str], None],
-) -> None:
+) -> dict[str, str]:
     base_tree = etree.fromstring(base_xml_bytes)
     chapter_expiry = _chapter_expiry_from_base(base_tree)
     if chapter_expiry is None:
-        return
+        return {}
     chapter_label, chapter_date = chapter_expiry
     replay_print(f"  base chapter expiry: luku {chapter_label} -> {chapter_date.isoformat()}")
+    return {chapter_label: chapter_date.isoformat()}
 
 
 def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:

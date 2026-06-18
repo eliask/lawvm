@@ -218,6 +218,23 @@ def scope_target_addresses_for_event(
     )
 
 
+def _cap_substantive_versions_at(
+    timeline: ProvisionTimeline,
+    event_date: str,
+) -> int:
+    """End a scoped legal unit without allowing older background text to revive."""
+    capped = 0
+    for version in timeline.versions:
+        if version.content is None or version.effective > event_date:
+            continue
+        if version.expires and version.expires <= event_date:
+            continue
+        version.expires = event_date
+        version.variant_kind = "temporary"
+        capped += 1
+    return capped
+
+
 def apply_standalone_temporal_event(
     event: TemporalEvent,
     timelines: dict[LegalAddress, ProvisionTimeline],
@@ -360,8 +377,7 @@ def apply_standalone_temporal_event(
                     source_statute=event.source.statute_id if event.source else "",
                     emit_warnings=emit_warnings,
                 )
-            active.expires = event_date
-            active.variant_kind = "temporary"
+            _cap_substantive_versions_at(timeline, event_date)
             continue
         if event.kind in {"commence", "revive"}:
             active = latest_eligible_version_without_scope(timeline, event_date)

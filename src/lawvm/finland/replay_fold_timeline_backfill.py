@@ -127,8 +127,6 @@ def _timeline_intentionally_absent(
     if _active_timeline_content(timelines, address, as_of=as_of) is not None:
         return False
     for version in timeline.versions:
-        if version.source is None:
-            continue
         if version.content is None:
             return True
         expires = str(getattr(version, "expires", "") or "")

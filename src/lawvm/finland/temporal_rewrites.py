@@ -549,6 +549,7 @@ def _base_chapter_expiry_temporal_events(
     events: list[TemporalEvent] = []
     for chapter_label, expiry_iso in sorted(chapter_expiries.items()):
         chapter_address = LegalAddress(path=(("chapter", chapter_label),))
+        expires = expires_on_from_valid_until(dt.date.fromisoformat(expiry_iso)).isoformat()
         events.append(
             TemporalEvent(
                 event_id=f"fi-base-chapter-expiry:{target_statute}:chapter:{chapter_label}",
@@ -557,10 +558,10 @@ def _base_chapter_expiry_temporal_events(
                     target_statute=target_statute,
                     address_prefixes=(chapter_address,),
                 ),
-                expires=expiry_iso,
+                expires=expires,
                 source=OperationSource(
                     statute_id=target_statute,
-                    expires=expiry_iso,
+                    expires=expires,
                 ),
             )
         )

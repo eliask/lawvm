@@ -1727,6 +1727,27 @@ def test_replay_xml_expires_2020_292_temporary_99a_section() -> None:
     assert replay.materialized_state.find_section("99a", "12", "5") is None
 
 
+def test_replay_xml_expires_2010_1386_base_chapter_9_sections() -> None:
+    replay = replay_xml_for_test("2010/1386", mode="legal_pit", quiet=True, as_of="2014-01-01")
+    addr = LegalAddress(path=(("chapter", "9"), ("section", "63")))
+    amended_addr = LegalAddress(path=(("chapter", "9"), ("section", "64")))
+
+    assert replay.timelines is not None
+    assert addr in replay.timelines
+    assert amended_addr in replay.timelines
+    assert any(
+        event.event_id == "fi-base-chapter-expiry:2010/1386:chapter:9"
+        and event.expires == "2014-01-01"
+        for event in replay.temporal_events
+    )
+    assert select_active_version(replay.timelines[addr], "2013-12-31") is not None
+    assert select_active_version(replay.timelines[addr], "2014-01-01") is None
+    assert select_active_version(replay.timelines[amended_addr], "2014-01-01") is None
+    assert replay.replay_fold_state.find_section("63", "9") is not None
+    assert replay.materialized_state.find_section("63", "9") is None
+    assert replay.materialized_state.find_section("64", "9") is None
+
+
 def test_temporal_events_from_lo_ops_keeps_expire_when_group_has_explicit_commence_only() -> None:
     addr = LegalAddress(path=(("chapter", "5"), ("section", "21b")))
     op = LegalOperation(
