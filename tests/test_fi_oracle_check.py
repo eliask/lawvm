@@ -3059,6 +3059,35 @@ def test_is_presentation_structural_diff_geo_list_with_mlk_and_group_labels() ->
     assert is_presentation_structural_diff(sd, events) is True
 
 
+def test_is_presentation_structural_diff_office_schedule_grouped_vs_split_rows() -> None:
+    # 1998/132 style: LawVM preserves individual office rows while Finlex groups
+    # them under hovioikeuspiiri rows. The text stream is the same schedule; the
+    # structural mismatch is presentation, not replay authority.
+    sd = {"label": ""}
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Turun hovioikeuspiiri",
+            "right_text": (
+                "Turun hovioikeuspiiri Ahvenanmaa (Maarianhaminassa) Forssa "
+                "Hämeenlinna Kankaanpää Ikaalinen (st) Kokemäki Loimaa"
+            ),
+        },
+        {
+            "kind": "wording_text_changed",
+            "left_text": "Forssa",
+            "right_text": (
+                "Itä-Suomen hovioikeuspiiri Iisalmi Joensuu Joensuunseutu "
+                "(Joensuussa) Ilomantsi (st) Kitee Kajaani"
+            ),
+        },
+        {"kind": "unit_missing_right", "left_text": "Loimaa", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Tampereenseutu (Tampereella)", "right_text": None},
+        {"kind": "unit_missing_right", "left_text": "Kannus (st)", "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, events) is True
+
+
 def test_is_presentation_structural_diff_minor_admin_rephrasing_and_table_header() -> None:
     # 2012/960 style: wording diffs on standard FI delegation boilerplate ("säädetään valtioneuvoston asetuksella",
     # "tarkempia säännöksiä") that the pres normalizer equalizes. Low lev overall.

@@ -282,7 +282,7 @@ _NAME_LIST_ITEM = re.compile(
     r'^[A-ZÄÖÅ][a-zäöåA-ZÄÖÅ0-9\.\-]+(?:\s+[A-ZÄÖÅa-zäöå0-9][a-zäöåA-ZÄÖÅ0-9\.\-]+){0,5}$'
 )
 _GROUP_LABEL = re.compile(
-    r'^\d*\.?\s*[A-ZÄÖÅ].*?(?:metsäkeskus|työvoima.*elinkeino|liitto|keskus|alue|toimialue|kunta|mlk\.)', re.I
+    r'^\d*\.?\s*[A-ZÄÖÅ].*?(?:hovioikeuspiiri|oikeusaputoimisto|sivutoimisto|metsäkeskus|työvoima.*elinkeino|liitto|keskus|alue|toimialue|kunta|mlk\.)', re.I
 )
 _CHEM_NAMEISH = re.compile(
     r'(?:α|β|γ|[-][a-z]+yl\b|N-\[|fenetyyli|piperidyyli|morfiini|amfetamiini|barbituuri|diatsepiini)', re.I
@@ -312,6 +312,43 @@ def _normalize_for_pres_text(t: str) -> str:
     t = re.sub(r'\s+', '', t)
     t = t.rstrip('.;:, \t')
     return t
+
+
+def _looks_like_name_schedule_fragment(t: str) -> bool:
+    """Return True for one entry or group row in an administrative name schedule.
+
+    This is intentionally narrower than general natural-language matching: it
+    accepts place/office names and group headings, and rejects operative prose
+    with Finnish legal verbs.  It is used only by comparison scoring to avoid
+    treating equivalent grouped-vs-split table/list presentation as replay
+    authority.
+    """
+
+    if not t:
+        return False
+    if re.search(r'\b(on|ovat|säädetään|määrätään|tulee|voi|voidaan|ratkaisee|päättää|annetaan)\b', t, re.I):
+        return False
+    if _GROUP_LABEL.search(t):
+        return True
+    normalized = _AMEND_PAREN_RE.sub('', t).strip()
+    if re.search(r'\((?:st|[A-ZÄÖÅ][a-zäöå]+ssa|[A-ZÄÖÅ][a-zäöå]+ssä)\)', normalized):
+        return True
+    tokens = re.findall(r'[A-ZÄÖÅ][a-zäöåA-ZÄÖÅ0-9\.\-]+', normalized)
+    return 1 <= len(tokens) <= 12 and all(len(token) < 35 for token in tokens)
+
+
+def _looks_like_name_schedule_grouping_diff(left_text: str, right_text: str) -> bool:
+    """True when a wording event pairs one split name entry with a grouped row."""
+
+    if not left_text or not right_text:
+        return False
+    if not (_looks_like_name_schedule_fragment(left_text) and _looks_like_name_schedule_fragment(right_text)):
+        return False
+    left_norm = _normalize_for_pres_text(left_text)
+    right_norm = _normalize_for_pres_text(right_text)
+    if not left_norm or not right_norm:
+        return False
+    return left_norm in right_norm or right_norm in left_norm or _looks_like_name_list(right_text)
 
 
 def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
@@ -354,8 +391,12 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
             if lt_clean and rt_clean and lt_clean != rt_clean:
                 # Do not count minor rephrasings or name-list/table schedule diffs as substantive
                 # for presentation decision (common in FI oracle vs replay for org lists, fee tables, etc.).
-                if not (_looks_like_name_list(lt) and _looks_like_name_list(rt) or
-                        _looks_like_value_table(lt) or _looks_like_value_table(rt)):
+                if not (
+                    _looks_like_name_list(lt) and _looks_like_name_list(rt)
+                    or _looks_like_name_schedule_grouping_diff(lt, rt)
+                    or _looks_like_value_table(lt)
+                    or _looks_like_value_table(rt)
+                ):
                     cleaned_text_diffs += 1
             continue
 
@@ -366,7 +407,11 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
                 continue
             present_norm = _normalize_for_pres_text(present)
             name_match = (
-                (_NAME_LIST_ITEM.match(present) or _NAME_LIST_ITEM.match(present_norm))
+                (
+                    _NAME_LIST_ITEM.match(present)
+                    or _NAME_LIST_ITEM.match(present_norm)
+                    or _looks_like_name_schedule_fragment(present)
+                )
                 and len(present) < 50
                 and not re.search(r'\b(on|ovat|säädetään|määrätään|tulee|voi|voidaan|ratkaisee|päättää|annetaan)\b', present, re.I)
             )
@@ -381,15 +426,12 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
 
         return False
 
-    if presentation_units > 0 and cleaned_text_diffs == 0:
-        return True
-    if cleaned_text_diffs == 0 and presentation_units == 0:
-        return True
-    # Pure presentation units (e.g. split name lists) with only one-sided wording events
-    # (the concat vs children case) also qualify.
+    # Pure presentation units (e.g. split name lists) qualify even when ordinal
+    # fallback paired a few grouped rows as wording diffs. This preserves the
+    # existing comparison policy; a stricter policy needs a separate corpus pass.
     if presentation_units > 0:
         return True
-    return False
+    return cleaned_text_diffs == 0
 
 
 def _looks_like_name_list(t: str) -> bool:
