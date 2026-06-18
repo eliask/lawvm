@@ -50,7 +50,8 @@ def test_parenthetical_alias_binds_to_finnish_act() -> None:
     alias = _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS)
     assert len(alias) == 1
     assert alias[0].term == "ympäristönsuojelulaki"
-    assert alias[0].target_ref == "527/2014"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
+    assert alias[0].target_ref == "2014/527"
     assert alias[0].status == STATUS_OK
 
 
@@ -72,7 +73,8 @@ def test_jaljempana_unquoted_binds_to_finnish_act() -> None:
     jal = _by_kind(bindings, BINDING_JALJEMPANA)
     assert len(jal) == 1
     assert jal[0].term == "ympäristönsuojelulaki"
-    assert jal[0].target_ref == "527/2014"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
+    assert jal[0].target_ref == "2014/527"
     assert jal[0].status == STATUS_OK
 
 
@@ -86,6 +88,35 @@ def test_jaljempana_quoted_binds_to_eu_act() -> None:
     # The quoted alias parenthesis must NOT also be emitted as a bare
     # parenthetical alias.
     assert _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS) == []
+
+
+def test_jaljempana_fi_target_is_canonical_year_number_orientation() -> None:
+    # The Finnish VISIBLE cite is "(906/2019)" (NUMBER/YEAR); the binding's
+    # target_ref is the CANONICAL "YEAR/NUMBER" id (same orientation as the
+    # <ref> / cross-ref lane and the corpus store keys), so the same act never
+    # splits into a second, inverted legal_work_entity.
+    text = (
+        "julkisen hallinnon tiedonhallinnasta annetun lain (906/2019), "
+        "jäljempänä tiedonhallintalaki, mukaan."
+    )
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "tiedonhallintalaki"
+    assert jal[0].target_ref == "2019/906"  # canonical, NOT the visible "906/2019"
+    # The canonical orientation matches how the corpus store splits a statute id
+    # (``year, num = sid.split("/", 1)``): year first, then running number.
+    year, num = jal[0].target_ref.split("/", 1)
+    assert (year, num) == ("2019", "906")
+
+
+def test_jaljempana_eu_target_keeps_source_orientation() -> None:
+    # EU ids are NOT canonicalized: their source surface orientation is kept
+    # (here NUMBER/YEAR from the "N:o 1069/2009" cite), unaffected by the FI fix.
+    text = 'asetuksen (EY) N:o 1069/2009, jäljempänä sivutuoteasetus, mukaan.'
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "sivutuoteasetus"
+    assert jal[0].target_ref == "1069/2009"
 
 
 # ---------------------------------------------------------------------------
@@ -554,4 +585,5 @@ def test_jaljempana_alias_markup_is_stripped() -> None:
     assert len(jal) == 1
     assert jal[0].term == "rakennetukilaki"
     assert "<" not in jal[0].term
-    assert jal[0].target_ref == "1476/2007"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(1476/2007)").
+    assert jal[0].target_ref == "2007/1476"

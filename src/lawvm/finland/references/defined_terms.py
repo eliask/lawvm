@@ -71,6 +71,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.references.cross_refs import _make_statute_id
 
 # ---------------------------------------------------------------------------
 # Typed output
@@ -114,8 +115,11 @@ class DefinedTermBinding:
         term:         The local term being defined (surface form, nominative as
                       written at the binding site), e.g. ``sivutuoteasetus``.
         target_ref:   Canonical act id the term denotes when the binding ties the
-                      term to an act cite (Finnish ``NUMBER/YEAR`` or EU surface
-                      form), else ``None``.
+                      term to an act cite, else ``None``. Finnish ids are the
+                      CANONICAL ``YEAR/NUMBER`` orientation (same authority as the
+                      ``<ref>`` / cross-ref lane and the corpus store keys), NOT
+                      the Finnish visible ``(NUMBER/YEAR)`` convention; EU ids keep
+                      their source surface orientation.
         expansion:    The definitional expansion text for a ``tarkoitetaan``
                       binding whose right-hand side is NOT an act cite, else
                       ``None``.
@@ -527,8 +531,12 @@ def _act_id_ending_before(text: str, pos: int, window: int = 90) -> Optional[str
 
     Canonical id surface returned:
       * EU acts → "NUMBER/YEAR" / "YEAR/NUMBER" (form prefix dropped; the digits
-        identify the act).
-      * FI acts → "NUMBER/YEAR".
+        identify the act, oriented as written in the source).
+      * FI acts → CANONICAL "YEAR/NUMBER" (via :func:`cross_refs._make_statute_id`,
+        the single orientation authority shared with the ``<ref>`` / cross-ref
+        lane and the corpus store keys). The Finnish VISIBLE convention is
+        ``(NUMBER/YEAR)``; the id this returns is the canonical target id, not the
+        visible surface.
     Returns ``None`` if no act cite terminates at ``pos``.
     """
     start = max(0, pos - window)
@@ -546,13 +554,14 @@ def _act_id_ending_before(text: str, pos: int, window: int = 90) -> Optional[str
         eu_y = m
     if eu_y is not None and eu_y.end() == n:
         return f"{eu_y.group(1)}/{eu_y.group(2)}"
-    # Finnish "(NUMBER/YEAR)" whose closing ')' ends at pos.
+    # Finnish "(NUMBER/YEAR)" whose closing ')' ends at pos. The id is
+    # CANONICALIZED to "YEAR/NUMBER" — group(1) is NUMBER, group(2) is YEAR.
     fi = None
     for m in _FI_ID.finditer(chunk):
         if m.end() == n:
             fi = m
     if fi is not None:
-        return f"{fi.group(1)}/{fi.group(2)}"
+        return _make_statute_id(fi.group(2), fi.group(1))
     return None
 
 
@@ -560,7 +569,11 @@ def _first_act_id_in(text: str) -> Optional[str]:
     """Return the FIRST act id appearing in ``text`` (EU preferred by position).
 
     Used to resolve the act a binding construct refers to when the act cite
-    precedes the cue inside a bounded window.
+    precedes the cue inside a bounded window. EU ids keep their source
+    orientation; FI ids are CANONICALIZED to "YEAR/NUMBER" via
+    :func:`cross_refs._make_statute_id` (the one orientation authority shared with
+    the ``<ref>`` / cross-ref lane), so the same act never splits into an inverted
+    "NUMBER/YEAR" entity.
     """
     candidates: list[tuple[int, str]] = []
     m = _EU_NNUM.search(text)
@@ -570,7 +583,8 @@ def _first_act_id_in(text: str) -> Optional[str]:
     if m:
         candidates.append((m.start(), f"{m.group(1)}/{m.group(2)}"))
     for fm in _FI_ID_LOOSE.finditer(text):
-        candidates.append((fm.start(), f"{fm.group(1)}/{fm.group(2)}"))
+        # group(1) is NUMBER, group(2) is YEAR → canonical "YEAR/NUMBER".
+        candidates.append((fm.start(), _make_statute_id(fm.group(2), fm.group(1))))
     if not candidates:
         return None
     candidates.sort(key=lambda c: c[0])

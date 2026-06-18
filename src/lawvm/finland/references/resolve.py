@@ -185,9 +185,10 @@ class _DefinedTermEntry:
     """One resolvable local binding behind a normalized term key.
 
     Attributes:
-        target_ref: The canonical act id the term denotes (FI ``N/Y`` or EU
-            surface). Always present (bindings with no ``target_ref`` carry no
-            resolvable identity and are excluded from the table).
+        target_ref: The canonical act id the term denotes (FI canonical
+            ``YEAR/NUMBER`` or EU source surface). Always present (bindings with no
+            ``target_ref`` carry no resolvable identity and are excluded from the
+            table).
         binding_offset: Byte offset of the binding SITE in the source text — a use
             is only resolved by this binding when the use's byte offset is at or
             after this (binding precedes use). ``None`` when the binding has no
