@@ -6634,6 +6634,36 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     assert records[-1]["selection_basis"] == "oracle_editorial_repeal_stub_override"
 
 
+def test_oracle_ref_body_surface_excludes_amendment_history_metadata() -> None:
+    from lawvm.finland.corpus import _oracle_ref_is_body_surface
+
+    root = etree.fromstring(
+        """
+        <akomaNtoso>
+          <act>
+            <meta>
+              <proprietary>
+                <amendedBy>
+                  <statuteReference><ref href="/akn/fi/act/statute/2023/741">741/2023</ref></statuteReference>
+                </amendedBy>
+              </proprietary>
+            </meta>
+            <preface>
+              <block eId="note_1">
+                Ks. L <ref href="/akn/fi/act/statute/2024/1049">1049/2024</ref> voimaantulosäännös.
+              </block>
+            </preface>
+          </act>
+        </akomaNtoso>
+        """.encode()
+    )
+
+    refs = root.findall(".//ref")
+
+    assert not _oracle_ref_is_body_surface(refs[0])
+    assert _oracle_ref_is_body_surface(refs[1])
+
+
 def test_replay_xml_1986_506_applies_oracle_reflected_cross_statute_vts_repeal() -> None:
     ir = pinned_replay("1986/506", oracle_version="19941264")
 

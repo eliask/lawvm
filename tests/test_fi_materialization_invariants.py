@@ -1112,6 +1112,24 @@ class TestNoDuplicatesInPIT:
             f"§11 found but appears to be an empty repeal placeholder: {text!r}"
         )
 
+    def test_2015_1635_chapter_3_not_stripped_by_metadata_only_future_repeal_ref(self) -> None:
+        """2015/1635 ch. 3 remains in the selected pre-repeal oracle body.
+
+        The selected fin@20221289 XML cites 741/2023 in AKN amendment-history
+        metadata, but the body still contains chapter 3.  That metadata citation
+        must not re-admit the future repeal as a body-materialized VTS surface.
+        """
+        ir = _replay("2015/1635", oracle_version="20221289")
+        assert check_invariants(ir) == []
+
+        chapter_labels = [
+            child.label
+            for child in ir.children
+            if child.kind is IRNodeKind.CHAPTER
+        ]
+
+        assert "3" in chapter_labels
+
     def test_2000_812_sections_not_stripped_by_future_effective_amendment(self) -> None:
         """2000/812 must have 0 MISSING sections at oracle date 2023-04-14.
 

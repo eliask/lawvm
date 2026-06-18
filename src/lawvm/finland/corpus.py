@@ -371,6 +371,8 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
     cited_ids: set[str] = set()
     for ref_el in tree.findall('.//{*}ref'):
+        if not _oracle_ref_is_body_surface(ref_el):
+            continue
         href = str(ref_el.get("href", "") or "")
         m = re.search(r"/akn/fi/act/statute/(\d{4})/(\d+(?:-\d+)?)$", href)
         if m is not None:
@@ -380,6 +382,34 @@ def get_consolidated_oracle_reflected_source_vts_children(
         if m is not None:
             cited_ids.add(f"{m.group(2)}/{int(m.group(1))}")
     return source_vts_children & cited_ids
+
+
+_ORACLE_REF_METADATA_ANCESTOR_TAGS = frozenset(
+    {
+        "meta",
+        "proprietary",
+        "amendedBy",
+        "corrigenda",
+        "corrigendum",
+    }
+)
+
+
+def _oracle_ref_is_body_surface(ref_el: etree._Element) -> bool:
+    """Return True when an oracle source ref is body/preface evidence.
+
+    ``source_vts_explicit`` readmission exists for stale embedded version pins
+    where the selected consolidated text already reflects a later VTS amendment.
+    A ref under AKN metadata only proves amendment-history/corrigendum citation,
+    not that the body has been materialized at that later effective date.
+    """
+    current: etree._Element | None = ref_el
+    while current is not None:
+        tag = str(current.tag).split("}")[-1]
+        if tag in _ORACLE_REF_METADATA_ANCESTOR_TAGS:
+            return False
+        current = current.getparent()
+    return True
 
 
 def _oracle_pending_amendment_suspect(
