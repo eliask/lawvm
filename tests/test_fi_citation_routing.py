@@ -430,6 +430,48 @@ class TestRouteAmendmentSec1Fallback:
 class TestRouteAmendmentTitleMismatch:
     """Title-based override: amendment title explicitly names a different statute."""
 
+    def test_single_target_title_mismatch_does_not_reject_without_vts_context(self) -> None:
+        johto_raw = (
+            "kumotaan rikoslain 7 luvun 5 §:n 2 momentti, sellaisena kuin se on "
+            "19 päivänä heinäkuuta 1974 annetussa laissa ( 613/74 ), sekä muutetaan "
+            "rikoslain 2 luvun 2 §:n 1 momentti ja 6 luku, seuraavasti:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1953/317",
+            "1976/466",
+            source_title="Laki rikoslain muuttamisesta",
+            parent_title="Laki vaarallisten rikoksenuusijain eristämisestä",
+        )
+
+        assert should_apply is True
+        assert reason == "references_parent"
+
+    def test_single_target_title_match_preserves_target_route(self) -> None:
+        johto_raw = (
+            "kumotaan rikoslain 7 luvun 5 §:n 2 momentti, sellaisena kuin se on "
+            "19 päivänä heinäkuuta 1974 annetussa laissa ( 613/74 ), sekä muutetaan "
+            "rikoslain 2 luvun 2 §:n 1 momentti ja 6 luku, seuraavasti:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1889/39",
+            "1976/466",
+            source_title="Laki rikoslain muuttamisesta",
+            parent_title="Rikoslaki",
+        )
+
+        assert should_apply is True
+        assert reason == "references_parent"
+
     def test_title_mismatch_overrides_citation_match(self) -> None:
         # johto references parent correctly, but title says it targets laki X (not asetus Y).
         # Use a concrete title pattern that _title_explicitly_targets_other_statute recognises.

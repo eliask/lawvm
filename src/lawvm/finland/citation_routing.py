@@ -293,6 +293,42 @@ def _title_explicitly_targets_other_statute(source_title: str, parent_title: str
     return bool(parent_kind) and source_kind != parent_kind
 
 
+def _single_target_title_names_other_statute(source_title: str, parent_title: str) -> bool:
+    """Return True when a title names one different target statute.
+
+    This broader title check is not sufficient by itself to reject routing:
+    many legitimate amendments have sparse or inflected titles. It is only used
+    at the processing boundary when a concrete VTS side-lane repeal for the
+    current parent has also been extracted from source XML.
+    """
+    source_norm = re.sub(r"\s+", " ", (source_title or "").strip().lower())
+    parent_norm = re.sub(r"\s+", " ", (parent_title or "").strip().lower())
+    if not source_norm or not parent_norm:
+        return False
+    if "muuttamisesta" not in source_norm:
+        return False
+    if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
+        return False
+    match = re.match(
+        r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
+        source_norm,
+    )
+    if not match:
+        return False
+    target_norm = match.group(1).strip()
+    if not target_norm:
+        return False
+    parent_variants = _parent_title_reference_variants(parent_norm)
+    if any(
+        target_norm == variant or target_norm.startswith(f"{variant} ")
+        for variant in parent_variants
+    ):
+        return False
+    if any(separator in target_norm for separator in (",", " ja ", " sekä ")):
+        return False
+    return bool(parent_variants)
+
+
 def route_amendment(
     citation_guard_johto: str,
     citation_guard_sec1: str,

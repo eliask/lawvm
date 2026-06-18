@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import logging
 
+from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import PhaseResult
 from lawvm.core.mutation_accounting import MutationAccountingResult
 from lawvm.finland.acquisition import amendment_lacks_operative_structure as _amendment_lacks_operative_structure
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
+from lawvm.finland.citation_routing import (
+    _single_target_title_names_other_statute,
+    johtolause_cited_target_ids,
+)
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _tree_title, normalize_and_compile_ops
 from lawvm.finland.ops import AmendmentOp
@@ -35,9 +40,39 @@ from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityCon
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.statute import ReplayState
-from lawvm.finland.vts import extract_vts_repeals_fallback
+from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
 
 logger = logging.getLogger(__name__)
+
+
+def _accepted_route_should_use_vts_side_repeal_only(
+    *,
+    amendment_id: str,
+    parent_id: str,
+    parent_title: str,
+    source_title: str,
+    johto: str,
+    xml_bytes: bytes,
+    strict_profile: StrictProfile | None,
+) -> bool:
+    """Detect accepted routes whose only parent effect is a VTS side repeal."""
+    if not _single_target_title_names_other_statute(source_title, parent_title):
+        return False
+    try:
+        source_year = int(str(amendment_id).split("/", 1)[0])
+    except (TypeError, ValueError, IndexError):
+        return False
+    if johtolause_cited_target_ids(johto, source_year):
+        return False
+    return bool(
+        extract_vts_cross_statute_repeals(
+            xml_bytes,
+            parent_id,
+            parent_title,
+            strict_profile,
+            skipped_targets_out=None,
+        )
+    )
 
 
 def process_muutoslaki(
@@ -141,6 +176,38 @@ def process_muutoslaki_resolved(
                 muutos_tree=muutos_tree,
                 route_reason=route_reason,
                 route_target_amendment_id=acquisition.decision.route_target_amendment_id,
+                strict_profile=strict_profile,
+                replay_mode=replay_mode,
+                lo_ops_out=lo_ops_out,
+                vts_skipped_targets=vts_skipped_targets,
+                commencement_expiry_override_notes=commencement_expiry_override_notes,
+                record_finding=record_process_finding,
+                replay_print=_replay_print,
+            ).handle()
+            if route_rejection.should_return_state:
+                return result_builder.build(state)
+            ops = list(route_rejection.ops)
+            vts_ops_enrich_done = route_rejection.vts_ops_enrich_done
+            skip_to_compile = route_rejection.skip_to_compile
+        elif _accepted_route_should_use_vts_side_repeal_only(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            parent_title=ctx.title,
+            source_title=source_title,
+            johto=johto,
+            xml_bytes=xml_bytes,
+            strict_profile=strict_profile,
+        ):
+            route_rejection = ProcessRouteRejectionContext(
+                amendment_id=amendment_id,
+                parent_id=parent_id,
+                parent_title=ctx.title,
+                source_title=source_title,
+                johto=johto,
+                xml_bytes=xml_bytes,
+                muutos_tree=muutos_tree,
+                route_reason="citation_mismatch_skip",
+                route_target_amendment_id="",
                 strict_profile=strict_profile,
                 replay_mode=replay_mode,
                 lo_ops_out=lo_ops_out,

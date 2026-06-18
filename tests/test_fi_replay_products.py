@@ -552,6 +552,15 @@ def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None
     )
 
 
+def test_replay_xml_1953_317_routes_title_mismatch_to_vts_side_repeal_only() -> None:
+    replay = pinned_replay("1953/317", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_5_text = " ".join(irnode_to_text(sections["chapter:2/section:5"]).split())
+
+    assert "section:20" not in sections
+    assert "Tasavallan presidentti määrää" in section_5_text
+
+
 def test_replay_xml_1987_1203_preserves_jolloin_section_renumber_chain() -> None:
     replay = pinned_replay("1987/1203", mode="official_consolidation", quiet=True)
 
