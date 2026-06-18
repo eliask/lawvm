@@ -305,6 +305,56 @@ def test_enumerated_block_non_adessive_item_does_not_bind() -> None:
     assert tk == []
 
 
+def test_enumerated_block_decree_header_items_are_statute() -> None:
+    # A decree ("asetus") opens its definitions block exactly like a law:
+    # "Tässä asetuksessa tarkoitetaan:" → each item is statute(=instrument)-wide.
+    text = (
+        "Tässä asetuksessa tarkoitetaan: eläkelailla lyhytaikaisten "
+        "työsuhteiden eläkelakia; vakuutetulla eläkelain mukaan vakuutettavaa "
+        "työntekijää;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert {b.scope for b in tk} == {"statute"}
+    assert {b.term for b in tk} == {"eläkelailla", "vakuutetulla"}
+
+
+def test_enumerated_block_decision_header_items_are_statute() -> None:
+    # A government decision ("päätös") definitions block: "Tässä päätöksessä
+    # tarkoitetaan:" governs each adessive-definiendum item at instrument scope.
+    text = (
+        "Tässä päätöksessä tarkoitetaan: räjähdysaineella ainetta; "
+        "välineellä laitetta;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert {b.scope for b in tk} == {"statute"}
+    assert {b.term for b in tk} == {"räjähdysaineella", "välineellä"}
+
+
+def test_decree_inline_definiendum_before_verb_is_statute() -> None:
+    # Inline decree definition with the definiendum (adessive) BEFORE the verb,
+    # mirroring the "Tässä laissa X:llä tarkoitetaan …" inline shape.
+    text = "Tässä asetuksessa rekisterinpitäjällä tarkoitetaan seurakunnan kirkkoherraa."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert len(tk) == 1
+    assert tk[0].term == "rekisterinpitäjällä"
+    assert tk[0].scope == "statute"
+
+
+def test_decree_referential_saadetaan_is_not_a_definition_header() -> None:
+    # The far more common REFERENTIAL idiom "Tässä asetuksessa säädetään …"
+    # ("provided for in this decree") must NOT be admitted as a definitions
+    # header — the ``tarkoitetaan`` ambiguity guard inherits to the decree word.
+    text = "Jollei tässä asetuksessa säädetään, sovelletaan yleislakia."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert tk == []
+
+
+def test_decision_referential_maaratan_is_not_a_definition_header() -> None:
+    text = "Siten kuin tässä päätöksessä määrätään, on noudatettava asianmukaisesti."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert tk == []
+
+
 def test_all_scopes_are_in_closed_vocabulary() -> None:
     text = (
         "Tässä luvussa tietojärjestelmällä tarkoitetaan kokonaisuutta. "

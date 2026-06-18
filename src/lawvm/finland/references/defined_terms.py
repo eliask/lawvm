@@ -247,7 +247,21 @@ _TARKOITETAAN = re.compile(
 # Leading scope locatives that may precede the definiendum in an inline shape-3
 # capture ("Tässä laissa X:llä tarkoitetaan …") — never part of the term surface.
 _SCOPE_LEADERS: frozenset[str] = frozenset(
-    {"tässä", "tätä", "laissa", "lakia", "luvussa", "pykälässä", "momentissa"}
+    {
+        "tässä",
+        "tätä",
+        "laissa",
+        "lakia",
+        "luvussa",
+        "pykälässä",
+        "momentissa",
+        # Decree / government-decision scope words: a definitions block in an
+        # asetus / päätös opens "Tässä asetuksessa/päätöksessä tarkoitetaan",
+        # exactly mirroring "Tässä laissa". The scope-word is statute-wide and is
+        # never part of the definiendum surface (same as "laissa").
+        "asetuksessa",
+        "päätöksessä",
+    }
 )
 
 # ---------------------------------------------------------------------------
@@ -292,6 +306,13 @@ _SCOPE_CUE_UNITS: dict[str, str] = {
     "luvussa": _SCOPE_CHAPTER,
     "pykälässä": _SCOPE_SECTION,
     "momentissa": _SCOPE_SUBSECTION,
+    # A decree ("asetus") / government decision ("päätös") declares its
+    # definitions block exactly as a law does — "Tässä asetuksessa/päätöksessä
+    # tarkoitetaan …" — with the same instrument-wide reach. Both map to the
+    # statute-wide scope (the closed vocabulary has no decree/decision-specific
+    # bucket; the reach is identical: the whole instrument).
+    "asetuksessa": _SCOPE_STATUTE,
+    "päätöksessä": _SCOPE_STATUTE,
 }
 
 # "Tässä <unit> [up to a short definiendum run] tarkoitetaan" — the cue must lead
@@ -302,8 +323,16 @@ _SCOPE_CUE_UNITS: dict[str, str] = {
 # bounding the gap to a short span of letters, digits, ':', ')', commas and
 # spaces only (the shapes seen in "Tässä luvussa tarkoitetaan:" and "Tässä
 # pykälässä X:llä tarkoitetaan").
+# ``asetuksessa`` (decree) and ``päätöksessä`` (government decision) are admitted
+# alongside ``laissa`` because an asetus / päätös opens its definitions block with
+# the identical header ("Tässä asetuksessa/päätöksessä tarkoitetaan …", scope =
+# the whole instrument).  They inherit the SAME ambiguity guard: the cue is
+# matched only when it leads CONTIGUOUSLY into ``tarkoitetaan``, so the far more
+# common referential idiom "Tässä asetuksessa/päätöksessä säädetään/määrätään …"
+# ("provided for / prescribed in this decree") can never fire (``säädetään`` /
+# ``määrätään`` is not ``tarkoitetaan`` and breaks the contiguity).
 _SCOPE_CUE_TASSA = re.compile(
-    r"\bTässä\s{1,3}(laissa|luvussa|pykälässä|momentissa)\b"
+    r"\bTässä\s{1,3}(laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\b"
     r"(?:[A-Za-zäöåÄÖÅ0-9:)\s,–-]{0,40})?"
     r"tarkoitetaan\b",
     re.IGNORECASE,
@@ -340,8 +369,13 @@ _GUARD_SOVELLETTAESSA = "sovellettaessa"
 
 # The block header that opens an enumerated definitions list.  The unit decides
 # the scope of EVERY item in the block.
+# Decree / decision units (``asetuksessa`` / ``päätöksessä``) are admitted here
+# too: the dominant decree definitions block is the enumerated form
+# "Tässä asetuksessa tarkoitetaan:\n<definiendum-adessive> <expansion>;".  The
+# ``tarkoitetaan\s{0,3}:`` tail is the ambiguity guard — a referential
+# "Tässä asetuksessa säädetään …" lacks it and never opens a block.
 _ENUM_HEADER = re.compile(
-    r"\bTässä\s{1,3}(?P<unit>laissa|luvussa|pykälässä|momentissa)\s{1,3}"
+    r"\bTässä\s{1,3}(?P<unit>laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\s{1,3}"
     r"tarkoitetaan\s{0,3}:",
     re.IGNORECASE,
 )
