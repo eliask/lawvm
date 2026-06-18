@@ -55,6 +55,8 @@ from lawvm.finland.conformance_corpus.refs.fixtures import (
     NO_LEAK_SYNTHETIC_MARKER,
     XML_PARSE_FAILURE,
 )
+from lawvm.finland.conformance_corpus.preparatory.fixtures import FULL_CHAIN
+from lawvm.core.preparatory_reference import PreparatoryReferenceKind
 
 
 # ===========================================================================
@@ -424,6 +426,73 @@ class TestConformanceFixtures:
     def test_fixture_body_byid_momentti(self) -> None:
         """Body lane: by-id citation threads momentti into the target ref."""
         self._assert_body_fixture("body_byid_momentti")
+
+
+# ===========================================================================
+# Category 2b: HE government-proposal <ref> = preparatory, not cross-statute
+# ===========================================================================
+
+
+class TestHEGovernmentProposalRefTyping:
+    """An HE government-proposal AKN <ref> is PREPARATORY material, not an
+    enacted statute. Finlex marks the HE→act lineage with
+    <ref href=".../government-proposal/YEAR/NUMBER"> in the preliminaryWork
+    ("Esityöt") footer, which cross_refs lifts to a CITES edge against a
+    he/YEAR/NUMBER target. It must type as NON_STATUTORY_INSTRUMENT (matching
+    the preparatory text lane that owns HaVM/EV/EU prep instruments), never as
+    CROSS_STATUTE, and must not double with the prep text lane (which excludes
+    HE precisely because this lane emits it)."""
+
+    def _he_mentions(
+        self, mentions: Iterable[ReferenceMention]
+    ) -> list[ReferenceMention]:
+        out = []
+        for m in mentions:
+            tgt = m.target_provision_ref
+            if tgt is not None and str(tgt.statute_id).startswith("he/"):
+                out.append(m)
+        return out
+
+    def test_he_ref_typed_preparatory_not_cross_statute(self) -> None:
+        result = extract_all_reference_mentions(
+            FULL_CHAIN.xml_bytes, FULL_CHAIN.source_statute_id
+        )
+        he = self._he_mentions(result.mentions)
+        assert len(he) == 1, f"expected exactly one HE mention, got {he}"
+        m = he[0]
+        assert m.cite_kind == CiteKind.NON_STATUTORY_INSTRUMENT, (
+            f"HE <ref> must be NON_STATUTORY_INSTRUMENT, got {m.cite_kind}"
+        )
+        assert m.cite_kind != CiteKind.CROSS_STATUTE
+        # Subtype matches the preparatory lane's HE kind so the whole
+        # HE/HaVM/EV/EU chain presents uniformly.
+        assert m.edge_subtype == PreparatoryReferenceKind.HE.value
+
+    def test_he_ref_not_double_emitted(self) -> None:
+        """The HE-via-<ref> mention and the prep text lane's HE recognition
+        dedup to ONE mention (the prep lane excludes kind=HE)."""
+        result = extract_all_reference_mentions(
+            FULL_CHAIN.xml_bytes, FULL_CHAIN.source_statute_id
+        )
+        he_targets = [
+            str(m.target_provision_ref.statute_id)
+            for m in self._he_mentions(result.mentions)
+        ]
+        assert he_targets == ["he/2021/173"], (
+            f"HE must be emitted exactly once, got {he_targets}"
+        )
+
+    def test_genuine_act_ref_still_cross_statute(self) -> None:
+        """A genuine enacted-statute <ref> is untouched (still CROSS_STATUTE)."""
+        result = extract_all_reference_mentions(
+            EXACT_CROSS_STATUTE.xml_bytes, EXACT_CROSS_STATUTE.source_statute_id
+        )
+        cross = [m for m in result.mentions if m.cite_kind == CiteKind.CROSS_STATUTE]
+        assert len(cross) >= 1, f"expected a cross-statute mention, got {result.mentions}"
+        for m in cross:
+            tgt = m.target_provision_ref
+            assert tgt is not None
+            assert not str(tgt.statute_id).startswith("he/")
 
 
 # ===========================================================================

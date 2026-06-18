@@ -686,7 +686,10 @@ def _edge_to_cite_kind(
 
     AGENTS.md §1.1: mapping is deterministic. No fallback.
 
-    CITES:        CROSS_STATUTE (or INTERNAL if target == source).
+    CITES:        CROSS_STATUTE (or INTERNAL if target == source; EU if the
+                  target is an EU id; NON_STATUTORY_INSTRUMENT if the target is
+                  an HE government-proposal backlink ``he/...`` — HE is
+                  preparatory material, not an enacted statute).
     REPEALS:      CROSS_STATUTE (metadata-level fact).
     ISSUED_UNDER: CROSS_STATUTE when the cited authority basis is a laki/statute
                   (``target_kind == "act"``); otherwise NON_STATUTORY_INSTRUMENT.
@@ -706,6 +709,16 @@ def _edge_to_cite_kind(
         # EU ids are "eu/TYPE/YEAR/NUMBER"
         if edge.target_statute_id.startswith("eu/"):
             return CiteKind.EU
+        # HE government-proposal backlinks (he/YEAR/NUMBER) are PREPARATORY
+        # material, NOT an enacted statute. Finlex marks the HE→act lineage with
+        # an AKN <ref href=".../government-proposal/..."> in the preliminaryWork
+        # ("Esityöt") footer, so cross_refs._parse_ref_href emits it as a CITES
+        # edge to a "he/..." target. Type it the same way the preparatory text
+        # lane types every other preparation-chain instrument
+        # (NON_STATUTORY_INSTRUMENT) so consumers treat the whole HE/HaVM/EV/EU
+        # chain uniformly instead of mistaking the HE for an act cross-reference.
+        if edge.target_statute_id.startswith("he/"):
+            return CiteKind.NON_STATUTORY_INSTRUMENT
         return CiteKind.CROSS_STATUTE
     if edge_type == "ISSUED_UNDER":
         # The authority basis is the cited ACT under which the source decree was
@@ -779,6 +792,17 @@ def _edge_to_mention(
     else:
         phrase_lemma = edge.edge_type  # REPEALS / ISSUED_UNDER / ISSUES
 
+    # Subtype defaults to the edge_type (CITES / REPEALS / ISSUED_UNDER / ISSUES).
+    # HE government-proposal <ref> backlinks are preparatory material, so carry
+    # the preparatory HE kind ("he") as the subtype — identical to the subtype
+    # the preparatory text lane emits for non-HE chain instruments — so the whole
+    # HE/HaVM/EV/EU preparation chain presents uniformly to consumers that split
+    # on edge_subtype.
+    if edge.edge_type == "CITES" and edge.target_statute_id.startswith("he/"):
+        edge_subtype = PreparatoryReferenceKind.HE.value
+    else:
+        edge_subtype = edge.edge_type
+
     return ReferenceMention(
         source_provision_ref=src_ref,
         target_provision_ref=tgt_ref,
@@ -789,7 +813,7 @@ def _edge_to_mention(
         # metadata edges that have no body surface). UNIT: bytes.
         source_span=_span_from_edge(edge, source_statute_id),
         valid_at_interval=valid_at_interval,
-        edge_subtype=edge.edge_type,
+        edge_subtype=edge_subtype,
         target_stat_hash=edge.target_stat_hash if edge.target_stat_hash else None,
         surface_text=edge.surface_text,
     )
