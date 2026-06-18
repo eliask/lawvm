@@ -31,6 +31,7 @@ from lawvm.finland.ops import (
     _lo_with_path_update,
     _rebind_resolved_target_address,
     runtime_scope_confidence_for_op,
+    temporary_signal_for_op,
 )
 from lawvm.finland.apply_policy import CONTAINER_TARGET_POLICY_ID, container_resolver_binding
 from lawvm.finland.scoped_section_resolver import (
@@ -2336,6 +2337,60 @@ def _apply_whole_section_op(
                 if existing_sec_path is not None:
                     existing_sec = _tops.resolve(state.ir, existing_sec_path)
                     if existing_sec is not None:
+                        is_temporary_op = (
+                            isinstance(op, (AmendmentOp, ResolvedOp)) and temporary_signal_for_op(op)
+                        )
+                        tail_policy = (
+                            str(view.payload_completeness.tail_policy or "").strip()
+                            if view.payload_completeness is not None
+                            else ""
+                        )
+                        if (
+                            not is_temporary_op
+                            and tail_policy != "preserve_unstated_tail"
+                            and not _has_section_omissions_ir(muutos_ir)
+                        ):
+                            rebase_kind, latest_snapshot_expires = (
+                                _expired_temporary_section_merge_base_rebase_info(
+                                    op=cast("AmendmentOp | ResolvedOp", op),
+                                    section_path=existing_sec_path,
+                                    replay_history_ops=replay_history_ops,
+                                    current_live_section=existing_sec,
+                                )
+                            )
+                            if rebase_kind is not None:
+                                if source_pathologies_out is not None:
+                                    source_pathologies_out.append(
+                                        build_temporary_section_rebase_pathology(
+                                            source_statute=_source_statute or "",
+                                            target_section=_ts,
+                                            target_chapter=_target_chapter or "",
+                                            rebase_context="section_insert_expired_temporary_slot",
+                                            rebase_kind=rebase_kind,
+                                            latest_snapshot_expires=latest_snapshot_expires or "",
+                                        )
+                                    )
+                                prepared_muutos_ir = _align_section_payload_subsection_labels_from_slot_assignment(
+                                    muutos_ir,
+                                    rop=rop,
+                                    view=view,
+                                )
+                                prepared_muutos_ir = _renormalize_section_payload_subsections(
+                                    prepared_muutos_ir
+                                )
+                                prepared_muutos_ir = _apply_section_tail_policy_marker(
+                                    prepared_muutos_ir,
+                                    rop=rop,
+                                    view=view,
+                                )
+                                logger.debug(
+                                    "  %s → section insert consumes expired temporary slot",
+                                    ctx_label,
+                                )
+                                return _with_preserved_provision_index(
+                                    state,
+                                    _tops.replace_at(state.ir, existing_sec_path, prepared_muutos_ir),
+                                )
                         prepared_muutos_ir = _prepare_section_root_payload_for_replay(
                             muutos_ir,
                             live_sec=existing_sec,

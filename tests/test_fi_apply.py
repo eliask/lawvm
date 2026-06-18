@@ -4568,6 +4568,71 @@ def test_apply_whole_section_replace_emits_temporary_section_rebase_pathology() 
     assert pathologies[0].detail["latest_snapshot_expires"] == "2019-12-31"
 
 
+def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() -> None:
+    """A permanent whole-section INSERT may replace an expired temp section slot."""
+    temp_section = _sec("27", _content("expired temporary section text"))
+    replacement = _sec("27", _content("new permanent section text"))
+    state = _make_state(
+        _body(IRNode(kind=IRNodeKind.CHAPTER, label="4", children=(temp_section,)))
+    )
+    section_path = (("chapter", "4"), ("section", "27"))
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_section_27",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=temp_section,
+            source=OperationSource(
+                statute_id="2003/156",
+                enacted="2003-08-01",
+                effective="2003-08-01",
+                expires="2008-08-01",
+            ),
+        ),
+    ]
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="INSERT", target_section="27", target_chapter="4"),
+        muutos_ir=replacement,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="27",
+        target_chapter="4",
+        op_source=OperationSource(
+            statute_id="2012/909",
+            enacted="2012-12-28",
+            effective="2013-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        section_path,
+        replacement,
+        None,
+        _LEGAL_PIT,
+        "27 §",
+        base_ir=_body(IRNode(kind=IRNodeKind.CHAPTER, label="4", children=())),
+        replay_history_ops=replay_history,
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    section = result.find_section("27", "4")
+    assert section is not None
+    text = irnode_to_text(section)
+    assert "new permanent section text" in text
+    assert "expired temporary section text" not in text
+    assert pathologies
+    assert pathologies[0].code == "TEMPORARY_SECTION_REBASE"
+    assert pathologies[0].detail["rebase_context"] == "section_insert_expired_temporary_slot"
+    assert pathologies[0].detail["rebase_kind"] == "expired_latest_snapshot_prior_non_temporary_snapshot"
+    assert pathologies[0].detail["latest_snapshot_expires"] == "2008-08-01"
+
+
 def _paragraph_labels(sub: IRNode) -> List[str]:
     return [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label is not None]
 

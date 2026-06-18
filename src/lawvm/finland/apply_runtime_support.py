@@ -968,12 +968,24 @@ def _emit_section_snapshot(
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
 
+    def _latest_exact_section_snapshot_is_expired_temporary() -> bool:
+        if target_unit_kind != "section" or resolved_path is None or not op_source.effective:
+            return False
+        latest = _latest_section_snapshot_payload(
+            section_path=tuple(resolved_path),
+            replay_history_ops=lo_ops_out,
+        )
+        if latest is None or latest.source is None:
+            return False
+        latest_expires = latest.source.expires or ""
+        return bool(latest_expires and op_source.effective >= latest_expires)
+
     def _complete_whole_section_source_payload() -> Optional[IRNode]:
-        """Return the source-owned section payload for exact whole-section replace.
+        """Return the source-owned section payload for exact whole-section snapshots.
 
         Snapshot emission normally observes post-apply replay state.  If the
         mutable apply fold failed to hit the target, that state may still carry
-        stale descendants.  A complete whole-section replacement payload is the
+        stale descendants.  A complete whole-section source payload is the
         stronger witness: it owns the section child surface and should be the
         timeline snapshot payload.
         """
@@ -981,8 +993,14 @@ def _emit_section_snapshot(
             return None
         candidates: list[IRNode] = []
         descendant_scoped_candidates = 0
+        latest_snapshot_is_expired_temporary = _latest_exact_section_snapshot_is_expired_temporary()
         for rop in group_rops:
-            if not rop.is_replace_action or not rop.targets_whole_unit("section"):
+            if not rop.targets_whole_unit("section"):
+                continue
+            if not rop.is_replace_action and not (
+                rop.is_insert_action and latest_snapshot_is_expired_temporary
+                and not temporary_signal_for_op(rop)
+            ):
                 continue
             source_payload = rop.muutos_ir
             if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
@@ -2923,7 +2941,7 @@ def _emit_section_snapshot(
         action = StructuralAction.INSERT
     complete_source_section_payload = _complete_whole_section_source_payload()
     if (
-        action is StructuralAction.REPLACE
+        action in {StructuralAction.REPLACE, StructuralAction.INSERT}
         and resolved_path is not None
         and complete_source_section_payload is not None
     ):
