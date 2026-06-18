@@ -1257,7 +1257,8 @@ class TestPlainTextStatuteCitations:
         hits = recognizer.scan(p)
         assert len(hits) >= 1
         statute_ids = [h[0] for h in hits]
-        assert "711/2022" in statute_ids
+        # Visible surface is "(711/2022)"; the TARGET id is canonical YEAR/NUMBER.
+        assert "2022/711" in statute_ids
 
     def test_recognizer_extracts_section_label(self) -> None:
         """Section label is extracted from 'lannoitelain (711/2022) 7 §'."""
@@ -1267,7 +1268,7 @@ class TestPlainTextStatuteCitations:
             "<p>lannoitelain (711/2022) 7 \xa7 nojalla.</p>"
         )
         hits = recognizer.scan(p)
-        assert any(h == ("711/2022", "7") for h in hits), f"Got {hits}"
+        assert any(h == ("2022/711", "7") for h in hits), f"Got {hits}"
 
     def test_recognizer_extracts_asetuksen_form(self) -> None:
         """'-asetuksen (NUMBER/YEAR) SECTION §' form is extracted."""
@@ -1278,7 +1279,7 @@ class TestPlainTextStatuteCitations:
         )
         hits = recognizer.scan(p)
         statute_ids = [h[0] for h in hits]
-        assert "169/2000" in statute_ids
+        assert "2000/169" in statute_ids
 
     def test_recognizer_extracts_laissa_form(self) -> None:
         """'elintarvikelaissa (23/2006)' form is extracted."""
@@ -1289,7 +1290,7 @@ class TestPlainTextStatuteCitations:
         )
         hits = recognizer.scan(p)
         statute_ids = [h[0] for h in hits]
-        assert "23/2006" in statute_ids
+        assert "2006/23" in statute_ids
 
     def test_recognizer_extracts_short_lain_form(self) -> None:
         """Bare 'lain (NUMBER/YEAR)' form without prefix word."""
@@ -1300,7 +1301,7 @@ class TestPlainTextStatuteCitations:
         )
         hits = recognizer.scan(p)
         statute_ids = [h[0] for h in hits]
-        assert "1326/2010" in statute_ids
+        assert "2010/1326" in statute_ids
 
     def test_recognizer_captures_section_less_id_cite(self) -> None:
         """A by-name id-cite with NO § is captured as a statute-only hit.
@@ -1316,7 +1317,7 @@ class TestPlainTextStatuteCitations:
         p = ET.fromstring("<p>Sovelletaan lain (711/2022) tekstia.</p>")
         hits = recognizer.scan_precise(p)
         assert len(hits) == 1
-        assert hits[0].statute_id == "711/2022"
+        assert hits[0].statute_id == "2022/711"
         assert hits[0].section_label == ""
 
     def test_recognizer_skips_text_without_paren(self) -> None:
@@ -1344,8 +1345,9 @@ class TestPlainTextStatuteCitations:
         hits = recognizer.scan(p)
         # If any hit, it must NOT come from inside the ref element
         statute_ids = [h[0] for h in hits]
-        # The ref content "711/2022" must not appear since it's inside a <ref>
-        assert "711/2022" not in statute_ids, (
+        # The ref content must not appear since it's inside a <ref> (check both
+        # the visible NUMBER/YEAR and the canonical YEAR/NUMBER target form).
+        assert "711/2022" not in statute_ids and "2022/711" not in statute_ids, (
             "Statute ID from inside <ref> must not be in plain-text scan results"
         )
 
@@ -1358,9 +1360,10 @@ class TestPlainTextStatuteCitations:
         )
         hits = recognizer.scan(p)
         statute_ids = [h[0] for h in hits]
-        # Both hits have statute_id 711/2022 but different sections — NOT deduplicated
-        # since the key includes section. But if same section cited twice, deduplicated.
-        assert statute_ids.count("711/2022") >= 1  # At least one hit
+        # Both hits target canonical 2022/711 but different sections — NOT
+        # deduplicated since the key includes section. But if same section cited
+        # twice, deduplicated.
+        assert statute_ids.count("2022/711") >= 1  # At least one hit
 
     # ── extract_plain_text_statute_mentions integration tests ────────────────
 
@@ -1380,7 +1383,8 @@ class TestPlainTextStatuteCitations:
         plain_mentions = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         assert len(plain_mentions) >= 1, f"Expected plain_text mention, got {result.mentions}"
         target_ids = _target_statute_ids(plain_mentions)
-        assert "711/2022" in target_ids
+        # Visible surface "(711/2022)"; TARGET id is canonical YEAR/NUMBER.
+        assert "2022/711" in target_ids
 
     def test_plain_text_mention_cite_kind(self) -> None:
         """Plain-text statute citation has cite_kind=CROSS_STATUTE."""
@@ -1419,8 +1423,11 @@ class TestPlainTextStatuteCitations:
     def test_plain_text_no_double_count_vs_ref_element(self) -> None:
         """When <ref> covers a statute, plain_text pass skips that statute_id.
 
-        The dedup guard is at statute level: if 711/2022 is already in the
-        ref_covered set, the plain_text extractor won't emit it again.
+        The dedup guard is at statute level: if 2022/711 is already in the
+        ref_covered set, the plain_text extractor won't emit it again. The
+        covered set is built from the <ref> lane's canonical YEAR/NUMBER target
+        ids, and the plain-text TARGET id is now canonicalized to the SAME
+        orientation, so the guard actually matches.
         """
         xml = (
             b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
@@ -1436,17 +1443,17 @@ class TestPlainTextStatuteCitations:
         )
         result = extract_plain_text_statute_mentions(
             xml, "2003/314",
-            ref_covered_statute_ids={"711/2022"},  # already covered by <ref>
+            ref_covered_statute_ids={"2022/711"},  # already covered by <ref> (canonical)
         )
-        # 711/2022 is in the covered set → plain_text pass must skip it
+        # 2022/711 is in the covered set → plain_text pass must skip it
         plain_711 = [
             m for m in result.mentions
             if m.phrase_lemma == "plain_text"
             and m.target_provision_ref is not None
-            and m.target_provision_ref.statute_id == "711/2022"
+            and m.target_provision_ref.statute_id == "2022/711"
         ]
         assert plain_711 == [], (
-            f"711/2022 should be skipped (covered by <ref>), but got {plain_711}"
+            f"2022/711 should be skipped (covered by <ref>), but got {plain_711}"
         )
 
     def test_plain_text_self_reference_skipped(self) -> None:
@@ -1461,13 +1468,14 @@ class TestPlainTextStatuteCitations:
             b"</section>"
             b"</body></act></akomaNtoso>"
         )
-        # Source statute IS 711/2022 — so the citation targets itself
-        result = extract_plain_text_statute_mentions(xml, "711/2022")
+        # Source statute IS 2022/711 (canonical) — the visible "(711/2022)" cite
+        # targets itself; the canonicalized target matches the source and is skipped.
+        result = extract_plain_text_statute_mentions(xml, "2022/711")
         self_refs = [
             m for m in result.mentions
             if m.phrase_lemma == "plain_text"
             and m.target_provision_ref is not None
-            and m.target_provision_ref.statute_id == "711/2022"
+            and m.target_provision_ref.statute_id == "2022/711"
         ]
         assert self_refs == [], "Self-reference must not produce a plain_text mention"
 
@@ -1531,7 +1539,7 @@ class TestPlainTextNominativeAnnettuFrame:
         hits = recognizer.scan(
             self._p("Kumotaan jostakin annettu asetus (875/1983).")
         )
-        assert ("875/1983", "") in hits, f"Got {hits}"
+        assert ("1983/875", "") in hits, f"Got {hits}"
 
     def test_nominative_annettu_laki_id_extracted(self) -> None:
         """``annettu laki (1295/1992) 5 §`` → ref to 1295/1992 § 5."""
@@ -1539,7 +1547,7 @@ class TestPlainTextNominativeAnnettuFrame:
         hits = recognizer.scan(
             self._p("lannoitteista annettu laki (1295/1992) 5 \xa7.")
         )
-        assert ("1295/1992", "5") in hits, f"Got {hits}"
+        assert ("1992/1295", "5") in hits, f"Got {hits}"
 
     def test_nominative_annetun_oblique_participle_with_nominative_head(self) -> None:
         """The participle alone (``annetun``) before a nominative head + id fires.
@@ -1549,7 +1557,7 @@ class TestPlainTextNominativeAnnettuFrame:
         """
         recognizer = PlainTextStatuteCitationRecognizer()
         hits = recognizer.scan(self._p("X:stä annettua asetus (169/2000)."))
-        assert ("169/2000", "") in hits, f"Got {hits}"
+        assert ("2000/169", "") in hits, f"Got {hits}"
 
     def test_bare_nominative_laki_without_frame_yields_nothing(self) -> None:
         """``tämä laki`` (no annettu, no id) → no hit (FP guard)."""
@@ -1593,7 +1601,7 @@ class TestPlainTextNominativeAnnettuFrame:
             for m in result.mentions
             if m.target_provision_ref
         ]
-        assert "875/1983" in targets, f"Got targets {targets}"
+        assert "1983/875" in targets, f"Got targets {targets}"
 
 
 # ===========================================================================
@@ -1624,7 +1632,7 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="711/2022", section_label="7", subsection_num=2, item_label=None,
+                statute_id="2022/711", section_label="7", subsection_num=2, item_label=None,
                 surface_text="lannoitelain (711/2022)",
             )
         ], hits
@@ -1637,7 +1645,7 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="250/1966", section_label="5", subsection_num=2, item_label="3",
+                statute_id="1966/250", section_label="5", subsection_num=2, item_label="3",
                 surface_text="lain (250/1966)",
             )
         ], hits
@@ -1650,7 +1658,7 @@ class TestPlainTextMomenttiPrecision:
         )
         assert hits == [
             PlainTextStatuteHit(
-                statute_id="297/2021", section_label="5", subsection_num=None, item_label=None,
+                statute_id="2021/297", section_label="5", subsection_num=None, item_label=None,
                 surface_text="elintarvikelain (297/2021)",
             )
         ], hits
@@ -1675,7 +1683,7 @@ class TestPlainTextMomenttiPrecision:
         hits = recognizer.scan(
             self._p("lannoitelain (711/2022) 7 \xa7:n 2 momentissa tarkoitettu.")
         )
-        assert hits == [("711/2022", "7")], hits
+        assert hits == [("2022/711", "7")], hits
 
     def test_name_internal_relative_clause_not_a_target(self) -> None:
         """A '§:n M momentissa tarkoitettu' relative clause with no statute id
@@ -1713,11 +1721,11 @@ class TestPlainTextMomenttiPrecision:
         assert len(plain) == 1, result.mentions
         tgt = plain[0].target_provision_ref
         assert tgt is not None
-        assert tgt.statute_id == "711/2022"
+        assert tgt.statute_id == "2022/711"
         assert tgt.section_label == "7"
         assert tgt.subsection_num == 2
         assert tgt.item_label == "3"
-        assert tgt.serialized() == "711/2022/7/2/k3"
+        assert tgt.serialized() == "2022/711/7/2/k3"
 
     def test_interlink_target_locator_has_subsection_segment(self) -> None:
         """The neutral interlink built from a momentti citation carries a
@@ -1897,7 +1905,7 @@ class TestTwoDigitYearAndSectionlessCites:
         ids = _target_statute_ids(
             [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         )
-        assert "307/1986" in ids, ids
+        assert "1986/307" in ids, ids
 
     def test_two_digit_year_named_anchor(self) -> None:
         """'hallintomenettelylain (598/82)' → 598/1982."""
@@ -1908,7 +1916,7 @@ class TestTwoDigitYearAndSectionlessCites:
         ids = _target_statute_ids(
             [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         )
-        assert "598/1982" in ids, ids
+        assert "1982/598" in ids, ids
 
     def test_paatos_anchor_two_digit_year(self) -> None:
         """'p\xc3\xa4\xc3\xa4t\xc3\xb6ksess\xc3\xa4 (233/89)' — the decision anchor + two-digit year."""
@@ -1919,7 +1927,7 @@ class TestTwoDigitYearAndSectionlessCites:
         ids = _target_statute_ids(
             [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         )
-        assert "233/1989" in ids, ids
+        assert "1989/233" in ids, ids
 
     def test_four_digit_year_unchanged(self) -> None:
         """A four-digit year still parses exactly as before (no regression)."""
@@ -1930,7 +1938,7 @@ class TestTwoDigitYearAndSectionlessCites:
         ids = _target_statute_ids(
             [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         )
-        assert "527/2014" in ids, ids
+        assert "2014/527" in ids, ids
 
     def test_section_less_act_cite_captured(self) -> None:
         """'annetussa laissa (205/2000)' with no § is captured statute-only."""
@@ -1940,11 +1948,11 @@ class TestTwoDigitYearAndSectionlessCites:
         result = extract_plain_text_statute_mentions(xml, "2000/212")
         plain = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         ids = _target_statute_ids(plain)
-        assert "205/2000" in ids, ids
+        assert "2000/205" in ids, ids
         m205 = next(
             m for m in plain
             if m.target_provision_ref is not None
-            and m.target_provision_ref.statute_id == "205/2000"
+            and m.target_provision_ref.statute_id == "2000/205"
         )
         assert m205.cite_confidence == CiteConfidence.STATUTE_ONLY
 
@@ -2183,7 +2191,7 @@ class TestExplicitIdTextRecoveryAcrossRefBoundary:
         # Fold mode: the inner text is folded in and the markup whitespace run is
         # collapsed, so the name head binds its id — recovered from text alone.
         hits = recognizer.scan_precise(p, include_ref_text=True)
-        assert any(h.statute_id == "688/1988" for h in hits), hits
+        assert any(h.statute_id == "1988/688" for h in hits), hits
 
     def test_name_id_adjacent_no_fold_needed(self) -> None:
         """When the name+id are already adjacent, fold mode changes nothing."""
@@ -2191,8 +2199,8 @@ class TestExplicitIdTextRecoveryAcrossRefBoundary:
         recognizer = PlainTextStatuteCitationRecognizer()
         ids_on = {h.statute_id for h in recognizer.scan_precise(p, include_ref_text=False)}
         ids_fold = {h.statute_id for h in recognizer.scan_precise(p, include_ref_text=True)}
-        assert "361/1999" in ids_on
-        assert "361/1999" in ids_fold
+        assert "1999/361" in ids_on
+        assert "1999/361" in ids_fold
 
     def test_distant_noun_id_not_bound(self) -> None:
         """Whitespace collapse must NOT bind an id to an unrelated distant noun.

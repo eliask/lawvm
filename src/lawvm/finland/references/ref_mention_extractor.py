@@ -65,6 +65,7 @@ from lawvm.core.reference_mention import (
 from lawvm.finland.references.cross_refs import (
     CrossRefDiagnostic,
     CrossRefEdge,
+    _make_statute_id,
     extract_cross_refs,
     extract_eu_refs,
 )
@@ -479,7 +480,16 @@ class PlainTextStatuteCitationRecognizer:
             if num_int <= 0 or num_int > 999999:
                 continue
 
-            statute_id = f"{num_int}/{year}"
+            # The TARGET link id is the canonical corpus-key orientation
+            # YEAR/NUMBER (e.g. "2001/55"), the SAME form the <ref>-element lane
+            # mints via cross_refs._make_statute_id and the form the corpus store
+            # keys statutes under. Use that helper as the single source of truth
+            # so a plain-text cross-statute cite dedups/merges onto the SAME
+            # canonical entity node as its <ref>-element citation, instead of
+            # minting a non-canonical NUMBER/YEAR node that never merges.
+            # NOTE: the human-visible surface_text stays the visible NUMBER/YEAR
+            # form ("(55/2001)") — only the link target canonicalizes.
+            statute_id = _make_statute_id(year, str(num_int))
 
             # Parse the structural tail (everything after the ``(id)`` paren)
             # through the shared section / sub-ref recognizers in BODY mode, so

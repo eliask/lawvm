@@ -74,9 +74,10 @@ def _p(text: str) -> ET.Element[str]:
 
 
 def test_plain_text_chapter_qualified_target_path() -> None:
-    # poliisilain (872/2011) 9 luvun 9 b § → 872/2011/chp_9__sec_9b.
+    # poliisilain (872/2011) 9 luvun 9 b § → target id is the canonical
+    # corpus-key orientation YEAR/NUMBER (2011/872), not the visible 872/2011.
     p = _p("poliisilain (872/2011) 9 luvun 9 b §:n nojalla käynnistetyn")
-    [hit] = [h for h in _PLAIN_TEXT_RECOGNIZER.scan_precise(p) if h.statute_id == "872/2011"]
+    [hit] = [h for h in _PLAIN_TEXT_RECOGNIZER.scan_precise(p) if h.statute_id == "2011/872"]
     assert hit.chapter == "9"
     assert hit.section_label == "9b"
 
@@ -92,7 +93,7 @@ def test_plain_text_chapter_qualified_mention_path() -> None:
     paths = {
         m.target_provision_ref.provision_path
         for m in res.mentions
-        if m.target_provision_ref and m.target_provision_ref.statute_id == "872/2011"
+        if m.target_provision_ref and m.target_provision_ref.statute_id == "2011/872"
     }
     assert paths == {"chp_9__sec_9b"}
 
@@ -109,7 +110,7 @@ def test_plain_text_chapter_only_is_statute_only() -> None:
         m
         for m in res.mentions
         if m.target_provision_ref
-        and m.target_provision_ref.statute_id == "297/2021"
+        and m.target_provision_ref.statute_id == "2021/297"
     ]
     assert len(chapter_only) == 1
     m = chapter_only[0]
