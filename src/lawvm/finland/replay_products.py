@@ -313,6 +313,9 @@ def _fold_hcontainer_direct_sections(fold: IRNode) -> tuple[IRNode, ...]:
     )
 
 
+_FI_PROVISIONS_WRAPPER_NAME = "statuteProvisionsWrapper"
+
+
 def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], ...]]:
     """Return body IR with an hcontainer child and that container's path."""
     for child in ir.children:
@@ -329,6 +332,45 @@ def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], 
         ),
         (("hcontainer", ""),),
     )
+
+
+def _split_operatives_from_sole_attachments_wrapper(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+    """Move misplaced operative sections out of a sole attachments wrapper.
+
+    Finland AKN often represents all top-level legal provisions inside an
+    unlabeled ``hcontainer``.  In a malformed PIT product, the only top-level
+    hcontainer can instead be ``name="attachments"`` while direct section
+    children have been restored into that appendix wrapper.  Because core tree
+    paths cannot distinguish same-label hcontainers by attrs, split exactly this
+    source shape by rebuilding the body children directly.
+    """
+    if materialized.kind is not IRNodeKind.BODY or len(materialized.children) != 1:
+        return materialized
+    attachments = materialized.children[0]
+    if attachments.kind is not IRNodeKind.HCONTAINER or attachments.attrs.get("name") != "attachments":
+        return materialized
+
+    fold_labels = {section.label for section in _fold_hcontainer_direct_sections(replay_fold) if section.label}
+    if not fold_labels:
+        return materialized
+
+    moved: list[IRNode] = []
+    kept: list[IRNode] = []
+    for child in attachments.children:
+        if child.kind is IRNodeKind.SECTION and child.label in fold_labels:
+            moved.append(child)
+        else:
+            kept.append(child)
+    if not moved:
+        return materialized
+
+    provisions = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        attrs={"name": _FI_PROVISIONS_WRAPPER_NAME},
+        children=tuple(moved),
+    )
+    repaired_attachments = dc_replace(attachments, children=tuple(kept))
+    return dc_replace(materialized, children=(provisions, repaired_attachments))
 
 
 def _all_section_paths(tree: IRNode, label: str) -> list[tuple[tuple[str, str], ...]]:
@@ -365,7 +407,7 @@ def _reconcile_materialized_fold_hcontainer_sections(
     if not direct_fold_sections:
         return materialized
 
-    result = materialized
+    result = _split_operatives_from_sole_attachments_wrapper(materialized, replay_fold)
     for fold_section in direct_fold_sections:
         label = fold_section.label or ""
         section_paths = _all_section_paths(result, label)

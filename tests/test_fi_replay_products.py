@@ -37,6 +37,7 @@ from lawvm.finland.replay_products import FinlandLineageBridgeClassification
 from lawvm.finland.replay_products import _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE
 from lawvm.finland.replay_products import _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR
 from lawvm.finland.replay_products import _cleanup_sourceless_base_merge_conflicts
+from lawvm.finland.replay_products import _reconcile_materialized_fold_hcontainer_sections
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
@@ -195,6 +196,70 @@ def test_1998_805_materialized_state_restores_sections_after_expired_temporary_c
         sections["section:1"]
     )
     assert "Suoritteiden laskeminen" in irnode_to_text(sections["section:2"])
+
+
+def test_reconcile_fold_sections_does_not_restore_into_attachments() -> None:
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="Operative text"),),
+    )
+    attachment = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        attrs={"name": "attachments"},
+        children=(
+            IRNode(kind=IRNodeKind.HCONTAINER, attrs={"name": "attachment"}, text="Fee table"),
+            section,
+        ),
+    )
+    materialized = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(attachment,),
+    )
+    replay_fold = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(section,),
+            ),
+            attachment,
+        ),
+    )
+
+    reconciled = _reconcile_materialized_fold_hcontainer_sections(materialized, replay_fold)
+
+    assert len(reconciled.children) == 2
+    provisions = reconciled.children[0]
+    assert provisions.kind is IRNodeKind.HCONTAINER
+    assert provisions.attrs.get("name") == "statuteProvisionsWrapper"
+    assert [child.label for child in provisions.children if child.kind is IRNodeKind.SECTION] == ["1"]
+    assert reconciled.children[1].attrs.get("name") == "attachments"
+    assert all(child.kind is not IRNodeKind.SECTION for child in reconciled.children[1].children)
+
+
+def test_2009_1182_materialized_text_keeps_operatives_outside_attachments() -> None:
+    replay = replay_xml_for_test("2009/1182", mode="official_consolidation", quiet=True)
+
+    text = replay.serialize_text()
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    attachments = [
+        child for child in replay.materialized_state.ir.children if child.attrs.get("name") == "attachments"
+    ]
+
+    assert "Opetus- ja kulttuuriministeriön suoritteista" in text
+    assert "section:1" in sections
+    assert attachments
+    assert all(child.kind is not IRNodeKind.SECTION for child in attachments[0].children)
+    findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "REPLAY.MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT"
+    ]
+    assert findings
+    assert findings[0].detail.get("witness_rule_id") == "fi_materialized_attachments_wrapper_split_v1"
+    assert findings[0].detail.get("moved_section_labels") == ("1", "2", "3", "4")
 
 
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:

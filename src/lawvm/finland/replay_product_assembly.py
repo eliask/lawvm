@@ -15,10 +15,17 @@ from lawvm.finland.replay_product_projection import (
     ReplayProductProjectionRequest,
     project_replay_products,
 )
-from lawvm.finland.replay_products import ReplayProducts, build_replay_products
+from lawvm.finland.replay_findings import materialized_attachments_wrapper_split_finding
+from lawvm.finland.replay_products import (
+    ReplayProducts,
+    _split_operatives_from_sole_attachments_wrapper,
+    build_replay_products,
+)
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.post_process import _consolidate_kumottu_range
+
+_FI_MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT_RULE = "fi_materialized_attachments_wrapper_split_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +101,19 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
                 debug_log=request.debug_log,
             )
         )
+    split_materialized_ir = _split_operatives_from_sole_attachments_wrapper(
+        products.materialized_state.ir,
+        products.replay_fold_state.ir,
+    )
+    if split_materialized_ir is not products.materialized_state.ir:
+        request.signals.findings.append(
+            materialized_attachments_wrapper_split_finding(
+                source_statute=request.parent_id,
+                moved_section_labels=_split_provisions_section_labels(split_materialized_ir),
+                witness_rule_id=_FI_MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT_RULE,
+            )
+        )
+        products.materialized_state = products.materialized_state.with_ir(split_materialized_ir)
     return products
 
 
@@ -124,6 +144,19 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         materialization_spec=products.materialization_spec,
         source_adjudication=products.source_adjudication,
     )
+
+
+def _split_provisions_section_labels(ir: Any) -> tuple[str, ...]:
+    for child in getattr(ir, "children", ()):
+        if getattr(child, "attrs", {}).get("name") != "statuteProvisionsWrapper":
+            continue
+        labels = [
+            str(grandchild.label)
+            for grandchild in getattr(child, "children", ())
+            if str(getattr(grandchild, "label", "") or "")
+        ]
+        return tuple(labels)
+    return ()
 
 
 def _apply_law_level_patches_if_needed(

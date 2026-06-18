@@ -214,6 +214,32 @@ def fold_timeline_backfill_finding(
     )
 
 
+def materialized_attachments_wrapper_split_finding(
+    *,
+    source_statute: str,
+    moved_section_labels: tuple[str, ...],
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when operative sections are split out of appendices."""
+    return Finding(
+        kind="REPLAY.MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT",
+        role="observation",
+        stage="replay_products",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "Materialized PIT product carried fold-owned operative sections under "
+                "a sole attachments wrapper; sections were split into a provisions wrapper."
+            ),
+            "witness_rule_id": witness_rule_id,
+            "source_shape": "sole_attachments_hcontainer_with_direct_sections",
+            "target_wrapper": "statuteProvisionsWrapper",
+            "moved_section_labels": moved_section_labels,
+        },
+    )
+
+
 def _structural_dedup_applied_finding(
     *,
     phase: str,
