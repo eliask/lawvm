@@ -27,6 +27,12 @@ from lawvm.finland.uncovered_recovery_prepare import (
     UncoveredRecoveryPreparationRequest,
     prepare_uncovered_body_recovery,
 )
+from lawvm.finland.elaboration_rule_dispatch import (
+    UNCOVERED_BODY_RECOVERY_PIPELINE,
+    emit_elaboration_pipeline_observation,
+    run_registered_elaboration_stage,
+    validate_elaboration_pipeline,
+)
 from lawvm.finland.uncovered_recovery_runner import UncoveredRecoveryRun
 from lawvm.finland.uncovered_recovery_state import RecoveryState, UncoveredCandidateAudit
 
@@ -84,20 +90,34 @@ def recover_uncovered_body_ops(
 ) -> UncoveredBodyRecoveryResult:
     """Collect body-driven ResolvedOps for sections not covered by parsed ops."""
     sinks = sinks or UncoveredBodyRecoverySinks()
-    preparation = prepare_uncovered_body_recovery(
-        UncoveredRecoveryPreparationRequest(
-            statute_id=request.ctx.id,
-            amendment_id=request.amendment_id,
-            ops=request.ops,
-            muutos_tree=request.muutos_tree,
-            failed_ops_out=sinks.failed_ops_out,
-            new_chapter_labels=request.new_chapter_labels,
-            restructure_plans_out=sinks.restructure_plans_out,
-            observations_out=sinks.observations_out,
-            findings_out=sinks.findings_out,
-            analyze_coverage_fn=analyze_coverage,
-            assign_body_units_fn=assign_body_units_subtree_aware,
-        )
+    pipeline_specs = validate_elaboration_pipeline(UNCOVERED_BODY_RECOVERY_PIPELINE)
+    pipeline_rule_ids = tuple(spec.rule_id for spec in pipeline_specs)
+    emit_elaboration_pipeline_observation(
+        sinks.findings_out,
+        rule_ids=pipeline_rule_ids,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
+    )
+    preparation = run_registered_elaboration_stage(
+        "fi.uncovered.recovery_prepare",
+        lambda: prepare_uncovered_body_recovery(
+            UncoveredRecoveryPreparationRequest(
+                statute_id=request.ctx.id,
+                amendment_id=request.amendment_id,
+                ops=request.ops,
+                muutos_tree=request.muutos_tree,
+                failed_ops_out=sinks.failed_ops_out,
+                new_chapter_labels=request.new_chapter_labels,
+                restructure_plans_out=sinks.restructure_plans_out,
+                observations_out=sinks.observations_out,
+                findings_out=sinks.findings_out,
+                analyze_coverage_fn=analyze_coverage,
+                assign_body_units_fn=assign_body_units_subtree_aware,
+            )
+        ),
+        findings_out=sinks.findings_out,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
     )
     if not preparation.has_body:
         return UncoveredBodyRecoveryResult(recovered_ops=(), candidate_audits=())
@@ -108,32 +128,56 @@ def recover_uncovered_body_ops(
         findings_out=sinks.findings_out,
         guards=preparation.recovery_guards,
     )
-    recovery_run = UncoveredRecoveryRun(
-        state=request.state,
-        ops=request.ops,
-        amendment_id=request.amendment_id,
-        future_repeals=request.future_repeals,
-        new_chapter_labels=request.new_chapter_labels,
-        has_content_ops=preparation.has_content_ops,
-        rstate=rstate,
-        recovery_guards=preparation.recovery_guards,
-        bp_assignments=preparation.body_pairing_assignments,
-        johto_mentioned_labels=set(preparation.context.johto_mentioned_labels),
-        johto_moment_targets=dict(preparation.context.johto_moment_targets),
-        johto_mentioned_replaced_chapters=set(
-            preparation.context.johto_mentioned_replaced_chapters
+    recovery_run = run_registered_elaboration_stage(
+        "fi.uncovered.recovery_runner",
+        lambda: UncoveredRecoveryRun(
+            state=request.state,
+            ops=request.ops,
+            amendment_id=request.amendment_id,
+            future_repeals=request.future_repeals,
+            new_chapter_labels=request.new_chapter_labels,
+            has_content_ops=preparation.has_content_ops,
+            rstate=rstate,
+            recovery_guards=preparation.recovery_guards,
+            bp_assignments=preparation.body_pairing_assignments,
+            johto_mentioned_labels=set(preparation.context.johto_mentioned_labels),
+            johto_moment_targets=dict(preparation.context.johto_moment_targets),
+            johto_mentioned_replaced_chapters=set(
+                preparation.context.johto_mentioned_replaced_chapters
+            ),
+            moved_section_destinations=preparation.context.moved_section_destinations,
+            owned_chapter_labels=set(preparation.context.owned_chapter_labels),
+            part_insert_labels=set(preparation.context.part_insert_labels),
         ),
-        moved_section_destinations=preparation.context.moved_section_destinations,
-        owned_chapter_labels=set(preparation.context.owned_chapter_labels),
-        part_insert_labels=set(preparation.context.part_insert_labels),
+        findings_out=sinks.findings_out,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
     )
-
-    run_uncovered_candidate_iteration(
-        supplemental_candidates=preparation.cov_report.supplemental_candidates,
-        peg_owned_targets=peg_owned_section_targets(request.ops),
-        processor=recovery_run,
+    run_registered_elaboration_stage(
+        "fi.uncovered.recovery_iteration",
+        lambda: run_uncovered_candidate_iteration(
+            supplemental_candidates=preparation.cov_report.supplemental_candidates,
+            peg_owned_targets=peg_owned_section_targets(request.ops),
+            processor=recovery_run,
+        ),
+        findings_out=sinks.findings_out,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
     )
-    rstate.emit_chapter_payload_mixed_findings()
+    run_registered_elaboration_stage(
+        "fi.uncovered.body_recovery",
+        lambda: None,
+        findings_out=sinks.findings_out,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
+    )
+    run_registered_elaboration_stage(
+        "fi.uncovered.recovery_findings",
+        lambda: rstate.emit_chapter_payload_mixed_findings(),
+        findings_out=sinks.findings_out,
+        source_statute=request.ctx.id,
+        amendment_id=request.amendment_id,
+    )
 
     return UncoveredBodyRecoveryResult(
         recovered_ops=tuple(rstate.result),

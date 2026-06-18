@@ -7005,6 +7005,22 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="write generated RULEBOOK.md and RULE_INDEX.json into DIR",
     )
 
+    # --- fi-periodic-table ---
+    fpt_p = sub.add_parser(
+        "fi-periodic-table",
+        help="render the Finland abstraction periodic table catalog",
+        description=(
+            "Render the machine-readable Finland periodic table of abstractions: "
+            "phase/structure/identity/time/operative/lexical/provenance/evidence/"
+            "instrumentation cells with filled/partial/hole status."
+        ),
+    )
+    fpt_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON summary grouped by axis instead of Markdown",
+    )
+
     # --- fi-scope-carrier-census ---
     fscc_p = sub.add_parser(
         "fi-scope-carrier-census",
@@ -13097,6 +13113,11 @@ def _main_impl() -> None:
         from lawvm.tools.finland_rulebook import main as finland_rulebook_main
 
         finland_rulebook_main(args)
+
+    elif args.command == "fi-periodic-table":
+        from lawvm.tools.fi_periodic_table import main as fi_periodic_table_main
+
+        fi_periodic_table_main(args)
 
     elif args.command == "fi-scope-carrier-census":
         from lawvm.tools.fi_scope_carrier_census import main as fi_scope_carrier_census_main

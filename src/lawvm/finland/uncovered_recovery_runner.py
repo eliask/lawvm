@@ -15,7 +15,7 @@ from lawvm.finland.apply_ir_ops import _relabel_section_ir
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.finland.merge import _merge_section_with_omission_ir
+from lawvm.finland.merge import merge_section_with_omission_invariants
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.uncovered_dispose import (
@@ -401,12 +401,16 @@ class UncoveredRecoveryRun:
                 amend_part_label=amend_part_label,
                 johto_moment_targets=self.johto_moment_targets,
             )
-            merged = _merge_section_with_omission_ir(
+            merge_result = merge_section_with_omission_invariants(
                 existing,
                 sec_ir,
                 group_ops=group_ops or None,
+                source_statute=self.amendment_id,
+                op_id=f"uncovered_merge_{label}",
+                findings_out=self.rstate.findings_out,
             )
-            if merged is not None:
+            if merge_result is not None:
+                merged = merge_result.node
                 mdec = evaluate_omission_merge(merged, existing)
                 if mdec.accept:
                     self.append_recovered_rop(

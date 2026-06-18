@@ -63,6 +63,7 @@ the architecture, keep it explanatory.
 - [FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md](FINLAND_SPARSE_SUBSECTION_SLOT_SPEC.md)
 - [FI_AMENDMENT_DRAFTING_GRAMMAR.md](FI_AMENDMENT_DRAFTING_GRAMMAR.md) — best-practice johtolause drafting guide derived from the per-rule register tiers (32 canonical / 7 accepted / 22 discouraged / 5 archaic)
 - [FI_REFERENCE_CATALOGUE.md](FI_REFERENCE_CATALOGUE.md) — living catalogue of Finnish citation/reference families: resolution-status ladder + determinism tiers (T1/T2/T3), the typed-overlay IR model (references as H1 of the Legal Surface Algebra), per-family table + detail cards, recognizer inventory (wired vs standalone), typed-primitive/status map, registry/convention dependencies, verification matrix, coverage ledger
+- [FINLAND_PERIODIC_TABLE.md](FINLAND_PERIODIC_TABLE.md) — Finland abstraction axes (phase/structure/time/provenance/evidence/instrumentation); filled cells, open holes, proof-projector split map; machine catalog in `src/lawvm/finland/periodic_table.py`
 
 ## Other Frontends
 

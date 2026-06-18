@@ -75,6 +75,7 @@ ProofCategory = Literal[
     "strictness",              # "compiled under profile P without non-permitted recoveries"
     "comparative",             # "divergence attributed to X, not vague mismatch"
     "non_commensurability",    # "not same-layer contradiction; representation mismatch"
+    "provenance",              # "source/evidence lineage for why a phase fact exists"
 ]
 
 _VALID_FINDING_FAMILIES = frozenset(get_args(FindingFamily))
@@ -518,6 +519,18 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     FindingSpec("merge_invariant_violation", "merge",
                 "audit", "warn", "merge",
                 "typed merge invariant contract violated after section merge",
+                ("safety_invariant", "preservation"), role="observation"),
+    FindingSpec("ELAB.REGISTRY_PIPELINE", "recover_uncovered_body_ops",
+                "audit", "info", "audit",
+                "named elaboration pipeline executed under registry rule ids",
+                ("strictness", "preservation"), role="observation"),
+    FindingSpec("ELAB.REGISTRY_STAGE", "run_registered_elaboration_stage",
+                "audit", "info", "audit",
+                "one registry-owned elaboration stage executed",
+                ("strictness", "preservation"), role="observation"),
+    FindingSpec("REPLAY.TRANSITION_DETECTOR", "project_transition_detector_findings",
+                "audit", "warn", "audit",
+                "transition detector flagged sparse broad snapshot or shadow conflict",
                 ("safety_invariant", "preservation"), role="observation"),
     FindingSpec("timeline_invariant_violation", "timeline_invariants",
                 "audit", "warn", "timeline",

@@ -121,6 +121,7 @@ class MergeEvent:
     master_items_per_omission_slot: Tuple[int, ...] = ()
     trailing_omission_dedup_fired: bool = False
     violations: Tuple[MergeInvariantViolation, ...] = ()
+    findings: Tuple[Finding, ...] = ()
 
     @property
     def has_violations(self) -> bool:
@@ -278,11 +279,12 @@ def build_merge_event(
         op_id=op_id,
     )
 
-    for finding in build_merge_invariant_findings(
+    findings = build_merge_invariant_findings(
         violations,
         source_statute=source_statute,
         op_id=op_id,
-    ):
+    )
+    for finding in findings:
         logger.warning(
             "MERGE_INVARIANT_VIOLATION [%s] %s: %s",
             finding.detail.get("code"),
@@ -298,7 +300,18 @@ def build_merge_event(
         master_items_per_omission_slot=master_items_per_omission_slot,
         trailing_omission_dedup_fired=trailing_omission_dedup_fired,
         violations=violations,
+        findings=findings,
     )
+
+
+def append_merge_event_findings(
+    findings_out: list[Finding] | None,
+    event: MergeEvent,
+) -> None:
+    """Append merge invariant findings from *event* into a phase finding ledger."""
+    if findings_out is None or not event.findings:
+        return
+    findings_out.extend(event.findings)
 
 
 @dataclass
@@ -355,6 +368,45 @@ def merge_section_with_invariants(
         source_statute=source_statute,
         op_id=op_id,
     )
+    return MergeResult(node=result, event=event)
+
+
+def merge_section_with_omission_invariants(
+    master_sec: IRNode,
+    amend_sec: IRNode,
+    *,
+    group_ops: List[AmendmentOp] | None = None,
+    source_statute: str = "",
+    op_id: str = "",
+    findings_out: list[Finding] | None = None,
+) -> Optional[MergeResult]:
+    """Section omission merge with invariant validation and optional finding emission."""
+    result = _merge_section_with_omission_ir(master_sec, amend_sec, group_ops=group_ops)
+    if result is None:
+        return None
+
+    amend_slots = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION or _is_omission_ir(c)]
+    omission_count = sum(1 for c in amend_slots if _is_omission_ir(c))
+    master_subsecs = [c for c in master_sec.children if c.kind is IRNodeKind.SUBSECTION]
+    amend_real = sum(1 for c in amend_slots if c.kind is IRNodeKind.SUBSECTION)
+    total_expanded = max(0, len(master_subsecs) - amend_real)
+    per_slot = (
+        tuple([total_expanded] if omission_count == 1 else [total_expanded // omission_count] * omission_count)
+        if omission_count > 0
+        else ()
+    )
+
+    event = build_merge_event(
+        result,
+        master_sec,
+        amend_sec,
+        ReplaceMode.OMISSION_MERGE,
+        omission_slots_expanded=omission_count,
+        master_items_per_omission_slot=per_slot,
+        source_statute=source_statute,
+        op_id=op_id,
+    )
+    append_merge_event_findings(findings_out, event)
     return MergeResult(node=result, event=event)
 
 
