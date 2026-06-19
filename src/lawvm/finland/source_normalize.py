@@ -109,6 +109,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
+    BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
     TRAILING_CHAPTER_REPARENT,
     UNNUMBERED_PEER_REPARENT,
@@ -839,6 +840,127 @@ def _fold_section_item_subsection_run(
     return rewritten if changed else children
 
 
+def _node_has_descendant_kind(node: IRNode, kind: IRNodeKind) -> bool:
+    return any(child.kind == kind or _node_has_descendant_kind(child, kind) for child in node.children)
+
+
+def _subsection_has_omission_marker(node: IRNode) -> bool:
+    return any(
+        child.kind == IRNodeKind.OMISSION
+        or (child.kind == IRNodeKind.HCONTAINER and child.attrs.get("name") == "omission")
+        for child in node.children
+    )
+
+
+def _has_source_eid(node: IRNode) -> bool:
+    return bool(node.attrs.get("eId") or node.attrs.get("lawvm_source_subsection_eid"))
+
+
+def _is_table_note_continuation_subsection(node: IRNode) -> bool:
+    """Synthetic source wrapper for table notes/prose, not a real momentti."""
+    if node.kind != IRNodeKind.SUBSECTION or _has_source_eid(node):
+        return False
+    if any(child.kind == IRNodeKind.NUM for child in node.children):
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child) for child in node.children):
+        return False
+    return bool(irnode_to_text(node).strip())
+
+
+def _starts_table_note_run(node: IRNode) -> bool:
+    leading = "".join(irnode_to_text(node).lstrip()[:24].split())
+    return leading.startswith(("(*)", "(**)", "(***)", "(****)"))
+
+
+def _fold_table_note_subsections_into_previous_moment(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold synthetic table-note subsection wrappers into a table-bearing moment.
+
+    Some amendment payload XML encodes one targeted moment as a table-bearing
+    subsection followed by source-synthetic subsection wrappers for footnotes,
+    dash bullets, and final prose.  The source johto owns the whole moment; the
+    wrappers are transport shape, not separate momentit.
+    """
+    if len(children) < 2:
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if (
+            child.kind != IRNodeKind.SUBSECTION
+            or not _node_has_descendant_kind(child, IRNodeKind.TABLE)
+            or not _subsection_has_omission_marker(child)
+        ):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        j = i + 1
+        if j >= len(children) or not _starts_table_note_run(children[j]):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        continuation_children: list[IRNode] = []
+        consumed_paths: list[str] = []
+        while j < len(children) and _is_table_note_continuation_subsection(children[j]):
+            continuation = children[j]
+            continuation_children.extend(continuation.children)
+            consumed_paths.append(_node_path_label(continuation))
+            j += 1
+
+        if not continuation_children:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        rewritten.append(
+            IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children) + tuple(continuation_children),
+            )
+        )
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_TABLE_NOTE_SUBSECTION_FOLD,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"table-bearing {_node_path_label(child)} followed by synthetic "
+                    f"table-note subsection wrappers {consumed_paths!r}"
+                ),
+                after=(
+                    f"folded {len(consumed_paths)} table-note/prose wrappers into "
+                    f"{_node_path_label(child)}"
+                ),
+                explanation=(
+                    "The source encoded footnotes and concluding prose for one "
+                    "table-bearing moment as sibling subsection wrappers without "
+                    "source eIds or numbered paragraph children.  Fold those "
+                    "transport wrappers into the preceding table-bearing moment "
+                    "so the targeted subsection replacement preserves the whole "
+                    "source-owned moment payload."
+                ),
+                path=parent_path + (_node_path_label(child),),
+                confidence=0.96,
+            )
+        )
+        changed = True
+        i = j
+
+    return rewritten if changed else children
+
+
 def _split_digit_reset_subparagraph_runs(
     children: List[IRNode],
     statute_id: str,
@@ -1535,6 +1657,9 @@ def _split_nonpenal_trailing_duplicate_paragraph(
 
         tail_para = paragraph_children[-1]
         prev_para = paragraph_children[-2]
+        if tail_para.label is None or prev_para.label is None:
+            rebuilt_children.append(child)
+            continue
         if _norm_num_token(str(tail_para.label or "")) != _norm_num_token(str(prev_para.label or "")):
             rebuilt_children.append(child)
             continue
@@ -2354,6 +2479,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_section_item_subsection_run(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_table_note_subsections_into_previous_moment(
             initial_children, statute_id, current_path, facts
         )
 
