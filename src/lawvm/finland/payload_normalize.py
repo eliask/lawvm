@@ -1499,7 +1499,12 @@ def _prepare_sparse_subsection_payload_ir(
         group_ops,
         muutos_ir,
     )
-    return _fold_split_omission_subsection_prefix_into_following_intro_list(
+    muutos_ir = _fold_split_omission_subsection_prefix_into_following_intro_list(
+        target_unit_kind,
+        group_ops,
+        muutos_ir,
+    )
+    return _fold_text_table_row_subsections_into_target_subsection(
         target_unit_kind,
         group_ops,
         muutos_ir,
@@ -1850,6 +1855,7 @@ class HeadingTaggedSubsectionPayloadResult:
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
+_TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
 
 def _flattened_list_row_from_subsection_ir(sub_ir: IRNode) -> Optional[FlattenedListRow]:
@@ -2486,6 +2492,100 @@ def _fold_continuation_row_subsections_into_previous_subsection(
 
     if not changed:
         return muutos_ir
+    return _tops._with_children(muutos_ir, new_children)
+
+
+_TEXT_TABLE_ROW_RE = re.compile(r"^[^\d\s].{0,90}\s+\d+(?:[,.]\d+)?$")
+
+
+def _content_only_subsection_text(sub: IRNode) -> str:
+    if sub.kind is not IRNodeKind.SUBSECTION or len(sub.children) != 1:
+        return ""
+    child = sub.children[0]
+    if child.kind is not IRNodeKind.CONTENT:
+        return ""
+    return " ".join(irnode_to_text(child).split())
+
+
+def _is_text_table_row_subsection(sub: IRNode) -> bool:
+    text = _content_only_subsection_text(sub)
+    if not text:
+        return False
+    if "." in text or ":" in text:
+        return False
+    return bool(_TEXT_TABLE_ROW_RE.match(text))
+
+
+def _fold_text_table_row_subsections_into_target_subsection(
+    target_unit_kind: TargetUnitKind,
+    group_ops: List[AmendmentOp],
+    muutos_ir: Optional[IRNode],
+) -> Optional[IRNode]:
+    """Fold textual table-row sibling subsections into a single targeted moment."""
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir
+    subsection_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type in {"REPLACE", "INSERT"}
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(subsection_ops) != 1:
+        return muutos_ir
+    target_label = str(subsection_ops[0].target_paragraph)
+    children = list(muutos_ir.children)
+    target_index = next(
+        (
+            idx
+            for idx, child in enumerate(children)
+            if child.kind is IRNodeKind.SUBSECTION and _norm_num_token(child.label or "") == target_label
+        ),
+        None,
+    )
+    if target_index is None:
+        return muutos_ir
+
+    target_sub = children[target_index]
+    target_text = " ".join(irnode_to_text(target_sub).split()).lower()
+    if "seuraavasti:" not in target_text:
+        return muutos_ir
+
+    row_indices: list[int] = []
+    row_paragraphs: list[IRNode] = []
+    for idx in range(target_index + 1, len(children)):
+        sibling = children[idx]
+        if sibling.kind is not IRNodeKind.SUBSECTION:
+            break
+        if not _is_text_table_row_subsection(sibling):
+            break
+        row_text = _content_only_subsection_text(sibling)
+        row_indices.append(idx)
+        row_paragraphs.append(IRNode(kind=IRNodeKind.PARAGRAPH, text=row_text))
+
+    if len(row_paragraphs) < 2:
+        return muutos_ir
+
+    folded = _with_payload_normalization_rule(
+        IRNode(
+            kind=target_sub.kind,
+            label=target_sub.label,
+            text=target_sub.text,
+            attrs=dict(target_sub.attrs),
+            children=tuple(target_sub.children) + tuple(row_paragraphs),
+        ),
+        _TEXT_TABLE_ROW_CONTINUATION_RULE,
+    )
+    row_index_set = set(row_indices)
+    new_children = [
+        folded if idx == target_index else child
+        for idx, child in enumerate(children)
+        if idx not in row_index_set
+    ]
     return _tops._with_children(muutos_ir, new_children)
 
 

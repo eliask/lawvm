@@ -1709,6 +1709,78 @@ def test_normalize_group_payload_rewrites_partial_table_section_to_row_replaces(
     assert irnode_to_text(paragraphs[0]) == "Seinäjoki Seinäjoki Seinäjoki Jalasjärvi"
 
 
+def test_text_table_row_subsections_fold_into_single_targeted_moment() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+    )
+    ctx = _mock_ctx("section", "6", live_node=live_sec)
+    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="6 §"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Museot seuraavasti: Museo mk"),),
+            ),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Alikartano 15"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="Hvitträsk 25"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="Olavinlinna 30"),)),
+        ),
+    )
+
+    prepared = prepare_payload_surface(ctx, [op], muutos_ir, _replay_profile_stub(), None)
+    got = elaborate_payload_against_live(ctx, [op], prepared, set())
+
+    assert got.muutos_ir is not None
+    sub = got.subsec_map.for_op(got.group_ops[0])
+    assert sub is not None
+    assert "Alikartano 15" in irnode_to_text(sub)
+    assert "Hvitträsk 25" in irnode_to_text(sub)
+    assert "Olavinlinna 30" in irnode_to_text(sub)
+    assert _slot_assignment_result(got).unassigned_payload_slots == ()
+    rows = _payload_normalization_observation_rows(
+        got.muutos_ir,
+        source_statute="2000/1157",
+        target_unit_kind="section",
+        target_norm="6",
+        target_chapter=None,
+    )
+    assert [row["kind"] for row in rows] == ["ELAB.TEXT_TABLE_ROW_CONTINUATION"]
+
+
+def test_text_table_row_subsections_do_not_fold_with_multiple_moment_targets() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"), IRNode(kind=IRNodeKind.SUBSECTION, label="2")),
+    )
+    ctx = _mock_ctx("section", "6", live_node=live_sec)
+    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
+    op2 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=2)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="6",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Museot seuraavasti: Museo mk"),),
+            ),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Alikartano 15"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="Hvitträsk 25"),)),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op1, op2], muutos_ir, set())
+
+    assert _slot_assignment_result(got).unassigned_payload_slots == ("3:3",)
+
+
 def test_normalize_group_payload_rewrites_named_row_repeal_with_fuzzy_anchor_match() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
