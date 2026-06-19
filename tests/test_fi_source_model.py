@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from lxml import etree
 
+from lawvm.core.ir import IRNode
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.body_coverage import extract_body_coverage
 from lawvm.finland.body_pairing import build_observed_body_inventory
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.statute import ReplayState
 
 
 def _tree() -> etree._Element:
@@ -115,3 +118,35 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     assert model_ir == direct_ir
     assert model_cross_ir == direct_cross_ir
 
+
+def test_source_model_precreates_source_body_chapters() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter>
+                <num>7 luku</num>
+                <section><num>45 \xc2\xa7</num><content><p>Text.</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/4")
+
+    result = model.pre_create_amendment_chapters(state, "2000/4")
+
+    assert result is not None
+    assert result.created_refs[0].chapter_label == "7"
+    assert result.state.find("chapter", "7") is not None
+
+
+def test_source_model_precreate_chapters_returns_none_without_body() -> None:
+    tree = etree.fromstring(b"<akomaNtoso><act/></akomaNtoso>")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/5")
+
+    assert model.pre_create_amendment_chapters(state, "2000/5") is None

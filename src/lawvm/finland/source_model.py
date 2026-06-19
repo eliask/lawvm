@@ -9,7 +9,7 @@ walk and reinterpret the same XML tree.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import lxml.etree as etree
 
@@ -19,6 +19,10 @@ from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.body_coverage import extract_body_coverage
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.constraints import _find_muutos_node_uncached
+
+if TYPE_CHECKING:
+    from lawvm.finland.amendment_chapter_precreate import PrecreatedChaptersResult
+    from lawvm.finland.statute import ReplayState
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,3 +162,20 @@ class AmendmentSourceModel:
             )
         return self._payload_ir_cache[key]
 
+    def pre_create_amendment_chapters(
+        self,
+        state: "ReplayState",
+        amendment_id: str,
+    ) -> "PrecreatedChaptersResult | None":
+        """Pre-create real source-body chapters through the source-model adapter."""
+        muutos_body = self.muutos_tree.find(".//{*}body")
+        if muutos_body is None:
+            return None
+
+        from lawvm.finland.amendment_chapter_precreate import _pre_create_amendment_chapters
+
+        return _pre_create_amendment_chapters(
+            state,
+            muutos_body,
+            amendment_id,
+        )
