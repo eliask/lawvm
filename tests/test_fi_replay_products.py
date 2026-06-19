@@ -2543,6 +2543,7 @@ def test_replay_xml_1987_1250_chapter_9_replace_retires_orphans_keeps_chapter_2(
     assert state.find_node("section", "9", "chapter", "2") is not None
 
 
+@pytest.mark.slow
 def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11(
     replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
