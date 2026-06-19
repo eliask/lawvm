@@ -270,6 +270,63 @@ def test_extract_authority_bases_anaphoric_sen_nojalla_yields_nothing() -> None:
     assert extract_authority_bases("jollei tässä laissa tai sen nojalla toisin säädetä") == []
 
 
+def test_extract_authority_bases_sellaisena_kuin_interjection_single() -> None:
+    # The ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment-version
+    # interjection sits between the provision path and ``nojalla``. The basis is
+    # the OUTER act (150/1992); the inner ``348/1994`` is the AMENDING act and must
+    # NOT be bound as a basis.
+    bases = extract_authority_bases(
+        "Säädetään valtion maksuperustelain (150/1992) 8 §:n, sellaisena kuin se "
+        "on laissa 348/1994, nojalla:"
+    )
+    assert [(b.num, b.year, b.section_labels) for b in bases] == [("150", "1992", ("8",))]
+
+
+def test_extract_authority_bases_sellaisena_kuin_interjection_coordinated() -> None:
+    # Each coordinated conjunct carries its OWN interjection; every interjection is
+    # skipped and only the two OUTER bases (with their sections) are emitted — never
+    # the amending acts 1/2000 / 348/1994.
+    bases = extract_authority_bases(
+        "säädetään lukiolain (629/1998) 36 §:n, sellaisena kuin se on laissa "
+        "1/2000, ja maksuperustelain (150/1992) 8 §:n, sellaisena kuin se on "
+        "laissa 348/1994, nojalla:"
+    )
+    triples = {(b.num, b.year, b.section_labels) for b in bases}
+    assert triples == {("629", "1998", ("36",)), ("150", "1992", ("8",))}
+
+
+def test_extract_authority_bases_sellaisena_interjection_keeps_following_coordinated_basis() -> None:
+    # An interjection with NO closing comma before a ``sekä``-coordinated NEXT basis
+    # must NOT swallow that basis. Here the amending act 365/92 is in the interjection
+    # for 255/88 §13, but 364/92 §1 (after ``sekä``) is a SEPARATE basis — both the
+    # outer 255/88 §13 AND the coordinated 364/92 §1 must survive (no recall loss),
+    # and the amending 365/92 must NOT be bound.
+    bases = extract_authority_bases(
+        "annetun asetuksen (255/88) 13 §:n 2 momentin, sellaisena kuin se on "
+        "24 päivänä huhtikuuta 1992 annetussa asetuksessa (365/92) sekä "
+        "Kansainvälisen Itämeren kalastuskomission suositusten mukaisten "
+        "saaliskiintiöiden voimaansaattamisesta annetun asetuksen (364/92) 1 §:n "
+        "nojalla päättänyt:"
+    )
+    triples = {(b.num, b.year, b.section_labels) for b in bases}
+    assert ("255", "88", ("13",)) in triples
+    assert ("364", "92", ("1",)) in triples
+    # the amending act inside the interjection is NOT a basis
+    assert not any(b.num == "365" and b.year == "92" for b in bases)
+
+
+def test_extract_authority_bases_sellaisena_kuin_muutettuna_parenthetical_amenders() -> None:
+    # ``sellaisena kuin se on muutettuna … laeilla (639/66 sekä 599 ja 1347/90),``
+    # carries MULTIPLE amending ids in a paren; none may be bound. The basis is the
+    # outer eläkelaki (395/61) 12 §.
+    bases = extract_authority_bases(
+        "annetun työntekijäin eläkelain (395/61) 12 §:n, sellaisena kuin se on "
+        "muutettuna 16 päivänä joulukuuta 1966 sekä annetuilla laeilla "
+        "(639/66 sekä 599 ja 1347/90), nojalla päättänyt"
+    )
+    assert [(b.num, b.year, b.section_labels) for b in bases] == [("395", "61", ("12",))]
+
+
 # ---------------------------------------------------------------------------
 # Projection keys + census classification
 # ---------------------------------------------------------------------------

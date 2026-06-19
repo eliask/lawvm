@@ -250,6 +250,26 @@ class TestReferenceMentionConstruction:
         ref = ProvisionRef(statute_id="711/2022")
         assert ref.serialized() == "711/2022"
 
+    def test_provision_ref_serialized_subitem(self) -> None:
+        """An alakohta (sub-item) serializes as a typed ``s{LABEL}`` segment,
+        analogous to the kohta ``k{LABEL}`` segment, so an item→sub-item ref is
+        unambiguous and round-trippable.
+        """
+        ref = ProvisionRef(
+            statute_id="711/2022",
+            section_label="7",
+            subsection_num=2,
+            item_label="1",
+            subitem_label="a",
+        )
+        assert ref.serialized() == "711/2022/7/2/k1/sa"
+
+    def test_provision_ref_serialized_subitem_no_momentti(self) -> None:
+        ref = ProvisionRef(
+            statute_id="711/2022", section_label="7", item_label="1", subitem_label="a"
+        )
+        assert ref.serialized() == "711/2022/7/k1/sa"
+
     def test_frozen_dataclass_immutable(self) -> None:
         """ReferenceMention is frozen (immutable)."""
         src = ProvisionRef(statute_id="2003/314")

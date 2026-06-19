@@ -5,7 +5,7 @@ from lawvm.core.preparatory_reference import (
     PreparatoryReferenceConfidence,
     PreparatoryReferenceKind,
 )
-from lawvm.finland.preparatory_reference_extractor import PrepRefExtractionResult
+from lawvm.finland.references.preparatory_reference_extractor import PrepRefExtractionResult
 from lawvm.tools import provenance
 
 

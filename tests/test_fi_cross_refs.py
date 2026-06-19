@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lawvm.finland.cross_refs import (
+from lawvm.finland.references.cross_refs import (
     CrossRefDiagnostic,
     extract_affected_document_refs,
     extract_cross_refs,

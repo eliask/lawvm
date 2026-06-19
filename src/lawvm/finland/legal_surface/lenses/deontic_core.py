@@ -49,6 +49,7 @@ import hashlib
 from lawvm.core.legal_surface_graph import SourceSpanRef
 from lawvm.core.legal_surface_lens import (
     SourceSurfaceBundle,
+    SourceSurfaceUnit,
     SurfaceAnalysisContext,
     SurfaceLensResult,
     SurfaceNodeSeed,
@@ -113,13 +114,89 @@ def _core_payload(core: ModalCore, base: int) -> dict[str, object]:
     }
 
 
+def mint_deontic_core_seed(
+    unit: SourceSurfaceUnit, core: ModalCore, base: int
+) -> SurfaceNodeSeed:
+    """Mint ONE deontic_core node seed for a construction core in ``base`` coords.
+
+    THE shared seed-minting authority: both the production lens scan and the
+    forest projection (:func:`…modal_projection.project_forest_deontic_core_seeds`)
+    mint via this one function, so a forest-projected node is byte-identical to a
+    lens-scanned node BY CONSTRUCTION (same cue-span anchor, same local
+    discriminator, same payload). ``base`` is the sentence's ``char_start`` in
+    raw_text coordinates; ``core`` is sentence-local.
+    """
+    cue_abs_start = base + core.cue_start
+    cue_abs_end = base + core.cue_end
+    ref = _span_ref(
+        unit.source_unit_id,
+        unit.source_hash,
+        unit.work_id,
+        unit.address,
+        unit.raw_text,
+        cue_abs_start,
+        cue_abs_end,
+    )
+    return SurfaceNodeSeed(
+        node_kind=DEONTIC_CORE_NODE_KIND,
+        source_ref=ref,
+        # Disambiguate co-located cores (same cue span never recurs within a
+        # unit, but key on kind/pol/voice too so a future multi-core-at-one-cue
+        # stays distinct).
+        local_discriminator=(
+            f"{core.kind}|{core.cue}|{core.polarity}|"
+            f"{core.voice}|{cue_abs_start}"
+        ),
+        rule_id=_LENS_ID,
+        # Structural NODE_STATUSES value: an owned, present surface fact (NOT a
+        # resolution outcome).
+        status="asserted",
+        payload=_core_payload(core, base),
+        authority_role="surface_fact",
+    )
+
+
+def deontic_core_seeds_for_unit(unit: SourceSurfaceUnit) -> list[SurfaceNodeSeed]:
+    """The INDEPENDENT (golden-reference) per-unit deontic_core seed scan.
+
+    Segments the unit into sentences via the shared clause authority and parses
+    each via :func:`parse_modal_sentence`, minting one seed per core through
+    :func:`mint_deontic_core_seed`. This is the GOLDEN REFERENCE the production
+    flip is differenced against: production now reads the cached forest
+    (:func:`…modal_projection.project_forest_deontic_core_seeds`), which projects
+    the SAME cores at the SAME granularity, gated by the forest's modal-family
+    ownership — proven node-identical to this scan corpus-wide.
+    """
+    tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+    index = build_clause_index(unit.source_unit_id, unit.raw_text, token_tape=tape)
+    seeds: list[SurfaceNodeSeed] = []
+    for sent in index.sentences:
+        base = sent.char_start
+        seg_text = unit.raw_text[sent.char_start : sent.char_end]
+        parse = parse_modal_sentence(seg_text)
+        for core in parse.cores:
+            seeds.append(mint_deontic_core_seed(unit, core, base))
+    return seeds
+
+
 class DeonticCoreLens:
-    """SurfaceLens minting ``deontic_core`` nodes from the construction modal parse.
+    """SurfaceLens minting ``deontic_core`` nodes from the cached forest projection.
 
     One node per construction modal core in each sentence of each unit. Mints NO
     edges. Runs ALONGSIDE the production ``actor_modal_frame`` lens (additive
-    strangle). Requires the populated ``token_tape`` view (reused to segment the
-    unit into sentences via the shared clause authority).
+    strangle).
+
+    PRODUCTION STRANGLE-FLIP (doc-6): the lens's deontic_core node facts now come
+    FROM the cached :class:`SourceSyntaxGraph` forest projection
+    (:func:`…modal_projection.project_forest_deontic_core_seeds`) rather than an
+    independent per-sentence body scan. The forest is the PRODUCER; the projection
+    gates each sentence on the forest's modal-family ownership and reconstructs the
+    cores via the SAME construction parse, minting through the SAME
+    :func:`mint_deontic_core_seed` authority — so production is byte-identical to
+    the prior independent scan (proven 0-delta corpus-wide). The independent scan
+    survives as the golden reference (:func:`deontic_core_seeds_for_unit`, the
+    differential's right side). Requires the populated ``token_tape`` view (reused
+    to segment the unit into sentences via the shared clause authority).
     """
 
     lens_id: str = _LENS_ID
@@ -135,50 +212,15 @@ class DeonticCoreLens:
         *,
         context: SurfaceAnalysisContext,
     ) -> SurfaceLensResult:
-        node_seeds: list[SurfaceNodeSeed] = []
-        units_scanned = 0
-        for unit in bundle.units:
-            units_scanned += 1
-            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
-            index = build_clause_index(
-                unit.source_unit_id, unit.raw_text, token_tape=tape
-            )
-            for sent in index.sentences:
-                base = sent.char_start
-                seg_text = unit.raw_text[sent.char_start : sent.char_end]
-                parse = parse_modal_sentence(seg_text)
-                for core in parse.cores:
-                    cue_abs_start = base + core.cue_start
-                    cue_abs_end = base + core.cue_end
-                    ref = _span_ref(
-                        unit.source_unit_id,
-                        unit.source_hash,
-                        unit.work_id,
-                        unit.address,
-                        unit.raw_text,
-                        cue_abs_start,
-                        cue_abs_end,
-                    )
-                    node_seeds.append(
-                        SurfaceNodeSeed(
-                            node_kind=DEONTIC_CORE_NODE_KIND,
-                            source_ref=ref,
-                            # Disambiguate co-located cores (same cue span never
-                            # recurs within a unit, but key on kind/pol/voice too
-                            # so a future multi-core-at-one-cue stays distinct).
-                            local_discriminator=(
-                                f"{core.kind}|{core.cue}|{core.polarity}|"
-                                f"{core.voice}|{cue_abs_start}"
-                            ),
-                            rule_id=_LENS_ID,
-                            # Structural NODE_STATUSES value: an owned, present
-                            # surface fact (NOT a resolution outcome).
-                            status="asserted",
-                            payload=_core_payload(core, base),
-                            authority_role="surface_fact",
-                        )
-                    )
+        # Import here to avoid a module import cycle (modal_projection imports the
+        # bundle/seed types this lens also uses, and the source_syntax_graph it
+        # reads from). The projection reads the CACHED forest, so production mints
+        # deontic_core facts FROM the forest (the flip), not an independent scan.
+        from lawvm.finland.legal_surface.modal_projection import (
+            project_forest_deontic_core_seeds,
+        )
 
+        node_seeds = project_forest_deontic_core_seeds(bundle)
         return SurfaceLensResult(
             lens_id=self.lens_id,
             node_seeds=tuple(node_seeds),
@@ -186,7 +228,7 @@ class DeonticCoreLens:
             residuals=(),
             diagnostics=(),
             coverage={
-                "units_scanned": units_scanned,
+                "units_scanned": len(bundle.units),
                 "deontic_cores": len(node_seeds),
             },
         )

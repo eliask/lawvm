@@ -184,3 +184,68 @@ def test_lens_declares_its_kinds() -> None:
     result = lens.analyze(bundle, context=SurfaceAnalysisContext())
     assert result.node_seeds, "lens emits deontic_core node seeds"
     assert result.edge_seeds == ()
+
+
+# ── (g) THE PRODUCTION STRANGLE-FLIP: production reads the forest, 0-delta ─────
+
+
+def _seed_fp(seed) -> tuple:
+    """A node-identity fingerprint of a deontic_core seed (span/discr/payload)."""
+    ref = seed.source_ref
+    payload = tuple(
+        sorted(
+            (k, tuple(v) if isinstance(v, list) else v)
+            for k, v in dict(seed.payload).items()
+        )
+    )
+    return (
+        seed.node_kind,
+        seed.local_discriminator,
+        seed.rule_id,
+        seed.status,
+        seed.authority_role,
+        None if ref is None else (ref.char_start, ref.char_end, ref.text_hash),
+        payload,
+    )
+
+
+def test_production_deontic_facts_derive_from_forest_and_are_identical() -> None:
+    """The flip happened (production projects from the forest) AND is 0-delta.
+
+    (1) The production lens now mints its deontic_core seeds via the cached
+        SourceSyntaxGraph forest projection
+        (``modal_projection.project_forest_deontic_core_seeds``) — not an
+        independent body scan;
+    (2) those seeds are node-identical (span / discriminator / payload) to the
+        pre-flip independent per-sentence scan, kept as the golden reference
+        (``deontic_core_seeds_for_unit``).
+    """
+    from lawvm.core.legal_surface_lens import SurfaceAnalysisContext
+    from lawvm.finland.legal_surface.lenses.deontic_core import (
+        deontic_core_seeds_for_unit,
+    )
+    from lawvm.finland.legal_surface.modal_projection import (
+        project_forest_deontic_core_seeds,
+    )
+
+    xml = _xml(
+        "Hakija voi pyytaa oikaisua paatokseen.",
+        "Hakemus on toimitettava maaraajassa.",
+        "Jos hakemus on puutteellinen, se on hylattava.",
+        "Asiasta saadetaan valtioneuvoston asetuksella.",
+        "Viranomainen ei saa luovuttaa tietoa.",
+    )
+    bundle = build_surface_bundle(xml, "108/2025")
+
+    # (1) the production lens emits exactly the forest projection's seeds …
+    lens = DeonticCoreLens()
+    lens_seeds = lens.analyze(bundle, context=SurfaceAnalysisContext()).node_seeds
+    forest_seeds = project_forest_deontic_core_seeds(bundle)
+    assert {_seed_fp(s) for s in lens_seeds} == {_seed_fp(s) for s in forest_seeds}
+    assert forest_seeds, "expected deontic cores from the forest projection"
+
+    # (2) … and the forest projection is node-identical to the golden-reference
+    # independent scan (the pre-flip behaviour) — the 0-delta flip gate.
+    golden = [s for u in bundle.units for s in deontic_core_seeds_for_unit(u)]
+    assert {_seed_fp(s) for s in forest_seeds} == {_seed_fp(s) for s in golden}
+    assert len(forest_seeds) == len(golden)

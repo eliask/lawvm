@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .gradation import weaken_stem
+from .gradation import strengthen_final_stop, weaken_stem
 
 _VOWELS = frozenset("aeiouyäö")
 
@@ -158,17 +158,27 @@ def _e_contract(
     lemma: str,
     *,
     gradation: bool,
-    single_k: str | None,
+    single_k: str | None,  # noqa: ARG001 - type-48 gemination is purely quantitative
 ) -> Stems:
     """-e nouns / -e place names: Tampere->Tamperee- (e lengthening).
 
-    The final ``-e`` lengthens to ``-ee`` in the inflected stem.  Partitive is
-    ``-tta`` (Tamperetta) per the long-vowel rule, but the gate only exercises
-    GEN/ADE here.
+    Kotus type 48: the final ``-e`` lengthens to ``-ee`` in the inflected stem,
+    which is uniformly the **strong** grade (the nominative is the weak grade).
+    For a gradating member (``gradation=True``) the final single quantitative
+    stop GEMINATES into that strong stem --- ``liite`` -> ``liitte-`` ->
+    ``liitteen``/``liitteeseen``, ``nimike`` -> ``nimikke-`` -> ``nimikkeen`` ---
+    so the cluster must be *strengthened*, NOT weakened (weakening gave the wrong
+    ``*liideen``/``*nimikeen``).  A non-gradating member (``gradation=False``,
+    e.g. ``ohje`` / ``Tampere``) keeps its consonant verbatim.  ``single_k`` is
+    unused: type-48 gemination is the quantitative-stop rule, never the lexical
+    single-``k`` realization.  Partitive is ``-tta`` (Tamperetta) per the
+    long-vowel rule.
     """
     consonant_part = lemma[:-1]
-    weak = weaken_stem(consonant_part, gradation=gradation, single_k=single_k)
-    stem = weak + "ee"
+    strong = (
+        strengthen_final_stop(consonant_part) if gradation else consonant_part
+    )
+    stem = strong + "ee"
     return Stems(
         nominative=lemma,
         vowel_stem=stem,

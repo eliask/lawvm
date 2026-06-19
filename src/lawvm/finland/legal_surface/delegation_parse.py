@@ -228,18 +228,79 @@ _BASIS_ID_SIGNAL_RE = re.compile(
 _BASIS_TAIL_TOKEN = (
     r"(?:§|:n|momentin|momentti|momentissa|kohdan|kohta|kohdassa"
     r"|mukaisen|ja|sekä|tai|\d{1,4}|[a-zäö](?![\wäö])"
-    r"|[\s.,:()/–-]+)"
+    r"|[\s.,:()/–-]++)"
 )
 # The tail is a single non-overlapping alternation repeated (each branch consumes
 # at least one char; the whitespace/punct branch and the literal branches start
-# with disjoint character sets), then anchored to the window end — no nested
-# variable repeats over a shared prefix, so no catastrophic backtracking.
+# with disjoint character sets), then anchored to the window end. The whitespace/
+# punctuation branch is POSSESSIVE (``++``): a long whitespace run (e.g. the
+# equal-length spaces left by :func:`_strip_amendment_interjections` blanking a
+# ``sellaisena kuin`` interjection) is consumed in one bite with NO backtracking,
+# so a FAILING match over a blanked window followed by non-tail prose (``… §:n
+# <blanked spaces> sekä <act-name prose> (NNN/YYYY) …``) cannot trigger the
+# catastrophic re-exploration of the outer repeat. Each whitespace char belongs to
+# exactly one tail token regardless, so making the run possessive changes no valid
+# match — it only removes the exponential failure path.
 _BASIS_PATH_BEFORE_TERMINAL_RE = re.compile(
     r"(?:\(\d{1,5}\s*/\s*\d{2,4}\)|\b\d{1,4}\s*[a-zäö]?\s*§)"
     + _BASIS_TAIL_TOKEN
     + r"*\Z",
     re.IGNORECASE,
 )
+#: AMENDMENT-VERSION INTERJECTION. A Finnish authority basis routinely carries an
+#: amendment-history aside about the basis provision BETWEEN its provision path and
+#: the ``nojalla`` terminal: ``… N §:n, sellaisena kuin se on [muutettuna …]
+#: [laissa/laeissa/asetuksessa …] (NNN/YYYY)[ muutoksineen], nojalla``. This aside is
+#: parenthetical metadata — it records WHICH amending act gave the basis provision
+#: its current form; the ``(NNN/YYYY)`` id(s) INSIDE it are the AMENDING act(s), NOT
+#: the authority basis. The basis is the OUTER ``[act] (NUM/YEAR) N §:n … nojalla``.
+#: Two consequences: (1) the prose between the path and ``nojalla`` defeats the
+#: adjacency guard (the construction correctly refuses to read across arbitrary
+#: prose); (2) if naively scanned, the inner amending id would be mis-bound as the
+#: basis. We REMOVE every such interjection from a basis window BEFORE the adjacency
+#: guard and conjunct-id extraction run — so the guard sees the clean
+#: path-before-terminal and the amending ids are never extracted as bases.
+#:
+#: The interjection runs from a comma + ``sellaise… kuin (se|ne) (on|ovat|oli|olivat)``
+#: through the amending-act reference it carries, and STOPS there: ``[^(,]*`` skips
+#: the connecting prose (``muutettuna …`` / ``annetussa asetuksessa`` / ``laissa``)
+#: up to EITHER a parenthesized id group ``(NNN/YYYY[ sekä … ja …])`` (one paren may
+#: list several amending ids — they are all consumed as one group) OR a bare
+#: ``NNN/YYYY`` id (the parenless ``laissa 348/1994`` form). It does NOT consume past
+#: that amending id — crucially it stops BEFORE any following ``sekä``/``ja``
+#: coordinated NEW basis (``… (365/92) sekä …lain (364/92) 1 §:n nojalla``: the
+#: ``364/92 §`` is a separate basis, not part of the interjection, so it survives).
+#: Bounded, perf-gate clean: ``[^(,]*`` is a single run over a class disjoint from
+#: its neighbours; the two stop alternatives ``\([^)]*\)`` / ``\d…/\d…`` follow it
+#: without sharing a variable prefix (no overlapping-start adjacent repeats, no
+#: nested quantifiers). A coordinated basis carries one interjection PER conjunct;
+#: ``re.sub`` removes them all. The basis is the OUTER ``[act] (NUM/YEAR) N §:n …
+#: nojalla``; the amending ``(NNN/YYYY)`` inside the interjection is never bound.
+_INTERJECTION_RE = re.compile(
+    r",\s*sellaise\w*\s+kuin\s+(?:se|ne)\s+(?:on|ovat|oli|olivat)\b"
+    r"[^(,]*(?:\([^)]*\)|\d{1,5}/\d{2,4})",
+    re.IGNORECASE,
+)
+
+
+def _strip_amendment_interjections(window: str) -> str:
+    """Blank every ``, sellaisena kuin … ,`` amendment-version interjection.
+
+    Replaces each interjection with an equal-length run of spaces, so downstream
+    char offsets within ``window`` are PRESERVED (the conjunct id offsets stay
+    aligned with the original window) while the amending-act ids the interjection
+    carries are removed from view — they are NOT the authority basis, only metadata
+    about which act amended the basis provision. The OUTER basis path remains.
+
+    A cheap ``"sellaise"`` substring prefilter skips the ``re.sub`` scan entirely
+    for the overwhelming majority of basis windows (which carry no interjection),
+    so the strip adds no measurable cost to the common no-interjection path.
+    """
+    if "sellaise" not in window:
+        return window
+    return _INTERJECTION_RE.sub(lambda m: " " * (m.end() - m.start()), window)
+
+
 #: One authority-basis conjunct id ``(NUM/YEAR)``. A single bounded id token, no
 #: nested optional repeats (AGENTS.md §1.11 / regex perf gate). The inflected
 #: act-name word that precedes the id (the drafting-kind signal) is read SEPARATELY
@@ -518,6 +579,11 @@ def _basis_span(
     for m in re.finditer(r"[.;\n]", text[: term.start()]):
         left = m.end()
     window = text[left : term.start()]
+    # Blank any ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment-version
+    # interjection between the path and the terminal: the inner ids are AMENDING
+    # acts (metadata), not the basis, and the interjection prose would otherwise
+    # defeat the adjacency guard. Offsets are preserved (equal-length blanking).
+    window = _strip_amendment_interjections(window)
     if not _BASIS_ID_SIGNAL_RE.search(window):
         return None, None, ()
     # ADJACENCY GUARD: the provision path must DIRECTLY precede the terminal (only
@@ -892,6 +958,12 @@ def extract_authority_bases(text: str) -> list[AuthorityBasisConjunct]:
                 left = m.end()
         prev_terminal_end = term.end()
         window = text[left : term.start()]
+        # Blank any ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment-version
+        # interjection: the inner ids are the AMENDING act(s), not the authority
+        # basis, and the interjection prose would otherwise defeat the adjacency
+        # guard (the basis is the OUTER ``[act] (NUM/YEAR) N §:n … nojalla``).
+        # Equal-length blanking preserves the window-local id/name-word offsets.
+        window = _strip_amendment_interjections(window)
         if not _BASIS_ID_SIGNAL_RE.search(window):
             continue
         if not _BASIS_PATH_BEFORE_TERMINAL_RE.search(window):

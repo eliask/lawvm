@@ -938,4 +938,5 @@ def _internal_bare_target(statute_id: str, ref: ProvisionRef) -> ProvisionRef:
         section_label=ref.section_label,
         subsection_num=ref.subsection_num,
         item_label=ref.item_label,
+        subitem_label=ref.subitem_label,
     )

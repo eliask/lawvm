@@ -261,6 +261,44 @@ def test_chapter_head_alternation_is_m1_backed_table() -> None:
     assert got == hand
 
 
+def test_definitions_header_unit_alternation_is_m1_backed_table() -> None:
+    """The definitions-block header scope-unit set equals the old hand table.
+
+    Replaces the verbatim
+    ``laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä`` duplicated
+    across ``defined_terms._SCOPE_CUE_TASSA`` and ``_ENUM_HEADER`` with one
+    M1-generated INE-SG set (paradigm inversion, gradation-correct: ``päätös`` ->
+    ``päätökse-`` -> ``päätöksessä``). Strict-equal to the old table — no recall
+    change, only the rule-of-three duplication retired and the gradation substring
+    bug class killed.
+    """
+    from lawvm.finland.references.lemma_gate import (
+        definitions_header_unit_alternation,
+        definitions_header_unit_scope_map,
+    )
+
+    got = set(definitions_header_unit_alternation().split("|"))
+    hand = {"laissa", "luvussa", "pykälässä", "momentissa", "asetuksessa", "päätöksessä"}
+    assert got == hand
+    assert definitions_header_unit_scope_map() == {
+        "laissa": "statute",
+        "luvussa": "chapter",
+        "pykälässä": "section",
+        "momentissa": "subsection",
+        "asetuksessa": "statute",
+        "päätöksessä": "statute",
+    }
+
+
+def test_definitions_header_unit_alternation_longest_first() -> None:
+    """Alternation is longest-first so a regex prefers the most-specific surface."""
+    from lawvm.finland.references.lemma_gate import definitions_header_unit_alternation
+
+    surfaces = definitions_header_unit_alternation().split("|")
+    lengths = [len(s) for s in surfaces]
+    assert lengths == sorted(lengths, reverse=True)
+
+
 def test_chapter_head_shared_across_lanes() -> None:
     """internal_refs and sections build the chapter head from the SAME M1 source."""
     import lawvm.finland.references.internal_refs as ir

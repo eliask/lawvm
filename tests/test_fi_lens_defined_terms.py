@@ -82,7 +82,10 @@ def _assemble(bundle, result):
 
 def test_local_alias_use_resolves_via_defined_term_binding() -> None:
     # WITHOUT the registry resolving anything, the local binding alone must make
-    # the inflected use resolve to the bound act (1069/2009).
+    # the inflected use resolve to the bound act. The bound act is the EU
+    # regulation (EY) N:o 1069/2009, so it is minted in its EU canonical work-id
+    # (``eu/reg/2009/1069``) — NOT the bare ``1069/2009``, which would collide
+    # with the Finnish statute-numbering space.
     _bundle, result = _run({"statute_registry": _MissingRegistry()})
     assert result.coverage["resolution_enabled"] is True
 
@@ -92,11 +95,11 @@ def test_local_alias_use_resolves_via_defined_term_binding() -> None:
         for s in result.node_seeds
         if s.node_kind == "legal_work_entity"
     }
-    assert "1069/2009" in entity_ids, (
-        "the locally-bound act must be minted as an entity via the alias use"
+    assert "eu/reg/2009/1069" in entity_ids, (
+        "the locally-bound EU act must be minted as an entity via the alias use"
     )
     refers_to = [e for e in result.edge_seeds if e.edge_kind == "refers_to"]
-    assert any(e.payload.get("work_id") == "1069/2009" for e in refers_to)
+    assert any(e.payload.get("work_id") == "eu/reg/2009/1069" for e in refers_to)
 
 
 def test_local_binding_resolution_round_trips_to_graph() -> None:
@@ -106,9 +109,9 @@ def test_local_binding_resolution_round_trips_to_graph() -> None:
     entity_ids = {
         nid
         for nid, n in graph.nodes.items()
-        if n.node_kind == "legal_work_entity" and n.payload.get("work_id") == "1069/2009"
+        if n.node_kind == "legal_work_entity" and n.payload.get("work_id") == "eu/reg/2009/1069"
     }
-    assert entity_ids, "bound act entity must exist in the assembled graph"
+    assert entity_ids, "bound EU act entity must exist in the assembled graph"
 
     g_refers = [e for e in graph.edges if e.edge_kind == "refers_to"]
     to_bound = [e for e in g_refers if e.dst in entity_ids]

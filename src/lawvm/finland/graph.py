@@ -31,7 +31,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     from lawvm.xml_ingest import xml_to_ir_node
     from lawvm.core.timeline import compile_timelines
     from lawvm.finland.amendment_index import get_amendment_children
-    from lawvm.finland.cross_refs import extract_cross_refs
+    from lawvm.finland.references.cross_refs import extract_cross_refs
     from lawvm.finland.delegation import extract_delegations
     from lawvm.finland.corpus import get_corpus
     from lawvm.finland.helpers import _fi_label_postprocessor
@@ -129,7 +129,7 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     Does NOT call replay_xml — suitable for bulk export use cases.
     """
     from lawvm.finland.amendment_index import get_amendment_children
-    from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
+    from lawvm.finland.references.cross_refs import extract_cross_refs, extract_eu_refs
     from lawvm.finland.delegation import extract_delegations
     from lxml import etree
 

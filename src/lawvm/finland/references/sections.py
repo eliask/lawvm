@@ -286,6 +286,7 @@ class BodyProvisionTarget:
                         named but no §; the in-chapter provision is deferred).
         subsection_num: Momentti number, or None for a bare § (section-level).
         item_label:     Kohta label, or None.
+        subitem_label:  Alakohta (sub-item) label, or None.
         chapter:        Chapter label (``"9"``, ``"9a"``) when the reference is
                         chapter-qualified (``9 luvun 9 b §``), or None. Carried so
                         the caller can build a chapter-qualified AKN target path
@@ -297,6 +298,7 @@ class BodyProvisionTarget:
     section_label: str
     subsection_num: Optional[int] = None
     item_label: Optional[str] = None
+    subitem_label: Optional[str] = None
     chapter: Optional[str] = None
 
 
@@ -307,6 +309,7 @@ def _subref_to_target(
         section_label=section_label,
         subsection_num=sub.momentti if sub.momentti else None,
         item_label=sub.item or None,
+        subitem_label=sub.subitem or None,
         chapter=chapter,
     )
 

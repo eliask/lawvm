@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
 
 def main(args: "argparse.Namespace") -> None:
-    from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
-    from lawvm.finland.cross_refs import CrossRefEdge
+    from lawvm.finland.references.cross_refs import extract_cross_refs, extract_eu_refs
+    from lawvm.finland.references.cross_refs import CrossRefEdge
     from lawvm.finland.corpus import get_corpus
 
     sid = args.statute_id

@@ -142,6 +142,33 @@ def test_mine_aggregates_distinct_statute_support():
     assert result.stats["biosidiasetus"].celex_support == {"32012R0528": {"400/2004"}}
 
 
+def test_normalize_strips_eu_scope_qualifier():
+    # A coined nickname bound WITH a leading EU-scope qualifier ("EU:n …") must be
+    # keyed on the BARE term-of-art, so a later bare ``<nickname> N artikla`` use
+    # hits the seeded key. The instrument identity (CELEX) is unchanged.
+    assert (
+        m.normalize_nickname_lemma("EU:n kryptovaramarkkina-asetus")
+        == "kryptovaramarkkina-asetus"
+    )
+    assert (
+        m.normalize_nickname_lemma("Euroopan unionin DORA-asetus") == "dora-asetus"
+    )
+    # No qualifier — lowercased/trimmed only.
+    assert m.normalize_nickname_lemma("ESAP-asetus") == "esap-asetus"
+
+
+def test_mine_keys_on_qualifier_stripped_lemma():
+    # "EU:n kryptovaramarkkina-asetus" bound across statutes aggregates under the
+    # bare lemma so the support accrues to the registry-usable key.
+    per_statute = [
+        ("100/2001", [_binding("EU:n kryptovaramarkkina-asetus", "2023/1114")]),
+        ("200/2002", [_binding("kryptovaramarkkina-asetus", "2023/1114")]),
+    ]
+    result = m.mine_bindings(per_statute)
+    stat = result.stats["kryptovaramarkkina-asetus"]
+    assert stat.celex_support == {"32023R1114": {"100/2001", "200/2002"}}
+
+
 def test_mine_same_statute_counted_once_per_celex():
     # Two bindings of the same nickname->CELEX in ONE statute = support 1.
     per_statute = [
