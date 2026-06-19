@@ -849,6 +849,7 @@ def test_replay_xml_2014_938_keeps_permanent_section_25_change_after_temporary_5
     assert "vuonna 2023 hyväksytään" not in text51
 
 
+@pytest.mark.slow
 def test_replay_xml_1940_378_keeps_voimaantulo_section_under_chapter_7_after_1994_318() -> None:
     replay = pinned_replay("1940/378", mode="official_consolidation", quiet=True)
 
@@ -2524,6 +2525,7 @@ def test_replay_xml_repealed_2009_375_sections_25_26_do_not_revive_live_text(
     assert sec26 is None
 
 
+@pytest.mark.slow
 def test_replay_xml_1988_161_pseudo_chapter_marker_moves_section_55_to_7c() -> None:
     """Regression: 1996/473 restructures chapter 7 → 7a/7b/7c via pseudo-markers.
 
@@ -2542,6 +2544,7 @@ def test_replay_xml_1988_161_pseudo_chapter_marker_moves_section_55_to_7c() -> N
     assert sec55_in_7 is None, "§55 must not remain in chapter 7 after move to 7c"
 
 
+@pytest.mark.slow
 def test_replay_xml_1988_161_unscoped_replaces_do_not_become_7c_inserts() -> None:
     """1996/473 bare REPLACE payloads after 7c must not be inserted into 7c."""
 
@@ -2935,6 +2938,7 @@ def test_replay_xml_moves_2014_1429_29e_into_chapter_5b(
     assert "Datakeskuksen hukkalämmön hyödyntäminen" in irnode_to_text(chapter_5b_29e)
 
 
+@pytest.mark.slow
 def test_replay_xml_applies_2024_483_kieliasu_section_list_for_2008_550() -> None:
     """Language-variant residue must not block the later long section list in 2024/483."""
     replay = pinned_replay("2008/550", mode="official_consolidation", quiet=True)

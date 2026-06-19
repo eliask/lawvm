@@ -8227,6 +8227,7 @@ def test_replay_xml_1995_1760_restores_inserted_section_8b_from_2004_1250() -> N
     assert "Tonnistoverovelvollisen yhtiön on annettava Konserniverokeskukselle seuraavat tiedot" in text
 
 
+@pytest.mark.slow
 def test_replay_xml_1940_378_1994_318_does_not_duplicate_section_61_timeline_versions() -> None:
     replay = pinned_replay("1940/378", as_of="1994-07-02", mode="official_consolidation", quiet=True)
     addr = LegalAddress(path=(("chapter", "7"), ("section", "61")))
@@ -9204,6 +9205,7 @@ def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_
     assert dedup_findings[0].source_statute == "2019/371"
 
 
+@pytest.mark.slow
 def test_replay_xml_2017_320_2018_301_keeps_part_scoped_chapter_4_section_11() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
@@ -11102,6 +11104,7 @@ def test_group_shadow_pruning_section_targets_ignores_duplicate_same_scope_label
     assert got == {"20a", "20h", "2"}
 
 
+@pytest.mark.slow
 def test_replay_xml_2010_1048_repeals_6a_lane_and_keeps_live_18b_26() -> None:
     replay = pinned_replay("2010/1048", mode="official_consolidation")
     state = replay.materialized_state
@@ -11153,6 +11156,7 @@ def test_replay_xml_retargets_1962_420_section_22_heading_insert_to_chapter_four
     assert row["target_chapter"] == "4"
 
 
+@pytest.mark.slow
 def test_replay_xml_dedupes_duplicate_amendment_records_for_1978_38() -> None:
     replay_meta: dict[str, object] = {}
     failed_ops: list[FailedOp] = []
@@ -13881,6 +13885,7 @@ def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail(
     assert "4 momentti" not in text.lower()
 
 
+@pytest.mark.slow
 def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsections() -> None:
     """`2010/469` section 149 must bind owned `1 momentti` edits to slot 1.
 
@@ -13979,6 +13984,7 @@ def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replac
     )
 
 
+@pytest.mark.slow
 def test_inspect_amendment_2014_527_2019_49_keeps_section_149b_between_149a_and_149c() -> None:
     bundle = build_amendment_bundle("2014/527", "2019/49", mode="legal_pit")
     groups = {group["target_norm"]: group for group in bundle["groups"]}
@@ -14021,6 +14027,7 @@ def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_re
     assert op71.lo.witness_rule_id == "fi_reinstated_section_scope_from_prior_repeal_address"
 
 
+@pytest.mark.slow
 def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_constraint_shape() -> None:
     bundle = build_amendment_bundle("2014/527", "2022/490", mode="official_consolidation")
     group221c = next(group for group in bundle["groups"] if group["target_norm"] == "221c")
@@ -14680,6 +14687,7 @@ def test_inspect_amendment_1994_674_2016_860_keeps_section_1_inside_new_chapter_
     )
 
 
+@pytest.mark.slow
 def test_inspect_amendment_1994_674_2019_1401_shows_whole_chapter_replace_not_heading_only() -> None:
     bundle = build_amendment_bundle("1994/674", "2019/1401", mode="official_consolidation")
     group11 = next(
@@ -15015,6 +15023,7 @@ def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497(
     assert "onko sopijapuolella oikeus irtisanoa sopimus" not in text4
 
 
+@pytest.mark.slow
 def test_replay_xml_2014_527_keeps_section_221c_subsection_2_after_2022_490() -> None:
     replay = pinned_replay("2014/527", mode="official_consolidation", quiet=True, build_full_products=False)
     sec221c = replay.materialized_state.find_section("221c", "20")
@@ -15068,6 +15077,7 @@ def test_replay_xml_2003_549_keeps_section_149_subsection_4_as_wrapup_only(
     assert "1)" not in sub4_text
 
 
+@pytest.mark.slow
 def test_replay_xml_2003_549_applies_shifted_subsection_insert_for_section_53() -> None:
     """`2009/925` must preserve the shifted old 6 momentti as the new 7 momentti."""
     master = pinned_replay("2003/549", as_of="2010-01-02", mode="official_consolidation", quiet=True)
