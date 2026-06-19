@@ -134,6 +134,7 @@ def _target_head_matches_parent_metadata(
     johto: str,
     parent_title: str,
     parent_issue_date: str,
+    source_title: str = "",
 ) -> bool:
     """Return True when non-citation metadata identifies the parent statute.
 
@@ -150,7 +151,8 @@ def _target_head_matches_parent_metadata(
     if "muuttamisesta annetun" in head.title_phrase.lower():
         return False
 
-    variants = _parent_title_reference_variants(parent_title)
+    variants = set(_parent_title_reference_variants(parent_title))
+    variants.update(_source_title_target_reference_variants(source_title))
     target_norm = re.sub(r"\s+", " ", head.title_phrase.lower())
     title_matches = bool(variants) and any(variant in target_norm for variant in variants)
     if not title_matches:
@@ -178,6 +180,25 @@ def _single_target_amending_act_title(source_title: str) -> bool:
             source_norm,
         )
     )
+
+
+def _source_title_target_reference_variants(source_title: str) -> set[str]:
+    """Return target-title surfaces from a single-target amendment title."""
+    source_norm = re.sub(r"\s+", " ", (source_title or "").strip().lower())
+    if not source_norm:
+        return set()
+    if any(token in source_norm for token in ("eräiden", "väliaikais", "voimaan", "kumoamisesta")):
+        return set()
+    match = re.match(
+        r"^(?:valtioneuvoston\s+)?(?:laki|asetus)\s+(.+?)\s+muuttamisesta$",
+        source_norm,
+    )
+    if match is None:
+        return set()
+    target = match.group(1).strip()
+    if " annetun " not in target:
+        return set()
+    return {target} if target else set()
 
 
 def _leading_meta_repeal_rest(johto: str) -> str | None:
@@ -503,6 +524,7 @@ def route_amendment(
                 johto=citation_guard_johto or johto,
                 parent_title=parent_title,
                 parent_issue_date=parent_issue_date,
+                source_title=source_title,
             ):
                 return True, "citation_typo_rewrite_parent_validated"
             if amendment_num and amendment_num == parent_num:

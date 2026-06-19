@@ -24,6 +24,15 @@ _AFFECTED_HEAD_RE = re.compile(
     r"annetun\s{1,4}+(?P<title>[^()]{1,220}?)\s{0,4}+\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
     re.IGNORECASE,
 )
+_AFFECTED_HEAD_TITLE_DATE_RE = re.compile(
+    r"(?P<title>[^(),;]{1,220}?)\s{1,4}+"
+    r"(?P<day>\d{1,2})\s{1,4}+päivänä\s{1,4}+"
+    r"(?P<month>[a-zäöå]{1,15})\s{1,4}+"
+    r"(?P<year>\d{4})\s{1,4}+annetun\s{1,4}+"
+    r"(?P<instrument>lain|asetuksen|päätöksen)\s{0,4}+"
+    r"\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
+    re.IGNORECASE,
+)
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")
 _NOJALLA_RE = re.compile(r"\bnojalla\b", re.IGNORECASE)
 
@@ -285,17 +294,43 @@ def parse_affected_statute_head(johto: str) -> AffectedStatuteHead | None:
     """Parse the affected-statute identity head, if present."""
 
     zone = target_zone(johto)
-    match = _AFFECTED_HEAD_RE.search(zone)
-    if match is None:
+    title_date_match = _AFFECTED_HEAD_TITLE_DATE_RE.search(zone)
+    match = None if title_date_match is not None else _AFFECTED_HEAD_RE.search(zone)
+    if match is None and title_date_match is None:
         return None
-    title_phrase = re.sub(r"\s+", " ", match.group("title") or "").strip()
+    if match is not None:
+        title_phrase = re.sub(r"\s+", " ", match.group("title") or "").strip()
+        text = match.group(0)
+        day = match.group("day")
+        month = match.group("month")
+        year = match.group("year")
+        num = match.group("num")
+        cite_year = match.group("cite_year")
+    else:
+        assert title_date_match is not None
+        title = re.sub(r"\s+", " ", title_date_match.group("title") or "").strip()
+        title = re.sub(
+            r"^(?:eduskunnan päätöksen mukaisesti\s+)?"
+            r"(?:muutetaan|kumotaan|lisätään|siirretään)\s+",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        ).strip()
+        instrument = title_date_match.group("instrument")
+        title_phrase = f"{title} annetun {instrument}".strip()
+        text = title_date_match.group(0)
+        day = title_date_match.group("day")
+        month = title_date_match.group("month")
+        year = title_date_match.group("year")
+        num = title_date_match.group("num")
+        cite_year = title_date_match.group("cite_year")
     return AffectedStatuteHead(
-        text=match.group(0),
+        text=text,
         title_phrase=title_phrase,
         instrument=instrument_from_text(title_phrase),
-        issue_date=_parse_finnish_date(match.group("day"), match.group("month"), match.group("year")),
-        cited_num=match.group("num"),
-        cited_year=match.group("cite_year"),
+        issue_date=_parse_finnish_date(day, month, year),
+        cited_num=num,
+        cited_year=cite_year,
     )
 
 

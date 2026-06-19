@@ -95,6 +95,10 @@ class TestJohtolauseCitedTargetIds:
         johto = "muutetaan jonkin lain (1234/2001) 1 §"
         assert johtolause_cited_target_ids(johto, 2010) == ["2001/1234"]
 
+    def test_four_digit_statute_number_citation(self) -> None:
+        johto = "muutetaan jonkin lain (1597/1992) 1 §"
+        assert johtolause_cited_target_ids(johto, 1997) == ["1992/1597"]
+
     def test_prior_amendment_citations_after_sellaisena_excluded(self) -> None:
         # Citations after "sellaisena kuin se on" are prior-amendment refs,
         # not the target statute — they must not be reported.
@@ -416,6 +420,42 @@ class TestRouteAmendmentCitationMismatchSkip:
         head = parse_affected_statute_head(johto_raw)
         assert head is not None
         assert head.issue_date is not None and head.issue_date.isoformat() == "1958-08-16"
+        assert head.instrument == "laki"
+
+    def test_title_before_date_corrupt_citation_uses_amendment_title_metadata(self) -> None:
+        johto_raw = (
+            "kumotaan Euroopan talousalueen valtioiden kansalaisten koulutuksen "
+            "ja ammatillisen harjoittelun tunnustamisesta 30 päivänä joulukuuta "
+            "1992 annetun lain (159/1992) 3 §:n 3 momentti, sellaisena kuin se "
+            "on 28 päivänä kesäkuuta 1994 annetussa laissa (579/1994), muutetaan "
+            "lain nimike, 1 ja 2 §"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1992/1597",
+            "1997/419",
+            source_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten koulutuksen "
+                "ja ammatillisen harjoittelun tunnustamisesta annetun lain muuttamisesta"
+            ),
+            parent_title=(
+                "Laki Euroopan talousalueen valtioiden kansalaisten "
+                "tutkintotodistusten tunnustamisesta"
+            ),
+            parent_issue_date="1992-12-30",
+        )
+        assert should_apply is True
+        assert reason == "citation_typo_rewrite_parent_validated"
+        head = parse_affected_statute_head(johto_raw)
+        assert head is not None
+        assert head.title_phrase == (
+            "Euroopan talousalueen valtioiden kansalaisten koulutuksen "
+            "ja ammatillisen harjoittelun tunnustamisesta annetun lain"
+        )
+        assert head.issue_date is not None and head.issue_date.isoformat() == "1992-12-30"
         assert head.instrument == "laki"
 
     def test_same_day_sibling_title_mismatch_blocks_typo_rewrite(self) -> None:
