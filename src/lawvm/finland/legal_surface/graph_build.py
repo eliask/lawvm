@@ -75,6 +75,7 @@ from lawvm.finland.legal_surface.norm_composition import (
     deontic_frame_attachment_passes,
     norm_subject_attachment_passes,
     procedure_governance_passes,
+    sanction_reference_passes,
 )
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
@@ -224,6 +225,16 @@ def build_legal_surface_graph(
     # recognizer delegation_frame to the construction delegated_instrument node(s)
     # its span contains — the norm->authorized-instrument link. Spliced in
     # ADDITIVELY, surface_only, candidate-not-asserted.
+    #
+    # The sanction-reference pass (sanction_defers_to_provision) is the PRINCIPLED
+    # sanction attachment: where sanctioned_by can only co-occur (the duty↔
+    # consequence link is not surface-recoverable from the modal-core ↔ frame
+    # join), the penal-DEFERRAL construction ("rangaistaan … niin kuin §:ssä
+    # säädetään") DOES carry a recoverable index — the forward provision reference
+    # the penalty defers to, bound by a closed deferral cue. Spliced in ADDITIVELY,
+    # surface_only, candidate-not-asserted (one deferral ref "asserted"; several
+    # "ambiguous"; none → no edge, a standalone offence correctly left to
+    # co-occurrence).
     all_edge_passes = (
         edge_passes
         + condition_attachment_passes(bundle)
@@ -231,6 +242,7 @@ def build_legal_surface_graph(
         + norm_subject_attachment_passes(bundle)
         + procedure_governance_passes(bundle)
         + delegation_instrument_passes(bundle)
+        + sanction_reference_passes(bundle)
     )
 
     return assemble_surface_graph(

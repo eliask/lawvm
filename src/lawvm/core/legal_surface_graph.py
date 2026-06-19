@@ -196,6 +196,24 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # the same shape as delegates_to/sanctioned_by. A SURFACE candidate, never
         # a legal conclusion (§D7).
         "governed_by_procedure",
+        # A sanction_frame node -> the reference_expr node naming the PROVISION its
+        # penalty defers to: the penal-deferral construction "rangaistaan/tuomitaan
+        # … [mukaan / niin kuin / siten kuin / säädetään / noudatettakoon] §:ssä /
+        # luvussa". Unlike sanctioned_by (a sentence-local CO-OCCURRENCE of a duty
+        # core and a consequence frame — for which no surface attachment index is
+        # recoverable, see norm_composition), this edge carries a PRINCIPLED
+        # attachment: a forward reference after the sanction marker, bound by a
+        # closed deferral cue between marker and reference, IS the provision the
+        # sanction's measure/offence is defined in (analogous to delegates_to's
+        # resolve-by-containment, here resolve-by-penal-reference). EXACTLY ONE
+        # deferral reference -> "asserted" (attachment=resolved_by_penal_reference);
+        # several -> one edge per reference with the full set in payload,
+        # "ambiguous"; none -> no edge (the sanction is a standalone offence with no
+        # back-reference, correctly left as co-occurrence). Still a SURFACE candidate
+        # of the citation relation, never a legal conclusion (§D7) — the reading that
+        # the penalty is governed by that provision must leave the graph through a
+        # named authorization object.
+        "sanction_defers_to_provision",
     }
 )
 
