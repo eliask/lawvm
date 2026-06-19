@@ -15,6 +15,7 @@ from lawvm.finland.acquisition import (
 )
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.process_findings import ProcessFindingRecorder
+from lawvm.finland.source_model import AmendmentSourceModel
 
 RecordProcessFinding = Callable[..., Finding]
 ReplayPrint = Callable[[str], None]
@@ -25,7 +26,7 @@ OperativeStructureCheck = Callable[[etree._Element], tuple[bool, list[str]]]
 @dataclass(frozen=True, slots=True)
 class ProcessAcquisitionResult:
     xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     lacks_operative_structure: bool
     operative_tags: tuple[str, ...]
     johto: str
@@ -53,6 +54,10 @@ class ProcessAcquisitionContext:
     def acquire(self) -> ProcessAcquisitionResult:
         xml_bytes = self._apply_source_corrections(self.xml_bytes)
         muutos_tree = etree.fromstring(xml_bytes)
+        source_model = AmendmentSourceModel.from_tree(
+            muutos_tree,
+            source_ref=self.amendment_id,
+        )
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)
         source_title = self.tree_title(muutos_tree)
         acquisition = self._build_acquisition(
@@ -81,7 +86,7 @@ class ProcessAcquisitionContext:
 
         return ProcessAcquisitionResult(
             xml_bytes=xml_bytes,
-            muutos_tree=muutos_tree,
+            source_model=source_model,
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=tuple(operative_tags),
             johto=acquisition.decision.chosen_normalized_text,

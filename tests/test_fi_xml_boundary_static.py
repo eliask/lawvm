@@ -201,3 +201,14 @@ def test_process_pipeline_metadata_reads_use_source_model() -> None:
 
     assert "_amendment_tree_metadata" not in source
     assert "source_model.amendment_tree_metadata(" in source
+
+
+def test_process_pipeline_receives_source_model_from_acquisition() -> None:
+    source = _source("src/lawvm/finland/process_pipeline.py")
+    acquisition_source = _source("src/lawvm/finland/process_acquisition.py")
+
+    assert "muutos_tree" not in source
+    assert "AmendmentSourceModel.from_tree" not in source
+    assert "source_model = acquired.source_model" in source
+    assert "source_model: AmendmentSourceModel" in acquisition_source
+    assert "AmendmentSourceModel.from_tree(" in acquisition_source

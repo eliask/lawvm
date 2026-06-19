@@ -56,7 +56,6 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_notices import replay_print as _replay_print
-from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
 
@@ -243,11 +242,7 @@ def process_muutoslaki_resolved(
             amendment_id=amendment_id,
         )
         xml_bytes = acquired.xml_bytes
-        muutos_tree = acquired.muutos_tree
-        source_model = AmendmentSourceModel.from_tree(
-            muutos_tree,
-            source_ref=amendment_id,
-        )
+        source_model = acquired.source_model
         lacks_operative_structure = acquired.lacks_operative_structure
         operative_tags = list(acquired.operative_tags)
         johto = acquired.johto
