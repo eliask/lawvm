@@ -3099,6 +3099,43 @@ def test_is_presentation_structural_diff_chem_list_wrapup_and_names() -> None:
     assert is_presentation_structural_diff(sd, events) is True
 
 
+def test_is_presentation_structural_diff_item_suffix_vs_wrapup_owner_projection() -> None:
+    # 1998/417 § 3 style: same legal text, but Finlex owns the final unnumbered
+    # paragraph as loppukappale while replay has already absorbed it into item 2.
+    sd = {"label": ""}
+    tail = (
+        "tämän päätöksen liitteessä mainittujen toimitusajan ja palvelun laadun "
+        "mittarien suoritustason osalta soveltaen liitteessä mainittuja "
+        "määritelmiä ja mittausmenetelmiä."
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "semantic_path": ["section:3", "subsection:1", "wrapUp"],
+            "right_badge": "loppukappale",
+            "left_text": None,
+            "right_text": tail,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:3", "subsection:1", "item:2"],
+            "left_text": f"ylläpidettävä ajantasaista luetteloa {tail}",
+            "right_text": "ylläpidettävä ajantasaista luetteloa",
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        {
+            **events[1],
+            "left_text": "ylläpidettävä ajantasaista luetteloa muuta oikeudellista tekstiä.",
+        },
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_negative_real_content_change() -> None:
     # A real wording change (not prefix, not artifact) must not be treated as presentation.
     sd = {"label": ""}
