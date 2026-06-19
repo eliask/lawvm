@@ -510,6 +510,22 @@ def _is_wrapup_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return right_norm == left_norm + tail_norm
 
 
+def _is_intro_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect same-text wording-vs-intro owner projection differences."""
+
+    if len(events) != 2:
+        return False
+    intro_events = [event for event in events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in events if event.get("kind") == "wording_text_changed"]
+    if len(intro_events) != 1 or len(wording_events) != 1:
+        return False
+    intro_text = _one_sided_event_text(intro_events[0])
+    wording_text = _one_sided_event_text(wording_events[0])
+    if not intro_text or not wording_text:
+        return False
+    return _normalize_for_pres_text(intro_text) == _normalize_for_pres_text(wording_text)
+
+
 def _one_sided_event_text(event: dict[str, Any]) -> str:
     left = (event.get("left_text") or "").strip()
     right = (event.get("right_text") or "").strip()
@@ -593,6 +609,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
         return False
 
     if _is_wrapup_owner_projection_diff(events):
+        return True
+    if _is_intro_owner_projection_diff(events):
         return True
     if _is_value_table_owner_projection_diff(events):
         return True

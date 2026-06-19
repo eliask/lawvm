@@ -3184,6 +3184,39 @@ def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> N
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_intro_vs_wording_owner_projection() -> None:
+    # 1980/552 § 1 style: identical text is an intro facet on one side and
+    # plain subsection wording on the other.
+    sd = {"label": ""}
+    text = (
+        "Kauppahintarekisterin ja siitä annettavan tietopalvelun tarkoituksena "
+        "on palvella kiinteistön arvon määrittämistä lunastustoimituksissa."
+    )
+    events = [
+        {
+            "kind": "facet_removed",
+            "semantic_path": ["section:1", "subsection:2", "intro"],
+            "left_badge": "johdanto",
+            "left_text": text,
+            "right_text": None,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:1", "subsection:2"],
+            "left_text": None,
+            "right_text": text,
+        },
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        events[0],
+        {**events[1], "right_text": text.replace("lunastustoimituksissa", "verotuksessa")},
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_negative_real_content_change() -> None:
     # A real wording change (not prefix, not artifact) must not be treated as presentation.
     sd = {"label": ""}
