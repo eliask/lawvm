@@ -46,8 +46,8 @@ def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
     monkeypatch,
 ) -> None:
     ref_module = types.ModuleType("lawvm.finland.ref_mention_extractor")
-    prep_module = types.ModuleType("lawvm.finland.preparatory_reference_extractor")
-    inline_module = types.ModuleType("lawvm.finland.inline_citation_extractor")
+    prep_module = types.ModuleType("lawvm.finland.references.preparatory_reference_extractor")
+    inline_module = types.ModuleType("lawvm.finland.references.inline_citation_extractor")
 
     ref_mention = ReferenceMention(
         source_provision_ref=ProvisionRef(statute_id="711/2022", section_label="4"),
@@ -125,8 +125,8 @@ def test_project_interlinks_for_statute_adapts_existing_fi_citation_families(
         raising=False,
     )
     monkeypatch.setitem(sys.modules, "lawvm.finland.ref_mention_extractor", ref_module)
-    monkeypatch.setitem(sys.modules, "lawvm.finland.preparatory_reference_extractor", prep_module)
-    monkeypatch.setitem(sys.modules, "lawvm.finland.inline_citation_extractor", inline_module)
+    monkeypatch.setitem(sys.modules, "lawvm.finland.references.preparatory_reference_extractor", prep_module)
+    monkeypatch.setitem(sys.modules, "lawvm.finland.references.inline_citation_extractor", inline_module)
 
     from lawvm.tools.export_fi_interlinks import _project_interlinks_for_statute
 
