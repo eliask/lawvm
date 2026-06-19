@@ -663,8 +663,90 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     return ops, []
 
 
-_cited_scope_cache: dict[str, dict[str, tuple[str | None, str | None]]] = {}
+_cited_scope_cache: dict[tuple[str, str], dict[str, tuple[str | None, str | None]]] = {}
 _cited_effective_date_cache: dict[str, str | None] = {}
+_CITED_REPEALED_SECTION_REPLACEMENT_RE = re.compile(
+    r"mainitulla\s+\w+\s+(?P<num>\d{1,4})/(?P<year>\d{4})\s+kumot\w*\s+"
+    r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+tilalle\s+uusi\s+"
+    r"(?P=section)\s*§",
+    flags=re.I,
+)
+
+
+def _compiled_cited_section_scopes(
+    *,
+    cited_id: str,
+    amendment_id: str,
+    parent_id: str,
+    master: "ReplayState",
+) -> dict[str, tuple[str | None, str | None]]:
+    if not cited_id or cited_id == amendment_id:
+        return {}
+    cache_key = (parent_id, cited_id)
+    if cache_key in _cited_scope_cache:
+        return _cited_scope_cache[cache_key]
+
+    cs = get_corpus()
+    xml_bytes = cs.read_source(cited_id)
+    if xml_bytes is None:
+        _cited_scope_cache[cache_key] = {}
+        return {}
+
+    cited_tree = etree.fromstring(xml_bytes)
+    cited_title = _tree_title(cited_tree)
+    cited_johto = get_johtolause(xml_bytes)
+    cited_phase = normalize_and_compile_ops(
+        johto=cited_johto,
+        muutos_tree=cited_tree,
+        master=master,
+        base_ir=None,
+        amendment_id=cited_id,
+        source_title=cited_title,
+        used_sec1_fallback=False,
+        parent_id=parent_id,
+        strict_profile=None,
+    )
+    section_scopes: dict[str, tuple[str | None, str | None]] = {}
+    for cited_op in cited_phase.output:
+        if cited_op.target_unit_kind != "section" or not cited_op.target_section:
+            continue
+        if not cited_op.target_chapter and not cited_op.target_part:
+            continue
+        section_scopes.setdefault(
+            _norm_num_token(cited_op.target_section),
+            (cited_op.target_part, cited_op.target_chapter),
+        )
+    _cited_scope_cache[cache_key] = section_scopes
+    return section_scopes
+
+
+def _cited_repealed_section_scope_for_replacement(
+    *,
+    johto: str,
+    section_norm: str,
+    amendment_id: str,
+    parent_id: str,
+    master: "ReplayState",
+) -> tuple[str | None, str | None] | None:
+    normalized = _normalize_fi_parse_text(johto)
+    if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
+        return None
+    for match in _CITED_REPEALED_SECTION_REPLACEMENT_RE.finditer(normalized):
+        if "lukuun" in normalized[max(0, match.start() - 24) : match.start()]:
+            continue
+        cited_section = _norm_num_token(match.group("section"))
+        if cited_section != section_norm:
+            continue
+        cited_id = f"{match.group('year')}/{int(match.group('num'))}"
+        scoped_target = _compiled_cited_section_scopes(
+            cited_id=cited_id,
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            master=master,
+        ).get(section_norm)
+        if scoped_target is not None and scoped_target[1] is not None:
+            return scoped_target
+    return None
 
 
 def _lift_explicit_scopes_from_cited_version_ops(
@@ -691,48 +773,16 @@ def _lift_explicit_scopes_from_cited_version_ops(
     if not relevant_cited_ids:
         return ops
 
-    cs = get_corpus()
     cited_scope_map: dict[str, dict[str, tuple[str | None, str | None]]] = {}
     for cited_id in relevant_cited_ids:
-        if not cited_id or cited_id == amendment_id:
-            continue
-        # Cache: avoid recompiling cited amendments across replay calls
-        if cited_id in _cited_scope_cache:
-            cached = _cited_scope_cache[cited_id]
-            if cached:
-                cited_scope_map[cited_id] = cached
-            continue
-        xml_bytes = cs.read_source(cited_id)
-        if xml_bytes is None:
-            _cited_scope_cache[cited_id] = {}
-            continue
-        cited_tree = etree.fromstring(xml_bytes)
-        cited_title = _tree_title(cited_tree)
-        cited_johto = get_johtolause(xml_bytes)
-        cited_phase = normalize_and_compile_ops(
-            johto=cited_johto,
-            muutos_tree=cited_tree,
-            master=master,
-            base_ir=None,
-            amendment_id=cited_id,
-            source_title=cited_title,
-            used_sec1_fallback=False,
+        cited_scopes = _compiled_cited_section_scopes(
+            cited_id=cited_id,
+            amendment_id=amendment_id,
             parent_id=parent_id,
-            strict_profile=None,
+            master=master,
         )
-        section_scopes: dict[str, tuple[str | None, str | None]] = {}
-        for cited_op in cited_phase.output:
-            if cited_op.target_unit_kind != "section" or not cited_op.target_section:
-                continue
-            if not cited_op.target_chapter and not cited_op.target_part:
-                continue
-            section_scopes.setdefault(
-                _norm_num_token(cited_op.target_section),
-                (cited_op.target_part, cited_op.target_chapter),
-            )
-        _cited_scope_cache[cited_id] = section_scopes
-        if section_scopes:
-            cited_scope_map[cited_id] = section_scopes
+        if cited_scopes:
+            cited_scope_map[cited_id] = cited_scopes
 
     if not cited_scope_map:
         return ops
@@ -1330,6 +1380,8 @@ def _infer_flat_reinstated_section_scope_from_base(
     master: "ReplayState",
     base_ir: IRNode | None,
     johto: str,
+    amendment_id: str,
+    parent_id: str,
 ) -> tuple[str | None, str] | None:
     """Infer scope for flat source-body insertion of a new section replacing a repealed one.
 
@@ -1339,10 +1391,25 @@ def _infer_flat_reinstated_section_scope_from_base(
     the rebirth semantics; the base tree supplies the prior address.  This rule
     only fires when that prior address is unique and its container still exists.
     """
-    if not _is_whole_section_insert(op) or op.target_chapter is not None or base_ir is None:
+    if not _is_whole_section_insert(op):
+        return None
+    scope_witness = projection_scope_confidence(
+        scope_confidence=op.scope_confidence,
+        scope_provenance_tags=op.scope_provenance_tags,
+        resolved_chapter=op.target_chapter,
+    )
+    if op.target_chapter is not None and (
+        scope_witness is None or scope_witness.source not in {"carry_forward", "explicit_chunk"}
+    ):
         return None
     section_norm = _norm_num_token(op.target_section)
-    if not _source_body_has_flat_whole_section(
+    if op.target_chapter is not None and master.find_section_path(
+        section_norm,
+        op.target_chapter,
+        op.target_part,
+    ) is not None:
+        return None
+    if not _source_body_carries_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
         target_part=op.target_part,
@@ -1350,11 +1417,38 @@ def _infer_flat_reinstated_section_scope_from_base(
         return None
     if not _johto_says_repealed_section_replaced_by_new_section(johto, section_norm):
         return None
+    cited_scope = _cited_repealed_section_scope_for_replacement(
+        johto=johto,
+        section_norm=section_norm,
+        amendment_id=amendment_id,
+        parent_id=parent_id,
+        master=master,
+    )
+    if cited_scope is not None:
+        cited_part, cited_chapter = cited_scope
+        if op.target_part is not None and cited_part != op.target_part:
+            return None
+        if cited_chapter is not None and _container_path_exists_in_master(
+            master=master,
+            part=cited_part,
+            chapter=cited_chapter,
+        ):
+            return (cited_part, cited_chapter)
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+    if base_ir is None:
+        return None
     base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
     if base_scope is None:
         return None
     base_part, base_chapter = base_scope
     if base_chapter is None:
+        return None
+    if base_chapter == op.target_chapter and base_part == op.target_part:
         return None
     if op.target_part is not None and base_part != op.target_part:
         return None
@@ -1786,6 +1880,7 @@ def _enrich_ops_from_amendment_tree(
     master: "ReplayState | None" = None,
     johto: str = "",
     base_ir: IRNode | None = None,
+    parent_id: str = "",
 ) -> List[AmendmentOp]:
     """Stamp source-statute metadata (date, title, expiry) onto every op.
 
@@ -1906,10 +2001,12 @@ def _enrich_ops_from_amendment_tree(
                         master=master,
                         base_ir=base_ir,
                         johto=johto,
+                        amendment_id=amendment_id,
+                        parent_id=parent_id,
                     )
                     if reinstated_scope is not None:
                         inferred_part, inferred_chapter = reinstated_scope
-                        inferred_rule_id = "fi_flat_reinstated_section_scope_from_base_prior_address"
+                        inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
                         op=scoped_op,
@@ -2882,6 +2979,7 @@ def normalize_and_compile_ops(
         master,
         johto=johto,
         base_ir=base_ir,
+        parent_id=parent_id or "",
     )
     ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(
         ops,
@@ -2976,6 +3074,7 @@ def normalize_and_compile_ops(
             master,
             johto=johto,
             base_ir=base_ir,
+            parent_id=parent_id or "",
         )
         fallback_plain_insert_count = sum(
             1
@@ -3068,6 +3167,7 @@ def normalize_and_compile_ops(
                     master,
                     johto=johto,
                     base_ir=base_ir,
+                    parent_id=parent_id or "",
                 )
                 for op in ops:
                     op.body_root_replace_fallback = True
@@ -3098,6 +3198,7 @@ def normalize_and_compile_ops(
                     master,
                     johto=johto,
                     base_ir=base_ir,
+                    parent_id=parent_id or "",
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3128,6 +3229,7 @@ def normalize_and_compile_ops(
                     master,
                     johto=johto,
                     base_ir=base_ir,
+                    parent_id=parent_id or "",
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3167,6 +3269,7 @@ def normalize_and_compile_ops(
                     master,
                     johto=johto,
                     base_ir=base_ir,
+                    parent_id=parent_id or "",
                 )
                 for op in ops:
                     op.fallback_provenance = True

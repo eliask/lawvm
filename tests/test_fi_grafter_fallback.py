@@ -162,6 +162,7 @@ from lawvm.finland.frontend_compile import (
     _enrich_ops_from_amendment_tree,
     _retarget_stale_body_scope_for_section_op,
     _extract_enacting_formula_body_replace_ops_fallback,
+    normalize_and_compile_ops,
 )
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.apply_resolved_op import FI_APPLY_RESOLVED_OP_RULE_ID
@@ -13870,6 +13871,37 @@ def test_inspect_amendment_2014_527_2019_49_keeps_section_149b_between_149a_and_
     assert groups["149b"]["target_chapter"] == "15"
     assert groups["149c"]["target_chapter"] == "15"
     assert groups["211b"]["target_chapter"] == "20"
+
+
+def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_repeal_scope() -> None:
+    xml_bytes = get_corpus().read_source("2004/254")
+    assert xml_bytes is not None
+    muutos_tree = etree.fromstring(xml_bytes)
+    master = replay_xml(
+        parent_id="1992/1243",
+        stop_before="2004/254",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    ).state
+
+    phase = normalize_and_compile_ops(
+        johto=get_johtolause(xml_bytes),
+        muutos_tree=muutos_tree,
+        master=master,
+        base_ir=None,
+        amendment_id="2004/254",
+        source_title="Valtioneuvoston asetus valtion talousarviosta annetun asetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1992/1243",
+        strict_profile=None,
+    )
+
+    op71 = next(op for op in phase.output if op.op_type == "INSERT" and op.target_section == "71")
+
+    assert op71.description() == "INSERT 9 luku 71 §"
+    assert op71.lo is not None
+    assert op71.lo.witness_rule_id == "fi_reinstated_section_scope_from_prior_repeal_address"
 
 
 def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_constraint_shape() -> None:
