@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from collections.abc import Iterable
 from typing import TYPE_CHECKING, Literal, Optional, cast
 
 import lxml.etree as etree
@@ -25,10 +25,14 @@ from lawvm.finland.constraints import _find_muutos_node_uncached
 from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
+    from lawvm.core.compile_result import StrictProfile
+    from lawvm.core.phase_result import PhaseResult
+    from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
     )
+    from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
     from lawvm.finland.ops import AmendmentOp, ResolvedOp
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.uncovered_recovery_context import UncoveredRecoveryContext
@@ -480,6 +484,41 @@ class AmendmentSourceModel:
 
         xml_bytes = etree.tostring(self.muutos_tree, encoding="utf-8")
         return get_operative_body_repeal_candidate(xml_bytes)
+
+    def normalize_and_compile_ops(
+        self,
+        *,
+        compile_ops: Callable[..., "PhaseResult[list[AmendmentOp]]"],
+        johto: str,
+        master: "ReplayState",
+        base_ir: IRNode | None,
+        amendment_id: str,
+        source_title: str,
+        used_sec1_fallback: bool,
+        parent_id: str,
+        strict_profile: "StrictProfile | None",
+        parse_result: object | None,
+        regex_recognition_coverage_out: list["RegexRecognitionCoverage"] | None,
+        amendment_metadata: "_AmendmentTreeMetadata | None",
+    ) -> "PhaseResult[list[AmendmentOp]]":
+        """Run frontend normalization with XML access owned by the source model."""
+        from lawvm.finland.constraints import muutos_node_lookup_cache_scope
+
+        with muutos_node_lookup_cache_scope():
+            return compile_ops(
+                johto=johto,
+                muutos_tree=self.muutos_tree,
+                master=master,
+                base_ir=base_ir,
+                amendment_id=amendment_id,
+                source_title=source_title,
+                used_sec1_fallback=used_sec1_fallback,
+                parent_id=parent_id,
+                strict_profile=strict_profile,
+                parse_result=parse_result,
+                regex_recognition_coverage_out=regex_recognition_coverage_out,
+                amendment_metadata=amendment_metadata,
+            )
 
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""

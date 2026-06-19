@@ -5,6 +5,7 @@ import datetime as dt
 from lxml import etree
 
 from lawvm.core.ir import IRNode
+from lawvm.core.phase_result import PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.body_coverage import extract_body_coverage
@@ -340,6 +341,38 @@ def test_source_model_exposes_operative_body_repeal_candidate() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
 
     assert model.operative_body_repeal_candidate() == "Taten kumotaan asetuksen 9 §."
+
+
+def test_source_model_owns_frontend_normalization_xml_adapter() -> None:
+    tree = _tree()
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/8")
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    calls: list[dict[str, object]] = []
+
+    def fake_compile_ops(**kwargs: object) -> PhaseResult[list[AmendmentOp]]:
+        calls.append(kwargs)
+        return PhaseResult(output=[])
+
+    result = model.normalize_and_compile_ops(
+        compile_ops=fake_compile_ops,
+        johto="muutetaan 5 §",
+        master=state,
+        base_ir=state.ir,
+        amendment_id="2000/8",
+        source_title="Testilaki",
+        used_sec1_fallback=False,
+        parent_id="1999/1",
+        strict_profile=None,
+        parse_result=None,
+        regex_recognition_coverage_out=None,
+        amendment_metadata=None,
+    )
+
+    assert result.output == []
+    assert len(calls) == 1
+    assert calls[0]["muutos_tree"] is tree
+    assert calls[0]["amendment_id"] == "2000/8"
+    assert calls[0]["parent_id"] == "1999/1"
 
 
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:

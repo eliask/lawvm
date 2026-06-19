@@ -396,7 +396,7 @@ def process_muutoslaki_resolved(
                 "fi.process.frontend_normalization",
                 lambda: ProcessFrontendNormalizationContext(
                     johto=johto,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     state=state,
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,

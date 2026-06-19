@@ -155,3 +155,14 @@ def test_temporal_postprocessing_body_repeal_candidate_uses_source_model() -> No
 
     assert "get_operative_body_repeal_candidate" not in source
     assert "source_model.operative_body_repeal_candidate()" in source
+
+
+def test_frontend_normalization_runs_through_source_model() -> None:
+    source = _source("src/lawvm/finland/process_frontend_normalization.py")
+    pipeline_source = _source("src/lawvm/finland/process_pipeline.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "muutos_node_lookup_cache_scope" not in source
+    assert "muutos_tree" not in source
+    assert "source_model.normalize_and_compile_ops(" in source
+    assert "source_model=source_model" in pipeline_source
