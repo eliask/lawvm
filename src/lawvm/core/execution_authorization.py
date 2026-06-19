@@ -22,7 +22,7 @@ _EXECUTION_AUTHORIZATION_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExecutionAuthorization:
     """Answer whether a diagnostic/frontier row may mutate legal state.
 
