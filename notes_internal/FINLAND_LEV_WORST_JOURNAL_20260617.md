@@ -1949,3 +1949,28 @@ fix-or-journal discipline.
   target resolution, or replay text for this row unless a source-owned section
   divergence reappears. This row is evidence for improving/reporting the
   secondary full-text metric, not for legal-state mutation.
+
+### `1976/693` — Laki toimenpiteistä tupakoinnin vähentämiseksi
+
+- Current row (`20260619T0834`): structural `1.000000`, Levenshtein
+  `0.852057`; 39 amendments.
+- Re-triage commands:
+  - `uv run lawvm diff 1976/693 --text --threshold 0.999 --compile-summary`
+    reports 63 compared sections, 63 perfect, no replay-missing sections, and
+    no replay-extra sections.
+  - `uv run lawvm oracle-check 1976/693` reports `85.1%` over 7 diverging
+    sections, all classified as `EDITORIAL_CONVENTION`, with cached XML
+    topology missing `16 §`, `26 §`, `27 §`, `30 §`, `34 §`, and `37 §`.
+  - `uv run lawvm bench --statute 1976/693 --no-save --top 5` reproduces
+    primary structural accuracy `100.00%` and secondary full-text
+    Levenshtein `85.21%`.
+- Root-cause class:
+  - This is another **metric-surface false positive for the Levenshtein
+    queue**. The primary structural lane and oracle adjudicator find no
+    source-owned replay gap.
+  - The residual is flattened whole-text/oracle presentation mismatch after
+    section-structured comparison has already normalized the relevant legal
+    text.
+- Disposition: **skip for replay/parser work**. Do not change johtolause,
+  target resolution, or replay state for this row unless a source-owned
+  structural or section-text divergence reappears.
