@@ -827,6 +827,54 @@ def test_export_places_unambiguous_lawvm_interlinks_in_rendered_text(
         conn.close()
 
 
+def test_lawvm_interlink_placement_token_index_keeps_subtoken_candidates() -> None:
+    row_data = _placeable_interlink_row()
+    row_data["source_locator"] = None
+    row_data["surface_text"] = "2014"
+    row = etg.LawvmInterlinkRow.from_mapping(row_data)
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y",
+            )
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:1",
+                segment_index=0,
+                text="x2014y",
+            ),
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="section:2",
+                segment_index=0,
+                text="2014",
+            ),
+        ],
+    }
+
+    placed = etg.place_lawvm_interlinks(
+        [row],
+        statute_id="100/2010",
+        segments_by_date=segments_by_date,
+    )
+
+    assert [
+        (
+            link.rendered_effective_date,
+            link.rendered_address,
+            link.rendered_segment_index,
+            link.rendered_char_start,
+            link.rendered_char_end,
+        )
+        for link in placed
+    ] == [("2010-01-01", "section:1", 0, 1, 5)]
+
+
 @pytest.mark.parametrize(
     "surface_kind",
     ["xml_ref", "preparatory_ref", "effect_feed_ref", "manual_claim_ref"],

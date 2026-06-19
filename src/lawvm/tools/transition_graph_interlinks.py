@@ -551,6 +551,7 @@ class SurfaceTextSpanPlacer:
     _token_segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
         dataclasses.field(default_factory=dict)
     )
+    _token_position_index: dict[str, set[tuple[int, int]]] | None = None
     _lower_segment_groups: list[
         tuple[str, list[tuple[RenderedTextSegment, str]]]
     ] | None = None
@@ -563,6 +564,18 @@ class SurfaceTextSpanPlacer:
             for date, segments in self.segments_by_date.items()
         ]
 
+    def _build_token_position_index(self) -> dict[str, set[tuple[int, int]]]:
+        if self._lower_segment_groups is None:
+            self._lower_segment_groups = self._build_lower_segment_groups()
+        index: dict[str, set[tuple[int, int]]] = {}
+        for date_index, (_date, segments) in enumerate(self._lower_segment_groups):
+            for segment_index, (_segment, lower_text) in enumerate(segments):
+                for segment_token in set(_SURFACE_PREFILTER_TOKEN_RE.findall(lower_text)):
+                    index.setdefault(segment_token, set()).add(
+                        (date_index, segment_index)
+                    )
+        return index
+
     def _segment_groups_for_token(
         self,
         token: str,
@@ -572,16 +585,27 @@ class SurfaceTextSpanPlacer:
             return cached
         if self._lower_segment_groups is None:
             self._lower_segment_groups = self._build_lower_segment_groups()
+        if self._token_position_index is None:
+            self._token_position_index = self._build_token_position_index()
+        segment_indexes_by_date: dict[int, set[int]] = {}
+        for segment_token, positions in self._token_position_index.items():
+            if token not in segment_token:
+                continue
+            for date_index, segment_index in positions:
+                segment_indexes_by_date.setdefault(date_index, set()).add(
+                    segment_index
+                )
         groups = [
             (
                 date,
                 [
-                    segment
-                    for segment, lower_text in segments
-                    if token in lower_text
+                    segments[segment_index][0]
+                    for segment_index in sorted(
+                        segment_indexes_by_date.get(date_index, ())
+                    )
                 ],
             )
-            for date, segments in self._lower_segment_groups
+            for date_index, (date, segments) in enumerate(self._lower_segment_groups)
         ]
         self._token_segment_groups_cache[token] = groups
         return groups
