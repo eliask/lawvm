@@ -27,6 +27,7 @@ from lawvm.finland.citation_routing import (
     johtolause_cited_target_ids,
 )
 from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.constraints import muutos_node_lookup_cache_scope
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
     emit_elaboration_pipeline_observation,
@@ -440,18 +441,19 @@ def process_muutoslaki_resolved(
         amendment_expiry_date = temporal_authority.expiry_date
         amendment_issue_date = temporal_authority.issue_date
 
-        compile_result = compile_amendment_ops(
-            state,
-            ops,
-            muutos_tree,
-            johto,
-            replay_mode,
-            compiled_ops_out=compiled_ops_out,
-            strict_profile=strict_profile,
-            source_ref=amendment_id,
-            source_title=source_title,
-            target_statute=ctx.id,
-        )
+        with muutos_node_lookup_cache_scope():
+            compile_result = compile_amendment_ops(
+                state,
+                ops,
+                muutos_tree,
+                johto,
+                replay_mode,
+                compiled_ops_out=compiled_ops_out,
+                strict_profile=strict_profile,
+                source_ref=amendment_id,
+                source_title=source_title,
+                target_statute=ctx.id,
+            )
         resolved = compile_result.output
 
         _run_process_stage(

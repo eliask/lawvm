@@ -2848,6 +2848,189 @@ def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold()
     assert "vuokraindeksi" not in rendered
 
 
+def test_emit_section_snapshot_repeals_subsections_absent_from_complete_section_replace() -> None:
+    live_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+        _sub("1", _content("new first")),
+        _sub("2", _content("stale transition tail")),
+    )
+    source_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+        _sub("1", _content("new first")),
+    )
+    state = _make_state(
+        _body(IRNode(kind=IRNodeKind.CHAPTER, label="3", children=(live_section,)))
+    )
+    pathologies: list[SourcePathology] = []
+    lo_ops: list[LegalOperation] = []
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_3_7",
+            op_type="REPLACE",
+            target_section="7",
+            target_unit_kind="section",
+            target_chapter="3",
+            source_statute="2018/936",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=source_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter="3",
+        target_address=LegalAddress(path=(("chapter", "3"), ("section", "7"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("whole_section_payload",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter="3",
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2018/936",
+        source_title="Replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=state.ir,
+        source_pathologies_out=pathologies,
+    )
+
+    assert any(
+        op.action is StructuralAction.REPEAL
+        and op.target.path == (("chapter", "3"), ("section", "7"), ("subsection", "2"))
+        for op in lo_ops
+    )
+    assert [p.detail["recovery_kind"] for p in pathologies] == [
+        "section_snapshot_repeal_absent_complete_replacement_subsection"
+    ]
+
+
+def test_emit_section_snapshot_sparse_whole_section_replace_does_not_repeal_absent_subsections() -> None:
+    live_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        _sub("1", _content("new first")),
+        _sub("2", _content("live tail")),
+    )
+    sparse_source_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        _sub("1", _content("new first")),
+    )
+    state = _make_state(_body(live_section))
+    pathologies: list[SourcePathology] = []
+    lo_ops: list[LegalOperation] = []
+    rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="7"),
+        muutos_ir=sparse_source_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "7"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("preserve_unstated_tail",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2020/1",
+        source_title="Sparse replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=state.ir,
+        source_pathologies_out=pathologies,
+    )
+
+    assert not any(
+        op.action is StructuralAction.REPEAL
+        and op.target.path == (("section", "7"), ("subsection", "2"))
+        for op in lo_ops
+    )
+    assert pathologies == []
+
+
+def test_emit_section_snapshot_temporary_complete_replace_does_not_repeal_base_only_subsections() -> None:
+    base_section = _sec(
+        "15",
+        IRNode(kind=IRNodeKind.NUM, text="15 §"),
+        _sub("1", _content("base first")),
+        _sub("2", _content("base temporary tail")),
+    )
+    source_section = _sec(
+        "15",
+        IRNode(kind=IRNodeKind.NUM, text="15 §"),
+        _sub("1", _content("temporary first")),
+    )
+    state = _make_state(_body(source_section))
+    pathologies: list[SourcePathology] = []
+    lo_ops: list[LegalOperation] = []
+    rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="15", is_temporary=True),
+        muutos_ir=source_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="15",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "15"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("whole_section_payload",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+        op_source=OperationSource(
+            statute_id="2003/1112",
+            title="Temporary replace",
+            enacted="2003-12-17",
+            effective="2004-01-01",
+            expires="2006-01-01",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="15",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2003/1112",
+        source_title="Temporary replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(base_section),
+        source_pathologies_out=pathologies,
+    )
+
+    assert not any(
+        op.action is StructuralAction.REPEAL
+        and op.target.path == (("section", "15"), ("subsection", "2"))
+        for op in lo_ops
+    )
+    assert pathologies == []
+
+
 def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_child_snapshot() -> None:
     base_section = _sec(
         "1",

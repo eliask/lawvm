@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import copy
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 import lxml.etree as etree
 
@@ -54,12 +56,81 @@ _CONSTRAINT_REASON_CODES: dict[str, str] = {
 }
 
 
+@dataclass(slots=True)
+class _MuutosNodeLookupCache:
+    """Temporary per-normalization XML lookup cache.
+
+    lxml elements are not weak-referenceable, so this cache must stay scoped to
+    one frontend normalization phase and must not be global/root-retaining.
+    """
+
+    node_queries: dict[
+        tuple[int, str, str, Optional[str], Optional[str]],
+        etree._Element | None,
+    ]
+    all_part_nodes: dict[int, list[etree._Element]]
+
+
+_MUUTOS_NODE_LOOKUP_CACHE: ContextVar[_MuutosNodeLookupCache | None] = ContextVar(
+    "lawvm_fi_muutos_node_lookup_cache",
+    default=None,
+)
+
+
+@contextmanager
+def muutos_node_lookup_cache_scope() -> Iterator[None]:
+    """Enable a temporary XML lookup cache for one frontend normalization run."""
+    token = _MUUTOS_NODE_LOOKUP_CACHE.set(
+        _MuutosNodeLookupCache(node_queries={}, all_part_nodes={})
+    )
+    try:
+        yield
+    finally:
+        _MUUTOS_NODE_LOOKUP_CACHE.reset(token)
+
+
 # ---------------------------------------------------------------------------
 # Shared lxml helper (also re-exported into grafter for _find_muutos_ir)
 # ---------------------------------------------------------------------------
 
 
 def _find_muutos_node(
+    muutos_tree: "etree._Element",
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_chapter: Optional[str] = None,
+    target_part: Optional[str] = None,
+):
+    cache = _MUUTOS_NODE_LOOKUP_CACHE.get()
+    if cache is None:
+        return _find_muutos_node_uncached(
+            muutos_tree,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+    cache_key = (
+        id(muutos_tree),
+        str(target_unit_kind or ""),
+        target_norm,
+        target_chapter,
+        target_part,
+    )
+    if cache_key in cache.node_queries:
+        return cache.node_queries[cache_key]
+    result = _find_muutos_node_uncached(
+        muutos_tree,
+        target_unit_kind,
+        target_norm,
+        target_chapter,
+        target_part,
+    )
+    cache.node_queries[cache_key] = result
+    return result
+
+
+def _find_muutos_node_uncached(
     muutos_tree: "etree._Element",
     target_unit_kind: TargetUnitKind,
     target_norm: str,
@@ -237,7 +308,16 @@ def _find_muutos_node(
         return logical_parts
 
     def _all_part_nodes(root: "etree._Element") -> list["etree._Element"]:
-        return list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        cache = _MUUTOS_NODE_LOOKUP_CACHE.get()
+        if cache is None:
+            return list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        root_id = id(root)
+        cached = cache.all_part_nodes.get(root_id)
+        if cached is not None:
+            return cached
+        nodes = list(root.findall(".//{*}part")) + _logical_part_nodes(root)
+        cache.all_part_nodes[root_id] = nodes
+        return nodes
 
     def _logical_chapter_node(chapter_el: "etree._Element", wanted_label: str) -> Optional["etree._Element"]:
         segments = _logical_chapter_segments(chapter_el)

@@ -60,12 +60,54 @@ OwnedRelabelSignature = tuple[
 class _RelabelLookupCache:
     """Per-plan path candidate cache for immutable relabel tree snapshots."""
 
+    active_tree: IRNode | None = None
     exact_paths: dict[tuple[int, str, str], tuple[tuple[tuple[str, str], ...], ...]] = field(
         default_factory=dict
     )
     structural_paths: dict[tuple[int, str, str], tuple[tuple[tuple[str, str], ...], ...]] = field(
         default_factory=dict
     )
+    exact_label_index: _tops.LabelIndex | None = None
+
+
+def _prepare_relabel_lookup_cache(
+    tree: IRNode,
+    lookup_cache: _RelabelLookupCache | None,
+) -> None:
+    if lookup_cache is None or lookup_cache.active_tree is tree:
+        return
+    lookup_cache.active_tree = tree
+    lookup_cache.exact_paths.clear()
+    lookup_cache.structural_paths.clear()
+    lookup_cache.exact_label_index = None
+
+
+def _find_all_relabel_candidates(
+    tree: IRNode,
+    kind: str,
+    label: str,
+    *,
+    lookup_cache: _RelabelLookupCache | None = None,
+) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """Return exact label candidates, indexing only repeatedly queried snapshots."""
+    if lookup_cache is None or not label:
+        return tuple(_tops.find_all(tree, kind, label))
+    _prepare_relabel_lookup_cache(tree, lookup_cache)
+
+    tree_id = id(tree)
+    cache_key = (tree_id, kind, label)
+    cached = lookup_cache.exact_paths.get(cache_key)
+    if cached is not None:
+        return cached
+
+    label_index = lookup_cache.exact_label_index
+    if label_index is None:
+        label_index = _tops.build_label_index(tree)
+        lookup_cache.exact_label_index = label_index
+
+    candidates = tuple(_tops.find_all(tree, kind, label, label_index=label_index))
+    lookup_cache.exact_paths[cache_key] = candidates
+    return candidates
 
 
 # ---------------------------------------------------------------------------
@@ -579,14 +621,12 @@ def _found_via_structural_label_alias(
     leaf_kind, leaf_label = target_path[-1]
     if leaf_kind not in {"part", "chapter", "section"}:
         return False
-    exact_cache_key = (id(tree), leaf_kind, leaf_label)
-    if lookup_cache is not None:
-        exact_matches = lookup_cache.exact_paths.get(exact_cache_key)
-        if exact_matches is None:
-            exact_matches = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
-            lookup_cache.exact_paths[exact_cache_key] = exact_matches
-    else:
-        exact_matches = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
+    exact_matches = _find_all_relabel_candidates(
+        tree,
+        leaf_kind,
+        leaf_label,
+        lookup_cache=lookup_cache,
+    )
     if exact_matches:
         return False
     return _norm_num_token(found_path[-1][1]) == _norm_num_token(leaf_label)
@@ -602,14 +642,12 @@ def _find_path_by_suffix(
     if not target_path:
         return None
     leaf_kind, leaf_label = target_path[-1]
-    exact_cache_key = (id(tree), leaf_kind, leaf_label)
-    if lookup_cache is not None:
-        candidates = lookup_cache.exact_paths.get(exact_cache_key)
-        if candidates is None:
-            candidates = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
-            lookup_cache.exact_paths[exact_cache_key] = candidates
-    else:
-        candidates = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
+    candidates = _find_all_relabel_candidates(
+        tree,
+        leaf_kind,
+        leaf_label,
+        lookup_cache=lookup_cache,
+    )
     if not candidates and leaf_kind in {"part", "chapter", "section"}:
         structural_cache_key = (id(tree), leaf_kind, _norm_num_token(leaf_label))
         if lookup_cache is not None:
