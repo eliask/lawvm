@@ -581,6 +581,41 @@ def _paragraph_label_values(subsection: IRNode) -> list[int]:
     ]
 
 
+def _node_text_starts_with_dash_bullet(node: IRNode) -> bool:
+    text = irnode_to_text(node).lstrip()
+    return text.startswith(("-", "–", "—", "−"))
+
+
+def _subsection_resumes_item_run_after_dash_continuation(
+    subsection: IRNode,
+    expected_next_value: int,
+) -> bool:
+    """Return True for a synthetic subsection carrying dash-list item tails.
+
+    Finlex occasionally splits a single definition-list moment so that the
+    first numbered item remains in one subsection and following dash bullets
+    plus items 2..N appear in a synthetic sibling subsection.  The witness is
+    narrow: the sibling must start with dash-bullet continuation text before
+    the expected next numbered item appears.
+    """
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return False
+
+    saw_dash_continuation = False
+    for child in subsection.children:
+        numbered_value = _numbered_paragraph_value(child)
+        if numbered_value is not None:
+            return saw_dash_continuation and numbered_value == expected_next_value
+        if child.kind in (IRNodeKind.INTRO, IRNodeKind.PARAGRAPH) and _node_text_starts_with_dash_bullet(child):
+            saw_dash_continuation = True
+            continue
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if irnode_to_text(child).strip():
+            return False
+    return False
+
+
 def _numbered_paragraph_value(paragraph: IRNode) -> int | None:
     if paragraph.kind != IRNodeKind.PARAGRAPH or not _paragraph_has_num_child(paragraph):
         return None
@@ -700,13 +735,23 @@ def _fold_section_item_subsection_run(
 
         base_paragraphs = [c for c in child.children if c.kind == IRNodeKind.PARAGRAPH]
         base_values = _paragraph_label_values(child)
+        if not base_values or base_values != list(range(1, len(base_values) + 1)):
+            rewritten.append(child)
+            i += 1
+            continue
+
         next_child = children[i + 1] if i + 1 < len(children) else None
+        expected_next_value = max(base_values) + 1
         if (
-            not base_values
-            or base_values != list(range(1, len(base_values) + 1))
-            or next_child is None
+            next_child is None
             or next_child.kind != IRNodeKind.SUBSECTION
-            or _item_num_value(next_child) != max(base_values) + 1
+            or (
+                _item_num_value(next_child) != expected_next_value
+                and not _subsection_resumes_item_run_after_dash_continuation(
+                    next_child,
+                    expected_next_value,
+                )
+            )
             or _is_item_style_subsection(next_child)
         ):
             rewritten.append(child)

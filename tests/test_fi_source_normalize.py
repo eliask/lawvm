@@ -296,6 +296,124 @@ class TestTagReclassify:
         assert "subsection:2" in fold_facts[0].before
         assert "3->2" in fold_facts[0].after
 
+    def test_folds_dash_bullet_definition_continuation_subsection(self) -> None:
+        """Dash-list definition continuations stay under the preceding numbered kohta."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 §"),
+                IRNode(kind=IRNodeKind.HEADING, text="Määritelmät"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Tässä päätöksessä tarkoitetaan:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB:llä"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="- polykloorattuja bifenyylejä;"),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="- polykloorattuja terfenyylejä;"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- monometyylitetraklooridifenyylimetaania; sekä"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="- seosta, jossa jotakin edellä mainittua ainetta on yli 0,005 prosenttia;"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB-laitteistolla muuntajaa;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="3)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="PCB-jätteellä jätettä;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="4",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="4)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="käsittelyllä hyödyntämistä."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "1998/711")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3", "4"]
+        assert "monometyylitetraklooridifenyylimetaania" in irnode_to_text(paragraphs[0])
+        assert "PCB-jätteellä" in irnode_to_text(paragraphs[2])
+        assert check_invariants(normalized) == []
+
+        fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
+        assert len(fold_facts) == 1
+        assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
+
+    def test_real_1998_711_dash_definition_list_preserves_all_items(self) -> None:
+        """Regression: 1998/711 section 2 is a single definition-list moment."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("1998/711")
+        assert xml is not None
+        xml_bytes: bytes = xml if isinstance(xml, bytes) else xml.encode("utf-8")
+        root = etree.fromstring(xml_bytes)
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "1998/711")
+
+        section_2: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "2":
+                section_2 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_2 is not None
+        subsections = [child for child in section_2.children if child.kind == IRNodeKind.SUBSECTION]
+        assert len(subsections) == 1
+        paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2", "3", "4"]
+        section_text = irnode_to_text(section_2)
+        assert "polykloorattuja terfenyylejä" in section_text
+        assert "PCB-jätteellä PCB:tä" in section_text
+        assert "käsittelyllä jäteasetuksen" in section_text
+
+        assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+        assert not any(
+            fact.kind_value == BASE_DUPLICATE_SIBLING_DROP
+            and fact.path[-1] in {"subsection:1", "subsection:2"}
+            for fact in facts
+        )
+
     def test_promotes_dotted_paragraph_rows_to_peer_subsections(self) -> None:
         """Old decision-style dotted rows are momentit, not kohdat."""
         xml = etree.fromstring(
