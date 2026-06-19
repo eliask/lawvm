@@ -6180,6 +6180,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="do not write CSV to data/frontier_reports/",
     )
 
+    # --- bench-triage ---
+    # Inlined from lawvm.tools.bench_triage.register_cli to avoid importing it
+    # (→ oracle_check → lxml/replay) at parser-build time. Dispatch in main()
+    # imports it lazily; this is pure argparse only.
+    bench_triage_p = sub.add_parser(
+        "bench-triage",
+        help="classify residual bench divergences into A/B/C/needs_human",
+        description=(
+            "Triage the worst divergent statutes from a bench run into "
+            "real_parser_gap (A, worth burndown), oracle_error_or_desync (B), "
+            "irreducibly_ambiguous (C), or needs_human. Decision-support: "
+            "tells you how much of the residual error is even closeable."
+        ),
+    )
+    bench_triage_p.add_argument(
+        "--label",
+        metavar="LABEL",
+        help="bench run label substring (default: latest *_run_*.csv)",
+    )
+    bench_triage_p.add_argument(
+        "--top",
+        type=int,
+        default=50,
+        help="number of worst divergent statutes to triage (default: 50)",
+    )
+    bench_triage_p.add_argument(
+        "--mode",
+        default="official_consolidation",
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation)",
+    )
+    bench_triage_p.add_argument(
+        "--json",
+        metavar="PATH",
+        help="write the full triage report as JSON to PATH",
+    )
+    bench_triage_p.add_argument(
+        "--runs-dir",
+        dest="runs_dir",
+        metavar="DIR",
+        help="bench_runs directory (default: <repo>/data/bench_runs)",
+    )
+
     # --- strict-report ---
     strict_p = sub.add_parser(
         "strict-report",
@@ -12979,6 +13023,11 @@ def _main_impl() -> None:
         from lawvm.tools.frontier import main as frontier_main
 
         frontier_main(args)
+
+    elif args.command == "bench-triage":
+        from lawvm.tools.bench_triage import main as bench_triage_main
+
+        bench_triage_main(args)
 
     elif args.command == "strict-report":
         from lawvm.tools.strict_report import main as strict_report_main
