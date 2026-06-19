@@ -115,8 +115,10 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
     assert "_find_muutos_node_uncached" not in source
     assert "_coverage_node_cache" not in source
     assert "_coverage_payload_nodes_by_unit_id" not in source
-    assert "_coverage_payload_ir_cache" in source
-    assert "_observed_payload_ir_cache" in source
+    assert "_coverage_payload_ir_cache" not in source
+    assert "_observed_payload_ir_cache" not in source
+    assert "class SourcePayloadIrIndex" in source
+    assert "_source_payload_ir_index_cache" in source
 
 
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:

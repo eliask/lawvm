@@ -92,6 +92,14 @@ class SourcePayloadLookupResult:
     cross_heading_ir: IRNode | None
 
 
+@dataclass(frozen=True, slots=True)
+class SourcePayloadIrIndex:
+    """Converted source payloads addressable by current transitional unit ids."""
+
+    observed_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+    coverage_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+
+
 def _xml_localname(el: etree._Element) -> str:
     tag = el.tag
     if isinstance(tag, str):
@@ -108,124 +116,60 @@ def _xml_num_text(el: etree._Element) -> str | None:
     return num_el.text.strip()
 
 
-def _coverage_payload_ir_by_unit_id(
-    muutos_tree: etree._Element,
-) -> dict[str, tuple[IRNode | None, IRNode | None]]:
-    """Return converted payload IR keyed by the same unit ids as body coverage."""
+def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
+    """Return converted payload IR keyed by observed and coverage unit ids."""
     from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
 
     body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
         body = muutos_tree.find(".//body")
     if body is None:
-        return {}
-    payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
-    seen_ids: set[str] = set()
+        return SourcePayloadIrIndex(observed_by_unit_id={}, coverage_by_unit_id={})
+    observed_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    coverage_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    seen_observed_ids: set[str] = set()
+    seen_coverage_ids: set[str] = set()
 
-    def append_node(
-        kind: str,
-        observed_label: str,
-        parent_label: str | None,
-        el: etree._Element,
-    ) -> None:
-        base_id = f"{kind}_{observed_label}"
-        if parent_label:
-            base_id = f"{kind}_{parent_label}_{observed_label}"
+    def next_observed_id(kind: str, label: str, chapter_label: str) -> str:
+        base_id = f"{kind}:{chapter_label}/{label}" if chapter_label else f"{kind}:{label}"
         unit_id = base_id
         counter = 1
-        while unit_id in seen_ids:
+        while unit_id in seen_observed_ids:
+            unit_id = f"{base_id}#{counter}"
+            counter += 1
+        seen_observed_ids.add(unit_id)
+        return unit_id
+
+    def next_coverage_id(kind: str, label: str, chapter_label: str | None) -> str:
+        base_id = f"{kind}_{label}"
+        if chapter_label:
+            base_id = f"{kind}_{chapter_label}_{label}"
+        unit_id = base_id
+        counter = 1
+        while unit_id in seen_coverage_ids:
             unit_id = f"{base_id}_{counter}"
             counter += 1
-        seen_ids.add(unit_id)
-        payloads[unit_id] = _payload_ir_from_muutos_node(
-            el,
-            target_unit_kind=kind,
-            target_norm=observed_label,
-        )
-
-    def walk_children(parent: etree._Element, active_chapter: str | None = None) -> None:
-        current_chapter = active_chapter
-        for child in parent:
-            kind = _xml_localname(child)
-            if kind == "crossHeading":
-                raw_part = " ".join("".join(str(part) for part in child.itertext()).split())
-                if _normalize_source_part_num(raw_part):
-                    current_chapter = None
-                    continue
-            if kind == "part":
-                raw_num = _xml_num_text(child)
-                if raw_num and _normalize_source_part_num(raw_num):
-                    walk_children(child, active_chapter=None)
-                    current_chapter = active_chapter
-                    continue
-            if kind == "chapter":
-                raw_num = _xml_num_text(child)
-                if raw_num:
-                    chapter_label = _norm_num_token(raw_num).removesuffix("luku")
-                    if chapter_label:
-                        append_node("chapter", chapter_label, None, child)
-                        walk_children(child, chapter_label)
-                        current_chapter = active_chapter
-                        continue
-            if kind == "section":
-                raw_num = _xml_num_text(child)
-                if raw_num:
-                    if _norm_num_token(raw_num).endswith("luku"):
-                        pseudo_chapter = _norm_num_token(raw_num).removesuffix("luku")
-                        if pseudo_chapter:
-                            append_node("chapter", pseudo_chapter, None, child)
-                            walk_children(child, pseudo_chapter)
-                            current_chapter = pseudo_chapter
-                            continue
-                    observed_label = _normalize_source_section_num(raw_num)
-                    if observed_label:
-                        append_node("section", observed_label, current_chapter, child)
-                        walk_children(child, current_chapter)
-                        continue
-            if kind == "article":
-                raw_num = _xml_num_text(child)
-                if raw_num:
-                    observed_label = _norm_num_token(raw_num)
-                    if observed_label:
-                        append_node("article", observed_label, current_chapter, child)
-            walk_children(child, current_chapter)
-
-    walk_children(body)
-    return payloads
-
-
-def _observed_payload_ir_by_unit_id(
-    muutos_tree: etree._Element,
-) -> dict[str, tuple[IRNode | None, IRNode | None]]:
-    """Return converted payload IR keyed by observed body-inventory unit id."""
-    from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
-
-    body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
-    if body is None:
-        body = muutos_tree.find(".//body")
-    if body is None:
-        return {}
-    payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
-    seen_ids: set[str] = set()
+        seen_coverage_ids.add(unit_id)
+        return unit_id
 
     def append_payload(
         kind: str,
         label: str,
         chapter_label: str,
         el: etree._Element,
+        *,
+        include_observed: bool = True,
+        include_coverage: bool = True,
     ) -> None:
-        base_id = f"{kind}:{chapter_label}/{label}" if chapter_label else f"{kind}:{label}"
-        unit_id = base_id
-        counter = 1
-        while unit_id in seen_ids:
-            unit_id = f"{base_id}#{counter}"
-            counter += 1
-        seen_ids.add(unit_id)
-        payloads[unit_id] = _payload_ir_from_muutos_node(
+        payload = _payload_ir_from_muutos_node(
             el,
             target_unit_kind=kind,
             target_norm=label,
         )
+        if include_observed:
+            observed_payloads[next_observed_id(kind, label, chapter_label)] = payload
+        if include_coverage:
+            coverage_payloads[next_coverage_id(kind, label, chapter_label or None)] = payload
 
     def walk_children(parent: etree._Element, active_chapter: str = "") -> None:
         current_chapter = active_chapter
@@ -233,8 +177,15 @@ def _observed_payload_ir_by_unit_id(
             kind = _xml_localname(child)
             if kind == "crossHeading":
                 raw_part = " ".join("".join(str(part) for part in child.itertext()).split())
-                if _normalize_source_part_num(raw_part):
-                    append_payload("part", _normalize_source_part_num(raw_part), "", child)
+                part_label = _normalize_source_part_num(raw_part)
+                if part_label:
+                    append_payload(
+                        "part",
+                        part_label,
+                        "",
+                        child,
+                        include_coverage=False,
+                    )
                     current_chapter = ""
                     continue
             if kind == "part":
@@ -242,7 +193,7 @@ def _observed_payload_ir_by_unit_id(
                 if raw_num:
                     part_label = _normalize_source_part_num(raw_num)
                     if part_label:
-                        append_payload("part", part_label, "", child)
+                        append_payload("part", part_label, "", child, include_coverage=False)
                         walk_children(child, active_chapter="")
                         current_chapter = active_chapter
                         continue
@@ -270,10 +221,25 @@ def _observed_payload_ir_by_unit_id(
                         append_payload("section", section_label, current_chapter, child)
                         walk_children(child, current_chapter)
                         continue
+            if kind == "article":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    article_label = _norm_num_token(raw_num)
+                    if article_label:
+                        append_payload(
+                            "article",
+                            article_label,
+                            current_chapter,
+                            child,
+                            include_observed=False,
+                        )
             walk_children(child, current_chapter)
 
     walk_children(body)
-    return payloads
+    return SourcePayloadIrIndex(
+        observed_by_unit_id=observed_payloads,
+        coverage_by_unit_id=coverage_payloads,
+    )
 
 
 @dataclass(slots=True)
@@ -298,12 +264,7 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
-    _coverage_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
-    _observed_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
+    _source_payload_ir_index_cache: SourcePayloadIrIndex | None = field(
         default=None,
         init=False,
         repr=False,
@@ -542,15 +503,10 @@ class AmendmentSourceModel:
             and ignored_section_units[0].reason == "missing_num"
         )
 
-    def _coverage_payload_ir_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
-        if self._coverage_payload_ir_cache is None:
-            self._coverage_payload_ir_cache = _coverage_payload_ir_by_unit_id(self.muutos_tree)
-        return self._coverage_payload_ir_cache
-
-    def _observed_payload_ir_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
-        if self._observed_payload_ir_cache is None:
-            self._observed_payload_ir_cache = _observed_payload_ir_by_unit_id(self.muutos_tree)
-        return self._observed_payload_ir_cache
+    def _source_payload_ir_index(self) -> SourcePayloadIrIndex:
+        if self._source_payload_ir_index_cache is None:
+            self._source_payload_ir_index_cache = _source_payload_ir_index(self.muutos_tree)
+        return self._source_payload_ir_index_cache
 
     def has_source_node(
         self,
@@ -605,7 +561,10 @@ class AmendmentSourceModel:
 
             observed_unit = body_lookup.unique_unit
             payload_ir, cross_heading_ir = (
-                self._observed_payload_ir_by_unit_id().get(observed_unit.unit_id, (None, None))
+                self._source_payload_ir_index().observed_by_unit_id.get(
+                    observed_unit.unit_id,
+                    (None, None),
+                )
                 if observed_unit is not None
                 else (None, None)
             )
@@ -660,7 +619,7 @@ class AmendmentSourceModel:
                 cross_heading_ir=None,
             )
 
-        payload_ir, cross_heading_ir = self._coverage_payload_ir_by_unit_id().get(
+        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_by_unit_id.get(
             source_ref.unit_id,
             (None, None),
         )
