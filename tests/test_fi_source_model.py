@@ -381,6 +381,40 @@ def test_source_model_owns_frontend_normalization_xml_adapter() -> None:
     assert calls[0]["parent_id"] == "1999/1"
 
 
+def test_source_model_owns_op_enrichment_xml_adapter() -> None:
+    tree = _tree()
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/9")
+    op = AmendmentOp(
+        op_id="replace_5",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="5",
+    )
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_enrich_ops(
+        *args: object,
+        **kwargs: object,
+    ) -> list[AmendmentOp]:
+        calls.append((args, kwargs))
+        return [op]
+
+    result = model.enrich_ops_from_amendment_tree(
+        enrich_ops=fake_enrich_ops,
+        ops=[op],
+        amendment_id="2000/9",
+        johto="muutetaan 5 §",
+        parent_id="1999/1",
+    )
+
+    assert result == [op]
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[:5] == ([op], "2000/9", tree, None, "muutetaan 5 §")
+    assert kwargs["parent_id"] == "1999/1"
+    assert kwargs["metadata"] is model.amendment_tree_metadata("2000/9")
+
+
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     tree = _tree()
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/3")

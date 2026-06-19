@@ -539,6 +539,30 @@ class AmendmentSourceModel:
                 amendment_metadata=amendment_metadata,
             )
 
+    def enrich_ops_from_amendment_tree(
+        self,
+        *,
+        enrich_ops: Callable[..., list["AmendmentOp"]],
+        ops: list["AmendmentOp"],
+        amendment_id: str,
+        master: "ReplayState | None" = None,
+        johto: str = "",
+        base_ir: IRNode | None = None,
+        parent_id: str = "",
+        metadata: "_AmendmentTreeMetadata | None" = None,
+    ) -> list["AmendmentOp"]:
+        """Stamp source metadata onto ops with XML access owned by the model."""
+        return enrich_ops(
+            ops,
+            amendment_id,
+            self.muutos_tree,
+            master,
+            johto,
+            base_ir=base_ir,
+            parent_id=parent_id,
+            metadata=metadata or self.amendment_tree_metadata(amendment_id),
+        )
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(

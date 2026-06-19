@@ -121,8 +121,12 @@ def test_temporal_authority_date_reads_use_source_model() -> None:
 def test_precompile_selection_eid_free_body_check_uses_source_model() -> None:
     source = _source("src/lawvm/finland/process_precompile_selection.py")
 
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "muutos_tree" not in source
     assert 'findall(".//{*}section' not in source
     assert "source_model.has_eid_free_body_sections()" in source
+    assert "source_model.enrich_ops_from_amendment_tree(" in source
 
 
 def test_route_rejection_expiry_override_uses_source_model() -> None:

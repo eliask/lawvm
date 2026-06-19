@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol, Sequence
 
-import lxml.etree as etree
-
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.finland.acquisition import AmendmentAcquisitionResult
 from lawvm.finland.citation_routing import OP_KEYWORDS
@@ -48,7 +46,7 @@ class ProcessPrecompileSelectionContext:
     source_title: str
     johto: str
     xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
     acquisition: AmendmentAcquisitionResult
     skip_to_compile: bool
@@ -61,7 +59,6 @@ class ProcessPrecompileSelectionContext:
     finding_recorder: ProcessFindingRecorder
     replay_print: ReplayPrint
     amendment_metadata: object | None = None
-    source_model: AmendmentSourceModel | None = None
     extract_vts_repeals: VtsExtractor = extract_vts_repeals_fallback
     enrich_ops_from_amendment_tree: OpsEnricher = _enrich_ops_from_amendment_tree
 
@@ -82,12 +79,12 @@ class ProcessPrecompileSelectionContext:
             skipped_targets_out=self.vts_skipped_targets,
         )
         if vts_ops:
-            ops = self.enrich_ops_from_amendment_tree(
-                vts_ops,
-                self.amendment_id,
-                self.muutos_tree,
-                None,
-                self.johto,
+            ops = self.source_model.enrich_ops_from_amendment_tree(
+                enrich_ops=self.enrich_ops_from_amendment_tree,
+                ops=vts_ops,
+                amendment_id=self.amendment_id,
+                master=None,
+                johto=self.johto,
                 metadata=self.amendment_metadata,
             )
             self.replay_print(
@@ -138,13 +135,9 @@ class ProcessPrecompileSelectionContext:
         normalized_johto = " ".join(self.johto.split()).lower()
         is_enacting_formula = normalized_johto == "eduskunnan päätöksen mukaisesti"
         is_body_only_amendment = _is_body_only_amendment_surface(self.johto, self.source_title)
-        source_model = self.source_model or AmendmentSourceModel.from_tree(
-            self.muutos_tree,
-            source_ref=self.amendment_id,
-        )
         return bool(
             (is_enacting_formula or is_body_only_amendment)
-            and source_model.has_eid_free_body_sections()
+            and self.source_model.has_eid_free_body_sections()
         )
 
     def _record_empty_body_pathology_if_needed(self) -> None:
