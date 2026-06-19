@@ -1668,15 +1668,24 @@ def _infer_unique_live_section_chapter_scope(
     master: "ReplayState",
 ) -> str | None:
     """Bind chapter scope when johto cites only §N and live tree has one host."""
-    if (
-        op.target_unit_kind != "section"
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.op_type not in {"REPLACE", "REPEAL"}
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
-    ):
+    if op.target_unit_kind != "section" or not op.target_section:
+        return None
+    has_child_target = (
+        op.target_paragraph is not None
+        or bool(op.target_item)
+        or bool(op.target_special)
+    )
+    if op.op_type in {"REPLACE", "REPEAL"}:
+        if op.target_chapter is not None or has_child_target:
+            return None
+    elif op.op_type == "INSERT" and has_child_target:
+        if op.target_chapter is not None and master.find_section_path(
+            _norm_num_token(op.target_section),
+            op.target_chapter,
+            op.target_part,
+        ) is not None:
+            return None
+    else:
         return None
     section_label = _norm_num_token(op.target_section)
     unique_chapter = _unique_section_chapter(
@@ -1736,16 +1745,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
-            if body_part == op.target_part and body_chapter == op.target_chapter:
-                return None
-            if len(_unborn_source_chapter_labels(muutos_tree=muutos_tree, master=master)) != 1:
-                return None
-            if body_chapter is None or master.find_chapter(body_chapter) is not None:
-                return None
-            if _source_chapter_direct_section_count(
-                muutos_tree=muutos_tree,
-                chapter_label=body_chapter,
-            ) > 20:
+            if body_part != op.target_part:
                 return None
         else:
             return None
@@ -2241,6 +2241,29 @@ def _enrich_ops_from_amendment_tree(
                     inferred_part, inferred_chapter = reinstated_scope
                     inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
                 if inferred_chapter is None:
+                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
+                if inferred_chapter is None and not _is_whole_section_insert(scoped_op):
+                    inferred_chapter = _infer_unique_live_section_chapter_scope(
+                        op=scoped_op,
+                        master=master,
+                    )
+                    if inferred_chapter is not None:
+                        inferred_rule_id = (
+                            "fi_unique_live_section_chapter_scope"
+                            if master.find_section_path(
+                                _norm_num_token(scoped_op.target_section or ""),
+                                inferred_chapter,
+                                scoped_op.target_part,
+                            )
+                            is not None
+                            else "fi_letter_suffix_stem_host_chapter_scope"
+                        )
+                if inferred_chapter is None:
                     inferred_chapter = _body_chapter_scope_for_section_op(
                         op=scoped_op,
                         muutos_tree=muutos_tree,
@@ -2248,13 +2271,6 @@ def _enrich_ops_from_amendment_tree(
                         johto=johto,
                     )
                     inferred_rule_id = "fi_body_chapter_scope_from_source_body"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
-                        op=scoped_op,
-                        muutos_tree=muutos_tree,
-                        master=master,
-                    )
-                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
@@ -2296,22 +2312,6 @@ def _enrich_ops_from_amendment_tree(
                 ):
                     inferred_chapter = last_inferred_section_chapter
                     inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_unique_live_section_chapter_scope(
-                        op=scoped_op,
-                        master=master,
-                    )
-                    if inferred_chapter is not None:
-                        inferred_rule_id = (
-                            "fi_unique_live_section_chapter_scope"
-                            if master.find_section_path(
-                                _norm_num_token(scoped_op.target_section or ""),
-                                inferred_chapter,
-                                scoped_op.target_part,
-                            )
-                            is not None
-                            else "fi_letter_suffix_stem_host_chapter_scope"
-                        )
             if inferred_chapter is not None:
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(

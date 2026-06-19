@@ -10480,6 +10480,50 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
     assert got == "6"
 
 
+def test_enrich_ops_prefers_letter_suffix_stem_host_before_body_wrapper_for_unscoped_insert() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="6", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 luku</num>
+            <section>
+              <num>37 a §</num>
+              <content><p>new section</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="37a",
+    )
+
+    got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
+
+    assert len(got) == 1
+    assert got[0].target_chapter == "5"
+    assert got[0].witness_rule_id == "fi_letter_suffix_insert_scope_from_stem_host"
+    assert got[0].scope_confidence is not None
+    assert got[0].scope_confidence.source == "carry_forward"
+    assert got[0].scope_confidence.resolved_chapter == "5"
+
+
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
     from lawvm.finland.frontend_compile import (
         _infer_flat_body_insert_chapter_from_bracketing_live_siblings,
