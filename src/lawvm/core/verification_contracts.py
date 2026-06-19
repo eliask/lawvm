@@ -47,7 +47,7 @@ CURRENT_TEXT_GATE_FIELDS = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CurrentTextVerificationMatrix:
     """A-G gate for source-backed current-text review packets.
 
@@ -65,12 +65,53 @@ class CurrentTextVerificationMatrix:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in CURRENT_TEXT_GATE_FIELDS:
-            object.__setattr__(
-                self,
-                field_name,
-                _current_text_gate_status(field_name, getattr(self, field_name)),
-            )
+        object.__setattr__(
+            self,
+            "current_body_text_contains_target_phrase",
+            _current_text_gate_status(
+                "current_body_text_contains_target_phrase",
+                self.current_body_text_contains_target_phrase,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "current_status_page_check",
+            _current_text_gate_status("current_status_page_check", self.current_status_page_check),
+        )
+        object.__setattr__(
+            self,
+            "source_explicitly_omits_or_repeals_same_text",
+            _current_text_gate_status(
+                "source_explicitly_omits_or_repeals_same_text",
+                self.source_explicitly_omits_or_repeals_same_text,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "commencement_in_force",
+            _current_text_gate_status("commencement_in_force", self.commencement_in_force),
+        )
+        object.__setattr__(
+            self,
+            "same_territorial_extent",
+            _current_text_gate_status("same_territorial_extent", self.same_territorial_extent),
+        )
+        object.__setattr__(
+            self,
+            "no_later_reinsertion_revival_or_replacement_found",
+            _current_text_gate_status(
+                "no_later_reinsertion_revival_or_replacement_found",
+                self.no_later_reinsertion_revival_or_replacement_found,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "target_phrase_in_operative_text_not_commentary",
+            _current_text_gate_status(
+                "target_phrase_in_operative_text_not_commentary",
+                self.target_phrase_in_operative_text_not_commentary,
+            ),
+        )
         if not isinstance(self.detail, Mapping):
             raise ValueError("CurrentTextVerificationMatrix.detail must be a mapping")
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
@@ -80,8 +121,27 @@ class CurrentTextVerificationMatrix:
         """Gate names that block an email-safe/public-proof candidate."""
 
         blocked: list[str] = []
-        for field_name in CURRENT_TEXT_GATE_FIELDS:
-            status = getattr(self, field_name)
+        for field_name, status in (
+            (
+                "current_body_text_contains_target_phrase",
+                self.current_body_text_contains_target_phrase,
+            ),
+            ("current_status_page_check", self.current_status_page_check),
+            (
+                "source_explicitly_omits_or_repeals_same_text",
+                self.source_explicitly_omits_or_repeals_same_text,
+            ),
+            ("commencement_in_force", self.commencement_in_force),
+            ("same_territorial_extent", self.same_territorial_extent),
+            (
+                "no_later_reinsertion_revival_or_replacement_found",
+                self.no_later_reinsertion_revival_or_replacement_found,
+            ),
+            (
+                "target_phrase_in_operative_text_not_commentary",
+                self.target_phrase_in_operative_text_not_commentary,
+            ),
+        ):
             if field_name == "commencement_in_force":
                 if status not in {"yes", "not_applicable"}:
                     blocked.append(field_name)
@@ -95,11 +155,24 @@ class CurrentTextVerificationMatrix:
         return not self.blocking_gate_names
 
     def to_dict(self) -> dict[str, Any]:
-        data = {field_name: getattr(self, field_name) for field_name in CURRENT_TEXT_GATE_FIELDS}
-        data["blocking_gate_names"] = list(self.blocking_gate_names)
-        data["is_email_safe"] = self.is_email_safe
-        data["detail"] = dict(self.detail)
-        return data
+        return {
+            "current_body_text_contains_target_phrase": self.current_body_text_contains_target_phrase,
+            "current_status_page_check": self.current_status_page_check,
+            "source_explicitly_omits_or_repeals_same_text": (
+                self.source_explicitly_omits_or_repeals_same_text
+            ),
+            "commencement_in_force": self.commencement_in_force,
+            "same_territorial_extent": self.same_territorial_extent,
+            "no_later_reinsertion_revival_or_replacement_found": (
+                self.no_later_reinsertion_revival_or_replacement_found
+            ),
+            "target_phrase_in_operative_text_not_commentary": (
+                self.target_phrase_in_operative_text_not_commentary
+            ),
+            "blocking_gate_names": list(self.blocking_gate_names),
+            "is_email_safe": self.is_email_safe,
+            "detail": dict(self.detail),
+        }
 
 
 def current_text_verification_matrix_from_mapping(
@@ -131,7 +204,7 @@ def current_text_verification_matrix_from_mapping(
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VerifyIssue:
     """Shared verification issue shape."""
 
@@ -157,7 +230,7 @@ class VerifyIssue:
         return data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DivergenceRecord:
     """Shared divergence row shape for replay-vs-oracle style comparisons."""
 
@@ -185,7 +258,7 @@ class DivergenceRecord:
         return data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FilteredDivergenceRecord:
     """A divergence intentionally removed from the primary mismatch lane."""
 
@@ -198,7 +271,7 @@ class FilteredDivergenceRecord:
         _require_field(self.reason, "FilteredDivergenceRecord.reason")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DivergencePartition:
     """Primary divergences plus filtered divergences with explicit rule IDs."""
 
@@ -213,7 +286,7 @@ class DivergencePartition:
         object.__setattr__(self, "filtered", filtered)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageAttribution:
     """Shared summary of touched/untouched divergence attribution."""
 
@@ -247,7 +320,7 @@ class CoverageAttribution:
         return data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VerifySummary:
     """Shared top-level verification result shape."""
 
