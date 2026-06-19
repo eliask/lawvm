@@ -6,8 +6,6 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Set
 
-import lxml.etree as etree
-
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationAccountingResult
@@ -33,7 +31,7 @@ class ApplyOpsRequest:
     ctx: StatuteContext
     resolved: List[ResolvedOp]
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     johto: str
     amendment_id: str
     source_title: str
@@ -44,7 +42,6 @@ class ApplyOpsRequest:
     strict_profile: Optional[StrictProfile]
     vts_ops_enrich_done: bool
     future_repeals: Optional[Set[RepealTargetRef]] = None
-    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)

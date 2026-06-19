@@ -87,10 +87,17 @@ def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes(
 
 def test_apply_executor_precreates_chapters_through_source_model() -> None:
     source = _source("src/lawvm/finland/apply_ops_executor.py")
+    boundary_source = _source("src/lawvm/finland/apply_ops_boundary.py")
 
     assert "_PrecreateApplyChaptersRequest" not in source
     assert "precreate_apply_chapters as _precreate_apply_chapters" not in source
+    assert "AmendmentSourceModel.from_tree" not in source
+    assert "request.muutos_tree" not in source
     assert "source_model.precreate_apply_chapters(" in source
+    assert "import lxml.etree as etree" not in boundary_source
+    assert "etree._Element" not in boundary_source
+    assert "muutos_tree" not in boundary_source
+    assert "source_model: AmendmentSourceModel" in boundary_source
 
 
 def test_compile_amendment_metadata_reads_use_source_model() -> None:

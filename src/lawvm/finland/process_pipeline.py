@@ -487,7 +487,7 @@ def process_muutoslaki_resolved(
                 ctx=ctx,
                 resolved=resolved,
                 ops=ops,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 johto=johto,
                 amendment_id=amendment_id,
                 source_title=source_title,
@@ -498,7 +498,6 @@ def process_muutoslaki_resolved(
                 strict_profile=strict_profile,
                 vts_ops_enrich_done=vts_ops_enrich_done,
                 future_repeals=future_repeals,
-                source_model=source_model,
             ),
             ApplyOpsSinks(
                 compiled_ops_out=compiled_ops_out,

@@ -41,7 +41,6 @@ from lawvm.finland.restructure_plan import (
     resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
     restructure_plan_owned_renumber_signatures as _restructure_plan_owned_renumber_signatures,
 )
-from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.restructure_plan_replay import (
     ExecuteRestructurePlanRequest as _ExecuteRestructurePlanRequest,
     ExecuteRestructurePlanSinks as _ExecuteRestructurePlanSinks,
@@ -73,11 +72,7 @@ def _apply_ops_to_tree_typed(
     ctx = request.ctx
     resolved = request.resolved
     ops = request.ops
-    muutos_tree = request.muutos_tree
-    source_model = request.source_model or AmendmentSourceModel.from_tree(
-        muutos_tree,
-        source_ref=request.amendment_id,
-    )
+    source_model = request.source_model
     johto = request.johto
     amendment_id = request.amendment_id
     source_title = request.source_title
