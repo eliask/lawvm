@@ -11,7 +11,7 @@ from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LegalAddress:
     """Jurisdiction-agnostic address for a legal structure element."""
 
@@ -63,7 +63,7 @@ class LegalAddress:
         return parts
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopePredicate:
     """A condition on when or where a provision version or operation applies."""
 
@@ -80,7 +80,7 @@ class ScopePredicate:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TextSelector:
     """Typed selector for text-level operations."""
 
@@ -97,7 +97,7 @@ class TextSelector:
             raise ValueError("TextSelector.end_occurrence must be >= 0")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TextPatchSpec:
     """Typed text-patch payload carried by text-level operations."""
 
@@ -181,7 +181,7 @@ class ProvisionTimeline:
     versions: List[ProvisionVersion] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IRNode:
     """Immutable tree node used across the replay-facing IR."""
 
