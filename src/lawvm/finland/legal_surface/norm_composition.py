@@ -70,6 +70,7 @@ proximity mesh: it attaches each qualifier to its OWN sentence's core(s).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Mapping
 
@@ -961,6 +962,318 @@ def deontic_frame_attachment_passes(
     return (DeonticFrameAttachmentPass(units=bundle.units),)
 
 
+# ── sanction_defers_to_provision — the PRINCIPLED sanction attachment index ────
+#
+# WHY sanctioned_by (above) stays sentence-local CO-OCCURRENCE, not resolved
+# ====================================================================
+# delegates_to resolves by CONTAINMENT because the delegating verb that mints the
+# power core IS part of the delegation_frame span — they are the same syntactic
+# event, so a frame whose span contains the core cue is the very instrument that
+# power grants. The same move does NOT transfer to sanctions: a sanction_frame's
+# span is NOT built around the sanctioned duty's modal core. In the canonical
+# Finnish penal construction "Joka <conduct>, on tuomittava … sakkoon" the
+# sanctioned conduct is a FINITE INDICATIVE verb in a joka-relative clause
+# (vahingoittaa / rikkoo / laiminlyö) — not a modal deontic_core at all — and the
+# modal cores that DO fall inside the frame's span (a stray "on" / "ei saa") were
+# verified, over a ~400-statute corpus differential, to be COINCIDENTAL: they
+# belong to unrelated duties that merely co-locate ("Tavaraa, joka … tuomitaan, on
+# hoidettava…"; "joka ei saa olla kolmeakymmentä päivää pitempi"). Cue-containment
+# (whether in the frame source_span, its trigger_span, or a joka-clause) is
+# therefore spurious for sanctions — candidate-not-asserted forbids minting it as
+# resolved. So sanctioned_by KEEPS its honest sentence-local co-occurrence status:
+# the duty↔consequence link is not surface-recoverable from the modal-core ↔
+# sanction-frame join.
+#
+# What IS surface-recoverable
+# ===========================
+# The penal-DEFERRAL construction: "rangaistaan / tuomitaan … [mukaan / niin kuin /
+# siten kuin / säädetään / noudatettakoon] §:ssä / luvussa …" — the penalty does
+# not define the offence here, it DEFERS to a named provision where the measure /
+# breached duty is set out. That provision is a forward REFERENCE that the
+# ReferenceLens already minted as a reference_expr node; the closed deferral cue
+# between the sanction marker and the reference binds them. This IS a principled
+# attachment index (analogous to delegates_to's containment, here resolve-by-
+# penal-reference), verified clean by raw-text adjudication of the resolved set.
+#
+# Candidate-not-asserted (never a silent pick):
+#   * a sanction marker with EXACTLY ONE deferral reference after it → ONE edge,
+#     status "asserted" (attachment="resolved_by_penal_reference");
+#   * SEVERAL deferral references → ONE edge per reference, status "ambiguous",
+#     each carrying the full candidate-reference set in payload;
+#   * NONE → NO edge (a standalone offence definition with no back-reference,
+#     correctly left as sentence-local co-occurrence) — recorded as a typed
+#     UnattachedSanction diagnostic, never an invented edge.
+
+EDGE_SANCTION_DEFERS = "sanction_defers_to_provision"
+
+PASS_ID_SANCTION_REF = "fi.norm_composition.sanction_reference.v0"
+RULE_SANCTION_DEFERS = "fi.norm_composition.sanction_defers_to_provision"
+
+#: The reference node kind a deferring sanction binds to.
+REFERENCE_EXPR_KIND = "reference_expr"
+
+#: Closed deferral-cue tokens that license a penal-deferral attachment. A penalty
+#: clause that names a provision via one of these is deferring its measure/offence
+#: to that provision (NOT defining it here). Matched case-insensitively as whole
+#: tokens (single-word cues via a word boundary; the multi-word cues verbatim).
+_DEFERRAL_CUE_WORDS: tuple[str, ...] = (
+    "mukaan",       # "… X §:n mukaan" (as provided in §X)
+    "mukaista",     # "… tämän asetuksen mukaista …"
+    "nojalla",      # "… X §:n nojalla" (under §X)
+    "säädetään",    # "… säädetään X luvussa" (is provided in chapter X)
+    "säädetty",     # "… josta on säädetty X §:ssä"
+    "noudatetaan",  # "… noudatetaan mitä X §:ssä …"
+    "noudatettakoon",
+    "noudatettavana",
+    "mainitun",     # "… X §:ssä mainitun …"
+    "mainitussa",
+)
+#: Multi-word deferral cues (verbatim, case-insensitive).
+_DEFERRAL_CUE_PHRASES: tuple[str, ...] = ("niin kuin", "siten kuin")
+
+_DEFERRAL_CUE_RE = re.compile(
+    r"(?:(?<![\wäöåÄÖÅ])(?:"
+    + "|".join(re.escape(w) for w in _DEFERRAL_CUE_WORDS)
+    + r")(?![\wäöåÄÖÅ]))|"
+    + "|".join(re.escape(p) for p in _DEFERRAL_CUE_PHRASES),
+    re.IGNORECASE,
+)
+
+#: Maximum gap (chars) from the sanction marker END to the deferral reference
+#: START still read as the SAME penal-deferral construction. Bounds the join to
+#: the marker's own clause-ish span; a reference further than this belongs to a
+#: different construction. Sized from the corpus differential (most genuine
+#: deferrals sit well within this; the rare far ones risk false positives).
+_DEFERRAL_MAX_GAP = 120
+
+#: Why a sanction frame produced no penal-deferral edge (the typed diagnostic).
+NO_DEFERRAL_REFERENCE = "no_penal_deferral_reference"
+
+
+@dataclass(frozen=True)
+class UnattachedSanction:
+    """A sanction frame that produced NO penal-deferral edge (tagged, never an edge).
+
+    Carried for the differential report / debugging. A sanction with no forward
+    deferral reference is a STANDALONE offence definition (the penalty IS defined
+    here); it is correctly left as sentence-local co-occurrence, NOT forced into a
+    fabricated provision link.
+    """
+
+    source_unit_id: str
+    sanction_kind: str
+    frame_char_start: int
+    frame_char_end: int
+    reason: str
+
+
+@dataclass
+class SanctionReferencePass:
+    """Edge pass: sanction_frame → the provision reference its penalty defers to.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`. Built
+    per-statute from the bundle units (it re-derives sentence boundaries via
+    :func:`build_clause_index` to bound the deferral to the marker's own sentence,
+    and reads the source text to test the deferral cue between marker and
+    reference). Mints NO nodes; it joins EXISTING ``sanction_frame`` (source) and
+    ``reference_expr`` (target) nodes other lenses produced.
+
+    For each sanction frame, a ``reference_expr`` node is a deferral target iff it
+    sits in the SAME sentence, STARTS at/after the sanction marker, within
+    :data:`_DEFERRAL_MAX_GAP` chars of the marker end, and a closed deferral cue
+    (:data:`_DEFERRAL_CUE_RE`) appears in the text between the marker end and the
+    reference start (or in a short window just before it). EXACTLY ONE target →
+    ``"asserted"`` (resolved_by_penal_reference); several → one edge per target,
+    ``"ambiguous"`` with the full set in payload; none → typed
+    :class:`UnattachedSanction` diagnostic.
+
+    Determinism: units in declared order; sentences left-to-right; sanction frames
+    by char_start; deferral references by char_start. The assembler recomputes the
+    graph_id over the edge set.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_SANCTION_REF
+    reads_node_kinds: tuple[str, ...] = (SANCTION_FRAME_KIND, REFERENCE_EXPR_KIND)
+    emits_edge_kinds: tuple[str, ...] = (EDGE_SANCTION_DEFERS,)
+    # Typed diagnostics for sanctions with no deferral reference. Populated on
+    # run(); read by the differential report. NOT a graph element.
+    unattached: list[UnattachedSanction] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KIND)
+        ref_index = _node_index_by_unit_kind(graph.nodes, REFERENCE_EXPR_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            sancts = sanct_index.get(unit_id, [])
+            if not sancts:
+                continue
+            refs = ref_index.get(unit_id, [])
+            if not refs:
+                # No reference nodes at all → every sanction is standalone.
+                for sid_, sref in sancts:
+                    self._tag(unit_id, graph.nodes[sid_], sref)
+                continue
+            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+            try:
+                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+            except Exception:
+                continue
+            sentences = [(s.char_start, s.char_end) for s in index.sentences]
+            if not sentences:
+                continue
+            for sid_, sref in sancts:
+                seeds.extend(
+                    self._sanction_edges(
+                        raw_text=unit.raw_text,
+                        unit_id=unit_id,
+                        sanction_id=sid_,
+                        sanction_ref=sref,
+                        sanction_node=graph.nodes[sid_],
+                        refs=refs,
+                        sentences=sentences,
+                    )
+                )
+        return tuple(seeds)
+
+    def _sanction_edges(
+        self,
+        *,
+        raw_text: str,
+        unit_id: str,
+        sanction_id: str,
+        sanction_ref: SourceSpanRef,
+        sanction_node: SurfaceNode,
+        refs: list[tuple[str, SourceSpanRef]],
+        sentences: list[tuple[int, int]],
+    ) -> list[SurfaceEdgeSeed]:
+        # The sanction marker is anchored at the frame node's source_ref. The frame
+        # span may include a preceding target actor; the MARKER (where the penalty
+        # verb/noun sits, the deferral's left anchor) is the marker_surface at the
+        # frame's char_start..char_end OR, when an actor pulled the frame back, the
+        # marker token itself. We use the frame's span as the deferral left anchor:
+        # the reference must start at/after it. (A reference inside the actor prefix
+        # would be a CITED actor, not the penalty's deferral — excluded by the
+        # at/after-marker test below using the marker, derived next.)
+        marker_lo, marker_hi = self._marker_bounds(raw_text, sanction_node, sanction_ref)
+        sent_i = _sentence_of(marker_lo, sentences)
+        if sent_i < 0:
+            self._tag(unit_id, sanction_node, sanction_ref)
+            return []
+        sent_lo, sent_hi = sentences[sent_i]
+
+        targets: list[tuple[str, SourceSpanRef]] = []
+        for rid, rref in refs:
+            # skip degenerate (unlocatable) char anchors — no real span to bind.
+            if rref.char_start == rref.char_end:
+                continue
+            # same sentence, forward of the marker, within the gap window.
+            if rref.char_start < marker_hi or rref.char_start >= sent_hi:
+                continue
+            if rref.char_start - marker_hi > _DEFERRAL_MAX_GAP:
+                continue
+            # a closed deferral cue must bind the marker to the reference — this is
+            # what distinguishes a penal DEFERRAL from a sanction that merely
+            # co-occurs with a citation. Two constructions:
+            #   * PRE-cue:  "rangaistaan niin kuin / siten kuin / … §:ssä säädetään"
+            #     — the cue sits between the marker and the reference.
+            #   * POST-cue: "rangaistaan … §:n mukaan / §:n nojalla" — the cue is a
+            #     POSTPOSITION immediately AFTER the reference.
+            gap_text = raw_text[marker_hi : rref.char_start]
+            post_text = raw_text[rref.char_end : min(sent_hi, rref.char_end + 24)]
+            if _DEFERRAL_CUE_RE.search(gap_text) or _DEFERRAL_CUE_RE.search(post_text):
+                targets.append((rid, rref))
+
+        if not targets:
+            self._tag(unit_id, sanction_node, sanction_ref)
+            return []
+
+        targets.sort(key=lambda kv: (kv[1].char_start, kv[1].char_end, kv[0]))
+        sanction_kind = str(sanction_node.payload.get("sanction_kind"))
+        frame_span = [sanction_ref.char_start, sanction_ref.char_end]
+        # PRINCIPLED: exactly one deferral reference → resolved-by-penal-reference
+        # ("asserted"); several → ambiguous (one edge per reference, full set).
+        ambiguous = len(targets) > 1
+        edge_status = "ambiguous" if ambiguous else "asserted"
+        candidate_spans = [[r.char_start, r.char_end] for _, r in targets]
+        out: list[SurfaceEdgeSeed] = []
+        for rid, rref in targets:
+            payload: dict[str, object] = {
+                "sanction_kind": sanction_kind,
+                "frame_span": frame_span,
+                "marker_span": [marker_lo, marker_hi],
+                "reference_span": [rref.char_start, rref.char_end],
+                "attachment": (
+                    "ambiguous_by_penal_reference"
+                    if ambiguous
+                    else "resolved_by_penal_reference"
+                ),
+                "source": "sanction_penal_deferral",
+                "experimental": True,
+            }
+            if ambiguous:
+                payload["candidate_reference_spans"] = candidate_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=EDGE_SANCTION_DEFERS,
+                    src_local=sanction_id,
+                    dst_local=rid,
+                    rule_id=RULE_SANCTION_DEFERS,
+                    status=edge_status,
+                    payload=payload,
+                )
+            )
+        return out
+
+    def _marker_bounds(
+        self, raw_text: str, node: SurfaceNode, ref: SourceSpanRef
+    ) -> tuple[int, int]:
+        """The sanction MARKER span (the penalty verb/noun) in raw_text coords.
+
+        The sanction_frame source_ref span may start at a PRECEDING target actor
+        (when the recognizer found one), so its char_start is not the penalty
+        marker. The marker surface is carried verbatim in the node payload; we
+        locate that surface within the frame span to recover the marker's own
+        offsets — the deferral's left anchor (the reference must come AFTER the
+        penalty verb, not inside the cited-actor prefix). Falls back to the frame
+        span when the marker surface cannot be located (defensive; never crashes).
+        """
+        marker = node.payload.get("marker_surface")
+        if isinstance(marker, str) and marker:
+            found = raw_text.find(marker, ref.char_start, ref.char_end)
+            if found >= 0:
+                return found, found + len(marker)
+        return ref.char_start, ref.char_end
+
+    def _tag(
+        self, unit_id: str, node: SurfaceNode, ref: SourceSpanRef
+    ) -> None:
+        self.unattached.append(
+            UnattachedSanction(
+                source_unit_id=unit_id,
+                sanction_kind=str(node.payload.get("sanction_kind")),
+                frame_char_start=ref.char_start,
+                frame_char_end=ref.char_end,
+                reason=NO_DEFERRAL_REFERENCE,
+            )
+        )
+
+
+def sanction_reference_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[SanctionReferencePass, ...]:
+    """Build the per-statute sanction_frame → deferral-provision reference pass.
+
+    Returns a one-tuple so the caller can splice it into the edge-pass sequence
+    ADDITIVELY (alongside the condition/exception, delegates_to/sanctioned_by,
+    norm-subject, procedure, and delegation-instrument passes).
+    """
+    return (SanctionReferencePass(units=bundle.units),)
+
+
 # ── norm_has_subject — bind each deontic core to its norm SUBJECT/addressee ────
 #
 # The highest-EV, most self-contained Layer-2 deontic edge: the modal parse
@@ -1339,12 +1652,14 @@ __all__ = [
     "DELEGATED_INSTRUMENT_KIND",
     "DELEGATION_FRAME_KIND",
     "PROCEDURE_FRAME_KIND",
+    "REFERENCE_EXPR_KIND",
     "SANCTION_FRAME_KIND",
     "ConditionAttachmentPass",
     "DelegationInstrumentPass",
     "DeonticFrameAttachmentPass",
     "NormSubjectAttachmentPass",
     "ProcedureGovernancePass",
+    "SanctionReferencePass",
     "EDGE_CONDITION_ATTACHES",
     "EDGE_DELEGATES_TO",
     "EDGE_DELEGATION_GRANTS_INSTRUMENT",
@@ -1352,7 +1667,9 @@ __all__ = [
     "EDGE_GOVERNED_BY_PROCEDURE",
     "EDGE_NORM_HAS_SUBJECT",
     "EDGE_SANCTIONED_BY",
+    "EDGE_SANCTION_DEFERS",
     "NO_CORE_IN_SENTENCE",
+    "NO_DEFERRAL_REFERENCE",
     "NO_FRAME_IN_SENTENCE",
     "NO_GRAPH_NODE_FOR_CORE",
     "NO_GRAPH_NODE_FOR_CUE",
@@ -1364,6 +1681,7 @@ __all__ = [
     "PASS_ID_DEONTIC_FRAME",
     "PASS_ID_NORM_SUBJECT",
     "PASS_ID_PROCEDURE",
+    "PASS_ID_SANCTION_REF",
     "RULE_CONDITION",
     "RULE_DELEGATES_TO",
     "RULE_DELEGATION_GRANTS_INSTRUMENT",
@@ -1371,12 +1689,15 @@ __all__ = [
     "RULE_GOVERNED_BY_PROCEDURE",
     "RULE_NORM_HAS_SUBJECT",
     "RULE_SANCTIONED_BY",
+    "RULE_SANCTION_DEFERS",
     "UnattachedCore",
     "UnattachedFrame",
     "UnattachedQualifier",
+    "UnattachedSanction",
     "condition_attachment_passes",
     "delegation_instrument_passes",
     "deontic_frame_attachment_passes",
     "norm_subject_attachment_passes",
     "procedure_governance_passes",
+    "sanction_reference_passes",
 ]
