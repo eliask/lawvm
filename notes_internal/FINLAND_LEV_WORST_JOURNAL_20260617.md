@@ -1923,3 +1923,29 @@ fix-or-journal discipline.
   rule for `2018/576`/`2018/947`. The metadata classifier gap for
   `erikseen lailla` is fixed separately so future diagnostics expose the
   unresolved temporal carrier.
+
+### `2013/1201` — Laki rajat ylittävästä terveydenhuollosta
+
+- Current row (`20260619T0832`): structural `1.000000`, Levenshtein
+  `0.842430`; 6 amendments.
+- Re-triage commands:
+  - `uv run lawvm diff 2013/1201 --text --threshold 0.999 --compile-summary`
+    reports 40 compared sections, 40 perfect, no replay-missing sections, and
+    no replay-extra sections.
+  - `uv run lawvm oracle-check 2013/1201` reports `84.2%` over 4 diverging
+    sections, all classified as `EDITORIAL_CONVENTION`, with cached XML
+    topology missing `10 §` and `16 §`.
+  - `uv run lawvm bench --statute 2013/1201 --no-save --top 5` reproduces
+    primary structural accuracy `100.00%` and secondary full-text
+    Levenshtein `84.24%`.
+- Root-cause class:
+  - This is a **metric-surface false positive for the Levenshtein queue**.
+    The section-level structural comparator and oracle adjudicator find no
+    source-owned replay gap.
+  - The low whole-statute Levenshtein score is caused by flattened text/oracle
+    presentation differences that the primary structural lane already
+    normalizes or classifies.
+- Disposition: **skip for replay/parser work**. Do not change johtolause,
+  target resolution, or replay text for this row unless a source-owned section
+  divergence reappears. This row is evidence for improving/reporting the
+  secondary full-text metric, not for legal-state mutation.
