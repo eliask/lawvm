@@ -65,6 +65,8 @@ _FI_LINEAGE_REASON_LEAF_STABLE_SCOPE_RENUMBER = "leaf_stable_scope_renumber"
 _FI_LINEAGE_REASON_DESTINATION_OCCUPANCY = "destination_occupancy_collision"
 _FI_LINEAGE_REASON_SCOPE_CHANGING_FALLBACK = "scope_changing_migration_fallback"
 _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE = "fi_sourceless_base_merge_cleanup_v1"
+_FI_LABEL_TRAILING_DECORATION_RE = re.compile(r"[^a-zA-Z0-9äöå]+$")
+_TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
 )
@@ -155,7 +157,7 @@ def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
 
 def fi_label_norm(label: str) -> str:
     """Normalize Finnish legacy labels for timeline materialization."""
-    return re.sub(r"[^a-zA-Z0-9äöå]+$", "", label).strip() or label
+    return _FI_LABEL_TRAILING_DECORATION_RE.sub("", label).strip() or label
 
 
 def fi_slot_identity_norm(label: str) -> str:
@@ -1077,7 +1079,7 @@ def _timeline_version_semantic_text_key(node: IRNode | None) -> str:
     if node is None:
         return ""
     text = " ".join(irnode_to_text(node).split())
-    return re.sub(r"^(\d+[a-z]?)\s*§", r"\1 §", text)
+    return _TIMELINE_SECTION_MARK_SPACING_RE.sub(r"\1 §", text)
 
 
 def _dedupe_same_source_semantic_versions(
@@ -1268,12 +1270,13 @@ def build_replay_products(
         replay_fold_ir=replay_fold_state.ir,
         base_ir=ctx.base_ir,
         base_statute_id=statute_id,
+        base_title=ctx.title,
         migration_events=migration_events,
         as_of=as_of,
         temporal_events=resolved_temporal_events,
         base_enacted_date=_base_enacted_date,
     )
-    if fold_timeline_backfills:
+    if fold_timeline_backfills.records:
         backfill_temporal_events = _temporal_events_from_lo_ops(
             lo_ops,
             target_statute=base_ir.statute_id,
@@ -1286,18 +1289,22 @@ def build_replay_products(
                 backfill_temporal_events,
             )
     _assert_finland_timeline_safe_ops(lo_ops)
-    raw_timelines = compile_timelines(
-        base_ir,
-        lo_ops,
-        base_enacted_date=_base_enacted_date,
-        label_norm=fi_label_norm,
-        temporal_events=resolved_temporal_events,
-    )
-    timelines = _rekey_timelines_with_migration_events(
-        raw_timelines,
-        migration_events,
-        as_of=as_of,
-    )
+    if fold_timeline_backfills.records:
+        raw_timelines = compile_timelines(
+            base_ir,
+            lo_ops,
+            base_enacted_date=_base_enacted_date,
+            label_norm=fi_label_norm,
+            temporal_events=resolved_temporal_events,
+        )
+        timelines = _rekey_timelines_with_migration_events(
+            raw_timelines,
+            migration_events,
+            as_of=as_of,
+        )
+    else:
+        raw_timelines = fold_timeline_backfills.raw_timelines
+        timelines = fold_timeline_backfills.rekeyed_timelines
     from lawvm.finland.timeline_version_dedupe import dedupe_finland_timelines
 
     timelines, timeline_version_dedupes = dedupe_finland_timelines(timelines)
@@ -1356,7 +1363,7 @@ def build_replay_products(
         timelines=timelines,
         temporal_events=resolved_temporal_events,
         migration_events=migration_events,
-        fold_timeline_backfills=fold_timeline_backfills,
+        fold_timeline_backfills=fold_timeline_backfills.records,
         timeline_version_dedupes=timeline_version_dedupes,
         materialization_spec=MaterializationSpec(
             as_of=as_of,

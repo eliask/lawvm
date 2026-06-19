@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import ast
 import time
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -42,12 +44,22 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src" / "lawvm"
 
 
-def _scan_patterns(src_root: Path) -> dict[str, list[tuple[int, str, str, list[str]]]]:
+@dataclass(frozen=True, slots=True)
+class RegexPatternScan:
+    """AST scan result for module-scope regex constants."""
+
+    violations: dict[str, list[tuple[int, str, str, list[str]]]]
+    total_patterns: int
+
+
+@lru_cache(maxsize=None)
+def _scan_patterns(src_root: Path) -> RegexPatternScan:
     """AST-scan all _*_RE / _*_PATTERN module-scope constants.
 
-    Returns: {rel_path: [(lineno, name, pattern_str[:120], risks), ...]}
+    Returns violations plus total discovered pattern count.
     """
     result: dict[str, list[tuple[int, str, str, list[str]]]] = {}
+    total_patterns = 0
 
     for pyfile in sorted(src_root.rglob("*.py")):
         if pyfile.name == "regex_safety.py":
@@ -91,6 +103,7 @@ def _scan_patterns(src_root: Path) -> dict[str, list[tuple[int, str, str, list[s
                 if pat_str is None:
                     continue
 
+                total_patterns += 1
                 try:
                     risks = lawvm_regex_risks(pat_str)
                 except Exception:
@@ -104,7 +117,7 @@ def _scan_patterns(src_root: Path) -> dict[str, list[tuple[int, str, str, list[s
                         (node.lineno, name, pat_str[:120], risks)
                     )
 
-    return result
+    return RegexPatternScan(violations=result, total_patterns=total_patterns)
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +762,7 @@ class TestAstLintGate:
     """
 
     def test_no_new_violations(self) -> None:
-        violations = _scan_patterns(_SRC_ROOT)
+        violations = _scan_patterns(_SRC_ROOT).violations
 
         allowlisted: dict[str, list[tuple[int, str, str, list[str]]]] = {}
         new_violations: dict[str, list[tuple[int, str, str, list[str]]]] = {}
@@ -799,41 +812,11 @@ class TestAstLintGate:
 
     def test_patterns_discovered_count(self) -> None:
         """Sanity: at least 300 module-scope patterns should be found."""
-        violations = _scan_patterns(_SRC_ROOT)
-        # The scan itself doesn't return a total count, so count via a separate walk
-        total = 0
-        for pyfile in _SRC_ROOT.rglob("*.py"):
-            if pyfile.name == "regex_safety.py":
-                continue
-            try:
-                source = pyfile.read_text()
-                tree = ast.parse(source, filename=str(pyfile))
-            except Exception:
-                continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Assign):
-                    continue
-                for target in node.targets:
-                    if not isinstance(target, ast.Name):
-                        continue
-                    name = target.id
-                    if name.startswith("_") and (
-                        name.endswith("_RE") or name.endswith("_PATTERN")
-                    ):
-                        val = node.value
-                        if isinstance(val, ast.Call) and isinstance(
-                            val.func, ast.Attribute
-                        ) and val.func.attr == "compile":
-                            total += 1
-                        elif isinstance(val, ast.Constant) and isinstance(
-                            val.value, str
-                        ):
-                            total += 1
+        total = _scan_patterns(_SRC_ROOT).total_patterns
         assert total >= 300, (
             f"Only {total} module-scope patterns found — "
             "scan may be broken or codebase shrank unexpectedly."
         )
-        _ = violations  # consumed above for allowlist check
 
 
 # ---------------------------------------------------------------------------

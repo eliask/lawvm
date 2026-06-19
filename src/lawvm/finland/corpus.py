@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import re
+import weakref
 from functools import lru_cache
 import datetime as dt
 from dataclasses import dataclass
@@ -20,8 +21,9 @@ from lawvm.finland.consolidated_artifacts import (
     build_consolidated_family_glob,
     ConsolidatedArtifactSelector,
 )
+from lawvm.finland.consolidated_store import SelectionProvenance
 from lawvm.finland.consolidated_store import select_cached_consolidated_path_index
-from lawvm.finland.consolidated_store import select_cached_consolidated_artifact
+from lawvm.finland.consolidated_store import select_cached_consolidated_artifact_with_info
 from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
 importlib.import_module("lawvm.finland.inline_repeal_stub")
@@ -30,6 +32,28 @@ from lawvm.finland.metadata import (
     _amendment_expiry_date,
     _statute_id_sort_key,
 )
+
+_SELECTED_CONSOLIDATED_LOCATOR_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], tuple[str, SelectionProvenance]]]" = (
+    weakref.WeakKeyDictionary()
+)
+_CONSOLIDATED_ORACLE_CONTEXT_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], ConsolidatedOracleContext]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _clear_selected_consolidated_locator_cache_for_tests() -> None:
+    _SELECTED_CONSOLIDATED_LOCATOR_CACHE.clear()
+    _CONSOLIDATED_ORACLE_CONTEXT_CACHE.clear()
+
+
+def _consolidated_selector_cache_key(
+    selector: ConsolidatedArtifactSelector | None,
+) -> tuple[str, str, str]:
+    effective = selector or ConsolidatedArtifactSelector.latest_cached_editorial()
+    mode = effective.mode.value if hasattr(effective.mode, "value") else str(effective.mode)
+    date_consolidated = getattr(effective, "date_consolidated", None)
+    date_value = date_consolidated.isoformat() if date_consolidated is not None else ""
+    return mode, str(getattr(effective, "version_tag", "") or ""), date_value
 
 
 def _get_amendment_children_map() -> Dict[str, List[str]]:
@@ -162,12 +186,47 @@ def _selected_consolidated_path_by_statute(
     if corpus is None:
         corpus = _get_corpus_store()
     if _is_default_latest_selector(selector):
+        if not hasattr(corpus, "oracle_path_index"):
+            return {}
         return corpus.oracle_path_index()
     assert selector is not None
     archive = getattr(corpus, "_archive", None)
     if archive is not None and hasattr(archive, "locators"):
         return select_cached_consolidated_path_index(archive, selector=selector)
+    if not hasattr(corpus, "oracle_path_index"):
+        return {}
     return corpus.oracle_path_index(selector=selector)
+
+
+def _selected_consolidated_locator_and_provenance_for_statute(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> tuple[str, SelectionProvenance | None]:
+    """Return the selected consolidated locator/provenance without a global rescan."""
+    if corpus is None:
+        corpus = _get_corpus_store()
+    archive = getattr(corpus, "_archive", None)
+    if archive is not None and hasattr(archive, "locators"):
+        mode, version_tag, date_value = _consolidated_selector_cache_key(selector)
+        cache_key = (statute_id, mode, version_tag, date_value)
+        corpus_cache = _SELECTED_CONSOLIDATED_LOCATOR_CACHE.setdefault(corpus, {})
+        cached = corpus_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        artifact, provenance = select_cached_consolidated_artifact_with_info(
+            archive,
+            statute_id,
+            selector=selector,
+        )
+        locator = artifact.canonical_locator if artifact is not None else ""
+        selected = (locator, provenance)
+        corpus_cache[cache_key] = selected
+        return selected
+    return (
+        _selected_consolidated_path_by_statute(corpus, selector).get(statute_id, ""),
+        None,
+    )
 
 
 def _selected_consolidated_locator_for_statute(
@@ -176,17 +235,12 @@ def _selected_consolidated_locator_for_statute(
     selector: ConsolidatedArtifactSelector | None = None,
 ) -> str:
     """Return one selected consolidated locator without forcing a global rescan."""
-    if corpus is None:
-        corpus = _get_corpus_store()
-    archive = getattr(corpus, "_archive", None)
-    if archive is not None and hasattr(archive, "locators"):
-        artifact = select_cached_consolidated_artifact(
-            archive,
-            statute_id,
-            selector=selector,
-        )
-        return artifact.canonical_locator if artifact is not None else ""
-    return _selected_consolidated_path_by_statute(corpus, selector).get(statute_id, "")
+    locator, _provenance = _selected_consolidated_locator_and_provenance_for_statute(
+        statute_id,
+        corpus,
+        selector,
+    )
+    return locator
 
 
 def get_oracle_path(
@@ -253,23 +307,33 @@ def get_consolidated_oracle_context(
     """Return the selected consolidated-oracle context for *statute_id*."""
     if corpus is None:
         corpus = _get_corpus_store()
+    mode, version_tag, date_value = _consolidated_selector_cache_key(selector)
+    cache_key = (statute_id, mode, version_tag, date_value)
+    corpus_cache = _CONSOLIDATED_ORACLE_CONTEXT_CACHE.setdefault(corpus, {})
+    cached = corpus_cache.get(cache_key)
+    if cached is not None:
+        return cached
     locator = _selected_consolidated_locator_for_statute(statute_id, corpus, selector)
     oracle_version_amendment_id = (
         _consolidated_oracle_version_amendment_id(locator) if locator else None
     )
     if not locator:
-        return ConsolidatedOracleContext(
+        ctx = ConsolidatedOracleContext(
             locator=locator,
             cutoff_date=None,
             oracle_version_amendment_id=oracle_version_amendment_id or "",
         )
+        corpus_cache[cache_key] = ctx
+        return ctx
     oracle_bytes = corpus.read_locator(locator)
     if oracle_bytes is None:
-        return ConsolidatedOracleContext(
+        ctx = ConsolidatedOracleContext(
             locator=locator,
             cutoff_date=None,
             oracle_version_amendment_id=oracle_version_amendment_id or "",
         )
+        corpus_cache[cache_key] = ctx
+        return ctx
     tree = etree.fromstring(oracle_bytes)
     if oracle_version_amendment_id is None:
         for el in tree.findall('.//{*}FRBRthis'):
@@ -283,11 +347,13 @@ def get_consolidated_oracle_context(
         if el.get('name') == 'dateConsolidated':
             cutoff_date = _parse_iso_date(el.get('date'))
             break
-    return ConsolidatedOracleContext(
+    ctx = ConsolidatedOracleContext(
         locator=locator,
         cutoff_date=cutoff_date,
         oracle_version_amendment_id=oracle_version_amendment_id or "",
     )
+    corpus_cache[cache_key] = ctx
+    return ctx
 
 
 def get_consolidated_oracle_inspection(
@@ -565,8 +631,11 @@ def get_consolidated_oracle_suspect_cache_only(
 
     archive = getattr(corpus, "_archive", None)
     if archive is not None and hasattr(archive, "locators"):
-        artifact = select_cached_consolidated_artifact(archive, statute_id)
-        path = artifact.canonical_locator if artifact is not None else ""
+        path = _selected_consolidated_locator_for_statute(
+            statute_id,
+            corpus,
+            ConsolidatedArtifactSelector.latest_cached_editorial(),
+        )
     else:
         oracle_index = corpus.oracle_path_index(
             selector=ConsolidatedArtifactSelector.latest_cached_editorial(),

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass, field
 import datetime as dt
 import logging
 from typing import Protocol
-
-log = logging.getLogger(__name__)
-_SEEN_COLLAPSED_DATE_WARNINGS: set[tuple[str, str, dt.date | None, dt.date]] = set()
 
 from lxml import etree
 
@@ -21,6 +20,14 @@ from lawvm.finland.consolidated_artifacts import (
     build_versioned_consolidated_main_glob,
     select_consolidated_record,
 )
+
+log = logging.getLogger(__name__)
+_SEEN_COLLAPSED_DATE_WARNINGS: set[tuple[str, str, dt.date | None, dt.date]] = set()
+_ARTIFACT_RECORD_CACHE_MAX = 4096
+_ARTIFACT_RECORD_CACHE: OrderedDict[
+    tuple[str, int, bytes],
+    ConsolidatedArtifactRecord,
+] = OrderedDict()
 
 
 class ConsolidatedArchiveLike(Protocol):
@@ -36,6 +43,28 @@ class CachedConsolidatedArtifact:
     xml: bytes
     version_tag: str
     date_consolidated: dt.date | None
+
+
+def _cached_artifact_record_for_xml(
+    locator: str,
+    xml: bytes,
+) -> ConsolidatedArtifactRecord:
+    """Return parsed artifact metadata without retaining XML bytes in the cache."""
+    digest = hashlib.blake2b(xml, digest_size=16).digest()
+    key = (locator, len(xml), digest)
+    cached = _ARTIFACT_RECORD_CACHE.get(key)
+    if cached is not None:
+        _ARTIFACT_RECORD_CACHE.move_to_end(key)
+        return cached
+    record = artifact_record(locator, xml)
+    _ARTIFACT_RECORD_CACHE[key] = record
+    if len(_ARTIFACT_RECORD_CACHE) > _ARTIFACT_RECORD_CACHE_MAX:
+        _ARTIFACT_RECORD_CACHE.popitem(last=False)
+    return record
+
+
+def _clear_artifact_record_cache_for_tests() -> None:
+    _ARTIFACT_RECORD_CACHE.clear()
 
 
 def _cached_artifact_record(
@@ -259,7 +288,7 @@ def list_cached_consolidated_artifacts(
         xml = archive.get(locator)
         if xml is None:
             continue
-        record = artifact_record(locator, xml)
+        record = _cached_artifact_record_for_xml(locator, xml)
         version_tag = record.embedded_version_tag
         if not version_tag:
             continue

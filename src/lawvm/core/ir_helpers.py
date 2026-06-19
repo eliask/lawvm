@@ -53,10 +53,14 @@ def is_zombie(node: "IRNode", pit_date: Optional[str] = None) -> bool:
 def irnode_to_text(node: "IRNode") -> str:
     """Recursively collect all text content from an IRNode tree."""
     parts: list[str] = []
-    if node.text:
-        parts.append(node.text)
-    parts.extend(irnode_to_text(child) for child in node.children)
-    return " ".join(p for p in parts if p)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.text:
+            parts.append(current.text)
+        if current.children:
+            stack.extend(reversed(current.children))
+    return " ".join(parts)
 
 
 @icontract.ensure(

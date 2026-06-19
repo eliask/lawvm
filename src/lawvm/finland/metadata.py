@@ -11,6 +11,7 @@ import copy
 import re
 import datetime as dt
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Literal, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
@@ -69,6 +70,8 @@ _TYPO_TRANSLATION_TABLE: dict[int, str] = {
     **{ord(ch): '\u2013' for ch in _DASH_TO_EN_DASH},
     **{cp: '' for cp in CF_FORMAT_CPS},
 }
+_NORMALIZE_FI_PARSE_TEXT_CACHE_MAX_CHARS = 4096
+_normalized_tree_text_cache: dict[tuple[int, int], str] = {}
 
 
 def _normalize_fi_parse_text(text: str) -> str:
@@ -88,7 +91,41 @@ def _normalize_fi_parse_text(text: str) -> str:
     nodes or compared against oracle content.  See the module header comment
     for the rationale of preferring targeted folds over ``unicodedata.NFKC``.
     """
+    if len(text) <= _NORMALIZE_FI_PARSE_TEXT_CACHE_MAX_CHARS:
+        return _normalize_fi_parse_text_cached(text)
     return text.translate(_TYPO_TRANSLATION_TABLE)
+
+
+@lru_cache(maxsize=4096)
+def _normalize_fi_parse_text_cached(text: str) -> str:
+    return text.translate(_TYPO_TRANSLATION_TABLE)
+
+
+def _normalized_tree_text(tree: "etree._Element", raw_text: str | None = None) -> str:
+    """Return parser-normalized full tree text with a per-root content cache."""
+    if raw_text is None:
+        raw_text = etree.tostring(tree, method="text", encoding="unicode")
+    cache_key = (id(tree), hash(raw_text))
+    cached = _normalized_tree_text_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    normalized = _normalize_fi_parse_text(raw_text)
+    _normalized_tree_text_cache[cache_key] = normalized
+    return normalized
+
+
+def _normalized_entry_into_force_text(
+    tree: "etree._Element",
+    fallback_full_text: str | None = None,
+) -> str:
+    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
+    if not eit_els:
+        if fallback_full_text is not None:
+            return fallback_full_text
+        return _normalized_tree_text(tree)
+    return _normalize_fi_parse_text(
+        " ".join(etree.tostring(el, method="text", encoding="unicode") for el in eit_els)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -816,7 +853,11 @@ def _amendment_effective_date(tree: "etree._Element") -> Optional[dt.date]:
     return date
 
 
-def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
+def _amendment_expiry_date(
+    tree: "etree._Element",
+    *,
+    raw_text: str | None = None,
+) -> Optional[dt.date]:
     """Return explicit expiry date for a temporary amendment when present.
 
     Matches three forms:
@@ -843,9 +884,11 @@ def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
     sites writing kernel ``expires`` fields must convert via
     ``expires_on_from_valid_until``.
     """
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
+    if raw_text is None:
+        raw_text = etree.tostring(tree, method="text", encoding="unicode")
+    if "voimassa" not in raw_text.casefold():
+        return None
+    full_text = _normalized_tree_text(tree, raw_text)
     month_map = {
         'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
         'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
@@ -863,16 +906,7 @@ def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
     # We extract text from <hcontainer name="entryIntoForce"> (the amendment's
     # own commencement element).  If that element is absent we fall back to
     # full_text so old-format statutes without the AKN element still work.
-    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
-    if eit_els:
-        eit_text = _normalize_fi_parse_text(
-            " ".join(
-                etree.tostring(el, method="text", encoding="unicode")
-                for el in eit_els
-            )
-        )
-    else:
-        eit_text = full_text
+    eit_text = _normalized_entry_into_force_text(tree, full_text)
 
     # Patterns 1+3 (whole-act day-month-year and year-end shorthand) are
     # delegated to whole_law_expiry_date_from_text so the statute-level
@@ -1028,6 +1062,59 @@ class TemporaryProvisionExpiryOverride:
 
 
 _temporary_provision_expiry_cache: dict[tuple[int, str, int], tuple[TemporaryProvisionExpiryOverride, ...]] = {}
+_TEMPORARY_SECTION_EXPIRY_TEXT_ANCHORS = (
+    "voimassa",
+    "väliaikaisesta muuttamisesta",
+)
+_TEMPORARY_SECTION_CHARS = r"[\d\w\s,\u2013:§]"
+_TEMPORARY_SECTION_CHARS_SIMPLE = r"[\d\w\s,\u2013]"
+_TEMPORARY_SINGLE_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s]"
+_TEMPORARY_CESSATION_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s,\u2013]+"
+_TEMPORARY_CITED_COMMENCEMENT_RE = re.compile(
+    r"\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_EXPIRY_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§"
+    rf"(?:\s*sekä\s+({_TEMPORARY_SECTION_CHARS_SIMPLE}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?"
+    rf"\s+(?:ovat|on)\s+voimassa\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    re.IGNORECASE,
+)
+_TEMPORARY_SUBSECTION_EXPIRY_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§:n\s+"
+    rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+"
+    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    re.IGNORECASE,
+)
+_TEMPORARY_CHAINED_SECTION_EXPIRY_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+on\s+voimassa\s+"
+    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})"
+    rf"((?:\s+(?:ja|sekä)\s+{_TEMPORARY_SINGLE_SECTION_CHARS}+?\s*§\s+\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})+)",
+    re.IGNORECASE,
+)
+_TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE = re.compile(
+    rf"(?:ja|sekä)\s+({_TEMPORARY_SINGLE_SECTION_CHARS}+?)\s*§\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_YEAR_END_EXPIRY_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun",
+    re.IGNORECASE,
+)
+_TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§:n\s+"
+    rf"\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun",
+    re.IGNORECASE,
+)
+_TEMPORARY_SECTION_CESSATION_RE = re.compile(
+    rf"(?:Lain|Asetuksen|Päätöksen|Tämän lain)\s+({_TEMPORARY_CESSATION_SECTION_CHARS})\s*§\s+lakkaa\s+olemasta\s+voimassa\s*,?\s+kun\s+tämä\s+laki\s+tulee\s+muilta\s+osin\s+voimaan",
+    re.IGNORECASE,
+)
+_TEMPORARY_TITLE_SCOPED_SECTION_RE = re.compile(
+    r"((?:\d+\s*[a-z]?\s*(?:[,]\s*)?(?:ja\s+|sekä\s+)?)*\d+\s*[a-z]?)\s*§:n\s+väliaikaisesta\s+muuttamisesta",
+    re.IGNORECASE,
+)
+_TEMPORARY_TITLE_SECTION_LABEL_RE = re.compile(r"\d+\s*(?:[a-z](?![a-z]))?")
+_LEADING_CHAPTER_CONTEXT_RE = re.compile(r"^\s*(?:[\d\w]+\s+)*luvun\s+", re.IGNORECASE)
 
 
 def _parse_moment_label_list(raw: str) -> set[int]:
@@ -1053,6 +1140,8 @@ def _parse_moment_label_list(raw: str) -> set[int]:
 def _temporary_provision_expiry_overrides(
     tree: "etree._Element",
     source_statute_id: str,
+    *,
+    raw_text: str | None = None,
 ) -> tuple[TemporaryProvisionExpiryOverride, ...]:
     """Return exact subsection/facet expiry overrides from scoped sunset text.
 
@@ -1060,18 +1149,19 @@ def _temporary_provision_expiry_overrides(
     ``Asetuksen 3 §:n otsikko sekä 3 ja 4 momentti, 4 §:n 3 ja 4 momentti
     ... ovat voimassa 31 päivään joulukuuta 2025``.
     """
-    tree_bytes = etree.tostring(tree, method="xml")
-    cache_key = (id(tree), source_statute_id, hash(tree_bytes))
-    cached = _temporary_provision_expiry_cache.get(cache_key)
-    if cached is not None:
-        return cached
-
     eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
     raw_text = (
         " ".join(etree.tostring(el, method="text", encoding="unicode") for el in eit_els)
         if eit_els
-        else etree.tostring(tree, method="text", encoding="unicode")
+        else raw_text if raw_text is not None else etree.tostring(tree, method="text", encoding="unicode")
     )
+    cache_key = (id(tree), source_statute_id, hash(raw_text))
+    cached = _temporary_provision_expiry_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    if "voimassa" not in raw_text.casefold():
+        _temporary_provision_expiry_cache[cache_key] = ()
+        return ()
     text = _normalize_fi_parse_text(raw_text)
     month_map = {
         'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
@@ -1148,6 +1238,8 @@ def _temporary_provision_expiry_overrides(
 def _temporary_section_expiry_overrides(
     tree: "etree._Element",
     source_statute_id: str,
+    *,
+    raw_text: str | None = None,
 ) -> tuple[tuple[str, Set[str], dt.date], ...]:
     """Return all section-scoped expiry override metadata when present.
 
@@ -1161,14 +1253,18 @@ def _temporary_section_expiry_overrides(
     laki tulee muilta osin voimaan`` branch subtracts one day below to honour
     this contract, because that clause names the first day NOT in force).
     """
-    tree_bytes = etree.tostring(tree, method="xml")
-    cache_key = (id(tree), source_statute_id, hash(tree_bytes))
+    if raw_text is None:
+        raw_text = etree.tostring(tree, method="text", encoding="unicode")
+    cache_key = (id(tree), source_statute_id, hash(raw_text))
     cached = _temporary_section_expiry_cache.get(cache_key)
     if cached is not None:
         return cached
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
+    raw_text_casefold = raw_text.casefold()
+    if not any(anchor in raw_text_casefold for anchor in _TEMPORARY_SECTION_EXPIRY_TEXT_ANCHORS):
+        _temporary_section_expiry_cache[cache_key] = ()
+        return ()
+    full_text = _normalized_tree_text(tree, raw_text)
+    full_text_casefold = full_text.casefold()
     overrides: list[tuple[str, Set[str], dt.date]] = []
     seen: set[tuple[str, frozenset[str], str]] = set()
 
@@ -1182,151 +1278,112 @@ def _temporary_section_expiry_overrides(
         overrides.append((target_mid, labels, expiry))
 
     target_mid_from_cited = source_statute_id
-    cited = re.search(
-        r'\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn',
-        full_text,
-        flags=re.IGNORECASE,
-    )
-    if cited:
-        norm = _normalize_textual_statute_id(cited.group(1))
-        if norm:
-            target_mid_from_cited = norm
+    if "voimaantulosäänn" in full_text_casefold:
+        cited = _TEMPORARY_CITED_COMMENCEMENT_RE.search(full_text)
+        if cited:
+            norm = _normalize_textual_statute_id(cited.group(1))
+            if norm:
+                target_mid_from_cited = norm
 
     month_map = {
         'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
         'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
         'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
     }
-    _sec_chars = r'[\d\w\s,\u2013:§]'
-    _simpler_sec_chars = r'[\d\w\s,\u2013]'
-    for m in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§'
-        rf'(?:\s*sekä\s+({_simpler_sec_chars}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?'
-        rf'\s+(?:ovat|on)\s+voimassa\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        month = month_map.get(m.group(4).lower())
-        if month is None:
-            continue
-        try:
-            expiry = dt.date(int(m.group(5)), month, int(m.group(3)))
-        except ValueError:
-            continue
-        labels = _parse_section_list_labels(m.group(1))
-        if m.group(2):
-            labels |= _parse_section_list_labels(m.group(2))
-        _append_override(target_mid_from_cited, labels, expiry)
-
-    # Section/subsection-scoped sunset, e.g.
-    # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
-    # The expiry is still section-scoped for replay stamping: the amendment op
-    # target carries the exact subsection/item granularity.
-    for m in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§:n\s+'
-        rf'\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+'
-        rf'(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        month = month_map.get(m.group(3).lower())
-        if month is None:
-            continue
-        try:
-            expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
-        except ValueError:
-            continue
-        _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
-
-    # Chained same-sentence temporary sunset where only the first section repeats
-    # "on voimassa", e.g.:
-    #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
-    #    toukokuuta 2021."
-    _single_sec_chars = r'[\dA-Za-zÄÖÅäöå\s]'
-    for m_chain in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_single_sec_chars}+?)\s*§\s+on\s+voimassa\s+'
-        rf'(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})'
-        rf'((?:\s+(?:ja|sekä)\s+{_single_sec_chars}+?\s*§\s+\d{{1,2}}\s+päivään\s+[a-zäöå]+\s+\d{{4}})+)',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        first_month = month_map.get(m_chain.group(3).lower())
-        if first_month is not None:
-            try:
-                first_expiry = dt.date(int(m_chain.group(4)), first_month, int(m_chain.group(2)))
-            except ValueError:
-                first_expiry = None
-            if first_expiry is not None:
-                _append_override(
-                    target_mid_from_cited,
-                    _parse_section_list_labels(m_chain.group(1)),
-                    first_expiry,
-                )
-        tail = m_chain.group(5)
-        for m_tail in re.finditer(
-            rf'(?:ja|sekä)\s+({_single_sec_chars}+?)\s*§\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})',
-            tail,
-            flags=re.IGNORECASE,
-        ):
-            tail_month = month_map.get(m_tail.group(3).lower())
-            if tail_month is None:
+    if "päivään" in full_text_casefold:
+        for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(full_text):
+            month = month_map.get(m.group(4).lower())
+            if month is None:
                 continue
             try:
-                tail_expiry = dt.date(int(m_tail.group(4)), tail_month, int(m_tail.group(2)))
+                expiry = dt.date(int(m.group(5)), month, int(m.group(3)))
+            except ValueError:
+                continue
+            labels = _parse_section_list_labels(m.group(1))
+            if m.group(2):
+                labels |= _parse_section_list_labels(m.group(2))
+            _append_override(target_mid_from_cited, labels, expiry)
+
+        # Section/subsection-scoped sunset, e.g.
+        # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
+        # The expiry is still section-scoped for replay stamping: the amendment op
+        # target carries the exact subsection/item granularity.
+        for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(full_text):
+            month = month_map.get(m.group(3).lower())
+            if month is None:
+                continue
+            try:
+                expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
+            except ValueError:
+                continue
+            _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
+
+        # Chained same-sentence temporary sunset where only the first section repeats
+        # "on voimassa", e.g.:
+        #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
+        #    toukokuuta 2021."
+        for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(full_text):
+            first_month = month_map.get(m_chain.group(3).lower())
+            if first_month is not None:
+                try:
+                    first_expiry = dt.date(int(m_chain.group(4)), first_month, int(m_chain.group(2)))
+                except ValueError:
+                    first_expiry = None
+                if first_expiry is not None:
+                    _append_override(
+                        target_mid_from_cited,
+                        _parse_section_list_labels(m_chain.group(1)),
+                        first_expiry,
+                    )
+            tail = m_chain.group(5)
+            for m_tail in _TEMPORARY_CHAINED_SECTION_EXPIRY_TAIL_RE.finditer(tail):
+                tail_month = month_map.get(m_tail.group(3).lower())
+                if tail_month is None:
+                    continue
+                try:
+                    tail_expiry = dt.date(int(m_tail.group(4)), tail_month, int(m_tail.group(2)))
+                except ValueError:
+                    continue
+                _append_override(
+                    target_mid_from_cited,
+                    _parse_section_list_labels(m_tail.group(1)),
+                    tail_expiry,
+                )
+
+    if "vuoden" in full_text_casefold and "loppuun" in full_text_casefold:
+        for m_yend in _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE.finditer(full_text):
+            try:
+                expiry = dt.date(int(m_yend.group(2)), 12, 31)
+            except ValueError:
+                continue
+            raw_secs = _LEADING_CHAPTER_CONTEXT_RE.sub("", m_yend.group(1)).strip()
+            labels = _parse_section_list_labels(raw_secs)
+            _append_override(target_mid_from_cited, labels, expiry)
+
+        for m_yend_moment in _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE.finditer(full_text):
+            try:
+                expiry = dt.date(int(m_yend_moment.group(2)), 12, 31)
             except ValueError:
                 continue
             _append_override(
                 target_mid_from_cited,
-                _parse_section_list_labels(m_tail.group(1)),
-                tail_expiry,
+                _parse_section_list_labels(m_yend_moment.group(1)),
+                expiry,
             )
 
-    for m_yend in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        try:
-            expiry = dt.date(int(m_yend.group(2)), 12, 31)
-        except ValueError:
-            continue
-        raw_secs = re.sub(r'^\s*(?:[\d\w]+\s+)*luvun\s+', '', m_yend.group(1), flags=re.IGNORECASE).strip()
-        labels = _parse_section_list_labels(raw_secs)
-        _append_override(target_mid_from_cited, labels, expiry)
-
-    for m_yend_moment in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§:n\s+'
-        rf'\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        try:
-            expiry = dt.date(int(m_yend_moment.group(2)), 12, 31)
-        except ValueError:
-            continue
-        _append_override(
-            target_mid_from_cited,
-            _parse_section_list_labels(m_yend_moment.group(1)),
-            expiry,
-        )
-
-    _lakkaa_sec_chars = r'[\dA-Za-zÄÖÅäöå\s,\u2013]+'
-    for m_lakkaa in re.finditer(
-        rf'(?:Lain|Asetuksen|Päätöksen|Tämän lain)\s+({_lakkaa_sec_chars})\s*§\s+lakkaa\s+olemasta\s+voimassa\s*,?\s+kun\s+tämä\s+laki\s+tulee\s+muilta\s+osin\s+voimaan',
-        full_text,
-        flags=re.IGNORECASE,
-    ):
-        cessation_date = _amendment_effective_date(tree)
-        if cessation_date is None:
-            continue
-        # "lakkaa olemasta voimassa, kun tämä laki tulee muilta osin voimaan":
-        # the section ceases to be in force ON the act's effective date, so that
-        # date is the first day NOT in force (an exclusive cutoff). The override
-        # contract carries the INCLUSIVE last in-force day, so subtract one day;
-        # the stamp-site conversion (+1) then restores the cessation date.
-        expiry = cessation_date - dt.timedelta(days=1)
-        labels = _parse_section_list_labels(m_lakkaa.group(1))
-        _append_override(source_statute_id, labels, expiry)
+    if "lakkaa" in full_text_casefold and "muilta osin" in full_text_casefold:
+        for m_lakkaa in _TEMPORARY_SECTION_CESSATION_RE.finditer(full_text):
+            cessation_date = _amendment_effective_date(tree)
+            if cessation_date is None:
+                continue
+            # "lakkaa olemasta voimassa, kun tämä laki tulee muilta osin voimaan":
+            # the section ceases to be in force ON the act's effective date, so that
+            # date is the first day NOT in force (an exclusive cutoff). The override
+            # contract carries the INCLUSIVE last in-force day, so subtract one day;
+            # the stamp-site conversion (+1) then restores the cessation date.
+            expiry = cessation_date - dt.timedelta(days=1)
+            labels = _parse_section_list_labels(m_lakkaa.group(1))
+            _append_override(source_statute_id, labels, expiry)
 
     title_el = tree.find(".//{*}docTitle")
     title_text = (
@@ -1334,21 +1391,17 @@ def _temporary_section_expiry_overrides(
         if title_el is not None
         else ""
     )
-    if title_text:
+    if title_text and "väliaikaisesta muuttamisesta" in title_text.casefold():
         expiry = _amendment_expiry_date(tree)
         if expiry is not None:
             title_labels: set[str] = set()
             # Match the full "N [, M]* [ja|sekä] M §:n väliaikaisesta muuttamisesta"
             # pattern to capture all section labels, including leading ones in
             # "6 ja 12 §:n väliaikaisesta muuttamisesta" style titles.
-            for match in re.finditer(
-                r'((?:\d+\s*[a-z]?\s*(?:[,]\s*)?(?:ja\s+|sekä\s+)?)*\d+\s*[a-z]?)\s*§:n\s+väliaikaisesta\s+muuttamisesta',
-                title_text,
-                flags=re.IGNORECASE,
-            ):
+            for match in _TEMPORARY_TITLE_SCOPED_SECTION_RE.finditer(title_text):
                 # Extract individual section labels: digit(s) + optional single
                 # letter that is not the start of "ja"/"sekä" (handled by (?![a-z])).
-                for sec_str in re.findall(r'\d+\s*(?:[a-z](?![a-z]))?', match.group(1)):
+                for sec_str in _TEMPORARY_TITLE_SECTION_LABEL_RE.findall(match.group(1)):
                     title_labels.add(_norm_num_token(sec_str.strip()))
             title_labels.discard("")
             _append_override(source_statute_id, title_labels, expiry)
@@ -1393,19 +1446,8 @@ def _section_commencement_effective_override(
     intentionally ignores subsection/item-scoped references such as
     ``2 §:n 1 momentti``.
     """
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
-    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
-    if eit_els:
-        eit_text = _normalize_fi_parse_text(
-            " ".join(
-                etree.tostring(el, method="text", encoding="unicode")
-                for el in eit_els
-            )
-        )
-    else:
-        eit_text = full_text
+    full_text = _normalized_tree_text(tree)
+    eit_text = _normalized_entry_into_force_text(tree, full_text)
 
     if not _scoped_commencement_guard(eit_text):
         return None
@@ -1461,19 +1503,8 @@ def _section_subsection_commencement_effective_override(
 ) -> Optional[Tuple[str, tuple[LegalAddress, ...], dt.date]]:
     """Return subsection-granular commencement overrides from voimaantulo text."""
 
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
-    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
-    if eit_els:
-        eit_text = _normalize_fi_parse_text(
-            " ".join(
-                etree.tostring(el, method="text", encoding="unicode")
-                for el in eit_els
-            )
-        )
-    else:
-        eit_text = full_text
+    full_text = _normalized_tree_text(tree)
+    eit_text = _normalized_entry_into_force_text(tree, full_text)
 
     if not _scoped_commencement_guard(eit_text):
         return None
@@ -1614,6 +1645,8 @@ def _infer_section_expiry_from_temporary_body_text(
 def _commencement_expiry_override(
     tree: "etree._Element",
     source_statute_id: str,
+    *,
+    section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] | None = None,
 ) -> Optional[Tuple[str, Optional[Set[str]], dt.date]]:
     """Return expiry override metadata for amended voimaantulosäännös clauses.
 
@@ -1625,14 +1658,16 @@ def _commencement_expiry_override(
     Date convention: the returned expiry is the prose-INCLUSIVE last in-force
     day; stamp sites convert via ``expires_on_from_valid_until``.
     """
-    scoped = _temporary_section_expiry_override(tree, source_statute_id)
+    scoped = (
+        (section_expiry_overrides[0] if section_expiry_overrides else None)
+        if section_expiry_overrides is not None
+        else _temporary_section_expiry_override(tree, source_statute_id)
+    )
     if scoped is not None and scoped[0] != source_statute_id:
         target_mid, labels, expiry = scoped
         return target_mid, labels, expiry
 
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
+    full_text = _normalized_tree_text(tree)
     cited = re.search(
         r'\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn',
         full_text,
@@ -1662,9 +1697,7 @@ def _chapter_expiry_from_base(
     day; any stamp site writing a kernel ``expires`` field must convert via
     ``expires_on_from_valid_until``.
     """
-    full_text = _normalize_fi_parse_text(
-        etree.tostring(tree, method="text", encoding="unicode")
-    )
+    full_text = _normalized_tree_text(tree)
     m = re.search(
         r'(?:Lain|Asetuksen)\s+(\d+)\s+luku\s+(?:on|ovat)\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
         full_text,
@@ -1712,15 +1745,7 @@ def _amendment_effective_date_with_step(
     #    (for example a replaced 8 § "Tämä asetus tulee voimaan..." clause)
     #    and then fall through to publication date, silently losing the
     #    amendment's real deferred commencement.
-    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
-    if eit_els:
-        full_text = _normalize_fi_parse_text(
-            " ".join(etree.tostring(el, method="text", encoding="unicode") for el in eit_els)
-        )
-    else:
-        full_text = _normalize_fi_parse_text(
-            etree.tostring(tree, method="text", encoding="unicode")
-        )
+    full_text = _normalized_entry_into_force_text(tree)
     #    Sanity check: if extracted date < issuance date, the match is from the
     #    AMENDED statute's voimaantulo text (context in the amendment XML), not
     #    from the amendment itself.  Fall through to issuance date.
@@ -1796,31 +1821,35 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
                 doc_number_year = int(m.group(1))
             except ValueError:
                 doc_number_year = None
-    signature_date: Optional[dt.date] = None
-    signatures_text = _normalize_fi_parse_text(
-        " ".join(
-            etree.tostring(el, method="text", encoding="unicode")
-            for el in tree.findall('.//{*}hcontainer[@name="signatures"]')
+    def _signature_date() -> Optional[dt.date]:
+        signatures_text = _normalize_fi_parse_text(
+            " ".join(
+                etree.tostring(el, method="text", encoding="unicode")
+                for el in tree.findall('.//{*}hcontainer[@name="signatures"]')
+            )
         )
-    )
-    if signatures_text:
+        if not signatures_text:
+            return None
         m = re.search(
             r'Helsingissä\s+(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})',
             signatures_text,
             flags=re.IGNORECASE,
         )
-        if m:
-            month_map = {
-                'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-                'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-                'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-            }
-            month = month_map.get(m.group(2).lower())
-            if month is not None:
-                try:
-                    signature_date = dt.date(int(m.group(3)), month, int(m.group(1)))
-                except ValueError:
-                    signature_date = None
+        if not m:
+            return None
+        month_map = {
+            'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
+            'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
+            'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
+        }
+        month = month_map.get(m.group(2).lower())
+        if month is None:
+            return None
+        try:
+            return dt.date(int(m.group(3)), month, int(m.group(1)))
+        except ValueError:
+            return None
+
     fallback_issued_generated: Optional[dt.date] = None
     for el in tree.findall('.//{*}FRBRdate'):
         parsed = _parse_iso_date(el.get('date'))
@@ -1831,10 +1860,10 @@ def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:
             if (
                 doc_number_year is not None
                 and parsed.year != doc_number_year
-                and signature_date is not None
-                and signature_date.year == doc_number_year
             ):
-                return signature_date
+                signature_date = _signature_date()
+                if signature_date is not None and signature_date.year == doc_number_year:
+                    return signature_date
             return parsed
         if name == 'datePublished':
             return parsed

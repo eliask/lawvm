@@ -16,6 +16,7 @@ import re
 from enum import Enum
 from typing import Iterable
 from typing import Optional
+from xml.sax.saxutils import unescape as _xml_unescape
 
 from lxml import etree
 
@@ -27,6 +28,15 @@ _CONSOLIDATED_LOCATOR_RE = re.compile(
     r"(?:@(?P<version>[^/]+))?/(?P<rest>.+)$"
 )
 _FRBRTHIS_VERSION_RE = re.compile(r"/(?P<lang>[a-z]{3})@(?P<version>\d{8})/")
+_FRBRTHIS_TAG_RE = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?FRBRthis\b[^>]{0,1000}>", re.DOTALL)
+_FRBRDATE_TAG_RE = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?FRBRdate\b[^>]{0,1000}>", re.DOTALL)
+_FRBREXPRESSION_OPEN_RE = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?FRBRExpression\b[^>]{0,1000}>", re.DOTALL)
+_FRBREXPRESSION_CLOSE_RE = re.compile(rb"</(?:[A-Za-z_][\w.-]*:)?FRBRExpression\s*>", re.DOTALL)
+_FRBREXPRESSION_IDENTITY_TAG_RE = re.compile(
+    rb"<(?:[A-Za-z_][\w.-]*:)?(?:FRBRlanguage|FRBRversionNumber)\b[^>]{0,1000}>",
+    re.DOTALL,
+)
+_TAG_ATTR_RE = re.compile(rb"([A-Za-z_][\w:.-]*)\s*=\s*(['\"])([^'\"]{0,2000})\2", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -147,12 +157,135 @@ def _preferred_langs(preferred_lang: str | None) -> tuple[str, ...]:
     return tuple(ordered)
 
 
+def _tag_attr(tag: bytes, attr_name: str) -> str:
+    for match in _TAG_ATTR_RE.finditer(tag):
+        raw_name = match.group(1).decode("ascii", errors="ignore")
+        if raw_name.rsplit(":", 1)[-1] != attr_name:
+            continue
+        raw_value = match.group(3).decode("utf-8", errors="replace")
+        return _xml_unescape(raw_value, {"&quot;": '"', "&apos;": "'"}).strip()
+    return ""
+
+
+def _select_version_from_candidates(
+    candidates: list[tuple[str, str, str]],
+    preferred_langs: tuple[str, ...],
+) -> tuple[str, str]:
+    for lang in preferred_langs:
+        for candidate_lang, candidate_version, candidate_value in candidates:
+            if candidate_lang == lang:
+                return candidate_value, candidate_version
+    if candidates:
+        _candidate_lang, candidate_version, candidate_value = candidates[0]
+        return candidate_value, candidate_version
+    return "", ""
+
+
+def _frbr_expression_candidates(xml_bytes: bytes) -> list[tuple[str, str, str]]:
+    candidates: list[tuple[str, str, str]] = []
+    in_expression = False
+    lang = ""
+    version = ""
+    tag_matches = sorted(
+        (
+            ("open", match.start(), match.group(0))
+            for match in _FRBREXPRESSION_OPEN_RE.finditer(xml_bytes)
+        ),
+        key=lambda item: item[1],
+    )
+    tag_matches += sorted(
+        (
+            ("close", match.start(), match.group(0))
+            for match in _FRBREXPRESSION_CLOSE_RE.finditer(xml_bytes)
+        ),
+        key=lambda item: item[1],
+    )
+    tag_matches += sorted(
+        (
+            ("identity", match.start(), match.group(0))
+            for match in _FRBREXPRESSION_IDENTITY_TAG_RE.finditer(xml_bytes)
+        ),
+        key=lambda item: item[1],
+    )
+    for kind, _position, tag in sorted(tag_matches, key=lambda item: item[1]):
+        if kind == "open":
+            in_expression = True
+            lang = ""
+            version = ""
+            continue
+        if kind == "close":
+            if lang and version.isdigit() and len(version) == 8:
+                candidates.append((lang, version, ""))
+            in_expression = False
+            lang = ""
+            version = ""
+            continue
+        if not in_expression:
+            continue
+        if b"FRBRlanguage" in tag:
+            lang = _tag_attr(tag, "language")
+        elif b"FRBRversionNumber" in tag:
+            version = _tag_attr(tag, "value")
+    return candidates
+
+
+def _fast_consolidated_xml_identity(
+    xml_bytes: bytes,
+    *,
+    preferred_lang: str | None = None,
+) -> ConsolidatedXmlIdentity | None:
+    preferred_langs = _preferred_langs(preferred_lang)
+    frbrthis_candidates: list[tuple[str, str, str]] = []
+    for tag in _FRBRTHIS_TAG_RE.finditer(xml_bytes):
+        value = _tag_attr(tag.group(0), "value")
+        if not value:
+            continue
+        match = _FRBRTHIS_VERSION_RE.search(value)
+        if match is None:
+            continue
+        frbrthis_candidates.append((match.group("lang"), match.group("version"), value))
+    embedded_frbrthis, embedded_version_tag = _select_version_from_candidates(
+        frbrthis_candidates,
+        preferred_langs,
+    )
+
+    if not embedded_version_tag:
+        expression_candidates = _frbr_expression_candidates(xml_bytes)
+        _frbrthis, embedded_version_tag = _select_version_from_candidates(
+            expression_candidates,
+            preferred_langs,
+        )
+
+    date_consolidated: Optional[dt.date] = None
+    for tag in _FRBRDATE_TAG_RE.finditer(xml_bytes):
+        tag_bytes = tag.group(0)
+        if _tag_attr(tag_bytes, "name") != "dateConsolidated":
+            continue
+        date_consolidated = _parse_iso_date(_tag_attr(tag_bytes, "date"))
+        break
+
+    if not (embedded_frbrthis or embedded_version_tag or date_consolidated):
+        return None
+    return ConsolidatedXmlIdentity(
+        embedded_frbrthis=embedded_frbrthis,
+        embedded_version_tag=embedded_version_tag,
+        date_consolidated=date_consolidated,
+    )
+
+
 def extract_consolidated_xml_identity(
     xml_bytes: bytes,
     *,
     preferred_lang: str | None = None,
 ) -> ConsolidatedXmlIdentity:
     """Extract embedded identity fields from a consolidated main.xml payload."""
+    fast_identity = _fast_consolidated_xml_identity(
+        xml_bytes,
+        preferred_lang=preferred_lang,
+    )
+    if fast_identity is not None:
+        return fast_identity
+
     try:
         root = etree.fromstring(xml_bytes)
     except Exception:

@@ -1088,6 +1088,49 @@ def test_replay_xml_1967_550_section_8_keeps_distinct_sparse_tail_moments(
     assert sixth_text != seventh_text
 
 
+def test_replay_xml_1967_550_section_70p_preserves_reborn_moment_slots(
+    replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
+    replay, lo_ops = replay_1967_550_legal_pit_with_lo_ops
+    first_path = (("chapter", "9b"), ("section", "70p"), ("subsection", "1"))
+    second_path = (("chapter", "9b"), ("section", "70p"), ("subsection", "2"))
+    third_path = (("chapter", "9b"), ("section", "70p"), ("subsection", "3"))
+    fourth_path = (("chapter", "9b"), ("section", "70p"), ("subsection", "4"))
+
+    migration_events = {
+        (event.from_address.path, event.to_address.path): event
+        for event in replay.migration_events
+        if event.source_statute == "2011/743" and "70p" in str(event.from_address)
+    }
+    assert (first_path, third_path) in migration_events
+    assert (second_path, fourth_path) in migration_events
+    assert {event.effective for event in migration_events.values()} == {"2011-06-17"}
+
+    snapshots_2013 = {
+        op.target.path: op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2013/101"
+        and op.op_id.startswith("snapshot_subsection_")
+        and "70p" in str(op.target)
+    }
+    assert set(snapshots_2013) == {first_path, second_path, third_path, fourth_path}
+
+    section = replay.materialized_state.find_section("70p", "9b")
+    assert section is not None
+    subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+
+    assert list(subsections) == ["1", "2", "3", "4"]
+    assert subsections["1"].startswith("Tähän lakiin perustuvassa eurooppapatenttia koskevassa")
+    assert subsections["2"].startswith("Edellä 66 §:ssä tarkoitetussa eurooppapatenttia koskevassa")
+    assert subsections["3"].startswith("Jollei 70 h ja 70 n §:ssä tarkoitettu käännös")
+    assert subsections["4"].startswith("Edellä 52 §:ssä tarkoitetussa mitättömyysoikeudenkäynnissä")
+
+
 def test_replay_xml_1966_657_section_3_keeps_distinct_tail_moments() -> None:
     replay = pinned_replay("1966/657", mode="legal_pit", quiet=True)
 
@@ -1819,6 +1862,49 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -
         record.witness_rule_id == FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
         for record in products.fold_timeline_backfills
     )
+
+
+def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monkeypatch) -> None:
+    import lawvm.core.timeline as timeline_mod
+    import lawvm.finland.replay_fold_timeline_backfill as backfill_mod
+
+    base_body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="base"),),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="synthetic/no-fold-backfill",
+        title="Synthetic no fold backfill",
+        base_ir=base_body,
+        base_xml_bytes=b"<body/>",
+    )
+    compile_calls = 0
+    real_compile_timelines = timeline_mod.compile_timelines
+
+    def counting_compile_timelines(*args, **kwargs):
+        nonlocal compile_calls
+        compile_calls += 1
+        return real_compile_timelines(*args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod, "compile_timelines", counting_compile_timelines)
+    monkeypatch.setattr(backfill_mod, "compile_timelines", counting_compile_timelines)
+
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id=ctx.id,
+        replay_fold_state=ReplayState(ir=base_body),
+        lo_ops_out=[],
+    )
+
+    assert compile_calls == 1
+    assert products.fold_timeline_backfills == ()
+    assert products.materialized_state.find_section("1") is not None
 
 
 def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> None:

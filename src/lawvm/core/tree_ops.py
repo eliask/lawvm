@@ -32,8 +32,6 @@ from itertools import pairwise
 import re
 from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TypeAlias
 
-import icontract
-
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath, TreePathStep
@@ -53,6 +51,7 @@ _TEXT_LINT_TOKEN_RE = re.compile(r"\w+", re.IGNORECASE)
 _PURE_DIGIT_LABEL_RE = re.compile(r"^\d+$")
 _PURE_ALPHA_LABEL_RE = re.compile(r"^[A-Za-z]+$")
 _PURE_ROMAN_LABEL_RE = re.compile(r"^[IVXLCDMivxlcdm]+$")
+_SPACE_BEFORE_PUNCTUATION_RE = re.compile(r"\s+([.,;:])")
 
 
 def _match_label(node_label: Optional[str], target: str) -> bool:
@@ -241,7 +240,7 @@ def hoist_trailing_into_container(
 def normalize_text(tree: IRNode) -> IRNode:
     """Fix common text artifacts: strip spaces before punctuation."""
     if tree.text:
-        cleaned = re.sub(r"\s+([.,;:])", r"\1", tree.text)
+        cleaned = _SPACE_BEFORE_PUNCTUATION_RE.sub(r"\1", tree.text)
         if cleaned != tree.text:
             tree = IRNode(
                 kind=tree.kind,
@@ -319,10 +318,11 @@ def build_label_index(
 
     def _walk(node: IRNode, prefix: Path) -> None:
         for child in node.children:
-            step = (_kind_str(child.kind), child.label or "")
+            child_kind = _kind_str(child.kind)
+            step = (child_kind, child.label or "")
             path = prefix + (step,)
-            if child.label and (indexed_kinds is None or _kind_str(child.kind) in indexed_kinds):
-                key = (_kind_str(child.kind), _norm(child.label))
+            if child.label and (indexed_kinds is None or child_kind in indexed_kinds):
+                key = (child_kind, _norm(child.label))
                 index.setdefault(key, []).append(path)
             _walk(child, path)
 
@@ -475,8 +475,6 @@ def find_provisions_parent(tree: IRNode) -> Path:
     return ()
 
 
-@icontract.require(lambda kind: kind, "kind must be non-empty")
-@icontract.require(lambda label: label, "label must be non-empty")
 def find(
     tree: IRNode,
     kind: str,
@@ -499,6 +497,10 @@ def find(
 
     Returns the full path from tree root, or None if not found.
     """
+    if not kind:
+        raise ValueError("kind must be non-empty")
+    if not label:
+        raise ValueError("label must be non-empty")
     if label_index is not None:
         paths = find_all(
             tree,
@@ -542,11 +544,6 @@ def find(
 # ---------------------------------------------------------------------------
 
 
-@icontract.require(lambda path: isinstance(path, (list, tuple)), "path must be a list or tuple")
-@icontract.ensure(
-    lambda tree, result: tree is not result or not tree.children,
-    "replace_at must return a new tree root (copy-on-write update)",
-)
 def replace_at(tree: IRNode, path: Sequence[PathStep], content: IRNode) -> IRNode:
     """Return new tree with node at path replaced by content.
 
@@ -557,6 +554,8 @@ def replace_at(tree: IRNode, path: Sequence[PathStep], content: IRNode) -> IRNod
     >>> t.children[0].text  # original unchanged
     'old'
     """
+    if not isinstance(path, (list, tuple)):
+        raise TypeError("path must be a list or tuple")
     path = _as_path(path)
     if not path:
         return content
@@ -574,7 +573,10 @@ def replace_at(tree: IRNode, path: Sequence[PathStep], content: IRNode) -> IRNod
             replaced = True
         else:
             new_children.append(child)
-    return _with_children(tree, new_children)
+    result = _with_children(tree, new_children)
+    if tree.children and result is tree:
+        raise AssertionError("replace_at must return a new tree root (copy-on-write update)")
+    return result
 
 
 def replace_at_required(tree: IRNode, path: Sequence[PathStep], content: IRNode) -> IRNode:
@@ -621,7 +623,6 @@ def remove_at_required(tree: IRNode, path: Sequence[PathStep]) -> IRNode:
     return remove_at(tree, normalized_path)
 
 
-@icontract.require(lambda content: content.kind, "inserted content must have a kind")
 # NOTE: Removed complex @icontract.ensure (resolve() in lambda triggers
 # icontract AST parser failure on some call stacks — broke 2017/320).
 # The invariant (parent gains exactly one child) is tested by hypothesis
@@ -637,6 +638,8 @@ def insert_sorted(
     Only compares against children of the same kind as content. Insert position
     is determined by sort_key_fn(label).
     """
+    if not content.kind:
+        raise ValueError("inserted content must have a kind")
     parent_path = _as_path(parent_path)
     if not parent_path:
         return _insert_child_sorted(tree, content, sort_key_fn)
@@ -795,6 +798,56 @@ _SORT_TARGET_KINDS: FrozenSet[str] = frozenset(
         "sentence",
     }
 )
+
+
+def has_dedup_label_duplicates(tree: IRNode) -> bool:
+    """Return True when ``dedup_children_by_label`` would have duplicate work.
+
+    This is a cheap predicate for hot replay paths that only need to decide
+    whether the owned same-kind+label dedup backstop is relevant.  It uses the
+    exact same container and target-kind policy as ``dedup_children_by_label``.
+    """
+    stack: list[IRNode] = [tree]
+    while stack:
+        node = stack.pop()
+        children = node.children
+        if not children:
+            continue
+        node_kind = node.kind
+        is_dedup_container = (
+            node_kind is IRNodeKind.BODY
+            or node_kind is IRNodeKind.CHAPTER
+            or node_kind is IRNodeKind.PART
+            or node_kind is IRNodeKind.HCONTAINER
+            or node_kind is IRNodeKind.SECTION
+            or (type(node_kind) is str and node_kind in _SECTION_DEDUP_CONTAINER_KINDS)
+        )
+        if is_dedup_container:
+            seen: set[tuple[str, str]] = set()
+            for child in children:
+                if not child.label:
+                    continue
+                child_kind_raw = child.kind
+                if child_kind_raw is IRNodeKind.SECTION:
+                    child_kind = "section"
+                elif child_kind_raw is IRNodeKind.CHAPTER:
+                    child_kind = "chapter"
+                elif child_kind_raw is IRNodeKind.PART:
+                    child_kind = "part"
+                elif child_kind_raw is IRNodeKind.SUBSECTION:
+                    child_kind = "subsection"
+                elif type(child_kind_raw) is str and child_kind_raw in _DEDUP_TARGET_KINDS:
+                    child_kind = child_kind_raw
+                else:
+                    continue
+                key = (child_kind, child.label)
+                if key in seen:
+                    return True
+                seen.add(key)
+        for child in children:
+            if child.children:
+                stack.append(child)
+    return False
 
 
 def dedup_children_by_label(tree: IRNode) -> IRNode:

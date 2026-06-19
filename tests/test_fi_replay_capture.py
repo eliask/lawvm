@@ -1,6 +1,21 @@
 from __future__ import annotations
 
-from lawvm.finland.replay_capture import ReplayCaptureRequest, resolve_replay_capture_sinks
+from dataclasses import replace
+
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import OperationSource
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.apply_runtime_support import (
+    SectionSnapshotIdentity,
+    _snapshot_section_los_for_identity,
+    _timeline_exact_target_exists_in_history,
+    _timeline_payload_target_exists_in_history,
+)
+from lawvm.finland.replay_capture import (
+    ReplayCaptureRequest,
+    ReplayLegalOperationCaptureList,
+    resolve_replay_capture_sinks,
+)
 
 
 def test_resolve_replay_capture_sinks_allocates_for_full_products() -> None:
@@ -16,6 +31,7 @@ def test_resolve_replay_capture_sinks_allocates_for_full_products() -> None:
     assert sinks.compiled_ops == []
     assert sinks.legal_operations == []
     assert sinks.failed_ops == []
+    assert isinstance(sinks.legal_operations, ReplayLegalOperationCaptureList)
 
 
 def test_resolve_replay_capture_sinks_preserves_caller_lists() -> None:
@@ -50,3 +66,178 @@ def test_resolve_replay_capture_sinks_keeps_lightweight_replay_uncaptured() -> N
     assert sinks.compiled_ops is None
     assert sinks.legal_operations is None
     assert sinks.failed_ops is None
+
+
+def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewrite() -> None:
+    payload = IRNode(kind=IRNodeKind.SECTION, label="1", text="one")
+    op = LegalOperation(
+        op_id="snapshot_section_1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=payload,
+    )
+    history = ReplayLegalOperationCaptureList()
+    history.append(op)
+
+    section_1 = SectionSnapshotIdentity(part="", chapter="", section="1")
+    section_2 = SectionSnapshotIdentity(part="", chapter="", section="2")
+    assert _snapshot_section_los_for_identity(history, section_1) == [op]
+    history.base_provision_index_cache = {("base",): object()}
+    base_target_sentinel = object()
+    history.base_target_exists_cache = {("base-target",): base_target_sentinel}
+    exact_target_sentinel = object()
+    history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    payload_target_sentinel = object()
+    history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
+    history.timeline_target_exists_cache = {("cached",): True}
+
+    rewritten = replace(op, target=LegalAddress(path=(("section", "2"),)))
+    history[0] = rewritten
+
+    assert history.base_provision_index_cache is None
+    assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
+    assert history.timeline_exact_target_index is None
+    assert history.timeline_payload_target_index is None
+    assert history.timeline_target_exists_cache is None
+    assert _snapshot_section_los_for_identity(history, section_1) == []
+    assert _snapshot_section_los_for_identity(history, section_2) == [rewritten]
+
+
+def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> None:
+    history = ReplayLegalOperationCaptureList()
+    history.base_provision_index_cache = {("base",): object()}
+    base_target_sentinel = object()
+    history.base_target_exists_cache = {("base-target",): base_target_sentinel}
+    exact_target_sentinel = object()
+    history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    payload_target_sentinel = object()
+    history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
+    history.timeline_target_exists_cache = {("cached",): True}
+
+    history.append(
+        LegalOperation(
+            op_id="snapshot_section_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+        )
+    )
+
+    assert history.base_provision_index_cache is not None
+    assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
+    assert history.timeline_exact_target_index == {("exact",): exact_target_sentinel}
+    assert history.timeline_payload_target_index == {("payload",): payload_target_sentinel}
+    assert history.timeline_target_exists_cache == {("cached",): True}
+
+
+def test_timeline_exact_target_index_preserves_effective_cutoff_semantics() -> None:
+    target = LegalAddress(path=(("section", "1"),))
+    history = ReplayLegalOperationCaptureList()
+    history.append(
+        LegalOperation(
+            op_id="future",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=target,
+            source=OperationSource(statute_id="1999/1", effective="2020-01-01"),
+        )
+    )
+
+    assert not _timeline_exact_target_exists_in_history(
+        history,
+        target.path,
+        before_effective="2019-01-01",
+    )
+
+    history.append(
+        LegalOperation(
+            op_id="past",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=target,
+            source=OperationSource(statute_id="1999/2", effective="2018-01-01"),
+        )
+    )
+
+    assert _timeline_exact_target_exists_in_history(
+        history,
+        target.path,
+        before_effective="2019-01-01",
+    )
+
+    history.append(
+        LegalOperation(
+            op_id="undated",
+            sequence=3,
+            action=StructuralAction.REPLACE,
+            target=target,
+            source=OperationSource(statute_id="1999/3", effective=""),
+        )
+    )
+
+    assert _timeline_exact_target_exists_in_history(
+        history,
+        target.path,
+        before_effective="2019-01-01",
+    )
+
+
+def test_timeline_payload_target_index_preserves_effective_cutoff_semantics() -> None:
+    target_path = (("section", "1"), ("subsection", "1"))
+    future_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+    )
+    history = ReplayLegalOperationCaptureList()
+    history.append(
+        LegalOperation(
+            op_id="future",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=future_payload,
+            source=OperationSource(statute_id="1999/1", effective="2020-01-01"),
+        )
+    )
+
+    assert not _timeline_payload_target_exists_in_history(
+        history,
+        target_path,
+        before_effective="2019-01-01",
+    )
+
+    history.append(
+        LegalOperation(
+            op_id="past",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=future_payload,
+            source=OperationSource(statute_id="1999/2", effective="2018-01-01"),
+        )
+    )
+
+    assert _timeline_payload_target_exists_in_history(
+        history,
+        target_path,
+        before_effective="2019-01-01",
+    )
+
+    history.append(
+        LegalOperation(
+            op_id="undated",
+            sequence=3,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=future_payload,
+            source=OperationSource(statute_id="1999/3", effective=""),
+        )
+    )
+
+    assert _timeline_payload_target_exists_in_history(
+        history,
+        target_path,
+        before_effective="2019-01-01",
+    )

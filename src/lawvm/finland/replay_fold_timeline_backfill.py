@@ -32,6 +32,15 @@ class FoldTimelineBackfillRecord:
     witness_rule_id: str = FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
 
 
+@dataclass(frozen=True, slots=True)
+class FoldTimelineBackfillResult:
+    """Backfill records plus the preview timelines they were derived from."""
+
+    records: tuple[FoldTimelineBackfillRecord, ...]
+    raw_timelines: dict[LegalAddress, ProvisionTimeline]
+    rekeyed_timelines: dict[LegalAddress, ProvisionTimeline]
+
+
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
@@ -169,7 +178,7 @@ def _preview_rekeyed_timelines(
     as_of: str,
     temporal_events: tuple[object, ...],
     base_enacted_date: str,
-) -> dict[LegalAddress, ProvisionTimeline]:
+) -> FoldTimelineBackfillResult:
     from lawvm.finland.replay_products import (
         _rekey_timelines_with_migration_events,
         fi_label_norm,
@@ -182,10 +191,15 @@ def _preview_rekeyed_timelines(
         label_norm=fi_label_norm,
         temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
     )
-    return _rekey_timelines_with_migration_events(
+    rekeyed_timelines = _rekey_timelines_with_migration_events(
         raw_timelines,
         migration_events,
         as_of=as_of,
+    )
+    return FoldTimelineBackfillResult(
+        records=(),
+        raw_timelines=raw_timelines,
+        rekeyed_timelines=rekeyed_timelines,
     )
 
 
@@ -195,11 +209,12 @@ def append_fold_timeline_backfill_ops(
     replay_fold_ir: IRNode,
     base_ir: IRNode,
     base_statute_id: str,
+    base_title: str = "",
     migration_events: tuple[MigrationEvent, ...],
     as_of: str,
     temporal_events: tuple[object, ...] = (),
     base_enacted_date: str = "",
-) -> tuple[FoldTimelineBackfillRecord, ...]:
+) -> FoldTimelineBackfillResult:
     """Append snapshot LOs for fold sections that lack timeline authority.
 
     Restructure relabel/renumber waves can leave provisions visible in the
@@ -209,10 +224,10 @@ def append_fold_timeline_backfill_ops(
     """
     preview_base = IRStatute(
         statute_id=base_statute_id,
-        title="",
+        title=base_title,
         body=base_ir,
     )
-    preview_timelines = _preview_rekeyed_timelines(
+    preview = _preview_rekeyed_timelines(
         base_ir=preview_base,
         lo_ops=lo_ops,
         migration_events=migration_events,
@@ -226,7 +241,7 @@ def append_fold_timeline_backfill_ops(
         if _content_is_repeal_placeholder(node):
             continue
         address = LegalAddress(path=path)
-        if _has_timeline_authority(preview_timelines, address, as_of=as_of):
+        if _has_timeline_authority(preview.rekeyed_timelines, address, as_of=as_of):
             continue
         source_statute, effective = _migration_source_for_address(
             address,
@@ -264,11 +279,16 @@ def append_fold_timeline_backfill_ops(
                 effective=effective,
             )
         )
-    return tuple(records)
+    return FoldTimelineBackfillResult(
+        records=tuple(records),
+        raw_timelines=preview.raw_timelines,
+        rekeyed_timelines=preview.rekeyed_timelines,
+    )
 
 
 __all__ = [
     "FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID",
     "FoldTimelineBackfillRecord",
+    "FoldTimelineBackfillResult",
     "append_fold_timeline_backfill_ops",
 ]

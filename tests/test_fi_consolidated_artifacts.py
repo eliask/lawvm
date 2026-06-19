@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 
 from lawvm.finland import consolidated_store
+from lawvm.finland import corpus as fi_corpus
 from lawvm.finland.consolidated_artifacts import (
     ConsolidatedArtifactSelector,
     canonical_consolidated_locator,
@@ -240,6 +241,159 @@ def test_select_cached_consolidated_artifact_latest_cached_editorial_uses_embedd
     assert artifact is not None
     assert artifact.version_tag == "20240012"
     assert artifact.canonical_locator == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+
+
+def test_select_cached_consolidated_artifact_reuses_metadata_without_retaining_xml(monkeypatch) -> None:
+    locators = [
+        "finlex://sd-cons/2014/1429/fin@20250001/main.xml",
+        "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
+    ]
+    payloads = {
+        locators[0]: _xml(
+            frbrthis_version="20190011",
+            frbrversion_number="20250001",
+            date_consolidated="2024-01-01",
+        ),
+        locators[1]: _xml(
+            frbrthis_version="20240012",
+            frbrversion_number="20240012",
+            date_consolidated="2024-01-02",
+        ),
+    }
+
+    class DummyArchive:
+        def locators(self, pattern: str = "%") -> list[str]:
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
+            return locators
+
+        def get(self, url: str) -> bytes | None:
+            return payloads[url]
+
+    consolidated_store._clear_artifact_record_cache_for_tests()
+    parse_count = 0
+    original_artifact_record = consolidated_store.artifact_record
+
+    def counted_artifact_record(locator: str, xml: bytes):
+        nonlocal parse_count
+        parse_count += 1
+        return original_artifact_record(locator, xml)
+
+    monkeypatch.setattr(consolidated_store, "artifact_record", counted_artifact_record)
+
+    first = consolidated_store.select_cached_consolidated_artifact(DummyArchive(), "2014/1429")
+    second = consolidated_store.select_cached_consolidated_artifact(DummyArchive(), "2014/1429")
+
+    assert first is not None
+    assert second is not None
+    assert first.version_tag == second.version_tag == "20240012"
+    assert parse_count == 2
+
+    payloads[locators[1]] = _xml(
+        frbrthis_version="20240013",
+        frbrversion_number="20240013",
+        date_consolidated="2024-01-03",
+    )
+
+    third = consolidated_store.select_cached_consolidated_artifact(DummyArchive(), "2014/1429")
+
+    assert third is not None
+    assert third.version_tag == "20240013"
+    assert parse_count == 3
+    consolidated_store._clear_artifact_record_cache_for_tests()
+
+
+def test_selected_consolidated_locator_cache_is_scoped_to_corpus_and_clearable() -> None:
+    locators = [
+        "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
+    ]
+    payloads = {
+        locators[0]: _xml(
+            frbrthis_version="20240012",
+            frbrversion_number="20240012",
+            date_consolidated="2024-01-02",
+        ),
+    }
+
+    class DummyArchive:
+        locator_calls = 0
+
+        def locators(self, pattern: str = "%") -> list[str]:
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
+            self.locator_calls += 1
+            return locators
+
+        def get(self, url: str) -> bytes | None:
+            return payloads[url]
+
+    class DummyCorpus:
+        def __init__(self) -> None:
+            self._archive = DummyArchive()
+
+        def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
+            raise AssertionError("archive-backed selection should not use global index")
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    corpus = DummyCorpus()
+
+    first = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+
+    assert first == second == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+    assert corpus._archive.locator_calls == 1
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+
+    assert third == first
+    assert corpus._archive.locator_calls == 2
+
+
+def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None:
+    locators = [
+        "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
+    ]
+    payloads = {
+        locators[0]: _xml(
+            frbrthis_version="20240012",
+            frbrversion_number="20240012",
+            date_consolidated="2024-01-02",
+        ),
+    }
+
+    class DummyArchive:
+        def locators(self, pattern: str = "%") -> list[str]:
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
+            return locators
+
+        def get(self, url: str) -> bytes | None:
+            return payloads[url]
+
+    class DummyCorpus:
+        def __init__(self) -> None:
+            self._archive = DummyArchive()
+            self.read_locator_calls = 0
+
+        def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
+            raise AssertionError("archive-backed selection should not use global index")
+
+        def read_locator(self, locator: str) -> bytes | None:
+            self.read_locator_calls += 1
+            return payloads[locator]
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    corpus = DummyCorpus()
+
+    first = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    second = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+
+    assert first == second == (dt.date(2024, 1, 2), "2024/12")
+    assert corpus.read_locator_calls == 1
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    third = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+
+    assert third == first
+    assert corpus.read_locator_calls == 2
 
 
 def test_select_cached_consolidated_artifact_date_cutoff_selects_latest_on_or_before() -> None:

@@ -370,6 +370,28 @@ def compile_timelines(
     # address they intend to modify. Renumber destinations are the one exception
     # to the "must already exist" rule because the new canonical address is
     # often introduced by the move itself.
+    active_selection_cache: Dict[LegalAddress, Dict[str, VersionSelectionResult]] = {}
+
+    def _select_active_cached(
+        timeline: ProvisionTimeline,
+        effective: str,
+    ) -> VersionSelectionResult:
+        address_cache = active_selection_cache.get(timeline.address)
+        cached = address_cache.get(effective) if address_cache is not None else None
+        if cached is not None:
+            return cached
+        selected = select_active_version_ex(
+            timeline,
+            effective,
+            query_type="governing",
+            territory=None,
+        )
+        if address_cache is None:
+            active_selection_cache[timeline.address] = {effective: selected}
+        else:
+            address_cache[effective] = selected
+        return selected
+
     def _resolve_target(t: LegalAddress) -> Optional[LegalAddress]:
         """Return the canonical base address for op target t."""
         if t in timelines:
@@ -408,12 +430,7 @@ def compile_timelines(
             parent_timeline = timelines.get(parent)
             if parent_timeline is None:
                 continue
-            parent_active = select_active_version_ex(
-                parent_timeline,
-                effective,
-                query_type="governing",
-                territory=None,
-            ).version
+            parent_active = _select_active_cached(parent_timeline, effective).version
             if (
                 parent_active is not None
                 and parent_active.content is not None
@@ -446,12 +463,7 @@ def compile_timelines(
         """
         tl = timelines.get(target)
         if tl is not None:
-            prev_active = select_active_version_ex(
-                tl,
-                effective,
-                query_type="governing",
-                territory=None,
-            ).version
+            prev_active = _select_active_cached(tl, effective).version
             if prev_active is not None:
                 if prev_active.expires and prev_active.expires > _day_after_iso(effective):
                     background = select_background_version(
@@ -469,12 +481,7 @@ def compile_timelines(
         while current.path:
             tl = timelines.get(current)
             if tl is not None:
-                prev_active = select_active_version_ex(
-                    tl,
-                    effective,
-                    query_type="governing",
-                    territory=None,
-                ).version
+                prev_active = _select_active_cached(tl, effective).version
                 # Ancestor branch: a child written under a temporary ANCESTOR
                 # inherits the ancestor's sunset whenever the ancestor is in
                 # force ON the child's effective day — including the last
@@ -564,11 +571,53 @@ def compile_timelines(
             emit_warnings=emit_warnings,
         )
     temporal_events = tuple(executable_temporal_events)
+    temporal_events_by_group_id: Dict[str, Tuple[TemporalEvent, ...]] = {}
+    if temporal_events:
+        grouped_events: Dict[str, List[TemporalEvent]] = {}
+        for event in temporal_events:
+            if event.group_id:
+                grouped_events.setdefault(event.group_id, []).append(event)
+        temporal_events_by_group_id = {
+            group_id: tuple(events)
+            for group_id, events in grouped_events.items()
+        }
+
+    def _temporal_events_for_op(op: LegalOperation) -> Tuple[TemporalEvent, ...]:
+        if not op.group_id:
+            return ()
+        return temporal_events_by_group_id.get(op.group_id, ())
+
+    def _matching_temporal_events_for_compile(
+        op: LegalOperation,
+        touched_addresses: Tuple[LegalAddress, ...],
+    ) -> Tuple[TemporalEvent, ...]:
+        op_events = _temporal_events_for_op(op)
+        if not op_events:
+            return ()
+        return _matching_temporal_events_for_op(
+            op,
+            op_events,
+            target_statute=base.statute_id,
+            touched_addresses=touched_addresses,
+        )
+
+    def _temporal_overrides_for_compile(
+        op: LegalOperation,
+        touched_addresses: Tuple[LegalAddress, ...],
+    ):
+        op_events = _temporal_events_for_op(op)
+        return _temporal_overrides_for_op(
+            op,
+            op_events,
+            target_statute=base.statute_id,
+            touched_addresses=touched_addresses,
+        )
 
     def _append_version(
         timeline: ProvisionTimeline,
         version: ProvisionVersion,
     ) -> None:
+        active_selection_cache.pop(timeline.address, None)
         timeline.versions.append(version)
         if version.expires and version.effective == version.expires:
             _record_empty_same_day_interval(
@@ -580,10 +629,8 @@ def compile_timelines(
     matched_temporal_event_ids = {
         event.event_id
         for op in executable_ops
-        for event in _matching_temporal_events_for_op(
+        for event in _matching_temporal_events_for_compile(
             op,
-            temporal_events,
-            target_statute=base.statute_id,
             touched_addresses=_resolved_touched_addresses(op),
         )
     }
@@ -600,7 +647,7 @@ def compile_timelines(
             (
                 _op_sort_date(
                     op,
-                    temporal_events,
+                    _temporal_events_for_op(op),
                     target_statute=base.statute_id,
                     touched_addresses=_resolved_touched_addresses(op),
                 ),
@@ -628,6 +675,7 @@ def compile_timelines(
                 latest_eligible_version_without_scope=_latest_eligible_version_without_scope,
                 latest_substantive_version_at_or_before=_latest_substantive_version_at_or_before,
             )
+            active_selection_cache.clear()
             standalone_index += 1
         if op.target.special is not None and not is_statute_title_address(op.target):
             _src_id = op.source.statute_id if op.source else "?"
@@ -646,10 +694,8 @@ def compile_timelines(
             continue
         target = _resolve_target(op.target)
         touched_addresses = _resolved_touched_addresses(op)
-        temporal_overrides = _temporal_overrides_for_op(
+        temporal_overrides = _temporal_overrides_for_compile(
             op,
-            temporal_events,
-            target_statute=base.statute_id,
             touched_addresses=touched_addresses,
         )
         # Safety: contingent temporal events without a resolved effective date
@@ -774,12 +820,7 @@ def compile_timelines(
             if wave_key not in renumber_wave_source_snapshots:
                 renumber_wave_source_snapshots[wave_key] = {
                     address: (
-                        select_active_version_ex(
-                            timeline,
-                            effective,
-                            query_type="governing",
-                            territory=None,
-                        ).version
+                        _select_active_cached(timeline, effective).version
                         if timeline.versions
                         else None
                     )

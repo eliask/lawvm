@@ -43,6 +43,8 @@ from lawvm.core.target_scope import TargetUnitKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, PathStep
 
+_REPLAY_LOOKUPS_BY_PROVISION_INDEX_CACHE: dict[int, tuple[object, "ReplayLookups"]] = {}
+
 
 @runtime_checkable
 class _TargetSnapshotStateLike(Protocol):
@@ -68,6 +70,9 @@ class _TargetSnapshotStateLike(Protocol):
 class _ReplayLookupStateLike(_TargetSnapshotStateLike, Protocol):
     @property
     def snapshot_rev(self) -> int: ...
+
+    @property
+    def provision_index(self) -> Mapping[Tuple[str, str], Sequence[Path]]: ...
 
 
 def _identity_row_anchor_normalizer(text: str) -> str:
@@ -285,7 +290,7 @@ def _snapshot_revision(master: _ReplayLookupStateLike) -> int:
 def snapshot_replay_lookups(master: _ReplayLookupStateLike) -> ReplayLookups:
     """Build ``ReplayLookups`` from live master state.
 
-    Walks ``master.ir`` once to extract:
+    Extracts from the replay state's sparse provision index:
 
     * ``unique_section_paths`` — sections that appear exactly once (the
       common case), keyed by ``(section_label, chapter_label | None)``.
@@ -293,70 +298,97 @@ def snapshot_replay_lookups(master: _ReplayLookupStateLike) -> ReplayLookups:
     * ``part_members`` — for each part, the frozenset of chapter labels.
 
     """
-    ir = master.ir
-
     # Maps (section_label, chapter_label_or_None) → list of paths
+    snapshot_rev = _snapshot_revision(master)
+    index = master.provision_index
+    cache_key = id(index)
+    cached = _REPLAY_LOOKUPS_BY_PROVISION_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] is index:
+        lookups = cached[1]
+        if lookups.snapshot_rev == snapshot_rev:
+            return lookups
+        return ReplayLookups(
+            snapshot_rev=snapshot_rev,
+            unique_section_paths=lookups.unique_section_paths,
+            chapter_members=lookups.chapter_members,
+            part_members=lookups.part_members,
+            all_section_labels=lookups.all_section_labels,
+        )
+
     section_path_lists: Dict[Tuple[str, Optional[str]], List[Path]] = {}
-    chapter_members: Dict[str, FrozenSet[str]] = {}
-    part_members: Dict[str, FrozenSet[str]] = {}
+    chapter_member_sets: dict[str, set[str]] = {}
+    part_member_sets: dict[str, set[str]] = {}
     all_section_labels_set: set[str] = set()
+    chapter_kind = IRNodeKind.CHAPTER.value
+    part_kind = IRNodeKind.PART.value
+    section_kind = IRNodeKind.SECTION.value
 
-    def _walk(
-        node: IRNode,
-        prefix: Path,
-        current_chapter: Optional[str],
-        current_part: Optional[str],
-    ) -> None:
-        for child in node.children:
-            step = (str(child.kind), child.label or "")
-            child_path = prefix + (step,)
+    for (kind, _label_norm), raw_paths in index.items():
+        if kind == chapter_kind:
+            for path in raw_paths:
+                if not path:
+                    continue
+                chapter_label = path[-1][1]
+                if chapter_label:
+                    chapter_member_sets.setdefault(chapter_label, set())
+                if len(path) > 1 and path[-2][0] == part_kind:
+                    part_label = path[-2][1]
+                    if part_label and chapter_label:
+                        part_member_sets.setdefault(part_label, set()).add(chapter_label)
+        elif kind == part_kind:
+            for path in raw_paths:
+                if path and path[-1][1]:
+                    part_member_sets.setdefault(path[-1][1], set())
 
-            if child.kind == IRNodeKind.PART and child.label:
-                # Collect chapter children of this part
-                part_chapters: List[str] = []
-                for grandchild in child.children:
-                    if grandchild.kind == IRNodeKind.CHAPTER and grandchild.label:
-                        part_chapters.append(grandchild.label)
-                part_members[child.label] = frozenset(part_chapters)
-                _walk(child, child_path, current_chapter, child.label)
+    for (kind, _label_norm), raw_paths in index.items():
+        if kind != section_kind:
+            continue
+        for raw_path in raw_paths:
+            path = tuple(raw_path)
+            if not path:
+                continue
+            sec_label = path[-1][1]
+            if not sec_label:
+                continue
+            all_section_labels_set.add(sec_label)
 
-            elif child.kind == IRNodeKind.CHAPTER and child.label:
-                # Collect section children of this chapter
-                chap_sections: List[str] = []
-                for grandchild in child.children:
-                    if grandchild.kind == IRNodeKind.SECTION and grandchild.label:
-                        chap_sections.append(grandchild.label)
-                chapter_members[child.label] = frozenset(chap_sections)
-                _walk(child, child_path, child.label, current_part)
+            current_chapter = None
+            for ancestor_kind, label in reversed(path[:-1]):
+                if ancestor_kind == chapter_kind and label:
+                    current_chapter = label
+                    break
+            direct_parent = path[:-1]
+            if current_chapter and direct_parent and direct_parent[-1][0] == chapter_kind:
+                chapter_member_sets.setdefault(current_chapter, set()).add(sec_label)
 
-            elif child.kind == IRNodeKind.SECTION and child.label:
-                sec_label = child.label
-                all_section_labels_set.add(sec_label)
-                # Keyed with chapter scope
-                key_with_chap: Tuple[str, Optional[str]] = (sec_label, current_chapter)
-                section_path_lists.setdefault(key_with_chap, []).append(child_path)
-                # Also key with None chapter for unscoped lookups
-                key_no_chap: Tuple[str, Optional[str]] = (sec_label, None)
-                section_path_lists.setdefault(key_no_chap, []).append(child_path)
-                _walk(child, child_path, current_chapter, current_part)
-
-            else:
-                _walk(child, child_path, current_chapter, current_part)
-
-    _walk(ir, (), None, None)
+            # Keyed with chapter scope.
+            key_with_chap: Tuple[str, Optional[str]] = (sec_label, current_chapter)
+            section_path_lists.setdefault(key_with_chap, []).append(path)
+            # Also key with None chapter for unscoped lookups.  This preserves
+            # the historical duplicate append for top-level sections.
+            key_no_chap: Tuple[str, Optional[str]] = (sec_label, None)
+            section_path_lists.setdefault(key_no_chap, []).append(path)
 
     # Unique section paths: only include entries with exactly one candidate
     unique_section_paths: Dict[Tuple[str, Optional[str]], Path] = {
         key: paths[0] for key, paths in section_path_lists.items() if len(paths) == 1
     }
 
-    return ReplayLookups(
-        snapshot_rev=_snapshot_revision(master),
+    lookups = ReplayLookups(
+        snapshot_rev=snapshot_rev,
         unique_section_paths=unique_section_paths,
-        chapter_members=chapter_members,
-        part_members=part_members,
+        chapter_members={
+            label: frozenset(members) for label, members in chapter_member_sets.items()
+        },
+        part_members={
+            label: frozenset(members) for label, members in part_member_sets.items()
+        },
         all_section_labels=frozenset(all_section_labels_set),
     )
+    if len(_REPLAY_LOOKUPS_BY_PROVISION_INDEX_CACHE) > 512:
+        _REPLAY_LOOKUPS_BY_PROVISION_INDEX_CACHE.clear()
+    _REPLAY_LOOKUPS_BY_PROVISION_INDEX_CACHE[cache_key] = (index, lookups)
+    return lookups
 
 
 def snapshot_target_context(

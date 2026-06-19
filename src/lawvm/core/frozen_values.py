@@ -6,6 +6,8 @@ from typing_extensions import override
 from copy import deepcopy
 from typing import Any, Dict, Mapping, Self, SupportsIndex
 
+_SCALAR_VALUE_TYPES = (str, int, float, bool, type(None))
+
 
 class FrozenDict(dict[str, Any]):
     """A deepcopy-friendly immutable dict for kernel IR attrs/metadata."""
@@ -59,6 +61,17 @@ class FrozenDict(dict[str, Any]):
 
 def _freeze_value(value: Any) -> Any:
     """Recursively freeze mutable container values used inside kernel payloads."""
+    value_type = type(value)
+    if value_type in _SCALAR_VALUE_TYPES:
+        return value
+    if value_type is FrozenDict:
+        return value
+    if value_type is dict:
+        return FrozenDict({key: _freeze_value(inner) for key, inner in value.items()})
+    if value_type is list or value_type is tuple:
+        return tuple(_freeze_value(inner) for inner in value)
+    if value_type is set or value_type is frozenset:
+        return frozenset(_freeze_value(inner) for inner in value)
     if isinstance(value, FrozenDict):
         return value
     if isinstance(value, dict):
@@ -81,7 +94,7 @@ def freeze_mapping(values: Mapping[str, Any]) -> FrozenDict:
 
     if not isinstance(values, Mapping):
         raise ValueError("values must be a mapping")
-    return FrozenDict({key: freeze_value(value) for key, value in dict(values).items()})
+    return FrozenDict({key: _freeze_value(value) for key, value in values.items()})
 
 
 def _jsonable_value(value: Any, *, path: str) -> Any:

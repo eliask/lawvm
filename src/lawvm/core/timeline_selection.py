@@ -7,8 +7,6 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-import icontract
-
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash
 
@@ -343,6 +341,69 @@ def required_scope_dimensions(
     return tuple(sorted(dims))
 
 
+def _required_scope_dimensions_from_eligible(
+    versions: list[ProvisionVersion],
+) -> tuple[str, ...]:
+    dims: set[str] = set()
+    for version in versions:
+        if any(pred.dimension == "territory" for pred in version.applicability):
+            dims.add("territory")
+    return tuple(sorted(dims))
+
+
+def _select_background_version_from_eligible(
+    versions: list[ProvisionVersion],
+    *,
+    as_of: str,
+    territory: Optional[str],
+    expires_as_of: str = "",
+) -> Optional[ProvisionVersion]:
+    expiry_horizon = expires_as_of or as_of
+    if any(
+        (
+            applicability_matches(v, territory=territory)
+            and v.expires
+            and v.expires <= expiry_horizon
+            and (v.content is None or content_is_repeal_placeholder(v.content))
+        )
+        for v in versions
+    ):
+        return None
+    return pick_latest(
+        [
+            v
+            for v in versions
+            if (
+                v.variant_kind == "permanent"
+                and applicability_matches(v, territory=territory)
+                and not (
+                    expires_as_of
+                    and as_of > expires_as_of
+                    and (v.content is None or content_is_repeal_placeholder(v.content))
+                    and v.effective > expires_as_of
+                )
+            )
+        ]
+    )
+
+
+def _select_temporary_version_from_eligible(
+    versions: list[ProvisionVersion],
+    *,
+    territory: Optional[str],
+) -> Optional[ProvisionVersion]:
+    return pick_latest(
+        [
+            v
+            for v in versions
+            if (
+                v.variant_kind == "temporary"
+                and applicability_matches(v, territory=territory)
+            )
+        ]
+    )
+
+
 def select_background_version(
     timeline: ProvisionTimeline,
     as_of: str,
@@ -356,34 +417,16 @@ def select_background_version(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
-    expiry_horizon = expires_as_of or as_of
-    if any(
-        (
-            eligible(v, as_of, query_type, expires_as_of=expires_as_of)
-            and applicability_matches(v, territory=territory)
-            and v.expires
-            and v.expires <= expiry_horizon
-            and (v.content is None or content_is_repeal_placeholder(v.content))
-        )
-        for v in timeline.versions
-    ):
-        return None
-    return pick_latest(
-        [
-            v
-            for v in timeline.versions
-            if (
-                v.variant_kind == "permanent"
-                and eligible(v, as_of, query_type, expires_as_of=expires_as_of)
-                and applicability_matches(v, territory=territory)
-                and not (
-                    expires_as_of
-                    and as_of > expires_as_of
-                    and (v.content is None or content_is_repeal_placeholder(v.content))
-                    and v.effective > expires_as_of
-                )
-            )
-        ]
+    eligible_versions = [
+        version
+        for version in timeline.versions
+        if eligible(version, as_of, query_type, expires_as_of=expires_as_of)
+    ]
+    return _select_background_version_from_eligible(
+        eligible_versions,
+        as_of=as_of,
+        territory=territory,
+        expires_as_of=expires_as_of,
     )
 
 
@@ -400,20 +443,17 @@ def select_temporary_version(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
-    return pick_latest(
-        [
-            v
-            for v in timeline.versions
-            if (
-                v.variant_kind == "temporary"
-                and eligible(v, as_of, query_type, expires_as_of=expires_as_of)
-                and applicability_matches(v, territory=territory)
-            )
-        ]
+    eligible_versions = [
+        version
+        for version in timeline.versions
+        if eligible(version, as_of, query_type, expires_as_of=expires_as_of)
+    ]
+    return _select_temporary_version_from_eligible(
+        eligible_versions,
+        territory=territory,
     )
 
 
-@icontract.require(lambda as_of: as_of, "as_of must be non-empty")
 def select_active_version_ex(
     timeline: ProvisionTimeline,
     as_of: str,
@@ -422,6 +462,8 @@ def select_active_version_ex(
     expires_as_of: str = "",
 ) -> VersionSelectionResult:
     """Return an explicit active-version selection result."""
+    if not as_of:
+        raise ValueError("as_of must be non-empty")
     _validate_selection_query(
         as_of=as_of,
         query_type=query_type,
@@ -432,12 +474,7 @@ def select_active_version_ex(
         for version in timeline.versions
         if eligible(version, as_of, query_type, expires_as_of=expires_as_of)
     ]
-    required_dimensions = required_scope_dimensions(
-        timeline,
-        as_of=as_of,
-        query_type=query_type,
-        expires_as_of=expires_as_of,
-    )
+    required_dimensions = _required_scope_dimensions_from_eligible(eligible_versions)
     if territory is None and required_dimensions:
         return VersionSelectionResult(
             status="ambiguous_missing_scope",
@@ -453,17 +490,13 @@ def select_active_version_ex(
             ),
         )
 
-    overlay = select_temporary_version(
-        timeline,
-        as_of,
-        query_type=query_type,
+    overlay = _select_temporary_version_from_eligible(
+        eligible_versions,
         territory=territory,
-        expires_as_of=expires_as_of,
     )
-    background = select_background_version(
-        timeline,
-        as_of,
-        query_type=query_type,
+    background = _select_background_version_from_eligible(
+        eligible_versions,
+        as_of=as_of,
         territory=territory,
         expires_as_of=expires_as_of,
     )
@@ -532,11 +565,6 @@ def select_active_version_ex(
     )
 
 
-@icontract.require(lambda as_of: as_of, "as_of must be non-empty")
-@icontract.ensure(
-    lambda as_of, result: result is None or result.effective <= as_of,
-    "returned version (if any) must have effective <= as_of",
-)
 def select_active_version(
     timeline: ProvisionTimeline,
     as_of: str,
@@ -544,6 +572,8 @@ def select_active_version(
     territory: Optional[str] = None,
 ) -> Optional[ProvisionVersion]:
     """Return the most recent active ProvisionVersion at date as_of."""
+    if not as_of:
+        raise ValueError("as_of must be non-empty")
     selection = select_active_version_ex(
         timeline,
         as_of,
@@ -556,4 +586,7 @@ def select_active_version(
             f"need {selection.required_dimensions!r}; use select_active_version_ex() "
             "for an explicit ambiguity result."
         )
-    return selection.version
+    version = selection.version
+    if version is not None and version.effective > as_of:
+        raise AssertionError("returned version (if any) must have effective <= as_of")
+    return version

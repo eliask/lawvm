@@ -383,6 +383,43 @@ def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_
     assert result == dt.date(1962, 12, 28)
 
 
+def test_statute_issue_date_does_not_read_signatures_when_frbr_year_matches(monkeypatch) -> None:
+    tree = _make_tree(
+        "<meta>"
+        "  <identification>"
+        "    <FRBRWork>"
+        "      <FRBRdate name='dateIssued' date='1962-12-28'/>"
+        "    </FRBRWork>"
+        "  </identification>"
+        "</meta>"
+        "<preface><p><docNumber>680/1962</docNumber></p></preface>"
+        "<body>"
+        "  <hcontainer name='signatures'>"
+        "    <content><p>Helsingissä 28 päivänä joulukuuta 1962.</p></content>"
+        "  </hcontainer>"
+        "</body>"
+    )
+    real_tostring = etree.tostring
+    signature_reads = 0
+
+    def counting_tostring(element, *args, **kwargs):
+        nonlocal signature_reads
+        if (
+            kwargs.get("method") == "text"
+            and etree.QName(element.tag).localname == "hcontainer"
+            and element.get("name") == "signatures"
+        ):
+            signature_reads += 1
+        return real_tostring(element, *args, **kwargs)
+
+    monkeypatch.setattr(etree, "tostring", counting_tostring)
+
+    result = _statute_issue_date(tree)
+
+    assert result == dt.date(1962, 12, 28)
+    assert signature_reads == 0
+
+
 def test_amendment_effective_date_parses_tata_lakia_sovelletaan_lukien() -> None:
     tree = _make_tree(
         "<meta>"
