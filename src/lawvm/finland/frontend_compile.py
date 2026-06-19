@@ -31,6 +31,7 @@ import lxml.etree as etree
 
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
@@ -2554,7 +2555,8 @@ def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[Tempor
 def _body_text_for_temporary_op(
     op: AmendmentOp,
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> str:
     """Return amendment-body text for a section-targeted temporary op."""
     if op.target_unit_kind != "section" or not op.target_section:
@@ -2562,6 +2564,13 @@ def _body_text_for_temporary_op(
 
     target_label = _norm_num_token(op.target_section)
     if not target_label:
+        return ""
+
+    if source_model is not None:
+        result = source_model.lookup_section_payload_text(target_label)
+        return result.text if result.status == "unique" else ""
+
+    if muutos_tree is None:
         return ""
 
     for section in muutos_tree.findall(".//{*}section"):
@@ -2585,7 +2594,8 @@ def _tag_temporary_ops(
     ops: List[AmendmentOp],
     *,
     amendment_id: str,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[List[AmendmentOp], List[TemporalEvent]]:
     """Return a new list with ``is_temporary=True`` on every op.
 
@@ -2616,7 +2626,11 @@ def _tag_temporary_ops(
             tagged.append(op)
             continue
         tagged_op = dc_replace(op, is_temporary=True)
-        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops([tagged_op], muutos_tree=muutos_tree)[0]
+        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops(
+            [tagged_op],
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )[0]
         temporal_events.extend(_temporary_events_for_op(tagged_op, amendment_id))
         tagged.append(tagged_op)
     return tagged, temporal_events
@@ -2625,7 +2639,8 @@ def _tag_temporary_ops(
 def _apply_inferred_payload_expiry_to_temporary_ops(
     ops: List[AmendmentOp],
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> List[AmendmentOp]:
     """Stamp inferred expiry on temporary ops when payload text names tax years.
 
@@ -2648,7 +2663,11 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
             and not source.expires
         ):
             inferred = _infer_expiry_date_from_temporary_payload_text(
-                _body_text_for_temporary_op(op, muutos_tree=muutos_tree)
+                _body_text_for_temporary_op(
+                    op,
+                    muutos_tree=muutos_tree,
+                    source_model=source_model,
+                )
             )
             if (
                 inferred is not None
@@ -3380,6 +3399,7 @@ def normalize_and_compile_ops(
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
     base_ir: IRNode | None = None,
     amendment_metadata: _AmendmentTreeMetadata | None = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -3666,7 +3686,12 @@ def normalize_and_compile_ops(
     temporary_temporal_events: List[TemporalEvent] = []
     if ops:
         if _is_temporary_whole:
-            ops, temp_events = _tag_temporary_ops(ops, amendment_id=amendment_id, muutos_tree=muutos_tree)
+            ops, temp_events = _tag_temporary_ops(
+                ops,
+                amendment_id=amendment_id,
+                muutos_tree=muutos_tree,
+                source_model=source_model,
+            )
             temporary_temporal_events.extend(temp_events)
         elif _temporary_targets is not None:
             # Section-scoped: only tag ops whose target_section is in the set
@@ -3677,6 +3702,7 @@ def normalize_and_compile_ops(
                         [op],
                         amendment_id=amendment_id,
                         muutos_tree=muutos_tree,
+                        source_model=source_model,
                     )
                     tagged_ops.extend(temp_tagged)
                     temporary_temporal_events.extend(temp_events)
@@ -3684,7 +3710,11 @@ def normalize_and_compile_ops(
                     tagged_ops.append(op)
             ops = tagged_ops
     if ops:
-        ops = _apply_inferred_payload_expiry_to_temporary_ops(ops, muutos_tree=muutos_tree)
+        ops = _apply_inferred_payload_expiry_to_temporary_ops(
+            ops,
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )
     # After tagging, detect ops that are temporary but have no parseable
     # expiry date.  These should produce an explicit degradation observation;
     # the temporal sidecar already carries the real temporary signal.

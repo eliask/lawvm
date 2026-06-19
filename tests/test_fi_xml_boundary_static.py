@@ -104,8 +104,10 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
     source = _source("src/lawvm/finland/source_model.py")
 
     assert "class SourcePayloadLookupResult" in source
+    assert "class SourcePayloadTextLookupResult" in source
     assert "def lookup_payload_ir(" in source
     assert "def lookup_payload_ir_for_coverage_ref(" in source
+    assert "def lookup_section_payload_text(" in source
     assert "body_lookup_status:" in source
     assert "body_candidates:" in source
     assert "payload_basis:" in source
@@ -305,12 +307,22 @@ def test_temporal_postprocessing_body_repeal_candidate_uses_source_model() -> No
 def test_frontend_normalization_runs_through_source_model() -> None:
     source = _source("src/lawvm/finland/process_frontend_normalization.py")
     pipeline_source = _source("src/lawvm/finland/process_pipeline.py")
+    source_model = _source("src/lawvm/finland/source_model.py")
 
     assert "import lxml.etree as etree" not in source
     assert "muutos_node_lookup_cache_scope" not in source
     assert "muutos_tree" not in source
     assert "source_model.normalize_and_compile_ops(" in source
     assert "source_model=source_model" in pipeline_source
+    assert "source_model=self" in source_model
+
+
+def test_temporary_payload_expiry_lookup_prefers_source_model_text() -> None:
+    source = _source("src/lawvm/finland/frontend_compile.py")
+
+    assert "lookup_section_payload_text(" in source
+    assert "_body_text_for_temporary_op(\n                    op,\n                    muutos_tree=muutos_tree,\n                    source_model=source_model," in source
+    assert "_tag_temporary_ops(\n                ops,\n                amendment_id=amendment_id,\n                muutos_tree=muutos_tree,\n                source_model=source_model," in source
 
 
 def test_process_pipeline_metadata_reads_use_source_model() -> None:

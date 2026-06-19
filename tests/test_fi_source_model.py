@@ -531,6 +531,61 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     assert inventory_payload_lookup.cross_heading_ir == direct_cross_ir
 
 
+def test_source_model_payload_lookup_keeps_chapter_scope_after_plain_cross_heading() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter>
+                <num>4 luku</num>
+                <heading>Sulautuminen</heading>
+                <crossHeading>Sulautumisen m\xc3\xa4\xc3\xa4ritelm\xc3\xa4 ja toteuttamistavat</crossHeading>
+                <section>
+                  <num>60 \xc2\xa7</num>
+                  <subsection><content><p>S\xc3\xa4\xc3\xa4st\xc3\xb6pankki voi sulautua.</p></content></subsection>
+                </section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2007/1423")
+
+    lookup = model.lookup_payload_ir("section", "60", target_chapter="4")
+
+    assert [unit.unit_id for unit in lookup.body_candidates] == ["section:4/60"]
+    assert lookup.status == "unique"
+    assert lookup.payload_basis == "body_inventory"
+    assert lookup.payload_ir is not None
+
+
+def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>5 \xc2\xa7</num>
+                <content><p>Vuodelta 1984 toimitettavassa verotuksessa teksti.</p></content>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="1982/1035")
+
+    result = model.lookup_section_payload_text("5")
+
+    assert result.status == "unique"
+    assert result.payload_lookup_status == "unique"
+    assert result.payload_basis == "body_inventory"
+    assert "Vuodelta 1984 toimitettavassa verotuksessa" in result.text
+
+
 def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_verdicts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

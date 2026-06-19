@@ -18,9 +18,15 @@ import lxml.etree as etree
 
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageUnit
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
-from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
+from lawvm.finland.body_pairing import (
+    ObservedBodyUnit,
+    _body_with_orphan_subsections_attached,
+    _part_label_from_cross_heading,
+    build_observed_body_inventory,
+)
 from lawvm.finland.helpers import (
     _normalize_source_part_num,
     _normalize_source_section_num,
@@ -93,6 +99,17 @@ class SourcePayloadLookupResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SourcePayloadTextLookupResult:
+    """Typed text lookup verdict for source payload text consumers."""
+
+    status: Literal["unique", "missing", "ambiguous"]
+    query: SourceBodyUnitQuery
+    payload_lookup_status: Literal["unique", "missing", "ambiguous"]
+    payload_basis: Literal["body_inventory", "coverage_payload_ref", "none"]
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class SourcePayloadIrIndex:
     """Converted source payloads addressable by current transitional unit ids."""
 
@@ -125,6 +142,7 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         body = muutos_tree.find(".//body")
     if body is None:
         return SourcePayloadIrIndex(observed_by_unit_id={}, coverage_by_unit_id={})
+    body = _body_with_orphan_subsections_attached(body)
     observed_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
     coverage_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
     seen_observed_ids: set[str] = set()
@@ -176,8 +194,7 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         for child in parent:
             kind = _xml_localname(child)
             if kind == "crossHeading":
-                raw_part = " ".join("".join(str(part) for part in child.itertext()).split())
-                part_label = _normalize_source_part_num(raw_part)
+                part_label = _part_label_from_cross_heading(child)
                 if part_label:
                     append_payload(
                         "part",
@@ -649,6 +666,33 @@ class AmendmentSourceModel:
         )
         return result.payload_ir, result.cross_heading_ir
 
+    def lookup_section_payload_text(
+        self,
+        section_label: str,
+        *,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> SourcePayloadTextLookupResult:
+        """Return typed source-body payload text for a section target."""
+        payload_lookup = self.lookup_payload_ir(
+            "section",
+            section_label,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        payload_text = (
+            " ".join(irnode_to_text(payload_lookup.payload_ir).split())
+            if payload_lookup.payload_ir is not None
+            else ""
+        )
+        return SourcePayloadTextLookupResult(
+            status=payload_lookup.status if payload_text else "missing",
+            query=payload_lookup.query,
+            payload_lookup_status=payload_lookup.status,
+            payload_basis=payload_lookup.payload_basis,
+            text=payload_text,
+        )
+
     def pre_create_amendment_chapters(
         self,
         state: "ReplayState",
@@ -897,6 +941,7 @@ class AmendmentSourceModel:
                 parse_result=parse_result,
                 regex_recognition_coverage_out=regex_recognition_coverage_out,
                 amendment_metadata=amendment_metadata,
+                source_model=self,
             )
 
     def enrich_ops_from_amendment_tree(
