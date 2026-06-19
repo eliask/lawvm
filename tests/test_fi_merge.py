@@ -45,6 +45,10 @@ def _content(text: str) -> IRNode:
     return IRNode(kind=IRNodeKind.CONTENT, text=text)
 
 
+def _has_omission(node: IRNode) -> bool:
+    return node.kind is IRNodeKind.OMISSION or any(_has_omission(child) for child in node.children)
+
+
 def _op(
     op_type: Literal["REPLACE", "INSERT", "REPEAL"],
     *,
@@ -548,6 +552,7 @@ def test_merge_section_with_nested_subsection_omission_preserves_master_tail() -
     assert result is not None
     result_subsec_labels = [c.label for c in result.children if c.kind is IRNodeKind.SUBSECTION]
     assert result_subsec_labels == ["1", "2", "3", "4"]
+    assert not _has_omission(result)
     tail_sub = next(c for c in result.children if c.kind is IRNodeKind.SUBSECTION and c.label == "4")
     tail_text = " ".join(c.text or "" for c in tail_sub.children if c.text)
     assert tail_text == "M4"

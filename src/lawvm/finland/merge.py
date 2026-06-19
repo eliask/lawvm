@@ -1047,6 +1047,32 @@ def _merge_section_with_omission_ir(
             return child
         return _relabel_subsection(child, master_label)
 
+    def _resolve_amend_subsection_for_master_slot(child: IRNode, slot_idx: int) -> IRNode:
+        """Resolve inner subsection omissions before overlaying an outer section merge."""
+        if not any(_is_omission_ir(grandchild) for grandchild in child.children):
+            return _relabel_subsection_to_master_slot(child, slot_idx)
+
+        master_slot = master_subsecs[slot_idx]
+        omission_idx = next(
+            (idx for idx, grandchild in enumerate(child.children) if _is_omission_ir(grandchild)),
+            None,
+        )
+        trailing = (
+            []
+            if omission_idx is None
+            else [grandchild for grandchild in child.children[omission_idx + 1 :] if not _is_omission_ir(grandchild)]
+        )
+        if omission_idx is not None and not trailing:
+            resolved = _tops._with_children(
+                child,
+                [grandchild for grandchild in child.children if not _is_omission_ir(grandchild)],
+            )
+        else:
+            resolved = _merge_subsection_accumulate_inner_omission_ir(master_slot, child)
+            if resolved is None:
+                resolved = _merge_subsection_with_omission_ir(master_slot, child)
+        return _relabel_subsection_to_master_slot(resolved or child, slot_idx)
+
     amend_subsecs = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION]
     if amend_subsecs and master_subsecs:
         first_amend_label = normalized_label_key(amend_subsecs[0].label)
@@ -1077,7 +1103,10 @@ def _merge_section_with_omission_ir(
     for slot_idx, amend_sub in enumerate(amend_subsecs):
         master_slot_idx = leading_omissions + slot_idx
         if master_slot_idx < M:
-            master_subsecs[master_slot_idx] = _relabel_subsection_to_master_slot(amend_sub, master_slot_idx)
+            master_subsecs[master_slot_idx] = _resolve_amend_subsection_for_master_slot(
+                amend_sub,
+                master_slot_idx,
+            )
             master_subsec_is_replaced[master_slot_idx] = True
         else:
             master_subsecs.append(amend_sub)
