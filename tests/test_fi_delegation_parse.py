@@ -135,6 +135,44 @@ def test_kind_bare_asetus_holder_underspecified() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Self-/cross-reference guard: the enacting decree's OWN instrument is not a grant
+# ---------------------------------------------------------------------------
+
+
+def test_demonstrative_self_reference_is_not_a_grant() -> None:
+    # ``Tällä asetuksella säädetään …`` is the decree exercising its OWN power,
+    # NOT a delegation that grants the power to issue a lower instrument. The
+    # demonstrative-preceded ``asetuksella`` must NOT seed a delegation core.
+    dp = parse_delegation_sentence(
+        "Tällä asetuksella säädetään ionisoivan säteilyn käytöstä."
+    )
+    assert dp.cores == ()
+    assert dp.parser_lane == DELEGATION_LANE_DECLINED
+    assert_total_ownership(dp)
+
+
+def test_demonstrative_self_reference_mid_clause_is_not_a_grant() -> None:
+    # The demonstrative may sit mid-clause (``vahvistaa tällä asetuksella …``).
+    dp = parse_delegation_sentence(
+        "Sosiaali- ja terveysministeriö vahvistaa tällä asetuksella luettelon "
+        "vaarallisista aineista."
+    )
+    assert dp.cores == ()
+    assert_total_ownership(dp)
+
+
+def test_genuine_grant_not_suppressed_by_earlier_demonstrative() -> None:
+    # A demonstrative earlier in the clause that does NOT bind ``asetuksella`` must
+    # not suppress a genuine ``[issuer] asetuksella`` grant later in the clause.
+    dp = parse_delegation_sentence(
+        "Tämän lain täytäntöönpanosta säädetään valtioneuvoston asetuksella."
+    )
+    assert len(dp.cores) == 1
+    assert dp.cores[0].kind == KIND_VN_ASETUS
+    assert_total_ownership(dp)
+
+
+# ---------------------------------------------------------------------------
 # Two-anchor cue: the discontinuous (verb, instrument) constituent
 # ---------------------------------------------------------------------------
 

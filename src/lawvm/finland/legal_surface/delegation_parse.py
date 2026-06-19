@@ -163,6 +163,24 @@ _VERB_ANCHOR_RE = re.compile(
 #: Instrument anchor for the ASETUS shape: the instrumental ``asetuksella`` (by
 #: decree). A single closed token.
 _INSTRUMENT_ASETUKSELLA_RE = re.compile(r"\basetuksella\b", re.IGNORECASE)
+#: SELF-/CROSS-REFERENCE GUARD. A demonstrative determiner immediately preceding
+#: ``asetuksella`` (``Tällä asetuksella säädetään …`` / ``vahvistaa tällä
+#: asetuksella …``) names the ENACTING decree's OWN instrument — the decree
+#: exercising its own power — NOT a delegation that GRANTS the power to issue a
+#: lower instrument. It is therefore out of the delegation family: the
+#: ``asetuksella`` is a self-reference to the document itself, not a delegated
+#: target. This mirrors the sibling H5 recognizer's ``_DEMONSTRATIVES`` guard
+#: (:mod:`lawvm.finland.references.delegation`), which already excludes the
+#: identical shape. The demonstrative set is the genitive/adessive surfaces that
+#: bind ``asetuksella`` (``tällä``/``tämän``/``sillä``/``sen`` + the colloquial
+#: ``tässä``/``tästä`` that appear in negated ``ei tällä asetuksella säädetä``
+#: forms). Matched as a whole token directly before the anchor (only whitespace
+#: between), so a coincidental earlier demonstrative does not suppress a genuine
+#: ``[issuer] asetuksella`` grant later in the clause.
+_DEMONSTRATIVE_BEFORE_ASETUS_RE = re.compile(
+    r"\b(?:tällä|tämän|tässä|tästä|tällaisella|sillä|sen|tuolla|tuon)\s+\Z",
+    re.IGNORECASE,
+)
 #: Object anchor for the AGENCY shape: ``määräyksiä`` / ``ohjeita`` (regulations /
 #: guidance), the lower instrument as the verb's object.
 _OBJECT_MAARAYS_RE = re.compile(r"\b(?:määräyksiä|ohjeita)\b", re.IGNORECASE)
@@ -728,7 +746,16 @@ def _recognize_clause_cores(
 
     # ASETUS shape: EVERY ``asetuksella`` instrumental anchor in the clause is a
     # decree grant (coordinated decrees → one core each). Requires a power verb.
-    asetus_anchors = list(_INSTRUMENT_ASETUKSELLA_RE.finditer(clause))
+    # EXCEPT a self-/cross-reference anchor (``tällä asetuksella`` / ``tämän
+    # asetuksella``): the decree exercising its OWN power is not a delegation that
+    # grants the power to issue a lower instrument, so such an anchor is not a
+    # grant. It falls to benign residual (totality preserved). Mirrors the H5
+    # recognizer's demonstrative cross-reference guard.
+    asetus_anchors = [
+        am
+        for am in _INSTRUMENT_ASETUKSELLA_RE.finditer(clause)
+        if not _DEMONSTRATIVE_BEFORE_ASETUS_RE.search(clause[: am.start()])
+    ]
     # AGENCY shape: the ``määräyksiä`` / ``ohjeita`` object anchor(s) under ``antaa``.
     object_anchors = list(_OBJECT_MAARAYS_RE.finditer(clause))
 
