@@ -8,6 +8,7 @@ walk and reinterpret the same XML tree.
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 from dataclasses import dataclass, field
 from collections.abc import Iterable
@@ -387,6 +388,24 @@ class AmendmentSourceModel:
         if johto_el is None:
             return ""
         return etree.tostring(johto_el, method="text", encoding="unicode")
+
+    def title(self) -> str:
+        """Return the source title through the source-model adapter."""
+        from lawvm.finland.frontend_compile import _tree_title
+
+        return _tree_title(self.muutos_tree)
+
+    def issue_date(self) -> dt.date | None:
+        """Return the source issue date through the source-model adapter."""
+        from lawvm.finland.metadata import _statute_issue_date
+
+        return _statute_issue_date(self.muutos_tree)
+
+    def effective_date(self) -> dt.date | None:
+        """Return the source amendment effective date through the source-model adapter."""
+        from lawvm.finland.metadata import _amendment_effective_date
+
+        return _amendment_effective_date(self.muutos_tree)
 
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""

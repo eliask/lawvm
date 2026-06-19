@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from lxml import etree
 
 from lawvm.core.ir import IRNode
@@ -193,6 +195,36 @@ def test_source_model_preserves_coverage_ignored_units_side_channel() -> None:
     assert model.body_coverage_units(ignored_units_out=ignored_second) == ()
     assert [ignored.reason for ignored in ignored_first] == ["missing_num"]
     assert [ignored.reason for ignored in ignored_second] == ["missing_num"]
+
+
+def test_source_model_exposes_metadata_surfaces() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <meta>
+              <identification>
+                <FRBRWork>
+                  <FRBRdate name="dateIssued" date="2020-01-02"/>
+                </FRBRWork>
+              </identification>
+              <lifecycle>
+                <eventRef>
+                  <dateEntryIntoForce date="2020-03-04"/>
+                </eventRef>
+              </lifecycle>
+            </meta>
+            <preface><longTitle><docTitle>Testilaki</docTitle></longTitle></preface>
+            <body/>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2020/1")
+
+    assert model.title() == "Testilaki"
+    assert model.issue_date() == dt.date(2020, 1, 2)
+    assert model.effective_date() == dt.date(2020, 3, 4)
 
 
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:

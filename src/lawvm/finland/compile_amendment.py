@@ -13,14 +13,12 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
 from lawvm.finland.effect_lowering import UnsupportedMetaClause, lower_johto_effects
-from lawvm.finland.frontend_compile import _tree_title
 from lawvm.finland.group_plan import (
     coalesce_same_target_mixed_scope_section_groups,
     group_ops_by_target,
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.metadata import _amendment_effective_date, _statute_issue_date
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.scope import find_body_section_chapter
 from lawvm.finland.source_model import AmendmentSourceModel
@@ -123,9 +121,9 @@ def compile_amendment_ops(
         muutos_tree,
         source_ref=source_ref,
     )
-    source_title = source_title or _tree_title(muutos_tree)
-    amendment_issue_date = _statute_issue_date(muutos_tree)
-    amendment_effective_date = _amendment_effective_date(muutos_tree)
+    source_title = source_title or source_model.title()
+    amendment_issue_date = source_model.issue_date()
+    amendment_effective_date = source_model.effective_date()
 
     def _body_inventory():
         return source_model.observed_body_inventory()

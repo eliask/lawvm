@@ -91,3 +91,14 @@ def test_apply_executor_precreates_chapters_through_source_model() -> None:
     assert "_PrecreateApplyChaptersRequest" not in source
     assert "precreate_apply_chapters as _precreate_apply_chapters" not in source
     assert "source_model.precreate_apply_chapters(" in source
+
+
+def test_compile_amendment_metadata_reads_use_source_model() -> None:
+    source = _source("src/lawvm/finland/compile_amendment.py")
+
+    assert "from lawvm.finland.frontend_compile import _tree_title" not in source
+    assert "from lawvm.finland.metadata import _amendment_effective_date" not in source
+    assert "from lawvm.finland.metadata import _statute_issue_date" not in source
+    assert "source_model.title()" in source
+    assert "source_model.issue_date()" in source
+    assert "source_model.effective_date()" in source
