@@ -195,7 +195,7 @@ def test_build_statute_graph_fi_prefers_replay_owned_timelines(monkeypatch) -> N
         )
         monkeypatch.setitem(
             sys.modules,
-            "lawvm.finland.cross_refs",
+            "lawvm.finland.references.cross_refs",
             types.SimpleNamespace(extract_cross_refs=lambda xml, sid: []),
         )
         monkeypatch.setitem(

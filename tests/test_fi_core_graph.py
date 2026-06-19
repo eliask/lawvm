@@ -9,7 +9,7 @@ from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBra
 from lawvm.core.graph import CorpusGraph
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.cross_refs import CrossRefEdge
+from lawvm.finland.references.cross_refs import CrossRefEdge
 from lawvm.finland.delegation import DelegationEdge
 
 
