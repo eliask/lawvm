@@ -119,6 +119,7 @@ def _result():
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_result_has_exactly_the_five_buckets(_result) -> None:
     assert set(_result.buckets) == set(CENSUS_ACCOUNTING_BUCKETS)
 
@@ -127,6 +128,7 @@ def test_result_has_exactly_the_five_buckets(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_buckets_partition_the_corpus(_result) -> None:
     """The five buckets sum to the amendment-johtolause total — no leak."""
     assert _result.is_partition(), (
@@ -140,6 +142,7 @@ def test_buckets_partition_the_corpus(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_legacy_fallback_unregistered_is_zero(_result) -> None:
     """Closed-set guarantee end-to-end: no un-accounted decline."""
     assert _result.buckets["legacy_fallback_unregistered"] == 0, (
@@ -154,6 +157,7 @@ def test_legacy_fallback_unregistered_is_zero(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     """A NEW un-adjudicated parity miss fails CI (parity regression guard)."""
     live = _result.buckets["genuine_delta_unclassified"]
@@ -171,6 +175,7 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_genuine_delta_adjudicated_fix_count(_result) -> None:
     """The adjudicated bucket holds the corrections + witness-span + drop-recovery
     + insertion-recovery sets that still diverge. Live = 50: 32 of the 33 parser
@@ -196,6 +201,7 @@ def test_genuine_delta_adjudicated_fix_count(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_grammar_owned_0delta_above_floor(_result) -> None:
     """Ownership regression guard: owned-and-byte-identical must not drop."""
     live = _result.buckets["grammar_owned_0delta"]
@@ -211,6 +217,7 @@ def test_grammar_owned_0delta_above_floor(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_report_renders(_result) -> None:
     report = format_accounting_report(_result)
     assert "FULL-ACCOUNTING CENSUS" in report
@@ -221,6 +228,7 @@ def test_report_renders(_result) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_witness_span_sid_is_structurally_equal_not_byte_equal() -> None:
     """Evidence + regression guard for the witness_span_normalized class.
 
