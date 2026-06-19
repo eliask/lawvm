@@ -150,7 +150,6 @@ from lawvm.finland.compile_amendment import _split_numbered_table_child_group_op
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
-    _source_body_is_single_mixed_chapter_wrapper,
     resolve_compile_group_scope_recovery,
 )
 from tests.corpus_pin_helpers import replay_xml_for_test as replay_xml
@@ -4727,6 +4726,16 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
                 ),
                 IRNode(
                     kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="14"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="43"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
                     label="9",
                     children=(IRNode(kind=IRNodeKind.SECTION, label="62"),),
                 ),
@@ -4740,6 +4749,8 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
             <body>
               <chapter>
                 <num>1 luku</num>
+                <section><num>14 a §</num><content><p>payload 14a</p></content></section>
+                <section><num>43 §</num><content><p>payload 43</p></content></section>
                 <section><num>62 a §</num><content><p>payload 62a</p></content></section>
               </chapter>
             </body>
