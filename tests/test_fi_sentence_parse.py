@@ -97,6 +97,35 @@ def test_two_digit_year_expands() -> None:
     assert_total_ownership(sp)
 
 
+def test_two_digit_year_bounded_by_citing_statute() -> None:
+    # A cite cannot post-date the statute that makes it: when the citing statute's
+    # year is threaded, the 2-digit pivot is bounded by it. A 1950 statute citing
+    # ``(1/19)`` means 1919, not 2019.
+    text = "painovapauslaissa (1/19) säädetään, että"
+    sp = parse_citation_sentence(text, source_statute_id="1950/558")
+    assert [c.statute_id for c in sp.citations] == ["1/1919"]
+    assert_total_ownership(sp)
+
+    # ``(208/25)`` cited by a 1925 statute is 1925 (the latest non-post-dating
+    # reading), not 2025.
+    sp2 = parse_citation_sentence("annetun lain (208/25) nojalla", "1925/100")
+    assert [c.statute_id for c in sp2.citations] == ["208/1925"]
+
+    # Without a citing year the legacy fixed pivot is preserved (no regression):
+    # ``(1/19)`` -> 2019 under the current-year heuristic.
+    sp3 = parse_citation_sentence("painovapauslaissa (1/19) säädetään, että")
+    assert [c.statute_id for c in sp3.citations] == ["1/2019"]
+
+    # A genuinely 21st-century cite under a 21st-century citing statute is kept:
+    # ``(1/04)`` cited by a 2010 statute is 2004.
+    sp4 = parse_citation_sentence("laissa (1/04) säädetään, että", "2010/1")
+    assert [c.statute_id for c in sp4.citations] == ["1/2004"]
+
+    # A 4-digit year is never touched by the pivot, with or without a citing year.
+    sp5 = parse_citation_sentence("laissa (359/1968) säädetään, että", "1950/558")
+    assert [c.statute_id for c in sp5.citations] == ["359/1968"]
+
+
 def test_multiple_citations_in_one_sentence() -> None:
     text = (
         "Tässä laissa tarkoitetaan, mitä laissa (359/1968) 6 §:ssä ja "

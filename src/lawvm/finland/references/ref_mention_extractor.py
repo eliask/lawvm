@@ -1939,7 +1939,11 @@ def extract_inline_id_construction_mentions(
         text = _PLAIN_TEXT_RECOGNIZER._collect_non_ref_text(p_el)
         if not text or _PLAIN_TEXT_GUARD_PAREN not in text:
             continue
-        sp = parse_citation_sentence(text)
+        # Thread the CITING statute id so the construction lane's 2-digit-year
+        # century pivot is bounded causally — a cited act cannot post-date the
+        # statute that cites it (e.g. a 1950 statute's ``(1/19)`` is 1919, not
+        # 2019). Unknown citing year falls back to the legacy fixed pivot.
+        sp = parse_citation_sentence(text, source_statute_id=statute_id)
         if not sp.citations:
             continue
         # Per-<p> span cache so multiple targets from one anchor share a span.
