@@ -2692,8 +2692,9 @@ def _emit_section_snapshot(
         return _search(tree, ())
 
     def _lookup_container_path_in_tree(tree: IRNode, kind_name: str) -> Optional[Path]:
+        label_index = base_provision_index if tree is base_ir else None
         for label in _candidate_lookup_labels():
-            raw_path = _tops.find(tree, kind_name, label)
+            raw_path = _tops.find(tree, kind_name, label, label_index=label_index)
             if raw_path:
                 return _tops._as_path(raw_path)
         return _find_normalized_container_path_in_tree(tree, kind_name)
