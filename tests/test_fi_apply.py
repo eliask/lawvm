@@ -11619,6 +11619,51 @@ class TestApplyItemInsert:
         assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
         assert pathologies[0].detail["recovery_kind"] == "compound_item_insert_append"
 
+    def test_insert_compound_item_can_append_flat_sibling_subparagraph_recovery(self):
+        master_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="item two:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("sub a"),)),
+            ),
+        )
+        sec = _sec("4", _sub("1", _para("1", "item one"), master_para2))
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "4")]
+        op = _op(op_type="INSERT", target_section="4", target_paragraph=1, target_item="2h")
+        amend_sub = _sub(
+            "1",
+            _para("2", "item two:"),
+            _para("h", "sub h"),
+        )
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_insert(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "4 § 1 mom 2h k insert",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "4")
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        para2 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "2")
+        sp_labels = [c.label for c in para2.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+        assert sp_labels == ["a", "h"]
+        assert len(pathologies) == 1
+        assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        assert pathologies[0].detail["recovery_kind"] == "compound_item_insert_append"
+
     def test_insert_strict_blocks_compound_item_append_recovery(self):
         master_para4 = IRNode(
             kind=IRNodeKind.PARAGRAPH,

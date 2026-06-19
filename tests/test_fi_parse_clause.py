@@ -907,6 +907,55 @@ def test_insertion_alakohta_into_existing_item_uses_compound_item_label() -> Non
     assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "lisätään 4 §:n 2 kohtaan uusi h alakohta seuraavasti:",
+            "L P 4 1 2h",
+        ),
+        (
+            "lisätään 4 §:n 2 kohtaan, sellaisena kuin se on osaksi laissa 650/2014, "
+            "uusi i alakohta, seuraavasti:",
+            "L P 4 1 2i",
+        ),
+    ],
+)
+def test_insertion_alakohta_into_item_defaults_omitted_momentti_to_first(
+    text: str, expected: str
+) -> None:
+    """``§:n K kohtaan uusi c alakohta`` keeps the alakohta target."""
+
+    ops = parse_clause(text).parsed_ops
+
+    assert [op.code() for op in ops] == [expected]
+    assert ops[0].witness is not None
+    assert ops[0].witness.rule_id == "fi.insertion_alakohta_into_item"
+
+
+def test_2014_692_insertion_list_keeps_anaphoric_momentti_and_alakohta_targets() -> None:
+    """The full 2014/692 preamble must not fall back to the lossy legacy parser."""
+
+    text = (
+        "muutetaan Energiavirastosta annetun lain (870/2013) 1 §:n 2 momentin 15 kohta "
+        "ja 3 momentin 6 kohta, sellaisena kuin niistä on 1 §:n 3 momentin 6 kohta "
+        "laissa 650/2014 sekä lisätään 1 §:n 2 momenttiin uusi 16 kohta ja "
+        "3 momenttiin, sellaisena kuin se on osaksi laissa 650/2014, uusi 7 kohta "
+        "sekä 4 §:n 2 kohtaan, sellaisena kuin se on osaksi laissa 650/2014, "
+        "uusi i alakohta, seuraavasti:"
+    )
+    result = parse_clause(text)
+
+    assert result.parser_lane == "grammar_owned"
+    assert [op.code() for op in result.parsed_ops] == [
+        "M P 1 2 15",
+        "M P 1 3 6",
+        "L P 1 2 16",
+        "L P 1 3 7",
+        "L P 4 1 2i",
+    ]
+
+
 def test_insertion_anaphoric_momentti_continuation_without_uusi():
     """'uusi N momentin M kohta ja P momentti' shares 'uusi' across the conjunction.
 

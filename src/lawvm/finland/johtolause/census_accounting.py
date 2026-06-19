@@ -220,6 +220,10 @@ FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0: frozenset[str] = frozenset(
         #             NEW 3 SurfaceInsertion nodes (alakohta_into_item ×2 + section 4a).
         "2003/363",  # 'lisätään 1 §:n ... 13 kohtaan uusi c alakohta, 12 §:ään uusi 4 momentti
         #             ja uusi 20 a §' — OLD one bare ref; NEW 3 SurfaceInsertion nodes.
+        "2014/650",  # 'lisätään ... 4 §:n 2 kohtaan uusi h alakohta' — OLD bare ref
+        #             (item '2'); NEW SurfaceInsertion sub_target '2h'.
+        "2014/692",  # 'lisätään ... 4 §:n 2 kohtaan ... uusi i alakohta' — OLD bare ref
+        #             (item '2'); NEW SurfaceInsertion sub_target '2i'.
         "2018/387",  # LISATA tail '78 §:n 2 momentin 1 kohtaan uusi d alakohta' — OLD bare ref
         #             (item '1', dropped alakohta); NEW SurfaceInsertion sub_target '1d'.
         "2025/1253",  # 'lisätään 1 §:n 1 momentin 1 kohtaan uusi c alakohta' — OLD bare ref

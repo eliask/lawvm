@@ -73,6 +73,7 @@ from lawvm.finland.johtolause.grammar.insertions import (
     recognize_bare_anaphoric_sub_target,
     recognize_cross_verb_anaphoric_insert,
     recognize_insertion,
+    recognize_numbered_bare_anaphoric_momentti_insert,
 )
 from lawvm.finland.johtolause.grammar.moves import (
     apply_leading_move_destination_chapter,
@@ -1715,7 +1716,8 @@ def _stamp_anaphoric_determiner_witness(
     """
     out: list[SurfaceNode] = []
     for node in nodes:
-        assert isinstance(node, SurfaceInsertion)
+        if not isinstance(node, SurfaceInsertion):
+            raise TypeError(f"expected SurfaceInsertion, got {type(node).__name__}")
         out.append(
             SurfaceInsertion(
                 kind=node.kind,
@@ -1726,6 +1728,26 @@ def _stamp_anaphoric_determiner_witness(
                 witness=SurfaceWitness(
                     rule_id="fi.anaphoric_determiner_insert", source_span=(start, end)
                 ),
+            )
+        )
+    return out
+
+
+def _stamp_anaphoric_insertion_witness(
+    nodes: Sequence[SurfaceNode], rule_id: str, start: int, end: int
+) -> list[SurfaceNode]:
+    out: list[SurfaceNode] = []
+    for node in nodes:
+        if not isinstance(node, SurfaceInsertion):
+            raise TypeError(f"expected SurfaceInsertion, got {type(node).__name__}")
+        out.append(
+            SurfaceInsertion(
+                kind=node.kind,
+                label=node.label,
+                chapter=node.chapter,
+                part=node.part,
+                sub_target=node.sub_target,
+                witness=SurfaceWitness(rule_id=rule_id, source_span=(start, end)),
             )
         )
     return out
@@ -1763,6 +1785,40 @@ def _resolve_anaphoric_sub_nodes(
             )
         )
     return out
+
+
+def _try_bare_anaphoric_insert_continuation(
+    scan: _Scan,
+    sep_saved: int,
+    chapter: str,
+    verb: Optional[SourceVerb],
+    group_nodes: list[SurfaceNode],
+) -> Optional[list[SurfaceNode]]:
+    """Resolve bare ``N momenttiin uusi ...`` / ``uusi ...`` insertion continuations."""
+    if verb != SourceVerb.LISATA:
+        return None
+    saved = scan.pos
+    res = _update_context_from_nodes(group_nodes, VerbGroupContext(chapter=chapter), verb)
+    prev_sec = res.last_section
+    prev_ch = res.last_section_chapter or chapter
+    prev_mom = res.last_momentti
+    if not prev_sec:
+        return None
+
+    parsed_sub = recognize_numbered_bare_anaphoric_momentti_insert(scan)
+    rule_id = "fi.anaphoric_momentti_ill"
+    if parsed_sub is None:
+        scan.goto(saved)
+        parsed_sub = recognize_bare_anaphoric_sub_target(scan)
+        rule_id = "fi.anaphoric_bare_uusi"
+    if parsed_sub is None:
+        scan.goto(saved)
+        return None
+    if parsed_sub.momentti_from_context and not prev_mom:
+        scan.goto(saved)
+        return None
+    sub_nodes = _resolve_anaphoric_sub_nodes(parsed_sub, prev_sec, prev_ch, prev_mom)
+    return _stamp_anaphoric_insertion_witness(sub_nodes, rule_id, sep_saved, scan.pos)
 
 
 def _try_anaphoric_determiner_insert(
@@ -2288,7 +2344,7 @@ def _parse_verb_group(
                 raise OutOfScope("dropped section/container tail keeps old nodes")
             break
         after_sep = scan.peek()
-        if after_sep is None or after_sep.cat == "VERB":
+        if after_sep is None or after_sep.cat in ("VERB", "END", "END_SENTINEL_SPAN"):
             # Trailing separator before a new verb group / end: the outer loop
             # owns this separator, so rewind and let the group end.
             scan.goto(saved)
@@ -2454,6 +2510,17 @@ def _parse_verb_group(
             # here ahead of ``_retry_target_after_word_skip`` (which self-bails on
             # these determiners). The arm folds into the same verb group; scope
             # carry-forward follows the resolved insert.
+            scan.goto(more_batch_start)
+            bare_anaphoric_nodes = _try_bare_anaphoric_insert_continuation(
+                scan, saved, chapter, verb, nodes
+            )
+            if bare_anaphoric_nodes is not None:
+                nodes.extend(bare_anaphoric_nodes)
+                last_batch = list(bare_anaphoric_nodes)
+                chapter = _extract_chapter(bare_anaphoric_nodes, chapter, verb)
+                part = _extract_part(bare_anaphoric_nodes, part)
+                _consume_inline_move_tails(scan, nodes, last_batch)
+                continue
             scan.goto(more_batch_start)
             det_nodes = _try_anaphoric_determiner_insert(
                 scan, saved, chapter, part, verb, nodes

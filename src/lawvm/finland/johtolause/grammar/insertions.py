@@ -533,6 +533,9 @@ def _recognize_alakohta_insert_into_item(
         return None
     scan.advance()
     _optional_comma(scan)
+    while _at(scan, *_GEN_REINST_SPANS):
+        scan.advance()
+        _optional_comma(scan)
     if not _consume_uusi(scan):
         scan.goto(saved)
         return None
@@ -674,6 +677,37 @@ def recognize_bare_anaphoric_sub_target(
         return None
 
     return None
+
+
+def recognize_numbered_bare_anaphoric_momentti_insert(
+    scan: _Scan,
+) -> Optional[ParsedAnaphoricSubTarget]:
+    """Recognize ``N momenttiin uusi <sub>`` with the section supplied by context."""
+    saved = scan.pos
+    mom_nums = _number_list(scan)
+    if not mom_nums or len(mom_nums) != 1 or not _at_cat_case(scan, "MOMENTTI", "ILL"):
+        scan.goto(saved)
+        return None
+    mom_num = int(mom_nums[0][0]) if mom_nums[0][0].isdigit() else 0
+    scan.advance()  # consume MOMENTTI:ILL
+    _optional_comma(scan)
+    while _at(scan, *_GEN_REINST_SPANS):
+        scan.advance()
+        _optional_comma(scan)
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    nodes = _recognize_sub_target(
+        scan, _ANAPHORIC_PLACEHOLDER, _ANAPHORIC_PLACEHOLDER, "", mom_num
+    )
+    if not nodes:
+        scan.goto(saved)
+        return None
+    return ParsedAnaphoricSubTarget(
+        span=Span(saved, scan.pos),
+        nodes=tuple(nodes),
+        momentti_from_context=False,
+    )
 
 
 def recognize_bare_anaphoric_chapter_insert(
@@ -1669,11 +1703,27 @@ def _try_section_gen_sub_target(
     """``numlist §:GEN [M MOMENTTI:ILL/GEN] uusi sub_target`` (Patterns B2/B3)."""
     saved = scan.pos
     scan.advance()  # consume §:GEN
+    saved_subtarget = scan.pos
     m_nums = _number_list(scan)
+    sec_nums = [n + sf for n, sf in nums]
+    if m_nums and len(sec_nums) == 1 and _at_cat_cases(scan, "KOHTA", "ILL", "GEN"):
+        item_label = m_nums[0][0] + m_nums[0][1]
+        scan.goto(saved_subtarget)
+        alakohta = _recognize_alakohta_insert_into_item(
+            scan,
+            sec_nums[0],
+            chapter,
+            part,
+            1,
+            item_label,
+        )
+        if alakohta:
+            return alakohta
+        scan.goto(saved_subtarget)
+
     if m_nums and _at_cat_cases(scan, "MOMENTTI", "ILL", "GEN"):
         scan.advance()
         m_num = int(m_nums[0][0]) if m_nums[0][0].isdigit() else 0
-        sec_nums = [n + sf for n, sf in nums]
         if m_num and len(sec_nums) == 1:
             saved_alakohta = scan.pos
             item_nums = _number_list(scan) or []

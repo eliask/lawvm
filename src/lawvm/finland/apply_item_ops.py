@@ -1242,6 +1242,19 @@ def _apply_item_insert(
                     (c for c in amend_para_ci.children if c.kind == IRNodeKind.SUBPARAGRAPH and c.label == sub_letter_ci),
                     None,
                 )
+                if new_sp is None and amend_sub is not None:
+                    flat_sp = next(
+                        (
+                            c
+                            for c in amend_sub.children
+                            if c.kind == IRNodeKind.PARAGRAPH
+                            and c.label
+                            and normalized_label_key(c.label) == sub_letter_ci
+                        ),
+                        None,
+                    )
+                    if flat_sp is not None:
+                        new_sp = _paragraph_to_subparagraph_ir(flat_sp, sub_letter_ci)
                 if new_sp is not None:
                     existing_sps = [c for c in master_para_ci.children if c.kind == IRNodeKind.SUBPARAGRAPH]
                     prev_letter = _previous_item_token(sub_letter_ci)
