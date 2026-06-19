@@ -37,6 +37,8 @@ _UNLABELED_ADJACENT_SECTION_CONTINUATION_RULE_ID = (
 _WRAPPER_ORPHAN_SUBSECTION_CONTINUATION_RULE_ID = (
     "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION"
 )
+_SUBSECTION_INTRO_NUMERIC_LABEL_RE = re.compile(r"^(\d+)\.\s")
+_PAYLOAD_SUFFIX_SECTION_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
 
 def _tag(el: etree._Element) -> str:
@@ -48,7 +50,7 @@ def _subsection_intro_numeric_label_ir(sub_ir: IRNode) -> Optional[str]:
         if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
             continue
         text = (child.text or "").strip()
-        m = re.match(r"^(\d+)\.\s", text)
+        m = _SUBSECTION_INTRO_NUMERIC_LABEL_RE.match(text)
         if m is not None and int(m.group(1)) > 1:
             return m.group(1)
     return None
@@ -426,7 +428,7 @@ def _payload_ir_from_muutos_node(
                             attrs={**dict(muutos_ir.attrs), **_extra_attrs},
                             children=muutos_ir.children,
                         )
-        m_suffix = re.fullmatch(r"(\d+)([a-z])", target_norm, flags=re.I)
+        m_suffix = _PAYLOAD_SUFFIX_SECTION_RE.fullmatch(target_norm)
         if m_suffix is not None and muutos_ir.kind is IRNodeKind.SECTION and muutos_ir.label == m_suffix.group(1):
             # Older malformed source sometimes encodes a newly inserted letter-suffix
             # section as a bare base section node even though the operative target

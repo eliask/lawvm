@@ -20,6 +20,9 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _roman_to_arabic_shared
 
+_NUM_TOKEN_STRIP_RE = re.compile(r"[)\s§.]")
+_RANGAISTUS_HEADING_NAME_RE = re.compile(r"\b(rangaistus|rikos)\b")
+
 
 @functools.lru_cache(maxsize=4096)
 def _norm_num_token(text: str) -> str:
@@ -30,7 +33,7 @@ def _norm_num_token(text: str) -> str:
     """
     # Strip §, whitespace, parentheses, and trailing periods
     # (pre-1980s nums like "1 §.")
-    token = re.sub(r'[)\s§.]', '', text).strip().lower()
+    token = _NUM_TOKEN_STRIP_RE.sub("", text).strip().lower()
     arabic = _roman_label_to_arabic(token)
     if arabic is not None:
         return arabic
@@ -192,7 +195,7 @@ def classify_rangaistussaannos(node: IRNode) -> Literal["yes", "no", "unknown"]:
     has_sentencing_command = bool(_RANGAISTUS_SENTENCING_RE.search(text))
     has_penalty_expression = bool(_RANGAISTUS_PENALTY_RE.search(text))
     has_offence_formula = bool(_RANGAISTUS_OFFENCE_PREFIX_RE.match(text))
-    has_offence_name = bool(re.search(r"\b(rangaistus|rikos)\b", heading_text or intro_text))
+    has_offence_name = bool(_RANGAISTUS_HEADING_NAME_RE.search(heading_text or intro_text))
     has_admin_sanction_terms = bool(_RANGAISTUS_ADMIN_SANCTION_RE.search(text))
     has_colon_intro_list = _has_colon_intro_signal(node)
 

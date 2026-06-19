@@ -22,6 +22,9 @@ from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.apply_ir_ops import _relabel_paragraph_ir
 
 _LEADING_ITEM_MARKER_RE = re.compile(r"^\s*((?:\d+\s*[a-z]?)|[a-z])\s*[\).]\s*", re.I)
+_PLAIN_INTRO_ONLY_SUBSECTION_RE = re.compile(r"^\d+[.)]\s+")
+_LEADING_SPACED_ITEM_RE = re.compile(r"(\d+)\s+([a-z])")
+_LEADING_COMPACT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\s*[\).]", re.I)
 
 
 def _has_consecutive_numeric_labels(labels: List[str]) -> bool:
@@ -46,7 +49,7 @@ def _is_plain_intro_only_subsection(sub: IRNode) -> bool:
     text = " ".join(part for part in text_parts if part).strip()
     if not text:
         return False
-    return re.match(r"^\d+[.)]\s+", text) is None
+    return _PLAIN_INTRO_ONLY_SUBSECTION_RE.match(text) is None
 
 
 def _find_amend_paragraph(
@@ -104,8 +107,8 @@ def _find_amend_paragraph(
         for ch in p.children:
             if ch.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and ch.text:
                 text = ch.text.lstrip()
-                compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text)
-                m = re.match(r"^(\d+[a-z]?)\s*[\).]", compact, re.I)
+                compact = _LEADING_SPACED_ITEM_RE.sub(r"\1\2", text)
+                m = _LEADING_COMPACT_ITEM_RE.match(compact)
                 if m:
                     return normalized_label_key(m.group(1))
         return None

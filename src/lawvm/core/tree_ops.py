@@ -52,6 +52,10 @@ _PURE_DIGIT_LABEL_RE = re.compile(r"^\d+$")
 _PURE_ALPHA_LABEL_RE = re.compile(r"^[A-Za-z]+$")
 _PURE_ROMAN_LABEL_RE = re.compile(r"^[IVXLCDMivxlcdm]+$")
 _SPACE_BEFORE_PUNCTUATION_RE = re.compile(r"\s+([.,;:])")
+_FS_DIGIT_LABEL_RE = re.compile(r"^\d+[a-zA-Z]?$")
+_FS_ROMAN_LABEL_RE = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
+_FS_ALPHA_LABEL_RE = re.compile(r"^[a-zA-Z]+\d*$")
+_FS_ORDINAL_DIGITS_RE = re.compile(r"(\d+)")
 
 
 def _match_label(node_label: Optional[str], target: str) -> bool:
@@ -1600,15 +1604,15 @@ def _fs_label_family(label: str) -> str:
     s = label.strip().rstrip(".")
     if not s:
         return "mixed"
-    if re.fullmatch(r"\d+[a-zA-Z]?", s):
+    if _FS_DIGIT_LABEL_RE.fullmatch(s):
         return "digit"
-    if re.fullmatch(r"[ivxlcdm]+", s, re.IGNORECASE):
+    if _FS_ROMAN_LABEL_RE.fullmatch(s):
         # Multi-letter roman tokens only.  Single glyphs such as i/v/x/c are
         # almost always alphabetic subitems in legal corpora, not roman numerals.
         if len(s) > 1:
             return "roman"
         return "alpha"
-    if re.fullmatch(r"[a-zA-Z]+\d*", s):
+    if _FS_ALPHA_LABEL_RE.fullmatch(s):
         return "alpha"
     return "mixed"
 
@@ -1630,7 +1634,7 @@ def _fs_ordinal(label: str, family: str) -> int:
     """Return a rough ordinal for a label within its family (0 if unknown)."""
     s = label.strip().rstrip(".")
     if family == "digit":
-        m = re.match(r"(\d+)", s)
+        m = _FS_ORDINAL_DIGITS_RE.match(s)
         return int(m.group(1)) if m else 0
     if family == "alpha":
         alpha = re.sub(r"\d+$", "", s).lower()

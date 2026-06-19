@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional
 
 import lxml.etree as etree
 
+_SECTION_LABEL_ORDER_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
     from lawvm.finland.source_model import AmendmentSourceModel
@@ -1316,7 +1318,7 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
 
 
 def _section_label_order_key(section_norm: str) -> tuple[int, int] | None:
-    match = re.fullmatch(r"(\d+)([a-z]?)", section_norm, flags=re.I)
+    match = _SECTION_LABEL_ORDER_RE.fullmatch(section_norm)
     if match is None:
         return None
     suffix = match.group(2).lower()
