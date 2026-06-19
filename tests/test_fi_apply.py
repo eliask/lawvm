@@ -10161,6 +10161,41 @@ class TestApplyItemReplace:
         text = " ".join(c.text or "" for c in para2.children)
         assert "updated second item" in text
 
+    def test_replace_item_relabels_unlabelled_payload_with_visible_num(self):
+        numbered_item_1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.NUM, text="1)"), _content("first item")),
+        )
+        numbered_item_7 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="7",
+            children=(IRNode(kind=IRNodeKind.NUM, text="7)"), _content("old seventh item")),
+        )
+        sec = _sec("1", _sub("1", numbered_item_1, numbered_item_7))
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        unlabelled_payload = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            children=(_content("7) updated seventh item"),),
+        )
+        amend_sub = _sub("1", unlabelled_payload)
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="7")
+
+        result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom 7 k")
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        para7 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "7")
+        assert para7.children[0].kind is IRNodeKind.NUM
+        assert para7.children[0].text == "7)"
+        content_text = " ".join(c.text or "" for c in para7.children if c.kind is IRNodeKind.CONTENT)
+        assert "updated seventh item" in content_text
+        assert "7) updated" not in content_text
+
     def test_replace_letter_item_reconciles_onto_digit_labelled_live_items(self):
         # Provenance: 1972/484 §1 / 2011/581 — the amendment authors the target
         # with a LETTER scheme (a/e) while the live consolidation numbers the

@@ -942,13 +942,7 @@ def _apply_item_replace(
             amend_labelled_paras = [c for c in amend_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label]
             if len(amend_unlabelled_paras) == 1 and not amend_labelled_paras:
                 unlabelled_para = amend_unlabelled_paras[0]
-                relabelled = IRNode(
-                    kind=unlabelled_para.kind,
-                    label=item_norm,
-                    text=unlabelled_para.text,
-                    attrs=dict(unlabelled_para.attrs),
-                    children=tuple(unlabelled_para.children),
-                )
+                relabelled = _relabel_paragraph_ir(unlabelled_para, item_norm)
                 new_sub = _tops.replace_nth(sub, "paragraph", para_idx, relabelled)
                 new_sec = _tops.replace_nth(sec, "subsection", n, new_sub)
                 logger.debug("  %s → kohta replace (unlabelled amend para)", ctx_label)

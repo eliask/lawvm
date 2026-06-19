@@ -21,6 +21,8 @@ from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.apply_ir_ops import _relabel_paragraph_ir
 
+_LEADING_ITEM_MARKER_RE = re.compile(r"^\s*((?:\d+\s*[a-z]?)|[a-z])\s*[\).]\s*", re.I)
+
 
 def _has_consecutive_numeric_labels(labels: List[str]) -> bool:
     """Return True when labels contain at least two consecutive numeric items."""
@@ -54,6 +56,42 @@ def _find_amend_paragraph(
 ) -> Optional[IRNode]:
     """Find a paragraph with matching label in the amendment subsection or muutos tree."""
 
+    def _strip_leading_item_marker(text: str) -> str:
+        match = _LEADING_ITEM_MARKER_RE.match(text)
+        if match is None:
+            return text
+        if normalized_label_key(match.group(1)) != item_norm:
+            return text
+        return text[match.end():].lstrip()
+
+    def _as_numbered_payload_paragraph(paragraph: IRNode) -> IRNode:
+        children: list[IRNode] = []
+        stripped = False
+        for child in paragraph.children:
+            if not stripped and child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and child.text:
+                children.append(
+                    IRNode(
+                        kind=child.kind,
+                        label=child.label,
+                        text=_strip_leading_item_marker(child.text),
+                        attrs=dict(child.attrs),
+                        children=tuple(child.children),
+                    )
+                )
+                stripped = True
+            else:
+                children.append(child)
+        return _relabel_paragraph_ir(
+            IRNode(
+                kind=paragraph.kind,
+                label=item_norm,
+                text=paragraph.text,
+                attrs=dict(paragraph.attrs),
+                children=tuple(children),
+            ),
+            item_norm,
+        )
+
     def _leading_item_label(p: IRNode) -> Optional[str]:
         for ch in p.children:
             if ch.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and ch.text:
@@ -70,13 +108,7 @@ def _find_amend_paragraph(
                 continue
             explicit = _leading_item_label(p)
             if explicit == item_norm:
-                return IRNode(
-                    kind=p.kind,
-                    label=item_norm,
-                    text=p.text,
-                    attrs=dict(p.attrs),
-                    children=tuple(p.children),
-                )
+                return _as_numbered_payload_paragraph(p)
         return None
 
     if amend_sub is not None:
@@ -128,7 +160,13 @@ def _find_amend_paragraph(
         content_text = (content_node.text or "").lstrip()
         content_compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", content_text)
         if re.match(re.escape(item_norm) + r"\s*\)", content_compact):
-            return IRNode(kind=IRNodeKind.PARAGRAPH, label=item_norm, children=content_node.children, text=content_node.text)
+            return _as_numbered_payload_paragraph(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label=item_norm,
+                    children=(content_node,),
+                )
+            )
         return None
 
     if amend_sub is not None:
@@ -179,7 +217,7 @@ def _find_amend_paragraph(
                 continue
             explicit = _leading_item_label(p)
             if explicit == item_norm:
-                return IRNode(kind=p.kind, label=item_norm, text=p.text, attrs=dict(p.attrs), children=tuple(p.children))
+                return _as_numbered_payload_paragraph(p)
         return None
 
     if amend_sub is not None:
