@@ -38,20 +38,29 @@ class _PrefixMigrationWavePlan:
     waves: tuple[_PrefixMigrationWave, ...]
 
 
-_PrefixMigrationEventSignature = tuple[str, str, TreePath, object | None, TreePath, object | None, str, str]
+@dataclass(frozen=True, slots=True)
+class _PrefixMigrationEventSignature:
+    event_id: str
+    kind: str
+    from_path: TreePath
+    from_special: object | None
+    to_path: TreePath
+    to_special: object | None
+    effective: str
+    source_statute: str
 
 
 def _migration_event_signature(event: MigrationEvent) -> _PrefixMigrationEventSignature:
     source_statute = event.source_statute if event.source_statute is not None else ""
-    return (
-        event.event_id,
-        event.kind,
-        event.from_address.path,
-        event.from_address.special,
-        event.to_address.path,
-        event.to_address.special,
-        event.effective,
-        source_statute,
+    return _PrefixMigrationEventSignature(
+        event_id=event.event_id,
+        kind=event.kind,
+        from_path=event.from_address.path,
+        from_special=event.from_address.special,
+        to_path=event.to_address.path,
+        to_special=event.to_address.special,
+        effective=event.effective,
+        source_statute=source_statute,
     )
 
 
@@ -75,26 +84,23 @@ def _prefix_migration_wave_plan_from_signature(
     not_before: str,
 ) -> _PrefixMigrationWavePlan:
     waves: dict[tuple[str, str], list[_PrefixMigrationEvent]] = {}
-    for (
-        _event_id,
-        _kind,
-        from_path,
-        from_special,
-        to_path,
-        to_special,
-        effective,
-        source_statute,
-    ) in events_signature:
-        if as_of_date and effective and effective > as_of_date:
+    for event_signature in events_signature:
+        if as_of_date and event_signature.effective and event_signature.effective > as_of_date:
             continue
-        if not_before and effective and effective < not_before:
+        if not_before and event_signature.effective and event_signature.effective < not_before:
             continue
-        waves.setdefault((effective, source_statute), []).append(
+        waves.setdefault((event_signature.effective, event_signature.source_statute), []).append(
             _PrefixMigrationEvent(
-                from_address=LegalAddress(path=from_path, special=from_special),
-                to_address=LegalAddress(path=to_path, special=to_special),
-                effective=effective,
-                source_statute=source_statute,
+                from_address=LegalAddress(
+                    path=event_signature.from_path,
+                    special=event_signature.from_special,
+                ),
+                to_address=LegalAddress(
+                    path=event_signature.to_path,
+                    special=event_signature.to_special,
+                ),
+                effective=event_signature.effective,
+                source_statute=event_signature.source_statute,
             )
         )
 
