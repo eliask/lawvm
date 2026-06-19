@@ -5,9 +5,10 @@ genuinely-fixable parser gaps and divergences no recognizer fix can close
 (the oracle is itself stale/wrong, or the source is irreducibly ambiguous).
 This tool partitions a bounded sample of the worst divergent statutes into:
 
-  A. real_parser_gap     — LawVM's reconstruction is wrong/incomplete; a
-                           recognizer fix would close it. The ONLY category
-                           worth codex burndown.
+  A. real_parser_gap     — LawVM's reconstruction is wrong/incomplete AND the
+                           bench actually penalizes it; a recognizer fix would
+                           close real bench error. The ONLY category worth
+                           codex burndown.
   B. oracle_error_or_desync — the consolidated Finlex oracle text is itself
                            behind the amendment chain / corrigendum-pending;
                            LawVM is arguably right. Always blame-cited.
@@ -15,13 +16,32 @@ This tool partitions a bounded sample of the worst divergent statutes into:
                            renderings (editorial convention, OCR source
                            pathology, corpus-reachability limits) where
                            byte-parity is not a meaningful target.
+  N. bench_neutralized   — oracle_check sees a divergence (it compares against
+                           the CONSOLIDATED oracle, which keeps numbered repeal
+                           tombstones + stale bodies), but the BENCH neutralizes
+                           it (kumottu tombstone stripped, or the diff is
+                           crossheading-only / digit-renesting / whitespace-only
+                           / presentation list-table). The bench NEVER penalizes
+                           these, so closing them buys zero bench error. NOT a
+                           burndown target.
   needs_human            — cannot be classified deterministically; carries the
                            specific question. NOT guessed.
 
-The classification reuses ``oracle_check._classify_statute``, which already
-performs blame-attribution of each divergent section to the amendment that
-produced it (or to the oracle's own staleness). Each blame diagnosis maps
-deterministically onto A/B/C; ambiguous residue is surfaced, never guessed.
+The classification reuses ``oracle_check._classify_statute``, which performs
+blame-attribution of each divergent section to the amendment that produced it
+(or to the oracle's own staleness). Each blame diagnosis maps deterministically
+onto A/B/C; ambiguous residue is surfaced, never guessed.
+
+Crucially, ``_classify_statute`` compares against the LATEST consolidated oracle
+(tombstones + stale bodies retained), whereas the bench scores against
+``bench_comparable`` (tombstones stripped) with the same neutralization filters
+``_structural_sim`` applies (crossheading / digit-renesting / whitespace-only /
+presentation list-table). A diagnosis can therefore be A-shaped ("LawVM is
+missing/extra content") yet correspond to a section the bench NEVER penalizes.
+To avoid over-reporting the closeable residual, an A-shaped diagnosis is only
+kept as class A when the section is in the bench-penalized key set
+(``bench.bench_penalized_section_keys``); otherwise it is reclassified to N
+(bench_neutralized).
 
 Usage:
     lawvm bench-triage --label run_20260619T2232 --top 50
@@ -88,17 +108,23 @@ _DIAG_NEEDS_HUMAN: Dict[str, str] = {
     "to decide parser-gap vs oracle-side",
 }
 
-TriageClass = Literal["A", "B", "C", "needs_human"]
+TriageClass = Literal["A", "B", "C", "N", "needs_human"]
 
 CLASS_LABELS: Dict[str, str] = {
     "A": "real_parser_gap",
     "B": "oracle_error_or_desync",
     "C": "irreducibly_ambiguous",
+    "N": "bench_neutralized",
     "needs_human": "needs_human",
 }
 
 
-def classify_diagnosis(diagnosis: str, blame_source: str) -> Tuple[TriageClass, str]:
+def classify_diagnosis(
+    diagnosis: str,
+    blame_source: str,
+    *,
+    bench_penalizes: Optional[bool] = None,
+) -> Tuple[TriageClass, str]:
     """Map one section diagnosis to a triage class + justification.
 
     ``blame_source`` is the amendment id _classify_statute attributed the
@@ -107,6 +133,16 @@ def classify_diagnosis(diagnosis: str, blame_source: str) -> Tuple[TriageClass, 
     ORACLE_STALE where the evidence is conclusive, so an A-diagnosis that
     *retains* a blame source means the blame was inconclusive — route to
     needs_human with the cite, never guess.
+
+    ``bench_penalizes`` reconciles the A-classification with what the BENCH
+    actually scores. oracle_check compares against the LATEST consolidated
+    oracle (numbered repeal tombstones + stale bodies retained); the bench
+    scores against ``bench_comparable`` (tombstones stripped) with neutralization
+    filters. So an A-shaped diagnosis (MISSING / EXTRA / REPLAY_*) can name a
+    section the bench never penalizes. When ``bench_penalizes`` is provided and
+    False for such a section, it is reclassified to N (bench_neutralized) — the
+    bench buys zero error from closing it. ``None`` means the bench view was not
+    computed (no reconciliation; preserves the legacy A-classification).
     """
     if diagnosis in _DIAG_ORACLE:
         return "B", _DIAG_ORACLE[diagnosis]
@@ -121,6 +157,14 @@ def classify_diagnosis(diagnosis: str, blame_source: str) -> Tuple[TriageClass, 
                 f"{_DIAG_PARSER_GAP[diagnosis]}; but blamed to {blame_source} "
                 f"without conclusive oracle-stale promotion — verify whether the "
                 f"amendment was correctly applied",
+            )
+        if bench_penalizes is False:
+            return (
+                "N",
+                f"{_DIAG_PARSER_GAP[diagnosis]}; but the bench (bench_comparable, "
+                f"tombstones stripped + crossheading/digit-renesting/whitespace/"
+                f"presentation neutralization) does NOT penalize this section — "
+                f"closing it buys zero bench error",
             )
         return "A", _DIAG_PARSER_GAP[diagnosis]
     # Fail loud: a diagnosis the triage table does not know about must not be
@@ -230,6 +274,47 @@ class StatuteTriage:
         }
 
 
+def _bench_penalized_keys(
+    statute_id: str,
+    mode: Literal["official_consolidation", "legal_pit"],
+) -> Optional[set]:
+    """Compute the bench-penalized section-key set for a statute.
+
+    Replays under the SAME selector + products the bench scores against
+    (``bench_comparable``, full products) and returns the set of section keys
+    the bench's ``_structural_sim`` actually penalizes. Returns ``None`` when
+    the bench view cannot be computed (oracle absent or replay failure) — the
+    caller then leaves the legacy A-classification untouched rather than
+    guessing.
+    """
+    from lawvm.tools.bench import (
+        _BENCH_CONSOLIDATED_SELECTOR,
+        bench_penalized_section_keys,
+    )
+    from lawvm.finland.replay_entrypoint import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+
+    try:
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=mode,
+                quiet=True,
+                build_full_products=True,
+                oracle_selector=_BENCH_CONSOLIDATED_SELECTOR,
+            ),
+        )
+        penalized, oracle_absent = bench_penalized_section_keys(statute_id, master)
+    except (NameError, TypeError, AttributeError):
+        raise  # programming bugs — fail loud
+    except Exception:
+        return None
+    if oracle_absent:
+        return None
+    return penalized
+
+
 def triage_statute(
     statute_id: str,
     similarity: float,
@@ -266,11 +351,33 @@ def triage_statute(
             error=result.error,
         )
 
+    # Reconcile against what the BENCH actually penalizes. oracle_check compares
+    # against the latest consolidated oracle (tombstones + stale bodies); the
+    # bench scores against bench_comparable with neutralization filters. Only
+    # compute the bench view when there is at least one A-shaped diagnosis whose
+    # classification could flip — otherwise skip the second replay.
+    needs_bench_view = any(
+        str(sec.get("diagnosis", "") or "") in _DIAG_PARSER_GAP
+        and not str(sec.get("blame_source", "") or "")
+        for sec in result.section_results
+    )
+    bench_keys = _bench_penalized_keys(statute_id, mode) if needs_bench_view else None
+
     sections: List[SectionTriage] = []
     for sec in result.section_results:
         diagnosis = str(sec.get("diagnosis", "") or "")
         blame_source = str(sec.get("blame_source", "") or "")
-        tclass, justification = classify_diagnosis(diagnosis, blame_source)
+        section_key = str(sec.get("section", "") or "")
+        # bench_penalizes is None when the bench view is unavailable (no
+        # reconciliation); otherwise True/False per the penalized key set.
+        bench_penalizes: Optional[bool]
+        if bench_keys is None:
+            bench_penalizes = None
+        else:
+            bench_penalizes = section_key in bench_keys
+        tclass, justification = classify_diagnosis(
+            diagnosis, blame_source, bench_penalizes=bench_penalizes
+        )
         sections.append(
             SectionTriage(
                 section=str(sec.get("section", "") or ""),
@@ -403,8 +510,10 @@ class TriageReport:
         """Estimate the closeable fraction of sampled divergent sections.
 
         Counts only sections (not statutes): the fraction of all divergent
-        sections in the sample that are class A (genuinely fixable). B and C
-        are NOT closeable by recognizer work; needs_human is undecided.
+        sections in the sample that are class A (genuinely fixable AND
+        bench-penalized). B and C are NOT closeable by recognizer work;
+        N (bench_neutralized) buys zero bench error so it is excluded from
+        closeable; needs_human is undecided.
         """
         cc = self.section_class_counts
         total = sum(cc.values())
@@ -415,6 +524,7 @@ class TriageReport:
             "A": cc.get("A", 0),
             "B": cc.get("B", 0),
             "C": cc.get("C", 0),
+            "N": cc.get("N", 0),
             "needs_human": cc.get("needs_human", 0),
             "closeable_fraction": cc.get("A", 0) / total,
             "closeable_fraction_lo": cc.get("A", 0) / total,
@@ -493,7 +603,7 @@ def _format_text_report(report: TriageReport) -> str:
     lines.append("Divergent sections by class:")
     cc = report.section_class_counts
     total = sum(cc.values()) or 1
-    for cls in ("A", "B", "C", "needs_human"):
+    for cls in ("A", "B", "C", "N", "needs_human"):
         n = cc.get(cls, 0)
         lines.append(f"  {cls:<12} {CLASS_LABELS[cls]:<24} {n:4}  ({100*n/total:.1f}%)")
     closeable = report.closeable_fraction()

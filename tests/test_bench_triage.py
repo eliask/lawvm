@@ -52,8 +52,44 @@ def test_ambiguous_and_source_limited_map_to_C():
 
 
 def test_unblamed_replay_bugs_map_to_A():
+    # Without a bench view (bench_penalizes=None) the legacy A-classification
+    # is preserved.
     for diag in ("REPLAY_MISSING", "MISSING", "REPLAY_EXTRA", "EXTRA", "UNKNOWN", "REPLAY_UNREPEALED"):
         assert classify_diagnosis(diag, "")[0] == "A", diag
+
+
+def test_bench_penalized_parser_gap_stays_A():
+    # An A-shaped diagnosis the bench DOES penalize stays class A.
+    for diag in ("REPLAY_MISSING", "MISSING", "REPLAY_EXTRA", "EXTRA", "UNKNOWN"):
+        cls, _ = classify_diagnosis(diag, "", bench_penalizes=True)
+        assert cls == "A", diag
+
+
+def test_bench_neutralized_parser_gap_reclassified_to_N():
+    # An A-shaped diagnosis (oracle_check sees a divergence vs the consolidated
+    # oracle) that the BENCH neutralizes is reclassified to N — closing it buys
+    # zero bench error. This is the over-report fix: tombstone/editorial diffs
+    # the bench strips must not be counted as fixable parser gaps.
+    for diag in ("REPLAY_MISSING", "MISSING", "REPLAY_EXTRA", "EXTRA", "UNKNOWN"):
+        cls, just = classify_diagnosis(diag, "", bench_penalizes=False)
+        assert cls == "N", diag
+        assert "does NOT penalize" in just
+
+
+def test_bench_view_does_not_override_blame_routing():
+    # Blame-carrying parser-gap diagnoses route to needs_human regardless of the
+    # bench view (the blame ambiguity is decided before the bench reconciliation).
+    cls, _ = classify_diagnosis("REPLAY_MISSING", "1999/213", bench_penalizes=False)
+    assert cls == "needs_human"
+    cls, _ = classify_diagnosis("REPLAY_MISSING", "1999/213", bench_penalizes=True)
+    assert cls == "needs_human"
+
+
+def test_bench_view_does_not_touch_B_or_C():
+    # Oracle-side (B) and ambiguous (C) diagnoses are never affected by the
+    # bench-penalization reconciliation.
+    assert classify_diagnosis("ORACLE_STALE", "", bench_penalizes=False)[0] == "B"
+    assert classify_diagnosis("EDITORIAL_CONVENTION", "", bench_penalizes=False)[0] == "C"
 
 
 def test_blamed_replay_bug_is_needs_human_not_A():
@@ -224,5 +260,48 @@ def test_load_worst_statutes_respects_top(tmp_path: Path):
     assert [r["statute_id"] for r in rows] == ["a/1", "b/1"]
 
 
+def _neutralized_sec(section: str = "section:1") -> SectionTriage:
+    cls, just = classify_diagnosis("MISSING", "", bench_penalizes=False)
+    return SectionTriage(
+        section=section,
+        diagnosis="MISSING",
+        triage_class=cls,
+        justification=just,
+        blame_source="",
+    )
+
+
+def test_closeable_fraction_excludes_N():
+    # N (bench_neutralized) sections are NOT closeable — closing them buys zero
+    # bench error, so they must not inflate the closeable fraction.
+    st = StatuteTriage(
+        "a/1", 0.5, 3,
+        sections=[
+            _sec("REPLAY_MISSING", section="section:1"),  # A
+            _neutralized_sec("section:2"),                 # N
+            _neutralized_sec("section:3"),                 # N
+            _sec("ORACLE_STALE", "z/1", "section:4"),      # B
+        ],
+    )
+    r = TriageReport("dummy.csv", "official_consolidation", 1, [st])
+    cf = r.closeable_fraction()
+    assert cf["total_sections"] == 4
+    assert cf["A"] == 1
+    assert cf["N"] == 2
+    # closeable = A / total only; N excluded
+    assert abs(cf["closeable_fraction"] - 1 / 4) < 1e-9
+
+
+def test_verdict_N_when_only_neutralized():
+    # A statute whose only divergences are bench-neutralized is verdict N
+    # (not A) — it is not a burndown target.
+    st = StatuteTriage(
+        "a/2", 0.9, 1,
+        sections=[_neutralized_sec("section:1"), _neutralized_sec("section:2")],
+    )
+    assert st.verdict == "N"
+    assert st.fixable_sections == 0
+
+
 def test_class_labels_cover_all_classes():
-    assert set(CLASS_LABELS) == {"A", "B", "C", "needs_human"}
+    assert set(CLASS_LABELS) == {"A", "B", "C", "N", "needs_human"}
