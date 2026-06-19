@@ -52,10 +52,13 @@ import pytest
 
 _CORPUS = Path("data/finlex.farchive")
 
-pytestmark = pytest.mark.skipif(
-    not _CORPUS.exists(),
-    reason="data/finlex.farchive not present; skipping real-corpus PIT seed tests",
-)
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not _CORPUS.exists(),
+        reason="data/finlex.farchive not present; skipping real-corpus PIT seed tests",
+    ),
+]
 
 
 def _state(statute_id: str, provision: str, as_of: str) -> dict[str, Any]:

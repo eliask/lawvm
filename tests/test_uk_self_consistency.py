@@ -239,6 +239,7 @@ def _uk_store_or_skip():
         pytest.skip(f"UK archive not reachable: {type(exc).__name__}")
 
 
+@pytest.mark.slow
 def test_uk_projector_row_shape_and_target_absent() -> None:
     store = _uk_store_or_skip()
     try:
