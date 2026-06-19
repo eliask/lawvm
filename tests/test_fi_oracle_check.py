@@ -909,6 +909,37 @@ def test_diagnose_treats_bench_comparable_temporary_residue_stub_as_editorial() 
     ) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_does_not_treat_substantive_high_similarity_as_editorial() -> None:
+    # Real shape: 2009/1182 fin@20110753 metadata says 2011/250 changed § 3,
+    # but the consolidated body still carries the pre-2011 ministry name.
+    replay = (
+        "3 § Muut maksulliset suoritteet Valtion maksuperustelain 7 §:ssä "
+        "tarkoitettuja suoritteita, jotka opetus- ja kulttuuriministeriö "
+        "hinnoittelee liiketaloudellisin perustein, ovat seuraavat tilauksesta "
+        "toimitetut suoritteet: 1) opetus- ja kulttuuriministeriön hallinnassa "
+        "olevien toimitilojen ja laitteiden käyttö; 5) selvitykset, arvioinnit "
+        "ja tutkimukset."
+    )
+    oracle = (
+        "3 § Muut maksulliset suoritteet Valtion maksuperustelain 7 §:ssä "
+        "tarkoitettuja suoritteita, jotka opetusministeriö hinnoittelee "
+        "liiketaloudellisin perustein, ovat seuraavat tilauksesta toimitetut "
+        "suoritteet: 1) opetusministeriön hallinnassa olevien toimitilojen ja "
+        "laitteiden käyttö; 5) selvitykset ja tutkimukset."
+    )
+
+    assert _diagnose(replay, oracle, {"action": "replace", "source_statute": "2011/250"}) == "UNKNOWN"
+
+
+def test_classify_statute_2009_1182_ministry_rename_is_stale_oracle() -> None:
+    result = _classify_statute("2009/1182", "official_consolidation")
+
+    assert result is not None
+    by_section = {item["section"]: item for item in result.section_results}
+    assert by_section["section:1"]["diagnosis"] == "ORACLE_STALE"
+    assert by_section["section:3"]["diagnosis"] == "ORACLE_STALE"
+
+
 def test_diagnose_treats_temporary_stub_over_substantive_replay_as_editorial() -> None:
     replay = (
         "13 a § Vanhusten ja muiden asiakasryhmien tarpeita vastaavien "

@@ -52,6 +52,7 @@ from lawvm.tools.divergence_heuristics import oracle_text_reduces_to_bare_sectio
 from lawvm.tools.divergence_heuristics import parse_oracle_repeal_stub
 from lawvm.tools.divergence_heuristics import replay_section_matches_text_at_cutoff
 from lawvm.tools.divergence_heuristics import replay_section_has_future_effective_version
+from lawvm.tools.divergence_core import has_inline_editorial_residue_marker
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.replay_products import fi_label_norm
 from lawvm.tools.section_keys import (
@@ -837,7 +838,13 @@ def _diagnose(
     c_o = _clean(o_text)
     if c_r and c_o:
         sim = Levenshtein.ratio(c_r, c_o)
-        if sim >= 0.95:
+        if (
+            sim >= 0.95
+            and (
+                has_inline_editorial_residue_marker(r_text)
+                or has_inline_editorial_residue_marker(o_text)
+            )
+        ):
             return "EDITORIAL_CONVENTION"
 
     if oracle_text_has_removable_duplicate_sentence(r_text, o_text):
