@@ -98,35 +98,35 @@ class MutationBoundaryProof:
                 f"{sorted(_VALID_STATUSES)}"
             )
         object.__setattr__(self, "status", status)
-        for field_name in (
-            "selected_target_paths",
-            "allowed_mutation_regions",
-            "changed_paths",
-            "covered_changed_paths",
-            "unexplained_changed_paths",
-            "declared_allowance_paths",
-            "declared_recovery_paths",
-            "declared_migration_paths",
+        for field_name, paths in (
+            ("selected_target_paths", self.selected_target_paths),
+            ("allowed_mutation_regions", self.allowed_mutation_regions),
+            ("changed_paths", self.changed_paths),
+            ("covered_changed_paths", self.covered_changed_paths),
+            ("unexplained_changed_paths", self.unexplained_changed_paths),
+            ("declared_allowance_paths", self.declared_allowance_paths),
+            ("declared_recovery_paths", self.declared_recovery_paths),
+            ("declared_migration_paths", self.declared_migration_paths),
         ):
             object.__setattr__(
                 self,
                 field_name,
                 _validated_tree_paths(
                     f"MutationBoundaryProof.{field_name}",
-                    getattr(self, field_name),
+                    paths,
                 ),
             )
-        for field_name in (
-            "declared_recovery_rule_ids",
-            "declared_migration_rule_ids",
-            "matched_allowance_rule_ids",
-            "result_codes",
-            "forbidden_shortcuts",
+        for field_name, values in (
+            ("declared_recovery_rule_ids", self.declared_recovery_rule_ids),
+            ("declared_migration_rule_ids", self.declared_migration_rule_ids),
+            ("matched_allowance_rule_ids", self.matched_allowance_rule_ids),
+            ("result_codes", self.result_codes),
+            ("forbidden_shortcuts", self.forbidden_shortcuts),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _string_tuple(f"MutationBoundaryProof.{field_name}", getattr(self, field_name)),
+                _string_tuple(f"MutationBoundaryProof.{field_name}", values),
             )
         if not isinstance(self.path_set_invariant_holds, bool):
             raise ValueError("MutationBoundaryProof.path_set_invariant_holds must be a bool")
