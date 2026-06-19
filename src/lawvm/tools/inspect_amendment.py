@@ -37,6 +37,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.scope import restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent
 from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
@@ -320,6 +321,10 @@ def build_amendment_bundle(
         xml_bytes,
         source_title,
     )
+    source_model = AmendmentSourceModel.from_tree(
+        muutos_tree,
+        source_ref=source_id,
+    )
 
     route_target_amendment_id = ""
     if route_reason == "pending_amendment_of_parent_skip":
@@ -384,7 +389,7 @@ def build_amendment_bundle(
         _resolved_compile_result = compile_amendment_ops(
             before_master.replay_fold_state,
             ops,
-            muutos_tree,
+            source_model,
             johto,
             mode,
             compiled_ops_out=_compiled_rows,
