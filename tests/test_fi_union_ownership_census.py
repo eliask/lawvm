@@ -114,6 +114,30 @@ def test_buckets_partition_the_classified_tokens() -> None:
         assert partition == nonws, (text, buckets, nonws)
 
 
+def test_coordinated_application_half_is_owned_not_silent() -> None:
+    # The L0 ruler's dominant unowned applicability span: in
+    # "tulee voimaan X ja sitä sovelletaan Y" the "sitä sovelletaan" half used to
+    # be silent-unowned (production keeps only the commencement). The temporal
+    # family now owns BOTH halves, so the cheap "sovelletaan" signal is NOT silent.
+    text = (
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 1991 "
+        "ja sitä sovelletaan ensimmäisen kerran vuodelta 1991 toimitettavassa verotuksessa."
+    )
+    su = union_over_sentence(text)
+    cue_at = text.index("sovelletaan")
+    assert "temporal" in su.owners.get(cue_at, frozenset())
+    assert _shapes(text).get("sovelletaan", 0) == 0, _shapes(text)
+
+
+def test_standalone_application_signal_is_owned_not_silent() -> None:
+    # "Lakia sovelletaan …" (production never recognized this) is now owned by the
+    # temporal family, so its cheap "sovelletaan" signal is not silent-unowned.
+    text = "Lakia sovelletaan vakuutusmaksuun, joka on kertynyt vuoden 1991 loppuun."
+    assert _shapes(text).get("sovelletaan", 0) == 0, _shapes(text)
+    su = union_over_sentence(text)
+    assert "temporal" in {f for fams in su.owners.values() for f in fams}
+
+
 def test_union_over_sentence_records_owning_families() -> None:
     # The owner map records WHICH family claimed each char; a commencement clause
     # is owned by the temporal family.
