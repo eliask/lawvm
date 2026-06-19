@@ -2,9 +2,12 @@ from __future__ import annotations
 from typing_extensions import override
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from lawvm.new_zealand.acquisition import (
     NZAcquisitionDiagnostic,
@@ -12,6 +15,7 @@ from lawvm.new_zealand.acquisition import (
     NZSyncOptions,
     UrllibNZTransport,
     _canonicalize_version_format_url,
+    open_farchive,
     sync_nz_corpus,
 )
 from lawvm.tools.cli import _build_parser
@@ -106,6 +110,28 @@ def _json_response(payload: dict[str, Any], remaining: int = 9999) -> NZHttpResp
         },
         content_type="application/json",
     )
+
+
+def test_open_farchive_defaults_to_readonly_without_creating_unused_archive(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "missing" / "unused.farchive"
+
+    with pytest.raises(sqlite3.OperationalError):
+        open_farchive(archive_path)
+
+    assert not archive_path.exists()
+    assert not archive_path.parent.exists()
+
+
+def test_open_farchive_writable_mode_creates_archive(tmp_path: Path) -> None:
+    archive_path = tmp_path / "created" / "nz.farchive"
+
+    archive = open_farchive(archive_path, readonly=False)
+    try:
+        assert archive_path.exists()
+    finally:
+        archive.close()
 
 
 def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
