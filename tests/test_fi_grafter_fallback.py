@@ -4274,6 +4274,55 @@ def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_cha
     assert pruned == []
 
 
+def test_prune_container_payload_sections_prunes_foreign_insert_when_payload_is_overwrapped_context() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                        IRNode(kind=IRNodeKind.SECTION, label="8"),
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                    ),
+                ),
+            ),
+        )
+    )
+    lookups = snapshot_replay_lookups(state)
+    ctx = build_payload_elaboration_context(
+        snapshot_target_context(state, "chapter", "2a", None, lookups),
+        lookups,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="2a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="2 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="7a"),
+            IRNode(kind=IRNodeKind.SECTION, label="8"),
+            IRNode(kind=IRNodeKind.SECTION, label="20a"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets_impl(
+        ctx,
+        "chapter",
+        "2a",
+        muutos_ir,
+        {"8", "20a"},
+        foreign_scoped_standalone_section_targets={"20a"},
+        foreign_scoped_replace_section_targets={"8"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["8", "20a"]
+    assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["7a"]
+
+
 def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_replaces() -> None:
     chapter_insert = AmendmentOp(
         op_type="INSERT",
@@ -10283,6 +10332,101 @@ def test_flat_body_insert_chapter_scope_rejects_one_sided_live_sibling() -> None
     )
 
     got = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
+def test_flat_body_replace_scope_uses_letter_suffix_bracketing_live_siblings() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_replace_scope_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2a",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="20a"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="20"),
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="21"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>20 a §</num><content><p>replacement</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="20a",
+    )
+
+    got = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got == (None, "4")
+
+
+def test_flat_body_replace_scope_rejects_letter_suffix_disagreeing_brackets() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_replace_scope_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="20"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="21"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>20 a §</num><content><p>replacement</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="20a",
+    )
+
+    got = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
         op=op,
         muutos_tree=muutos_tree,
         master=master,

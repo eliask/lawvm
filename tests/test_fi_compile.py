@@ -2479,6 +2479,42 @@ def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_sibling
     )
 
 
+def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_siblings() -> None:
+    before = replay_xml("2004/485", stop_before="2018/955", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2018/955")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2018/955",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2004/485",
+        strict_profile=None,
+    )
+
+    section_20a_ops = [
+        op
+        for op in phase.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "20a"
+    ]
+
+    assert [op.description() for op in section_20a_ops] == ["REPLACE 4 luku 20a §"]
+    assert section_20a_ops[0].lo is not None
+    assert tuple(section_20a_ops[0].lo.target.path) == (
+        ("chapter", "4"),
+        ("section", "20a"),
+    )
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

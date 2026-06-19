@@ -1264,7 +1264,8 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
     ):
         return None
     section_norm = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+", section_norm) is None:
+    target_order = _section_label_order_key(section_norm)
+    if target_order is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
@@ -1273,9 +1274,9 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
     ):
         return None
 
-    target_num = int(section_norm)
-    lower_by_distance: dict[int, set[tuple[str | None, str]]] = {}
-    upper_by_distance: dict[int, set[tuple[str | None, str]]] = {}
+    target_num, target_suffix_rank = target_order
+    lower_by_distance: dict[tuple[int, int], set[tuple[str | None, str]]] = {}
+    upper_by_distance: dict[tuple[int, int], set[tuple[str | None, str]]] = {}
 
     def _walk(node: IRNode, current_part: str | None, current_chapter: str | None) -> None:
         next_part = current_part
@@ -1288,14 +1289,14 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
             sibling_norm = _norm_num_token(str(node.label))
             if sibling_norm == section_norm:
                 return
-            if re.fullmatch(r"\d+", sibling_norm) is not None and (
-                op.target_part is None or next_part == op.target_part
-            ):
-                sibling_num = int(sibling_norm)
-                distance = abs(sibling_num - target_num)
-                if 0 < distance <= 2:
-                    bucket = lower_by_distance if sibling_num < target_num else upper_by_distance
-                    bucket.setdefault(distance, set()).add((next_part, next_chapter))
+            sibling_order = _section_label_order_key(sibling_norm)
+            if sibling_order is not None and (op.target_part is None or next_part == op.target_part):
+                sibling_num, sibling_suffix_rank = sibling_order
+                numeric_distance = abs(sibling_num - target_num)
+                if numeric_distance <= 2:
+                    bucket = lower_by_distance if sibling_order < target_order else upper_by_distance
+                    rank_distance = abs(sibling_suffix_rank - target_suffix_rank)
+                    bucket.setdefault((numeric_distance, rank_distance), set()).add((next_part, next_chapter))
             return
         for child in node.children:
             _walk(child, next_part, next_chapter)
@@ -1311,6 +1312,14 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
     if master.find_section_path(section_norm, chapter, part) is None:
         return None
     return part, chapter
+
+
+def _section_label_order_key(section_norm: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"(\d+)([a-z]?)", section_norm, flags=re.I)
+    if match is None:
+        return None
+    suffix = match.group(2).lower()
+    return int(match.group(1)), (ord(suffix) - ord("a") + 1) if suffix else 0
 
 
 def _flat_source_body_section_nums(
