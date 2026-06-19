@@ -136,26 +136,20 @@ def test_subject_span_captured_as_surface():
 # ---------------------------------------------------------------------------
 
 
-def test_delegation_without_known_actor_yields_residual():
-    # "lautakunta" is not in the registry nor the closed role list, so the
-    # delegation-shaped clause cannot be typed → residual, not a guessed frame.
+def test_lautakunta_agency_grant_binds_via_issuer_head_fallback():
+    # DELEGATION-UNIFY-VERDICT step 4 / FRONTIER adjudication (old_C_correct):
+    # ``Lautakunta antaa määräyksiä …`` IS a genuine agency delegation grant. The
+    # old B residualized it as ``delegation_without_actor`` because ``lautakunta``
+    # is not a verbatim registry phrase nor a closed role; the canonical parser (B
+    # now calls it) binds the issuer via the generic ISSUER-HEAD fallback
+    # (``…lautakunta`` is an agency head) and emits the grant. Adjudicated old-B
+    # MISS — the test now pins the corrected behavior.
     text = "Lautakunta antaa tarkempia määräyksiä asian käsittelystä."
     frames = _frames(text)
-    residuals = _residuals(text)
-    assert frames == ()
-    assert len(residuals) == 1
-    r = residuals[0]
-    assert r.kind == "delegation_without_actor"
-    # Self-evidencing: the offending clause text is embedded.
-    assert "Lautakunta" in r.detail
-    assert "Lautakunta" in r.surface_text
-    assert "määräys" in r.detail
-
-
-def test_residual_never_guesses_an_actor():
-    text = "Lautakunta antaa tarkempia määräyksiä asian käsittelystä."
-    # No frame at all means no actor was guessed.
-    assert _frames(text) == ()
+    assert len(frames) == 1
+    assert frames[0].instrument_kind == "määräys"
+    assert frames[0].delegate_actor == "Lautakunta"
+    assert _residuals(text) == ()
 
 
 # ---------------------------------------------------------------------------
