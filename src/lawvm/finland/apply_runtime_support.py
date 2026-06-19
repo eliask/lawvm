@@ -305,7 +305,7 @@ def _base_provision_index_for_replay_history(
     if base_ir is None:
         return None
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
-        return _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+        return _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
     cache: dict[int, tuple[IRNode, LabelIndex]] | None = replay_history_ops.base_provision_index_cache  # type: ignore[assignment]
     if cache is None:
         cache = {}
@@ -314,7 +314,7 @@ def _base_provision_index_for_replay_history(
     cached = cache.get(key)
     if cached is not None and cached[0] is base_ir:
         return cached[1]
-    index = _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    index = _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
     cache[key] = (base_ir, index)
     return index
 

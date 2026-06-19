@@ -102,7 +102,7 @@ def _find_all_relabel_candidates(
 
     label_index = lookup_cache.exact_label_index
     if label_index is None:
-        label_index = _tops.build_label_index(tree)
+        label_index = _tops.build_provision_label_index(tree)
         lookup_cache.exact_label_index = label_index
 
     candidates = tuple(_tops.find_all(tree, kind, label, label_index=label_index))

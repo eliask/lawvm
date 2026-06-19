@@ -432,7 +432,7 @@ class ReplayState:
     def provision_index(self) -> LabelIndex:
         """Lazy sparse index for section/chapter/part lookups only."""
         if self._provision_index is None:
-            self._provision_index = build_label_index(
+            self._provision_index = _tops.build_provision_label_index(
                 self.ir,
                 indexed_kinds=_PROVISION_INDEXED_KINDS,
             )

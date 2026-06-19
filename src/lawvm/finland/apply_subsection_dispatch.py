@@ -40,6 +40,7 @@ from lawvm.finland.apply_runtime_support import (
     _expired_temporary_section_merge_base_rebase_info,
     _expired_temporary_subsection_slot_can_be_consumed,
     _legacy_target_section_for_scope,
+    _with_preserved_provision_index,
 )
 from lawvm.finland.source_pathology import (
     build_subsection_target_rebound_pathology,
@@ -432,7 +433,7 @@ def _maybe_update_section_heading(
         current_heading.text if current_heading else "(none)",
         amend_heading.text,
     )
-    return result.with_ir(_tops.replace_at(result.ir, sec_path, new_sec))
+    return _with_preserved_provision_index(result, _tops.replace_at(result.ir, sec_path, new_sec))
 
 
 def _apply_deterministic_subsection_op(
