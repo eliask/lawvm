@@ -1139,7 +1139,10 @@ def _rekey_timelines_with_migration_events(
     rekeys its replay-owned timelines here before materialization.
     """
     from lawvm.core.timeline import _address_prefix_matches
-    from lawvm.finland.migration_ledger import current_address_with_prefix_migrations_from_events
+    from lawvm.finland.migration_ledger import (
+        current_address_with_prefix_migrations_from_event_signatures,
+        current_address_with_prefix_migrations_from_events,
+    )
 
     migration_events = _drop_explicitly_repealed_source_move_events(
         timelines, migration_events
@@ -1150,6 +1153,9 @@ def _rekey_timelines_with_migration_events(
         migration_events,
         as_of_date=as_of,
         current_address_with_prefix_migrations_fn=current_address_with_prefix_migrations_from_events,
+        current_address_with_prefix_migration_signatures_fn=(
+            current_address_with_prefix_migrations_from_event_signatures
+        ),
         address_prefix_matches=_address_prefix_matches,
         retarget_version_content_fn=lambda version, address: _retarget_version_content(
             version,
