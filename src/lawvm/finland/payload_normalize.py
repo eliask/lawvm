@@ -386,6 +386,7 @@ class SubsectionSlotInputs:
     amend_subs: tuple[IRNode, ...]
     payload_subsec_ops: tuple[AmendmentOp, ...]
     intro_subsec_ops: tuple[AmendmentOp, ...]
+    renumber_subsec_ops: tuple[AmendmentOp, ...]
     duplicate_targets: tuple[int, ...]
 
 
@@ -1493,6 +1494,48 @@ def _assign_remaining_insert_slot_ops(
     for op, (idx, sub) in zip(remaining_inserts, remaining_slots, strict=True):
         state.subsec_map.assign(op, sub)
         state.used_subs.add(idx)
+
+
+def _destination_subsection_label_for_renumber(op: AmendmentOp) -> str:
+    if op.op_type != "RENUMBER" or op.lo is None or op.lo.destination is None:
+        return ""
+    return _norm_num_token(
+        next((label for kind, label in reversed(op.lo.destination.path) if kind == "subsection"), "")
+    )
+
+
+def _assign_renumber_destination_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind carried source payload slots to explicit subsection renumber destinations."""
+    for op in slot_inputs.renumber_subsec_ops:
+        if op in state.subsec_map or op.target_paragraph is None or op.target_item or op.target_special:
+            continue
+        destination_label = _destination_subsection_label_for_renumber(op)
+        if not destination_label:
+            continue
+        candidates = [
+            (idx, sub)
+            for idx, sub in enumerate(slot_inputs.amend_subs)
+            if idx not in state.used_subs and _norm_num_token(sub.label or "") == destination_label
+        ]
+        if len(candidates) != 1:
+            continue
+        idx, sub = candidates[0]
+        state.subsec_map.assign(op, sub)
+        state.used_subs.add(idx)
+        state.binding_rule_by_op_id[id(op)] = "renumber_destination_payload_slot"
+        state.binding_observations.append(
+            _obs(
+                "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT",
+                "sparse_subsection_elaboration",
+                source_target_paragraph=int(op.target_paragraph),
+                destination_paragraph=int(destination_label),
+                payload_slot_label=str(sub.label or ""),
+                op_description=op.description(),
+            )
+        )
 
 
 def _normalize_assigned_intro_subparagraphs(subsec_map: SubsectionSlotMap) -> None:
@@ -3917,6 +3960,7 @@ def _assign_subsection_slots(
     _assign_item_prefix_slot_ops(slot_inputs, state)
     _assign_highest_insert_slot_op(slot_inputs, state)
     _assign_remaining_insert_slot_ops(slot_inputs, state)
+    _assign_renumber_destination_slot_ops(slot_inputs, state)
     assigned_indices_by_op_id = {
         op_id: next(
             (idx for idx, sub in enumerate(slot_inputs.amend_subs) if sub is assigned_sub),
@@ -3927,7 +3971,7 @@ def _assign_subsection_slots(
     _normalize_assigned_intro_subparagraphs(state.subsec_map)
 
     all_slot_ops = sorted(
-        [*slot_inputs.payload_subsec_ops, *slot_inputs.intro_subsec_ops],
+        [*slot_inputs.payload_subsec_ops, *slot_inputs.intro_subsec_ops, *slot_inputs.renumber_subsec_ops],
         key=lambda op: (
             op.target_paragraph or 0,
             op.target_item or "",
@@ -4001,6 +4045,7 @@ def _assign_subsection_slots(
             "numbered_table_xml_subsection_offset",
             "numbered_table_companion_subsection_binding",
             "trailing_sparse_insert_binding",
+            "renumber_destination_payload_slot",
         }:
             count = 1
             admissibility: Literal["single", "ambiguous", "fallback"] = "single"
@@ -4076,10 +4121,27 @@ def _collect_subsection_slot_inputs(
             and (not op.target_special or op.target_special == "johd")
         )
     ]
+    renumber_subsec_ops = [
+        op
+        for op in group_ops
+        if (
+            op.target_paragraph
+            and op.op_type == "RENUMBER"
+            and not op.target_item
+            and not op.target_special
+            and _destination_subsection_label_for_renumber(op)
+        )
+    ]
     subsec_ops.sort(key=lambda op: (op.target_paragraph or 0, op.target_item or ""))
+    renumber_subsec_ops.sort(
+        key=lambda op: (
+            int(_destination_subsection_label_for_renumber(op) or "0"),
+            op.target_paragraph or 0,
+        )
+    )
     payload_subsec_ops = [op for op in subsec_ops if op.target_special != "johd"]
     intro_subsec_ops = [op for op in subsec_ops if op.target_special == "johd"]
-    if muutos_ir is None or not subsec_ops:
+    if muutos_ir is None or not (subsec_ops or renumber_subsec_ops):
         return None
     amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
     table_labels_for_child_binding = frozenset(
@@ -4114,6 +4176,7 @@ def _collect_subsection_slot_inputs(
         amend_subs=tuple(amend_subs),
         payload_subsec_ops=tuple(payload_subsec_ops),
         intro_subsec_ops=tuple(intro_subsec_ops),
+        renumber_subsec_ops=tuple(renumber_subsec_ops),
         duplicate_targets=tuple(duplicate_targets),
     )
 

@@ -2321,6 +2321,22 @@ def test_replay_xml_2021_1289_applies_explicit_heading_and_first_moment_replace(
     assert "pienikokoinen pakettiauto" not in text
 
 
+def test_replay_xml_2013_1201_carries_renumbered_section_12_moments() -> None:
+    replay = replay_xml("2013/1201", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section12 = sections["chapter:3/section:12"]
+    subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section12.children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+
+    assert "4" in subsections
+    assert "5" in subsections
+    assert "Kansaneläkelaitos pyytää edellä 2 ja 3 momentissa mainitut tiedot" in subsections["4"]
+    assert "Kirjallinen vastaus on toimitettava pyynnön vastaanottamista seuraavien" in subsections["5"]
+
+
 def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior_addresses() -> None:
     before = replay_xml("2021/1289", stop_before="2024/420", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

@@ -2027,6 +2027,7 @@ def _emit_section_snapshot(
         renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
+        has_payload_bearing_renumber = False
         for rop in group_rops:
             if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
                 continue
@@ -2041,6 +2042,15 @@ def _emit_section_snapshot(
                 if not source_label or not destination_label:
                     return None
                 renumber_destinations[source_label] = destination_label
+                amend_sub = rop.resolved_amend_sub_ir()
+                if amend_sub is not None and amend_sub.kind is IRNodeKind.SUBSECTION:
+                    relabelled = _relabel_subsection_payload(amend_sub, destination_label)
+                    existing = subsection_payloads.get(destination_label)
+                    if existing is not None and irnode_to_text(existing) != irnode_to_text(relabelled):
+                        return None
+                    subsection_payloads[destination_label] = relabelled
+                    whole_subsection_targets.add(destination_label)
+                    has_payload_bearing_renumber = True
                 continue
             if rop.is_repeal_action:
                 if not (
@@ -2118,7 +2128,9 @@ def _emit_section_snapshot(
                     pending_payload.item_norm
                 )
 
-        if not has_insert or (len(subsection_payloads) < 2 and not renumber_destinations):
+        if not (has_insert or has_payload_bearing_renumber) or (
+            len(subsection_payloads) < 2 and not renumber_destinations
+        ):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
             if not has_item_payload or not subsection_payloads:
                 return None
