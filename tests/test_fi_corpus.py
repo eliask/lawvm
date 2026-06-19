@@ -393,6 +393,43 @@ def test_oracle_reflected_section_original_versions_excludes_future_repeal_overl
     assert got == {"2003/537"}
 
 
+def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
+    """Full-text oracle extraction must preserve distinct same-eId-base siblings.
+
+    This is the 2012/316 pattern: Finlex encodes an existing unnumbered
+    subsection and a later inserted unnumbered fee subsection with the same
+    positional eId base. They are distinct live provisions, not historical
+    duplicates.
+    """
+    sid = "2012/316"
+    oracle_path = "akn/fi/act/statute-consolidated/2012/316/fin@20240859/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_1v20150795" finlex:originalVersion="@20150795">
+          <num>1 §</num>
+          <subsection eId="sec_1v20150795__subsec_1v20150795">
+            <intro><p>Chargeable decisions are:</p></intro>
+            <paragraph eId="sec_1v20150795__subsec_1v20150795__para_1v20150795">
+              <num>1)</num>
+              <content><p>operating licence;</p></content>
+            </paragraph>
+          </subsection>
+          <subsection eId="sec_1v20150795__subsec_1v20240859" finlex:originalVersion="@20240859">
+            <content><p>The fee is 7 135 euros.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    text = corpus.get_ground_truth(sid, cast(Any, fake))
+
+    assert "Chargeable decisions are" in text
+    assert "The fee is 7 135 euros." in text
+
+
 # ---------------------------------------------------------------------------
 # _oracle_pending_amendment_suspect tests
 # ---------------------------------------------------------------------------
