@@ -68,7 +68,7 @@ from lawvm.finland.morphology import (
     generate_forms,
     head_entry,
 )
-from lawvm.finland.references.lemma_gate import GateVerdict, lemma_gate
+from lawvm.finland.references.lemma_gate import GateVerdict, head_case_forms, lemma_gate
 from lawvm.finland.references.registries.statute_name import _HEADS_BY_LEN
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
@@ -220,9 +220,49 @@ _KNOWN_KAARI_CODES: frozenset[str] = frozenset(
         "rikoskaari",  # archaic penal code (1734)
     }
 )
-_KAARI_OBLIQUE_ALT = (
-    r"kaar(?:en|essa|esta|een|ella|elta|elle|eksi|ena|tta|in)"
-    r"|kaarta"
+# The exact ``(case, number)`` set the hand-written ``-kaari`` oblique table
+# encoded: the singular grammatical + internal-local + external-local cases the
+# code titles appear in within citing prose (``maakaaren`` GEN, ``maakaaressa``
+# INE, ``maakaaresta`` ELA, ``maakaareen`` ILL, ``maakaarella`` ADE,
+# ``maakaarelta`` ABL, ``maakaarelle`` ALL, ``maakaareksi`` TRA, ``maakaarta``
+# PART).  Curated (not the full paradigm) and singular-only, reproducing the
+# precise oblique set the hand table matched so the M1-backed recognizer is a
+# strict superset of it (no precision change).  The NOMINATIVE ``kaari`` is
+# deliberately absent (a bare uninflected head is not a by-name citation — same
+# discipline as the ``-laki`` lane), as are the plural cases (the codes are cited
+# in the singular).
+_KAARI_HEAD_CASE_NUMBERS: tuple[tuple[str, str], ...] = (
+    ("GEN", "SG"),
+    ("INE", "SG"),
+    ("ELA", "SG"),
+    ("ILL", "SG"),
+    ("ADE", "SG"),
+    ("ABL", "SG"),
+    ("ALL", "SG"),
+    ("TRA", "SG"),
+    ("PART", "SG"),
+)
+
+# Three singular oblique forms the hand table matched that M1's ``reference_v1``
+# profile does NOT generate: the essive ``kaarena``, the instructive ``kaarin``,
+# and the abessive ``kaartta``.  They are supplied explicitly so the M1-backed
+# alternation stays a strict superset of the old hand table (no recall loss) —
+# the same documented M1-boundary supplement the inline essive / plural-local
+# helpers carry in :mod:`lawvm.finland.references.lemma_gate`.
+_KAARI_M1_UNCOVERED_OBLIQUES: tuple[str, ...] = ("kaarena", "kaarin", "kaartta")
+
+# SOUND replacement for the hand-typed ``kaar(?:en|essa|...)`` oblique table:
+# M1's generated ``kaari`` surfaces over the curated case set above (paradigm
+# inversion, not a suffix guess) plus the three M1-uncovered supplements.
+# Longest-first so the head regex prefers the most-specific form.
+_KAARI_OBLIQUE_ALT = "|".join(
+    sorted(
+        {
+            *head_case_forms("kaari", _KAARI_HEAD_CASE_NUMBERS),
+            *_KAARI_M1_UNCOVERED_OBLIQUES,
+        },
+        key=lambda s: (-len(s), s),
+    )
 )
 _KAARI_HEAD_RE = re.compile(
     rf"(?<![A-Za-zÅÄÖåäö0-9-])"  # word start (no preceding name char)
