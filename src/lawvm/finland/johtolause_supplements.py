@@ -27,13 +27,30 @@ from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_mixed_clauses,
     parse_named_table_row_single_clauses,
 )
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, _lo_with_path_update
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
 _NUMBERED_TABLE_TARGET_RULE_ID = "fi.numbered_table_target.v1"
 _NUMBERED_TABLE_TARGET_TAG = "numbered_table_target"
+_ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
+_ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
+_REPLACE_ITEMS_AND_MOMENT_RE = re.compile(
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    r"(?P<moment>\d{1,3})\s+momentin\s+kohdat\s+"
+    r"(?P<items>\d{1,3}(?:\s*(?:,|ja)\s*\d{1,3}){0,12})\s+"
+    r"sekä\s+(?P<extra_moment>\d{1,3})\s+momentti\b",
+    flags=re.I,
+)
+_INSERT_ITEM_RE = re.compile(
+    r"\blisätään\b[\s\S]{0,800}?"
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
+    r"(?P<item>\d{1,3})\b",
+    flags=re.I,
+)
 _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
     r"\bmuut[a-zäöå]{0,12}\b.{0,500}?"
     r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?::[a-zäöå]{1,6})?.{0,300}?"
@@ -75,6 +92,27 @@ class SparseOsaltaRowOmissionClause:
 
     section: str
     row_target: str
+    raw_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ItemAndMomentReplaceClause:
+    """Typed supplement for ``N momentin kohdat ... sekä M momentti`` clauses."""
+
+    section: str
+    moment: int
+    item_labels: tuple[str, ...]
+    extra_moment: int
+    raw_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ItemInsertClause:
+    """Typed supplement for ``N momenttiin uusi kohta M`` clauses."""
+
+    section: str
+    moment: int
+    item_label: str
     raw_text: str
 
 
@@ -452,6 +490,180 @@ def _tag_numbered_table_target_clause_ops(
                 numbered_table_targets=table_labels,
                 extraction_provenance_tags=(_NUMBERED_TABLE_TARGET_TAG,),
                 witness_rule_id=_NUMBERED_TABLE_TARGET_RULE_ID,
+            )
+        )
+    return supplemented
+
+
+def _parse_item_labels(raw_items: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for raw_label in re.findall(r"\d{1,3}", raw_items or ""):
+        label = _norm_num_token(raw_label)
+        if label and label not in labels:
+            labels.append(label)
+    return tuple(labels)
+
+
+def _parse_item_and_moment_replace_clauses(johto: str) -> tuple[ItemAndMomentReplaceClause, ...]:
+    clauses: list[ItemAndMomentReplaceClause] = []
+    for match in _REPLACE_ITEMS_AND_MOMENT_RE.finditer(johto or ""):
+        section = _norm_num_token(match.group("section"))
+        item_labels = _parse_item_labels(match.group("items"))
+        if not section or not item_labels:
+            continue
+        clauses.append(
+            ItemAndMomentReplaceClause(
+                section=section,
+                moment=int(match.group("moment")),
+                item_labels=item_labels,
+                extra_moment=int(match.group("extra_moment")),
+                raw_text=match.group(0),
+            )
+        )
+    return tuple(clauses)
+
+
+def _parse_item_insert_clauses(johto: str) -> tuple[ItemInsertClause, ...]:
+    clauses: list[ItemInsertClause] = []
+    for match in _INSERT_ITEM_RE.finditer(johto or ""):
+        section = _norm_num_token(match.group("section"))
+        item_label = _norm_num_token(match.group("item"))
+        if not section or not item_label:
+            continue
+        clauses.append(
+            ItemInsertClause(
+                section=section,
+                moment=int(match.group("moment")),
+                item_label=item_label,
+                raw_text=match.group(0),
+            )
+        )
+    return tuple(clauses)
+
+
+def _has_op(
+    ops: list[AmendmentOp],
+    *,
+    op_type: str,
+    section: str,
+    moment: int,
+    item: str | None,
+) -> bool:
+    return any(
+        op.op_type == op_type
+        and op.target_unit_kind == "section"
+        and op.target_section == section
+        and op.target_paragraph == moment
+        and (op.target_item or None) == item
+        and not op.target_special
+        for op in ops
+    )
+
+
+def _supplement_item_and_moment_clause_ops(
+    ops: List[AmendmentOp],
+    johto: str,
+) -> List[AmendmentOp]:
+    """Recover explicit item and sparse moment targets flattened by PEG."""
+    replace_clauses = _parse_item_and_moment_replace_clauses(johto)
+    insert_clauses = _parse_item_insert_clauses(johto)
+    if not replace_clauses and not insert_clauses:
+        return ops
+
+    supplemented = list(ops)
+    for clause_index, clause in enumerate(replace_clauses):
+        for item_label in clause.item_labels:
+            if _has_op(
+                supplemented,
+                op_type="REPLACE",
+                section=clause.section,
+                moment=clause.moment,
+                item=item_label,
+            ):
+                continue
+            supplemented.append(
+                AmendmentOp(
+                    op_id=f"item_and_moment_replace_item_{clause_index}_{item_label}",
+                    op_type="REPLACE",
+                    target_section=clause.section,
+                    target_unit_kind="section",
+                    target_paragraph=clause.moment,
+                    target_item=item_label,
+                    extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                    witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
+                )
+            )
+        if not _has_op(
+            supplemented,
+            op_type="REPLACE",
+            section=clause.section,
+            moment=clause.extra_moment,
+            item=None,
+        ):
+            supplemented.append(
+                AmendmentOp(
+                    op_id=f"item_and_moment_replace_moment_{clause_index}_{clause.extra_moment}",
+                    op_type="REPLACE",
+                    target_section=clause.section,
+                    target_unit_kind="section",
+                    target_paragraph=clause.extra_moment,
+                    extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                    witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
+                )
+            )
+
+    for clause_index, clause in enumerate(insert_clauses):
+        if _has_op(
+            supplemented,
+            op_type="INSERT",
+            section=clause.section,
+            moment=clause.moment,
+            item=clause.item_label,
+        ):
+            continue
+        converted = False
+        for pos, op in enumerate(supplemented):
+            if (
+                op.op_type == "INSERT"
+                and op.target_unit_kind == "section"
+                and (not op.target_section or op.target_section == clause.section)
+                and op.target_paragraph == clause.moment
+                and not op.target_item
+                and not op.target_special
+            ):
+                supplemented[pos] = dc_replace(
+                    op,
+                    target_section=clause.section,
+                    target_item=clause.item_label,
+                    lo=(
+                        _lo_with_path_update(
+                            op.lo,
+                            section=clause.section,
+                            subsection=str(clause.moment),
+                            item=clause.item_label,
+                        )
+                        if op.lo is not None
+                        else op.lo
+                    ),
+                    extraction_provenance_tags=tuple(
+                        dict.fromkeys((*op.extraction_provenance_tags, _ITEM_AND_MOMENT_TARGET_TAG))
+                    ),
+                    witness_rule_id=op.witness_rule_id or _ITEM_AND_MOMENT_TARGET_RULE_ID,
+                )
+                converted = True
+                break
+        if converted:
+            continue
+        supplemented.append(
+            AmendmentOp(
+                op_id=f"item_and_moment_insert_item_{clause_index}_{clause.item_label}",
+                op_type="INSERT",
+                target_section=clause.section,
+                target_unit_kind="section",
+                target_paragraph=clause.moment,
+                target_item=clause.item_label,
+                extraction_provenance_tags=(_ITEM_AND_MOMENT_TARGET_TAG,),
+                witness_rule_id=_ITEM_AND_MOMENT_TARGET_RULE_ID,
             )
         )
     return supplemented

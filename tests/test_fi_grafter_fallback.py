@@ -63,6 +63,7 @@ from lawvm.finland.johto_scope_mentions import (
 )
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause_supplements import (
+    _supplement_item_and_moment_clause_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
     _supplement_sparse_osalta_row_omission_repeals,
@@ -11279,6 +11280,36 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
 
     assert [(op.op_type, op.target_section) for op in got] == [("REPLACE", "1")]
     assert got[0].named_row_targets == ("iisalmen",)
+
+
+def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="op0",
+            op_type="INSERT",
+            target_section="",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=1,
+        )
+    ]
+    johto = (
+        "muutetaan 24 §:n 1 momentin kohdat 1 ja 6 sekä 5 momentti, "
+        "sekä lisätään 24 §:n 1 momenttiin uusi kohta 8, seuraavasti:"
+    )
+
+    got = _supplement_item_and_moment_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in got
+    ] == [
+        ("INSERT", "24", 1, "8"),
+        ("REPLACE", "24", 1, "1"),
+        ("REPLACE", "24", 1, "6"),
+        ("REPLACE", "24", 5, None),
+    ]
+    assert got[0].witness_rule_id == "fi.item_and_moment_target_supplement.v1"
+    assert got[0].extraction_provenance_tags == ("item_and_moment_target_supplement",)
 
 
 def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:
