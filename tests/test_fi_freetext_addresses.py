@@ -135,3 +135,28 @@ def test_prose_led_section() -> None:
     assert ("6", 1, None, None) in _sections(
         "niihin myöhemmin tehtyine muutoksineen sekä lain 6 §:n 1 momentti"
     )
+
+
+# ---------------------------------------------------------------------------
+# Sole production consumer: johto_scope_mentions.collect_johto_moment_targets
+# (the Q1 demotion migrated this off the legacy address_parse regex). The driver
+# is strictly MORE correct for it: a kohta-only phrase no longer leaks a phantom
+# whole-momentti target the legacy regex emitted.
+# ---------------------------------------------------------------------------
+
+
+def test_moment_targets_genuine_whole_momentti() -> None:
+    from lawvm.finland.johto_scope_mentions import collect_johto_moment_targets
+
+    # ``129 §:n 2 momentti`` names a whole momentti → registered as a target.
+    assert collect_johto_moment_targets("129 §:n 2 momentti") == {"129": frozenset({2})}
+
+
+def test_moment_targets_kohta_only_is_not_a_whole_momentti() -> None:
+    from lawvm.finland.johto_scope_mentions import collect_johto_moment_targets
+
+    # ``2 §:n 1 momentin 7 ja 8 kohta`` names only specific kohtas, NOT the whole
+    # momentti. The grammar driver parses item-level rows (item is not None), so
+    # the consumer correctly registers NO whole-momentti target. The legacy regex
+    # leaked a phantom ``(2, 1)`` bare-momentti here.
+    assert collect_johto_moment_targets("2 §:n 1 momentin 7 ja 8 kohta") == {}

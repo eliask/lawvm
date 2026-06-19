@@ -7,13 +7,15 @@ cite starts is the allowed lexer-primitive floor), then parse each site's
 STRUCTURE through the shared johtolause grammar
 (:func:`...grammar.sections.recognize_section_ref` +
 :func:`...grammar.subref.recognize_sub_refs`). The output is the same
-``ParsedLegalAddress`` rows :func:`...address_parse.parse_legal_addresses`
-emits, so existing consumers are unchanged.
+``ParsedLegalAddress`` rows the legacy ``address_parse`` regex parser emitted,
+so existing consumers are unchanged.
 
-Why a grammar driver instead of the parallel ``address_parse`` regex:
-``address_parse`` is the last full *parallel weaker sub-ref grammar* in the FI
-tree — it re-parses amendment-target sub-references entirely in regex, importing
-nothing from the grammar. That regex systematically UNDER-PARSES:
+Why a grammar driver instead of the parallel ``address_parse`` regex: the legacy
+``address_parse.parse_legal_addresses`` was the last full *parallel weaker
+sub-ref grammar* in the FI tree — it re-parsed amendment-target sub-references
+entirely in regex, importing nothing from the grammar. That regex systematically
+UNDER-PARSED (the now-removed parser is retained here only as the documented
+contrast); this driver superseded and removed it:
 
   * ``9 §:n 2―5 momentti`` → the regex emits a bare WHOLE-SECTION repeal of § 9
     plus an orphan momentti, while the source names only momenttis 2–5; the
@@ -32,7 +34,7 @@ corpus: the driver is IDENTICAL on 8,076, strictly NEW-BETTER on 128 (precise
 momentti/kohta, recovered coordinated lists, prose-led targets) and has ZERO
 place-level regressions (no section/chapter the regex emitted is dropped).
 
-Site passes (mirroring ``parse_legal_addresses`` passes, grammar-backed):
+Site passes (mirroring the legacy ``parse_legal_addresses`` passes, grammar-backed):
   1. §-anchored section sites → ``recognize_section_ref`` (ranges, coordination,
      momentti/kohta/alakohta, genitive tails, glued/Roman/missing-colon via the
      shared lexer); the ``§`` marker is the symbol OR the spelled-out ``pykälä``.
@@ -199,8 +201,8 @@ def _section_addresses_from_surface(surface: str) -> List[ParsedLegalAddress]:
 def scan_legal_addresses(text: str) -> List[ParsedLegalAddress]:
     """Scan *text* for legal-address citation sites and parse each via the grammar.
 
-    Drop-in superset replacement for
-    :func:`...address_parse.parse_legal_addresses`: same ``ParsedLegalAddress``
+    Drop-in superset replacement for the (now-removed) legacy
+    ``address_parse.parse_legal_addresses`` regex parser: same ``ParsedLegalAddress``
     output type and ordering convention (§ sites, then standalone momentti, then
     chapter), but the structure of every site is parsed by the shared johtolause
     grammar instead of a parallel regex. Patterns that cannot be classified are

@@ -10,8 +10,8 @@ import functools
 import re
 from dataclasses import dataclass
 
-from lawvm.finland.address_parse import parse_legal_addresses
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.references.freetext_addresses import scan_legal_addresses
 
 _DASH_CHARS = r"[-\u2013\u2014\u2015]"  # hyphen, en-dash, em-dash, horizontal bar
 _SECTION_REF_RE = re.compile(
@@ -123,7 +123,7 @@ def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
     ``N §:n M momentti`` but compile emits no paragraph-scoped AmendmentOps.
     """
     targets: dict[str, set[int]] = {}
-    for addr in parse_legal_addresses(johto_text):
+    for addr in scan_legal_addresses(johto_text):
         if (
             not addr.section
             or addr.subsection is None
