@@ -123,6 +123,66 @@ RULE_EXCEPTION = "fi.norm_composition.exception_excepts_norm"
 CUE_NODE_KIND = "exception_condition_cue"
 CORE_NODE_KIND = "deontic_core"
 
+# ── cross-sentence attachment (the Layer-2 cross-sentence gap closure) ─────────
+#
+# The intra-sentence attachment above can ONLY attach a qualifier to a deontic
+# core in its OWN sentence. A back-reference exception qualifier whose excepted
+# norm is stated in a DIFFERENT provision —
+#   "Sen estämättä, mitä 6 §:n 1 momentissa on säädetty, …"
+#   "Poiketen siitä mitä 8 §:n 2 momentissa on säädetty, …"
+# — carries no local deontic core (its matrix is the new rule, not the excepted
+# one), so it is tagged ``candidate``/``NO_CORE_IN_SENTENCE`` by the intra-sentence
+# pass. The PRINCIPLED cross-sentence target is the provision the back-reference
+# NAMES: the closed back-reference cue (``sen estämättä`` / ``poiketen siitä mitä``)
+# is followed by ``[siitä] mitä <provision-ref> on säädetään/säädetty`` — and that
+# provision reference is an INTERNAL ``reference_expr`` node the ReferenceLens
+# already minted (``cite_kind == "internal"``, ``target_provision_ref`` = the §/
+# momentti the excepted norm lives in, WITHIN this statute). Binding the exception
+# cue to that internal reference IS the cross-sentence attachment: it says "this
+# exception excepts the norm at provision §N".
+#
+# This is a STRICT SUPERSET of the intra-sentence behaviour — it fires ONLY for a
+# qualifier the intra-sentence pass would tag ``NO_CORE_IN_SENTENCE`` (no local
+# core), and NEVER alters an existing intra-sentence (resolved/ambiguous) edge.
+#
+# Surface-recoverability boundary (verified by corpus differential):
+#   * INTRA-statute back-reference (``cite_kind == "internal"``, non-empty
+#     ``target_provision_ref``) → resolvable: the excepted norm lives in THIS
+#     statute, so the provision pointer is a typed target in THIS graph.
+#   * CROSS-statute back-reference (``sen estämättä mitä osuuskuntalain 177 §:ssä
+#     säädetään``) → NOT resolvable here: the excepted norm lives in a DIFFERENT
+#     statute, not in this graph. Left ``candidate`` + a typed diagnostic.
+#   * NO back-reference provision at all → left ``candidate`` (the honest
+#     no-target case).
+#
+# The edge TARGET for a cross-sentence resolution is the internal ``reference_expr``
+# node (a provision pointer), not a ``deontic_core`` (the §N cores are not locatable
+# in the flattened whole-body coordinate space, which drops the <num> section
+# markers — so the reference node is the strongest recoverable typed target). The
+# ``attachment=`` reason distinguishes it from intra-sentence resolution.
+REFERENCE_EXPR_NODE_KIND = "reference_expr"
+
+#: The closed back-reference EXCEPTION cues whose construction names the excepted
+#: norm's provision (mirrors the production EXCEPTION markers that head a
+#: ``[siitä] mitä <ref> säädetään`` back-reference). Casefolded to match the
+#: ``Qualifier.cue`` surface.
+_BACKREF_EXCEPTION_CUES: frozenset[str] = frozenset(
+    {"sen estämättä", "poiketen siitä mitä"}
+)
+
+#: Window (chars) from the cue END to the internal reference START still read as
+#: the SAME back-reference construction. The reference must sit in the short
+#: ``mitä <ref> säädetään`` head right after the cue; a reference further than this
+#: belongs to the matrix (the new rule), not the excepted-norm back-reference.
+_BACKREF_MAX_GAP = 64
+
+#: Attachment reasons (ride in the edge payload's ``attachment`` field), naming HOW
+#: the qualifier was attached. The intra-sentence path carries the construction's
+#: own ``attachment_status``; the cross-sentence path names its principled signal.
+ATTACHMENT_INTRA_SENTENCE = "intra_sentence"
+ATTACHMENT_RESOLVED_BY_PROVISION_REF = "resolved_by_provision_ref"
+ATTACHMENT_AMBIGUOUS_BY_PROVISION_REF = "ambiguous_by_provision_ref"
+
 #: Map the qualifier kind to its NORM edge kind.
 _KIND_EDGE: dict[str, str] = {
     KIND_CONDITION: EDGE_CONDITION_ATTACHES,
@@ -137,6 +197,11 @@ _KIND_RULE: dict[str, str] = {
 NO_CORE_IN_SENTENCE = "no_deontic_core_in_sentence"
 NO_GRAPH_NODE_FOR_CUE = "no_exception_condition_cue_node_for_qualifier"
 NO_GRAPH_NODE_FOR_CORE = "no_deontic_core_node_for_attached_core"
+#: A back-reference exception cue with no LOCAL core whose excepted-norm provision
+#: lies in ANOTHER statute (``cite_kind != "internal"``) or whose back-reference
+#: names no provision at all — the cross-sentence target is not in THIS graph, so
+#: the qualifier stays candidate (never resolved cross-statute / never invented).
+NO_INTERNAL_PROVISION_REF = "no_internal_provision_reference_for_backref"
 
 
 @dataclass(frozen=True)
@@ -169,6 +234,31 @@ def _node_index_by_unit_kind(
     index: dict[str, list[tuple[str, SourceSpanRef]]] = {}
     for nid, node in nodes.items():
         if node.node_kind != kind:
+            continue
+        ref = node.source_ref
+        if ref is None:
+            continue
+        index.setdefault(ref.source_unit_id, []).append((nid, ref))
+    for unit_id in index:
+        index[unit_id].sort(key=lambda kv: (kv[1].char_start, kv[1].char_end, kv[0]))
+    return index
+
+
+def _internal_reference_index(
+    nodes: Mapping[str, SurfaceNode],
+) -> dict[str, list[tuple[str, SourceSpanRef]]]:
+    """Index INTERNAL ``reference_expr`` nodes by source unit, sorted by char_start.
+
+    The cross-sentence back-reference attachment targets: ``reference_expr`` nodes
+    whose ``cite_kind == "internal"`` (a provision in THIS statute). A cross-statute
+    reference is excluded here — its excepted norm lives in a different statute, not
+    in this graph, so it can never be a cross-sentence target (left candidate).
+    """
+    index: dict[str, list[tuple[str, SourceSpanRef]]] = {}
+    for nid, node in nodes.items():
+        if node.node_kind != REFERENCE_EXPR_NODE_KIND:
+            continue
+        if node.payload.get("cite_kind") != "internal":
             continue
         ref = node.source_ref
         if ref is None:
@@ -257,12 +347,18 @@ class ConditionAttachmentPass:
         self.unattached = []
         cue_index = _node_index_by_unit_kind(graph.nodes, CUE_NODE_KIND)
         core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+        # INTERNAL provision-reference nodes — the cross-sentence back-reference
+        # attachment targets (the §/momentti the excepted norm lives in, within
+        # THIS statute). Filtered to cite_kind == "internal" so a cross-statute
+        # back-reference is never resolved against this graph.
+        ref_index = _internal_reference_index(graph.nodes)
 
         seeds: list[SurfaceEdgeSeed] = []
         for unit in self.units:
             unit_id = unit.source_unit_id
             cue_nodes = cue_index.get(unit_id, [])
             core_nodes = core_index.get(unit_id, [])
+            ref_nodes = ref_index.get(unit_id, [])
             # Reuse the unit's populated token tape when present (the bundle sets
             # it); fall back to building one on demand. The tape view is typed
             # ``object | None`` on the unit, so narrow it before passing.
@@ -280,9 +376,13 @@ class ConditionAttachmentPass:
                     self._sentence_edges(
                         parse,
                         base=base,
+                        sent_start=sent.char_start,
+                        sent_end=sent.char_end,
                         unit_id=unit_id,
                         cue_nodes=cue_nodes,
                         core_nodes=core_nodes,
+                        ref_nodes=ref_nodes,
+                        graph=graph,
                     )
                 )
         return tuple(seeds)
@@ -292,9 +392,13 @@ class ConditionAttachmentPass:
         parse: ConditionExceptionParse,
         *,
         base: int,
+        sent_start: int,
+        sent_end: int,
         unit_id: str,
         cue_nodes: list[tuple[str, SourceSpanRef]],
         core_nodes: list[tuple[str, SourceSpanRef]],
+        ref_nodes: list[tuple[str, SourceSpanRef]],
+        graph: LegalSurfaceGraph,
     ) -> list[SurfaceEdgeSeed]:
         out: list[SurfaceEdgeSeed] = []
         for q in parse.qualifiers:
@@ -308,8 +412,24 @@ class ConditionAttachmentPass:
                 continue
 
             if q.attachment_status == ATTACH_CANDIDATE:
-                # No deontic core in the sentence → no asserted edge (tagged).
-                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_CORE_IN_SENTENCE)
+                # No deontic core in THIS sentence. Before giving up, try the
+                # CROSS-SENTENCE back-reference attachment: a back-reference
+                # exception cue ("sen estämättä mitä N §:ssä säädetään") names the
+                # excepted norm's provision, an INTERNAL reference_expr node. This
+                # is a STRICT ADDITION — it fires only here (the intra-sentence
+                # candidate case), never touching a resolved/ambiguous edge.
+                xsent = self._cross_sentence_edges(
+                    q,
+                    src_id=src_id,
+                    cue_abs_start=cue_abs_start,
+                    cue_abs_end=cue_abs_end,
+                    sent_start=sent_start,
+                    sent_end=sent_end,
+                    unit_id=unit_id,
+                    ref_nodes=ref_nodes,
+                    graph=graph,
+                )
+                out.extend(xsent)
                 continue
 
             core_idx_set = _core_candidate_indices(q, parse)
@@ -357,6 +477,108 @@ class ConditionAttachmentPass:
                 self._tag(
                     unit_id, q, cue_abs_start, cue_abs_end, NO_GRAPH_NODE_FOR_CORE
                 )
+        return out
+
+    def _cross_sentence_edges(
+        self,
+        q: Qualifier,
+        *,
+        src_id: str,
+        cue_abs_start: int,
+        cue_abs_end: int,
+        sent_start: int,
+        sent_end: int,
+        unit_id: str,
+        ref_nodes: list[tuple[str, SourceSpanRef]],
+        graph: LegalSurfaceGraph,
+    ) -> list[SurfaceEdgeSeed]:
+        """Cross-sentence attachment for a back-reference exception qualifier.
+
+        Fires ONLY for the intra-sentence ``candidate`` case (no local deontic
+        core) and ONLY for a closed back-reference EXCEPTION cue
+        (:data:`_BACKREF_EXCEPTION_CUES`). The cross-sentence target is the
+        provision the back-reference NAMES: an INTERNAL ``reference_expr`` node
+        (``cite_kind == "internal"``, non-empty ``target_provision_ref``) sitting in
+        the short ``mitä <ref> säädetään`` head right after the cue (within
+        :data:`_BACKREF_MAX_GAP`, in the SAME sentence). This binds the exception
+        to the §/momentti where the excepted norm lives in THIS statute.
+
+        candidate-not-asserted (never a silent pick, never a cross-statute guess):
+          * EXACTLY ONE internal reference in the window → ONE edge, status
+            ``"asserted"`` (``attachment=resolved_by_provision_ref``);
+          * SEVERAL (a coordinated back-reference, ``mitä 12 ja 17-20 §:ssä …``) →
+            ONE edge per reference, status ``"ambiguous"``, full candidate-reference
+            set in payload;
+          * NONE (cross-statute back-reference / no provision named) → NO edge; a
+            typed :data:`NO_INTERNAL_PROVISION_REF` diagnostic (left candidate).
+
+        Not a back-reference exception cue → the honest ``NO_CORE_IN_SENTENCE``
+        diagnostic (unchanged from the intra-sentence-only behaviour).
+        """
+        if q.cue not in _BACKREF_EXCEPTION_CUES or q.kind != KIND_EXCEPTION:
+            # Not a back-reference exception cue → no cross-sentence signal; keep
+            # the original intra-sentence candidate diagnostic.
+            self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_CORE_IN_SENTENCE)
+            return []
+
+        targets: list[tuple[str, SourceSpanRef, str]] = []
+        for nid, ref in ref_nodes:
+            # same sentence, forward of the cue, within the back-reference window.
+            if ref.char_start < cue_abs_end or ref.char_start >= sent_end:
+                continue
+            if ref.char_start - cue_abs_end > _BACKREF_MAX_GAP:
+                continue
+            provision = graph.nodes[nid].payload.get("target_provision_ref")
+            if not isinstance(provision, str) or not provision:
+                # internal ref node with no resolved provision target → not a
+                # usable cross-sentence target (never bind to an empty pointer).
+                continue
+            targets.append((nid, ref, provision))
+
+        if not targets:
+            # cross-statute back-reference (target not in this graph) or no
+            # provision named → left candidate, typed diagnostic. Never resolved
+            # cross-statute, never invented.
+            self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_INTERNAL_PROVISION_REF)
+            return []
+
+        targets.sort(key=lambda t: (t[1].char_start, t[1].char_end, t[0]))
+        ambiguous = len(targets) > 1
+        edge_status = "ambiguous" if ambiguous else "asserted"
+        attachment = (
+            ATTACHMENT_AMBIGUOUS_BY_PROVISION_REF
+            if ambiguous
+            else ATTACHMENT_RESOLVED_BY_PROVISION_REF
+        )
+        candidate_ref_spans = [[r.char_start, r.char_end] for _, r, _ in targets]
+        candidate_provisions = [p for _, _, p in targets]
+        out: list[SurfaceEdgeSeed] = []
+        for nid, ref, provision in targets:
+            payload: dict[str, object] = {
+                "qualifier_kind": q.kind,
+                "cue": q.cue,
+                "attachment": attachment,
+                "cue_span": [cue_abs_start, cue_abs_end],
+                "reference_span": [ref.char_start, ref.char_end],
+                "target_provision_ref": provision,
+                "source": "construction_cross_sentence_backref",
+                "experimental": True,
+            }
+            if ambiguous:
+                # full candidate set so a consumer sees this is one of several
+                # back-referenced provisions — never a silent pick of the nearest.
+                payload["candidate_reference_spans"] = candidate_ref_spans
+                payload["candidate_provisions"] = candidate_provisions
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=EDGE_EXCEPTION_EXCEPTS,
+                    src_local=src_id,
+                    dst_local=nid,
+                    rule_id=RULE_EXCEPTION,
+                    status=edge_status,
+                    payload=payload,
+                )
+            )
         return out
 
     def _candidate_payload(

@@ -30,9 +30,12 @@ from __future__ import annotations
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.graph_build import build_legal_surface_graph
 from lawvm.finland.legal_surface.norm_composition import (
+    ATTACHMENT_AMBIGUOUS_BY_PROVISION_REF,
+    ATTACHMENT_RESOLVED_BY_PROVISION_REF,
     EDGE_CONDITION_ATTACHES,
     EDGE_EXCEPTION_EXCEPTS,
     NO_CORE_IN_SENTENCE,
+    NO_INTERNAL_PROVISION_REF,
     ConditionAttachmentPass,
     condition_attachment_passes,
 )
@@ -244,7 +247,17 @@ def test_attachment_is_sentence_local() -> None:
         return -1
 
     graph = _build()
-    for edge in _norm_edges(graph):
+    # The INTRA-sentence attachment is sentence-local by construction. The
+    # cross-sentence back-reference pass (source ==
+    # construction_cross_sentence_backref) is DELIBERATELY cross-sentence (it
+    # targets a reference_expr in another provision, not a co-sentence core), so it
+    # is excluded here — its own gate is the test_cross_sentence_* tests below.
+    intra = [
+        e
+        for e in _norm_edges(graph)
+        if e.payload.get("source") == "construction_attachment"
+    ]
+    for edge in intra:
         cue_span = edge.payload["cue_span"]
         core_span = edge.payload["core_span"]
         cue_sent = _sentence_of(cue_span[0])
@@ -264,3 +277,168 @@ def test_pass_declares_its_kinds() -> None:
     assert set(pass_.emits_edge_kinds) == _NORM_KINDS
     assert "exception_condition_cue" in pass_.reads_node_kinds
     assert "deontic_core" in pass_.reads_node_kinds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CROSS-SENTENCE back-reference attachment (the Layer-2 cross-sentence gap)
+#
+# A back-reference EXCEPTION qualifier whose excepted norm is stated in a DIFFERENT
+# provision — "Sen estämättä, mitä N §:ssä on säädetty, …" / "Poiketen siitä mitä
+# N §:ssä on säädetty, …" — carries no LOCAL deontic core (its matrix is the new
+# rule, and the back-reference uses the non-finite "on säädetty", not a modal
+# core), so it would be left CANDIDATE by the intra-sentence pass. The principled
+# cross-sentence target is the INTERNAL provision reference the back-reference
+# names (the §/momentti the excepted norm lives in, within THIS statute). The pass
+# binds the exception cue to that reference_expr node.
+#
+# A multi-section statute exercising the three cross-sentence shapes:
+#   sec_2: a plain norm (the excepted norm, with a deontic core "voi").
+#   sec_5: a resolved back-reference exception → INTERNAL ref to § 2 (one target).
+#   sec_7: an AMBIGUOUS back-reference (mitä 2 §:ssä ja 5 §:ssä …) → two targets.
+#   sec_9: a back-reference to "muualla laissa" — NO specific provision → no
+#          internal ref → diagnostic, never an invented edge.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_XSENT_BACKREF_SOURCE = "construction_cross_sentence_backref"
+
+
+def _section(eid: str, num: str, *paragraphs: str) -> str:
+    body = "".join(f"<p>{p}</p>" for p in paragraphs)
+    return (
+        f'<section eId="{eid}"><num>{num}</num><content>{body}</content></section>'
+    )
+
+
+_XSENT_XML = (
+    f'<?xml version="1.0" encoding="UTF-8"?>'
+    f'<akomaNtoso xmlns="{_AKN}"><act><body>'
+    + _section("sec_2", "2 §", "Viranomainen voi myöntää luvan hakijalle.")
+    + _section(
+        "sec_5",
+        "5 §",
+        "Sen estämättä, mitä 2 §:ssä on säädetty, lupa myönnetään ehdoitta.",
+    )
+    + _section(
+        "sec_7",
+        "7 §",
+        "Poiketen siitä mitä 2 §:ssä ja 5 §:ssä on säädetty, asia raukeaa heti.",
+    )
+    + _section(
+        "sec_9",
+        "9 §",
+        "Sen estämättä, mitä muualla laissa on säädetty, asia raukeaa heti.",
+    )
+    + "</body></act></akomaNtoso>"
+).encode("utf-8")
+
+
+def _xsent_build():
+    return build_legal_surface_graph(_XSENT_XML, "888/2025")
+
+
+def _xsent_edges(graph):
+    return [
+        e
+        for e in graph.edges
+        if e.payload.get("source") == _XSENT_BACKREF_SOURCE
+    ]
+
+
+def test_cross_sentence_resolved_binds_exception_to_internal_provision() -> None:
+    graph = _xsent_build()
+    resolved = [
+        e
+        for e in _xsent_edges(graph)
+        if e.payload.get("attachment") == ATTACHMENT_RESOLVED_BY_PROVISION_REF
+    ]
+    assert resolved, "expected a resolved cross-sentence back-reference attachment"
+    for edge in resolved:
+        assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
+        assert edge.status == "asserted"
+        # source is the exception cue; target is the INTERNAL provision reference.
+        assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
+        assert graph.nodes[edge.dst].node_kind == "reference_expr"
+        assert graph.nodes[edge.dst].payload.get("cite_kind") == "internal"
+        # the resolved edge carries the named provision target (the § 2 norm).
+        assert edge.payload.get("target_provision_ref") == "888/2025/2"
+
+
+def test_cross_sentence_ambiguous_emits_full_set_not_a_pick() -> None:
+    graph = _xsent_build()
+    ambiguous = [
+        e
+        for e in _xsent_edges(graph)
+        if e.payload.get("attachment") == ATTACHMENT_AMBIGUOUS_BY_PROVISION_REF
+    ]
+    # the sec_7 "mitä 2 §:ssä ja 5 §:ssä on säädetty" names TWO provisions → two
+    # edges, each carrying the FULL candidate set (never a silent nearest pick).
+    assert len(ambiguous) >= 2, "expected one ambiguous edge per back-referenced provision"
+    targets = {e.payload.get("target_provision_ref") for e in ambiguous}
+    assert {"888/2025/2", "888/2025/5"} <= targets
+    for edge in ambiguous:
+        assert edge.status == "ambiguous"
+        assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
+        full_set = edge.payload.get("candidate_provisions")
+        assert full_set and len(full_set) >= 2, "ambiguous edge must carry full set"
+
+
+def test_cross_sentence_no_internal_ref_is_diagnostic_not_invented() -> None:
+    bundle = build_surface_bundle(_XSENT_XML, "888/2025")
+    graph = _xsent_build()
+    (pass_,) = condition_attachment_passes(bundle)
+    pass_.run(graph)
+    # sec_9 "mitä muualla laissa on säädetty" names no specific provision → a typed
+    # diagnostic, NEVER an invented edge.
+    diag = [u for u in pass_.unattached if u.reason == NO_INTERNAL_PROVISION_REF]
+    assert diag, "expected a NO_INTERNAL_PROVISION_REF diagnostic for sec_9"
+    # no cross-sentence edge was minted for the diagnosed cue.
+    for u in diag:
+        for edge in _xsent_edges(graph):
+            assert edge.payload.get("cue_span") != [u.cue_char_start, u.cue_char_end], (
+                "a diagnosed back-reference must NOT yield an asserted edge"
+            )
+
+
+def test_cross_sentence_edges_obey_the_firewall() -> None:
+    graph = _xsent_build()
+    edges = _xsent_edges(graph)
+    assert edges, "expected cross-sentence edges to exercise the firewall"
+    for edge in edges:
+        assert edge.surface_only is True
+        assert edge.replay_authorized is False
+        assert edge.status in ("asserted", "ambiguous")
+
+
+def test_cross_sentence_is_strict_superset_intra_unchanged() -> None:
+    # The cross-sentence pass is a STRICT ADDITION: a statute with NO back-reference
+    # exception (the intra-sentence-only _XML) must produce ZERO cross-sentence
+    # edges, and its intra-sentence edge set must be byte-identical with the pass.
+    intra_graph = _build()
+    assert not [
+        e
+        for e in intra_graph.edges
+        if e.payload.get("source") == _XSENT_BACKREF_SOURCE
+    ], "a statute with no back-reference must yield no cross-sentence edge"
+    # and the cross-sentence statute's intra-sentence edges are still the
+    # construction_attachment ones (the new path never relabels them).
+    xs_graph = _xsent_build()
+    for edge in xs_graph.edges:
+        if edge.edge_kind in _NORM_KINDS:
+            assert edge.payload.get("source") in (
+                "construction_attachment",
+                _XSENT_BACKREF_SOURCE,
+            )
+
+
+def test_cross_sentence_is_deterministic() -> None:
+    first = _xsent_build()
+    second = _xsent_build()
+
+    def _keys(graph):
+        return sorted(
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            for e in _xsent_edges(graph)
+        )
+
+    assert _keys(first) == _keys(second)
+    assert first.graph_id == second.graph_id
