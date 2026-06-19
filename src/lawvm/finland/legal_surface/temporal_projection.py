@@ -57,7 +57,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lawvm.finland.legal_surface.source_syntax_graph import SourceSyntaxGraph
+from lawvm.core.legal_surface_lens import (
+    SourceSurfaceBundle,
+    SurfaceNodeSeed,
+)
+from lawvm.finland.legal_surface.source_syntax_graph import (
+    SourceSyntaxGraph,
+    assemble_source_syntax_graph,
+)
 from lawvm.finland.legal_surface.temporal_parse import (
     ROLE_COMMENCEMENT,
     ROLE_VALIDITY,
@@ -261,6 +268,86 @@ def project_forest_temporal(
         )
     out.sort(key=lambda p: (p.char_start, p.char_end))
     return tuple(out)
+
+
+def _gated_temporal_segment_ids(forest: SourceSyntaxGraph) -> list[str]:
+    """The distinct structural segments the forest's temporal family gated, in order.
+
+    Mirrors :func:`project_forest_temporal`'s gate: each ``temporal_phrase`` leaf's
+    enclosing structural segment, deduplicated, span-ordered. This is the SET GATE
+    deciding which segments the shared-slice recognizer is re-run on.
+    """
+    seg_ids: list[str] = []
+    seen: set[str] = set()
+    for leaf_id in _temporal_gated_leaf_ids(forest):
+        seg_id = _enclosing_segment_id(forest, leaf_id)
+        if seg_id is None or seg_id in seen:
+            continue
+        seen.add(seg_id)
+        seg_ids.append(seg_id)
+    return seg_ids
+
+
+def project_forest_temporal_seeds(
+    bundle: SourceSurfaceBundle,
+) -> list[SurfaceNodeSeed]:
+    """Project the SHARED-CANONICAL ``temporal_expr`` node seeds FROM the cached forest.
+
+    THE PARTIAL PRODUCTION STRANGLE-FLIP (doc-6): the shared-canonical temporal
+    node slice the production :class:`TemporalLens` emits — the dated fixed-term-
+    expiry node (:data:`…lenses.temporal.FOREST_SHARED_TEMPORAL_KINDS`) — now comes
+    FROM the cached :class:`SourceSyntaxGraph` forest, not the whole-unit scan. For
+    each unit we assemble (or reuse) the cached forest, take its temporal-family-
+    owned ``temporal_phrase`` leaves' enclosing segments as the SET GATE, re-run the
+    H3 recognizer (:func:`recognize_temporal_exprs`) on each gated segment, keep
+    ONLY the shared-canonical kinds, and mint each through the SAME node-minting
+    authority the lens uses (:func:`…lenses.temporal.mint_temporal_expr_seed`) at
+    the segment's raw_text base offset.
+
+    PARTIAL by design: only the fixed-term-expiry node is flippable at the NODE
+    level. The dated-commencement DATE is carried by the recognizer in a
+    ``FIXED_DATE`` node, which is also the (lens-only) residual kind for a bare date
+    — so the commencement date cannot leave the residual scan without splitting a
+    residual kind. Every other temporal kind stays on the whole-unit scan; this
+    function emits ONLY the shared slice.
+
+    0-DELTA BY CONSTRUCTION vs the whole-unit scan
+    ==============================================
+    The forest's temporal ownership is computed from the SAME temporal grammar's
+    own construction parse over the SAME structural segmentation the assembler
+    uses, so a segment carries forest temporal ownership iff it contains a temporal
+    cue. Re-running the H3 recognizer on the gated segment reproduces the
+    fixed-term-expiry exprs the whole-unit scan finds at the SAME raw_text-absolute
+    spans (the recognizer is span-local and segment boundaries are sentence-aligned,
+    so a fixed-term-expiry never straddles a segment boundary). Gate-then-reparse
+    therefore reproduces the scan's fixed-term-expiry node set node-identically,
+    proven 0-delta corpus-wide (``.tmp/temporal_flip_diff``). Surface-only; reads
+    the forest + the body; authorises no replay.
+    """
+    # Lazy import: the lens imports this module, so a module-top import would
+    # cycle. This keeps the seed-minting authority shared without a cycle.
+    from lawvm.finland.legal_surface.lenses.temporal import (
+        FOREST_SHARED_TEMPORAL_KINDS,
+        mint_temporal_expr_seed,
+    )
+
+    seeds: list[SurfaceNodeSeed] = []
+    for unit in bundle.units:
+        forest = assemble_source_syntax_graph(
+            subject=bundle.subject,
+            source_units=(),
+            statute_id=unit.source_unit_id,
+            body=unit.raw_text,
+        )
+        for seg_id in _gated_temporal_segment_ids(forest):
+            seg = forest.syntax_nodes[seg_id]
+            seg_text = unit.raw_text[seg.char_start : seg.char_end]
+            for expr in recognize_temporal_exprs(seg_text):
+                if expr.kind in FOREST_SHARED_TEMPORAL_KINDS:
+                    seeds.append(
+                        mint_temporal_expr_seed(unit, expr, base=seg.char_start)
+                    )
+    return seeds
 
 
 def forest_temporal_keys(

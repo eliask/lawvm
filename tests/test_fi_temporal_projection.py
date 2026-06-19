@@ -201,3 +201,118 @@ def test_projected_temporal_anchors_to_enclosing_segment() -> None:
     assert p.segment_node_id in forest.syntax_nodes
     assert "tulee voimaan" in body[p.char_start : p.char_end]
     assert p.clauses
+
+
+# ── the PRODUCTION node-seed flip projection (doc-6 partial strangle-flip) ────
+
+
+_AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+
+
+def _xml(*paras: str) -> bytes:
+    body = "\n".join(f"      <p>{p}</p>" for p in paras)
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<akomaNtoso xmlns="{_AKN}"><act><body>\n'
+        f'  <section eId="sec_1"><num>1 §</num><content>\n{body}\n'
+        f"  </content></section>\n"
+        f"</body></act></akomaNtoso>\n"
+    ).encode("utf-8")
+
+
+def _seed_fp(seed) -> tuple:
+    """A node-identity fingerprint of a temporal_expr seed (span/discr/payload)."""
+    ref = seed.source_ref
+    payload = tuple(
+        sorted(
+            (k, tuple(v) if isinstance(v, list) else v)
+            for k, v in dict(seed.payload).items()
+        )
+    )
+    return (
+        seed.node_kind,
+        seed.local_discriminator,
+        seed.rule_id,
+        seed.status,
+        seed.authority_role,
+        None if ref is None else (ref.char_start, ref.char_end, ref.text_hash),
+        payload,
+    )
+
+
+def test_forest_temporal_seed_projection_emits_only_shared_slice() -> None:
+    """``project_forest_temporal_seeds`` emits ONLY the shared fixed-term-expiry slice.
+
+    A body carrying a dated commencement, a dated fixed-term expiry, and a bare
+    date: the forest projection emits the fixed-term-expiry node (the flippable
+    shared slice) and NOTHING else — the commencement cue / its FIXED_DATE date /
+    bare dates are residual kinds the projection does not own.
+    """
+    from lawvm.finland.legal_surface.bundle import build_surface_bundle
+    from lawvm.finland.legal_surface.lenses.temporal import (
+        FOREST_SHARED_TEMPORAL_KINDS,
+    )
+    from lawvm.finland.legal_surface.temporal_projection import (
+        project_forest_temporal_seeds,
+    )
+
+    bundle = build_surface_bundle(
+        _xml(
+            "Tämä laki tulee voimaan 1.1.2027.",
+            "Tämä laki on voimassa 31 päivään joulukuuta 2030 saakka.",
+        ),
+        "2026/710",
+    )
+    seeds = project_forest_temporal_seeds(bundle)
+    assert seeds, "expected the fixed-term-expiry slice from the forest projection"
+    kinds = {s.payload["temporal_kind"] for s in seeds}
+    assert kinds == {k.value for k in FOREST_SHARED_TEMPORAL_KINDS}
+    assert all(s.payload["temporal_kind"] == "fixed_term_expiry" for s in seeds)
+
+
+def test_production_temporal_facts_derive_from_forest_and_total_is_identical() -> None:
+    """The partial flip happened (shared slice from the forest) AND the total is 0-delta.
+
+    (1) The production lens's fixed-term-expiry node(s) are minted by the cached
+        forest projection (``project_forest_temporal_seeds``);
+    (2) the TOTAL production node set is node-identical (span / discriminator /
+        payload) to the pre-flip whole-unit scan, kept as the golden reference
+        (``temporal_seeds_for_unit``) — the 0-delta flip gate.
+    """
+    from lawvm.core.legal_surface_lens import SurfaceAnalysisContext
+    from lawvm.finland.legal_surface.bundle import build_surface_bundle
+    from lawvm.finland.legal_surface.lenses.temporal import (
+        TemporalLens,
+        temporal_seeds_for_unit,
+    )
+    from lawvm.finland.legal_surface.temporal_projection import (
+        project_forest_temporal_seeds,
+    )
+
+    bundle = build_surface_bundle(
+        _xml(
+            "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027.",
+            "Tämä laki on voimassa 31 päivään joulukuuta 2030 saakka.",
+            "Hakemus on tehtävä 1.6.2028.",
+            "Tämä asetus on voimassa 31.12.2029 saakka.",
+        ),
+        "2026/720",
+    )
+
+    # (1) the shared slice is non-empty and comes from the forest projection.
+    forest_slice = project_forest_temporal_seeds(bundle)
+    assert forest_slice, "expected fixed-term-expiry nodes from the forest"
+    assert {s.payload["temporal_kind"] for s in forest_slice} == {"fixed_term_expiry"}
+
+    # (2) the production lens's TOTAL node set == the golden-reference whole-unit
+    #     scan (the shared slice routed through the forest + residuals from scan).
+    lens = TemporalLens()
+    prod_seeds = lens.analyze(bundle, context=SurfaceAnalysisContext()).node_seeds
+    golden = [s for u in bundle.units for s in temporal_seeds_for_unit(u)]
+    assert {_seed_fp(s) for s in prod_seeds} == {_seed_fp(s) for s in golden}
+    assert len(prod_seeds) == len(golden)
+
+    # the forest slice's seeds are PRESENT in the production set (the flip routed
+    # the shared slice through the forest, byte-identically).
+    prod_fps = {_seed_fp(s) for s in prod_seeds}
+    assert {_seed_fp(s) for s in forest_slice} <= prod_fps
