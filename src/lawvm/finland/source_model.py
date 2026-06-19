@@ -724,9 +724,9 @@ class AmendmentSourceModel:
         """Return cached typed payload lookup for a source-body target."""
         key = SourceUnitLookup(
             unit_kind=str(target_unit_kind or ""),
-            label=target_norm,
-            chapter=target_chapter,
-            part=target_part,
+            label=_norm_num_token(target_norm),
+            chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
+            part=_norm_num_token(target_part or "") if target_part else None,
         )
         if key not in self._payload_ir_cache:
             body_lookup = self.lookup_body_unit(
