@@ -266,13 +266,40 @@ def _maybe_apply_body_chapter_insert_correction(
         and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
         is not None
     )
+    body_chapter_is_letter_suffix = (
+        body_chapter is not None
+        and re.fullmatch(r"\d+[a-z]+", body_chapter, re.I) is not None
+    )
+    group_targets_whole_section = any(
+        op.target_unit_kind == "section"
+        and _norm_num_token(op.target_section or "") == request.target_norm
+        and op.target_chapter == request.target_chapter
+        and not op.target_paragraph
+        and not op.target_item
+        and not op.target_special
+        for op in request.group_ops
+    )
     source_owned_inserted_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
-        and (body_chapter_is_subchapter or carry_forward_scoped or not explicit_chapter_scoped)
+        and (
+            body_chapter_is_subchapter
+            or (not explicit_chapter_scoped and not carry_forward_scoped)
+            or (
+                carry_forward_scoped
+                and not body_chapter_is_letter_suffix
+            )
+        )
         and request.source_model.body_has_real_chapter_container(body_chapter)
     )
-    if body_chapter is not None and (not request.target_chapter or carry_forward_scoped):
+    if body_chapter is not None and (
+        group_targets_whole_section
+        and (
+            not request.target_chapter
+            or body_chapter_is_subchapter
+            or (not explicit_chapter_scoped and body_chapter == request.target_chapter)
+        )
+    ):
         sibling_consensus_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(
             section_norm=request.target_norm,
             body_chapter=body_chapter,
@@ -303,13 +330,13 @@ def _maybe_apply_body_chapter_insert_correction(
         apply_correction = True
     elif not request.target_chapter:
         apply_correction = request.master.find("chapter", resolved_body_chapter) is not None
+    elif source_owned_inserted_chapter_scope:
+        apply_correction = True
     elif carry_forward_scoped:
         apply_correction = (
             re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]", resolved_body_chapter, re.I)
             is not None
         )
-    elif source_owned_inserted_chapter_scope:
-        apply_correction = True
     if not apply_correction:
         return PhaseResult(output=result)
     corrected = dc_replace(
@@ -482,16 +509,29 @@ def _maybe_retarget_live_section(
     request: CompileGroupScopeRecoveryRequest,
     result: CompileGroupScopeRecoveryResult,
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
+    all_whole_section_inserts = all(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and not op.target_paragraph
+        and not op.target_item
+        and not op.target_special
+        for op in request.group_ops
+    )
     if (
         request.target_unit_kind != "section"
         or not (request.target_chapter or request.target_part)
-        or all(op.op_type == "INSERT" for op in request.group_ops)
+        or all_whole_section_inserts
     ):
         return PhaseResult(output=result)
     scoped_path = request.master.find_section_path(
         request.target_norm,
         request.target_chapter,
         request.target_part,
+    )
+    authorized_retarget_scope_source = (
+        allow_unscoped_live_section_retarget(request.group_ops)
+        if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels
+        else None
     )
     if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels:
         if request.target_chapter:
@@ -500,10 +540,13 @@ def _maybe_retarget_live_section(
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
             )
-            if source_body_chapter == request.target_chapter:
+            if (
+                source_body_chapter == request.target_chapter
+                and authorized_retarget_scope_source is None
+            ):
                 scoped_path = ()
     retarget_scope_source = (
-        allow_unscoped_live_section_retarget(request.group_ops)
+        authorized_retarget_scope_source
         if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels
         else None
     )

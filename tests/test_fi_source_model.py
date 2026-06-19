@@ -152,6 +152,81 @@ def test_source_model_body_lookup_returns_typed_verdicts() -> None:
     assert missing.candidates == ()
 
 
+def test_source_model_has_source_node_uses_typed_body_lookup() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter><num>1 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+              <chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert model.has_source_node("section", "5")
+    assert model.has_source_node("section", "5", target_chapter="2")
+    assert not model.has_source_node("section", "6")
+    assert model.has_source_node("chapter", "1")
+    assert not model.has_source_node("chapter", "3")
+
+
+def test_source_model_has_source_node_preserves_single_unlabeled_section_payload() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section><content><p>Unnumbered payload.</p></content></section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert model.has_single_unlabeled_section_payload()
+    assert model.has_source_node("section", "5")
+
+
+def test_source_model_has_source_node_rejects_multiple_or_unusable_unlabeled_sections() -> None:
+    two_unlabeled = AmendmentSourceModel.from_tree(
+        etree.fromstring(
+            b"""
+            <akomaNtoso>
+              <act>
+                <body>
+                  <section><content><p>One.</p></content></section>
+                  <section><content><p>Two.</p></content></section>
+                </body>
+              </act>
+            </akomaNtoso>
+            """
+        )
+    )
+    unusable_num = AmendmentSourceModel.from_tree(
+        etree.fromstring(
+            b"""
+            <akomaNtoso>
+              <act>
+                <body>
+                  <section><num>ei pykala</num><content><p>Text.</p></content></section>
+                </body>
+              </act>
+            </akomaNtoso>
+            """
+        )
+    )
+
+    assert not two_unlabeled.has_single_unlabeled_section_payload()
+    assert not two_unlabeled.has_source_node("section", "5")
+    assert not unusable_num.has_single_unlabeled_section_payload()
+    assert not unusable_num.has_source_node("section", "5")
+
+
 def test_source_model_scoped_body_chapter_requires_unique_inventory_match() -> None:
     tree = etree.fromstring(
         b"""

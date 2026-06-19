@@ -302,6 +302,29 @@ class AmendmentSourceModel:
             target_part=target_part,
         )
 
+    def has_single_unlabeled_section_payload(self) -> bool:
+        """Return True for the legacy single unlabeled section payload fact.
+
+        This preserves the old source-node fallback as a typed model fact:
+        if the body contains exactly one section candidate and that candidate
+        has no usable number, constraints should treat the body as having a
+        payload rather than rejecting the operation as a cross-reference.
+        """
+        ignored_units: list[CoverageIgnoredUnit] = []
+        coverage_units = self.body_coverage_units(ignored_units_out=ignored_units)
+        labeled_section_count = sum(1 for unit in coverage_units if unit.kind == "section")
+        ignored_section_units = tuple(
+            unit
+            for unit in ignored_units
+            if unit.unit_kind == "section"
+            and unit.reason in {"missing_num", "unusable_num", "pseudo_chapter_marker_unusable"}
+        )
+        return (
+            labeled_section_count == 0
+            and len(ignored_section_units) == 1
+            and ignored_section_units[0].reason == "missing_num"
+        )
+
     def find_xml_node(
         self,
         target_unit_kind: TargetUnitKind | str,
@@ -334,15 +357,15 @@ class AmendmentSourceModel:
         target_part: Optional[str] = None,
     ) -> bool:
         """Return whether the source body contains the normalized target."""
-        return (
-            self.find_xml_node(
-                target_unit_kind,
-                target_norm,
-                target_chapter,
-                target_part,
-            )
-            is not None
+        lookup = self.lookup_body_unit(
+            str(target_unit_kind or ""),
+            target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
         )
+        if lookup.status != "missing":
+            return True
+        return str(target_unit_kind or "") == "section" and self.has_single_unlabeled_section_payload()
 
     def find_payload_ir(
         self,

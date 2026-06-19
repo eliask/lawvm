@@ -440,6 +440,18 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
         if target_live_path is not None:
             return None
 
+        if is_letter_suffix_section:
+            stem_live_path = master.find_section_path(str(target_num), None, body_part)
+            if stem_live_path is not None:
+                stem_live_part = next((label for kind, label in stem_live_path if kind == "part"), None)
+                stem_live_chapter = next((label for kind, label in stem_live_path if kind == "chapter"), None)
+                if (
+                    stem_live_chapter
+                    and stem_live_chapter != body_chapter
+                    and stem_live_part == body_part
+                ):
+                    return stem_live_part, stem_live_chapter
+
         close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
         body_chapter_corroborated = False
         for sibling in parent.findall("./{*}section"):
