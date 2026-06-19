@@ -8,6 +8,7 @@ walk and reinterpret the same XML tree.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, cast
 
@@ -22,7 +23,9 @@ from lawvm.finland.constraints import _find_muutos_node_uncached
 
 if TYPE_CHECKING:
     from lawvm.finland.amendment_chapter_precreate import PrecreatedChaptersResult
+    from lawvm.finland.ops import AmendmentOp
     from lawvm.finland.statute import ReplayState
+    from lawvm.finland.uncovered_recovery_context import UncoveredRecoveryContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,4 +181,48 @@ class AmendmentSourceModel:
             state,
             muutos_body,
             amendment_id,
+        )
+
+    def preamble_text(self) -> str:
+        """Return normalized source preamble text for this amendment."""
+        johto_el = self.muutos_tree.find(".//{*}preamble")
+        if johto_el is None:
+            return ""
+        return etree.tostring(johto_el, method="text", encoding="unicode")
+
+    def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
+        """Whether section/chapter body recovery is content-authorized."""
+        if any(
+            op.op_type in ("REPLACE", "INSERT")
+            and op.target_unit_kind == "section"
+            and op.target_special is None
+            for op in ops
+        ):
+            return True
+        if any(
+            op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter"
+            for op in ops
+        ):
+            return True
+        return bool(
+            re.search(
+                r"\bmuutetaan\b|\blisätään\b",
+                self.preamble_text(),
+                re.IGNORECASE,
+            )
+        )
+
+    def build_uncovered_recovery_context(
+        self,
+        *,
+        ops: list["AmendmentOp"],
+        new_chapter_labels: set[str] | None,
+    ) -> "UncoveredRecoveryContext":
+        """Build uncovered-recovery context through the source-model adapter."""
+        from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
+
+        return build_uncovered_recovery_context(
+            muutos_tree=self.muutos_tree,
+            ops=ops,
+            new_chapter_labels=new_chapter_labels,
         )

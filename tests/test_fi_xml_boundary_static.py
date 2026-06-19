@@ -34,3 +34,13 @@ def test_finland_body_coverage_payload_refs_are_typed_not_xml_handles() -> None:
     assert "payload_ref=child" not in source
     assert "payload_ref=muutos_tree" not in source
     assert "BodyCoveragePayloadRef(" in source
+
+
+def test_uncovered_recovery_prepare_uses_source_model_not_xml_root() -> None:
+    source = _source("src/lawvm/finland/uncovered_recovery_prepare.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "source_model.muutos_tree" not in source
+    assert "build_uncovered_recovery_context,\n" not in source
+    assert "source_model.build_uncovered_recovery_context(" in source
+    assert "has_uncovered_recovery_content_ops(" in source

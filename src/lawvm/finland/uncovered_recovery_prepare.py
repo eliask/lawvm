@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Dict, List, Optional, cast
-
-import lxml.etree as etree
 
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageRejectedClaim, CoverageReport
 from lawvm.core.phase_result import Finding
@@ -35,7 +32,6 @@ from lawvm.finland.restructure_plan import (
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.uncovered_recovery_context import (
     UncoveredRecoveryContext,
-    build_uncovered_recovery_context,
 )
 from lawvm.finland.uncovered_recovery_findings import (
     CoverageIgnoredUnitFindingRequest,
@@ -94,7 +90,6 @@ def prepare_uncovered_body_recovery(
     """Run coverage, body-pairing, restructure, and scope preparation."""
     ops = request.ops
     source_model = request.source_model
-    muutos_tree = source_model.muutos_tree
     statute_id = request.statute_id
     amendment_id = request.amendment_id
     findings_out = request.findings_out
@@ -155,8 +150,7 @@ def prepare_uncovered_body_recovery(
             findings_out=findings_out,
         )
 
-    context = build_uncovered_recovery_context(
-        muutos_tree=muutos_tree,
+    context = source_model.build_uncovered_recovery_context(
         ops=ops,
         new_chapter_labels=request.new_chapter_labels,
     )
@@ -169,7 +163,7 @@ def prepare_uncovered_body_recovery(
         cov_report=cov_report,
         recovery_guards=recovery_guards,
         body_pairing_assignments=body_pairing_assignments,
-        has_content_ops=_compute_has_content_ops(ops, muutos_tree),
+        has_content_ops=source_model.has_uncovered_recovery_content_ops(ops),
         context=context,
         has_body=has_body,
         restructure_plan=restructure_plan,
@@ -199,25 +193,6 @@ def _build_peg_covered_sets(
                     )
                 )
     return covered_labels
-
-
-def _compute_has_content_ops(ops: List[AmendmentOp], muutos_tree: etree._Element) -> bool:
-    """Whether REPLACE/INSERT body recovery is permitted for this amendment."""
-    if any(
-        op.op_type in ("REPLACE", "INSERT")
-        and op.target_unit_kind == "section"
-        and op.target_special is None
-        for op in ops
-    ):
-        return True
-    if any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter" for op in ops):
-        return True
-    johto_el = muutos_tree.find(".//{*}preamble")
-    if johto_el is not None:
-        johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
-        if re.search(r"\bmuutetaan\b|\blisätään\b", johto_text, re.IGNORECASE):
-            return True
-    return False
 
 
 def _emit_coverage_analysis_findings(

@@ -7,6 +7,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.body_coverage import extract_body_coverage
 from lawvm.finland.body_pairing import build_observed_body_inventory
+from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
@@ -150,3 +151,38 @@ def test_source_model_precreate_chapters_returns_none_without_body() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/5")
 
     assert model.pre_create_amendment_chapters(state, "2000/5") is None
+
+
+def test_source_model_preamble_text_and_content_authorization() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <preamble><p>lis\xc3\xa4t\xc3\xa4\xc3\xa4n lakiin uusi 4 \xc2\xa7</p></preamble>
+            <body/>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/6")
+
+    assert "lisätään" in model.preamble_text()
+    assert model.has_uncovered_recovery_content_ops([])
+
+
+def test_source_model_builds_uncovered_recovery_context() -> None:
+    tree = etree.fromstring(b"<akomaNtoso><act><body/></act></akomaNtoso>")
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/7")
+    op = AmendmentOp(
+        op_id="insert_4",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="4",
+    )
+
+    context = model.build_uncovered_recovery_context(
+        ops=[op],
+        new_chapter_labels={"2"},
+    )
+
+    assert "2" in context.owned_chapter_labels
