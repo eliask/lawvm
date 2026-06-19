@@ -2691,6 +2691,149 @@ def test_1986_508_replay_keeps_1996_755_body_only_amendment_after_precompile_sel
     ]
 
 
+def test_act_wide_body_section_replace_formula_uses_body_section_witness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <hcontainer name="statuteProvisionsWrapper">
+              <section eId="sec_3">
+                <num>3 §</num>
+                <heading>Changed section</heading>
+                <hcontainer name="omission"/>
+                <subsection>
+                  <intro><p>Changed text.</p></intro>
+                  <paragraph><content><p>More changed text.</p></content></paragraph>
+                  <hcontainer name="omission"/>
+                </subsection>
+              </section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Old first."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Old second."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Changed text before."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="More changed text"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
+    monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
+    monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto="Muutetaan testiasetus (1/2020), sellaisena kuin se on asetuksessa 2/2021, seuraavasti:",
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2026/1",
+        source_title="Asetus testiasetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="2020/1",
+        strict_profile=None,
+    )
+
+    assert [(op.op_type, op.target_section, op.target_paragraph, op.target_unit_kind) for op in phase2.output] == [
+        ("REPLACE", "3", 3, "section"),
+        ("REPLACE", "3", 4, "section"),
+    ]
+    assert {op.witness_rule_id for op in phase2.output} == {"fi.act_wide_body_section_replace"}
+    assert all("extraction_act_wide_body_section_replace" in op.extraction_provenance_tags for op in phase2.output)
+    findings = [
+        finding
+        for finding in phase2.findings()
+        if finding.kind == "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA"
+    ]
+    assert len(findings) == 2
+    assert {finding.detail["target_section"] for finding in findings} == {"3"}
+    assert {finding.detail["target_paragraph"] for finding in findings} == {3, 4}
+
+    strict_phase2 = frontend_compile.normalize_and_compile_ops(
+        johto="Muutetaan testiasetus (1/2020), sellaisena kuin se on asetuksessa 2/2021, seuraavasti:",
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2026/1",
+        source_title="Asetus testiasetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="2020/1",
+        strict_profile=default_finland_strict_profile(),
+    )
+    assert strict_phase2.output == []
+    reasons = strict_fail_reasons_from_finding_ledger(
+        default_finland_strict_profile(),
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=strict_phase2.findings(),
+    )
+    assert "ELAB.STRICT_REJECTED_OPERATION" in reasons
+
+
+def test_2023_608_2026_159_act_wide_body_section_replace_regression() -> None:
+    before = replay_xml(
+        "2023/608",
+        mode="official_consolidation",
+        stop_before="2026/159",
+        quiet=True,
+        build_full_products=False,
+    )
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2026/159")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        amendment_id="2026/159",
+        source_title=(
+            "Maa- ja metsätalousministeriön asetus maatalouden investointien "
+            "hyväksyttävistä yksikkökustannuksista annetun maa- ja "
+            "metsätalousministeriön asetuksen muuttamisesta"
+        ),
+        used_sec1_fallback=False,
+        parent_id="2023/608",
+        strict_profile=None,
+    )
+
+    assert [(op.op_type, op.target_section, op.target_paragraph) for op in phase2.output] == [
+        ("REPLACE", "3", 3),
+        ("REPLACE", "3", 4),
+    ]
+    assert any(
+        finding.kind == "PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA"
+        and finding.detail.get("target_section") == "3"
+        and finding.detail.get("target_paragraph") == 3
+        for finding in phase2.findings()
+    )
+
+
 def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_momentti_target() -> None:
     before = pinned_replay("1974/16", stop_before="1980/1037", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()

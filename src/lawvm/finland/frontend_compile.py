@@ -24,6 +24,7 @@ import logging
 import re
 from dataclasses import dataclass, replace as dc_replace
 from datetime import date
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, FrozenSet, List, Optional
 
 import lxml.etree as etree
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.compile_result import StrictProfile
@@ -117,6 +119,7 @@ FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID = "fi.fallback_extraction_recovery"
 FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = (
     "fi.historical_top_level_kohta_as_subsection"
 )
+FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID = "fi.act_wide_body_section_replace"
 _PARENTHESIZED_LEADING_LABEL_RE = re.compile(r"^\s*\((\d+(?:\s*[a-z])?)\)")
 _POSTPOSED_KOHTA_LABELS_RE = re.compile(
     r"\bkohd(?:an|at|ien)\s+([0-9a-zA-Z\s,–—\-]+)",
@@ -2810,6 +2813,72 @@ def _section_direct_payload_paragraph_count(
     return count
 
 
+def _xml_text(element: "etree._Element") -> str:
+    return _WHITESPACE_RE.sub(" ", etree.tostring(element, method="text", encoding="unicode")).strip()
+
+
+def _act_wide_sparse_subsection_text_blocks(sec: "etree._Element") -> tuple[str, ...]:
+    """Return sparse unnumbered subsection blocks carried by one body section.
+
+    This recognizes a narrow AKN shape used by act-wide ``muutetaan ...
+    seuraavasti`` amendments: the body section has a direct leading omission and
+    one unnumbered subsection whose intro/paragraph children carry consecutive
+    changed live moments, with an omission marker preserving the tail.
+    """
+    if not _section_has_direct_omission(sec):
+        return ()
+    subsections = [child for child in sec if _direct_child_localname(child) == "subsection"]
+    if len(subsections) != 1:
+        return ()
+    subsection = subsections[0]
+    blocks: list[str] = []
+    saw_omission = False
+    for child in subsection:
+        tag = _direct_child_localname(child)
+        if tag == "hcontainer" and (child.get("name") or "").strip() == "omission":
+            saw_omission = True
+            continue
+        if tag in {"intro", "paragraph", "content", "p"}:
+            text = _xml_text(child)
+            if text:
+                blocks.append(text)
+    if not saw_omission or len(blocks) < 2:
+        return ()
+    return tuple(blocks)
+
+
+def _unique_live_subsection_window_for_text_blocks(
+    live_section: IRNode,
+    blocks: tuple[str, ...],
+) -> tuple[int, ...]:
+    live_subsections = [
+        child
+        for child in live_section.children
+        if child.kind is IRNodeKind.SUBSECTION and str(child.label or "").isdigit()
+    ]
+    if not blocks or len(blocks) > len(live_subsections):
+        return ()
+
+    matches: list[tuple[float, tuple[int, ...]]] = []
+    for start in range(0, len(live_subsections) - len(blocks) + 1):
+        window = live_subsections[start : start + len(blocks)]
+        scores = [
+            SequenceMatcher(
+                None,
+                block,
+                _WHITESPACE_RE.sub(" ", irnode_to_text(live_subsection)).strip(),
+            ).ratio()
+            for block, live_subsection in zip(blocks, window, strict=True)
+        ]
+        if all(score >= 0.70 for score in scores):
+            labels = tuple(int(str(live_subsection.label)) for live_subsection in window)
+            matches.append((sum(scores) / len(scores), labels))
+
+    if len(matches) != 1:
+        return ()
+    return matches[0][1]
+
+
 def _next_integer_subsection_label(section: IRNode) -> int | None:
     labels: list[int] = []
     for child in section.children:
@@ -3072,6 +3141,102 @@ def _extract_ceremonial_body_only_ops_fallback(
             )
 
     return _dedupe_fallback_ops_ir(ops)
+
+
+def _extract_act_wide_body_section_replace_ops_fallback(
+    johto: str,
+    source_title: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState",
+) -> "list[AmendmentOp]":
+    """Recover body-labelled section replacements from act-wide change formulas.
+
+    Some Finnish amendment regulations say only that the named act/regulation is
+    changed ``seuraavasti`` and leave the concrete provision labels to the
+    body.  In that bounded shape the body section labels are source-owned target
+    evidence.  This recovery deliberately refuses formulas that already name a
+    section, chapter, part, or appendix target in the preamble.
+    """
+    cleaned_johto = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
+    cleaned_title = _WHITESPACE_RE.sub(" ", source_title or "").strip().lower()
+    if "muutetaan" not in cleaned_johto or "seuraavasti" not in cleaned_johto:
+        return []
+    if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
+        return []
+    if re.search(r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b", cleaned_johto):
+        return []
+    if muutos_tree.find(".//{*}chapter") is not None or muutos_tree.find(".//{*}part") is not None:
+        return []
+
+    ops: list[AmendmentOp] = []
+    seen: set[str] = set()
+    for sec, _orphan_subsections in _body_section_groups(muutos_tree):
+        section_label = _section_label_from_xml(sec)
+        if not section_label or section_label in seen:
+            return []
+        live_section = master.find_section(section_label)
+        if live_section is None:
+            return []
+        seen.add(section_label)
+        sparse_blocks = _act_wide_sparse_subsection_text_blocks(sec)
+        sparse_targets = _unique_live_subsection_window_for_text_blocks(live_section, sparse_blocks)
+        if sparse_blocks and not sparse_targets:
+            return []
+        if sparse_targets:
+            for target_paragraph in sparse_targets:
+                ops.append(
+                    AmendmentOp(
+                        op_id="",
+                        op_type="REPLACE",
+                        target_section=section_label,
+                        target_paragraph=target_paragraph,
+                        target_unit_kind="section",
+                    )
+                )
+            continue
+        ops.append(
+            AmendmentOp(
+                op_id="",
+                op_type="REPLACE",
+                target_section=section_label,
+                target_unit_kind="section",
+            )
+        )
+    return _dedupe_fallback_ops_ir(ops)
+
+
+def _act_wide_body_section_replace_findings(
+    ops: "list[AmendmentOp]",
+    *,
+    amendment_id: str,
+    johto: str,
+) -> "list[Finding]":
+    findings: list[Finding] = []
+    if not ops:
+        return findings
+    for op in ops:
+        findings.append(
+            Finding(
+                kind="PARSE.BODY_SECTION_REPLACE_FROM_ACT_WIDE_FORMULA",
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": (
+                        "Act-wide muutetaan formula supplied no provision target; "
+                        "a labelled body section already present in live state was "
+                        "used as the source-owned replacement target."
+                    ),
+                    "rule_id": FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID,
+                    "description": op.description(),
+                    "target_section": op.target_section or "",
+                    "target_paragraph": op.target_paragraph,
+                    "johto_preview": _WHITESPACE_RE.sub(" ", johto or "").strip()[:240],
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -3619,6 +3784,51 @@ def normalize_and_compile_ops(
                     _strict_rejected_op_findings(
                         ceremonial_body_ops,
                         source="_extract_ceremonial_body_only_ops_fallback",
+                    )
+                )
+
+    if not ops:
+        act_wide_body_replace_ops = _extract_act_wide_body_section_replace_ops_fallback(
+            johto,
+            source_title,
+            muutos_tree,
+            master,
+        )
+        if act_wide_body_replace_ops:
+            if _allows_fallback:
+                logger.debug(
+                    "  %s act_wide_body_section_replace_ops: %s",
+                    amendment_id,
+                    [op.description() for op in act_wide_body_replace_ops],
+                )
+                ops = _enrich_ops_from_amendment_tree(
+                    act_wide_body_replace_ops,
+                    amendment_id,
+                    muutos_tree,
+                    master,
+                    johto=johto,
+                    base_ir=base_ir,
+                    parent_id=parent_id or "",
+                    metadata=tree_metadata,
+                )
+                for op in ops:
+                    op.fallback_provenance = True
+                    op.witness_rule_id = FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID
+                    op.extraction_provenance_tags = tuple(
+                        dict.fromkeys((*op.extraction_provenance_tags, "extraction_act_wide_body_section_replace"))
+                    )
+                frontend_findings_out.extend(
+                    _act_wide_body_section_replace_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        johto=johto,
+                    )
+                )
+            else:
+                frontend_findings_out.extend(
+                    _strict_rejected_op_findings(
+                        act_wide_body_replace_ops,
+                        source="_extract_act_wide_body_section_replace_ops_fallback",
                     )
                 )
 
