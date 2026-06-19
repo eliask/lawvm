@@ -1628,9 +1628,24 @@ def build_replay_products(
     else:
         raw_timelines = fold_timeline_backfills.raw_timelines
         timelines = fold_timeline_backfills.rekeyed_timelines
-    from lawvm.finland.timeline_version_dedupe import dedupe_finland_timelines
+    from lawvm.finland.timeline_version_dedupe import (
+        SemanticTextKeyCache,
+        dedupe_finland_timelines,
+    )
 
-    timelines, timeline_version_dedupes = dedupe_finland_timelines(timelines)
+    semantic_text_cache: SemanticTextKeyCache | None = None
+    if fold_backfill_preview_cache is not None:
+        cache_key = ("timeline_version_dedupe_semantic_text", statute_id)
+        cached = fold_backfill_preview_cache.get(cache_key)
+        if isinstance(cached, dict):
+            semantic_text_cache = cast(SemanticTextKeyCache, cached)
+        else:
+            semantic_text_cache = {}
+            fold_backfill_preview_cache[cache_key] = semantic_text_cache
+    timelines, timeline_version_dedupes = dedupe_finland_timelines(
+        timelines,
+        semantic_text_cache=semantic_text_cache,
+    )
     bridge_classification = _classify_finland_lineage_bridge(
         raw_timelines,
         migration_events,
