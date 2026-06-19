@@ -77,12 +77,31 @@ SENTENCE_LANE_CONSTRUCTION_OWNED = "citation_construction_owned"
 #: segment is handed back as typed residue rather than a guessed parse.
 SENTENCE_LANE_DECLINED = "citation_construction_declined"
 
-#: Closed list of declaration-predicate cues (casefolded lemma stems) that mark a
+#: Closed list of declaration-predicate cues (casefolded verb stems) that mark a
 #: citation-bearing sentence as a *declaration about* the cited provisions. An
-#: audited tuple — a new cue is a deliberate edit, never a heuristic. Matched as a
-#: substring of the segment's casefolded text (surface-only; the cue's exact span
-#: is recorded for ownership). Stems are chosen to cover the common Finnish
-#: inflections (``säädetään``/``säädetty``, ``tarkoitetaan``/``tarkoitettu`` …).
+#: audited tuple — a new cue is a deliberate edit, never a heuristic.
+#:
+#: These are PASSIVE/participial verb stems (``säätää`` → ``säädetään`` /
+#: ``säädetty``; ``tarkoittaa`` → ``tarkoitetaan`` / ``tarkoitettu`` …). Finnish
+#: verb morphology is open and productive (``mainitsematta``, ``määrättäköön``,
+#: ``noudatettakoon`` … — hundreds of distinct corpus inflections per lemma) and
+#: is OUT of the M1 generator's scope (M1 inflects the closed NOUN head inventory
+#: only — there is no verb conjugation to invert). A closed full-form list is
+#: therefore neither feasible nor a strict superset of what the stem covers, so
+#: the cue stays a stem matched against the segment text. The cue is also matched
+#: WITHOUT a left word boundary on purpose: real cues appear glued to a preceding
+#: word in source prose (``onsäädetty``, ``laissasäädetään``,
+#: ``kohdassatarkoitettu``) and compounded (``edellämainitussa`` =
+#: "above-mentioned"), all of which a left ``\b`` would drop.
+#:
+#: The one stem with a non-verb collision is ``määrät``: it is also the suffix of
+#: the noun ``määrä`` ("amount") in the nominative plural (``määrät``) and in
+#: compounds (``rahamäärät``, ``äänimäärät`` …). A verb form of ``määrätä`` always
+#: continues past the stem (``määrätään`` / ``määrätty`` / ``määrättäessä`` …),
+#: while the noun plural ends exactly at the ``t``. The recognizer therefore
+#: requires a vowel-continuation after ``määrät`` — a sound discriminator that
+#: keeps every verb form and rejects only the noun (audited corpus-wide: every
+#: rejected occurrence is the noun, never the verb).
 _DECLARATION_CUE_STEMS: tuple[str, ...] = (
     "säädet",        # säädetään / säädetty / säädettyä
     "tarkoitet",     # tarkoitetaan / tarkoitettu
@@ -90,7 +109,19 @@ _DECLARATION_CUE_STEMS: tuple[str, ...] = (
     "noudatet",      # noudatetaan / noudatettava
     "viitat",        # viitataan
     "mainit",        # mainitaan / mainittu
-    "määrät",        # määrätään
+    "määrät",        # määrätään / määrätty (verb only — see _DECLARATION_CUE_RE)
+)
+
+#: Compiled cue recognizer over :data:`_DECLARATION_CUE_STEMS`. One scan replaces
+#: the per-stem ``str.find`` loop; the leftmost match wins (identical to taking
+#: the minimum ``find`` index). Every stem keeps plain-substring semantics EXCEPT
+#: ``määrät``, which carries the vowel-continuation lookahead that excludes the
+#: ``määrä`` ("amount") noun while keeping every ``määrätä`` verb form.
+_DECLARATION_CUE_RE = re.compile(
+    "|".join(
+        rf"{re.escape(stem)}(?=[a-zåäö])" if stem == "määrät" else re.escape(stem)
+        for stem in _DECLARATION_CUE_STEMS
+    )
 )
 
 #: A statute-id parenthetical ``(NUMBER/YEAR)`` — the mandatory anchor marker of a
@@ -248,16 +279,17 @@ class SentenceParse:
 
 
 def _find_declaration_marker(text_low: str) -> tuple[str, tuple[int, int]] | None:
-    """Find the FIRST declaration-cue stem occurrence (casefolded). Surface-only."""
-    best: tuple[int, str] | None = None
-    for stem in _DECLARATION_CUE_STEMS:
-        i = text_low.find(stem)
-        if i >= 0 and (best is None or i < best[0]):
-            best = (i, stem)
-    if best is None:
+    """Find the FIRST declaration-cue occurrence (casefolded). Surface-only.
+
+    Single scan via :data:`_DECLARATION_CUE_RE`; the leftmost match wins, which is
+    the same selection the old per-stem ``str.find``-minimum loop made. The owned
+    span is the matched stem surface (the ``määrät`` vowel lookahead is zero-width,
+    so the span is the stem exactly as before).
+    """
+    m = _DECLARATION_CUE_RE.search(text_low)
+    if m is None:
         return None
-    start, stem = best
-    return stem, (start, start + len(stem))
+    return m.group(0), (m.start(), m.end())
 
 
 def parse_citation_sentence(text: str) -> SentenceParse:

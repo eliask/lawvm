@@ -83,7 +83,10 @@ from lawvm.finland.references.treaty import recognize_treaty_refs
 from lawvm.finland.references.treaty_article import recognize_treaty_article_refs
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
-from lawvm.finland.references.by_name import recognize_by_name_refs
+from lawvm.finland.references.by_name import (
+    name_head_np_start_before_paren,
+    recognize_by_name_refs,
+)
 from lawvm.core.preparatory_reference import (
     PreparatoryReference,
     PreparatoryReferenceKind,
@@ -92,6 +95,8 @@ from lawvm.finland.references.preparatory_reference_extractor import (
     extract_preparatory_refs,
 )
 from lawvm.finland.legal_surface.sentence_parse import parse_citation_sentence
+from lawvm.finland.legal_surface.delegation_parse import extract_authority_bases
+from lawvm.finland.delegation import _classify_authority_kind, _normalize_year
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -1814,10 +1819,23 @@ def _extend_surface_to_name_head(text: str, paren_start: int, anchor_end: int) -
     however, must carry the SAME name-head-inclusive surface the demoted regex lane
     carried (``arvonlisäverolain (1767/95) 128 §``), so downstream span-overlap
     consumers (the surface graph, the census by-name dedup) anchor it identically to
-    the old lane. Extend the surface leftward over the contiguous name-token run
-    immediately preceding the paren; if none is present (a bare paren) the surface
-    is unchanged (starts at the paren).
+    the old lane.
+
+    The name head is parsed as a proper inflected NP via the shared by-name
+    recognizer (``by_name.name_head_np_start_before_paren``), so an intervening
+    modifier between the head and the paren is INCLUDED in the surface
+    (``annettu opetusministeriön asetus (253/2001)`` — the genitive
+    ``opetusministeriön``; ``valvotusta koevapaudesta annetun lain (629/2013)`` —
+    the descriptive complement). When the NP recognizer finds no clean name head
+    abutting the paren, it falls back to the contiguous single-token left-scan (the
+    prior behaviour: ``arvonlisäverolain``, ``perintökaaren``); when even that finds
+    nothing (a bare paren) the surface is unchanged (starts at the paren).
+    Tag-don't-guess: the NP path never fabricates a boundary — it returns ``None``
+    and the single-token fallback (itself bounded) applies.
     """
+    np_start = name_head_np_start_before_paren(text, paren_start)
+    if np_start is not None:
+        return text[np_start:anchor_end]
     left = text[max(0, paren_start - 61) : paren_start]
     m = _NAME_HEAD_BEFORE_PAREN_RE.search(left)
     if m is None:
@@ -1993,6 +2011,102 @@ def extract_inline_id_construction_mentions(
     return result, covered_keys
 
 
+def _authority_basis_text(root: ET.Element) -> str:
+    """Decoded text of the spans that carry a ``… nojalla`` authority basis.
+
+    The asetus authority basis lives in the decree PREAMBLE enacting clause; some
+    older statutes carry it in the leading body text instead. Prefer the preamble;
+    fall back to the whole-document text head when no preamble element exists. The
+    text is whitespace-normalized so the construction's clause scan sees a clean
+    surface (the same normalization the production extractor applies).
+    """
+    pre = root.find(f".//{{{_AKN_NS}}}preamble")
+    raw = ET.tostring(
+        pre if pre is not None else root, encoding="unicode", method="text"
+    )
+    norm = re.sub(r"\s+", " ", raw).strip()
+    if pre is not None:
+        return norm
+    # No preamble element: scan only the head (the enacting clause region) to avoid
+    # body sentences that are forward grants, not authority bases.
+    return norm[:600]
+
+
+def extract_delegation_construction_authority_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+) -> Tuple[ExtractionResult, set[str]]:
+    """Lift ``… nojalla`` authority bases via the construction parse (PRIMARY).
+
+    Recognizes the asetus authority-basis construction (``[act-name] (NUM/YEAR) N
+    §:n nojalla``) in the decree preamble using the construction recognizer
+    (:func:`lawvm.finland.legal_surface.delegation_parse.extract_authority_bases`),
+    and lifts each recognized basis to an ISSUED_UNDER ``ReferenceMention`` keyed
+    canonically YEAR/NUMBER (routed through ``_make_statute_id`` after 2-digit-year
+    normalization — NO inverted ids). The cite_kind is taken from the per-basis
+    drafting-kind inflection (``…lain`` → act → CROSS_STATUTE; a genuine
+    ``…asetuksen`` / ``…päätöksen`` basis stays a NON_STATUTORY_INSTRUMENT), exactly
+    as the metadata/regex lift types it.
+
+    This is the construction-PRIMARY recall source for the authority-basis family;
+    the production ``extract_asetus_authority`` regex (already consumed by
+    ``extract_cross_refs`` → the metadata ISSUED_UNDER edges) is demoted to the
+    typed-residue FALLBACK, surfaced ONLY for bases the construction did not cover
+    (the caller dedups by parent id). Mentions carry a distinct
+    ``phrase_lemma="delegation_construction"`` so the construction-recall frontier
+    is auditable.
+
+    Returns ``(result, covered_parent_ids)`` — the canonical YEAR/NUMBER parent ids
+    the construction covered, so the caller can mark the regex/metadata residue.
+    """
+    result = ExtractionResult()
+    covered: set[str] = set()
+    if not xml_bytes:
+        return result, covered
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return result, covered
+
+    basis_text = _authority_basis_text(root)
+    if not basis_text:
+        return result, covered
+
+    src_ref = ProvisionRef(statute_id=statute_id, provision_path="", section_label="")
+    for basis in extract_authority_bases(basis_text):
+        parent_id = _make_statute_id(_normalize_year(basis.year), basis.num)
+        # ISSUED_UNDER cite_kind from the basis drafting kind (act vs instrument),
+        # mirroring _edge_to_cite_kind: only an "act" basis is a statute
+        # cross-reference; a decree/decision basis stays a non-statutory instrument.
+        kind = _classify_authority_kind(basis.name_word)
+        cite_kind = (
+            CiteKind.CROSS_STATUTE
+            if kind in _AUTHORITY_STATUTE_KINDS
+            else CiteKind.NON_STATUTORY_INSTRUMENT
+        )
+        # One mention per recognized section (or one sectionless mention when the
+        # basis carries an id but no overt §). Same target orientation as the lift.
+        section_labels = basis.section_labels or ("",)
+        for sec in section_labels:
+            tgt_ref = _parse_provision_ref_from_path(parent_id, sec)
+            result.mentions.append(
+                ReferenceMention(
+                    source_provision_ref=src_ref,
+                    target_provision_ref=tgt_ref,
+                    cite_kind=cite_kind,
+                    cite_confidence=CiteConfidence.EXACT,
+                    phrase_lemma="delegation_construction",
+                    source_span=None,
+                    valid_at_interval=valid_at_interval,
+                    edge_subtype="ISSUED_UNDER",
+                )
+            )
+        covered.add(parent_id)
+    return result, covered
+
+
 def extract_all_reference_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -2160,10 +2274,44 @@ def extract_all_reference_mentions(
         valid_at_interval=valid_at_interval,
     )
 
+    # Delegation-authority (``… nojalla``) lane.
+    #
+    # PRIMARY: the delegation/authority construction parse recognizes the asetus
+    # authority-basis construction in the preamble and lifts each basis to an
+    # ISSUED_UNDER mention (canonical YEAR/NUMBER orientation, drafting-kind typing).
+    # FALLBACK: the production ``extract_asetus_authority`` regex — already consumed
+    # upstream by ``extract_cross_refs`` into the metadata/``domestic`` ISSUED_UNDER
+    # edges — is kept as the typed-residue safety net: nothing it found disappears
+    # (§1.8). The construction adds ONLY the bases the existing ISSUED_UNDER set did
+    # NOT carry (deduped by canonical parent id), each marked
+    # ``phrase_lemma="delegation_construction"`` so the construction-recall frontier
+    # is auditable. Skipped in annotation-independence measurement mode (the
+    # ISSUED_UNDER metadata lane is part of the suppressed ``<ref>``/metadata lane).
+    authority = ExtractionResult()
+    if not ignore_annotations:
+        existing_issued_targets: set[str] = {
+            m.target_provision_ref.statute_id
+            for m in domestic.mentions
+            if m.edge_subtype == "ISSUED_UNDER" and m.target_provision_ref is not None
+        }
+        constr_authority, _covered = extract_delegation_construction_authority_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+        )
+        for m in constr_authority.mentions:
+            tgt = m.target_provision_ref
+            if tgt is not None and tgt.statute_id in existing_issued_targets:
+                # The existing metadata/regex ISSUED_UNDER mention already owns this
+                # authority basis — keep that one (it carries the byte span); drop
+                # the construction duplicate so nothing is double-emitted.
+                continue
+            authority.mentions.append(m)
+
     combined = ExtractionResult()
     combined.mentions = (
         domestic.mentions + affected.mentions + eu.mentions + plain.mentions
-        + surface.mentions + preparatory.mentions
+        + surface.mentions + preparatory.mentions + authority.mentions
     )
     combined.rejected = (
         domestic.rejected + eu.rejected + plain.rejected + surface.rejected + preparatory.rejected

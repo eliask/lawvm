@@ -56,10 +56,14 @@ from lawvm.finland.johtolause.grammar.sections import (
 from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.references.eu_reference import (
     DIALECT_CROSS_REF,
+    DIALECT_EU_DIRECTIVE,
+    eu_celex_type_for_head,
     recognize_celex,
     recognize_eu_acts,
+    recognize_eu_year_first_slash,
 )
 from lawvm.finland.references.lemma_gate import (
+    head_case_forms,
     head_plural_external_local_forms,
     head_surface_forms,
 )
@@ -199,6 +203,40 @@ _ALAKOHTA_ITEM = r"(?:[a-zåäö]{1,2}|\d{1,3})"
 _ALAKOHTA_LIST = (
     rf"{_ALAKOHTA_ITEM}(?:{_ALAKOHTA_CONNECTOR}{_ALAKOHTA_ITEM}){{0,10}}"
 )
+# The ``kohta`` (point/paragraph) head, M1-backed. The hand-written
+# ``koh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?`` arm was
+# a truncated stem (``koh``) spanning the ``ht``/``hd`` consonant gradation with a
+# hand-typed case suffix list — the gradation-substring smell ``lemma_gate``
+# retires elsewhere (and its trailing ``?`` even let a bare ``koh`` match). It is
+# replaced by the M1-generated full surfaces of ``kohta`` over the exact curated
+# case set the suffix list encoded, so each alternative is a real M1 output of a
+# closed head, not a stem guess. The curated set is a strict equal of the old
+# forms (no precision change): a kohta reference appears in precisely these cases
+# in EU-article body prose; widening to the full paradigm (plural inessive
+# ``kohdissa`` etc.) is unnecessary and unverified here.
+_KOHTA_CASE_NUMBERS: tuple[tuple[str, str], ...] = (
+    ("NOM", "SG"),   # kohta
+    ("INE", "SG"),   # kohdassa
+    ("ELA", "SG"),   # kohdasta
+    ("ILL", "SG"),   # kohtaan
+    ("GEN", "SG"),   # kohdan
+    ("PART", "SG"),  # kohtaa
+    ("TRA", "SG"),   # kohdaksi
+    ("ADE", "SG"),   # kohdalla
+    ("ABL", "SG"),   # kohdalta
+    ("ALL", "SG"),   # kohdalle
+    ("NOM", "PL"),   # kohdat
+    ("GEN", "PL"),   # kohtien
+)
+_KOHTA_HEAD_ALT = "|".join(head_case_forms("kohta", _KOHTA_CASE_NUMBERS))
+# ``alakohta`` (lettered sub-point) is not an M1 head, but it is the invariant
+# prefix ``ala`` + ``kohta``, so its paradigm is ``kohta``'s with ``ala``
+# prepended — derive it soundly from the same M1 surfaces rather than re-typing a
+# second truncated ``alakoh`` stem.
+_ALAKOHTA_HEAD_ALT = "|".join(
+    "ala" + form for form in head_case_forms("kohta", _KOHTA_CASE_NUMBERS)
+)
+
 # A kohta tail anchored at the start of the post-article remainder: a
 # (possibly coordinated) kohta number list + the ``kohta`` head, then an optional
 # (possibly coordinated) ``alakohta`` lettered/numbered sub-point list. The
@@ -207,9 +245,9 @@ _ALAKOHTA_LIST = (
 _KOHTA_TAIL_RE = re.compile(
     r"^\s+"
     rf"(?P<kohdat>{_KOHTA_ITEM}(?:{_ARTIKLA_CONNECTOR}{_KOHTA_ITEM}){{0,10}})"
-    r"\s*koh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b"
+    rf"\s*(?:{_KOHTA_HEAD_ALT})\b"
     rf"(?:\s+(?P<alakohta>{_ALAKOHTA_LIST})\s*"
-    r"alakoh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b)?",
+    rf"(?:{_ALAKOHTA_HEAD_ALT})\b)?",
     re.IGNORECASE,
 )
 # Splits an alakohta label list ("a ja b", "1, 2 ja 3") on the explicit
@@ -221,39 +259,13 @@ _ALAKOHTA_SPLIT_RE = re.compile(_ALAKOHTA_CONNECTOR, re.IGNORECASE)
 # nickname head. Finnish keeps the two adjacent: "<nickname> N ja M artiklassa".
 _NICKNAME_LOOKBEHIND = 80
 
-# CELEX sector/type letter per instrument-head stem. A directive is L, a
-# regulation is R, a decision is D. The head word that governs the article
-# carries the instrument type, so it disambiguates a form-less inline cite
-# (e.g. "direktiivin 2009/138/EY" → L → 32009L0138). Most-specific stem first.
-_HEAD_CELEX_TYPE: tuple[tuple[str, str], ...] = (
-    ("direktiiv", "L"),   # direktiivi → directive
-    ("päätöks", "D"),     # päätöksen → decision (gradated stem)
-    ("päätös", "D"),
-    ("asetuks", "R"),     # asetuksen → regulation (gradated stem)
-    ("asetus", "R"),
-    ("asetu", "R"),       # broad asetus stem (matches _HEAD_WORD's "asetu")
-)
-
-
-# Year-first slash cite "YEAR/NUMBER/FORM" (e.g. "2009/138/EY", "2001/23/EY",
-# and the legacy 2-digit-year directives/decisions "96/53/EY", "82/891/ETY").
-# The shared NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE group, so it
-# only reads the number-first order; this picks up the year-first order. The act
-# number is ≤3 digits, so the shape is unambiguously year-first.
-#
-# The YEAR group accepts a 4-digit year ("2009/138/EY") OR a legacy 2-digit year
-# ("96/53/EY"); pre-2000 EU directives/decisions are written year-first with the
-# year abbreviated to its last two digits. The 4-digit alternative is listed
-# FIRST so "2009/138/EY" matches as year "2009" (never as "20" + "09/138"). The
-# trailing ``\b`` after the act number keeps a 3-digit number run from being
-# mis-split, and the ``/FORM`` suffix is the discriminator: a bare "NN/NNN"
-# without the EU form marker never matches here. A 2-digit year is normalised to
-# its full 19xx form in ``_celex_from_formal_cite`` (see ``_normalize_eu_year``).
-# Bounded (§1.11).
-_YEAR_FIRST_SLASH_CITE = re.compile(
-    r"\b(?P<year>\d{4}|\d{2})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b",
-    re.IGNORECASE,
-)
+# The year-first slash cite "YEAR/NUMBER/FORM" (e.g. "2009/138/EY", "2001/23/EY",
+# and the legacy 2-digit-year directives/decisions "96/53/EY", "82/891/ETY") is
+# recognised via the shared ``recognize_eu_year_first_slash(DIALECT_EU_DIRECTIVE)``
+# waist, which carries this lane's legacy 2-digit-year tolerance. The shared
+# ``recognize_eu_acts`` NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE
+# group, so it only reads the number-first order; this fills the year-first gap.
+# A 2-digit year is normalised to its full 19xx form by ``_normalize_eu_year``.
 
 
 def _normalize_eu_year(year: int) -> int:
@@ -271,12 +283,16 @@ def _normalize_eu_year(year: int) -> int:
 
 
 def _celex_type_for_head(head: str) -> Optional[str]:
-    """CELEX type letter (L/R/D) implied by an instrument-head surface, or None."""
-    low = head.lower()
-    for stem, letter in _HEAD_CELEX_TYPE:
-        if stem in low:
-            return letter
-    return None
+    """CELEX type letter (L/R/D) implied by an instrument-head surface, or None.
+
+    Delegates to the shared, M1-backed
+    :func:`~lawvm.finland.references.eu_reference.eu_celex_type_for_head`: the
+    head token's TAIL must be an M1-generated EU-instrument-head surface
+    (``direktiivin`` → L, ``asetuksen`` → R, ``päätöksen`` → D). Paradigm
+    inversion over a closed head set, not a ``asetu`` substring guess — so the
+    gradated forms map correctly and ``None`` means "not an EU-instrument head".
+    """
+    return eu_celex_type_for_head(head, default=None)
 
 
 def _celex_from_formal_cite(window: str, head: str) -> Optional[str]:
@@ -312,8 +328,8 @@ def _celex_from_formal_cite(window: str, head: str) -> Optional[str]:
             candidates.append((h.start, int(h.year), int(h.number)))
         except ValueError:
             continue
-    for m in _YEAR_FIRST_SLASH_CITE.finditer(window):
-        candidates.append((m.start(), int(m.group("year")), int(m.group("num"))))
+    for ref in recognize_eu_year_first_slash(window, dialect=DIALECT_EU_DIRECTIVE):
+        candidates.append((ref.start, int(ref.year), int(ref.number)))
     if not candidates:
         return None
     # The cite closest to the article (largest start offset) governs it. A legacy

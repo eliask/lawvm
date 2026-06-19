@@ -79,6 +79,14 @@ NODE_KINDS: frozenset[str] = frozenset(
         "procedure_frame",
         "sanction_frame",
         "exception_condition_cue",
+        # The LOWER INSTRUMENT a delegation grants the power to issue (the asetus /
+        # määräys / päätös the delegation_frame authorizes). Minted by the
+        # delegated_instrument lens from the construction delegation parse's
+        # instrument anchor (the precise instrument-noun span), so the Layer-2
+        # delegation_grants_instrument edge has an INSTRUMENT-ENTITY node to point
+        # at. Surface-only; records the instrument's surface form, never that the
+        # delegation is legally valid.
+        "delegated_instrument",
         "surface_residual",
     }
 )
@@ -104,9 +112,18 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # NOT settled semantics and NEVER asserted facts (Pro §D5). They link
         # frame-family nodes that some future analysis MIGHT exploit; they make
         # no legal claim.
-        # delegation_frame -> the instrument_kind it names (carried in payload;
-        # reserved for when an instrument ENTITY node exists to point at).
-        "delegation_grants_instrument",  # EXPERIMENTAL
+        # delegation_frame -> the delegated_instrument ENTITY node it grants the
+        # power to issue (the asetus/määräys/päätös). A Layer-2 norm->authorized-
+        # instrument link: the delegation parse's instrument anchor backs a
+        # delegated_instrument node, and this edge joins the recognizer frame to the
+        # instrument node whose span sits INSIDE the frame (a structural containment
+        # attachment, not mere proximity). Candidate-not-asserted: one contained
+        # instrument -> "asserted"; several -> one edge per candidate with the full
+        # set in payload, "ambiguous"; none -> a typed diagnostic, never an invented
+        # edge. Still a SURFACE candidate, never a legal conclusion (§D7) — the
+        # reading that the power validly delegates rulemaking must leave the graph
+        # through a named authorization object.
+        "delegation_grants_instrument",
         # actor_modal_frame -> temporal_expr co-located within a small span
         # window in the same source unit (a nearby deadline/commencement).
         "actor_modal_temporal_colocated",  # EXPERIMENTAL

@@ -72,6 +72,10 @@ from typing import Optional
 
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.references.cross_refs import _make_statute_id
+from lawvm.finland.references.eu_reference import (
+    DIALECT_DEFINED_TERMS,
+    recognize_eu_act_ids,
+)
 
 # ---------------------------------------------------------------------------
 # Typed output
@@ -158,18 +162,12 @@ class DefinedTermBinding:
 # Finnish act id: "(NUMBER/YEAR)".  EU act id: "(FORM) N:o NUMBER/YEAR",
 # "(FORM) YEAR/NUMBER", or "NUMBER/YEAR/FORM".  Bounded quantifiers throughout.
 
-_EU_FORMS = r"EU|EY|EEY|ETY|EURATOM|ETA"
-
-# EU "(FORM) N:o NUMBER/YEAR"
-_EU_NNUM = re.compile(
-    rf"\((?:{_EU_FORMS})\)\s{{0,3}}N:o\s{{0,3}}(\d{{1,6}})/(\d{{4}})",
-    re.IGNORECASE,
-)
-# EU "(FORM) YEAR/NUMBER"  (GDPR-style)
-_EU_YEARFIRST = re.compile(
-    rf"\((?:{_EU_FORMS})\)\s{{0,3}}(\d{{4}})/(\d{{1,6}})\b",
-    re.IGNORECASE,
-)
+# EU "(FORM) N:o NUMBER/YEAR" and "(FORM) YEAR/NUMBER" act-id SHAPES are shared
+# with the cross-ref / preparatory waist via
+# ``eu_reference.recognize_eu_act_ids(DIALECT_DEFINED_TERMS)`` (this lane's exact
+# form set / bounded "\s{0,3}" spacing / case-insensitivity preserved there);
+# the positional lowering (cite ending at an offset / first cite in window) stays
+# in this lane.
 # Finnish "(NUMBER/YEAR)" wrapped act id (closing paren required).
 _FI_ID = re.compile(r"\((\d{1,6})/(\d{4})\)")
 # Finnish act id followed by a separator (whitespace / comma / paren) — used when
@@ -557,18 +555,16 @@ def _act_id_ending_before(text: str, pos: int, window: int = 90) -> Optional[str
     start = max(0, pos - window)
     chunk = text[start:pos]
     n = len(chunk)
-    # EU "(FORM) N:o NUMBER/YEAR" ending at pos.
-    eu_n = None
-    for m in _EU_NNUM.finditer(chunk):
-        eu_n = m
-    if eu_n is not None and eu_n.end() == n:
-        return f"{eu_n.group(1)}/{eu_n.group(2)}"
-    # EU "(FORM) YEAR/NUMBER" ending at pos.
-    eu_y = None
-    for m in _EU_YEARFIRST.finditer(chunk):
-        eu_y = m
-    if eu_y is not None and eu_y.end() == n:
-        return f"{eu_y.group(1)}/{eu_y.group(2)}"
+    # EU paren act id ("(FORM) N:o NUMBER/YEAR" / "(FORM) YEAR/NUMBER") ending at
+    # pos. recognize_eu_act_ids returns N:o-form spans before year-first spans, so
+    # taking the LAST span that ends at n preserves the prior NNUM-then-YEARFIRST
+    # precedence (the two shapes never both end at the same offset).
+    eu_at_end = [
+        s for s in recognize_eu_act_ids(chunk, dialect=DIALECT_DEFINED_TERMS)
+        if s.end == n
+    ]
+    if eu_at_end:
+        return eu_at_end[-1].id_surface
     # Finnish "(NUMBER/YEAR)" whose closing ')' ends at pos. The id is
     # CANONICALIZED to "YEAR/NUMBER" — group(1) is NUMBER, group(2) is YEAR.
     fi = None
@@ -591,12 +587,13 @@ def _first_act_id_in(text: str) -> Optional[str]:
     "NUMBER/YEAR" entity.
     """
     candidates: list[tuple[int, str]] = []
-    m = _EU_NNUM.search(text)
-    if m:
-        candidates.append((m.start(), f"{m.group(1)}/{m.group(2)}"))
-    m = _EU_YEARFIRST.search(text)
-    if m:
-        candidates.append((m.start(), f"{m.group(1)}/{m.group(2)}"))
+    # All EU paren act ids (both shapes). The function returns the candidate with
+    # the smallest start, so adding every EU span (not just the first of each
+    # shape, as the prior per-pattern .search() did) yields the identical winner:
+    # the earliest EU span is min(first N:o-form, first year-first), exactly what
+    # the old two-candidate min selected.
+    for s in recognize_eu_act_ids(text, dialect=DIALECT_DEFINED_TERMS):
+        candidates.append((s.start, s.id_surface))
     for fm in _FI_ID_LOOSE.finditer(text):
         # group(1) is NUMBER, group(2) is YEAR → canonical "YEAR/NUMBER".
         candidates.append((fm.start(), _make_statute_id(fm.group(2), fm.group(1))))

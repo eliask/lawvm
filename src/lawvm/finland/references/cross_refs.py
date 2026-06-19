@@ -28,8 +28,10 @@ from typing import List, Optional
 
 from lawvm.finland.references.eu_reference import (
     DIALECT_CROSS_REF,
+    classify_eu_instrument_type,
     recognize_celex,
     recognize_eu_acts,
+    recognize_eu_year_first_slash,
 )
 from lawvm.finland.references.sections import (
     coordinated_member_paths_from_ref_surface,
@@ -792,59 +794,39 @@ def extract_affected_document_refs(
 # references.eu_reference (DIALECT_CROSS_REF preserves this lane's exact
 # patterns: EU|EY|ETY|EURATOM|ETA, re.I, plus the NUMBER/YEAR/FORM order).
 # Lowering into CrossRefEdge (type classification + sanity filter + dedup)
-# stays here.
-# Finnish consonant gradation inflects the act-type heads (asetus → asetuksen,
-# päätös → päätöksen), so a bare-nominative substring test misses every inflected
-# regulation/decision and silently falls through to the generic 'act'. Match the
-# inflected STEMS instead. Ordered most-specific first so the longest stem wins
-# when several could co-occur in the look-behind window.
-_EU_TYPE_STEMS: tuple[tuple[str, str], ...] = (
-    ('direktiiv', 'dir'),   # direktiivi(n/ssä/…) — vowel-stemmed (no gradation)
-    ('asetuks', 'reg'),     # asetuksen/asetuksessa/… (gradated genitive stem)
-    ('asetus', 'reg'),      # asetus (nominative)
-    ('päätöks', 'dec'),     # päätöksen/päätöksessä/… (gradated genitive stem)
-    ('päätös', 'dec'),      # päätös (nominative)
-    ('asiakirja', 'act'),   # generic instrument
-)
+# stays here; the instrument-TYPE discrimination (regulation/directive/decision)
+# is delegated to the shared, M1-backed ``classify_eu_instrument_type`` so the
+# gradated heads (``asetuksen``, ``päätöksen``) classify soundly instead of
+# falling through a nominative substring test to the generic 'act'.
 _EU_JURISDICTION = re.compile(r'\b(EU|EY|ETY|EURATOM|ETA)\b')
 
 _CELEX_TYPE = {'R': 'reg', 'L': 'dir', 'D': 'dec'}
 
-# "YEAR/NUMBER/FORM" — year-first slash form, e.g. "2001/23/EY" in
-# "Neuvoston direktiivi 2001/23/EY". The shared recognizer's NUMBER/YEAR/FORM
-# pattern (_CR_EU_P2) requires a 4-digit MIDDLE group, so it only matches the
-# number-first order ("999/2001/EY"); a small (1–3 digit) act number after a
-# 4-digit year is left unrecognised. The 4-digit-then-≤3-digit shape is
-# unambiguously year-first (number-first would need a 4-digit year in the
-# middle), so it cannot collide with the number-first form. Year bounds are
-# enforced by the _add sanity filter.
-_EU_YEAR_FIRST_SLASH = re.compile(
-    r'\b(\d{4})/(\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b',
-    re.I,
-)
+# The year-first slash form "YEAR/NUMBER/FORM" ("2001/23/EY" in "Neuvoston
+# direktiivi 2001/23/EY") is recognised via the shared
+# ``recognize_eu_year_first_slash(DIALECT_CROSS_REF)`` waist (the same shape the
+# eu_directive lane consumes), de-duplicating the recogniser the two lanes used
+# to keep in lockstep. The shared ``recognize_eu_acts`` NUMBER/YEAR/FORM pattern
+# requires a 4-digit MIDDLE group, so it only reads the number-first order; this
+# fills the year-first gap. Year bounds are enforced by the _add sanity filter.
 
 # Look-behind: 40 chars before a match to detect the act type keyword
 _TYPE_LOOKBEHIND = 40
 
 
 def _classify_eu_type(text: str, match_start: int) -> str:
-    """Guess regulation/directive/decision from text before the match.
+    """Classify regulation/directive/decision from text before the match.
 
-    Tests inflected stems (``asetuks``/``asetus``, ``päätöks``/``päätös``,
-    ``direktiiv``) so gradated forms ("asetuksen", "päätöksen") classify
-    correctly instead of falling through to the generic ``act``. The closest
-    (latest-occurring) stem in the look-behind window wins; on a tie the
-    most-specific (earliest-listed) stem is preferred.
+    Delegates to the shared, M1-backed
+    :func:`~lawvm.finland.references.eu_reference.classify_eu_instrument_type`:
+    a look-behind token whose TAIL is an M1-generated EU-instrument-head surface
+    (``asetuksen`` → reg, ``päätöksen`` → dec, ``direktiivin`` → dir) classifies
+    that token's type. The head closest to the match wins; absent any head the
+    type is the generic ``act``. This is paradigm inversion over a closed head
+    set, not an ``asetu`` substring guess — so gradated forms classify correctly.
     """
-    window = text[max(0, match_start - _TYPE_LOOKBEHIND):match_start].lower()
-    best_pos = -1
-    best_type = 'act'
-    for stem, eu_type in _EU_TYPE_STEMS:
-        pos = window.rfind(stem)
-        if pos > best_pos:
-            best_pos = pos
-            best_type = eu_type
-    return best_type
+    window = text[max(0, match_start - _TYPE_LOOKBEHIND):match_start]
+    return classify_eu_instrument_type(window, default='act')
 
 
 def _normalize_eu_year(year: str) -> str:
@@ -974,12 +956,12 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
     # Year-first slash form ("2001/23/EY") that the shared NUMBER/YEAR/FORM
     # recognizer misses because its middle group must be 4 digits. Common in
     # signature/footer citations like "Neuvoston direktiivi 2001/23/EY".
-    for m in _EU_YEAR_FIRST_SLASH.finditer(text):
-        eu_type = _classify_eu_type(text, m.start())
+    for ref in recognize_eu_year_first_slash(text, dialect=DIALECT_CROSS_REF):
+        eu_type = _classify_eu_type(text, ref.start)
         _add(
-            eu_type, m.group(1), m.group(2), "",
-            char_start=m.start(), char_end=m.end(),
-            surface=m.group(0),
+            eu_type, ref.year, ref.number, "",
+            char_start=ref.start, char_end=ref.end,
+            surface=ref.raw,
         )
 
     edges: List[CrossRefEdge] = []
