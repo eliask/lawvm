@@ -61,6 +61,14 @@ class _FakeArchiveStore:
         return None
 
 
+def test_transparent_corpus_store_close_tolerates_archive_without_close() -> None:
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+
+    store = TransparentCorpusStore(cast(Any, object()))
+
+    store.close()
+
+
 def _consolidated_xml(*, version: str, date_consolidated: str) -> bytes:
     return f"""
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
