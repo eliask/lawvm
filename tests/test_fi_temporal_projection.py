@@ -1,0 +1,203 @@
+"""Differential: the SourceSyntaxGraph forest's temporal projection vs the H3 lens.
+
+The temporal half of the L5 lens→forest projection strangle — following the L3
+TEMPLATE (``test_fi_reference_projection``). It proves the forest can REPRODUCE
+the shared-kind SUBSET (dated commencement / dated fixed-term expiry) of the H3
+:class:`TemporalLens` (the differential ORACLE), and CHARACTERISES the temporal
+families neither grammar shares.
+
+OUTCOME (B): the forest's ``temporal_phrase`` leaf is sourced from the temporal /
+applicability family (``parse_temporal_sentence``, mirroring the production
+``meta_parse`` clause-role classifier). The H3 lens is a DIFFERENT grammar
+(``recognize_temporal_exprs``). Their shared identity is the dated commencement /
+dated expiry core; the differential is run on THAT canonical subset, and the
+lens-only kinds (bare FIXED_DATE / duration / event-bound / undated validity) +
+the forest-only roles (application / delegation) are explicit, surfaced residual
+worklists.
+
+The differential compares CANONICAL ``(kind, iso_date)`` identity keys, so it is
+robust to the representational differences between the two grammars (the lens
+splits a dated commencement into a dateless COMMENCEMENT row + a FIXED_DATE row;
+the forest carries the date on the commencement clause).
+"""
+from __future__ import annotations
+
+from lawvm.core.legal_surface_graph import SurfaceGraphSubject
+from lawvm.finland.legal_surface.source_syntax_graph import assemble_source_syntax_graph
+from lawvm.finland.legal_surface.temporal_projection import (
+    CANON_COMMENCEMENT,
+    CANON_EXPIRY,
+    FOREST_ONLY_TEMPORAL_ROLES,
+    FOREST_UNOWNED_TEMPORAL_LENS_KINDS,
+    diff_forest_vs_lens_temporal_subset,
+    forest_temporal_keys,
+    lens_temporal_keys_for_text,
+    project_forest_temporal,
+)
+
+_SUBJECT = SurfaceGraphSubject(
+    jurisdiction="fi",
+    work_id="test/1",
+    scope={},
+    surface_time=None,
+    source_bundle_hash="",
+    language="fi",
+)
+
+
+def _forest_for(body: str, statute_id: str):
+    return assemble_source_syntax_graph(
+        subject=_SUBJECT, source_units=(), statute_id=statute_id, body=body
+    )
+
+
+def _forest_keys_for(body: str, statute_id: str) -> set[str]:
+    return forest_temporal_keys(_forest_for(body, statute_id), body)
+
+
+# ── outcome characterisation ────────────────────────────────────────────────
+
+
+def test_outcome_is_subset_plus_characterised_residual() -> None:
+    """The forest shares the dated commencement/expiry kinds; the rest is surfaced.
+
+    Documents the strangle's frontier: the shared canonical kinds are commencement
+    and expiry; the lens-only kinds (bare date / duration / event-bound / undated
+    validity) and the forest-only roles (application / delegation) are the surfaced
+    residual worklists — never hidden.
+    """
+    assert CANON_COMMENCEMENT == "commencement"
+    assert CANON_EXPIRY == "expiry"
+    # The lens-only kinds the forest does not reproduce.
+    assert "fixed_date" in FOREST_UNOWNED_TEMPORAL_LENS_KINDS
+    assert "duration_from_commencement" in FOREST_UNOWNED_TEMPORAL_LENS_KINDS
+    assert "event_bound" in FOREST_UNOWNED_TEMPORAL_LENS_KINDS
+    assert "validity_open" in FOREST_UNOWNED_TEMPORAL_LENS_KINDS
+    # The forest-only roles the H3 lens does not model.
+    assert "application" in FOREST_ONLY_TEMPORAL_ROLES
+    assert "delegation" in FOREST_ONLY_TEMPORAL_ROLES
+
+
+# ── 0-delta on the shared canonical subset (the flip gate) ───────────────────
+
+
+def test_zero_delta_on_dated_commencement_numeric() -> None:
+    """A numeric-dated commencement: forest commencement clause == lens subset.
+
+    ``tulee voimaan 1.1.2027`` — the forest's commencement clause carries the ISO
+    date; the lens emits a dateless COMMENCEMENT + a FIXED_DATE, paired into the
+    same ``commencement:<iso>`` key → 0 delta.
+    """
+    body = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027."
+    statute_id = "2026/100"
+    forest_keys = _forest_keys_for(body, statute_id)
+    lens_keys = lens_temporal_keys_for_text(body)
+
+    diff = diff_forest_vs_lens_temporal_subset(forest_keys, lens_keys)
+    assert diff.is_zero_delta, (
+        f"missing={sorted(diff.forest_missing)} extra={sorted(diff.forest_extra)}"
+    )
+    assert "commencement:2027-01-01" in forest_keys, sorted(forest_keys)
+
+
+def test_zero_delta_on_dated_fixed_term_expiry() -> None:
+    """A fixed-term expiry: forest validity clause == lens FIXED_TERM_EXPIRY.
+
+    ``on voimassa 31 päivään joulukuuta 2027 saakka`` — the forest validity clause
+    extracts the expiry ISO date; the lens emits a FIXED_TERM_EXPIRY carrying the
+    same date → 0 delta on the shared ``expiry:<iso>`` key.
+    """
+    body = "Tämä laki on voimassa 31 päivään joulukuuta 2027 saakka."
+    statute_id = "2026/200"
+    forest_keys = _forest_keys_for(body, statute_id)
+    lens_keys = lens_temporal_keys_for_text(body)
+
+    diff = diff_forest_vs_lens_temporal_subset(forest_keys, lens_keys)
+    assert diff.is_zero_delta, (
+        f"missing={sorted(diff.forest_missing)} extra={sorted(diff.forest_extra)}"
+    )
+    assert "expiry:2027-12-31" in forest_keys, sorted(forest_keys)
+
+
+# ── residual worklist: families neither grammar shares ───────────────────────
+
+
+def test_forest_does_not_own_bare_fixed_date() -> None:
+    """A bare calendar date with no temporal-operator cue is lens-only residual.
+
+    ``Hakemus on tehtävä 1.1.2027`` carries a FIXED_DATE the H3 lens recognises,
+    but NO commencement/expiry temporal-operator cue, so the forest temporal
+    family produces no clause for it → the shared subset is empty on both sides
+    (the bare date is the lens's own FIXED_DATE residual worklist, not a shared
+    core).
+    """
+    body = "Hakemus on tehtävä 1.1.2027."
+    statute_id = "2026/300"
+    forest_keys = _forest_keys_for(body, statute_id)
+    lens_keys = lens_temporal_keys_for_text(body)
+    # No shared commencement/expiry core on either side.
+    assert forest_keys == set(), sorted(forest_keys)
+    assert lens_keys == set(), sorted(lens_keys)
+
+
+def test_application_clause_is_forest_only_residual() -> None:
+    """An application/transition clause is forest-only (the H3 lens has no kind).
+
+    ``Tätä lakia sovelletaan ensimmäisen kerran …`` is a forest ``application``
+    clause; it canonicalises to NO shared kind, so it never enters the
+    differential (it is the forest-only residual worklist).
+    """
+    body = "Tätä lakia sovelletaan ensimmäisen kerran vuodelta 2027 toimitettavassa verotuksessa."
+    statute_id = "2026/400"
+    forest_keys = _forest_keys_for(body, statute_id)
+    lens_keys = lens_temporal_keys_for_text(body)
+    # The application clause does not produce a shared canonical key.
+    assert forest_keys == set(), sorted(forest_keys)
+    assert lens_keys == set(), sorted(lens_keys)
+
+
+def test_undated_commencement_is_not_keyed() -> None:
+    """A dateless commencement (placeholder) yields no shared key on either side.
+
+    ``Tämä laki tulee voimaan päivänä kuuta 20 .`` — the forest commencement
+    clause has no extractable date; the lens emits a dateless COMMENCEMENT with no
+    FIXED_DATE to pair. Both sides produce the empty shared subset → 0 delta with
+    nothing compared (the honest no-guess outcome).
+    """
+    body = "Tämä laki tulee voimaan päivänä kuuta 20 ."
+    statute_id = "2026/500"
+    forest_keys = _forest_keys_for(body, statute_id)
+    lens_keys = lens_temporal_keys_for_text(body)
+    assert forest_keys == set(), sorted(forest_keys)
+    assert lens_keys == set(), sorted(lens_keys)
+    diff = diff_forest_vs_lens_temporal_subset(forest_keys, lens_keys)
+    assert diff.is_zero_delta
+
+
+# ── projection shape sanity ──────────────────────────────────────────────────
+
+
+def test_projection_is_gated_by_temporal_family_membership() -> None:
+    """The projection emits facts only for segments the temporal family gated.
+
+    A pure-prose provision with no temporal cue carries no temporal family
+    ownership on any leaf and therefore projects no temporal segment.
+    """
+    body = "Viranomaisen on tehtävä päätös viivytyksettä."
+    statute_id = "2026/600"
+    forest = _forest_for(body, statute_id)
+    assert not any("temporal" in n.families for n in forest.syntax_nodes.values())
+    assert project_forest_temporal(forest, body) == ()
+
+
+def test_projected_temporal_anchors_to_enclosing_segment() -> None:
+    """Each projected temporal segment anchors to a real structural segment node."""
+    body = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2027."
+    statute_id = "2026/700"
+    forest = _forest_for(body, statute_id)
+    projected = project_forest_temporal(forest, body)
+    assert projected, "expected one projected temporal segment"
+    p = projected[0]
+    assert p.segment_node_id in forest.syntax_nodes
+    assert "tulee voimaan" in body[p.char_start : p.char_end]
+    assert p.clauses
