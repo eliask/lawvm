@@ -73,6 +73,27 @@ of the superset/miss frontier, not ``miss == 0`` against this weak oracle.
 :func:`assert_total_ownership` is the checkable postcondition (the union of the
 core cue spans, holder spans, instrument spans, basis spans, and residual spans
 partitions the sentence char range exactly).
+
+CANONICAL CUTOVER (DELEGATION-UNIFY-VERDICT step 5)
+==================================================
+The FORWARD-grant recognition is now the single canonical token-native parser's
+(:func:`lawvm.finland.legal_surface.delegation_canonical.parse_delegation_grants`,
+substrate Q1). :func:`parse_delegation_sentence` is a thin compatibility ADAPTER
+for the forward direction: it calls the canonical parser and projects each
+canonical ``DelegationGrant`` back to a :class:`DelegationCore` (a field rename,
+not a re-parse), then fills the no-silent-drop residue over the complement so
+:func:`assert_total_ownership` holds exactly as before. The ``delegated_instrument``
+node identity (cue span + instrument kind + anchor start) is preserved for every
+core C already produced; canonical recognizes a strict superset of the
+adjudicated-correct union, so the only deltas are the adjudicated ADDITIONS (bare
+/ ``Opetusministeriön`` / ``vahvistetaan`` / sentence-initial / ``ohje`` /
+``päätös`` grants the old two-anchor model missed) and the adjudicated REMOVALS
+(the genitive-instrument cross-reference false positives the canonical guards
+decline).
+
+The REVERSE authority-basis recognizer :func:`extract_authority_bases` is
+UNTOUCHED — it is the clean construction-owned reverse direction and is OUT OF
+SCOPE for the forward unification.
 """
 from __future__ import annotations
 
@@ -83,6 +104,13 @@ from dataclasses import dataclass, field
 # NOT re-implement section/momentti recognition. A blank import-time failure
 # would be a silent fallback, so the import is unguarded (fail loud).
 from lawvm.finland.references.sections import parse_body_provision_tail_spanned
+
+# The single canonical forward-grant construction parser (DELEGATION-UNIFY-VERDICT
+# step 5: C-forward calls the winner). Unguarded import = fail loud.
+from lawvm.finland.legal_surface.delegation_canonical import (
+    DelegationGrant,
+    parse_delegation_grants,
+)
 
 # ---------------------------------------------------------------------------
 # Parser-lane provenance — mirrors the prior islands.
@@ -118,98 +146,10 @@ INSTRUMENT_PAATOS = "päätös"
 # order) as a closed alternation so the cue SPAN is owned for total ownership.
 # ---------------------------------------------------------------------------
 
-#: Power verbs that head a delegation grant (the ``KIND_POWER`` set, plus the
-#: drafting variants the production extractor's verb alternation carries:
-#: ``säätää`` / ``vahvistaa`` / ``vahvistetaan`` / ``määrätä`` / ``määritellään``).
-_POWER_VERBS: tuple[str, ...] = (
-    "säädetään",
-    "säätää",
-    "annetaan",
-    "antaa",
-    "määrätään",
-    "määrätä",
-    "vahvistetaan",
-    "vahvistaa",
-    "määritellään",
-)
-
-# ---------------------------------------------------------------------------
-# Two-anchor clause-level cue model (grammar form, gap-tolerant).
-# ---------------------------------------------------------------------------
-# A delegation grant is recognized from the CO-OCCURRENCE of two CLOSED-LIST
-# anchor tokens within ONE clause, NOT from an adjacency regex with a fixed gap
-# window. This is the construction-grammar form: the cue is a discontinuous
-# constituent (an instrument anchor + a power-verb anchor) whose two token spans
-# the cue OWNS, with the intervening prose carried as benign residual. It handles
-# a WIDE modifier gap between the issuer/instrument and the verb — the exact shape
-# the production extractor's bounded ``{0,150}?`` / ``{0,2}``-word windows MISS —
-# by construction, because the anchors are matched independently and only their
-# clause co-occurrence is required.
-#
-# Two grant shapes:
-#   * ASETUS shape — an INSTRUMENT anchor (``asetuksella`` instrumental, or an
-#     ``asetus``-issuer nominative ``… antaa asetuksella``) co-occurring with a
-#     POWER-VERB anchor in the clause. Either order, any gap.
-#   * AGENCY shape — an ``antaa``/``voi antaa`` power head co-occurring with a
-#     ``määräyksiä`` / ``ohjeita`` OBJECT anchor (the lower instrument is the
-#     object, not the instrumental case).
-
-#: Power-verb anchor (a single closed-list verb token). ``\b`` enforces whole-
-#: token matching (AGENTS.md whole-token discipline at the char-regex level).
-_VERB_ANCHOR_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(v) for v in _POWER_VERBS) + r")\b",
-    re.IGNORECASE,
-)
-#: Instrument anchor for the ASETUS shape: the instrumental ``asetuksella`` (by
-#: decree). A single closed token.
-_INSTRUMENT_ASETUKSELLA_RE = re.compile(r"\basetuksella\b", re.IGNORECASE)
-#: SELF-/CROSS-REFERENCE GUARD. A demonstrative determiner immediately preceding
-#: ``asetuksella`` (``Tällä asetuksella säädetään …`` / ``vahvistaa tällä
-#: asetuksella …``) names the ENACTING decree's OWN instrument — the decree
-#: exercising its own power — NOT a delegation that GRANTS the power to issue a
-#: lower instrument. It is therefore out of the delegation family: the
-#: ``asetuksella`` is a self-reference to the document itself, not a delegated
-#: target. This mirrors the sibling H5 recognizer's ``_DEMONSTRATIVES`` guard
-#: (:mod:`lawvm.finland.references.delegation`), which already excludes the
-#: identical shape. The demonstrative set is the genitive/adessive surfaces that
-#: bind ``asetuksella`` (``tällä``/``tämän``/``sillä``/``sen`` + the colloquial
-#: ``tässä``/``tästä`` that appear in negated ``ei tällä asetuksella säädetä``
-#: forms). Matched as a whole token directly before the anchor (only whitespace
-#: between), so a coincidental earlier demonstrative does not suppress a genuine
-#: ``[issuer] asetuksella`` grant later in the clause.
-_DEMONSTRATIVE_BEFORE_ASETUS_RE = re.compile(
-    r"\b(?:tällä|tämän|tässä|tästä|tällaisella|sillä|sen|tuolla|tuon)\s+\Z",
-    re.IGNORECASE,
-)
-#: Object anchor for the AGENCY shape: ``määräyksiä`` / ``ohjeita`` (regulations /
-#: guidance), the lower instrument as the verb's object.
-_OBJECT_MAARAYS_RE = re.compile(r"\b(?:määräyksiä|ohjeita)\b", re.IGNORECASE)
-#: The ``antaa``/``voi antaa`` head that governs the AGENCY object anchor.
-_VERB_ANTAA_RE = re.compile(r"\bantaa\b", re.IGNORECASE)
-
-#: Authority-holder surfaces (the actor span). Closed institutional heads:
-#: valtioneuvosto, tasavallan presidentti, a ``…ministeriö(n)`` (compound names
-#: like ``sosiaali- ja terveysministeriö``), and the agency family
-#: (``…virasto/…keskus/…laitos/…hallinto/…valvonta/…lautakunta/…neuvosto``). The
-#: compound-name prefix is a SINGLE bounded LAZY char-class run anchored by the
-#: literal head word (``ministeriö`` / ``…virasto`` …), NOT a nested word-repeat
-#: quantifier — so there is no overlapping-repeat backtracking risk
-#: (AGENTS.md regex discipline / the regex perf gate).
-_HOLDER_RE = re.compile(
-    r"(?:valtioneuvosto(?:n)?"
-    r"|tasavallan\s+presidentin?"
-    r"|[\w][\w\s-]{0,40}?ministeriö(?:n|ssä)?"
-    r"|[\w][\w-]{0,30}?(?:virasto|keskus|laitos|hallinto|valvonta|lautakunta"
-    r"|neuvosto|komissio|hallitus)(?:n|sta)?)",
-    re.IGNORECASE,
-)
-
-#: Clause boundaries WITHIN a sentence (``.`` / ``;`` / newline). NOTE: ``:`` is
-#: deliberately NOT a boundary — the Finnish section surface ``8 §:n`` carries an
-#: internal colon. Co-occurrence is required within ONE clause so two unrelated
-#: clauses ("Asetus on annettu. Säädetään laissa.") do not spuriously pair an
-#: instrument in one with a verb in the other.
-_CLAUSE_BOUNDARY_RE = re.compile(r"[.;\n]")
+# Forward-grant recognition (power-verb / instrument / holder / clause-boundary
+# anchors) moved to the canonical token-native parser delegation_canonical.py
+# (DELEGATION-UNIFY-VERDICT step 5). Only the reverse authority-basis surface
+# vocabulary remains here, native to extract_authority_bases.
 
 #: The ``nojalla`` / ``mukaan`` provision-basis tail: a ``(NUM/YEAR)`` id and/or a
 #: ``N §:n`` provision path, terminated by ``nojalla`` (under) or ``mukaan``
@@ -428,24 +368,6 @@ class DelegationParse:
     parser_lane: str = DELEGATION_LANE_CONSTRUCTION_OWNED
 
 
-def _clause_spans(text: str) -> list[tuple[int, int]]:
-    """Partition ``text`` into clause spans on ``.`` / ``;`` / newline boundaries.
-
-    The boundary char itself is left OUTSIDE every clause span (it falls to
-    residual), so the clause spans plus the boundary chars tile the sentence. A
-    delegation grant must have BOTH its anchors inside ONE clause span.
-    """
-    spans: list[tuple[int, int]] = []
-    cursor = 0
-    for m in _CLAUSE_BOUNDARY_RE.finditer(text):
-        if m.start() > cursor:
-            spans.append((cursor, m.start()))
-        cursor = m.end()
-    if cursor < len(text):
-        spans.append((cursor, len(text)))
-    return spans
-
-
 def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
     out: list[tuple[int, int]] = []
     for s, e in sorted(intervals):
@@ -470,379 +392,64 @@ def _fill_residuals(n: int, owned: list[tuple[int, int]], reason: str) -> list[R
     return residuals
 
 
-def _classify_kind(classify_text: str) -> str:
-    """Classify the issuing authority from the cue+holder surface.
+def _core_from_grant(grant: DelegationGrant) -> DelegationCore:
+    """Project one canonical :class:`DelegationGrant` to a C ``DelegationCore``.
 
-    Mirrors the production ``_classify_delegation_type`` (which keys on the FULL
-    matched clause text, issuer included): valtioneuvosto → VN_ASETUS, a
-    ministeriö → MIN_ASETUS, presidentti → PRES_ASETUS, a määräys/ohje surface →
-    AGENCY, else generic ASETUS. ``classify_text`` is the cue surface UNION the
-    holder surface, because the instrument-first / agency cue spans
-    (``asetuksella säädetään``) do NOT contain the issuer — the holder is owned by
-    a separate span — so classifying off the cue alone would mis-key every
-    holder-before-cue grant as the generic ``ASETUS``.
-
-    Precedence matches the production ``_classify_delegation_type`` order:
-    valtioneuvosto first, then ministeriö, then presidentti, then the
-    agency/määräys surface, then the generic fallback.
+    Identity-preserving: the canonical grant already carries the EXACT C core
+    fields (kind / cue / instrument / holder / basis spans) — this is a field
+    rename, not a re-parse. The instrument vocabulary is a strict superset of C's
+    old two-anchor set (it adds ``ohje`` and the ``päätös`` / object cases the old
+    two-anchor model lacked); those richer instrument kinds flow straight through
+    as the adjudicated ``old_B_correct`` additions.
     """
-    t = classify_text.lower()
-    # GENITIVE issuer forms ONLY. ``valtioneuvoston`` / ``ministeriön`` /
-    # ``presidentin`` are the genitive surfaces that bind an ``asetuksella``
-    # grant (``valtioneuvoston asetuksella``). The NOMINATIVE issuer heading an
-    # ``antaa määräyksiä`` agency grant (``valtioneuvosto voi antaa määräyksiä``)
-    # is NOT a decree class — it falls through to the agency/määräys check below.
-    # This mirrors the production ``_classify_delegation_type`` EXACTLY, which keys
-    # on the genitive ``"valtioneuvoston"`` / ``"ministeriön"`` / ``"presidentin"``.
-    if "valtioneuvoston" in t:
-        return KIND_VN_ASETUS
-    if "ministeriön" in t:
-        return KIND_MIN_ASETUS
-    if "presidentin" in t:
-        return KIND_PRES_ASETUS
-    if "määräyksi" in t or "ohjeita" in t or "määräyks" in t:
-        return KIND_AGENCY
-    return KIND_ASETUS
-
-
-def _holder_span_in_clause(
-    text: str,
-    clause_start: int,
-    clause_end: int,
-    anchor_offset: int,
-    *,
-    adjacent_only: bool = False,
-    search_floor: int | None = None,
-) -> tuple[int | None, int | None, bool]:
-    """Find the authority-holder NP span bound to the instrument anchor.
-
-    The issuer is the holder NP that BINDS the instrument: the holder match nearest
-    to (at or before, else just after) the instrument anchor — NOT merely the last
-    holder in the clause, which can be a name in the regulated OBJECT (``ministeriön
-    asetuksella ... annettua VALTIONEUVOSTON asetusta``: the valtioneuvosto is the
-    object, the ministeriö is the issuer bound to ``asetuksella``). ``anchor_offset``
-    is the instrument-anchor start (sentence-local). A clause with no overt issuer
-    NP (a bare ``asetuksella säädetään``) is holder-underspecified (the impersonal
-    register), NOT absent.
-
-    ``adjacent_only`` (the ASETUS instrument shape): the genitive issuer of an
-    ``asetuksella`` decree is the construction ``[issuer-genitive] asetuksella`` —
-    the issuer NP immediately precedes the anchor (only whitespace between). When
-    set, ONLY a holder ending adjacent to the anchor binds; the ``after`` fallback
-    is rejected. This stops a COORDINATED clause's later-instrument issuer being
-    wrongly grabbed across the coordinator (``annetaan asetuksella, ympäristö-
-    ministeriön päätöksellä …``: the ``asetuksella`` is a bare/generic decree, the
-    ``ympäristöministeriön`` genitive binds ``päätöksellä``, NOT the asetus).
-
-    ``search_floor`` (sentence-local) lower-bounds the holder search to the segment
-    AFTER the PREVIOUS coordinated instrument anchor — so a coordinated grant's
-    issuer cannot reach back across an earlier anchor (``valtioneuvoston asetuksella
-    ja ministeriön asetuksella``: the second ``asetuksella``'s issuer is
-    ``ministeriön``, confined to the post-first-anchor segment).
-    """
-    floor_local = 0 if search_floor is None else max(0, search_floor - clause_start)
-    base = clause_start + floor_local
-    clause = text[base:clause_end]
-    anchor_local = anchor_offset - base
-    before: re.Match[str] | None = None  # nearest holder ending at/before anchor
-    after: re.Match[str] | None = None  # first holder starting after anchor
-    for m in _HOLDER_RE.finditer(clause):
-        if m.end() <= anchor_local:
-            before = m  # keep the LATEST one before the anchor (nearest)
-        elif after is None:
-            after = m
-    if adjacent_only:
-        # Only an immediately-preceding genitive issuer binds an asetus anchor.
-        if before is not None and clause[before.end() : anchor_local].strip() == "":
-            return base + before.start(), base + before.end(), False
-        return None, None, True
-    chosen = before if before is not None else after
-    if chosen is not None:
-        return base + chosen.start(), base + chosen.end(), False
-    return None, None, True
-
-
-def _basis_span(
-    text: str, search_from: int
-) -> tuple[int | None, int | None, tuple[str, ...]]:
-    """Find a ``… nojalla`` / ``… mukaan`` provision-basis window, REUSING refs.
-
-    Scans from ``search_from`` for a ``nojalla`` / ``mukaan`` terminal whose
-    preceding window carries a provision-id signal (a ``(NUM/YEAR)`` id or a
-    ``N §`` path). Returns the window span and the references-recognized provision
-    target labels inside it. ``(None, None, ())`` when no basis is present.
-
-    The window left boundary is the previous clause boundary (``.``/``;``/newline
-    / start); the references recognizer (:func:`parse_body_provision_tail_spanned`)
-    parses each conjunct's section path — REUSING the existing sub-ref grammar, not
-    a new section regex.
-
-    CONJUNCT DISTRIBUTION: a single ``nojalla`` may coordinate several authority
-    bases (``…lain (629/1998) 36 §:n 1 momentin ja valtion maksuperustelain
-    (150/1992) 8 §:n nojalla``). We take the section tail AFTER EACH ``(NUM/YEAR)``
-    id in the window and distribute the single ``nojalla`` over every conjunct, so
-    BOTH ``36`` and ``8`` are recognized — not only the conjunct adjacent to
-    ``nojalla``. This mirrors the production ``extract_asetus_authority`` conjunct
-    loop, which an earlier single-match approach got wrong (it dropped all but the
-    last conjunct).
-    """
-    term = _BASIS_TERMINAL_RE.search(text, search_from)
-    if term is None:
-        return None, None, ()
-    # Left boundary: the previous clause terminator (``.`` / ``;`` / newline)
-    # before the basis terminal. NOTE: we deliberately do NOT split on ``:`` —
-    # the Finnish section surface ``8 §:n`` carries an internal colon, so a
-    # ``:``-boundary would truncate the window to ``n `` and lose the section id.
-    left = 0
-    for m in re.finditer(r"[.;\n]", text[: term.start()]):
-        left = m.end()
-    window = text[left : term.start()]
-    # Blank any ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment-version
-    # interjection between the path and the terminal: the inner ids are AMENDING
-    # acts (metadata), not the basis, and the interjection prose would otherwise
-    # defeat the adjacency guard. Offsets are preserved (equal-length blanking).
-    window = _strip_amendment_interjections(window)
-    if not _BASIS_ID_SIGNAL_RE.search(window):
-        return None, None, ()
-    # ADJACENCY GUARD: the provision path must DIRECTLY precede the terminal (only
-    # provision-tail vocabulary in between). Rejects the long-range false basis
-    # where an unrelated earlier ``(NUM/YEAR) §`` ref sits far to the left of an
-    # anaphoric bare ``sen nojalla`` separated by prose.
-    if not _BASIS_PATH_BEFORE_TERMINAL_RE.search(window):
-        return None, None, ()
-    # Recognize each conjunct's provision path. For each ``(NUM/YEAR)`` id, feed
-    # the slice from just after that id up to the NEXT id (or window end) to the
-    # references recognizer (so ``N §:n`` is what it sees, not the act-name prose
-    # before the id). We do NOT swallow recognizer exceptions (fail loud — a parse
-    # crash here is a real defect, not a benign "no basis"); an empty target list
-    # is the legitimate "no recognizable section" outcome (a bare ``(NUM/YEAR) …
-    # nojalla`` with no ``§``). A window with NO id at all (a bare ``N §:n
-    # nojalla`` without a statute id) is parsed as a single conjunct.
-    id_matches = list(re.finditer(r"\(\d{1,5}\s*/\s*\d{2,4}\)\s*", window))
-    targets: list[str] = []
-    if id_matches:
-        for i, idm in enumerate(id_matches):
-            tail_end = (
-                id_matches[i + 1].start() if i + 1 < len(id_matches) else len(window)
-            )
-            tail = window[idm.end() : tail_end]
-            parsed = parse_body_provision_tail_spanned(tail)
-            targets.extend(t.section_label for t in parsed.targets if t.section_label)
-    else:
-        parsed = parse_body_provision_tail_spanned(window)
-        targets.extend(t.section_label for t in parsed.targets if t.section_label)
-    # Preserve source order, drop duplicates (coordinated conjuncts can repeat).
-    seen: set[str] = set()
-    ordered = [t for t in targets if not (t in seen or seen.add(t))]
-    return left, term.end(), tuple(ordered)
-
-
-def _build_core(
-    text: str,
-    clause_start: int,
-    clause_end: int,
-    verb_span: tuple[int, int],
-    instr_span: tuple[int, int],
-    instrument: str,
-    *,
-    own_basis: bool,
-    search_floor: int | None = None,
-) -> DelegationCore:
-    """Assemble ONE delegation core from a (verb anchor, instrument anchor) pair.
-
-    The holder NP is the issuer bound to THIS instrument anchor; the issuer KIND is
-    classified off the narrow holder-vicinity window. ``own_basis`` is True only for
-    the FIRST core of a coordinated clause, so the shared ``… nojalla`` provision
-    basis (which precedes the coordinated grant once) is owned by exactly one core —
-    the remaining coordinated cores leave the basis unset (it is already owned, so
-    re-owning it would double-count the same span in totality).
-    """
-    h_start, h_end, underspec = _holder_span_in_clause(
-        text,
-        clause_start,
-        clause_end,
-        instr_span[0],
-        adjacent_only=(instrument == INSTRUMENT_ASETUS),
-        search_floor=search_floor,
-    )
-    holder_surface = (
-        text[h_start:h_end] if h_start is not None and h_end is not None else ""
-    )
-    instrument_surface = text[instr_span[0] : instr_span[1]]
-    if instrument == INSTRUMENT_MAARAYS:
-        # The AGENCY shape (``voi antaa määräyksiä``) is ALWAYS an agency
-        # regulation in the production taxonomy — its bounded match never captures
-        # a genitive ``…n asetuksella`` issuer, so it classifies as AGENCY
-        # regardless of any genitive name modifying the agency NP (``Valtioneuvoston
-        # kanslia voi antaa määräyksiä`` is an AGENCY määräys, not a VN_ASETUS).
-        kind = KIND_AGENCY
-    else:
-        # ASETUS shape: classify off a NARROW issuer-vicinity window — the holder
-        # NP (the issuer bound to ``asetuksella``) UNION the instrument anchor —
-        # NOT the whole clause. The whole clause can carry a spurious issuer name
-        # in the regulated OBJECT (``ministeriön asetuksella ... annettua
-        # VALTIONEUVOSTON asetusta``: the valtioneuvosto is the object, the
-        # ministeriö is the issuer). The genitive issuer in the holder
-        # discriminates VN_ASETUS / MIN_ASETUS / PRES_ASETUS; no genitive issuer →
-        # generic ASETUS. Mirrors the production classifier's bounded match_text.
-        kind = _classify_kind(holder_surface + " " + instrument_surface)
-
-    b_start: int | None = None
-    b_end: int | None = None
-    basis_targets: tuple[str, ...] = ()
-    if own_basis:
-        # The ``nojalla`` provision basis (if any) lives inside this clause, before
-        # the grant. Only the first coordinated core owns it (shared span).
-        b_start, b_end, basis_targets = _basis_span(text, clause_start)
-        if b_start is None or b_end is None or b_end > clause_end:
-            b_start, b_end, basis_targets = None, None, ()
-
     return DelegationCore(
-        kind=kind,
-        cue=text[verb_span[0] : verb_span[1]],
-        cue_start=verb_span[0],
-        cue_end=verb_span[1],
-        instrument=instrument,
-        instrument_start=instr_span[0],
-        instrument_end=instr_span[1],
-        holder_start=h_start,
-        holder_end=h_end,
-        holder_underspecified=underspec,
-        basis_start=b_start,
-        basis_end=b_end,
-        basis_targets=basis_targets,
+        kind=grant.kind,
+        cue=grant.cue,
+        cue_start=grant.cue_start,
+        cue_end=grant.cue_end,
+        instrument=grant.instrument,
+        instrument_start=grant.instrument_start,
+        instrument_end=grant.instrument_end,
+        holder_start=grant.holder_start,
+        holder_end=grant.holder_end,
+        holder_underspecified=grant.holder_underspecified,
+        basis_start=grant.basis_start,
+        basis_end=grant.basis_end,
+        basis_targets=grant.basis_targets,
     )
-
-
-def _recognize_clause_cores(
-    text: str, clause_start: int, clause_end: int
-) -> list[DelegationCore]:
-    """Recognize the delegation grant(s) inside a clause via two-anchor co-occurrence.
-
-    A grant is recognized iff the clause carries either:
-
-      * ASETUS shape — an ``asetuksella`` instrument anchor AND a power-verb anchor
-        (any order, any gap within the clause); or
-      * AGENCY shape — an ``antaa`` power head AND a ``määräyksiä`` / ``ohjeita``
-        OBJECT anchor (the lower instrument as the verb's object).
-
-    MULTI-CORE coordination: one clause may delegate to SEVERAL coordinated
-    instruments sharing ONE power verb — the drafting form
-    ``annetaan asetuksella, X:n päätöksellä ja Y:n järjestyksellä``, or a clause
-    carrying SEVERAL distinct ``asetuksella`` instrumental anchors. Each coordinated
-    instrument anchor that the family models (an ``asetuksella`` decree anchor, or
-    the agency ``määräyksiä``/``ohjeita`` object) gets its OWN core (its own issuer
-    KIND, bound to that anchor), sharing the clause's single power-verb anchor as
-    the discontinuous cue head. Non-modelled coordinated instruments (a bare
-    ``päätöksellä`` / ``järjestyksellä`` with no asetus/määräys surface) stay benign
-    residual — the family's instrument vocabulary is asetus / määräys, so they are
-    not silently asserted as grants. Returns ``[]`` when no grant shape is present
-    (the clause is out of family).
-    """
-    clause = text[clause_start:clause_end]
-
-    verb = _VERB_ANCHOR_RE.search(clause)
-    antaa = _VERB_ANTAA_RE.search(clause)
-
-    # ASETUS shape: EVERY ``asetuksella`` instrumental anchor in the clause is a
-    # decree grant (coordinated decrees → one core each). Requires a power verb.
-    # EXCEPT a self-/cross-reference anchor (``tällä asetuksella`` / ``tämän
-    # asetuksella``): the decree exercising its OWN power is not a delegation that
-    # grants the power to issue a lower instrument, so such an anchor is not a
-    # grant. It falls to benign residual (totality preserved). Mirrors the H5
-    # recognizer's demonstrative cross-reference guard.
-    asetus_anchors = [
-        am
-        for am in _INSTRUMENT_ASETUKSELLA_RE.finditer(clause)
-        if not _DEMONSTRATIVE_BEFORE_ASETUS_RE.search(clause[: am.start()])
-    ]
-    # AGENCY shape: the ``määräyksiä`` / ``ohjeita`` object anchor(s) under ``antaa``.
-    object_anchors = list(_OBJECT_MAARAYS_RE.finditer(clause))
-
-    cores: list[DelegationCore] = []
-    # First-anchor-owns-basis: order the coordinated anchors by source position so
-    # the leftmost (the one the shared ``nojalla`` basis precedes) owns the basis.
-    anchors: list[tuple[int, tuple[int, int], str, tuple[int, int]]] = []
-    if asetus_anchors and verb is not None:
-        verb_span = (clause_start + verb.start(), clause_start + verb.end())
-        for am in asetus_anchors:
-            anchors.append(
-                (
-                    am.start(),
-                    (clause_start + am.start(), clause_start + am.end()),
-                    INSTRUMENT_ASETUS,
-                    verb_span,
-                )
-            )
-    if antaa is not None and object_anchors:
-        antaa_span = (clause_start + antaa.start(), clause_start + antaa.end())
-        for om in object_anchors:
-            anchors.append(
-                (
-                    om.start(),
-                    (clause_start + om.start(), clause_start + om.end()),
-                    INSTRUMENT_MAARAYS,
-                    antaa_span,
-                )
-            )
-
-    if not anchors:
-        return []
-
-    anchors.sort(key=lambda a: a[0])
-    prev_anchor_end: int | None = None
-    for i, (_pos, instr_span, instrument, vspan) in enumerate(anchors):
-        cores.append(
-            _build_core(
-                text,
-                clause_start,
-                clause_end,
-                vspan,
-                instr_span,
-                instrument,
-                own_basis=(i == 0),
-                # Confine a coordinated grant's issuer search to the segment after
-                # the previous anchor (it cannot reach back across an earlier one).
-                search_floor=prev_anchor_end,
-            )
-        )
-        prev_anchor_end = instr_span[1]
-    return cores
 
 
 def parse_delegation_sentence(text: str) -> DelegationParse:
     """Parse one sentence span into delegation/authority construction cores.
 
     ``text`` is the EXACT sentence span, in its own local coordinate system.
-    Deterministic: split the sentence into clauses (on ``.`` / ``;`` / newline) and
-    recognize the delegation grant(s) per clause via two-anchor co-occurrence (an
-    instrument anchor + a power-verb anchor, any order, any intra-clause gap; or an
-    ``antaa`` + ``määräyksiä`` agency shape). A clause may carry SEVERAL coordinated
-    instrument anchors sharing one power verb (``annetaan asetuksella, X:n
-    päätöksellä …`` / several ``asetuksella`` anchors) — each modelled instrument
-    anchor yields its OWN core. For each grant emit ONE
-    delegation core — classified into an issuer KIND, owning the discontinuous cue
-    (verb anchor + instrument anchor), the authority-holder NP span (or marking the
-    holder underspecified for the bare/impersonal register), the instrument kind,
-    and the ``… nojalla`` / ``… mukaan`` provision-basis window (parsed via the
-    references recognizer). Every other char is typed explicit residual.
 
-    Declines (typed residue, never a guessed parse) when NO clause yields a grant
-    (the caller's family discriminator guarantees a grant for in-scope spans, so a
-    decline here is the out-of-family case).
+    CANONICAL CUTOVER (DELEGATION-UNIFY-VERDICT step 5): the FORWARD-grant
+    recognition is the single canonical token-native parser's
+    (:func:`lawvm.finland.legal_surface.delegation_canonical.parse_delegation_grants`,
+    substrate Q1). This function is a thin compatibility ADAPTER for the forward
+    direction: it calls the canonical parser and projects each canonical
+    :class:`~lawvm.finland.legal_surface.delegation_canonical.DelegationGrant`
+    back to a :class:`DelegationCore` (a field rename, not a re-parse), then fills
+    the no-silent-drop residue over the complement so :func:`assert_total_ownership`
+    holds exactly as before. The ``delegated_instrument`` node identity (cue span +
+    instrument kind + anchor start) is preserved for every core C already produced;
+    canonical recognizes a strict superset of the adjudicated-correct union, so the
+    only deltas are the adjudicated additions (bare / ``Opetusministeriön`` /
+    ``vahvistetaan`` / sentence-initial / ``ohje`` / ``päätös`` grants the old
+    two-anchor model missed) and the adjudicated removals (the old-B-style genitive
+    cross-reference false positives the canonical guards decline).
+
+    The REVERSE authority-basis recognizer :func:`extract_authority_bases` is
+    UNTOUCHED — it is the clean construction-owned reverse direction, out of scope
+    for the forward unification.
+
+    Declines (typed residue, never a guessed parse) when the canonical parser
+    yields NO forward grant for the sentence — the out-of-family / declined case.
     """
     n = len(text)
-    cores: list[DelegationCore] = []
-    owned: list[tuple[int, int]] = []
-    for clause_start, clause_end in _clause_spans(text):
-        for core in _recognize_clause_cores(text, clause_start, clause_end):
-            cores.append(core)
-            owned.append((core.cue_start, core.cue_end))
-            owned.append((core.instrument_start, core.instrument_end))
-            if core.holder_start is not None and core.holder_end is not None:
-                owned.append((core.holder_start, core.holder_end))
-            if core.basis_start is not None and core.basis_end is not None:
-                owned.append((core.basis_start, core.basis_end))
+    scan = parse_delegation_grants(text)
+    cores: list[DelegationCore] = [_core_from_grant(g) for g in scan.grants]
 
     if not cores:
         return DelegationParse(
@@ -854,6 +461,15 @@ def parse_delegation_sentence(text: str) -> DelegationParse:
             residuals=(Residual(0, n, "no_delegation_core"),),
             parser_lane=DELEGATION_LANE_DECLINED,
         )
+
+    owned: list[tuple[int, int]] = []
+    for core in cores:
+        owned.append((core.cue_start, core.cue_end))
+        owned.append((core.instrument_start, core.instrument_end))
+        if core.holder_start is not None and core.holder_end is not None:
+            owned.append((core.holder_start, core.holder_end))
+        if core.basis_start is not None and core.basis_end is not None:
+            owned.append((core.basis_start, core.basis_end))
 
     residuals = _fill_residuals(n, owned, "benign_uninterpreted_prose")
     return DelegationParse(

@@ -519,8 +519,54 @@ def _is_issuer_head(tok: Token) -> bool:
     return any(low.endswith(suf) for suf in _ISSUER_HEAD_SUFFIXES)
 
 
+def _adjacent_issuer_before(
+    tokens: tuple[Token, ...], clause_lo: int, inst_idx: int
+) -> tuple[str, int | None, int | None]:
+    """The issuer NP ending IMMEDIATELY before the instrument anchor, or none.
+
+    Walks left from the anchor over whitespace, then takes the contiguous run of
+    ``word`` tokens that form the genitive issuer surface (the actor-matcher span
+    if it ends adjacent, else the issuer-head run). Returns ("", None, None) when
+    no issuer is immediately adjacent — the asetus is then GENERIC / underspecified
+    (old C ``adjacent_only`` rule).
+    """
+    # The token immediately before the anchor (skipping whitespace).
+    j = inst_idx - 1
+    while j >= clause_lo and tokens[j].category == "whitespace":
+        j -= 1
+    if j < clause_lo or tokens[j].category != "word":
+        return "", None, None
+    # Prefer a registry/role actor phrase whose END is exactly this adjacent word.
+    matches = _ACTOR_MATCHER.find_in_window(tokens, clause_lo, inst_idx)
+    adj_end = tokens[j].char_end
+    adjacent = [m for m in matches if m.char_end == adj_end]
+    if adjacent:
+        chosen = max(adjacent, key=lambda m: m.char_start)
+        return chosen.surface, chosen.char_start, chosen.char_end
+    # Else: the adjacent word itself must be an issuer head (``…ministeriön`` /
+    # ``valtioneuvoston`` / an agency head); absorb a leading ``tasavallan``.
+    if not _is_issuer_head(tokens[j]):
+        return "", None, None
+    start_idx = j
+    prev = _prev_word_token(tokens, j)
+    if prev is not None and prev.text.lower() in ("tasavallan",):
+        k = j - 1
+        while k >= clause_lo and tokens[k].category != "word":
+            k -= 1
+        if k >= clause_lo:
+            start_idx = k
+    cs = tokens[start_idx].char_start
+    ce = tokens[j].char_end
+    return _surface_for(tokens, cs, ce), cs, ce
+
+
 def _resolve_holder(
-    tokens: tuple[Token, ...], clause_lo: int, clause_hi: int, inst_idx: int
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+    *,
+    adjacent_only: bool = False,
 ) -> tuple[str, int | None, int | None]:
     """Bind the authority-holder NP to the instrument anchor.
 
@@ -536,8 +582,19 @@ def _resolve_holder(
     Returns (surface, char_start, char_end) for the issuer nearest the instrument
     anchor. When NEITHER tier binds, the holder is UNDERSPECIFIED — ("", None,
     None) — NOT a decline (C's holder-never-absent rule).
+
+    ``adjacent_only`` (the ASETUS instrumental shape ``[issuer-genitive]
+    asetuksella``, ported from old C ``_holder_span_in_clause``): the genitive
+    issuer of an ``asetuksella`` decree immediately PRECEDES the anchor (only
+    whitespace between). When set, ONLY an issuer ending immediately before the
+    anchor binds — a holder that merely sits NEAREST but across a coordinator
+    (``annetaan asetuksella, ympäristöministeriön päätöksellä …``: the bare
+    ``asetuksella`` is a GENERIC asetus, the ``ympäristöministeriön`` genitive
+    binds ``päätöksellä``) does NOT bind the asetus, which stays underspecified.
     """
     inst_char = tokens[inst_idx].char_start
+    if adjacent_only:
+        return _adjacent_issuer_before(tokens, clause_lo, inst_idx)
     matches = _ACTOR_MATCHER.find_in_window(tokens, clause_lo, clause_hi)
     if matches:
         chosen = min(matches, key=lambda m: abs(m.char_start - inst_char))
@@ -579,6 +636,48 @@ def _surface_for(tokens: tuple[Token, ...], cs: int, ce: int) -> str:
     return "".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Authority-basis adjacency guard + amendment-interjection strip (ported VERBATIM
+# from the old C ``delegation_parse._basis_span`` so the canonical basis lane does
+# not REGRESS the long-range-false-basis / amending-id precision C already had).
+# ---------------------------------------------------------------------------
+_BASIS_TAIL_TOKEN = (
+    r"(?:§|:n|momentin|momentti|momentissa|kohdan|kohta|kohdassa"
+    r"|mukaisen|ja|sekä|tai|\d{1,4}|[a-zäö](?![\wäö])"
+    r"|[\s.,:()/–-]++)"
+)
+#: The provision PATH (a ``(NUM/YEAR)`` id or a ``N §`` section) must DIRECTLY
+#: precede the terminal, with ONLY provision-tail vocabulary in between — not
+#: arbitrary prose. Possessive whitespace branch is perf-gate safe.
+_BASIS_PATH_BEFORE_TERMINAL_RE = re.compile(
+    r"(?:\(\d{1,5}\s*/\s*\d{2,4}\)|\b\d{1,4}\s*[a-zäö]?\s*§)"
+    + _BASIS_TAIL_TOKEN
+    + r"*\Z",
+    re.IGNORECASE,
+)
+#: A ``, sellaisena kuin se on … (NNN/YYYY),`` amendment-version interjection: the
+#: inner ids are the AMENDING acts (metadata), not the basis. Blanked (equal-length)
+#: before the adjacency guard so the prose does not defeat it and the amending ids
+#: are not bound.
+_INTERJECTION_RE = re.compile(
+    r",\s*sellaise\w*\s+kuin\s+(?:se|ne)\s+(?:on|ovat|oli|olivat)\b"
+    r"[^(,]*(?:\([^)]*\)|\d{1,5}/\d{2,4})",
+    re.IGNORECASE,
+)
+
+
+def _strip_amendment_interjections(window: str) -> str:
+    """Blank every ``, sellaisena kuin … ,`` amendment-version interjection.
+
+    Equal-length space replacement preserves window-local char offsets while
+    removing the amending-act ids (metadata) from view. A cheap ``"sellaise"``
+    prefilter skips the scan for the no-interjection common case.
+    """
+    if "sellaise" not in window:
+        return window
+    return _INTERJECTION_RE.sub(lambda m: " " * (m.end() - m.start()), window)
+
+
 def _basis_for_clause(
     text: str, clause_char_start: int, clause_char_end: int
 ) -> tuple[int | None, int | None, tuple[str, ...]]:
@@ -602,8 +701,17 @@ def _basis_for_clause(
     if term_pos == -1:
         return None, None, ()
     window = clause[:term_pos]
+    # Blank ``, sellaisena kuin se on laissa NNN/YYYY,`` amendment interjections
+    # (inner ids are amending acts, not the basis) — ported from old C.
+    window = _strip_amendment_interjections(window)
     # require a provision-id signal in the window
     if not re.search(r"\(\d{1,5}\s*/\s*\d{2,4}\)|\b\d{1,4}[a-z]?\s?§", window):
+        return None, None, ()
+    # ADJACENCY GUARD (ported from old C ``_basis_span`` — preserved across the
+    # cutover): the provision PATH must DIRECTLY precede the terminal. Rejects the
+    # long-range FALSE basis (an unrelated earlier ``(NUM/YEAR) §`` far left of an
+    # anaphoric bare ``sen nojalla`` separated by prose).
+    if not _BASIS_PATH_BEFORE_TERMINAL_RE.search(window):
         return None, None, ()
     # Feed the references sub-grammar the tail AFTER each ``(NUM/YEAR)`` id (so it
     # sees ``N §:n``, not the act-name prose before the id), distributing one
@@ -747,7 +855,14 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
         binding = "may" if _clause_has_may_modal(tokens, clause_lo, clause_hi) else "must"
 
         holder_surface, h_start, h_end = _resolve_holder(
-            tokens, clause_lo, clause_hi, inst_idx
+            tokens,
+            clause_lo,
+            clause_hi,
+            inst_idx,
+            # The ASETUS instrumental issuer is the genitive immediately preceding
+            # the anchor (``[issuer] asetuksella``); a non-adjacent nearest actor
+            # across a coordinator binds a DIFFERENT instrument (old C rule).
+            adjacent_only=(instrument == INSTRUMENT_ASETUS),
         )
         underspec = h_start is None
         kind = _classify_kind(holder_surface, instrument)

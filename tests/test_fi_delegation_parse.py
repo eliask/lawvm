@@ -418,19 +418,36 @@ def test_multicore_two_coordinated_asetus_anchors() -> None:
 
 def test_multicore_coordinated_bare_asetus_not_misbound_to_later_issuer() -> None:
     # The canonical coordinated multi-instrument clause (repro 1995/1062): one verb
-    # delegates to a BARE ``asetuksella`` plus a ministry ``päätöksellä`` and a
-    # municipal ``järjestyksellä``. The bare ``asetuksella`` is a GENERIC asetus —
-    # its issuer must NOT be the ``ympäristöministeriön`` genitive that binds the
-    # later ``päätöksellä`` (adjacency rule). The non-modelled päätös/järjestys
-    # instruments stay benign residual.
+    # delegates to a BARE ``asetuksella`` plus a ministry ``päätöksellä`` (and a
+    # municipal ``rakennusjärjestyksellä`` that is OUT of the instrument vocab and
+    # stays residual). The LOAD-BEARING invariant: the bare ``asetuksella`` is a
+    # GENERIC asetus whose issuer must NOT be misbound to the later
+    # ``ympäristöministeriön`` genitive that binds ``päätöksellä`` (the asetus
+    # adjacency rule, ported from old C into the canonical parser).
+    #
+    # DELEGATION-UNIFY-VERDICT step 5 / FRONTIER adjudication (old_B_correct
+    # additions): the clause ALSO genuinely delegates ``tarkempia säännöksiä JA
+    # määräyksiä`` (an agency ``määräys`` grant) and the ``ympäristöministeriön
+    # päätöksellä`` (a ``päätös`` grant). The old C two-anchor model MISSED both —
+    # it produced only the bare-asetus core and left the määräys/päätös as residual.
+    # The canonical parser recovers them as the adjudicated-correct additional
+    # grants. The bare-asetus issuer-binding invariant is preserved exactly.
     text = (
         "Tarkempia säännöksiä ja määräyksiä rakentamisesta annetaan asetuksella, "
         "ympäristöministeriön päätöksellä ja kunnan rakennusjärjestyksellä."
     )
     dp = parse_delegation_sentence(text)
-    assert len(dp.cores) == 1
-    assert dp.cores[0].kind == KIND_ASETUS  # bare asetus, NOT MIN_ASETUS
-    assert dp.cores[0].holder_underspecified is True
+    # The bare-asetus core is present, GENERIC, and issuer-underspecified.
+    asetus_cores = [c for c in dp.cores if c.instrument == INSTRUMENT_ASETUS]
+    assert len(asetus_cores) == 1
+    assert asetus_cores[0].kind == KIND_ASETUS  # bare asetus, NOT MIN_ASETUS
+    assert asetus_cores[0].holder_underspecified is True
+    # The adjudicated additions: an agency määräys grant + a päätös grant.
+    instruments = {c.instrument for c in dp.cores}
+    assert INSTRUMENT_MAARAYS in instruments
+    assert "päätös" in instruments
+    # The non-modelled ``rakennusjärjestyksellä`` is never asserted as a grant.
+    assert all(c.instrument != "järjestys" for c in dp.cores)
     assert_total_ownership(dp)
 
 
