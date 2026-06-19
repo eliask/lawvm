@@ -141,8 +141,7 @@ class TestBuildObservedBodyInventory:
         inventory = build_observed_body_inventory(xml)
 
         assert [unit.label for unit in inventory] == ["2", "3"]
-        first_section_text = " ".join("".join(inventory[0].xml_element.itertext()).split())
-        assert "2) jatkokohta" in first_section_text
+        assert "2) jatkokohta" in inventory[0].source_text
         wrapper = xml.find(".//{*}hcontainer")
         assert wrapper is not None
         assert [child.tag.rsplit("}", 1)[-1] for child in wrapper] == ["section", "subsection", "section"]

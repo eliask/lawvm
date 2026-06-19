@@ -14,9 +14,10 @@ from lxml import etree
 
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
 from lawvm.finland.body_coverage import (
-    extract_body_coverage,
-    collect_coverage_claims,
+    BodyCoveragePayloadRef,
     analyze_coverage,
+    collect_coverage_claims,
+    extract_body_coverage,
 )
 from lawvm.finland.ops import AmendmentOp, OpType, TargetKind
 
@@ -103,6 +104,33 @@ def test_extract_two_sections() -> None:
     # No nonoperative tags on plain sections
     for u in units:
         assert "nonoperative" not in u.tags
+
+
+def test_extract_body_coverage_payload_ref_is_typed_and_part_scoped() -> None:
+    tree = _body(
+        """
+        <crossHeading>V osa</crossHeading>
+        <chapter>
+          <num>3 luku</num>
+          <section>
+            <num>9 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    unit = extract_body_coverage(tree)[1]
+
+    assert unit.unit_id == "section_3_9"
+    assert isinstance(unit.payload_ref, BodyCoveragePayloadRef)
+    assert unit.payload_ref == BodyCoveragePayloadRef(
+        unit_kind="section",
+        label="9",
+        chapter="3",
+        part="5",
+        source_tag="section",
+    )
 
 
 # ---------------------------------------------------------------------------

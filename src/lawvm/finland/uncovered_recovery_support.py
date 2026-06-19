@@ -6,20 +6,17 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Optional, cast
 
-import lxml.etree as etree
-
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.body_pairing import _part_label_from_cross_heading, should_use_body_section
-from lawvm.finland.helpers import _norm_num_token, _normalize_source_part_num
+from lawvm.finland.body_pairing import should_use_body_section
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.uncovered_recovery_state import (
     FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     UncoveredRecoveryGuards,
 )
-from lawvm.xml_ingest import _tag
 
 
 class ChapterPayloadOutcome(Enum):
@@ -247,31 +244,6 @@ def next_letter_label(label: str) -> Optional[str]:
     return f"{base}{chr(ord(suffix) + 1)}"
 
 
-def xml_part_label(section_el: etree._Element) -> Optional[str]:
-    """Normalized part label from ``<part>`` ancestors or a preceding ``crossHeading``."""
-    el: etree._Element | None = section_el
-    while el is not None:
-        parent = el.getparent()
-        if parent is None:
-            break
-        part_from_heading: Optional[str] = None
-        for child in parent:
-            if child is el:
-                break
-            if _tag(child) == "crossHeading":
-                heading_part = _part_label_from_cross_heading(child)
-                if heading_part:
-                    part_from_heading = heading_part
-        if part_from_heading:
-            return part_from_heading
-        if _tag(parent) == "part":
-            num_el = parent.find("{*}num")
-            if num_el is not None and num_el.text:
-                return _normalize_source_part_num(num_el.text) or None
-        el = parent
-    return None
-
-
 def part_label_from_path(path: tuple[tuple[str, str], ...] | None) -> Optional[str]:
     """First part label in a resolved provision path, if any."""
     if not path:
@@ -379,6 +351,5 @@ _build_uncovered_rop = build_uncovered_rop
 _uncovered_disposition_for_op_id = uncovered_disposition_for_op_id
 _section_heading_text = section_heading_text
 _next_letter_label = next_letter_label
-_xml_part_label = xml_part_label
 _part_label_from_path = part_label_from_path
 _uncovered_section_payload_completeness = uncovered_section_payload_completeness

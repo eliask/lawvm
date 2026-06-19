@@ -359,6 +359,20 @@ def _find_muutos_ir(
     )
     if muutos_sec is None:
         return None, None
+    return _payload_ir_from_muutos_node(
+        muutos_sec,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+    )
+
+
+def _payload_ir_from_muutos_node(
+    muutos_sec: etree._Element,
+    *,
+    target_unit_kind: str,
+    target_norm: str,
+) -> Tuple[Optional[IRNode], Optional[IRNode]]:
+    """Convert one selected amendment-body XML node into payload/cross-heading IR."""
 
     muutos_ir = _embedded_letter_suffix_section_ir(
         muutos_sec,

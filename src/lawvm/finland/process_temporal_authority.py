@@ -12,11 +12,7 @@ from lxml import etree
 from lawvm.core.compile_result import ActivationRule
 from lawvm.core.phase_result import Finding
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.metadata import (
-    _amendment_effective_date_with_step,
-    _amendment_expiry_date,
-    _statute_issue_date,
-)
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_lowering import (
     activation_rules_from_meta_clauses,
     classify_contingent,
@@ -45,11 +41,16 @@ class ProcessTemporalAuthorityContext:
     johto: str
     muutos_tree: etree._Element
     record_finding: RecordProcessFinding
+    source_model: AmendmentSourceModel | None = None
 
     def derive(self) -> AmendmentTemporalAuthority:
-        effective_date, effective_step = _amendment_effective_date_with_step(self.muutos_tree)
-        expiry_date = _amendment_expiry_date(self.muutos_tree)
-        issue_date = _statute_issue_date(self.muutos_tree)
+        source_model = self.source_model or AmendmentSourceModel.from_tree(
+            self.muutos_tree,
+            source_ref=self.amendment_id,
+        )
+        effective_date, effective_step = source_model.effective_date_with_step()
+        expiry_date = source_model.expiry_date()
+        issue_date = source_model.issue_date()
 
         meta_clauses = extract_meta_surface_clauses(self.johto)
         activation_rules = activation_rules_from_meta_clauses(meta_clauses)

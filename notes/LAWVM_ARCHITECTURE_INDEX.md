@@ -37,6 +37,12 @@ non-commensurability remains.
 The target direction is that replay applies typed contracts and does not
 rediscover legal meaning from raw source text.
 
+For Finland, the next hard source boundary is
+[FINLAND_XML_INGEST_ONLY_SOURCE_MODEL.md](FINLAND_XML_INGEST_ONLY_SOURCE_MODEL.md):
+XML/lxml is an acquisition/model-building surface only, while ordinary
+parse/elaborate/lower/apply/temporal phases consume typed source units,
+payload IR, witnesses, and temporal/johto surfaces.
+
 ## Current Implementation Centers
 
 - `src/lawvm/core/ir.py` — legal addresses, IR nodes, operations, timelines.

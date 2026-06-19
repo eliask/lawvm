@@ -35,7 +35,6 @@ from lawvm.finland.elaboration_rule_dispatch import (
     validate_elaboration_pipeline,
 )
 from lawvm.finland.frontend_compile import (
-    _amendment_tree_metadata,
     _enrich_ops_from_amendment_tree,
     _tree_title,
     normalize_and_compile_ops,
@@ -57,6 +56,7 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_notices import replay_print as _replay_print
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
 
@@ -244,6 +244,10 @@ def process_muutoslaki_resolved(
         )
         xml_bytes = acquired.xml_bytes
         muutos_tree = acquired.muutos_tree
+        source_model = AmendmentSourceModel.from_tree(
+            muutos_tree,
+            source_ref=amendment_id,
+        )
         lacks_operative_structure = acquired.lacks_operative_structure
         operative_tags = list(acquired.operative_tags)
         johto = acquired.johto
@@ -275,6 +279,7 @@ def process_muutoslaki_resolved(
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
+                    source_model=source_model,
                 ).handle(),
                 process_findings=process_findings,
                 parent_id=parent_id,
@@ -319,6 +324,7 @@ def process_muutoslaki_resolved(
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
+                    source_model=source_model,
                 ).handle(),
                 process_findings=process_findings,
                 parent_id=parent_id,
@@ -338,10 +344,7 @@ def process_muutoslaki_resolved(
         else:
             skip_to_compile = False
 
-        amendment_tree_metadata = _amendment_tree_metadata(
-            amendment_id=amendment_id,
-            muutos_tree=muutos_tree,
-        )
+        amendment_tree_metadata = source_model.amendment_tree_metadata(amendment_id)
 
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",
@@ -352,7 +355,7 @@ def process_muutoslaki_resolved(
                 source_title=source_title,
                 johto=johto,
                 xml_bytes=xml_bytes,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 strict_profile=strict_profile,
                 acquisition=acquisition,
                 skip_to_compile=skip_to_compile,
@@ -388,7 +391,7 @@ def process_muutoslaki_resolved(
                 "fi.process.frontend_normalization",
                 lambda: ProcessFrontendNormalizationContext(
                     johto=johto,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     state=state,
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,
@@ -432,6 +435,7 @@ def process_muutoslaki_resolved(
                 johto=johto,
                 muutos_tree=muutos_tree,
                 record_finding=record_process_finding,
+                source_model=source_model,
             ).derive(),
             process_findings=process_findings,
             parent_id=parent_id,
@@ -453,6 +457,7 @@ def process_muutoslaki_resolved(
                 source_ref=amendment_id,
                 source_title=source_title,
                 target_statute=ctx.id,
+                source_model=source_model,
             )
         resolved = compile_result.output
 
@@ -496,6 +501,7 @@ def process_muutoslaki_resolved(
                 strict_profile=strict_profile,
                 vts_ops_enrich_done=vts_ops_enrich_done,
                 future_repeals=future_repeals,
+                source_model=source_model,
             ),
             ApplyOpsSinks(
                 compiled_ops_out=compiled_ops_out,
@@ -560,6 +566,7 @@ def process_muutoslaki_resolved(
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
                 section_expiry_overrides=amendment_tree_metadata.section_expiry_overrides,
+                source_model=source_model,
             ).run(),
             process_findings=process_findings,
             parent_id=parent_id,

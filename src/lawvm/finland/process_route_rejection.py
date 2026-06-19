@@ -24,8 +24,8 @@ from lawvm.finland.citation_routing import (
     johtolause_cited_target_ids,
 )
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
-from lawvm.finland.metadata import _commencement_expiry_override
 from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
 from lawvm.finland.vts import VtsSkippedTarget, extract_vts_cross_statute_repeals
 
@@ -153,6 +153,7 @@ class ProcessRouteRejectionContext:
     commencement_expiry_override_notes: list[dict[str, object]]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
+    source_model: AmendmentSourceModel | None = None
 
     def _cited_statute_phrase(self) -> str:
         """Name the statute(s) the johtolause actually cites, for diagnostics.
@@ -274,7 +275,11 @@ class ProcessRouteRejectionContext:
         )
 
     def _apply_skipped_amendment_expiry_override(self) -> None:
-        expiry_override = _commencement_expiry_override(self.muutos_tree, self.amendment_id)
+        source_model = self.source_model or AmendmentSourceModel.from_tree(
+            self.muutos_tree,
+            source_ref=self.amendment_id,
+        )
+        expiry_override = source_model.commencement_expiry_override(self.amendment_id)
         if expiry_override is None:
             return
         target_mid, labels, expiry = expiry_override

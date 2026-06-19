@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import lxml.etree as etree
 
@@ -10,6 +11,9 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.constraints import _find_muutos_node
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.ops import AmendmentOp, projection_scope_confidence
+
+if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 
 def group_has_scope_source(group_ops: Iterable[AmendmentOp], source: str) -> bool:
@@ -47,6 +51,7 @@ def allow_unscoped_live_section_retarget(
 def source_body_chapter_for_scoped_section_target(
     *,
     muutos_tree: etree._Element,
+    source_model: "AmendmentSourceModel | None" = None,
     target_norm: str,
     target_chapter: str,
     target_part: str | None,
@@ -58,6 +63,17 @@ def source_body_chapter_for_scoped_section_target(
     body.  Compile-time scope preservation must distinguish that fallback from a
     true payload that already lives under the scoped target chapter.
     """
+    if source_model is not None:
+        lookup = source_model.body_section_lookup(
+            target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        unit = lookup.unique_unit
+        if unit is None:
+            return None
+        return unit.chapter_label or None
+
     node = _find_muutos_node(
         muutos_tree,
         "section",
@@ -133,6 +149,7 @@ def source_body_scope_for_section_target(
 def resolve_group_surface_scope(
     *,
     muutos_tree: etree._Element,
+    source_model: "AmendmentSourceModel | None" = None,
     target_unit_kind: TargetUnitKind,
     target_norm: str,
     target_chapter: str | None,
@@ -153,31 +170,57 @@ def resolve_group_surface_scope(
     if target_unit_kind != "section":
         return surface_target_chapter, surface_target_part
 
-    body_scope = source_body_scope_for_section_target(
-        muutos_tree=muutos_tree,
-        target_norm=target_norm,
+    body_scope = (
+        source_model.body_section_scope(target_norm)
+        if source_model is not None
+        else source_body_scope_for_section_target(
+            muutos_tree=muutos_tree,
+            target_norm=target_norm,
+        )
     )
     if carry_forward_scoped and body_scope == (None, None):
         return None, None
     if target_chapter and body_scope is not None:
         body_part, body_chapter = body_scope
-        scoped_node = _find_muutos_node(
-            muutos_tree,
-            "section",
-            target_norm,
-            target_chapter,
-            target_part,
+        scoped_node_exists = (
+            source_model.body_has_section(
+                target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+            )
+            if source_model is not None
+            else (
+                _find_muutos_node(
+                    muutos_tree,
+                    "section",
+                    target_norm,
+                    target_chapter,
+                    target_part,
+                )
+                is not None
+            )
         )
-        body_node = _find_muutos_node(
-            muutos_tree,
-            "section",
-            target_norm,
-            body_chapter,
-            body_part,
+        body_node_exists = (
+            source_model.body_has_section(
+                target_norm,
+                target_chapter=body_chapter,
+                target_part=body_part,
+            )
+            if source_model is not None
+            else (
+                _find_muutos_node(
+                    muutos_tree,
+                    "section",
+                    target_norm,
+                    body_chapter,
+                    body_part,
+                )
+                is not None
+            )
         )
         if (
-            scoped_node is None
-            and body_node is not None
+            not scoped_node_exists
+            and body_node_exists
             and (body_chapter != target_chapter or body_part != target_part)
         ):
             return body_chapter, body_part
