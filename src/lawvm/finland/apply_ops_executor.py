@@ -43,6 +43,7 @@ from lawvm.finland.restructure_plan import (
     resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
     restructure_plan_owned_renumber_signatures as _restructure_plan_owned_renumber_signatures,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.restructure_plan_replay import (
     ExecuteRestructurePlanRequest as _ExecuteRestructurePlanRequest,
     ExecuteRestructurePlanSinks as _ExecuteRestructurePlanSinks,
@@ -75,6 +76,10 @@ def _apply_ops_to_tree_typed(
     resolved = request.resolved
     ops = request.ops
     muutos_tree = request.muutos_tree
+    source_model = request.source_model or AmendmentSourceModel.from_tree(
+        muutos_tree,
+        source_ref=request.amendment_id,
+    )
     johto = request.johto
     amendment_id = request.amendment_id
     source_title = request.source_title
@@ -328,7 +333,7 @@ def _apply_ops_to_tree_typed(
             state=state,
             ctx=ctx,
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=source_model,
             johto=johto,
             amendment_id=amendment_id,
             source_title=source_title,
@@ -347,7 +352,6 @@ def _apply_ops_to_tree_typed(
             executed_restructure_plan_ids=executed_restructure_plan_ids,
             standalone_section_targets=_standalone_section_targets,
             migration_ledger=migration_ledger,
-            source_model=request.source_model,
         ),
         ApplySupplementalRecoverySinks(
             compiled_ops_out=compiled_ops_out,

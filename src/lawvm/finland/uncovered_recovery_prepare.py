@@ -65,7 +65,7 @@ class UncoveredRecoveryPreparationRequest:
     statute_id: str
     amendment_id: str
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     failed_ops_out: Optional[List[FailedOp]]
     new_chapter_labels: Optional[set[str]]
     restructure_plans_out: Optional[List[StructuralTransformPlan]]
@@ -73,7 +73,6 @@ class UncoveredRecoveryPreparationRequest:
     findings_out: Optional[List[Finding]]
     analyze_coverage_fn: AnalyzeCoverageFn = analyze_coverage
     assign_body_units_fn: AssignBodyUnitsFn = assign_body_units_subtree_aware
-    source_model: AmendmentSourceModel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,13 +93,10 @@ def prepare_uncovered_body_recovery(
 ) -> UncoveredRecoveryPreparation:
     """Run coverage, body-pairing, restructure, and scope preparation."""
     ops = request.ops
-    muutos_tree = request.muutos_tree
+    source_model = request.source_model
+    muutos_tree = source_model.muutos_tree
     statute_id = request.statute_id
     amendment_id = request.amendment_id
-    source_model = request.source_model or AmendmentSourceModel.from_tree(
-        muutos_tree,
-        source_ref=amendment_id,
-    )
     findings_out = request.findings_out
 
     covered_labels = _build_peg_covered_sets(ops, request.failed_ops_out)
@@ -141,7 +137,6 @@ def prepare_uncovered_body_recovery(
             statute_id=statute_id,
             amendment_id=amendment_id,
             ops=ops,
-            muutos_tree=muutos_tree,
             source_model=source_model,
             assign_body_units_fn=request.assign_body_units_fn,
         )
@@ -281,7 +276,6 @@ def _prepare_body_pairing(
     statute_id: str,
     amendment_id: str,
     ops: List[AmendmentOp],
-    muutos_tree: etree._Element,
     source_model: AmendmentSourceModel,
     assign_body_units_fn: AssignBodyUnitsFn,
 ) -> _BodyPairingPreparation:

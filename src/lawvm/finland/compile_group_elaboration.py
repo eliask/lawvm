@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
-import lxml.etree as etree
-
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.elaboration_context import (
     ReplayLookups,
@@ -202,8 +200,7 @@ class ElaborateGroupRequest:
     foreign_scoped_standalone_section_targets: set[str]
     foreign_scoped_replace_section_targets: set[str]
     effective_target_part: str | None
-    muutos_tree: etree._Element
-    source_model: AmendmentSourceModel | None
+    source_model: AmendmentSourceModel
     johto: str
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
@@ -221,7 +218,6 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     )
     foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
     target_part = request.effective_target_part
-    muutos_tree = request.muutos_tree
     source_model = request.source_model
     johto = request.johto
     profile = request.profile
@@ -260,7 +256,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     local_rejected_ops: list[FailedOp] = []
     fctx = _FilterCtx(
         muutos_ir=muutos_ir,
-        muutos_tree=muutos_tree,
+        muutos_tree=source_model.muutos_tree,
         johto=johto,
         source_model=source_model,
     )
@@ -315,7 +311,6 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     local_source_pathologies.extend(
         collect_recodification_omission_only_section_shell_pathologies(
             group_ops=group_ops,
-            muutos_tree=muutos_tree,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
             target_chapter=target_chapter,

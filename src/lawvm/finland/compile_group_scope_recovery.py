@@ -7,13 +7,10 @@ from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import Optional, Sequence
 
-import lxml.etree as etree
-
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.semantic_types import StructuralAction
-from lawvm.finland.body_pairing import ObservedBodyUnit
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget,
@@ -59,10 +56,8 @@ class CompileGroupScopeRecoveryRequest:
     target_part: Optional[str]
     group_ops: list[AmendmentOp]
     inserted_chapter_labels: set[str]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
-    body_inventory: Sequence[ObservedBodyUnit] | None = None
-    source_model: AmendmentSourceModel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,9 +255,9 @@ def _maybe_apply_body_chapter_insert_correction(
     if request.target_unit_kind != "section":
         return PhaseResult(output=result)
     body_chapter = find_body_section_chapter(
-        request.muutos_tree,
+        request.source_model.muutos_tree,
         request.target_norm,
-        inventory=request.body_inventory,
+        inventory=request.source_model.observed_body_inventory(),
     )
     resolved_body_chapter = body_chapter
     carry_forward_scoped = group_has_scope_source(request.group_ops, "carry_forward")
@@ -277,14 +272,14 @@ def _maybe_apply_body_chapter_insert_correction(
         and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
         is not None
         and body_has_real_chapter_container(
-            request.muutos_tree,
+            request.source_model.muutos_tree,
             body_chapter,
-            inventory=request.body_inventory,
+            inventory=request.source_model.observed_body_inventory(),
         )
     )
     if body_chapter is not None and (not request.target_chapter or carry_forward_scoped):
         sibling_consensus_scope = retarget_duplicate_body_section_scope_from_close_live_siblings(
-            muutos_tree=request.muutos_tree,
+            muutos_tree=request.source_model.muutos_tree,
             section_norm=request.target_norm,
             body_chapter=body_chapter,
             body_part=request.target_part,
@@ -299,7 +294,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and all(str(op.target_special or "").strip() == "otsikko" for op in result.group_ops)
     ):
         resolved_body_chapter = retarget_heading_insert_body_chapter_from_close_live_sibling(
-            muutos_tree=request.muutos_tree,
+            muutos_tree=request.source_model.muutos_tree,
             section_norm=request.target_norm,
             body_chapter=body_chapter,
             master=request.master,
@@ -391,9 +386,9 @@ def _maybe_apply_replace_to_insert_move(
     ):
         return PhaseResult(output=result)
     body_chapter = find_body_section_chapter(
-        request.muutos_tree,
+        request.source_model.muutos_tree,
         request.target_norm,
-        inventory=request.body_inventory,
+        inventory=request.source_model.observed_body_inventory(),
     )
     trigger_evidence = tuple(
         evidence
@@ -402,9 +397,9 @@ def _maybe_apply_replace_to_insert_move(
                 "pseudo_chapter_marker",
                 body_chapter is not None
                 and body_has_pseudo_chapter_marker(
-                    request.muutos_tree,
+                    request.source_model.muutos_tree,
                     body_chapter,
-                    inventory=request.body_inventory,
+                    inventory=request.source_model.observed_body_inventory(),
                 ),
             ),
             (
@@ -412,9 +407,9 @@ def _maybe_apply_replace_to_insert_move(
                 body_chapter is not None
                 and request.master.find("chapter", body_chapter) is None
                 and body_has_real_chapter_container(
-                    request.muutos_tree,
+                    request.source_model.muutos_tree,
                     body_chapter,
-                    inventory=request.body_inventory,
+                    inventory=request.source_model.observed_body_inventory(),
                 ),
             ),
             (
@@ -520,7 +515,7 @@ def _maybe_retarget_live_section(
     if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels:
         if request.target_chapter:
             source_body_chapter = source_body_chapter_for_scoped_section_target(
-                muutos_tree=request.muutos_tree,
+                muutos_tree=request.source_model.muutos_tree,
                 source_model=request.source_model,
                 target_norm=request.target_norm,
                 target_chapter=request.target_chapter,
@@ -549,13 +544,13 @@ def _maybe_retarget_live_section(
         and group_targets_whole_section
     ):
         body_scope = source_body_scope_for_section_target(
-            muutos_tree=request.muutos_tree,
+            muutos_tree=request.source_model.muutos_tree,
             target_norm=request.target_norm,
         )
         if body_scope is not None:
             body_part, body_chapter = body_scope
             sibling_consensus_live_scope = retarget_duplicate_body_section_scope_from_close_live_siblings(
-                muutos_tree=request.muutos_tree,
+                muutos_tree=request.source_model.muutos_tree,
                 section_norm=request.target_norm,
                 body_chapter=body_chapter or "",
                 body_part=body_part,
@@ -566,7 +561,7 @@ def _maybe_retarget_live_section(
     if retarget_scope_source is None:
         return PhaseResult(output=result)
     body_scope = source_body_scope_for_section_target(
-        muutos_tree=request.muutos_tree,
+        muutos_tree=request.source_model.muutos_tree,
         target_norm=request.target_norm,
     )
     body_part = None
@@ -681,7 +676,7 @@ def resolve_compile_group_scope_recovery(
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
     """Resolve pre-snapshot scope/action recovery for one compile group."""
     surface_target_chapter, surface_target_part = resolve_group_surface_scope(
-        muutos_tree=request.muutos_tree,
+        muutos_tree=request.source_model.muutos_tree,
         source_model=request.source_model,
         target_unit_kind=request.target_unit_kind,
         target_norm=request.target_norm,

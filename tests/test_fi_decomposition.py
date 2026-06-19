@@ -2136,7 +2136,7 @@ class TestCompileAmendmentOps:
         sinks = seen["sinks"]
         assert isinstance(request, CompileGroupRequest)
         assert request.master is master
-        assert request.muutos_tree is muutos_tree
+        assert request.source_model.muutos_tree is muutos_tree
         assert request.johto == "muutetaan 3 §"
         assert request.lookups is not None
         assert request.target_norm == "3"

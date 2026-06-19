@@ -7,6 +7,7 @@ from lawvm.finland.compile_group_scope_recovery import (
     resolve_compile_group_scope_recovery,
 )
 from lawvm.finland.ops import AmendmentOp, ScopeConfidence
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
 
@@ -98,7 +99,7 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
             target_part=None,
             group_ops=[heading_op, insert_op],
             inserted_chapter_labels={"6a"},
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             strict_profile=None,
         )
     )

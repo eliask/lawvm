@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
-import lxml.etree as etree
-
 from lawvm.core.ir import OperationSource
 from lawvm.core.phase_result import Finding
 from lawvm.finland.body_coverage import analyze_coverage
@@ -48,12 +46,11 @@ class UncoveredBodyRecoveryRequest:
     state: "ReplayState"
     ctx: "StatuteContext"
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     amendment_id: str
     future_repeals: Optional[Set[RepealTargetRef]] = None
     op_source: Optional[OperationSource] = None
     new_chapter_labels: Optional[Set[str]] = None
-    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +104,7 @@ def recover_uncovered_body_ops(
                 statute_id=request.ctx.id,
                 amendment_id=request.amendment_id,
                 ops=request.ops,
-                muutos_tree=request.muutos_tree,
+                source_model=request.source_model,
                 failed_ops_out=sinks.failed_ops_out,
                 new_chapter_labels=request.new_chapter_labels,
                 restructure_plans_out=sinks.restructure_plans_out,
@@ -115,7 +112,6 @@ def recover_uncovered_body_ops(
                 findings_out=sinks.findings_out,
                 analyze_coverage_fn=analyze_coverage,
                 assign_body_units_fn=assign_body_units_subtree_aware,
-                source_model=request.source_model,
             )
         ),
         findings_out=sinks.findings_out,

@@ -31,7 +31,7 @@ def compile_group_typed(
     group_ops = request.group_ops
     standalone_section_targets = request.standalone_section_targets
     inserted_chapter_labels = request.inserted_chapter_labels
-    muutos_tree = request.muutos_tree
+    source_model = request.source_model
     johto = request.johto
     profile = request.profile
     strict_profile = request.strict_profile
@@ -52,10 +52,8 @@ def compile_group_typed(
             target_part=target_part,
             group_ops=group_ops,
             inserted_chapter_labels=inserted_chapter_labels,
-            muutos_tree=muutos_tree,
+            source_model=source_model,
             strict_profile=strict_profile,
-            body_inventory=request.body_inventory,
-            source_model=request.source_model,
         )
     )
     recovery = recovery_result.output
@@ -76,12 +74,11 @@ def compile_group_typed(
     surface_result = build_group_surface(
         BuildGroupSurfaceRequest(
             group_ops=recovery.group_ops,
-            muutos_tree=muutos_tree,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
             target_chapter=recovery.surface_target_chapter,
             target_part=recovery.surface_target_part,
-            source_model=request.source_model,
+            source_model=source_model,
         )
     )
 
@@ -95,8 +92,7 @@ def compile_group_typed(
             foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
             foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
             effective_target_part=recovery.effective_target_part,
-            muutos_tree=muutos_tree,
-            source_model=request.source_model,
+            source_model=source_model,
             johto=johto,
             profile=profile,
             strict_profile=strict_profile,

@@ -6,8 +6,6 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Set
 
-import lxml.etree as etree
-
 from lawvm.core import tree_ops as _tops
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
@@ -72,7 +70,7 @@ class ApplySupplementalRecoveryRequest:
     state: ReplayState
     ctx: StatuteContext
     ops: List[AmendmentOp]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     johto: str
     amendment_id: str
     source_title: str
@@ -91,7 +89,6 @@ class ApplySupplementalRecoveryRequest:
     executed_restructure_plan_ids: Set[str]
     standalone_section_targets: frozenset[StandaloneSectionTarget]
     migration_ledger: Optional[MigrationLedger]
-    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +219,7 @@ def run_apply_supplemental_recovery(
 
     if ops and uncov_allowed:
         new_chapter_refs = list(request.pre_real_chapter_refs)
-        muutos_body_el = request.muutos_tree.find(".//{*}body")
+        muutos_body_el = request.source_model.muutos_tree.find(".//{*}body")
         if muutos_body_el is not None:
             late_new_chapters = _pre_create_amendment_chapters(
                 state,
@@ -269,13 +266,12 @@ def run_apply_supplemental_recovery(
                 state=state,
                 ctx=request.ctx,
                 ops=ops,
-                muutos_tree=request.muutos_tree,
+                source_model=request.source_model,
                 amendment_id=request.amendment_id,
                 future_repeals=request.future_repeals,
                 op_source=uncov_src,
                 new_chapter_labels=set(new_chapter_labels)
                 | set(pre_pseudo_chapter_labels),
-                source_model=request.source_model,
             ),
             UncoveredBodyRecoverySinks(
                 failed_ops_out=sinks.failed_ops_out,
