@@ -101,6 +101,10 @@ from lawvm.finland.legal_surface.condition_exception_parse import (
     Qualifier,
     parse_condition_exception_sentence,
 )
+from lawvm.finland.legal_surface.source_syntax_graph import (
+    SyntaxNode,
+    assemble_source_syntax_graph,
+)
 
 JURISDICTION = "fi"
 
@@ -2209,6 +2213,392 @@ def enclosing_anaphora_passes(
     return (EnclosingAnaphoraPass(units=bundle.units),)
 
 
+# ── forest-structural attachment — fix the sentence-local proximity blind spot ─
+#
+# WHY this pass exists (the proximity / sentence-local mis-attachment it fixes)
+# ============================================================================
+# The intra-sentence :class:`ConditionAttachmentPass` attaches a qualifier to a
+# deontic core in its OWN clause-segmented SENTENCE. Its attachment index comes
+# from :func:`parse_condition_exception_sentence`, whose ``_attach`` heuristic is a
+# PROXIMITY rule: one core in the sentence → resolved; several → the NEAREST core
+# by char-distance flagged ``ambiguous``; ZERO cores → ``candidate`` (no edge, a
+# typed ``NO_CORE_IN_SENTENCE`` diagnostic).
+#
+# The ``candidate`` (zero-core) case is the blind spot. ``build_clause_index``
+# splits a provision at every clause boundary (``,;.\n``), so the SENTENCE a cue
+# lands in routinely loses the governing norm's modal core to a NEIGHBOURING
+# sentence in the SAME provision:
+#
+#   "Säilytystilassa tulee olla … vastaava henkilö. Tämä ei kuitenkaan ole
+#    tarpeen, jos …"
+#       — the ``ei kuitenkaan`` exception's governing norm (``tulee olla``) sits in
+#         the PREVIOUS sentence; the cue's own sentence carries no modal core, so
+#         the intra-sentence pass tags it ``candidate`` and emits NO edge.
+#
+#   chapeau ``… säädetään:`` + list items ``1) … jollei …`` — a list-item
+#   condition/exception whose governing norm is the CHAPEAU's frame, a different
+#   structural segment again.
+#
+# The FOREST (:func:`assemble_source_syntax_graph`) carries the structure the
+# clause-segmented sentence loses: the ``prose`` / ``chapeau`` / ``list_item``
+# STRUCTURAL SEGMENT a cue sits in, and the ``inherits_chapeau`` edge binding a
+# list item to its governing chapeau. The deontic core(s) in the cue's enclosing
+# structural segment (or, for a frame-less list item, in its governing chapeau) are
+# the SYNTACTIC attachment target the proximity sentence split dropped. This pass
+# recovers exactly that.
+#
+# STRICT ADDITION over the intra/cross-sentence/enclosing passes
+# ==============================================================
+# It fires ONLY for a qualifier the intra-sentence pass leaves ``candidate`` (zero
+# core in its sentence) — never re-deciding a ``resolved`` / ``ambiguous`` intra-
+# sentence attachment — and it skips the closed back-reference EXCEPTION cues the
+# cross-sentence pass owns (so the two never compete for one cue). Because it only
+# attaches PREVIOUSLY-EDGELESS candidates, it is NEW-BETTER with 0 regressions BY
+# CONSTRUCTION. Its edges carry a distinct ``rule_id`` and ``attachment`` reason, so
+# they never collide with another pass's edge id.
+#
+# candidate-not-asserted + no-silent-drop + proximity fallback (the §discipline):
+#   * EXACTLY ONE deontic core in the cue's enclosing structural segment → ONE
+#     edge, status ``"asserted"`` (``attachment=resolved_by_forest_segment``);
+#   * a frame-less ``list_item`` with NO in-item core but core(s) in its governing
+#     chapeau → the chapeau cores (``attachment=resolved_by_chapeau_inheritance``
+#     when one, ``ambiguous_by_chapeau_inheritance`` when several);
+#   * SEVERAL cores in the segment → ONE edge per core, status ``"ambiguous"``,
+#     full candidate-core set in payload (never a silent pick of the nearest);
+#   * NO core in the segment / chapeau but core(s) elsewhere in the UNIT → FALL
+#     BACK to PROXIMITY (the nearest core in the unit by char-distance), status
+#     ``"ambiguous"`` (a fallback is never asserted), ``attachment=proximity_fallback``
+#     — the edge is NEVER dropped (no-silent-drop);
+#   * NO deontic core anywhere in the unit → NO edge; a typed
+#     :data:`NO_CORE_IN_UNIT` diagnostic (the honest target-less case).
+#
+# surface_only / replay_authorized=False holds (the assembler mints every edge).
+
+PASS_ID_FOREST_STRUCT = "fi.norm_composition.forest_structural.v0"
+RULE_CONDITION_FOREST = "fi.norm_composition.condition_attaches_norm.forest"
+RULE_EXCEPTION_FOREST = "fi.norm_composition.exception_excepts_norm.forest"
+
+_KIND_RULE_FOREST: dict[str, str] = {
+    KIND_CONDITION: RULE_CONDITION_FOREST,
+    KIND_EXCEPTION: RULE_EXCEPTION_FOREST,
+}
+
+#: Attachment reasons for the forest-structural path (ride in the edge payload).
+ATTACHMENT_RESOLVED_BY_FOREST_SEGMENT = "resolved_by_forest_segment"
+ATTACHMENT_AMBIGUOUS_BY_FOREST_SEGMENT = "ambiguous_by_forest_segment"
+ATTACHMENT_RESOLVED_BY_CHAPEAU = "resolved_by_chapeau_inheritance"
+ATTACHMENT_AMBIGUOUS_BY_CHAPEAU = "ambiguous_by_chapeau_inheritance"
+ATTACHMENT_PROXIMITY_FALLBACK = "proximity_fallback"
+
+#: Why a forest-structural candidate produced no asserted/fallback edge (typed).
+NO_CORE_IN_UNIT = "no_deontic_core_anywhere_in_unit"
+
+#: The forest STRUCTURAL segment kinds a cue can sit inside (grammar6 §"Phase A").
+_FOREST_STRUCTURAL_KINDS: frozenset[str] = frozenset(
+    {"heading", "chapeau", "list_item", "quoted_amendment_block", "continuation", "prose"}
+)
+
+
+def _enclosing_structural_segment(
+    structural: list[SyntaxNode], char: int
+) -> SyntaxNode | None:
+    """The SMALLEST forest structural segment whose span contains ``char``.
+
+    The cue's enclosing structural segment is the provision unit (prose paragraph /
+    chapeau / list item) the proximity sentence split came from. Smallest-first so a
+    list_item nested under a chapeau wins over the chapeau (the item is the cue's
+    own segment). Returns ``None`` when the char sits in no structural segment.
+    """
+    enclosers = [n for n in structural if n.char_start <= char < n.char_end]
+    if not enclosers:
+        return None
+    enclosers.sort(key=lambda n: (n.char_end - n.char_start, n.char_start, n.node_id))
+    return enclosers[0]
+
+
+@dataclass
+class ForestStructuralAttachmentPass:
+    """Edge pass: attach a sentence-local-CANDIDATE qualifier via FOREST structure.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`.
+    Constructed per-statute from the bundle units (it re-derives sentences via
+    :func:`build_clause_index`, re-runs the construction parse to find the
+    ``candidate`` residue, and assembles the per-unit
+    :func:`assemble_source_syntax_graph` forest for the structural segments +
+    ``inherits_chapeau`` edges). Mints NO nodes; it joins the EXISTING
+    ``exception_condition_cue`` (source) and ``deontic_core`` (target) nodes the
+    intra-sentence pass could not connect.
+
+    STRICT SUPERSET of :class:`ConditionAttachmentPass`: it fires ONLY for a
+    qualifier the intra-sentence pass leaves ``candidate`` (zero core in its
+    sentence) and skips the back-reference EXCEPTION cues the cross-sentence pass
+    owns. NEW-BETTER with 0 regressions by construction (previously-edgeless
+    qualifiers only). candidate-not-asserted, no-silent-drop, proximity fallback.
+
+    Determinism: units in declared order; sentences left-to-right; qualifiers in
+    source order; candidate cores by char_start. The assembler recomputes graph_id.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_FOREST_STRUCT
+    reads_node_kinds: tuple[str, ...] = (CUE_NODE_KIND, CORE_NODE_KIND)
+    emits_edge_kinds: tuple[str, ...] = (
+        EDGE_CONDITION_ATTACHES,
+        EDGE_EXCEPTION_EXCEPTS,
+    )
+    # Typed diagnostics for candidates with no forest/proximity target. Populated on
+    # run(); read by the differential report. NOT a graph element.
+    unattached: list[UnattachedQualifier] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        cue_index = _node_index_by_unit_kind(graph.nodes, CUE_NODE_KIND)
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            cue_nodes = cue_index.get(unit_id, [])
+            core_nodes = core_index.get(unit_id, [])
+            if not cue_nodes or not core_nodes:
+                # No cue node to source from, or no core anywhere → nothing this
+                # pass can attach (the intra-sentence pass already tagged the
+                # NO_CORE_IN_SENTENCE residue; we add no edge with no target).
+                continue
+            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+            try:
+                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+            except Exception:
+                continue
+            # The forest carries the structural segments + inherits_chapeau the
+            # clause-segmented sentence drops. Built per-unit, surface-only.
+            try:
+                forest = assemble_source_syntax_graph(
+                    subject=graph.subject,
+                    source_units=(),
+                    statute_id=unit_id,
+                    body=unit.raw_text,
+                )
+            except Exception:
+                continue
+            structural = [
+                n
+                for n in forest.syntax_nodes.values()
+                if n.kind in _FOREST_STRUCTURAL_KINDS
+            ]
+            item_to_chapeau = {
+                e.src: e.dst
+                for e in forest.syntax_edges
+                if e.kind == "inherits_chapeau"
+            }
+
+            for sent in index.sentences:
+                base = sent.char_start
+                seg_text = unit.raw_text[sent.char_start : sent.char_end]
+                parse = parse_condition_exception_sentence(seg_text)
+                seeds.extend(
+                    self._sentence_edges(
+                        parse,
+                        base=base,
+                        unit_id=unit_id,
+                        cue_nodes=cue_nodes,
+                        core_nodes=core_nodes,
+                        structural=structural,
+                        item_to_chapeau=item_to_chapeau,
+                        forest_nodes=forest.syntax_nodes,
+                    )
+                )
+        return tuple(seeds)
+
+    def _sentence_edges(
+        self,
+        parse: ConditionExceptionParse,
+        *,
+        base: int,
+        unit_id: str,
+        cue_nodes: list[tuple[str, SourceSpanRef]],
+        core_nodes: list[tuple[str, SourceSpanRef]],
+        structural: list[SyntaxNode],
+        item_to_chapeau: dict[str, str],
+        forest_nodes: Mapping[str, SyntaxNode],
+    ) -> list[SurfaceEdgeSeed]:
+        out: list[SurfaceEdgeSeed] = []
+        for q in parse.qualifiers:
+            # Only the intra-sentence CANDIDATE residue (zero core in its sentence)
+            # — never re-decide a resolved/ambiguous intra-sentence attachment.
+            if q.attachment_status != ATTACH_CANDIDATE:
+                continue
+            # The cross-sentence pass owns the back-reference EXCEPTION cues; skip
+            # them so the two passes never compete for one cue.
+            if q.kind == KIND_EXCEPTION and q.cue in _BACKREF_EXCEPTION_CUES:
+                continue
+
+            cue_abs_start = base + q.cue_start
+            cue_abs_end = base + q.cue_end
+            src_id = _find_node_covering(cue_nodes, cue_abs_start, cue_abs_end)
+            if src_id is None:
+                # The H6 lens minted no cue node for this construction cue
+                # (coordinate-bridge miss). Tag it; never invent a src.
+                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_GRAPH_NODE_FOR_CUE)
+                continue
+
+            targets, attachment, edge_status = self._forest_targets(
+                cue_abs_start=cue_abs_start,
+                core_nodes=core_nodes,
+                structural=structural,
+                item_to_chapeau=item_to_chapeau,
+                forest_nodes=forest_nodes,
+            )
+            if not targets:
+                # No forest segment core AND no core anywhere in the unit reachable
+                # by proximity → the honest target-less case (never an invented
+                # edge). (core_nodes non-empty is guaranteed by run(), so this is
+                # the rare "cue sits in no structural segment and unit has no core
+                # the fallback could pick" guard.)
+                self._tag(unit_id, q, cue_abs_start, cue_abs_end, NO_CORE_IN_UNIT)
+                continue
+
+            candidate_core_spans = [[r.char_start, r.char_end] for _, r in targets]
+            for dst_id, dst_ref in targets:
+                payload: dict[str, object] = {
+                    "qualifier_kind": q.kind,
+                    "cue": q.cue,
+                    "attachment": attachment,
+                    "cue_span": [cue_abs_start, cue_abs_end],
+                    "core_span": [dst_ref.char_start, dst_ref.char_end],
+                    "source": "construction_forest_structural",
+                    "experimental": True,
+                }
+                if len(targets) > 1:
+                    payload["candidate_core_spans"] = candidate_core_spans
+                out.append(
+                    SurfaceEdgeSeed(
+                        edge_kind=_KIND_EDGE[q.kind],
+                        src_local=src_id,
+                        dst_local=dst_id,
+                        rule_id=_KIND_RULE_FOREST[q.kind],
+                        status=edge_status,
+                        payload=payload,
+                    )
+                )
+        return out
+
+    def _forest_targets(
+        self,
+        *,
+        cue_abs_start: int,
+        core_nodes: list[tuple[str, SourceSpanRef]],
+        structural: list[SyntaxNode],
+        item_to_chapeau: dict[str, str],
+        forest_nodes: Mapping[str, SyntaxNode],
+    ) -> tuple[list[tuple[str, SourceSpanRef]], str, str]:
+        """Resolve a candidate cue's attachment target(s) via FOREST structure.
+
+        Returns ``(targets, attachment_reason, edge_status)``. ``targets`` is the
+        list of ``(core_node_id, core_source_ref)`` the cue attaches to (one →
+        asserted/resolved; several → ambiguous; empty only when the unit has no
+        core at all). The attachment reason names HOW it was resolved
+        (segment / chapeau-inheritance / proximity-fallback).
+        """
+        seg = _enclosing_structural_segment(structural, cue_abs_start)
+        if seg is not None:
+            in_seg = _cores_within(core_nodes, seg.char_start, seg.char_end)
+            if in_seg:
+                ambiguous = len(in_seg) > 1
+                attachment = (
+                    ATTACHMENT_AMBIGUOUS_BY_FOREST_SEGMENT
+                    if ambiguous
+                    else ATTACHMENT_RESOLVED_BY_FOREST_SEGMENT
+                )
+                return in_seg, attachment, ("ambiguous" if ambiguous else "asserted")
+            # A frame-less list_item: its governing norm is the CHAPEAU's — follow
+            # the inherits_chapeau edge and take the chapeau's cores.
+            if seg.kind == "list_item":
+                chapeau_id = item_to_chapeau.get(seg.node_id)
+                chapeau = forest_nodes.get(chapeau_id) if chapeau_id else None
+                if chapeau is not None:
+                    in_chap = _cores_within(
+                        core_nodes, chapeau.char_start, chapeau.char_end
+                    )
+                    if in_chap:
+                        ambiguous = len(in_chap) > 1
+                        attachment = (
+                            ATTACHMENT_AMBIGUOUS_BY_CHAPEAU
+                            if ambiguous
+                            else ATTACHMENT_RESOLVED_BY_CHAPEAU
+                        )
+                        return (
+                            in_chap,
+                            attachment,
+                            "ambiguous" if ambiguous else "asserted",
+                        )
+
+        # FALL BACK to proximity: the nearest core in the unit by char-distance to
+        # the cue (never dropped; a fallback is never asserted → "ambiguous").
+        nearest = min(
+            core_nodes,
+            key=lambda kv: (
+                abs(kv[1].char_start - cue_abs_start),
+                kv[1].char_start,
+                kv[0],
+            ),
+            default=None,
+        )
+        if nearest is None:
+            return [], ATTACHMENT_PROXIMITY_FALLBACK, "ambiguous"
+        return [nearest], ATTACHMENT_PROXIMITY_FALLBACK, "ambiguous"
+
+    def _tag(
+        self,
+        unit_id: str,
+        q: Qualifier,
+        cue_abs_start: int,
+        cue_abs_end: int,
+        reason: str,
+    ) -> None:
+        self.unattached.append(
+            UnattachedQualifier(
+                source_unit_id=unit_id,
+                kind=q.kind,
+                cue=q.cue,
+                cue_char_start=cue_abs_start,
+                cue_char_end=cue_abs_end,
+                reason=reason,
+            )
+        )
+
+
+def _cores_within(
+    core_nodes: list[tuple[str, SourceSpanRef]], start: int, end: int
+) -> list[tuple[str, SourceSpanRef]]:
+    """The ``deontic_core`` nodes whose span sits inside ``[start, end)``.
+
+    A core belongs to a structural segment when its modal-cue span is fully
+    contained in the segment span. Returned in source order (the index already
+    sorts by char_start).
+    """
+    return [
+        (nid, ref)
+        for nid, ref in core_nodes
+        if start <= ref.char_start and ref.char_end <= end
+    ]
+
+
+def forest_structural_attachment_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[ForestStructuralAttachmentPass, ...]:
+    """Build the per-statute forest-structural condition/exception attachment pass.
+
+    Recovers the intra-sentence pass's ``candidate`` (zero-core-in-sentence) residue
+    by attaching via the forest's structural segments + ``inherits_chapeau`` edges
+    (the structure the clause-segmented sentence drops), with a proximity fallback
+    so no qualifier is silently dropped. Returns a one-tuple so the caller can
+    splice it into the edge-pass sequence ADDITIVELY (alongside the intra-sentence,
+    cross-sentence, enclosing-anaphora, and proximity incumbents).
+    """
+    return (ForestStructuralAttachmentPass(units=bundle.units),)
+
+
 __all__ = [
     "ACTOR_FRAME_KIND",
     "CORE_NODE_KIND",
@@ -2223,6 +2613,7 @@ __all__ = [
     "DelegationInstrumentPass",
     "DeonticFrameAttachmentPass",
     "EnclosingAnaphoraPass",
+    "ForestStructuralAttachmentPass",
     "NormSubjectAttachmentPass",
     "ProcedureGovernancePass",
     "SanctionReferencePass",
@@ -2236,6 +2627,16 @@ __all__ = [
     "EDGE_SANCTION_DEFERS",
     "ATTACHMENT_RESOLVED_BY_ENCLOSING",
     "ATTACHMENT_AMBIGUOUS_BY_ENCLOSING",
+    "ATTACHMENT_RESOLVED_BY_FOREST_SEGMENT",
+    "ATTACHMENT_AMBIGUOUS_BY_FOREST_SEGMENT",
+    "ATTACHMENT_RESOLVED_BY_CHAPEAU",
+    "ATTACHMENT_AMBIGUOUS_BY_CHAPEAU",
+    "ATTACHMENT_PROXIMITY_FALLBACK",
+    "NO_CORE_IN_UNIT",
+    "PASS_ID_FOREST_STRUCT",
+    "RULE_CONDITION_FOREST",
+    "RULE_EXCEPTION_FOREST",
+    "forest_structural_attachment_passes",
     "AMBIGUOUS_ENCLOSING_PROVISION",
     "ENCLOSING_SCOPE_WHOLE_LAW",
     "NO_CORE_IN_ENCLOSING_PROVISION",
