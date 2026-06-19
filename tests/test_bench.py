@@ -56,6 +56,22 @@ def test_fi_bench_worker_count_rejects_zero(capsys: pytest.CaptureFixture[str]) 
     assert "--parallel must be a positive integer" in capsys.readouterr().err
 
 
+def test_fi_bench_banner_reports_worker_count() -> None:
+    banner = bench._format_bench_run_banner(
+        statute_count=3545,
+        label="run_test",
+        mode="official_consolidation",
+        workers=16,
+        section_score_mode=False,
+        fast_mode=False,
+        text_scores=True,
+        diagnostic_replay=False,
+    )
+
+    assert "workers=16" in banner
+    assert "[quiet-replay]" in banner
+
+
 def test_save_run_preserves_non_scored_status_labels(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
 

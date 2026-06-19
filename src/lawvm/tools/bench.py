@@ -2374,6 +2374,27 @@ def _fi_bench_worker_count(args: Any) -> int:
     return explicit
 
 
+def _format_bench_run_banner(
+    *,
+    statute_count: int,
+    label: str,
+    mode: str,
+    workers: int,
+    section_score_mode: bool,
+    fast_mode: bool,
+    text_scores: bool,
+    diagnostic_replay: bool,
+) -> str:
+    return (
+        f"Running benchmark: {statute_count} statutes  label={label}  "
+        f"mode={mode}  workers={workers}"
+        + ("  [+section-score]" if section_score_mode else "")
+        + ("  [fast]" if fast_mode else "")
+        + ("  [no-text-scores]" if not text_scores else "")
+        + ("  [diagnostic-replay]" if diagnostic_replay else "  [quiet-replay]")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -2503,17 +2524,21 @@ def main(args) -> None:
     no_save = bool(getattr(args, "no_save", False))
     bench_mode = getattr(args, "mode", "official_consolidation") or "official_consolidation"
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
+    workers = _fi_bench_worker_count(args)
 
     print(
-        f"Running benchmark: {len(corpus)} statutes  label={label}  mode={bench_mode}"
-        + ("  [+section-score]" if section_score_mode else "")
-        + ("  [fast]" if fast_mode else "")
-        + ("  [no-text-scores]" if not text_scores else "")
-        + ("  [diagnostic-replay]" if diagnostic_replay else "  [quiet-replay]")
+        _format_bench_run_banner(
+            statute_count=len(corpus),
+            label=label,
+            mode=bench_mode,
+            workers=workers,
+            section_score_mode=section_score_mode,
+            fast_mode=fast_mode,
+            text_scores=text_scores,
+            diagnostic_replay=diagnostic_replay,
+        )
     )
     print()
-
-    workers = _fi_bench_worker_count(args)
 
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None
     lev_sims: Optional[Dict[str, float]] = None
