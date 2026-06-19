@@ -1251,7 +1251,7 @@ def materialize_pit_ex(
         else:
             child_kinds = {"subsection", "item"}
         has_structural_children = any(
-            getattr(child, "label", None) and child.kind.value in child_kinds
+            child.label and child.kind.value in child_kinds
             for child in content.children
         )
         if parent_addr.leaf_kind() == "section":
