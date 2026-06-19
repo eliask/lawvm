@@ -109,12 +109,70 @@ class SourcePayloadTextLookupResult:
     text: str
 
 
+@dataclass(slots=True)
+class _SourcePayloadIrEntry:
+    """Lazy converted source payload for one source-body unit id."""
+
+    muutos_tree: etree._Element
+    kind: str
+    label: str
+    el: etree._Element
+    _payload: tuple[IRNode | None, IRNode | None] | None = None
+
+    def resolve(self) -> tuple[IRNode | None, IRNode | None]:
+        if self._payload is None:
+            from lawvm.finland.amendment_payload_lookup import (
+                _find_muutos_ir,
+                _payload_ir_from_muutos_node,
+            )
+
+            if self.kind == "chapter" and (
+                _xml_localname(self.el) != "chapter" or _chapter_contains_pseudo_markers(self.el)
+            ):
+                self._payload = _find_muutos_ir(
+                    self.muutos_tree,
+                    target_unit_kind=self.kind,
+                    target_norm=self.label,
+                )
+            else:
+                self._payload = _payload_ir_from_muutos_node(
+                    self.el,
+                    target_unit_kind=self.kind,
+                    target_norm=self.label,
+                )
+        return self._payload
+
+
 @dataclass(frozen=True, slots=True)
 class SourcePayloadIrIndex:
     """Converted source payloads addressable by current transitional unit ids."""
 
-    observed_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
-    coverage_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+    observed_entries_by_unit_id: dict[str, _SourcePayloadIrEntry]
+    coverage_entries_by_unit_id: dict[str, _SourcePayloadIrEntry]
+
+    def observed_payload(self, unit_id: str) -> tuple[IRNode | None, IRNode | None]:
+        entry = self.observed_entries_by_unit_id.get(unit_id)
+        return entry.resolve() if entry is not None else (None, None)
+
+    def coverage_payload(self, unit_id: str) -> tuple[IRNode | None, IRNode | None]:
+        entry = self.coverage_entries_by_unit_id.get(unit_id)
+        return entry.resolve() if entry is not None else (None, None)
+
+    @property
+    def observed_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        """Compatibility view for callers that still expect eager payload maps."""
+        return {
+            unit_id: entry.resolve()
+            for unit_id, entry in self.observed_entries_by_unit_id.items()
+        }
+
+    @property
+    def coverage_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        """Compatibility view for callers that still expect eager payload maps."""
+        return {
+            unit_id: entry.resolve()
+            for unit_id, entry in self.coverage_entries_by_unit_id.items()
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,19 +277,14 @@ def _source_body_inventory_index(
 
 def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
     """Return converted payload IR keyed by observed and coverage unit ids."""
-    from lawvm.finland.amendment_payload_lookup import (
-        _find_muutos_ir,
-        _payload_ir_from_muutos_node,
-    )
-
     body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
         body = muutos_tree.find(".//body")
     if body is None:
-        return SourcePayloadIrIndex(observed_by_unit_id={}, coverage_by_unit_id={})
+        return SourcePayloadIrIndex(observed_entries_by_unit_id={}, coverage_entries_by_unit_id={})
     body = _body_with_orphan_subsections_attached(body)
-    observed_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
-    coverage_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    observed_payloads: dict[str, _SourcePayloadIrEntry] = {}
+    coverage_payloads: dict[str, _SourcePayloadIrEntry] = {}
     seen_observed_ids: set[str] = set()
     seen_coverage_ids: set[str] = set()
 
@@ -266,20 +319,12 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         include_observed: bool = True,
         include_coverage: bool = True,
     ) -> None:
-        if kind == "chapter" and (
-            _xml_localname(el) != "chapter" or _chapter_contains_pseudo_markers(el)
-        ):
-            payload = _find_muutos_ir(
-                muutos_tree,
-                target_unit_kind=kind,
-                target_norm=label,
-            )
-        else:
-            payload = _payload_ir_from_muutos_node(
-                el,
-                target_unit_kind=kind,
-                target_norm=label,
-            )
+        payload = _SourcePayloadIrEntry(
+            muutos_tree=muutos_tree,
+            kind=kind,
+            label=label,
+            el=el,
+        )
         if include_observed:
             observed_payloads[next_observed_id(kind, label, chapter_label)] = payload
         if include_coverage:
@@ -350,8 +395,8 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
 
     walk_children(body)
     return SourcePayloadIrIndex(
-        observed_by_unit_id=observed_payloads,
-        coverage_by_unit_id=coverage_payloads,
+        observed_entries_by_unit_id=observed_payloads,
+        coverage_entries_by_unit_id=coverage_payloads,
     )
 
 
@@ -666,10 +711,7 @@ class AmendmentSourceModel:
 
             observed_unit = body_lookup.unique_unit
             payload_ir, cross_heading_ir = (
-                self._source_payload_ir_index().observed_by_unit_id.get(
-                    observed_unit.unit_id,
-                    (None, None),
-                )
+                self._source_payload_ir_index().observed_payload(observed_unit.unit_id)
                 if observed_unit is not None
                 else (None, None)
             )
@@ -724,9 +766,8 @@ class AmendmentSourceModel:
                 cross_heading_ir=None,
             )
 
-        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_by_unit_id.get(
-            source_ref.unit_id,
-            (None, None),
+        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_payload(
+            source_ref.unit_id
         )
         return SourcePayloadLookupResult(
             status="unique" if payload_ir is not None else "missing",

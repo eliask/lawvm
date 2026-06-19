@@ -685,6 +685,54 @@ def test_source_model_real_chapter_payload_lookup_uses_current_source_unit(
     assert "Chapter-owned payload" in irnode_to_text(lookup.payload_ir)
 
 
+def test_source_model_payload_lookup_converts_only_selected_source_unit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>1 \xc2\xa7</num>
+                <subsection><content><p>first payload</p></content></subsection>
+              </section>
+              <section>
+                <num>2 \xc2\xa7</num>
+                <subsection><content><p>second payload</p></content></subsection>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    import lawvm.finland.amendment_payload_lookup as payload_lookup
+
+    calls = 0
+    real_payload_from_node = payload_lookup._payload_ir_from_muutos_node
+
+    def counted_payload_from_node(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return real_payload_from_node(*args, **kwargs)
+
+    monkeypatch.setattr(
+        payload_lookup,
+        "_payload_ir_from_muutos_node",
+        counted_payload_from_node,
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/10")
+
+    first = model.lookup_payload_ir("section", "1")
+    again = model.lookup_payload_ir("section", "1")
+
+    assert first is again
+    assert first.payload_ir is not None
+    assert "first payload" in irnode_to_text(first.payload_ir)
+    assert calls == 1
+
+
 def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segments() -> None:
     xml = get_corpus_store().read_source("1997/611")
     assert xml is not None
