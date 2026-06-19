@@ -764,6 +764,190 @@ class DeonticFrameAttachmentPass:
         return out
 
 
+# ── delegation_grants_instrument — frame → the lower instrument it authorizes ──
+#
+# The north-star "norm → authorized-instrument" Layer-2 link. A delegation grants
+# the power to issue a LOWER INSTRUMENT (asetus/määräys/päätös). The production
+# ``delegation_frame`` node names the instrument only as a canonical KIND string and
+# has no instrument-entity to point at; the ``delegated_instrument`` lens mints that
+# entity (anchored on the construction parse's precise instrument anchor span, which
+# sits INSIDE the recognizer frame's span). This pass joins each frame to the
+# instrument node(s) its span CONTAINS — a STRUCTURAL CONTAINMENT attachment (the
+# instrument anchor is part of the delegation frame text), strictly stronger than
+# sentence co-occurrence, and bounded to the frame itself (never a body-wide mesh).
+#
+# Candidate-not-asserted (never a silent pick):
+#   * a frame CONTAINING exactly ONE delegated_instrument → ONE edge, status
+#     "asserted" (the instrument the frame unambiguously grants);
+#   * a frame containing SEVERAL instruments (a coordinated grant: "annetaan
+#     asetuksella, X:n päätöksellä …") → ONE edge PER contained instrument, status
+#     "ambiguous", each carrying the full contained-instrument set in payload (the
+#     graph never commits to the nearest one);
+#   * a frame containing NO delegated_instrument node (the recognizer typed an
+#     instrument_kind the construction parse did not anchor — a coordinate-bridge
+#     miss between the two delegation parsers) → NO edge; a typed UnattachedFrame
+#     diagnostic, never an invented edge.
+
+EDGE_DELEGATION_GRANTS_INSTRUMENT = "delegation_grants_instrument"
+
+PASS_ID_DELEG_INSTRUMENT = "fi.norm_composition.delegation_instrument.v0"
+RULE_DELEGATION_GRANTS_INSTRUMENT = (
+    "fi.norm_composition.delegation_grants_instrument"
+)
+
+#: Graph node kinds this pass joins. Source is the recognizer ``delegation_frame``
+#: node; target is the construction ``delegated_instrument`` node.
+DELEGATED_INSTRUMENT_KIND = "delegated_instrument"
+
+#: Why a delegation frame produced no delegation_grants_instrument edge (typed).
+NO_INSTRUMENT_IN_FRAME = "no_delegated_instrument_in_frame"
+
+
+@dataclass(frozen=True)
+class UnattachedFrame:
+    """A delegation frame that produced NO instrument edge (tagged, never an edge).
+
+    Carried for the differential report / debugging. The reason distinguishes the
+    coordinate-bridge miss (the recognizer typed an instrument_kind but no
+    construction ``delegated_instrument`` node sits inside the frame) from any future
+    cause; today the only reason is ``NO_INSTRUMENT_IN_FRAME``.
+    """
+
+    source_unit_id: str
+    instrument_kind: str
+    frame_char_start: int
+    frame_char_end: int
+    reason: str
+
+
+@dataclass
+class DelegationInstrumentPass:
+    """Edge pass: delegation_frame → the delegated_instrument node(s) it contains.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`. Joins
+    EXISTING ``delegation_frame`` (source) and ``delegated_instrument`` (target)
+    nodes; it mints no nodes and re-parses nothing. A frame is joined to the
+    instrument node(s) whose span sits INSIDE the frame's span in the same source
+    unit (the instrument anchor is part of the frame text).
+
+    One contained instrument → ``"asserted"``; several (coordinated grant) → one
+    edge per instrument, ``"ambiguous"`` with the full contained set in payload;
+    none → typed :class:`UnattachedFrame` diagnostic.
+
+    Determinism: units in declared order; frames by char_start; contained
+    instruments by char_start. The assembler recomputes graph_id over the edge set.
+    The pass needs no source text (it reads node spans only) but is built per-statute
+    for symmetry with the other Layer-2 passes.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_DELEG_INSTRUMENT
+    reads_node_kinds: tuple[str, ...] = (
+        DELEGATION_FRAME_KIND,
+        DELEGATED_INSTRUMENT_KIND,
+    )
+    emits_edge_kinds: tuple[str, ...] = (EDGE_DELEGATION_GRANTS_INSTRUMENT,)
+    # Typed diagnostics for frames that produced no edge. Populated on run(); read by
+    # the differential report. NOT a graph element.
+    unattached: list[UnattachedFrame] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        frame_index = _node_index_by_unit_kind(graph.nodes, DELEGATION_FRAME_KIND)
+        instr_index = _node_index_by_unit_kind(graph.nodes, DELEGATED_INSTRUMENT_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            frames = frame_index.get(unit_id, [])
+            if not frames:
+                continue
+            instruments = instr_index.get(unit_id, [])
+            for fid, fref in frames:
+                node = graph.nodes[fid]
+                instrument_kind = str(node.payload.get("instrument_kind"))
+                contained = [
+                    (iid, iref)
+                    for iid, iref in instruments
+                    if fref.char_start <= iref.char_start
+                    and iref.char_end <= fref.char_end
+                ]
+                seeds.extend(
+                    self._frame_edges(
+                        unit_id=unit_id,
+                        frame_id=fid,
+                        frame_ref=fref,
+                        instrument_kind=instrument_kind,
+                        contained=contained,
+                    )
+                )
+        return tuple(seeds)
+
+    def _frame_edges(
+        self,
+        *,
+        unit_id: str,
+        frame_id: str,
+        frame_ref: SourceSpanRef,
+        instrument_kind: str,
+        contained: list[tuple[str, SourceSpanRef]],
+    ) -> list[SurfaceEdgeSeed]:
+        frame_span = [frame_ref.char_start, frame_ref.char_end]
+        if not contained:
+            self.unattached.append(
+                UnattachedFrame(
+                    source_unit_id=unit_id,
+                    instrument_kind=instrument_kind,
+                    frame_char_start=frame_ref.char_start,
+                    frame_char_end=frame_ref.char_end,
+                    reason=NO_INSTRUMENT_IN_FRAME,
+                )
+            )
+            return []
+        ambiguous = len(contained) > 1
+        edge_status = "ambiguous" if ambiguous else "asserted"
+        candidate_spans = [[iref.char_start, iref.char_end] for _, iref in contained]
+        out: list[SurfaceEdgeSeed] = []
+        for instr_id, instr_ref in contained:
+            payload: dict[str, object] = {
+                "frame_instrument_kind": instrument_kind,
+                "frame_span": frame_span,
+                "instrument_span": [instr_ref.char_start, instr_ref.char_end],
+                "attachment": "resolved_by_containment",
+                "source": "delegation_instrument_in_frame",
+                "experimental": True,
+            }
+            if ambiguous:
+                # a coordinated grant carries several instruments; surface the full
+                # contained set so a consumer sees this is one of several — never a
+                # silent pick of the nearest.
+                payload["attachment"] = "ambiguous_by_containment"
+                payload["candidate_instrument_spans"] = candidate_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=EDGE_DELEGATION_GRANTS_INSTRUMENT,
+                    src_local=frame_id,
+                    dst_local=instr_id,
+                    rule_id=RULE_DELEGATION_GRANTS_INSTRUMENT,
+                    status=edge_status,
+                    payload=payload,
+                )
+            )
+        return out
+
+
+def delegation_instrument_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[DelegationInstrumentPass, ...]:
+    """Build the per-statute delegation_frame → delegated_instrument edge pass.
+
+    Returns a one-tuple so the caller can splice it into the edge-pass sequence
+    ADDITIVELY (alongside the condition/exception, delegates_to/sanctioned_by,
+    norm-subject, and procedure passes and the proximity incumbents).
+    """
+    return (DelegationInstrumentPass(units=bundle.units),)
+
+
 def deontic_frame_attachment_passes(
     bundle: SourceSurfaceBundle,
 ) -> tuple[DeonticFrameAttachmentPass, ...]:
@@ -1152,15 +1336,18 @@ __all__ = [
     "ACTOR_FRAME_KIND",
     "CORE_NODE_KIND",
     "CUE_NODE_KIND",
+    "DELEGATED_INSTRUMENT_KIND",
     "DELEGATION_FRAME_KIND",
     "PROCEDURE_FRAME_KIND",
     "SANCTION_FRAME_KIND",
     "ConditionAttachmentPass",
+    "DelegationInstrumentPass",
     "DeonticFrameAttachmentPass",
     "NormSubjectAttachmentPass",
     "ProcedureGovernancePass",
     "EDGE_CONDITION_ATTACHES",
     "EDGE_DELEGATES_TO",
+    "EDGE_DELEGATION_GRANTS_INSTRUMENT",
     "EDGE_EXCEPTION_EXCEPTS",
     "EDGE_GOVERNED_BY_PROCEDURE",
     "EDGE_NORM_HAS_SUBJECT",
@@ -1169,21 +1356,26 @@ __all__ = [
     "NO_FRAME_IN_SENTENCE",
     "NO_GRAPH_NODE_FOR_CORE",
     "NO_GRAPH_NODE_FOR_CUE",
+    "NO_INSTRUMENT_IN_FRAME",
     "NO_SUBJECT_NODE_FOR_ADDRESSEE",
     "SUBJECT_UNDERSPECIFIED",
     "PASS_ID",
+    "PASS_ID_DELEG_INSTRUMENT",
     "PASS_ID_DEONTIC_FRAME",
     "PASS_ID_NORM_SUBJECT",
     "PASS_ID_PROCEDURE",
     "RULE_CONDITION",
     "RULE_DELEGATES_TO",
+    "RULE_DELEGATION_GRANTS_INSTRUMENT",
     "RULE_EXCEPTION",
     "RULE_GOVERNED_BY_PROCEDURE",
     "RULE_NORM_HAS_SUBJECT",
     "RULE_SANCTIONED_BY",
     "UnattachedCore",
+    "UnattachedFrame",
     "UnattachedQualifier",
     "condition_attachment_passes",
+    "delegation_instrument_passes",
     "deontic_frame_attachment_passes",
     "norm_subject_attachment_passes",
     "procedure_governance_passes",

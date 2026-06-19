@@ -37,6 +37,9 @@ from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
 from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
+from lawvm.finland.legal_surface.lenses.delegated_instrument import (
+    DelegatedInstrumentLens,
+)
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
 from lawvm.finland.legal_surface.lenses.deontic_core import DeonticCoreLens
 from lawvm.finland.legal_surface.lenses.exception_condition import (
@@ -68,6 +71,7 @@ from lawvm.finland.legal_surface.cross_lens_passes import (
 )
 from lawvm.finland.legal_surface.norm_composition import (
     condition_attachment_passes,
+    delegation_instrument_passes,
     deontic_frame_attachment_passes,
     norm_subject_attachment_passes,
     procedure_governance_passes,
@@ -95,6 +99,12 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     # most attachments).
     DeonticCoreLens(),
     DelegationLens(),
+    # ADDITIVE strangle: the construction delegated-instrument node lens runs
+    # ALONGSIDE the recognizer DelegationLens. It mints one delegated_instrument
+    # node per construction delegation core (anchored on the instrument anchor span)
+    # — the INSTRUMENT-ENTITY substrate the Layer-2 delegation_grants_instrument edge
+    # points at (the recognizer frame names the instrument only as a kind string).
+    DelegatedInstrumentLens(),
     ProcedureLens(),
     SanctionLens(),
     ExceptionConditionLens(),
@@ -210,12 +220,17 @@ def build_legal_surface_graph(
     # (governed_by_procedure) joins obligation/power cores to co-sentence
     # procedure_frames. Both ADDITIVE, surface_only, candidate-not-asserted —
     # alongside (never replacing) the proximity incumbents.
+    # The delegation-instrument pass (delegation_grants_instrument) joins each
+    # recognizer delegation_frame to the construction delegated_instrument node(s)
+    # its span contains — the norm->authorized-instrument link. Spliced in
+    # ADDITIVELY, surface_only, candidate-not-asserted.
     all_edge_passes = (
         edge_passes
         + condition_attachment_passes(bundle)
         + deontic_frame_attachment_passes(bundle)
         + norm_subject_attachment_passes(bundle)
         + procedure_governance_passes(bundle)
+        + delegation_instrument_passes(bundle)
     )
 
     return assemble_surface_graph(
