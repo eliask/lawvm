@@ -38,7 +38,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import List, Optional
+
+from lawvm.finland.references.lemma_gate import (
+    head_plural_external_local_forms,
+    head_surface_forms,
+)
 
 # ---------------------------------------------------------------------------
 # Dialect selector
@@ -48,6 +54,13 @@ from typing import List, Optional
 DIALECT_CROSS_REF = "cross_ref"
 #: preparatory_reference_extractor.py lane — preliminaryWork rows (EU|EY|EEY|ETY).
 DIALECT_PREPARATORY = "preparatory"
+#: eu_directive.py nickname lane — the year-first slash form, with the legacy
+#: 2-digit-year tolerance ("96/53/EY") that the cross_refs lane does not carry.
+DIALECT_EU_DIRECTIVE = "eu_directive"
+#: defined_terms.py alias lane — paren EU act ids near an alias-binding site.
+#: Form set EU|EY|EEY|ETY|EURATOM|ETA, case-insensitive, bounded "\\s{0,3}N:o\\s{0,3}"
+#: / "\\s{0,3}" spacing (tolerates zero spaces, unlike the PREP "\\s+" forms).
+DIALECT_DEFINED_TERMS = "defined_terms"
 
 # ---------------------------------------------------------------------------
 # Compiled patterns (module scope — §1.11). Bounded quantifiers throughout:
@@ -79,6 +92,29 @@ _CR_EU_P2 = re.compile(
 # CELEX "3YYYY(R|L|D)NNNN" — type chars restricted, no re.I (cross_refs original).
 _CR_CELEX = re.compile(r'\b3(\d{4})(R|L|D)(\d{4})\b')
 
+# --- Year-first slash form "YEAR/NUMBER/FORM" (e.g. "2001/23/EY", "96/53/EY") ---
+#
+# The shared NUMBER/YEAR/FORM order (``_CR_EU_P2``) requires a 4-digit MIDDLE
+# group, so it reads ONLY the number-first order; an EU act number after a 4-digit
+# year (the year-first slash form, common in "Neuvoston direktiivi 2001/23/EY")
+# is left unrecognised by ``recognize_eu_acts``. This separate recogniser fills
+# that gap. The act number is ≤3 digits, so the 4-digit-year-then-≤3-digit shape
+# is unambiguously year-first (a number-first cite has its 4-digit YEAR in the
+# middle), so it never collides with the number-first form.
+#
+# This shape was duplicated in BOTH cross_refs (``_EU_YEAR_FIRST_SLASH``,
+# 4-digit year only) and eu_directive (``_YEAR_FIRST_SLASH_CITE``, with a legacy
+# 2-digit-year tolerance ``\d{4}|\d{2}`` for pre-2000 directives like
+# "96/53/EY"). Both are preserved here verbatim behind their dialect.
+_CR_EU_YEAR_FIRST_SLASH = re.compile(
+    r'\b(?P<year>\d{4})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b',
+    re.I,
+)
+_DIR_EU_YEAR_FIRST_SLASH = re.compile(
+    r'\b(?P<year>\d{4}|\d{2})/(?P<num>\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b',
+    re.I,
+)
+
 # --- PREPARATORY dialect EU-act patterns (ported verbatim from prep extractor) ---
 
 # Modern: "(EU) YEAR/SEQUENTIAL" — case-sensitive, EEY in the form set.
@@ -108,6 +144,24 @@ _PREP_EU_YEAR_FIRST_SUFFIX = re.compile(
 # CELEX accepting any uppercase type char, full-celex + part groups.
 _PREP_CELEX = re.compile(
     r'\b(?P<celex>3(?P<cy>\d{4})(?P<ctype>[A-Z])(?P<cn>\d{4}))\b'
+)
+
+# --- DEFINED_TERMS dialect (ported verbatim from defined_terms.py) ---
+# The alias lane scans a bounded window for a paren EU act id terminating at a
+# given offset, so it tolerates zero spaces ("\\s{0,3}") and the full form set
+# (EU|EY|EEY|ETY|EURATOM|ETA), case-insensitive. The two groups are (number,
+# year) for the N:o form and (year, number) for the year-first form — the lane
+# composes the id surface in source orientation from ``number``/``year``.
+_DT_FORMS = r"EU|EY|EEY|ETY|EURATOM|ETA"
+# "(FORM) N:o NUMBER/YEAR" → groups (number, year).
+_DT_EU_NNUM = re.compile(
+    rf"\((?:{_DT_FORMS})\)\s{{0,3}}N:o\s{{0,3}}(?P<number>\d{{1,6}})/(?P<year>\d{{4}})",
+    re.IGNORECASE,
+)
+# "(FORM) YEAR/NUMBER" (GDPR-style) → groups (year, number).
+_DT_EU_YEARFIRST = re.compile(
+    rf"\((?:{_DT_FORMS})\)\s{{0,3}}(?P<year>\d{{4}})/(?P<number>\d{{1,6}})\b",
+    re.IGNORECASE,
 )
 
 # --- Embedded-repeal cue (long-form EU citation provenance) ---
@@ -374,6 +428,82 @@ def recognize_celex(text: str, *, dialect: str) -> List[EuActRef]:
     raise ValueError(f"unknown EU-reference dialect: {dialect!r}")
 
 
+@dataclass(frozen=True)
+class EuActIdSpan:
+    """A paren EU-act-id span with its source-orientation id surface.
+
+    ``id_surface`` is the act-id digits in the order written in the source
+    (``"999/2001"`` for an N:o cite, ``"2016/679"`` for a year-first cite) — the
+    defined-terms alias lane uses this verbatim as the bound act id (EU ids keep
+    source orientation, unlike FI ids which are canonicalised).
+    """
+
+    id_surface: str
+    start: int
+    end: int
+
+
+def recognize_eu_act_ids(text: str, *, dialect: str) -> List[EuActIdSpan]:
+    """Recognise paren EU act ids and their source-orientation id surface.
+
+    DIALECT_DEFINED_TERMS: the two paren forms the defined-terms alias lane reads
+        — "(FORM) N:o NUMBER/YEAR" → id ``"NUMBER/YEAR"`` and
+        "(FORM) YEAR/NUMBER" → id ``"YEAR/NUMBER"`` — bounded "\\s{0,3}" spacing,
+        full form set (EU|EY|EEY|ETY|EURATOM|ETA), case-insensitive. Returns ALL
+        matches across both forms in document order; the lane applies its own
+        positional selection (cite ending at an offset / first cite in window).
+
+    This shares the EU-act-id SHAPE with the cross-ref / preparatory waist while
+    the lane keeps its own lowering (which id to bind, positional anchoring).
+    """
+    if dialect != DIALECT_DEFINED_TERMS:
+        raise ValueError(f"unknown EU-act-id dialect: {dialect!r}")
+    out: List[EuActIdSpan] = []
+    for m in _DT_EU_NNUM.finditer(text):
+        out.append(EuActIdSpan(
+            id_surface=f"{m.group('number')}/{m.group('year')}",
+            start=m.start(), end=m.end(),
+        ))
+    for m in _DT_EU_YEARFIRST.finditer(text):
+        out.append(EuActIdSpan(
+            id_surface=f"{m.group('year')}/{m.group('number')}",
+            start=m.start(), end=m.end(),
+        ))
+    return out
+
+
+def recognize_eu_year_first_slash(text: str, *, dialect: str) -> List[EuActRef]:
+    """Recognise the year-first slash form "YEAR/NUMBER/FORM" in ``text``.
+
+    The companion to :func:`recognize_eu_acts`: ``recognize_eu_acts`` reads only
+    the number-first "NUMBER/YEAR/FORM" order (its middle group must be 4 digits),
+    so this picks up the year-first order ("2001/23/EY") that order misses. All
+    matches are returned in document order, each with ``year``/``number``/``raw``/
+    ``start``/``end`` populated (``form``/``celex`` are ``None`` — the type letter
+    is supplied by the governing head in the lane's lowering).
+
+    DIALECT_CROSS_REF: 4-digit year only (matches the old
+        ``cross_refs._EU_YEAR_FIRST_SLASH``).
+    DIALECT_EU_DIRECTIVE: 4-digit OR legacy 2-digit year (matches the old
+        ``eu_directive._YEAR_FIRST_SLASH_CITE`` — pre-2000 directives are written
+        with a 2-digit year, "96/53/EY"); the 2-digit year is expanded to its
+        full 19xx form by the lane's own normaliser.
+    """
+    if dialect == DIALECT_CROSS_REF:
+        pat = _CR_EU_YEAR_FIRST_SLASH
+    elif dialect == DIALECT_EU_DIRECTIVE:
+        pat = _DIR_EU_YEAR_FIRST_SLASH
+    else:
+        raise ValueError(f"unknown EU-year-first-slash dialect: {dialect!r}")
+    out: List[EuActRef] = []
+    for m in pat.finditer(text):
+        out.append(EuActRef(
+            form=None, number=m.group("num"), year=m.group("year"),
+            raw=m.group(0), start=m.start(), end=m.end(),
+        ))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # OJ recognition
 # ---------------------------------------------------------------------------
@@ -397,3 +527,126 @@ def recognize_oj_refs(text: str) -> List[OjRef]:
             end=m.end(),
         ))
     return out
+
+
+# ---------------------------------------------------------------------------
+# EU-instrument TYPE discrimination (regulation / directive / decision)
+# ---------------------------------------------------------------------------
+#
+# The Finnish head word that governs an EU citation carries its instrument TYPE:
+# ``asetus`` → regulation, ``direktiivi`` → directive, ``päätös`` → decision.
+# Consonant gradation inflects two of those heads (``asetus`` → ``asetukseN``,
+# ``päätös`` → ``päätökseN``), so a naive nominative-substring test
+# (``'asetus' in head``) silently MISSES every inflected regulation/decision —
+# the consonant-gradation bug class M1 was built to kill.
+#
+# These heads are a CLOSED set of three known M1 statute heads, so the type is
+# discriminated SOUNDLY by paradigm inversion: a token whose TAIL is one of the
+# M1-generated inflected surfaces of a head is that head's instrument. The head
+# rides at the end of a compound (``rakennusasetuksen``, ``sivutuoteasetus``)
+# exactly as a statute modifier rides before ``laki``; suffix-matching on the
+# generated surface set is sound (every surface is a real M1 output of a closed
+# head), never an ``asetu``-substring guess. The plural external-local cases
+# (``direktiiveillä`` …) are added via the documented M1-boundary supplement
+# (:func:`head_plural_external_local_forms`), the same one the eu_directive head
+# matcher uses.
+
+#: The closed EU-instrument-head lemma set and its type code per consumer lane.
+_EU_TYPE_LEMMAS: tuple[tuple[str, str], ...] = (
+    ("direktiivi", "dir"),
+    ("asetus", "reg"),
+    ("päätös", "dec"),
+)
+
+#: EU type code → CELEX document-type letter.
+_EU_TYPE_TO_CELEX: dict[str, str] = {"dir": "L", "reg": "R", "dec": "D"}
+
+
+@lru_cache(maxsize=None)
+def _eu_type_form_table() -> tuple[tuple[str, str], ...]:
+    """``(surface_form, type_code)`` for every inflected EU-instrument head form.
+
+    Longest-first so the most-specific (longest) head form is preferred when a
+    shorter form is a suffix of it. Built once (memoized) from the M1 paradigm of
+    the closed head set plus the plural external-local supplement.
+    """
+    table: dict[str, str] = {}
+    for lemma, type_code in _EU_TYPE_LEMMAS:
+        forms = set(head_surface_forms((lemma,))) | set(
+            head_plural_external_local_forms((lemma,))
+        )
+        for form in forms:
+            # A form unique to one head maps to that head's type. (The three heads
+            # share no inflected surface, so there is never a real collision.)
+            table.setdefault(form, type_code)
+    return tuple(
+        sorted(table.items(), key=lambda kv: (-len(kv[0]), kv[0]))
+    )
+
+
+# Tokeniser for the type look-behind: Finnish word tokens (letters + ä ö å,
+# internal hyphen / digits for compounds). Bounded (§1.11).
+_EU_TYPE_TOKEN_RE = re.compile(r"[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö0-9-]*")
+
+
+def classify_eu_instrument_type(window: str, *, default: str = "act") -> str:
+    """Classify the EU-instrument type from a look-behind ``window`` of text.
+
+    Returns the type code of the EU-instrument head closest to the END of
+    ``window`` (the head nearest the citation governs it): ``"reg"`` /
+    ``"dir"`` / ``"dec"``, or ``default`` (``"act"``) when no head form is the
+    tail of any token in the window.
+
+    SOUND replacement for the ``'asetuks' in window`` substring scan: a token is
+    a head iff its TAIL is one of the M1-generated head surfaces, so the gradated
+    forms (``asetuksen``, ``päätöksen``) classify correctly and a bare ``asetu``
+    substring never mis-fires. On a tie (two heads end at the same offset — not
+    possible for distinct tokens), the longest head form / most-specific type
+    wins via the longest-first form table.
+    """
+    table = _eu_type_form_table()
+    best_pos = -1
+    best_type = default
+    for tok in _EU_TYPE_TOKEN_RE.finditer(window):
+        low = tok.group(0).lower()
+        for form, type_code in table:
+            if low.endswith(form):
+                # The token's offset (start of the head form within the window)
+                # — the head closest to the citation (largest offset) wins.
+                pos = tok.start()
+                if pos > best_pos:
+                    best_pos = pos
+                    best_type = type_code
+                break  # longest form already matched (table is longest-first)
+    return best_type
+
+
+def eu_celex_type_for_head(head: str, *, default: Optional[str] = None) -> Optional[str]:
+    """CELEX type letter (L/R/D) for an EU-instrument-head surface ``head``.
+
+    ``head`` is a SINGLE head token (possibly compound-prefixed, e.g.
+    ``teollisuuspäästödirektiivin``): its TAIL must be an M1-generated head
+    surface. Returns the CELEX letter (directive → ``L``, regulation → ``R``,
+    decision → ``D``) or ``default`` when the tail is not a known head form.
+
+    SOUND replacement for the ``stem in head`` substring table — same paradigm
+    inversion as :func:`classify_eu_instrument_type`, just the CELEX-letter
+    projection of the type code.
+    """
+    code = classify_eu_instrument_type(head, default="")
+    return _EU_TYPE_TO_CELEX.get(code, default)
+
+
+def is_eu_instrument_head(term: str) -> bool:
+    """True iff ``term`` ends in an EU-instrument head (asetus/direktiivi/päätös).
+
+    The head is the LAST whitespace-separated token; its tail must be an
+    M1-generated EU-instrument-head surface. A ``…laki`` / other domestic head
+    yields False. SOUND replacement for the ``stem in head`` substring test used
+    to discriminate an EU nickname from a domestic-act alias.
+    """
+    low = term.strip().lower()
+    if not low:
+        return False
+    head = low.split()[-1]
+    return classify_eu_instrument_type(head, default="") != ""

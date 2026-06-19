@@ -56,22 +56,11 @@ from lawvm.finland.references.eu_directive import (
 )
 from lawvm.finland.references.eu_reference import (
     DIALECT_CROSS_REF,
+    is_eu_instrument_head,
     recognize_celex,
     recognize_eu_acts,
 )
 from lawvm.finland.references.registries.eu_nickname import _inflected_surfaces
-
-# A nickname is EU-instrument-shaped only when its head morpheme is one of the
-# closed EU-instrument heads. (A statute also coins ad-hoc aliases for DOMESTIC
-# acts — ``ympäristönsuojelulaki`` — which are NOT EU nicknames and must not be
-# registered here; that ``laki`` head is the discriminator.)
-_EU_HEAD_STEMS: tuple[str, ...] = (
-    "direktiiv",  # direktiivi / direktiivin / …
-    "asetu",      # asetus / asetuksen / … (gradated stem)
-    "asetus",
-    "päätös",     # päätös / päätöksen …
-    "päätöks",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,17 +104,15 @@ _EMPTY = StatuteLocalNicknames(celex_by_lemma={}, _surface_to_lemma={})
 def _is_eu_nickname_shaped(term: str) -> bool:
     """True iff ``term`` ends in an EU-instrument head (``…asetus``/``…direktiivi``).
 
-    The head is matched on its (possibly gradated) stem so an alias coined in an
-    inflected form is still recognised. A ``…laki`` / other domestic head is False.
+    Delegates to the shared, M1-backed
+    :func:`~lawvm.finland.references.eu_reference.is_eu_instrument_head`: the
+    last whitespace-separated token's TAIL must be an M1-generated
+    EU-instrument-head surface, so an alias coined in an inflected form
+    (``…asetuksen``) is recognised while a ``…laki`` / other domestic head is
+    False. Paradigm inversion over a closed head set, not an ``asetu`` substring
+    guess.
     """
-    low = term.strip().lower()
-    if not low:
-        return False
-    # The head is the LAST whitespace-separated word; the alias surface as written
-    # at the binding site is usually nominative ("kriittisten raaka-aineiden
-    # asetus") but tolerate an inflected coinage too.
-    head = low.split()[-1]
-    return any(stem in head for stem in _EU_HEAD_STEMS)
+    return is_eu_instrument_head(term)
 
 
 def _celex_from_binding_window(window: str, head: str) -> str | None:
