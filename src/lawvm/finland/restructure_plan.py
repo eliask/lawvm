@@ -23,7 +23,7 @@ Types are Finland-specific and live in the finland frontend, not in core.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Tuple, cast
 
@@ -54,6 +54,18 @@ OwnedRelabelSignature = tuple[
     tuple[tuple[str, str], ...],
     tuple[tuple[str, str], ...],
 ]
+
+
+@dataclass(slots=True)
+class _RelabelLookupCache:
+    """Per-plan path candidate cache for immutable relabel tree snapshots."""
+
+    exact_paths: dict[tuple[int, str, str], tuple[tuple[tuple[str, str], ...], ...]] = field(
+        default_factory=dict
+    )
+    structural_paths: dict[tuple[int, str, str], tuple[tuple[tuple[str, str], ...], ...]] = field(
+        default_factory=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +570,8 @@ def _found_via_structural_label_alias(
     tree: IRNode,
     target_path: List[Tuple[str, str]],
     found_path: Tuple[Tuple[str, str], ...],
+    *,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> bool:
     """True when lookup matched only through Finland structural-label normalization."""
     if not target_path:
@@ -565,19 +579,46 @@ def _found_via_structural_label_alias(
     leaf_kind, leaf_label = target_path[-1]
     if leaf_kind not in {"part", "chapter", "section"}:
         return False
-    if _tops.find_all(tree, leaf_kind, leaf_label):
+    exact_cache_key = (id(tree), leaf_kind, leaf_label)
+    if lookup_cache is not None:
+        exact_matches = lookup_cache.exact_paths.get(exact_cache_key)
+        if exact_matches is None:
+            exact_matches = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
+            lookup_cache.exact_paths[exact_cache_key] = exact_matches
+    else:
+        exact_matches = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
+    if exact_matches:
         return False
     return _norm_num_token(found_path[-1][1]) == _norm_num_token(leaf_label)
 
 
-def _find_path_by_suffix(tree: IRNode, target_path: List[Tuple[str, str]]) -> Optional[Tuple[Tuple[str, str], ...]]:
+def _find_path_by_suffix(
+    tree: IRNode,
+    target_path: List[Tuple[str, str]],
+    *,
+    lookup_cache: _RelabelLookupCache | None = None,
+) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Find a live tree path whose suffix matches the plan-owned target path."""
     if not target_path:
         return None
     leaf_kind, leaf_label = target_path[-1]
-    candidates = _tops.find_all(tree, leaf_kind, leaf_label)
+    exact_cache_key = (id(tree), leaf_kind, leaf_label)
+    if lookup_cache is not None:
+        candidates = lookup_cache.exact_paths.get(exact_cache_key)
+        if candidates is None:
+            candidates = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
+            lookup_cache.exact_paths[exact_cache_key] = candidates
+    else:
+        candidates = tuple(_tops.find_all(tree, leaf_kind, leaf_label))
     if not candidates and leaf_kind in {"part", "chapter", "section"}:
-        candidates = _find_paths_by_structural_label(tree, leaf_kind, leaf_label)
+        structural_cache_key = (id(tree), leaf_kind, _norm_num_token(leaf_label))
+        if lookup_cache is not None:
+            candidates = lookup_cache.structural_paths.get(structural_cache_key)
+            if candidates is None:
+                candidates = tuple(_find_paths_by_structural_label(tree, leaf_kind, leaf_label))
+                lookup_cache.structural_paths[structural_cache_key] = candidates
+        else:
+            candidates = tuple(_find_paths_by_structural_label(tree, leaf_kind, leaf_label))
     target_suffix = tuple(target_path)
 
     def _normalize_path(
@@ -664,6 +705,8 @@ def _tree_has_part_nodes(tree: IRNode) -> bool:
 def _find_path_in_pre_partification_frame(
     tree: IRNode,
     target_path: List[Tuple[str, str]],
+    *,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve part-scoped targets against a pre-partification live tree.
 
@@ -676,7 +719,7 @@ def _find_path_in_pre_partification_frame(
         return None
     if not target_path or target_path[0][0] != "part":
         return None
-    return _find_path_by_suffix(tree, target_path[1:])
+    return _find_path_by_suffix(tree, target_path[1:], lookup_cache=lookup_cache)
 
 
 def _find_path_in_loose_trailing_section_frame(
@@ -684,6 +727,7 @@ def _find_path_in_loose_trailing_section_frame(
     target_path: List[Tuple[str, str]],
     *,
     part_relabel_sources: dict[str, str] | None = None,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve chapter-scoped section relabels against one loose trailing sibling.
 
@@ -700,6 +744,7 @@ def _find_path_in_loose_trailing_section_frame(
         tree,
         target_path[:-1],
         part_relabel_sources=part_relabel_sources,
+        lookup_cache=lookup_cache,
     )
     if parent_found is None:
         return None
@@ -738,6 +783,7 @@ def _find_path_in_pre_part_relabel_frame(
     target_path: List[Tuple[str, str]],
     *,
     part_relabel_sources: dict[str, str],
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve a part-scoped target against the pre-part-relabel live tree.
 
@@ -756,7 +802,7 @@ def _find_path_in_pre_part_relabel_frame(
     if not source_part:
         return None
     remapped_path = [("part", source_part), *target_path[1:]]
-    return _find_path_by_suffix(tree, remapped_path)
+    return _find_path_by_suffix(tree, remapped_path, lookup_cache=lookup_cache)
 
 
 def _candidate_source_paths_for_relabel_lookup(
@@ -789,9 +835,10 @@ def _resolve_relabel_lookup_path_on_tree(
     target_path: List[Tuple[str, str]],
     *,
     part_relabel_sources: dict[str, str] | None = None,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve one explicit address against the live tree without migration replay."""
-    found_path = _find_path_by_suffix(tree, target_path)
+    found_path = _find_path_by_suffix(tree, target_path, lookup_cache=lookup_cache)
     if found_path is None:
         if len(target_path) == 1:
             found_path = _tops.find(tree, target_path[-1][0], target_path[-1][1])
@@ -800,14 +847,20 @@ def _resolve_relabel_lookup_path_on_tree(
             tree,
             target_path,
             part_relabel_sources=part_relabel_sources,
+            lookup_cache=lookup_cache,
         )
     if found_path is None:
-        found_path = _find_path_in_pre_partification_frame(tree, target_path)
+        found_path = _find_path_in_pre_partification_frame(
+            tree,
+            target_path,
+            lookup_cache=lookup_cache,
+        )
     if found_path is None:
         found_path = _find_path_in_loose_trailing_section_frame(
             tree,
             target_path,
             part_relabel_sources=part_relabel_sources,
+            lookup_cache=lookup_cache,
         )
     return found_path
 
@@ -819,12 +872,14 @@ def _resolve_relabel_lookup_path(
     part_relabel_sources: dict[str, str] | None = None,
     migration_ledger: "MigrationLedger | None" = None,
     migration_as_of_date: str = "",
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve one relabel lookup path using the executor's bounded search rules."""
     found_path = _resolve_relabel_lookup_path_on_tree(
         tree,
         target_path,
         part_relabel_sources=part_relabel_sources,
+        lookup_cache=lookup_cache,
     )
     if found_path is not None or migration_ledger is None or not target_path:
         return found_path
@@ -844,6 +899,7 @@ def _resolve_relabel_lookup_path(
         tree,
         migrated_path,
         part_relabel_sources=part_relabel_sources,
+        lookup_cache=lookup_cache,
     )
 
 
@@ -896,6 +952,7 @@ def _classify_missing_relabel_reason(
     *,
     part_relabel_sources: dict[str, str] | None = None,
     consumed_source_paths: set[tuple[tuple[str, str], ...]] | None = None,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> str:
     """Classify why a relabel target could not be resolved.
 
@@ -920,6 +977,7 @@ def _classify_missing_relabel_reason(
             tree,
             target_path[:-1],
             part_relabel_sources=part_relabel_sources,
+            lookup_cache=lookup_cache,
         )
         if parent_found is not None:
             return "target_leaf_absent_under_existing_parent"
@@ -929,6 +987,7 @@ def _classify_missing_relabel_reason(
                 tree,
                 target_path[:depth],
                 part_relabel_sources=part_relabel_sources,
+                lookup_cache=lookup_cache,
             )
             if ancestor_found is not None:
                 return "target_container_absent"
@@ -1532,6 +1591,7 @@ def _execute_same_parent_relabel_group(
     migration_ledger: "MigrationLedger | None" = None,
     effective_date: str = "",
     source_statute: str = "",
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Tuple[IRNode, List[ExecutedOp]]:
     """Execute a same-parent RELABEL chain atomically against one parent snapshot."""
 
@@ -1563,6 +1623,7 @@ def _execute_same_parent_relabel_group(
             part_relabel_sources=part_relabel_sources,
             migration_ledger=migration_ledger,
             migration_as_of_date=effective_date,
+            lookup_cache=lookup_cache,
         )
         via_ledger_by_op[op] = (
             found_path is not None
@@ -1570,6 +1631,7 @@ def _execute_same_parent_relabel_group(
                 tree,
                 target_path,
                 part_relabel_sources=part_relabel_sources,
+                lookup_cache=lookup_cache,
             )
             is None
             and migration_ledger is not None
@@ -1577,7 +1639,12 @@ def _execute_same_parent_relabel_group(
         via_alias_by_op[op] = (
             found_path is not None
             and not via_ledger_by_op[op]
-            and _found_via_structural_label_alias(tree, target_path, found_path)
+            and _found_via_structural_label_alias(
+                tree,
+                target_path,
+                found_path,
+                lookup_cache=lookup_cache,
+            )
         )
         if found_path is None:
             consumed_reason = _classify_missing_relabel_reason(
@@ -1585,6 +1652,7 @@ def _execute_same_parent_relabel_group(
                 target_path,
                 part_relabel_sources=part_relabel_sources,
                 consumed_source_paths=consumed_source_paths,
+                lookup_cache=lookup_cache,
             )
             lineage_recorded = _record_pending_source_chain_relabel_lineage(
                 op,
@@ -1794,6 +1862,7 @@ def execute_restructure_plan(
     ordered_ops = _stabilize_same_parent_relabel_exec_order(plan.ops_ordered)
     ordered_ops = _prioritize_descendant_relabels(ordered_ops)
     consumed_relabel_sources: set[tuple[tuple[str, str], ...]] = set()
+    lookup_cache = _RelabelLookupCache()
     i = 0
     while i < len(ordered_ops):
         op = ordered_ops[i]
@@ -1830,6 +1899,7 @@ def execute_restructure_plan(
                         migration_ledger=migration_ledger,
                         effective_date=effective_date,
                         source_statute=plan.amendment_id,
+                        lookup_cache=lookup_cache,
                     )
                     executed.extend(group_exec)
                     for exec_op in group_exec:
@@ -1861,6 +1931,7 @@ def execute_restructure_plan(
                 migration_ledger=migration_ledger,
                 effective_date=effective_date,
                 source_statute=plan.amendment_id,
+                lookup_cache=lookup_cache,
             )
             executed.append(exec_op)
             if exec_op.success:
@@ -1890,6 +1961,7 @@ def _execute_relabel(
     migration_ledger: "MigrationLedger | None" = None,
     effective_date: str = "",
     source_statute: str = "",
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> Tuple[IRNode, ExecutedOp]:
     """Execute a RELABEL op: find target node and change its label.
 
@@ -1924,6 +1996,7 @@ def _execute_relabel(
         part_relabel_sources=part_relabel_sources,
         migration_ledger=migration_ledger,
         migration_as_of_date=effective_date,
+        lookup_cache=lookup_cache,
     )
     via_migration_ledger_lookup = (
         found_path is not None
@@ -1931,6 +2004,7 @@ def _execute_relabel(
             tree,
             target_path,
             part_relabel_sources=part_relabel_sources,
+            lookup_cache=lookup_cache,
         )
         is None
         and migration_ledger is not None
@@ -1938,7 +2012,12 @@ def _execute_relabel(
     via_structural_label_alias_lookup = (
         found_path is not None
         and not via_migration_ledger_lookup
-        and _found_via_structural_label_alias(tree, target_path, found_path)
+        and _found_via_structural_label_alias(
+            tree,
+            target_path,
+            found_path,
+            lookup_cache=lookup_cache,
+        )
     )
     found_via_pre_part_relabel_frame = False
     if found_path is not None and part_relabel_sources and target_path and target_path[0][0] == "part":
@@ -1949,7 +2028,7 @@ def _execute_relabel(
             and found_path
             and found_path[0][0] == "part"
             and _norm_num_token(found_path[0][1]) == _norm_num_token(source_part)
-            and _find_path_by_suffix(tree, target_path) is None
+            and _find_path_by_suffix(tree, target_path, lookup_cache=lookup_cache) is None
         ):
             found_via_pre_part_relabel_frame = True
     restored_source_alias = False
@@ -1964,7 +2043,7 @@ def _execute_relabel(
         source_part = part_relabel_sources.get(target_part)
         if source_part:
             source_path = [("part", source_part), *target_path[1:]]
-            source_found = _find_path_by_suffix(tree, source_path)
+            source_found = _find_path_by_suffix(tree, source_path, lookup_cache=lookup_cache)
             if source_found is None:
                 restored = _restore_missing_source_part_alias(
                     tree,
@@ -1982,6 +2061,7 @@ def _execute_relabel(
             target_path,
             part_relabel_sources=part_relabel_sources,
             consumed_source_paths=consumed_source_paths,
+            lookup_cache=lookup_cache,
         )
         lineage_recorded = _record_pending_source_chain_relabel_lineage(
             op,
@@ -2026,6 +2106,7 @@ def _execute_relabel(
             tree,
             target_path[:-1],
             part_relabel_sources=part_relabel_sources,
+            lookup_cache=lookup_cache,
         )
 
     if (
