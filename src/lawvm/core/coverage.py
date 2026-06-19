@@ -25,7 +25,7 @@ shared carrier and the common partition helpers.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import FrozenSet, Literal, Optional, Tuple
+from typing import FrozenSet, Literal, Optional, Protocol, Tuple
 
 
 CoverageClaimKind = Literal[
@@ -65,6 +65,19 @@ _COVERAGE_DISPOSITIONS: FrozenSet[CoverageDisposition] = (
 )
 
 
+class CoveragePayloadRef(Protocol):
+    """Named source-model payload reference carried by coverage units.
+
+    Frontends own the concrete carrier.  Core only requires the stable fields
+    needed to route coverage gaps back to a typed source unit without passing
+    XML nodes through the coverage contract.
+    """
+
+    unit_id: str
+    unit_kind: str
+    label: str
+
+
 def _string_tuple(values: Tuple[str, ...], *, field_name: str) -> tuple[str, ...]:
     result = tuple(values)
     if not all(isinstance(value, str) for value in result):
@@ -77,7 +90,7 @@ def _string_tuple(values: Tuple[str, ...], *, field_name: str) -> tuple[str, ...
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageUnit:
     """One operative unit observed in the amendment body XML.
 
@@ -94,9 +107,9 @@ class CoverageUnit:
         parent_label: Label of the enclosing container (e.g. the chapter
             number for a section inside a chapter node).  ``None`` at top
             level.
-        payload_ref: Opaque typed reference into the body surface, such as a
+        payload_ref: Named typed reference into the body surface, such as a
             frontend-local source-unit lookup.  Used by downstream synthesis
-            to locate the payload without re-parsing.
+            to locate the payload without re-parsing or passing XML handles.
         tags: Free-form classification tags attached during extraction.
             Common values: ``'nonoperative'``, ``'provenance'``, ``'context'``,
             ``'standalone'``, ``'bundled_in_container'``.
@@ -106,7 +119,7 @@ class CoverageUnit:
     kind: str
     observed_label: Optional[str]
     parent_label: Optional[str]
-    payload_ref: Optional[object]
+    payload_ref: Optional[CoveragePayloadRef]
     tags: FrozenSet[str] = frozenset()
 
     def __post_init__(self) -> None:
@@ -120,7 +133,7 @@ class CoverageUnit:
         object.__setattr__(self, "tags", tags)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageClaim:
     """A claim that an amendment operation covers one or more body units.
 
@@ -159,7 +172,7 @@ class CoverageClaim:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageGap:
     """An amendment body unit not covered by any operation claim.
 
@@ -193,7 +206,7 @@ class CoverageGap:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageIgnoredUnit:
     """A body unit candidate that extraction intentionally ignored.
 
@@ -206,7 +219,7 @@ class CoverageIgnoredUnit:
     reason: str
     observed_label: Optional[str] = None
     parent_label: Optional[str] = None
-    payload_ref: Optional[object] = None
+    payload_ref: Optional[CoveragePayloadRef] = None
     evidence: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -221,7 +234,7 @@ class CoverageIgnoredUnit:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageRejectedClaim:
     """A compiled op that coverage claim collection intentionally skipped."""
 
@@ -239,7 +252,7 @@ class CoverageRejectedClaim:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CoverageReport:
     """Full coverage analysis for one amendment's body.
 

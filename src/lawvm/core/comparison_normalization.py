@@ -16,7 +16,7 @@ ComparisonRuleKind = Literal["translation", "literal", "regex", "placeholder", "
 TranslationTable = Mapping[int, str | int | None]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ComparisonNormalizationRule:
     name: str
     rule_class: str
@@ -32,7 +32,7 @@ class ComparisonNormalizationRule:
     new_text: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ComparisonNormalizationResult:
     text: str
     fired_rules: tuple[str, ...]

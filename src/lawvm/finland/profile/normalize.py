@@ -120,6 +120,11 @@ def apply_all(
 # Regexes used across rules
 # ---------------------------------------------------------------------------
 
+_FIRST_SUBSECTION_RIGHT_ANAPHORA_RE = re.compile(
+    r"(?<!\w)1\s*\.?\s*momentissa\s+tarkoitettu\s+oikeus\b",
+    re.IGNORECASE,
+)
+
 _EMBEDDED_PARAGRAPH_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?|[a-zA-Z]+)\s*\)\s*(.+)$")
 _EMBEDDED_DOTTED_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\.\s+(.+)$")
 _EMBEDDED_PLAIN_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\s+(.+)$")
@@ -1211,6 +1216,20 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
     if last_subsection_idx is None:
         return children
 
+    def _trailing_refers_to_first_subsection(nodes: tuple[IRNode, ...]) -> bool:
+        for node in nodes:
+            text = irnode_to_text(node).strip()
+            text_lower = text.lower()
+            if text_lower.startswith("mitä 1 momentissa ") and " ei koske " in f" {text_lower} ":
+                return True
+            if (
+                "momentissa" in text_lower
+                and "oikeus" in text_lower
+                and _FIRST_SUBSECTION_RIGHT_ANAPHORA_RE.search(text)
+            ):
+                return True
+        return False
+
     rewritten: List[IRNode] = []
     for idx, child in enumerate(children):
         if child.kind != IRNodeKind.SUBSECTION:
@@ -1268,6 +1287,29 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
                     )
                     and all(_paragraph_is_content_only(node) for node in trailing)
                 ):
+                    if _trailing_refers_to_first_subsection(trailing):
+                        rewritten.append(
+                            IRNode(
+                                kind=child.kind,
+                                label=child.label,
+                                text=child.text,
+                                attrs=child.attrs,
+                                children=child.children[: last_numbered_idx + 1],
+                            )
+                        )
+                        for node in trailing:
+                            attrs = dict(node.attrs)
+                            attrs["lawvm_source_normalization_rule"] = (
+                                "fi_split_trailing_first_moment_anaphora_subsection_v1"
+                            )
+                            rewritten.append(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    children=tuple(node.children),
+                                    attrs=attrs,
+                                )
+                            )
+                        continue
                     rewritten_children = list(child.children[: last_numbered_idx + 1])
                     for trailing_idx, node in enumerate(trailing):
                         text = irnode_to_text(node).strip()
@@ -1302,7 +1344,7 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
 
 
 def _apply_fi_merge_split_intro_item_subsections(children: List[IRNode]) -> List[IRNode]:
-    """Merge a content-only intro subsection with its following paragraph-bearing subsection."""
+    """Merge a content-only intro subsection with its following flattened item row."""
     rewritten: List[IRNode] = []
     i = 0
     while i < len(children):
@@ -1342,12 +1384,27 @@ def _apply_fi_merge_split_intro_item_subsections(children: List[IRNode]) -> List
             gc.kind == IRNodeKind.PARAGRAPH and any(ggc.kind == IRNodeKind.NUM for ggc in gc.children)
             for gc in next_child.children
         )
-        if not has_numbered_paragraph:
+        next_text = _subsection_leaf_text(next_child) or ""
+        next_is_lowercase_content_row = (
+            not has_numbered_paragraph
+            and not _subsection_has_structured_children(next_child)
+            and bool(next_text)
+            and next_text[:1].islower()
+        )
+        if not has_numbered_paragraph and not next_is_lowercase_content_row:
             rewritten.append(child)
             i += 1
             continue
         new_children: List[IRNode] = [IRNode(kind=IRNodeKind.INTRO, text=intro_text.strip())]
-        new_children.extend(next_child.children)
+        if next_is_lowercase_content_row:
+            new_children.append(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text=next_text.strip()),),
+                )
+            )
+        else:
+            new_children.extend(next_child.children)
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,

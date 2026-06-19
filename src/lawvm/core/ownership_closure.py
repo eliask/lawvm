@@ -39,18 +39,18 @@ class OwnershipClosureCertificate:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "certificate_id",
-            "corpus_slice_id",
-            "source_bundle_hash",
-            "profile_id",
-            "interpretation_policy_id",
-            "graph_snapshot_hash",
+        for field_name, value in (
+            ("certificate_id", self.certificate_id),
+            ("corpus_slice_id", self.corpus_slice_id),
+            ("source_bundle_hash", self.source_bundle_hash),
+            ("profile_id", self.profile_id),
+            ("interpretation_policy_id", self.interpretation_policy_id),
+            ("graph_snapshot_hash", self.graph_snapshot_hash),
         ):
             object.__setattr__(
                 self,
                 field_name,
-                _required_string(field_name, getattr(self, field_name)),
+                _required_string(field_name, value),
             )
         if not isinstance(self.closed, bool):
             raise ValueError("OwnershipClosureCertificate.closed must be boolean")

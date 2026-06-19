@@ -339,7 +339,7 @@ def scope_authority_parity_for_op(
 def lo_scope_confidence(lo: _LegalOperation) -> ScopeConfidence | None:
     """Return the Finland-local scope witness stored on one LegalOperation."""
     chapter = _lo_path_dict(lo).get("chapter")
-    stored = cast(ScopeConfidence | None, getattr(lo, "scope_confidence", None))
+    stored = cast(ScopeConfidence | None, lo.scope_confidence)
     return normalize_scope_confidence(stored, resolved_chapter=chapter)
 
 
@@ -348,15 +348,13 @@ def lo_with_scope_confidence(
     scope_confidence: ScopeConfidence | None,
 ) -> _LegalOperation:
     """Attach the Finland-local scope witness to one LegalOperation."""
-    object.__setattr__(
+    return dc_replace(
         lo,
-        "scope_confidence",
-        normalize_scope_confidence(
+        scope_confidence=normalize_scope_confidence(
             scope_confidence,
             resolved_chapter=_lo_path_dict(lo).get("chapter"),
         ),
     )
-    return lo
 
 
 def lo_with_move_clause_target_unit_kind(
@@ -372,13 +370,9 @@ def lo_with_move_clause_target_unit_kind(
     it to evaluate a destination-scoped REPLACE against the move ORIGIN slot.
     Same Finland-local transport pattern as ``lo_with_scope_confidence``.
     """
-    if move_clause_target_unit_kind is not None:
-        object.__setattr__(
-            lo,
-            "move_clause_target_unit_kind",
-            move_clause_target_unit_kind,
-        )
-    return lo
+    if move_clause_target_unit_kind is None:
+        return lo
+    return dc_replace(lo, move_clause_target_unit_kind=move_clause_target_unit_kind)
 
 
 def lo_with_added_scope_tag(lo: _LegalOperation, tag: str) -> _LegalOperation:
@@ -744,7 +738,7 @@ class AmendmentOp:
         self.witness_rule_id = witness_rule_id
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
-            getattr(self.lo, "move_clause_target_unit_kind", None)
+            cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
             if self.lo is not None
             else None
         )
@@ -833,9 +827,7 @@ class AmendmentOp:
         }
         op_type: OpType = _ACTION_MAP.get(lo.action, "REPLACE")
         base_id = lo.op_id or f"op_{idx}"
-        move_clause_target_unit_kind: TargetUnitKind | None = getattr(
-            lo, "move_clause_target_unit_kind", None
-        )
+        move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
 
         target = lo.target

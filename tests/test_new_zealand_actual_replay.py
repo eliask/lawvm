@@ -404,6 +404,7 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_actual_replay_canary_replays_transitions_against_archived_oracle() -> None:
     from lawvm.new_zealand.actual_replay import build_archived_work_actual_replay
 

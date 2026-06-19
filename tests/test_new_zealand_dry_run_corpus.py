@@ -427,6 +427,7 @@ _REAL_DB = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_corpus_builder_runs_over_real_canary_and_neighbour() -> None:
     # The hand-picked canary plus a sampled modern act, run end to end against
     # the archive. The canary must contribute agreeing repeal proofs.
@@ -445,6 +446,7 @@ def test_corpus_builder_runs_over_real_canary_and_neighbour() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_corpus_selected_family_scope_unblocks_incomplete_work() -> None:
     # act_public_1955_37 is blocked_incomplete_candidate_set, so complete_set
     # scope yields zero proofs. Selected-family scope dry-runs its ready repeal
@@ -482,6 +484,7 @@ def test_corpus_selected_family_scope_unblocks_incomplete_work() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_corpus_run_cache_produces_identical_report_to_uncached_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

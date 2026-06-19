@@ -50,27 +50,38 @@ class FrontendCapability:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in ("frontend_id", "jurisdiction", "scope", "status", "capability_schema"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"FrontendCapability.{field_name}", getattr(self, field_name)),
-            )
-        for field_name in (
-            "has_token_tape",
-            "has_annotation_overlay",
-            "has_surface_clause",
-            "has_enriched_surface",
-            "has_resolved_surface",
-            "has_clause_ast",
-            "has_payload_surface",
-            "has_payload_elaboration",
-            "has_canonical_effects",
-            "has_replay_apply",
-            "has_materialization",
-            "has_agreement_surface",
+        object.__setattr__(
+            self,
+            "frontend_id",
+            _required_string("FrontendCapability.frontend_id", self.frontend_id),
+        )
+        object.__setattr__(
+            self,
+            "jurisdiction",
+            _required_string("FrontendCapability.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(self, "scope", _required_string("FrontendCapability.scope", self.scope))
+        object.__setattr__(self, "status", _required_string("FrontendCapability.status", self.status))
+        object.__setattr__(
+            self,
+            "capability_schema",
+            _required_string("FrontendCapability.capability_schema", self.capability_schema),
+        )
+        for field_name, value in (
+            ("has_token_tape", self.has_token_tape),
+            ("has_annotation_overlay", self.has_annotation_overlay),
+            ("has_surface_clause", self.has_surface_clause),
+            ("has_enriched_surface", self.has_enriched_surface),
+            ("has_resolved_surface", self.has_resolved_surface),
+            ("has_clause_ast", self.has_clause_ast),
+            ("has_payload_surface", self.has_payload_surface),
+            ("has_payload_elaboration", self.has_payload_elaboration),
+            ("has_canonical_effects", self.has_canonical_effects),
+            ("has_replay_apply", self.has_replay_apply),
+            ("has_materialization", self.has_materialization),
+            ("has_agreement_surface", self.has_agreement_surface),
         ):
-            if not isinstance(getattr(self, field_name), bool):
+            if not isinstance(value, bool):
                 raise ValueError(f"FrontendCapability.{field_name} must be boolean")
         object.__setattr__(
             self,
@@ -143,22 +154,35 @@ class SurfaceParseResult:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
+        object.__setattr__(
+            self,
             "frontend_id",
+            _required_string("SurfaceParseResult.frontend_id", self.frontend_id),
+        )
+        object.__setattr__(
+            self,
             "jurisdiction",
+            _required_string("SurfaceParseResult.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
             "source_hash",
-            "status",
+            _required_string("SurfaceParseResult.source_hash", self.source_hash),
+        )
+        object.__setattr__(self, "status", _required_string("SurfaceParseResult.status", self.status))
+        object.__setattr__(
+            self,
             "original_surface_kind",
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"SurfaceParseResult.{field_name}", getattr(self, field_name)),
-            )
+            _required_string("SurfaceParseResult.original_surface_kind", self.original_surface_kind),
+        )
         object.__setattr__(self, "enriched_surface_kind", str(self.enriched_surface_kind or ""))
         object.__setattr__(self, "resolved_surface_kind", str(self.resolved_surface_kind or ""))
-        for field_name in ("original_produced", "enriched", "resolved_produced"):
-            if not isinstance(getattr(self, field_name), bool):
+        for field_name, value in (
+            ("original_produced", self.original_produced),
+            ("enriched", self.enriched),
+            ("resolved_produced", self.resolved_produced),
+        ):
+            if not isinstance(value, bool):
                 raise ValueError(f"SurfaceParseResult.{field_name} must be boolean")
         if not isinstance(self.consumed_count, int) or self.consumed_count < 0:
             raise ValueError("SurfaceParseResult.consumed_count must be a non-negative integer")
@@ -238,27 +262,63 @@ class DerivedCompatibilityArtifact:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
+        object.__setattr__(
+            self,
             "artifact_id",
+            _required_string("DerivedCompatibilityArtifact.artifact_id", self.artifact_id),
+        )
+        object.__setattr__(
+            self,
             "jurisdiction",
+            _required_string("DerivedCompatibilityArtifact.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
             "frontend_id",
+            _required_string("DerivedCompatibilityArtifact.frontend_id", self.frontend_id),
+        )
+        object.__setattr__(
+            self,
             "artifact_kind",
+            _required_string("DerivedCompatibilityArtifact.artifact_kind", self.artifact_kind),
+        )
+        object.__setattr__(
+            self,
             "source_artifact_id",
+            _required_string(
+                "DerivedCompatibilityArtifact.source_artifact_id",
+                self.source_artifact_id,
+            ),
+        )
+        object.__setattr__(
+            self,
             "source_artifact_kind",
+            _required_string(
+                "DerivedCompatibilityArtifact.source_artifact_kind",
+                self.source_artifact_kind,
+            ),
+        )
+        object.__setattr__(
+            self,
             "derivation_phase",
+            _required_string("DerivedCompatibilityArtifact.derivation_phase", self.derivation_phase),
+        )
+        object.__setattr__(
+            self,
             "status",
+            _required_string("DerivedCompatibilityArtifact.status", self.status),
+        )
+        object.__setattr__(
+            self,
             "safe_default",
+            _required_string("DerivedCompatibilityArtifact.safe_default", self.safe_default),
+        )
+        for field_name, value in (
+            ("lossy", self.lossy),
+            ("replay_authorized", self.replay_authorized),
+            ("semantic_authority", self.semantic_authority),
         ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(
-                    f"DerivedCompatibilityArtifact.{field_name}",
-                    getattr(self, field_name),
-                ),
-            )
-        for field_name in ("lossy", "replay_authorized", "semantic_authority"):
-            if not isinstance(getattr(self, field_name), bool):
+            if not isinstance(value, bool):
                 raise ValueError(f"DerivedCompatibilityArtifact.{field_name} must be boolean")
         object.__setattr__(
             self,

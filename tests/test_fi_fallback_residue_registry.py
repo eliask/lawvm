@@ -99,6 +99,7 @@ def _audit():
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_corpus_closed_set_every_reason_registered(_audit) -> None:
     """Closed-set guarantee: no live decline reason is unregistered."""
     assert _audit.unregistered_reasons == [], (
@@ -113,6 +114,7 @@ def test_corpus_closed_set_every_reason_registered(_audit) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_corpus_total_declined_does_not_exceed_baseline(_audit) -> None:
     """No silent growth in the fallback set beyond the pinned total baseline."""
     assert _audit.total_declined <= FI_JOHTOLAUSE_FALLBACK_RESIDUE_TOTAL_BASELINE, (
@@ -127,6 +129,7 @@ def test_corpus_total_declined_does_not_exceed_baseline(_audit) -> None:
     not _canonical_corpus_available(),
     reason="canonical finlex.farchive not linked (LAWVM_CANONICAL_DATA_ROOT unset)",
 )
+@pytest.mark.slow
 def test_corpus_per_class_counts_do_not_exceed_baseline(_audit) -> None:
     """Per-class no-silent-growth guard. A class over baseline fails loudly."""
     overruns = {

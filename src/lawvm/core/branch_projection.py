@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from lawvm.core.ir import LegalOperation
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BranchImpactRow:
     """One branch-local effect projected for UI/API consumers."""
 
@@ -51,7 +51,7 @@ class BranchImpactRow:
         return data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BranchImpactProjection:
     """Branch/proposal impact projection without enacted-state mutation claims."""
 

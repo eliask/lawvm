@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional, Protocol, Tuple
 
+from lawvm.core.coverage import CoverageGap
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp
@@ -58,7 +59,7 @@ def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTarg
 
 def run_uncovered_candidate_iteration(
     *,
-    supplemental_candidates: Iterable[object],
+    supplemental_candidates: Iterable[CoverageGap],
     peg_owned_targets: PegOwnedSectionTargets,
     processor: UncoveredCandidateProcessor,
 ) -> None:
@@ -69,20 +70,20 @@ def run_uncovered_candidate_iteration(
     outranks uncovered-body recovery.
     """
     for gap in supplemental_candidates:
-        unit = getattr(gap, "unit", None)
-        if unit is None or getattr(unit, "kind", None) != "section":
+        unit = gap.unit
+        if unit.kind != "section":
             continue
-        label = getattr(unit, "observed_label", "") or ""
+        label = unit.observed_label or ""
         if not label:
             continue
-        chapter = getattr(unit, "parent_label", None)
+        chapter = unit.parent_label
         if (chapter, label) in peg_owned_targets.by_chapter:
             processor.record_skip("peg_owned_same_chapter", label, chapter)
             continue
         if label in peg_owned_targets.labels:
             processor.record_skip("peg_owned_label_collision", label, chapter)
             continue
-        source_ref = getattr(unit, "payload_ref", None)
+        source_ref = unit.payload_ref
         if not isinstance(source_ref, BodyCoveragePayloadRef) or source_ref.unit_kind != "section":
             processor.record_skip("missing_source_payload_ref", label, chapter)
             continue

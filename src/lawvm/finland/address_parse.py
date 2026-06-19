@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List
 
 # ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ from typing import List
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ParsedLegalAddress:
     """Structured legal address parsed from Finnish text.
 
@@ -337,6 +338,15 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
         >>> parse_legal_addresses("2 ja 3 momentti")
         [ParsedLegalAddress(subsection=2, ...), ParsedLegalAddress(subsection=3, ...)]
     """
+    return list(_parse_legal_addresses_cached(text))
+
+
+@lru_cache(maxsize=4096)
+def _parse_legal_addresses_cached(text: str) -> tuple[ParsedLegalAddress, ...]:
+    return tuple(_parse_legal_addresses_uncached(text))
+
+
+def _parse_legal_addresses_uncached(text: str) -> List[ParsedLegalAddress]:
     addresses: List[ParsedLegalAddress] = []
     consumed: set[int] = set()
 

@@ -47,7 +47,7 @@ def _validate_selection_query(
     _validate_query_type(query_type)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionCertificate:
     """Positive certificate explaining one version-selection decision."""
 
@@ -94,7 +94,7 @@ class VersionSelectionCertificate:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionResult:
     """Explicit selection result that can represent missing required scope."""
 
@@ -153,7 +153,7 @@ class VersionSelectionResult:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VersionSelectionTie:
     """Equal-rank active candidates where current selection would need list order."""
 
@@ -163,6 +163,16 @@ class VersionSelectionTie:
     source_statute: str
     variant_kind: str
     candidate_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _VersionSelectionConflictKey:
+    """Equal-rank dimensions for same-source version-selection conflict checks."""
+
+    variant_kind: str
+    effective: str
+    enacted: str
+    source_statute: str
 
 
 def _day_before_iso(iso_date: str) -> str:
@@ -274,14 +284,19 @@ def equal_rank_same_source_conflicts(
     selection_rail = temporary_versions or [
         version for version in eligible_versions if version.variant_kind == "permanent"
     ]
-    grouped: dict[tuple[str, str, str, str], list[ProvisionVersion]] = {}
+    grouped: dict[_VersionSelectionConflictKey, list[ProvisionVersion]] = {}
     for version in selection_rail:
         source_statute = version.source.statute_id if version.source is not None else ""
-        key = (version.variant_kind, version.effective, version.enacted, source_statute)
+        key = _VersionSelectionConflictKey(
+            variant_kind=version.variant_kind,
+            effective=version.effective,
+            enacted=version.enacted,
+            source_statute=source_statute,
+        )
         grouped.setdefault(key, []).append(version)
 
     conflicts: list[VersionSelectionTie] = []
-    for (variant_kind, effective, enacted, source_statute), versions in grouped.items():
+    for key, versions in grouped.items():
         if len(versions) < 2:
             continue
         content_hashes = {
@@ -293,10 +308,10 @@ def equal_rank_same_source_conflicts(
         conflicts.append(
             VersionSelectionTie(
                 address=timeline.address,
-                effective=effective,
-                enacted=enacted,
-                source_statute=source_statute,
-                variant_kind=variant_kind,
+                effective=key.effective,
+                enacted=key.enacted,
+                source_statute=key.source_statute,
+                variant_kind=key.variant_kind,
                 candidate_count=len(versions),
             )
         )

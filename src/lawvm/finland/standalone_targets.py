@@ -210,3 +210,40 @@ def group_shadow_pruning_foreign_scoped_replace_section_targets(
             continue
         out.add(section_label)
     return out
+
+
+def group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
+    ops: list[AmendmentOp],
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_part: str | None,
+    duplicate_section_labels: frozenset[str],
+) -> frozenset[StandaloneSectionTarget]:
+    """Return typed foreign-scoped REPLACE targets for carried-payload pruning."""
+    if target_unit_kind not in {"chapter", "part"}:
+        return frozenset()
+
+    out: set[StandaloneSectionTarget] = set()
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op.target_unit_kind != "section" or not section_label:
+            continue
+        if op.op_type != "REPLACE":
+            continue
+        if section_label in duplicate_section_labels:
+            continue
+        if op.target_part == target_part and op.target_chapter == target_norm:
+            continue
+        if op.target_chapter is None and target_unit_kind == "chapter":
+            continue
+        if op.target_part is None and target_unit_kind == "part":
+            continue
+        out.add(
+            StandaloneSectionTarget(
+                part=_norm_num_token(op.target_part) if op.target_part else None,
+                chapter=_norm_num_token(op.target_chapter) if op.target_chapter else None,
+                label=section_label,
+            )
+        )
+    return frozenset(out)

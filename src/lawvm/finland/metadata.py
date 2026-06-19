@@ -353,12 +353,22 @@ def _operative_body_repeal_candidate(tree: "etree._Element") -> str:
 def get_operative_body_repeal_candidate(xml_bytes: bytes) -> str:
     """Extract a body-prose repeal clause when no structured operative body exists."""
     tree = etree.fromstring(xml_bytes)
+    return get_operative_body_repeal_candidate_from_tree(tree)
+
+
+def get_operative_body_repeal_candidate_from_tree(tree: "etree._Element") -> str:
+    """Extract a body-prose repeal clause from an already parsed amendment tree."""
     return _operative_body_repeal_candidate(tree)
 
 
 def get_johtolause(xml_bytes: bytes) -> str:
     """Extract the enacting clause (johtolause) from amendment XML bytes."""
     tree = etree.fromstring(xml_bytes)
+    return get_johtolause_from_tree(tree)
+
+
+def get_johtolause_from_tree(tree: "etree._Element") -> str:
+    """Extract the enacting clause (johtolause) from an already parsed tree."""
     # Strip editorial corrigendum footnotes before extracting clause text. A
     # <span class="corrigendum"> wraps the CORRECTED (operative) wording and
     # carries an <authorialNote> holding only the SUPERSEDED original text
@@ -368,29 +378,36 @@ def get_johtolause(xml_bytes: bytes) -> str:
     # uusi 6 momentti"), breaking the parse. The corrigendum history itself is
     # captured separately by corrigendum.extract_inline_corrections (Population
     # A); all corpus authorialNotes live inside corrigendum spans, so dropping
-    # them all is safe and equivalent.
+    # them all is safe and equivalent. When the caller owns the parsed tree,
+    # restore notes afterward so source-model consumers keep the full witness.
+    removed_notes: list[tuple[etree._Element, etree._Element, int]] = []
     for _note in cast(List[etree._Element], tree.xpath(".//*[local-name()='authorialNote']")):
         _parent = _note.getparent()
         if _parent is not None:
+            removed_notes.append((_note, _parent, _parent.index(_note)))
             _parent.remove(_note)
-    formula = cast(List[etree._Element], tree.xpath("//*[local-name()='formula' and @name='enactingClause']"))
-    if formula:
-        formula_text = _element_text(formula[0])
-        block_text = _formula_block_text(formula[0])
-        raw = formula_text
-        if block_text:
-            outside_blocks = _formula_outside_blocks_text(formula[0])
-            if not _OPERATIVE_KEYWORD_PAT.search(outside_blocks):
-                raw = block_text
+    try:
+        formula = cast(List[etree._Element], tree.xpath("//*[local-name()='formula' and @name='enactingClause']"))
+        if formula:
+            formula_text = _element_text(formula[0])
+            block_text = _formula_block_text(formula[0])
+            raw = formula_text
+            if block_text:
+                outside_blocks = _formula_outside_blocks_text(formula[0])
+                if not _OPERATIVE_KEYWORD_PAT.search(outside_blocks):
+                    raw = block_text
+            return _strip_cross_law_description(raw)
+        blocks = cast(List[etree._Element], tree.xpath(
+            "//*[local-name()='block' and ("
+            "@name='substitutions' or "
+            "@name='repeals' or "
+            "@name='insertions' or @name='insertions-originals')]"
+        ))
+        raw = " ".join(_element_text(block) for block in blocks if _element_text(block))
         return _strip_cross_law_description(raw)
-    blocks = cast(List[etree._Element], tree.xpath(
-        "//*[local-name()='block' and ("
-        "@name='substitutions' or "
-        "@name='repeals' or "
-        "@name='insertions' or @name='insertions-originals')]"
-    ))
-    raw = " ".join(_element_text(block) for block in blocks if _element_text(block))
-    return _strip_cross_law_description(raw)
+    finally:
+        for note, parent, index in reversed(removed_notes):
+            parent.insert(index, note)
 
 
 def _normalize_johtolause_verbs(text: str) -> str:

@@ -21,6 +21,7 @@ from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_replace_section_targets,
+    group_shadow_pruning_foreign_scoped_replace_section_target_scopes,
     group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets,
 )
@@ -155,6 +156,15 @@ def compile_amendment_ops(
             target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
+        foreign_scoped_replace_section_target_scopes = (
+            group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
+                ops,
+                target_unit_kind=target_unit_kind_value,
+                target_norm=group_key.target_norm,
+                target_part=group_key.target_part,
+                duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
+            )
+        )
         subgroups = _split_numbered_table_child_group_ops(group_ops)
         if len(subgroups) > 1:
             all_findings.append(
@@ -176,6 +186,7 @@ def compile_amendment_ops(
                     standalone_section_targets=standalone_section_targets,
                     foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
                     foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
+                    foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
                     inserted_chapter_labels=inserted_chapter_labels,
                     source_model=source_model,
                     johto=johto,

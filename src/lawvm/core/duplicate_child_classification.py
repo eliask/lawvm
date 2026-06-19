@@ -28,7 +28,7 @@ _VALID_DUPLICATE_CHILD_CLASSIFICATIONS: frozenset[str] = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DuplicateChildFinding:
     """One duplicate direct-child family under a legal parent."""
 

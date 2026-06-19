@@ -698,15 +698,10 @@ def test_replay_xml_preserves_letter_suffix_item_spacing_for_2014_346() -> None:
     assert num_text == "3 a)"
 
 
-def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_authority(
+def test_replay_xml_absorbs_2008_342_section_21_tail_subsection_with_authority(
     replay_1987_990_finlex_oracle: ReplayResult,
 ) -> None:
-    """Sparse tail prose stays in the following moment unless a frontend repair owns it.
-
-    LawVM currently does not treat this source shape as auto-repair authority, so
-    the carried tail remains as plain content in the next subsection rather than
-    being reattached under item 7.
-    """
+    """2008/342 encodes the list tail as a sibling subsection; apply recovery owns it."""
     section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:5/section:21"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -718,12 +713,19 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
     )
     subparagraphs = [child for child in seventh_para.children if child.kind == IRNodeKind.SUBPARAGRAPH]
     assert subparagraphs == []
+    first_wrapup_text = " ".join(
+        (child.text or "").strip()
+        for child in seventh_para.children
+        if child.kind == IRNodeKind.WRAP_UP
+    )
+    assert "ydinenergian käyttö muutoinkin täyttää" in first_wrapup_text
+
     second_subsection_text = " ".join(
         (child.text or "").strip()
         for child in subsections[1].children
         if child.kind in {IRNodeKind.CONTENT, IRNodeKind.INTRO}
     )
-    assert "ydinenergian käyttö muutoinkin täyttää 5-7" in second_subsection_text
+    assert "Edellä 1 momentissa tarkoitettuun ydinenergian käyttöön" in second_subsection_text
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:
@@ -2397,6 +2399,51 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
+    replay = pinned_replay("1996/1200", mode="official_consolidation", quiet=True)
+    section9 = extract_ir_sections(replay.materialized_state.ir)["section:9"]
+    text = " ".join(irnode_to_text(section9).split())
+
+    assert "5) hakkuun metsälain 5 §:n 1 momentin" in text
+    assert "6) uudistushakkuussa metsiköittäin" in text
+    assert "pääasiallinen puulaji sekä maanpinnan käsittelymenetelmä;" in text
+    assert "pääasiallinen puulaji, maanpinnan käsittelymenetelmä sekä taimikon" not in text
+    assert "7) jos metsätalousmaata otetaan metsälain 3 §:ssä" in text
+    assert "8) onko kysymyksessä metsälain 12 §:ssä" in text
+    assert "9) jos metsän käsittely koskee metsälain 10 §:n" in text
+    assert "10) metsänkäyttöilmoituksen laatijan nimi ja yhteystiedot." in text
+
+
+def test_replay_xml_1994_357_normalizes_colon_intro_content_pairs_before_insert() -> None:
+    replay = pinned_replay("1994/357", mode="official_consolidation", quiet=True)
+    section2 = extract_ir_sections(replay.materialized_state.ir)["section:2"]
+    text = " ".join(irnode_to_text(section2).split())
+
+    first_intro = "JHTT-tutkinto sisältää kirjanpitovelvollisia"
+    first_items = "tilintarkastus, tilinpäätösanalyysi, yleinen laskentatoimi"
+    second_intro = "JHTT-tutkinto sisältää lisäksi seuraavat oppiaineet:"
+    second_items = "julkisyhteisöjen suunnittelujärjestelmä ja budjetointi"
+    ec_sentence = "Lisäksi JHTT-tutkinnon vaatimuksiin kuuluu Euroopan yhteisöjen"
+
+    assert text.index(first_intro) < text.index(first_items)
+    assert text.index(first_items) < text.index(second_intro)
+    assert text.index(second_intro) < text.index(second_items)
+    assert text.index(second_items) < text.index(ec_sentence)
+
+
+def test_replay_xml_1982_1112_splits_first_moment_exception_tail_before_replacement() -> None:
+    replay = pinned_replay("1982/1112", mode="official_consolidation", quiet=True)
+    section2 = extract_ir_sections(replay.materialized_state.ir)["section:2"]
+    text = " ".join(irnode_to_text(section2).split())
+
+    old_tail = "Mitä 1 momentissa on sanottu, ei koske maa- ja metsätalousministeriön luvalla"
+    new_tail = "Mitä 1 momentissa säädetään, ei koske Suomen ympäristökeskuksen luvalla"
+
+    assert old_tail not in text
+    assert new_tail in text
+    assert text.count("Mitä 1 momentissa") == 1
+
+
 def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
     replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
     section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]
@@ -2648,6 +2695,18 @@ def test_replay_xml_2012_999_prunes_stale_item_tail_when_2018_207_supplies_new_t
     assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in item_4.children)
 
 
+def test_replay_xml_2011_872_keeps_new_5a_sections_shadowed_by_chapter_5_replaces() -> None:
+    replay = replay_xml("2011/872", mode="official_consolidation", quiet=True, build_full_products=False)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    chapter_5_section_44 = sections["chapter:5/section:44"]
+    chapter_5a_section_44 = sections["chapter:5a/section:44"]
+
+    assert "Valvotusta läpilaskusta päättäminen" in irnode_to_text(chapter_5_section_44)
+    assert "Rikosepäilystä ilmoittaminen" in irnode_to_text(chapter_5a_section_44)
+    assert "Rikosepäilystä ilmoittaminen" not in irnode_to_text(chapter_5_section_44)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()
@@ -2823,6 +2882,19 @@ def test_replay_xml_matches_current_oracle_order_for_1987_990_section_3_first_mo
     assert paragraph_labels[:10] == ["1", "2", "3", "4", "5", "5a", "5b", "6", "7", "8"]
     assert "13" in paragraph_labels
     assert "14" in paragraph_labels
+
+
+def test_replay_xml_binds_1987_990_section_17_intro_to_second_moment(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    """1994/1420 replaces 17 § 1 mom and 2 mom johdantokappale separately."""
+    section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:5/section:17"]
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    subsection_texts = [" ".join(irnode_to_text(child).split()) for child in subsections]
+
+    assert subsection_texts[0].startswith("Lupa ydinenergian käyttöön voidaan myöntää vain Euroopan unionin")
+    assert subsection_texts[1].startswith("Muulle kuin 1 momentissa tarkoitetulle yhteisölle")
+    assert subsection_texts[1].count("Lupa ydinenergian käyttöön voidaan myöntää vain Euroopan unionin") == 0
 
 
 def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73(
@@ -4711,3 +4783,12 @@ def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalizati
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
     result = pinned_replay("2002/1290", mode="official_consolidation", quiet=True, build_full_products=False)
     assert result is not None
+
+
+@pytest.mark.slow
+def test_replay_xml_1995_386_rebuilds_dead_preserved_provision_index() -> None:
+    """1999/466 leaves a stale preserved index entry that 2003/444 later probes."""
+    result = pinned_replay("1995/386", mode="official_consolidation", quiet=True, build_full_products=False)
+
+    assert result is not None
+    assert result.replay_fold_state.find_section_path("25", "6a") is None

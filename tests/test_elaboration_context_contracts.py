@@ -42,6 +42,7 @@ def test_payload_elaboration_context_rejects_live_indexes_without_live_node() ->
             target_unit_kind="section",
             target_norm="2",
             target_chapter=None,
+            target_part=None,
             live_node=None,
             parent_node=None,
             subsection_slots=(),

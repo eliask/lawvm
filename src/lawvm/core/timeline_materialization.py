@@ -24,7 +24,7 @@ from lawvm.core.timeline_addresses import (
 from lawvm.core.timeline_lineage import current_address_from_migration_events
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MaterializationSelectionState:
     address: LegalAddress
     status: Literal["selected", "inactive", "ambiguous_missing_scope"]

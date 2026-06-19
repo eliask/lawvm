@@ -240,6 +240,7 @@ def test_render_diff_markers() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_dump_uk_statute_basic_ukpga_1978_30() -> None:
     """dump_uk_statute for ukpga/1978/30 produces non-empty output with required markers."""
     from lawvm.tools.uk_structural_review import dump_uk_statute
@@ -254,6 +255,7 @@ def test_dump_uk_statute_basic_ukpga_1978_30() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_dump_uk_statute_contains_divergence_marker_ukpga_1978_30() -> None:
     """dump_uk_statute compact output must contain at least one divergence."""
     from lawvm.tools.uk_structural_review import dump_uk_statute
@@ -274,6 +276,7 @@ def test_dump_uk_statute_contains_divergence_marker_ukpga_1978_30() -> None:
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_dump_uk_statute_compact_has_no_same_nodes_ukpga_1978_30() -> None:
     """Compact mode must not contain '=SAME' (identical nodes are omitted)."""
     from lawvm.tools.uk_structural_review import dump_uk_statute

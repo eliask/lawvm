@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from lxml import etree
+
 from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.tools.phase_witness import _build_acquisition_witness
@@ -100,6 +102,27 @@ def test_build_amendment_acquisition_result_uses_sec1_pre_routing_fallback() -> 
     assert result.decision.pre_routing_sec1_applied is True
     assert "rakennuslain (370/1958) 3 §" in result.decision.chosen_normalized_text
     assert result.decision.should_apply is True
+
+
+def test_build_amendment_acquisition_result_reuses_supplied_tree(monkeypatch) -> None:
+    xml_bytes = _sec1_fallback_xml()
+    muutos_tree = etree.fromstring(xml_bytes)
+
+    def fail_fromstring(_xml_bytes: bytes):
+        raise AssertionError("build_amendment_acquisition_result reparsed supplied tree")
+
+    monkeypatch.setattr("lawvm.finland.acquisition.etree.fromstring", fail_fromstring)
+
+    result = build_amendment_acquisition_result(
+        xml_bytes=xml_bytes,
+        muutos_tree=muutos_tree,
+        parent_id="1958/370",
+        amendment_id="1993/949",
+        source_title="Rakennuslain muuttamisesta",
+        parent_title="Rakennuslaki",
+    )
+
+    assert result.decision.selected_lane == "sec1_fallback_pre_routing"
 
 
 def test_build_amendment_acquisition_result_keeps_short_operative_preamble() -> None:

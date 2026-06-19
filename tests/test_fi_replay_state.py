@@ -104,3 +104,19 @@ def test_replaced_provision_subtree_index_falls_back_when_changed_path_is_not_li
     )
 
     assert updated.provision_index == ReplayState(ir=new_ir).provision_index
+
+
+def test_preserved_provision_index_dead_section_path_rebuilds_on_lookup() -> None:
+    body = _body(_chap("6a", _sec("25"), _sec("25a")))
+    state = ReplayState(ir=body)
+    old_path = state.find_section_path("25", "6a")
+    cached_index = state._provision_index
+
+    new_ir = _body(_chap("6a", _sec("25a")))
+    updated = state.with_ir(new_ir, preserve_provision_index=True)
+
+    assert old_path == (("chapter", "6a"), ("section", "25"))
+    assert updated._provision_index is cached_index
+    assert updated.find_section_path("25", "6a") is None
+    assert updated.find_section_path("25a", "6a") == (("chapter", "6a"), ("section", "25a"))
+    assert updated._provision_index == ReplayState(ir=new_ir).provision_index

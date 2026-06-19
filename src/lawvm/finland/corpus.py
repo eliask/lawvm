@@ -818,11 +818,13 @@ def get_ground_truth(
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)
     # Strip historical duplicates that Finlex keeps for version history.
-    # Sections: deduplicate by <num> text. Subsections/paragraphs: by eId base
-    # (strip version suffix like "v20210680").
+    # Sections: deduplicate by <num> text. Subsections/paragraphs use the
+    # shared versioned-child helper, which preserves genuinely distinct same-slot
+    # siblings such as 2012/316 sec_1/subsec_1v20150795 + subsec_1v20240859.
+    from lawvm.finland.oracle_versioned_children import dedup_versioned_children
+
     def _norm_num(t: str | None) -> str:
         return re.sub(r'\s+', ' ', (t or '').replace('\xa0', ' ')).strip()
-    _ver_re = re.compile(r'v\d{8}$')
 
     def _dedup_children(parent, child_tag: str, key_fn):
         """Remove duplicate children of `child_tag`, keeping first by key_fn."""
@@ -838,10 +840,6 @@ def get_ground_truth(
             else:
                 seen.add(key)
 
-    def _eid_base(el) -> Optional[str]:
-        eid = el.get('eId', '')
-        return _ver_re.sub('', eid.split('__')[-1]) if eid else None
-
     for parent in cast(List[etree._Element], root.xpath(
         './/*[local-name()="hcontainer"]'
         ' | .//*[local-name()="body"]'
@@ -856,9 +854,9 @@ def get_ground_truth(
             ) or None,
         )
     for sec in root.findall('.//{*}section'):
-        _dedup_children(sec, 'subsection', _eid_base)
+        dedup_versioned_children(sec, 'subsection')
         for sub in sec.findall('{*}subsection'):
-            _dedup_children(sub, 'paragraph', _eid_base)
+            dedup_versioned_children(sub, 'paragraph')
     text = etree.tostring(root, method="text", encoding="unicode").strip()
     # Strip consolidated-only annotations before scoring.
     return normalize_finlex_oracle_comparison_text(text)

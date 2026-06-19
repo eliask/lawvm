@@ -1142,11 +1142,32 @@ def _rekey_timelines_with_migration_events(
     from lawvm.finland.migration_ledger import (
         current_address_with_prefix_migrations_from_event_signatures,
         current_address_with_prefix_migrations_from_events,
+        normalize_address_path,
     )
 
     migration_events = _drop_explicitly_repealed_source_move_events(
         timelines, migration_events
     )
+    renumber_source_paths = frozenset(
+        event.from_address.path
+        for event in migration_events
+        if event.kind == "renumber"
+        and event.from_address.path
+        and event.from_address.special is None
+    )
+    has_special_renumber_source = any(
+        event.kind == "renumber" and event.from_address.special is not None
+        for event in migration_events
+    )
+
+    def _renumber_source_prefix_may_match(address: LegalAddress) -> bool:
+        if has_special_renumber_source:
+            return True
+        normalized_path = normalize_address_path(address.path)
+        return any(
+            normalized_path[:depth] in renumber_source_paths
+            for depth in range(1, len(normalized_path) + 1)
+        )
 
     return _core_rekey_timelines_with_migration_events(
         timelines,
@@ -1157,6 +1178,7 @@ def _rekey_timelines_with_migration_events(
             current_address_with_prefix_migrations_from_event_signatures
         ),
         address_prefix_matches=_address_prefix_matches,
+        renumber_source_prefix_may_match_fn=_renumber_source_prefix_may_match,
         retarget_version_content_fn=lambda version, address: _retarget_version_content(
             version,
             address,

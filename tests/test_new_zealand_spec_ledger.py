@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import List
 
+import pytest
+
 import lawvm.new_zealand.dry_run as dry_run
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_INSERT_AGREES_RULE_ID,
@@ -309,10 +311,9 @@ def test_empty_reports_yield_no_inputs() -> None:
 # End-to-end smoke over the smoke corpus (gated on the farchive being present).
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_spec_ledger_smoke_corpus_end_to_end() -> None:
     from pathlib import Path
-
-    import pytest
 
     db_path = Path("data/nz_legislation.farchive")
     corpus_path = Path("data/nz/bench_corpus_smoke.csv")

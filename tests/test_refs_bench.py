@@ -254,6 +254,7 @@ _ARCHIVE = os.path.join(
     not os.path.exists(_ARCHIVE),
     reason=f"Requires {_ARCHIVE} (corpus archive not present in this checkout)",
 )
+@pytest.mark.slow
 def test_run_fi_limit_smoke(capsys) -> None:
     """run_fi over a tiny --limit sample prints a status distribution without error."""
     args = SimpleNamespace(jurisdiction="fi", limit=5, workers=2, top=5, json=False)
@@ -270,6 +271,7 @@ def test_run_fi_limit_smoke(capsys) -> None:
     not os.path.exists(_ARCHIVE),
     reason=f"Requires {_ARCHIVE} (corpus archive not present in this checkout)",
 )
+@pytest.mark.slow
 def test_run_fi_scorecard_smoke(capsys) -> None:
     """run_fi with --scorecard prints the per-family scorecard table additively."""
     args = SimpleNamespace(
@@ -287,6 +289,7 @@ def test_run_fi_scorecard_smoke(capsys) -> None:
     not os.path.exists(_ARCHIVE),
     reason=f"Requires {_ARCHIVE} (corpus archive not present in this checkout)",
 )
+@pytest.mark.slow
 def test_run_fi_recall_limit_smoke(capsys) -> None:
     """run_fi_recall over a tiny --limit sample prints the recall worklist header."""
     args = SimpleNamespace(jurisdiction="fi", limit=5, workers=2, top=5, json=False)

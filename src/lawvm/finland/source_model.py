@@ -109,12 +109,70 @@ class SourcePayloadTextLookupResult:
     text: str
 
 
+@dataclass(slots=True)
+class _SourcePayloadIrEntry:
+    """Lazy converted source payload for one source-body unit id."""
+
+    muutos_tree: etree._Element
+    kind: str
+    label: str
+    el: etree._Element
+    _payload: tuple[IRNode | None, IRNode | None] | None = None
+
+    def resolve(self) -> tuple[IRNode | None, IRNode | None]:
+        if self._payload is None:
+            from lawvm.finland.amendment_payload_lookup import (
+                _find_muutos_ir,
+                _payload_ir_from_muutos_node,
+            )
+
+            if self.kind == "chapter" and (
+                _xml_localname(self.el) != "chapter" or _chapter_contains_pseudo_markers(self.el)
+            ):
+                self._payload = _find_muutos_ir(
+                    self.muutos_tree,
+                    target_unit_kind=self.kind,
+                    target_norm=self.label,
+                )
+            else:
+                self._payload = _payload_ir_from_muutos_node(
+                    self.el,
+                    target_unit_kind=self.kind,
+                    target_norm=self.label,
+                )
+        return self._payload
+
+
 @dataclass(frozen=True, slots=True)
 class SourcePayloadIrIndex:
     """Converted source payloads addressable by current transitional unit ids."""
 
-    observed_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
-    coverage_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+    observed_entries_by_unit_id: dict[str, _SourcePayloadIrEntry]
+    coverage_entries_by_unit_id: dict[str, _SourcePayloadIrEntry]
+
+    def observed_payload(self, unit_id: str) -> tuple[IRNode | None, IRNode | None]:
+        entry = self.observed_entries_by_unit_id.get(unit_id)
+        return entry.resolve() if entry is not None else (None, None)
+
+    def coverage_payload(self, unit_id: str) -> tuple[IRNode | None, IRNode | None]:
+        entry = self.coverage_entries_by_unit_id.get(unit_id)
+        return entry.resolve() if entry is not None else (None, None)
+
+    @property
+    def observed_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        """Compatibility view for callers that still expect eager payload maps."""
+        return {
+            unit_id: entry.resolve()
+            for unit_id, entry in self.observed_entries_by_unit_id.items()
+        }
+
+    @property
+    def coverage_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        """Compatibility view for callers that still expect eager payload maps."""
+        return {
+            unit_id: entry.resolve()
+            for unit_id, entry in self.coverage_entries_by_unit_id.items()
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,19 +277,14 @@ def _source_body_inventory_index(
 
 def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
     """Return converted payload IR keyed by observed and coverage unit ids."""
-    from lawvm.finland.amendment_payload_lookup import (
-        _find_muutos_ir,
-        _payload_ir_from_muutos_node,
-    )
-
     body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
         body = muutos_tree.find(".//body")
     if body is None:
-        return SourcePayloadIrIndex(observed_by_unit_id={}, coverage_by_unit_id={})
+        return SourcePayloadIrIndex(observed_entries_by_unit_id={}, coverage_entries_by_unit_id={})
     body = _body_with_orphan_subsections_attached(body)
-    observed_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
-    coverage_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    observed_payloads: dict[str, _SourcePayloadIrEntry] = {}
+    coverage_payloads: dict[str, _SourcePayloadIrEntry] = {}
     seen_observed_ids: set[str] = set()
     seen_coverage_ids: set[str] = set()
 
@@ -266,20 +319,12 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         include_observed: bool = True,
         include_coverage: bool = True,
     ) -> None:
-        if kind == "chapter" and (
-            _xml_localname(el) != "chapter" or _chapter_contains_pseudo_markers(el)
-        ):
-            payload = _find_muutos_ir(
-                muutos_tree,
-                target_unit_kind=kind,
-                target_norm=label,
-            )
-        else:
-            payload = _payload_ir_from_muutos_node(
-                el,
-                target_unit_kind=kind,
-                target_norm=label,
-            )
+        payload = _SourcePayloadIrEntry(
+            muutos_tree=muutos_tree,
+            kind=kind,
+            label=label,
+            el=el,
+        )
         if include_observed:
             observed_payloads[next_observed_id(kind, label, chapter_label)] = payload
         if include_coverage:
@@ -350,8 +395,8 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
 
     walk_children(body)
     return SourcePayloadIrIndex(
-        observed_by_unit_id=observed_payloads,
-        coverage_by_unit_id=coverage_payloads,
+        observed_entries_by_unit_id=observed_payloads,
+        coverage_entries_by_unit_id=coverage_payloads,
     )
 
 
@@ -378,6 +423,11 @@ class AmendmentSourceModel:
         repr=False,
     )
     _coverage_ignored_units: tuple[CoverageIgnoredUnit, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _coverage_units_by_payload_ref_id_cache: dict[str, tuple[CoverageUnit, ...]] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -417,7 +467,32 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _preamble_text_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _text_lower_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _source_xml_bytes_cache: bytes | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _operative_body_repeal_candidate_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _has_body_cache: bool | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _has_eid_free_body_sections_cache: bool | None = field(
         default=None,
         init=False,
         repr=False,
@@ -439,12 +514,18 @@ class AmendmentSourceModel:
 
     @property
     def has_body(self) -> bool:
-        return self.muutos_tree.find(".//{*}body") is not None
+        if self._has_body_cache is None:
+            self._has_body_cache = self.muutos_tree.find(".//{*}body") is not None
+        return self._has_body_cache
 
     def has_eid_free_body_sections(self) -> bool:
         """Return True when the source body has sections and none carry eIds."""
-        sections = self.muutos_tree.findall(".//{*}section")
-        return bool(sections) and not any(section.get("eId") for section in sections)
+        if self._has_eid_free_body_sections_cache is None:
+            sections = self.muutos_tree.findall(".//{*}section")
+            self._has_eid_free_body_sections_cache = bool(sections) and not any(
+                section.get("eId") for section in sections
+            )
+        return self._has_eid_free_body_sections_cache
 
     def observed_body_inventory(self) -> tuple[ObservedBodyUnit, ...]:
         """Return cached body-pairing inventory units."""
@@ -483,6 +564,18 @@ class AmendmentSourceModel:
         if ignored_units_out is not None:
             ignored_units_out.extend(self._coverage_ignored_units)
         return self._coverage_units
+
+    def _coverage_units_by_payload_ref_id(self) -> dict[str, tuple[CoverageUnit, ...]]:
+        if self._coverage_units_by_payload_ref_id_cache is None:
+            grouped: dict[str, list[CoverageUnit]] = {}
+            for unit in self.body_coverage_units():
+                payload_ref = unit.payload_ref
+                if isinstance(payload_ref, BodyCoveragePayloadRef):
+                    grouped.setdefault(payload_ref.unit_id, []).append(unit)
+            self._coverage_units_by_payload_ref_id_cache = {
+                unit_id: tuple(units) for unit_id, units in grouped.items()
+            }
+        return self._coverage_units_by_payload_ref_id_cache
 
     def body_section_scope(
         self,
@@ -641,9 +734,9 @@ class AmendmentSourceModel:
         """Return cached typed payload lookup for a source-body target."""
         key = SourceUnitLookup(
             unit_kind=str(target_unit_kind or ""),
-            label=target_norm,
-            chapter=target_chapter,
-            part=target_part,
+            label=_norm_num_token(target_norm),
+            chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
+            part=_norm_num_token(target_part or "") if target_part else None,
         )
         if key not in self._payload_ir_cache:
             body_lookup = self.lookup_body_unit(
@@ -666,10 +759,7 @@ class AmendmentSourceModel:
 
             observed_unit = body_lookup.unique_unit
             payload_ir, cross_heading_ir = (
-                self._source_payload_ir_index().observed_by_unit_id.get(
-                    observed_unit.unit_id,
-                    (None, None),
-                )
+                self._source_payload_ir_index().observed_payload(observed_unit.unit_id)
                 if observed_unit is not None
                 else (None, None)
             )
@@ -701,12 +791,7 @@ class AmendmentSourceModel:
             chapter=_norm_num_token(source_ref.chapter or "") if source_ref.chapter else None,
             part=_norm_num_token(source_ref.part or "") if source_ref.part else None,
         )
-        matching_units = tuple(
-            unit
-            for unit in self.body_coverage_units()
-            if isinstance(unit.payload_ref, BodyCoveragePayloadRef)
-            and unit.payload_ref.unit_id == source_ref.unit_id
-        )
+        matching_units = self._coverage_units_by_payload_ref_id().get(source_ref.unit_id, ())
         body_lookup = self.lookup_body_unit(
             source_ref.unit_kind,
             source_ref.label,
@@ -724,9 +809,8 @@ class AmendmentSourceModel:
                 cross_heading_ir=None,
             )
 
-        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_by_unit_id.get(
-            source_ref.unit_id,
-            (None, None),
+        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_payload(
+            source_ref.unit_id
         )
         return SourcePayloadLookupResult(
             status="unique" if payload_ir is not None else "missing",
@@ -844,10 +928,14 @@ class AmendmentSourceModel:
 
     def preamble_text(self) -> str:
         """Return normalized source preamble text for this amendment."""
-        johto_el = self.muutos_tree.find(".//{*}preamble")
-        if johto_el is None:
-            return ""
-        return etree.tostring(johto_el, method="text", encoding="unicode")
+        if self._preamble_text_cache is None:
+            johto_el = self.muutos_tree.find(".//{*}preamble")
+            self._preamble_text_cache = (
+                ""
+                if johto_el is None
+                else etree.tostring(johto_el, method="text", encoding="unicode")
+            )
+        return self._preamble_text_cache
 
     def source_text(self) -> str:
         """Return cached plain source text for this amendment."""
@@ -875,7 +963,9 @@ class AmendmentSourceModel:
         """Return corrected source XML bytes for byte-oriented ingest adapters."""
         if self.source_bytes is not None:
             return self.source_bytes
-        return etree.tostring(self.muutos_tree, encoding="utf-8")
+        if self._source_xml_bytes_cache is None:
+            self._source_xml_bytes_cache = etree.tostring(self.muutos_tree, encoding="utf-8")
+        return self._source_xml_bytes_cache
 
     def title(self) -> str:
         """Return the source title through the source-model adapter."""
@@ -995,7 +1085,11 @@ class AmendmentSourceModel:
         """Return body-prose repeal text when no structured operative body exists."""
         from lawvm.finland.metadata import get_operative_body_repeal_candidate
 
-        return get_operative_body_repeal_candidate(self.source_xml_bytes())
+        if self._operative_body_repeal_candidate_cache is None:
+            self._operative_body_repeal_candidate_cache = get_operative_body_repeal_candidate(
+                self.source_xml_bytes()
+            )
+        return self._operative_body_repeal_candidate_cache
 
     def extract_vts_cross_statute_repeals(
         self,

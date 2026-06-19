@@ -687,6 +687,7 @@ def rekey_timelines_with_migration_events(
     ]
     | None = None,
     address_prefix_matches: Callable[[LegalAddress, LegalAddress], bool],
+    renumber_source_prefix_may_match_fn: Callable[[LegalAddress], bool] | None = None,
     retarget_version_content_fn: _RetargetVersionContentFn = _retarget_version_content,
     merge_bucket_cleanup_fn: _MergeBucketCleanupFn | None = None,
 ) -> dict[LegalAddress, ProvisionTimeline]:
@@ -700,7 +701,11 @@ def rekey_timelines_with_migration_events(
     if not migration_events:
         return dict(timelines)
     migration_event_signatures = prefix_migration_event_signatures(migration_events)
+    renumber_events = tuple(
+        event for event in migration_events if event.kind == "renumber"
+    )
     native_boundary_signatures: dict[str, tuple[PrefixMigrationEventSignature, ...]] = {}
+    native_boundary_events: dict[str, tuple[MigrationEvent, ...]] = {}
 
     def _signatures_after_native_boundary(
         native_boundary: str,
@@ -716,6 +721,20 @@ def rekey_timelines_with_migration_events(
             and event_signature.effective > native_boundary
         )
         native_boundary_signatures[native_boundary] = filtered
+        return filtered
+
+    def _events_after_native_boundary(
+        native_boundary: str,
+    ) -> tuple[MigrationEvent, ...]:
+        cached = native_boundary_events.get(native_boundary)
+        if cached is not None:
+            return cached
+        filtered = tuple(
+            event
+            for event in migration_events
+            if native_boundary and event.effective and event.effective > native_boundary
+        )
+        native_boundary_events[native_boundary] = filtered
         return filtered
 
     def _current_address_after_prefix_migrations(
@@ -742,8 +761,8 @@ def rekey_timelines_with_migration_events(
         return any(
             prior_event.effective < before_effective
             and address_prefix_matches(address, prior_event.to_address)
-            for prior_event in migration_events
-            if prior_event.kind == "renumber" and prior_event.effective
+            for prior_event in renumber_events
+            if prior_event.effective
         )
 
     def _has_same_wave_incoming_migration_prefix(
@@ -754,8 +773,8 @@ def rekey_timelines_with_migration_events(
         return any(
             event.effective == at_effective
             and address_prefix_matches(address, event.to_address)
-            for event in migration_events
-            if event.kind == "renumber" and event.effective
+            for event in renumber_events
+            if event.effective
         )
 
     def _has_same_wave_incoming_to_source_prefix(
@@ -766,8 +785,8 @@ def rekey_timelines_with_migration_events(
         return any(
             event.effective == at_effective
             and event.to_address.path == source_prefix.path
-            for event in migration_events
-            if event.kind == "renumber" and event.effective
+            for event in renumber_events
+            if event.effective
         )
 
     def _source_prefix_has_native_rebirth(
@@ -787,12 +806,16 @@ def rekey_timelines_with_migration_events(
         address: LegalAddress,
         versions: list[ProvisionVersion],
     ) -> list[TimelineSplitBucket]:
+        if (
+            renumber_source_prefix_may_match_fn is not None
+            and not renumber_source_prefix_may_match_fn(address)
+        ):
+            return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
         timeline = ProvisionTimeline(address=address, versions=versions)
         matching_renumbers = [
             MigrationBoundary(event=event, effective=effective)
-            for event in migration_events
-            if event.kind == "renumber"
-            and address_prefix_matches(address, event.from_address)
+            for event in renumber_events
+            if address_prefix_matches(address, event.from_address)
             and (effective := _migration_effective_from_timeline(event, timeline))
         ]
         if not matching_renumbers:
@@ -881,10 +904,10 @@ def rekey_timelines_with_migration_events(
             migrated_address = (
                 _current_address_after_prefix_migrations(
                     bucket.address,
-                    tuple(
-                        event
-                        for event in migration_events
-                        if bucket.native_boundary and event.effective and event.effective > bucket.native_boundary
+                    (
+                        ()
+                        if current_address_with_prefix_migration_signatures_fn is not None
+                        else _events_after_native_boundary(bucket.native_boundary)
                     ),
                     _signatures_after_native_boundary(bucket.native_boundary),
                     not_before=bucket.native_boundary,

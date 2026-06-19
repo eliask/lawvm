@@ -36,6 +36,10 @@ from lawvm.finland.apply_ir_ops import _relabel_section_ir
 if TYPE_CHECKING:
     pass
 
+_ITEM_TARGET_STRIP_RE = re.compile(r"[)\s.]")
+_ITEM_TARGET_NUM_SUFFIX_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+_ITEM_TARGET_ALPHA_RE = re.compile(r"[a-z]", flags=re.I)
+
 
 def normalize_group_ops_for_repeal_reenact(
     group_ops: List[AmendmentOp],
@@ -207,13 +211,13 @@ def _item_target_sort_key(item: Optional[str]) -> tuple[int, int, str]:
     ``10`` instead of lexicographic order, which would place ``10`` before
     ``5a``/``5b`` and can corrupt replay insertion order.
     """
-    token = re.sub(r"[)\s.]", "", item or "").strip().lower()
+    token = _ITEM_TARGET_STRIP_RE.sub("", item or "").strip().lower()
     if not token:
         return (0, -1, "")
-    m = re.fullmatch(r"(\d+)([a-z]?)", token, flags=re.I)
+    m = _ITEM_TARGET_NUM_SUFFIX_RE.fullmatch(token)
     if m:
         return (1, int(m.group(1)), m.group(2))
-    if re.fullmatch(r"[a-z]", token, flags=re.I):
+    if _ITEM_TARGET_ALPHA_RE.fullmatch(token):
         return (2, 0, token)
     return (3, 0, token)
 

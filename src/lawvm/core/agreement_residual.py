@@ -164,19 +164,28 @@ class AgreementSurface:
     residuals: tuple[AgreementResidual, ...] = ()
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "surface_id",
-            "jurisdiction",
+        object.__setattr__(self, "surface_id", _required_string("surface_id", self.surface_id))
+        object.__setattr__(self, "jurisdiction", _required_string("jurisdiction", self.jurisdiction))
+        object.__setattr__(
+            self,
             "agreement_surface",
+            _required_string("agreement_surface", self.agreement_surface),
+        )
+        object.__setattr__(
+            self,
             "materialization_id",
+            _required_string("materialization_id", self.materialization_id),
+        )
+        object.__setattr__(
+            self,
             "comparison_target_id",
+            _required_string("comparison_target_id", self.comparison_target_id),
+        )
+        object.__setattr__(
+            self,
             "comparison_kind",
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(field_name, getattr(self, field_name)),
-            )
+            _required_string("comparison_kind", self.comparison_kind),
+        )
         materialization_kind = _materialization_kind(
             "materialization_kind",
             self.materialization_kind,

@@ -50,6 +50,7 @@ from lawvm.finland.merge import (
     _pre_resolve_omissions,
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
 
@@ -1418,11 +1419,10 @@ def _assign_intro_slot_ops(
     if not intro_ops:
         return
 
-    # When intro ops are mixed with other sparse subsection ops, bind them in
-    # source order to the earliest remaining slots. This keeps repeated
-    # johdanto fragments stable and prevents later plain fallback from stealing
-    # the leading slot. A lone intro op keeps the historical exact-label
-    # behavior for compatibility.
+    # Prefer exact labels before positional fallback. Dense-local numbering
+    # cases have already been assigned by _assign_dense_local_target_groups; if
+    # target labels and payload labels really match, source order is not
+    # authority to move a johdantokappale to another moment.
     mixed_intro_group = len(intro_ops) > 1 or bool(slot_inputs.payload_subsec_ops)
 
     for op in intro_ops:
@@ -1439,6 +1439,18 @@ def _assign_intro_slot_ops(
         if shared is not None:
             state.subsec_map.assign(op, shared)
             continue
+        exact_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(slot_inputs.amend_subs)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+            ),
+            None,
+        )
+        if exact_idx is not None:
+            state.subsec_map.assign(op, slot_inputs.amend_subs[exact_idx])
+            state.used_subs.add(exact_idx)
+            continue
         if mixed_intro_group:
             for idx, sub in enumerate(slot_inputs.amend_subs):
                 if idx in state.used_subs:
@@ -1447,13 +1459,6 @@ def _assign_intro_slot_ops(
                 state.used_subs.add(idx)
                 break
             continue
-        for idx, sub in enumerate(slot_inputs.amend_subs):
-            if idx in state.used_subs:
-                continue
-            if _norm_num_token(sub.label or "") == str(op.target_paragraph):
-                state.subsec_map.assign(op, sub)
-                state.used_subs.add(idx)
-                break
 
 
 def _assign_remaining_insert_slot_ops(
@@ -2858,6 +2863,10 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_target_scopes: (
+        frozenset[StandaloneSectionTarget] | None
+    ) = None,
+    recodification_transfer_context: bool = False,
     expected_heading_only: bool = False,
 ) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
@@ -2874,6 +2883,24 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     foreign_scoped_replace_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
     }
+    foreign_scoped_replace_section_target_scopes = frozenset(
+        target
+        for target in (foreign_scoped_replace_section_target_scopes or frozenset())
+        if target.label
+    )
+
+    def _foreign_scope_is_base_of_target(target: StandaloneSectionTarget) -> bool:
+        base = target.chapter if target_unit_kind == "chapter" else target.part
+        if not base or base == target_norm or not target_norm.startswith(base):
+            return False
+        if (
+            target_unit_kind == "chapter"
+            and ctx.target_part is not None
+            and target.part != ctx.target_part
+        ):
+            return False
+        suffix = target_norm[len(base):]
+        return bool(suffix) and suffix.isalpha()
 
     def _scope_label_from_unique_path(section_label: str, scope_kind: str) -> Optional[str]:
         """Look up a section's enclosing scope label from lookups.
@@ -2932,6 +2959,9 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         for child in muutos_ir.children
         if child.kind is IRNodeKind.SECTION and child.label
     }
+    payload_has_suffixed_section_labels = any(
+        not label.isdigit() for label in payload_section_labels
+    )
     payload_numeric_labels = {
         int(label) for label in payload_section_labels if label.isdigit()
     }
@@ -2939,6 +2969,15 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         int(label)
         for label in foreign_scoped_replace_section_targets
         if label in payload_section_labels and label.isdigit()
+    }
+    foreign_replace_payload_overlap = (
+        payload_section_labels & foreign_scoped_replace_section_targets
+    )
+    foreign_replace_base_scope_labels = {
+        target.label
+        for target in foreign_scoped_replace_section_target_scopes
+        if target.label in payload_section_labels
+        and _foreign_scope_is_base_of_target(target)
     }
     has_dense_foreign_replace_bridge = False
     if foreign_replace_numeric_labels:
@@ -3003,11 +3042,28 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         # INSERT belongs to that context too and must not be smuggled into the
         # new container.
         if child_label in foreign_scoped_standalone_section_targets:
-            if payload_section_labels & foreign_scoped_replace_section_targets:
+            if foreign_replace_payload_overlap:
                 changed = True
                 pruned_labels.append(child_label)
                 pruned_witnesses.append(child_witness)
                 continue
+            new_children.append(child)
+            continue
+        if (
+            child_label in foreign_scoped_replace_section_targets
+            and not has_dense_foreign_replace_bridge
+            and not recodification_transfer_context
+            and child_label in foreign_replace_base_scope_labels
+            and not (
+                child_label.isdigit()
+                and payload_has_suffixed_section_labels
+            )
+        ):
+            # A separately targeted REPLACE scoped to another live container
+            # does not authorize pruning the same-numbered member of this new
+            # chapter/part when the overlap is isolated by label rather than a
+            # dense or suffix-delimited carried-context bridge from that
+            # foreign scope.
             new_children.append(child)
             continue
         changed = True
@@ -5495,6 +5551,10 @@ def elaborate_payload_against_live(
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
+    foreign_scoped_replace_section_target_scopes: (
+        frozenset[StandaloneSectionTarget] | None
+    ) = None,
+    recodification_transfer_context: bool = False,
     surface: Optional[PayloadSurface] = None,
 ) -> GroupPayloadNormalizationResult:
     """Normalize one group's payload and target ops against live state.
@@ -5629,6 +5689,8 @@ def elaborate_payload_against_live(
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
         foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
+        foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
+        recodification_transfer_context=recodification_transfer_context,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
     muutos_ir = pruning_result.muutos_ir

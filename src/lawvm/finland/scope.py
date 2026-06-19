@@ -1012,7 +1012,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         chapter = pd.get("chapter")
         part = pd.get("part")
         scope_tags = lo.provenance_tags
-        scope_confidence = getattr(lo, "scope_confidence", None)
+        scope_confidence = lo.scope_confidence
         special = lo.target.special
         facet = special.value if special is not None else None
         if not section or not chapter:
@@ -1052,7 +1052,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         if explicit_scope_notes.intersection(scope_tags):
             result.append(lo)
             continue
-        if getattr(lo, "move_clause_target_unit_kind", None) in {"chapter", "part"}:
+        if lo.move_clause_target_unit_kind in {"chapter", "part"}:
             result.append(lo)
             continue
         section_norm = _norm_num_token(str(section))

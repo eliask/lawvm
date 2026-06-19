@@ -336,6 +336,31 @@ def test_fi_renest_flat_digit_item_subsections_fires():
     assert paras[1].label == "2"
 
 
+def test_fi_merge_split_intro_item_subsections_absorbs_lowercase_content_row():
+    intro_sub = _subsection(children=(_content("Tutkinto sisältää seuraavat oppiaineet:"),))
+    row_sub = _subsection(children=(_content("tilintarkastus, kirjanpito ja sisäinen tarkastus."),))
+
+    result = _apply_fi_merge_split_intro_item_subsections([intro_sub, row_sub])
+
+    assert len(result) == 1
+    merged = result[0]
+    assert [child.kind for child in merged.children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert "Tutkinto sisältää seuraavat oppiaineet:" in merged.children[0].text
+    assert "tilintarkastus" in merged.children[1].children[0].text
+
+
+def test_fi_merge_split_intro_item_subsections_keeps_uppercase_following_moment():
+    intro_sub = _subsection(children=(_content("Tutkinto sisältää seuraavat oppiaineet:"),))
+    next_moment = _subsection(children=(_content("Tämä on itsenäinen seuraava momentti."),))
+
+    result = _apply_fi_merge_split_intro_item_subsections([intro_sub, next_moment])
+
+    assert result == [intro_sub, next_moment]
+
+
 def test_fi_renest_flat_digit_item_subsections_extends_existing_item_series():
     """Rule absorbs malformed sibling moments only when they continue existing items."""
     intro_sub = _subsection(
@@ -612,6 +637,106 @@ def test_split_trailing_content_only_paragraphs_keeps_final_intro_list_tail_insi
         IRNodeKind.PARAGRAPH,
         IRNodeKind.PARAGRAPH,
         IRNodeKind.CONTENT,
+        IRNodeKind.WRAP_UP,
+    ]
+
+
+def test_split_trailing_content_only_paragraphs_splits_first_moment_anaphora_tail() -> None:
+    """A tail that refers to 1 momentissa is a later moment, not list wrap-up."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Viranomaisella on oikeus saada seuraavat tiedot:"),
+            _para(label="1", children=(_num("1)"), _content("ensimmäiseltä viranomaiselta;"))),
+            _para(label="2", children=(_num("2)"), _content("toiselta viranomaiselta; sekä"))),
+            _para(label="3", children=(_num("3)"), _content("työnantajalta."))),
+            _para(
+                children=(
+                    _content(
+                        "Kansaneläkelaitoksella on 1 momentissa tarkoitettu oikeus saada "
+                        "välttämättömät tiedot."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 2
+    assert result[0].kind == IRNodeKind.SUBSECTION
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert result[1].kind == IRNodeKind.SUBSECTION
+    assert result[1].attrs["lawvm_source_normalization_rule"] == (
+        "fi_split_trailing_first_moment_anaphora_subsection_v1"
+    )
+    assert "1 momentissa tarkoitettu oikeus" in result[1].children[0].text
+
+
+def test_split_trailing_content_only_paragraphs_splits_mita_first_moment_exception_tail() -> None:
+    """A "Mitä 1 momentissa ... ei koske" tail is a later moment."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Seuraavien tuotteiden maahantuonti on kielletty:"),
+            _para(label="1", children=(_num("1)"), _content("valaanliha;"))),
+            _para(label="2", children=(_num("2)"), _content("valaan elimet."))),
+            _para(
+                children=(
+                    _content(
+                        "Mitä 1 momentissa on sanottu, ei koske luvalla "
+                        "tapahtuvaa tuontia."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 2
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert result[1].attrs["lawvm_source_normalization_rule"] == (
+        "fi_split_trailing_first_moment_anaphora_subsection_v1"
+    )
+    assert "Mitä 1 momentissa on sanottu" in result[1].children[0].text
+
+
+def test_split_trailing_content_only_paragraphs_keeps_non_right_first_moment_tail_inside_subsection() -> None:
+    """Generic first-moment references are not enough to split an intro-list tail."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Verovapaan luovutuksen kohteena voivat olla:"),
+            _para(label="1", children=(_num("1)"), _content("vuokra-asunnot;"))),
+            _para(label="2", children=(_num("2)"), _content("asumisoikeusasunnot."))),
+            _para(
+                children=(
+                    _content(
+                        "Edellä 1 momentissa tarkoitettu verovapaus koskee myös "
+                        "eräitä osakkeita."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 1
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
         IRNodeKind.WRAP_UP,
     ]
 

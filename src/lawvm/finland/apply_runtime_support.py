@@ -93,6 +93,13 @@ _SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
+@lru_cache(maxsize=512)
+def _paragraph_label_prefix_re(label: str) -> re.Pattern[str]:
+    """Compile a paragraph label prefix stripper for one source label."""
+
+    return re.compile(rf"^\s*{re.escape(label)}\s*[\).]\s*")
+
+
 def _normalize_snapshot_item_label(label: str | None) -> str:
     """Normalize FI item labels without Roman-to-Arabic conversion.
 
@@ -2010,12 +2017,7 @@ def _emit_section_snapshot(
             text = _norm_text(node)
             if node.kind is not IRNodeKind.PARAGRAPH or not node.label:
                 return text
-            return re.sub(
-                rf"^\s*{re.escape(str(node.label))}\s*[\).]\s*",
-                "",
-                text,
-                count=1,
-            )
+            return _paragraph_label_prefix_re(str(node.label)).sub("", text, count=1)
 
         if not op_source.effective:
             return None
@@ -2696,8 +2698,14 @@ def _emit_section_snapshot(
                 return _tops._as_path(raw_path)
         return _find_normalized_container_path_in_tree(tree, kind_name)
 
+    base_resolved_path_cache: tuple[bool, Optional[Path]] = (False, None)
+
     def _base_resolved_path() -> Optional[Path]:
+        nonlocal base_resolved_path_cache
+        if base_resolved_path_cache[0]:
+            return base_resolved_path_cache[1]
         if base_ir is None:
+            base_resolved_path_cache = (True, None)
             return None
         if hinted_path is not None:
             hinted_node = _tops.resolve(base_ir, hinted_path)
@@ -2711,7 +2719,8 @@ def _emit_section_snapshot(
                 else None
             )
             if hinted_node is not None and (expected_kind is None or hinted_node.kind is expected_kind):
-                return _timeline_path(hinted_path)
+                base_resolved_path_cache = (True, _timeline_path(hinted_path))
+                return base_resolved_path_cache[1]
         if target_unit_kind == "section":
             if target_part:
                 part_path = _tops.find(base_ir, "part", target_part)
@@ -2751,7 +2760,11 @@ def _emit_section_snapshot(
             raw_path = _lookup_container_path_in_tree(base_ir, "part")
         else:
             raw_path = None
-        return _timeline_path(_tops._as_path(raw_path)) if raw_path else None
+        base_resolved_path_cache = (
+            True,
+            _timeline_path(_tops._as_path(raw_path)) if raw_path else None,
+        )
+        return base_resolved_path_cache[1]
 
     def _base_section_payload_for_complete_replacement() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind != "section":

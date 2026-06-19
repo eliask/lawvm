@@ -374,3 +374,14 @@ def test_pykälän_synonym_plain_section_ref() -> None:
     addr = result[0]
     assert addr.section == "3"
     assert addr.subsection == 2
+
+
+def test_parse_legal_addresses_cache_returns_independent_lists() -> None:
+    first = parse_legal_addresses("6 §:n 1 momentti")
+    first.clear()
+
+    second = parse_legal_addresses("6 §:n 1 momentti")
+
+    assert len(second) == 1
+    assert second[0].section == "6"
+    assert second[0].subsection == 1

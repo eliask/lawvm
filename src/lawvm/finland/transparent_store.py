@@ -599,7 +599,9 @@ class TransparentCorpusStore(CorpusStore):
 
     @override
     def close(self) -> None:
-        self._archive.close()
+        close = getattr(self._archive, "close", None)
+        if callable(close):
+            close()
 
     # ------------------------------------------------------------------
     # Refresh one statute
