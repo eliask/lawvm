@@ -251,6 +251,36 @@ def test_source_model_exposes_metadata_surfaces() -> None:
     assert model.expiry_date() is None
 
 
+def test_source_model_exposes_commencement_expiry_override() -> None:
+    tree = etree.fromstring(
+        """
+        <akomaNtoso>
+          <act>
+            <body>
+              <hcontainer name="entryIntoForce">
+                <content>
+                  <p>muutetaan sosiaalihuoltolain väliaikaisesta muuttamisesta annetun lain
+                  (1428/2004) voimaantulosäännös, sellaisena kuin se on laissa 1105/2008,
+                  seuraavasti: Tämä laki tulee voimaan 1 päivänä tammikuuta 2005 ja on
+                  voimassa 31 päivään joulukuuta 2014.</p>
+                </content>
+              </hcontainer>
+            </body>
+          </act>
+        </akomaNtoso>
+        """.encode()
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2010/1314")
+
+    override = model.commencement_expiry_override("2010/1314")
+
+    assert override is not None
+    target_mid, labels, expiry = override
+    assert target_mid == "2004/1428"
+    assert labels is None
+    assert expiry == dt.date(2014, 12, 31)
+
+
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     tree = _tree()
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/3")

@@ -123,3 +123,11 @@ def test_precompile_selection_eid_free_body_check_uses_source_model() -> None:
 
     assert 'findall(".//{*}section' not in source
     assert "source_model.has_eid_free_body_sections()" in source
+
+
+def test_route_rejection_expiry_override_uses_source_model() -> None:
+    source = _source("src/lawvm/finland/process_route_rejection.py")
+
+    assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
+    assert "_commencement_expiry_override(" not in source
+    assert "source_model.commencement_expiry_override(" in source

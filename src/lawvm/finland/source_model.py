@@ -438,6 +438,21 @@ class AmendmentSourceModel:
 
         return _amendment_expiry_date(self.muutos_tree)
 
+    def commencement_expiry_override(
+        self,
+        source_statute_id: str,
+        *,
+        section_expiry_overrides: tuple[tuple[str, set[str], dt.date], ...] | None = None,
+    ) -> tuple[str, set[str] | None, dt.date] | None:
+        """Return commencement-clause expiry override metadata."""
+        from lawvm.finland.metadata import _commencement_expiry_override
+
+        return _commencement_expiry_override(
+            self.muutos_tree,
+            source_statute_id,
+            section_expiry_overrides=section_expiry_overrides,
+        )
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(
