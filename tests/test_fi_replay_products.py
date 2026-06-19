@@ -653,6 +653,7 @@ def test_replay_xml_1987_1203_preserves_jolloin_section_renumber_chain() -> None
     assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 1988." in text_12
 
 
+@pytest.mark.slow
 def test_replay_xml_1968_360_handles_temporary_tax_year_window_without_crashing() -> None:
     replay = pinned_replay("1968/360", mode="official_consolidation", quiet=True, build_full_products=False)
 
@@ -1261,6 +1262,7 @@ def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber(
     assert "EU-luettelo" not in text_5c
 
 
+@pytest.mark.slow
 def test_replay_xml_keeps_1994_1486_uncovered_sections_under_part_scoped_chapter() -> None:
     """Uncovered-body recovery must not emit bare root chapter:5 extras for 1994/1486."""
     replay = pinned_replay("1993/1501", mode="legal_pit", quiet=True, stop_before="1995/347")
@@ -1307,6 +1309,7 @@ def test_replay_xml_keeps_1994_1486_uncovered_sections_under_part_scoped_chapter
     }
 
 
+@pytest.mark.slow
 def test_replay_xml_1978_38_section_12_1_full_replace_does_not_preserve_stale_list_items() -> None:
     replay = pinned_replay("1978/38", mode="official_consolidation", quiet=True, stop_before="2022/697")
 
@@ -2433,6 +2436,7 @@ def test_replay_xml_2010_76_whole_chapter_replace_drops_omitted_section_3(
     assert section_3_ops[-1].action is StructuralAction.REPEAL
 
 
+@pytest.mark.slow
 def test_replay_xml_1940_378_chapter_range_replace_retires_omitted_sections() -> None:
     """Regression: a chapter-RANGE REPLACE must drop sections its payloads omit.
 
@@ -2564,6 +2568,7 @@ def test_replay_xml_2009_617_moves_sections_39_to_41_into_inserted_chapter_4a() 
         assert sec_in_4 is None, f"§{label} must not remain in chapter 4 after move to 4a"
 
 
+@pytest.mark.slow
 def test_replay_xml_2002_1090_relocates_sections_into_sibling_chapters_5a_5b() -> None:
     """Regression: 2009/226 splits chapter 5 into 5a/5b and moves §§41–50 in.
 
@@ -2646,6 +2651,7 @@ def test_replay_xml_1977_603_realizes_section_72c_only_under_chapter_8a(
     assert "72c" not in root_section_labels
 
 
+@pytest.mark.slow
 def test_replay_xml_1958_370_retargets_143b_away_from_stale_chapter_scope() -> None:
     """A stale carried scope must not promote its payload into root PIT timelines.
 
@@ -2958,6 +2964,7 @@ def test_replay_xml_preserves_explicit_body_chapter_ownership_for_2013_393() -> 
     assert replay.materialized_state.find_section("37a", "5") is None
 
 
+@pytest.mark.slow
 def test_replay_xml_preserves_2006_395_targeted_merge_sections(
     replay_2006_395_finlex_oracle: ReplayResult,
 ) -> None:
@@ -3312,6 +3319,7 @@ def test_validate_replay_products_still_flags_non_commencement_mixed_section() -
     )
 
 
+@pytest.mark.slow
 def test_2014_527_legal_pit_does_not_leave_reinstated_section_family_at_root() -> None:
     replay = pinned_replay("2014/527", mode="legal_pit", quiet=True)
 
@@ -3338,6 +3346,7 @@ def test_2004_1287_legal_pit_allows_source_authored_final_commencement_section()
     assert not any("direct section:23 alongside chapter:4" in violation for violation in violations)
 
 
+@pytest.mark.slow
 def test_1958_370_allows_source_authored_final_commencement_section() -> None:
     replay = replay_xml_for_test("1958/370", mode="official_consolidation", quiet=True)
 
@@ -3350,6 +3359,7 @@ def test_1958_370_allows_source_authored_final_commencement_section() -> None:
     assert not any("direct section:152 alongside part" in violation for violation in violations)
 
 
+@pytest.mark.slow
 def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
     replay = replay_xml_for_test("1958/370", mode="legal_pit", quiet=True)
 
@@ -3364,6 +3374,7 @@ def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
         assert not has_root_section_114(state.ir)
 
 
+@pytest.mark.slow
 def test_1958_370_retargets_1968_493_stale_body_chapter_scope() -> None:
     failed_ops = []
     replay = replay_xml_for_test("1958/370", mode="legal_pit", quiet=True, failed_ops_out=failed_ops)

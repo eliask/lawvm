@@ -5,6 +5,8 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from lawvm.core.regex_recognition_coverage import (
     REGEX_RECOGNITION_UNCLASSIFIED_GAP,
     RegexRecognitionCoverage,
@@ -1869,6 +1871,7 @@ def test_compile_one_hydrates_source_adjudication_from_replay_meta(monkeypatch) 
     assert row["source_available"] == 1
 
 
+@pytest.mark.slow
 def test_strict_report_main_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
     strict_report.main(
         Namespace(

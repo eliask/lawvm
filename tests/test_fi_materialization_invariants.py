@@ -521,6 +521,7 @@ class TestNoDuplicatesInPIT:
             for pathology in source_pathologies
         )
 
+    @pytest.mark.slow
     def test_2014_917_section_265_no_duplicate_subsection(self) -> None:
         """Tietoyhteiskuntakaari § 265 had duplicate subsection:1."""
         ir = _replay("2014/917")
@@ -541,6 +542,7 @@ class TestNoDuplicatesInPIT:
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
 
+    @pytest.mark.slow
     def test_2008_878_section_40_momentti_not_duplicated(self) -> None:
         """Laki Finanssivalvonnasta § 40: momentti 2 must not be duplicated, momentti 3 must survive.
 
@@ -584,6 +586,7 @@ class TestNoDuplicatesInPIT:
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
+    @pytest.mark.slow
     def test_1979_1062_sections_no_duplicate_subsection(self) -> None:
         """The 1979/1062 replay must not duplicate subsection 2 in chapter 18."""
         ir, replay_meta = _replay_ir_and_meta("1979/1062")
@@ -724,6 +727,7 @@ class TestNoDuplicatesInPIT:
         ]
         assert {"2", "3"} <= set(chapter_labels)
 
+    @pytest.mark.slow
     def test_2017_320_2018_301_keeps_chapter_children_and_part_scoped_inserts_before_2019_371(self) -> None:
         """2018/301 must keep child sections and canonicalized part-scoped inserts before 2019/371."""
         ir = pinned_replay(
@@ -1150,6 +1154,7 @@ class TestNoDuplicatesInPIT:
         assert replay_meta.get("invariant_violations") in (None, [])
         assert replay_meta.get("product_invariant_violations") in (None, [])
 
+    @pytest.mark.slow
     def test_2006_624_sections_27_and_17_3_no_duplicate_7a_or_13a(self) -> None:
         """2006/624 must not duplicate carried explicit paragraph labels from 2022/1337."""
         ir, replay_meta = _replay_ir_and_meta("2006/624")
