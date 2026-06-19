@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Callable, Iterable, Optional, cast
 
 from lawvm.core.invariant_detectors import (
+    InvariantDetectorResult,
     run_descendant_sibling_loss_detector,
     run_same_source_descendant_snapshot_shadow_detector,
 )
@@ -207,14 +208,14 @@ def project_replay_warning_findings(
 
 def _transition_detector_finding(
     *,
-    result: object,
+    result: InvariantDetectorResult,
     detector: ReplayTransitionDetectorName,
     phase: str,
     source_statute: str,
     surface_id: str,
     profile_id: str,
 ) -> Finding:
-    detail = dict(getattr(result, "detail", {}) or {})
+    detail = dict(result.detail)
     return Finding(
         kind="REPLAY.TRANSITION_DETECTOR",
         role=OBSERVATION_ROLE,
@@ -223,9 +224,9 @@ def _transition_detector_finding(
         source_statute=source_statute,
         detail={
             "detector": detector,
-            "kind": str(getattr(result, "kind", "") or ""),
-            "path": str(getattr(result, "path_text", "") or ""),
-            "message": str(getattr(result, "message", "") or ""),
+            "kind": result.kind,
+            "path": result.path_text,
+            "message": result.message,
             "phase": phase,
             "surface": surface_id,
             "profile_id": profile_id,
@@ -257,14 +258,19 @@ def project_transition_detector_findings(
             continue
         if detector == "descendant_sibling_loss":
             results = cast(
-                Callable[[IRNode, Sequence[LegalOperation]], list[object]], runner
+                Callable[
+                    [IRNode, Sequence[LegalOperation]],
+                    list[InvariantDetectorResult],
+                ],
+                runner,
             )(before_ir, operations)
         else:
             results = cast(
-                Callable[[Sequence[LegalOperation]], list[object]], runner
+                Callable[[Sequence[LegalOperation]], list[InvariantDetectorResult]],
+                runner,
             )(operations)
         for result in results:
-            replay_print(f"WARNING transition detector: {getattr(result, 'message', '')}")
+            replay_print(f"WARNING transition detector: {result.message}")
             finding = _transition_detector_finding(
                 result=result,
                 detector=detector,
