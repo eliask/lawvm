@@ -274,6 +274,21 @@ def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() ->
     assert "yleistajuinen ja havainnollinen tiivistelmä" in irnode_to_text(paragraphs[-1])
 
 
+def test_1997_142_item_repeal_preserves_surviving_definition_items() -> None:
+    """1999/786 repeals only 1997/142 §1 item 2, not the whole section."""
+
+    replay = pinned_replay("1997/142", quiet=True)
+    section_node = replay.materialized_state.find_section("1", None, None)
+
+    assert section_node is not None
+    assert section_node.attrs.get("lawvm_repeal_placeholder") != "1"
+    rendered = irnode_to_text(section_node)
+    assert "Määritelmät" in rendered
+    assert "kaasuöljyllä" in rendered
+    assert "kevyellä polttoöljyllä" in rendered
+    assert "dieselöljyllä" not in rendered
+
+
 def test_1966_612_section_item_subsection_fold_preserves_first_moment_items() -> None:
     """Base §2 items 2-5 are kohdat, not momentit targeted by later amendments."""
 

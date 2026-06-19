@@ -193,6 +193,11 @@ def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def _content_is_editorial_repeal_notice(node: IRNode) -> bool:
+    text = irnode_to_text(node).casefold()
+    return "kumottu" in text
+
+
 def _kind_value(node: IRNode) -> str:
     return node.kind.value if isinstance(node.kind, IRNodeKind) else str(node.kind)
 
@@ -688,11 +693,16 @@ def _reconcile_materialized_fold_hcontainer_sections(
 def _should_restore_repeal_placeholder(node: IRNode) -> bool:
     """Return whether a replay-only placeholder is visible in FI export.
 
-    Repealed whole provisions stay absent in the materialized state. The visible
-    dotted-text convention is currently owned only for child slots inside a live
-    provision, where Finlex preserves the numbering gap.
+    Repealed whole provisions stay absent in the materialized state. Subsection
+    slots keep the existing dotted-text convention. Paragraph slots are restored
+    only when apply marked a stale materialized item slot that was rebound by a
+    named target-resolution recovery.
     """
-    return node.kind is IRNodeKind.SUBSECTION and _content_is_repeal_placeholder(node)
+    if not _content_is_repeal_placeholder(node):
+        return False
+    if node.kind is IRNodeKind.SUBSECTION:
+        return True
+    return node.kind is IRNodeKind.PARAGRAPH and node.attrs.get("lawvm_restore_materialized_stale_item_slot") == "1"
 
 
 def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: IRNode) -> IRNode:
@@ -705,6 +715,10 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
     """
     if materialized.kind is not replay_fold.kind or materialized.label != replay_fold.label:
         return materialized
+    if _content_is_editorial_repeal_notice(materialized):
+        return materialized
+    if _should_restore_repeal_placeholder(replay_fold):
+        return replay_fold
     if not replay_fold.children:
         return materialized
 
@@ -757,6 +771,8 @@ def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: 
 
     for child in replay_children:
         if child.label is None or not _should_restore_repeal_placeholder(child):
+            continue
+        if child.kind is not IRNodeKind.SUBSECTION:
             continue
         key = (child.kind, child.label)
         if key in existing_keys:

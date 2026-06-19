@@ -381,10 +381,13 @@ def _make_item_repeal_placeholder_ir(paragraph: IRNode, op: AmendmentOp | Resolv
     """Return a paragraph-scoped repeal placeholder preserving the visible item label."""
     op_target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_item
     label = paragraph.label or (op_target_item or "")
+    attrs = {"lawvm_repeal_placeholder": "1"}
+    if "unique_item_label_subsection_fallback" in op.target_guessing_provenance_tags:
+        attrs["lawvm_restore_materialized_stale_item_slot"] = "1"
     placeholder = IRNode(
         kind=IRNodeKind.PARAGRAPH,
         label=label,
-        attrs={"lawvm_repeal_placeholder": "1"},
+        attrs=attrs,
     )
     return _relabel_paragraph_ir(placeholder, label)
 

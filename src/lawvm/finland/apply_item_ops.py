@@ -81,6 +81,7 @@ class _ItemApplyView:
     target_item: str | None
     target_special: str | None
     post_repeal_item_shift_label: str | None
+    target_guessing_provenance_tags: tuple[str, ...] = ()
 
 
 def _coerce_item_apply_view(op: "_ItemApplyView | AmendmentOp | ResolvedOp") -> _ItemApplyView:
@@ -116,6 +117,7 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
         post_repeal_item_shift_label=(
             op.resolved_post_repeal_item_shift_label if isinstance(op, ResolvedOp) else op.post_repeal_item_shift_label
         ),
+        target_guessing_provenance_tags=op.target_guessing_provenance_tags,
     )
 
 
@@ -750,11 +752,14 @@ def _apply_item_repeal(
             if synthesize_item_placeholder:
                 para = paras[para_idx]
                 label = para.label or (view.target_item or "")
+                placeholder_attrs = {"lawvm_repeal_placeholder": "1"}
+                if "unique_item_label_subsection_fallback" in view.target_guessing_provenance_tags:
+                    placeholder_attrs["lawvm_restore_materialized_stale_item_slot"] = "1"
                 placeholder = _relabel_paragraph_ir(
                     IRNode(
                         kind=IRNodeKind.PARAGRAPH,
                         label=label,
-                        attrs={"lawvm_repeal_placeholder": "1"},
+                        attrs=placeholder_attrs,
                     ),
                     label,
                 )

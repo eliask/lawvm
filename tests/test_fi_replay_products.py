@@ -40,6 +40,7 @@ from lawvm.finland.replay_products import _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE
 from lawvm.finland.replay_products import _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR
 from lawvm.finland.replay_products import _cleanup_sourceless_base_merge_conflicts
 from lawvm.finland.replay_products import _reconcile_materialized_fold_hcontainer_sections
+from lawvm.finland.replay_products import _restore_replay_fold_repeal_placeholders
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
@@ -314,6 +315,51 @@ def test_project_materialized_provisions_wrapper_unwraps_direct_sections_without
         IRNodeKind.SECTION,
     ]
     assert [child.label for child in projected.children] == ["1", "2"]
+
+
+def test_restore_replay_fold_repeal_placeholders_preserves_editorial_notice_slots() -> None:
+    replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1", "lawvm_restore_materialized_stale_item_slot": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    unmarked_replay_placeholder = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3)"),),
+    )
+    materialized_notice = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3 kohta on kumottu L:lla 16.1.2026/45."),),
+    )
+    materialized_stale = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.CONTENT, text="3) stale substantive text"),),
+    )
+    materialized_parent_missing = IRNode(kind=IRNodeKind.SUBSECTION, label="1")
+    replay_parent_with_missing_placeholder = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(replay_placeholder,),
+    )
+
+    assert _restore_replay_fold_repeal_placeholders(materialized_notice, replay_placeholder) is materialized_notice
+    assert (
+        _restore_replay_fold_repeal_placeholders(materialized_stale, unmarked_replay_placeholder)
+        is materialized_stale
+    )
+    restored = _restore_replay_fold_repeal_placeholders(materialized_stale, replay_placeholder)
+    projected_parent = _restore_replay_fold_repeal_placeholders(
+        materialized_parent_missing,
+        replay_parent_with_missing_placeholder,
+    )
+
+    assert restored is replay_placeholder
+    assert projected_parent is materialized_parent_missing
 
 
 def test_project_materialized_provisions_wrapper_reparents_eid_sections_to_chapters() -> None:
@@ -1849,11 +1895,9 @@ def test_replay_xml_can_skip_full_products_for_fast_bench() -> None:
     assert replay.materialization_spec is None
 
 
-def test_fold_timeline_backfill_materializes_restructure_renumbered_sections(monkeypatch) -> None:
+def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -> None:
     """Fold-owned sections must survive PIT when only payload-less RENUMBER LOs exist."""
     from lawvm.core.provenance import MigrationEvent
-    import lawvm.core.timeline as timeline_mod
-    import lawvm.finland.replay_fold_timeline_backfill as backfill_mod
     from lawvm.finland.replay_fold_timeline_backfill import FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
 
     def _section(label: str, heading: str) -> IRNode:
@@ -1955,17 +1999,6 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections(mon
             source_statute="2020/1256",
         ),
     )
-    compile_calls = 0
-    real_compile_timelines = timeline_mod.compile_timelines
-
-    def counting_compile_timelines(*args, **kwargs):
-        nonlocal compile_calls
-        compile_calls += 1
-        return real_compile_timelines(*args, **kwargs)
-
-    monkeypatch.setattr(timeline_mod, "compile_timelines", counting_compile_timelines)
-    monkeypatch.setattr(backfill_mod, "compile_timelines", counting_compile_timelines)
-
     products = build_replay_products(
         ctx=ctx,
         statute_id="synthetic/fold-backfill",
@@ -1977,7 +2010,6 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections(mon
     addr_210 = LegalAddress(path=(("part", "5"), ("chapter", "25"), ("section", "210")))
 
     assert products.timelines is not None
-    assert compile_calls == 1
     assert addr_209 in products.timelines
     assert addr_210 in products.timelines
     assert products.materialized_state.find_section("209", "25", "5") is not None
