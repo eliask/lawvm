@@ -34,13 +34,13 @@ from lawvm.core.frontend_phase_surface import (
 from lawvm.core.ir import LegalAddress
 from lawvm.core.phase_result import Finding
 from lawvm.core.token_tape import TokenLexeme, TokenTape
+from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.core.clause_ast import ClauseAST
 from lawvm.core.semantic_types import FacetKind, LabelAction
 
 if TYPE_CHECKING:
-    from lawvm.finland.johtolause.lexicon import Token
     from lawvm.finland.johtolause.surface_model import (
         SurfaceClause as _SurfaceClauseType,
         SurfaceNode as _SurfaceNodeType,
@@ -908,20 +908,20 @@ def _build_finland_surface_parse_result(
     )
 
 
-def _core_token_tape_from_finland_tokens(text: str, tokens: Sequence[object]) -> TokenTape:
+def _core_token_tape_from_finland_tokens(text: str, tokens: Sequence[Token]) -> TokenTape:
     lexemes: list[TokenLexeme] = []
     for token in tokens:
-        verb_code = getattr(token, "verb_code", None)
-        semantic_code = getattr(verb_code, "value", "") if verb_code is not None else ""
+        verb_code = token.verb_code
+        semantic_code = verb_code.value if verb_code is not None else ""
         lexemes.append(
             TokenLexeme(
-                text=str(getattr(token, "text", "") or ""),
-                lemma=str(getattr(token, "lemma", "") or ""),
-                category=str(getattr(token, "cat", "") or ""),
-                gram_case=str(getattr(token, "case", "") or ""),
-                semantic_code=str(semantic_code or ""),
-                char_start=int(getattr(token, "char_start", -1)),
-                char_end=int(getattr(token, "char_end", -1)),
+                text=token.text,
+                lemma=token.lemma,
+                category=token.cat,
+                gram_case=token.case,
+                semantic_code=semantic_code,
+                char_start=token.char_start,
+                char_end=token.char_end,
             )
         )
     return TokenTape(source_text=text, lexemes=tuple(lexemes))

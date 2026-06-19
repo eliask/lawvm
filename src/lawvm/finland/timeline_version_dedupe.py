@@ -18,6 +18,7 @@ FI_TIMELINE_SAME_SOURCE_SEMANTIC_DEDUPE_RULE_ID = (
 FI_TIMELINE_ABSENT_CONTENT_SHADOW_COLLAPSE_RULE_ID = (
     "fi.timeline.absent_content_shadow_collapse"
 )
+_TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,7 @@ def _timeline_version_semantic_text_key(node: object | None) -> str:
         text = " ".join(irnode_to_text(node).split())
     else:
         text = str(node)
-    return re.sub(r"^(\d+[a-z]?)\s*§", r"\1 §", text)
+    return _TIMELINE_SECTION_MARK_SPACING_RE.sub(r"\1 §", text)
 
 
 def _collapse_absent_content_shadow_rows(

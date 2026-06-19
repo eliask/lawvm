@@ -223,6 +223,9 @@ class ReplayState:
     _index: Optional[LabelIndex] = field(default=None, repr=False)
     _provision_index: Optional[LabelIndex] = field(default=None, repr=False)
     _duplicate_section_labels: Optional[Set[str]] = field(default=None, repr=False)
+    _section_path_cache: Optional[
+        dict[tuple[str, Optional[str], Optional[str]], Optional[Path]]
+    ] = field(default=None, repr=False)
 
     def with_ir(
         self,
@@ -241,6 +244,9 @@ class ReplayState:
             _provision_index=self._provision_index if preserve_provision_index else None,
             _duplicate_section_labels=(
                 self._duplicate_section_labels if preserve_provision_index else None
+            ),
+            _section_path_cache=(
+                self._section_path_cache if preserve_provision_index else None
             ),
         )
 
@@ -312,15 +318,7 @@ class ReplayState:
             scope_label=scope_label,
             label_index=label_index,
         )
-        if path is not None:
-            return path
-        return _tops.find(
-            self.ir,
-            kind,
-            label,
-            scope_kind=scope_kind,
-            scope_label=scope_label,
-        )
+        return path
 
     def resolve(self, path: Path) -> Optional[IRNode]:
         """Resolve a path to an IRNode, or None if not found."""
@@ -354,13 +352,21 @@ class ReplayState:
         target_part: Optional[str] = None,
     ) -> Optional[Path]:
         """Convenience: find path to a section by number, optionally scoped to chapter/part."""
-        return find_scoped_section_path(
+        cache_key = (target_norm, target_chapter, target_part)
+        if self._section_path_cache is None:
+            self._section_path_cache = {}
+        elif cache_key in self._section_path_cache:
+            return self._section_path_cache[cache_key]
+        path = find_scoped_section_path(
             self.ir,
             target_section=target_norm,
             target_chapter=target_chapter,
             target_part=target_part,
             find_path=self.find,
+            provision_index=self.provision_index,
         )
+        self._section_path_cache[cache_key] = path
+        return path
 
     def find_chapter(self, chap_num: str) -> Optional[IRNode]:
         """Convenience: find a chapter node by number."""

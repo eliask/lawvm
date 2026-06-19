@@ -33,6 +33,7 @@ def unique_chapter_scoped_section_path(
     *,
     target_section: str,
     target_chapter: str,
+    provision_index: ProvisionIndex | None = None,
 ) -> Path | None:
     """Return the unique ``.../chapter:X/section:Y`` path, ignoring part scope.
 
@@ -42,9 +43,22 @@ def unique_chapter_scoped_section_path(
     chapter/section pair has exactly one direct live match across the tree.
     """
 
-    matches: list[Path] = []
     target_chapter_norm = _norm_num_token(target_chapter)
     target_section_norm = normalized_label_key(target_section)
+    if provision_index is not None:
+        matches = _unique_canonical_legal_paths(
+            ir,
+            (
+                path
+                for path in section_paths_for_label(provision_index, target_section)
+                if _path_matches_chapter_scope(path, target_chapter_norm)
+            ),
+        )
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    matches: list[Path] = []
 
     def _walk(node: IRNode, path: Path, current_chapter: str | None) -> None:
         node_kind = _kind_name(node.kind)
@@ -74,6 +88,7 @@ def find_scoped_section_path(
     target_chapter: str | None = None,
     target_part: str | None = None,
     find_path: FindPath,
+    provision_index: ProvisionIndex | None = None,
 ) -> Path | None:
     """Find a Finland section path under optional chapter/part scope.
 
@@ -113,6 +128,7 @@ def find_scoped_section_path(
             ir,
             target_section=target_section,
             target_chapter=target_chapter,
+            provision_index=provision_index,
         )
     return find_path("section", target_section, None, None)
 
@@ -172,6 +188,36 @@ def path_matches_part_scope(path: Path, target_part: str | None) -> bool:
     if not parts:
         return False
     return _norm_num_token(parts[-1]) == _norm_num_token(target_part)
+
+
+def _nearest_chapter_label(path: Path) -> str | None:
+    for kind, label in reversed(path):
+        if kind == "chapter":
+            return label
+    return None
+
+
+def _path_matches_chapter_scope(path: Path, target_chapter_norm: str) -> bool:
+    chapter_label = _nearest_chapter_label(path)
+    return chapter_label is not None and _norm_num_token(chapter_label) == target_chapter_norm
+
+
+def _canonical_legal_path(path: Path) -> Path:
+    return tuple((kind, label) for kind, label in path if kind != "hcontainer")
+
+
+def _unique_canonical_legal_paths(ir: IRNode, paths: Iterable[Path]) -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for path in paths:
+        canonical = _canonical_legal_path(path)
+        if canonical != path and _tops.resolve(ir, canonical) is None:
+            canonical = path
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        out.append(canonical)
+    return tuple(out)
 
 
 def section_paths_for_label(

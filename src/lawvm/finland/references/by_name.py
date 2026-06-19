@@ -465,7 +465,26 @@ _ANNETTU_LAKI_RE = re.compile(
 #
 # A title word is a lower-case name token (the official title's subject matter is
 # common-noun lower case), possibly hyphen/colon-joined.
-_DESC_WORD_RE = re.compile(r"^[a-zäöå]{2,40}(?:-[a-zäöå]{2,40})?(?::[a-zäöå]{1,20})?$")
+_DESC_WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzäöå")
+
+
+def _desc_word_ok(word: str) -> bool:
+    base, colon, suffix = word.partition(":")
+    if colon and not (1 <= len(suffix) <= 20 and all(ch in _DESC_WORD_CHARS for ch in suffix)):
+        return False
+    if "-" in base:
+        left, sep, right = base.partition("-")
+        if not sep or "-" in right:
+            return False
+        return (
+            2 <= len(left) <= 40
+            and 2 <= len(right) <= 40
+            and all(ch in _DESC_WORD_CHARS for ch in left)
+            and all(ch in _DESC_WORD_CHARS for ch in right)
+        )
+    return 2 <= len(base) <= 40 and all(ch in _DESC_WORD_CHARS for ch in base)
+
+
 # The complement NP's words agree in the case the participle governs OR are its
 # inner modifiers: elative (``…sta/…stä``), partitive (``…ta/…tä/…a/…ä``), or the
 # coordinative ``ja``/``sekä``/``tai`` joiner BETWEEN two complement words. The
@@ -510,12 +529,47 @@ _POSTPOSITION_WINDOW = 40
 # complement and ``annetun`` (``… kielitaidosta 1 päivänä kesäkuuta 1922 annetun
 # lain``). It is part of the enactment reference, not the title complement, so it
 # is stripped off the left of ``annetun`` before the complement scan.
-_DATE_PHRASE_RE = re.compile(
-    r"(?:\d{1,2}\.?\s*)?(?:p(?:äivänä|\.|:nä)?\s+)?"
-    r"(?:tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu"
-    r"(?:ta|n|ssa)?\s+\d{4}\s+$",
-    re.IGNORECASE,
+_MONTH_STEMS = (
+    "tammi",
+    "helmi",
+    "maalis",
+    "huhti",
+    "touko",
+    "kesä",
+    "heinä",
+    "elo",
+    "syys",
+    "loka",
+    "marras",
+    "joulu",
 )
+
+
+def _date_phrase_start(left: str) -> int | None:
+    """Return the start offset of a date phrase at the end of ``left``."""
+    toks = list(re.finditer(r"\S+", left.rstrip()))
+    if len(toks) < 2:
+        return None
+    year = toks[-1].group(0)
+    if len(year) != 4 or not year.isdigit():
+        return None
+    month = toks[-2].group(0).lower()
+    if not any(month.startswith(stem + "kuu") for stem in _MONTH_STEMS):
+        return None
+    month_suffix = month.split("kuu", 1)[1]
+    if month_suffix not in {"", "ta", "n", "ssa"}:
+        return None
+    start_idx = len(toks) - 2
+    if start_idx > 0:
+        marker = toks[start_idx - 1].group(0).lower()
+        if marker in {"p", "p.", "päivänä", "p:nä", "p:na"}:
+            start_idx -= 1
+    if start_idx > 0:
+        day = toks[start_idx - 1].group(0)
+        day_norm = day[:-1] if day.endswith(".") else day
+        if day_norm.isdigit() and 1 <= len(day_norm) <= 2:
+            start_idx -= 1
+    return toks[start_idx].start()
 
 
 def _complement_word_ok(word: str) -> bool:
@@ -532,7 +586,7 @@ def _complement_word_ok(word: str) -> bool:
         return True
     if word in _COMPLEMENT_STOPWORDS:
         return False
-    if not _DESC_WORD_RE.match(word):
+    if not _desc_word_ok(word):
         return False
     return word.endswith(_COMPLEMENT_CASE_SUFFIXES)
 
@@ -547,7 +601,7 @@ def _is_elative(word: str) -> bool:
     """
     if word in _COMPLEMENT_STOPWORDS:
         return False
-    if not _DESC_WORD_RE.match(word):
+    if not _desc_word_ok(word):
         return False
     return word.endswith(("sta", "stä"))
 
@@ -580,7 +634,7 @@ _ELATIVE_ATTR_PARTICIPLE_SUFFIXES: tuple[str, ...] = (
 
 def _is_elative_attr_participle(word: str) -> bool:
     """True when ``word`` is an elative attributive participle (``koskevasta``)."""
-    if not _DESC_WORD_RE.match(word):
+    if not _desc_word_ok(word):
         return False
     return word.endswith(_ELATIVE_ATTR_PARTICIPLE_SUFFIXES)
 
@@ -644,7 +698,7 @@ def _is_genitive_premodifier(word: str) -> bool:
     """
     if word in _COMPLEMENT_STOPWORDS or word in _GENITIVE_FUNCTION_WORD_STOPS:
         return False
-    if not _DESC_WORD_RE.match(word):
+    if not _desc_word_ok(word):
         return False
     # A 2-letter ``-n`` token (``en``, ``on``) is far more likely a clause word
     # than a title premodifier; require a real noun-length stem.
@@ -698,7 +752,7 @@ def _descriptive_complement(left: str) -> tuple[str, int] | None:
         w = words[i]
         if w in _COMPLEMENT_STOPWORDS:
             continue
-        if _DESC_WORD_RE.match(w) and w.endswith(("sta", "stä")):
+        if _desc_word_ok(w) and w.endswith(("sta", "stä")):
             anchor = i
             break
     if anchor is None:
@@ -805,9 +859,9 @@ def _recognize_descriptive_participle_refs(text: str) -> list[ReferenceMention]:
         # left context (a bare ``annetun lain`` or a non-citation fragment) is not
         # a descriptive title — emit nothing (tag-don't-guess, FP guard).
         left = text[: m.start()]
-        date_m = _DATE_PHRASE_RE.search(left)
-        if date_m is not None:
-            left = left[: date_m.start()] + " "
+        date_start = _date_phrase_start(left)
+        if date_start is not None:
+            left = left[:date_start] + " "
         comp = _descriptive_complement(left)
         if comp is None:
             continue

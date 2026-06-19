@@ -54,6 +54,7 @@ def compile_group_typed(
             inserted_chapter_labels=inserted_chapter_labels,
             muutos_tree=muutos_tree,
             strict_profile=strict_profile,
+            body_inventory=request.body_inventory,
         )
     )
     recovery = recovery_result.output

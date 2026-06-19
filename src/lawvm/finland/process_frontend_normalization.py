@@ -42,6 +42,7 @@ class ProcessFrontendNormalizationContext:
     strict_profile: Optional[StrictProfile]
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]]
     normalize_and_compile_ops: Callable[..., Any]
+    amendment_metadata: Any = None
 
     def run(self) -> FrontendNormalizationResult:
         parse_result = _parse_johtolause_clause(self.johto)
@@ -57,6 +58,7 @@ class ProcessFrontendNormalizationContext:
             strict_profile=self.strict_profile,
             parse_result=parse_result,
             regex_recognition_coverage_out=self.regex_recognition_coverage_out,
+            amendment_metadata=self.amendment_metadata,
         )
         non_commence_events = tuple(
             event

@@ -6,7 +6,6 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.phase_result import Finding
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
-    _pre_dedup_duplicate_details,
 )
 from lawvm.finland.statute import ReplayState
 
@@ -27,7 +26,7 @@ def normalize_process_apply_fold(
     per-amendment ``process_muutoslaki`` output aligned with the fold state
     later amendments actually consume.
     """
-    if not _pre_dedup_duplicate_details(state.ir):
+    if not _tops.has_dedup_label_duplicates(state.ir):
         return state
 
     deduped_ir = _tops.dedup_children_by_label(state.ir)

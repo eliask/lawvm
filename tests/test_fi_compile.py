@@ -664,6 +664,7 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
     assert "kuuden kuukauden kuluessa" in sixth_text
 
 
+@pytest.mark.slow
 def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> None:
     """2019/371 preserves §159 text under the final replay and materialized frame."""
     replay = pinned_replay(
@@ -696,6 +697,7 @@ def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> No
     assert rows
 
 
+@pytest.mark.slow
 def test_2019_371_compile_records_omission_only_recodification_pathology_for_sections_209_210() -> None:
     """Renumber-only omission shells are manual-frontier source limits, not apply payloads."""
     replay = pinned_replay(
@@ -714,6 +716,7 @@ def test_2019_371_compile_records_omission_only_recodification_pathology_for_sec
     assert any(" 210 §" in label for label in omission_shell_labels)
 
 
+@pytest.mark.slow
 def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> None:
     from lawvm.tools.inspect_amendment import _working_johtolause
 
@@ -1679,6 +1682,7 @@ def test_compile_fi_surfaces_source_pathology_with_neutral_target_unit_kind(
     assert _source_pathology_rows(facade)[0]["target_unit_kind"] == "chapter"
 
 
+@pytest.mark.slow
 def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> None:
     facade = compile_fi_facade("2017/320", replay_mode="legal_pit")
 
@@ -2376,6 +2380,7 @@ def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior
     } == {"fi_reinstated_section_scope_from_prior_repeal_address"}
 
 
+@pytest.mark.slow
 def test_normalize_and_compile_ops_1734_4_keeps_chapter_scoped_reinstatement_in_source_chapter() -> None:
     before = replay_xml("1734/4-000", stop_before="2025/142", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()
@@ -4392,6 +4397,7 @@ def test_compute_verdict_from_registry_uses_registry_descriptions() -> None:
     assert verdict.barrier_messages == (spec.description,)
 
 
+@pytest.mark.slow
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
     result = pinned_replay("2002/1290", mode="official_consolidation", quiet=True, build_full_products=False)

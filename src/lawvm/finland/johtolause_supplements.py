@@ -39,44 +39,50 @@ _ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
 _ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
 _MIXED_EXPLICIT_TARGET_RULE_ID = "fi.mixed_explicit_target_supplement.v1"
 _MIXED_EXPLICIT_TARGET_TAG = "mixed_explicit_target_supplement"
+_SECTION_LABEL_PATTERN = r"\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?"
+_ITEM_LABEL_PATTERN = r"\d{1,3}(?:[a-zäöå]|\s[a-zäöå])?"
 _REPLACE_ITEMS_AND_MOMENT_RE = re.compile(
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momentin\s+kohdat\s+"
-    r"(?P<items>\d{1,3}(?:\s*(?:,|ja)\s*\d{1,3}){0,12})\s+"
+    r"(?P<items>\d{1,3}(?:\s{0,20}(?:,|ja)\s{0,20}\d{1,3}){0,12})\s+"
     r"sekä\s+(?P<extra_moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
 _INSERT_ITEM_RE = re.compile(
     r"\blisätään\b[\s\S]{0,800}?"
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
     r"(?P<item>\d{1,3})\b",
     flags=re.I,
 )
 _ITEM_REPLACE_RE = re.compile(
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
     r"(?P<moment>\d{1,3})\s+momentin\s+kohta\s+"
-    r"(?P<item>\d{1,3}\s*[a-zäöå]?)\b",
+    rf"(?P<item>{_ITEM_LABEL_PATTERN})\b",
     flags=re.I,
 )
 _TABLE_AND_MOMENT_RE = re.compile(
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
-    r"taulukko\s+\d{1,4}\s*[a-zäöå]?\s+ja\s+"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    rf"taulukko\s+{_SECTION_LABEL_PATTERN}\s+ja\s+"
     r"(?P<moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
 _INSERT_MOMENT_RE = re.compile(
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*ään\s+uusi\s+"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}ään\s+uusi\s+"
     r"(?P<moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
 _BARE_REPLACE_SECTION_RE = re.compile(
-    r"(?<![/\d])(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?!\s*:)(?!\s*n\b)",
+    rf"(?<![/\d])(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?!\s{{0,10}}:)(?!\s{{0,10}}n\b)",
+    flags=re.I,
+)
+_CHAPTER_HEADING_PAIR_PREFIX_RE = re.compile(
+    r"\d{1,4}\s*(?:luku|luvun)\s+nimike\s+ja\s*$",
     flags=re.I,
 )
 _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
     r"\bmuut[a-zäöå]{0,12}\b.{0,500}?"
-    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?::[a-zäöå]{1,6})?.{0,300}?"
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?::[a-zäöå]{{1,6}})?.{{0,300}}?"
     r"\boikeusaputoimiston\s+"
     r"(?P<row>[a-zåäö][a-zåäö-]{1,80})\s+sivutoimiston\s+osalta\s+seuraavasti\b",
     flags=re.I,
@@ -691,6 +697,9 @@ def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceC
     clauses: list[BareSectionReplaceClause] = []
     seen: set[str] = set()
     for match in _BARE_REPLACE_SECTION_RE.finditer(muutetaan_segment):
+        prefix = " ".join(muutetaan_segment[: match.start()].split())
+        if _CHAPTER_HEADING_PAIR_PREFIX_RE.search(prefix):
+            continue
         section = _norm_num_token(match.group("section"))
         if not section or section in seen:
             continue

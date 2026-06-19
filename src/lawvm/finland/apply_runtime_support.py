@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.regex_safety import compile_classifier_regex
@@ -19,7 +20,7 @@ from lawvm.core.ir_helpers import _kind_str, irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
+from lawvm.core.tree_ops import LabelIndex, Path, default_label_sort_key, normalized_label_key
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
@@ -28,6 +29,7 @@ from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.scope import _unique_section_chapter, infer_letter_suffix_section_chapter_from_stem_host
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
+from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
@@ -57,12 +59,38 @@ class SectionSnapshotIdentity:
     section: str
 
 
+@dataclass(frozen=True, slots=True)
+class _SectionSnapshotIndex:
+    by_identity: dict[SectionSnapshotIdentity, list[int]]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
+class _TimelineExactTargetIndex:
+    earliest_effective_by_path: dict[Path, str]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
+class _TimelineLatestTargetOpIndex:
+    latest_by_path: dict[Path, _LegalOperation]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
+class _TimelinePayloadTargetIndex:
+    earliest_effective_by_path: dict[Path, str]
+    indexed_len: int
+
+
 _SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
     r"\b(?P<section>\d+[a-z]?)\s*§:n\b.{0,240}?\b"
     r"(?:moment[a-zåäö]{0,20}|koht[a-zåäö]{0,20}|alakoht[a-zåäö]{0,20})\b",
     re.IGNORECASE,
     classifier_id="fi.section_source_descendant_scope",
 )
+
+_PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
 def _normalize_snapshot_item_label(label: str | None) -> str:
@@ -270,7 +298,60 @@ def _op_source_for_merge_base(op: AmendmentOp | ResolvedOp) -> OperationSource |
     return None
 
 
-def _section_node_from_base_ir(base_ir: IRNode | None, section_path: Path) -> IRNode | None:
+def _base_provision_index_for_replay_history(
+    replay_history_ops: List[_LegalOperation] | None,
+    base_ir: IRNode | None,
+) -> LabelIndex | None:
+    if base_ir is None:
+        return None
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        return _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    cache: dict[int, tuple[IRNode, LabelIndex]] | None = replay_history_ops.base_provision_index_cache  # type: ignore[assignment]
+    if cache is None:
+        cache = {}
+        replay_history_ops.base_provision_index_cache = cache
+    key = id(base_ir)
+    cached = cache.get(key)
+    if cached is not None and cached[0] is base_ir:
+        return cached[1]
+    index = _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    cache[key] = (base_ir, index)
+    return index
+
+
+def _base_target_exists_for_replay_history(
+    replay_history_ops: List[_LegalOperation] | None,
+    base_ir: IRNode | None,
+    target_path: Path,
+) -> bool:
+    if base_ir is None:
+        return False
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        return _tops.resolve(base_ir, target_path) is not None
+    cache: dict[int, tuple[IRNode, dict[Path, bool]]] | None = replay_history_ops.base_target_exists_cache  # type: ignore[assignment]
+    if cache is None:
+        cache = {}
+        replay_history_ops.base_target_exists_cache = cache
+    key = id(base_ir)
+    cached = cache.get(key)
+    if cached is None or cached[0] is not base_ir:
+        path_cache: dict[Path, bool] = {}
+        cache[key] = (base_ir, path_cache)
+    else:
+        path_cache = cached[1]
+    normalized_path = tuple(target_path)
+    cached_exists = path_cache.get(normalized_path)
+    if cached_exists is not None:
+        return cached_exists
+    exists = _tops.resolve(base_ir, normalized_path) is not None
+    path_cache[normalized_path] = exists
+    return exists
+
+
+def _section_node_from_base_ir(
+    base_ir: IRNode | None,
+    section_path: Path,
+) -> IRNode | None:
     if base_ir is None:
         return None
     section_node = _tops.resolve(base_ir, section_path)
@@ -312,6 +393,7 @@ def _subsection_node_from_base_ir(base_ir: IRNode | None, subsection_path: Path)
     return None
 
 
+@lru_cache(maxsize=8192)
 def _section_snapshot_identity(path: Path) -> SectionSnapshotIdentity:
     labels = {kind: label for kind, label in path}
     return SectionSnapshotIdentity(
@@ -333,43 +415,50 @@ def _snapshot_section_los_for_identity(
     """
     if replay_history_ops is None:
         return []
-    # Build or retrieve the per-identity index.
-    # Stored as a hidden attribute on the list — lives as long as the list does,
-    # automatically invalidated when a new list is created.
-    _IDX_ATTR = "_snapshot_section_index"
-    _LEN_ATTR = "_snapshot_section_index_len"
-    idx: dict[SectionSnapshotIdentity, list[int]] | None = getattr(
-        replay_history_ops, _IDX_ATTR, None
-    )
-    idx_len: int = getattr(replay_history_ops, _LEN_ATTR, 0)
+
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        idx: dict[SectionSnapshotIdentity, list[int]] = {}
+        _add_section_snapshots_to_index(idx, replay_history_ops, start=0, stop=len(replay_history_ops))
+        indices = idx.get(target_identity)
+        if not indices:
+            return []
+        return [replay_history_ops[i] for i in indices]
+
     cur_len = len(replay_history_ops)
-    if idx is None:
-        # First build — scan everything
+    index: _SectionSnapshotIndex | None = replay_history_ops.snapshot_index  # type: ignore[assignment]
+    if index is None or index.indexed_len > cur_len:
         idx = {}
         start = 0
-    elif idx_len < cur_len:
-        # Incremental update — only scan new entries
-        start = idx_len
     else:
-        start = cur_len  # no scan needed
+        idx = index.by_identity
+        start = index.indexed_len
     if start < cur_len:
-        for i in range(start, cur_len):
-            lo = replay_history_ops[i]
-            if not lo.op_id.startswith("snapshot_section_"):
-                continue
-            if lo.payload is None or lo.payload.kind is not IRNodeKind.SECTION:
-                continue
-            ident = _section_snapshot_identity(lo.target.path)
-            idx.setdefault(ident, []).append(i)
-        try:
-            object.__setattr__(replay_history_ops, _IDX_ATTR, idx)
-            object.__setattr__(replay_history_ops, _LEN_ATTR, cur_len)
-        except (TypeError, AttributeError):
-            pass
+        _add_section_snapshots_to_index(idx, replay_history_ops, start=start, stop=cur_len)
+        replay_history_ops.snapshot_index = _SectionSnapshotIndex(
+            by_identity=idx,
+            indexed_len=cur_len,
+        )
     indices = idx.get(target_identity)
     if not indices:
         return []
     return [replay_history_ops[i] for i in indices]
+
+
+def _add_section_snapshots_to_index(
+    idx: dict[SectionSnapshotIdentity, list[int]],
+    replay_history_ops: List[_LegalOperation],
+    *,
+    start: int,
+    stop: int,
+) -> None:
+    for i in range(start, stop):
+        lo = replay_history_ops[i]
+        if not lo.op_id.startswith("snapshot_section_"):
+            continue
+        if lo.payload is None or lo.payload.kind is not IRNodeKind.SECTION:
+            continue
+        ident = _section_snapshot_identity(lo.target.path)
+        idx.setdefault(ident, []).append(i)
 
 
 def _prior_non_temporary_section_snapshot_payload(
@@ -741,7 +830,6 @@ def _timeline_target_exists(
     """Return True if target_path already exists in base or prior emitted replay history."""
     if base_ir is not None and _tops.resolve(base_ir, target_path) is not None:
         return True
-    target_address = LegalAddress(path=target_path)
     for lo in replay_history_ops:
         lo_effective = lo.source.effective if lo.source is not None else ""
         if before_effective and lo_effective and lo_effective >= before_effective:
@@ -751,11 +839,162 @@ def _timeline_target_exists(
         if (
             lo.payload is not None
             and len(lo.target.path) < len(target_path)
-            and target_address.has_path_prefix(lo.target)
+            and target_path[: len(lo.target.path)] == lo.target.path
             and _payload_contains_relative_target(lo.payload, target_path[len(lo.target.path) :])
         ):
             return True
     return False
+
+
+def _timeline_exact_target_exists_in_history(
+    replay_history_ops: List[_LegalOperation],
+    target_path: Path,
+    *,
+    before_effective: str = "",
+) -> bool:
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        for lo in replay_history_ops:
+            lo_effective = lo.source.effective if lo.source is not None else ""
+            if before_effective and lo_effective and lo_effective >= before_effective:
+                continue
+            if lo.target.path == target_path:
+                return True
+        return False
+
+    cur_len = len(replay_history_ops)
+    index: _TimelineExactTargetIndex | None = replay_history_ops.timeline_exact_target_index  # type: ignore[assignment]
+    if index is None or index.indexed_len > cur_len:
+        earliest_effective_by_path: dict[Path, str] = {}
+        start = 0
+    else:
+        earliest_effective_by_path = index.earliest_effective_by_path
+        start = index.indexed_len
+    if start < cur_len:
+        for idx in range(start, cur_len):
+            lo = replay_history_ops[idx]
+            effective = lo.source.effective if lo.source is not None else ""
+            existing = earliest_effective_by_path.get(lo.target.path)
+            if existing is None or not effective or (existing and effective < existing):
+                earliest_effective_by_path[lo.target.path] = effective
+        replay_history_ops.timeline_exact_target_index = _TimelineExactTargetIndex(
+            earliest_effective_by_path=earliest_effective_by_path,
+            indexed_len=cur_len,
+        )
+    earliest_effective = earliest_effective_by_path.get(target_path)
+    if earliest_effective is None:
+        return False
+    if not before_effective:
+        return True
+    return not earliest_effective or earliest_effective < before_effective
+
+
+def _latest_target_op_for_path(
+    replay_history_ops: List[_LegalOperation],
+    target_path: Path,
+) -> _LegalOperation | None:
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        for lo in reversed(replay_history_ops):
+            if lo.target.special is not None:
+                continue
+            if lo.target.path == target_path:
+                return lo
+        return None
+
+    cur_len = len(replay_history_ops)
+    index: _TimelineLatestTargetOpIndex | None = replay_history_ops.timeline_latest_target_op_index  # type: ignore[assignment]
+    if index is None or index.indexed_len > cur_len:
+        latest_by_path: dict[Path, _LegalOperation] = {}
+        start = 0
+    else:
+        latest_by_path = index.latest_by_path
+        start = index.indexed_len
+    if start < cur_len:
+        for idx in range(start, cur_len):
+            lo = replay_history_ops[idx]
+            if lo.target.special is None:
+                latest_by_path[lo.target.path] = lo
+        replay_history_ops.timeline_latest_target_op_index = _TimelineLatestTargetOpIndex(
+            latest_by_path=latest_by_path,
+            indexed_len=cur_len,
+        )
+    return latest_by_path.get(tuple(target_path))
+
+
+def _record_payload_descendant_paths(
+    parent_path: Path,
+    payload: IRNode,
+    *,
+    effective: str,
+    earliest_effective_by_path: dict[Path, str],
+) -> None:
+    """Record labelled descendant paths under a legal-operation payload."""
+    stack: list[tuple[Path, IRNode]] = [
+        (parent_path, child)
+        for child in reversed(payload.children)
+        if child.label
+    ]
+    while stack:
+        path, node = stack.pop()
+        node_path = path + ((_kind_str(node.kind), node.label),)
+        existing = earliest_effective_by_path.get(node_path)
+        if existing is None or not effective or (existing and effective < existing):
+            earliest_effective_by_path[node_path] = effective
+        for child in reversed(node.children):
+            if child.label:
+                stack.append((node_path, child))
+
+
+def _timeline_payload_target_exists_in_history(
+    replay_history_ops: List[_LegalOperation],
+    target_path: Path,
+    *,
+    before_effective: str = "",
+) -> bool:
+    """Return True if a prior operation payload contains target_path.
+
+    This is the indexed equivalent of the descendant-payload branch in
+    ``_timeline_target_exists``.  Effective-date cutoff semantics intentionally
+    mirror that scanner: undated operations remain visible under a cutoff, and
+    dated operations at/after ``before_effective`` are ignored.
+    """
+    if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        return _timeline_target_exists(
+            target_path,
+            replay_history_ops=replay_history_ops,
+            base_ir=None,
+            before_effective=before_effective,
+        )
+
+    cur_len = len(replay_history_ops)
+    index: _TimelinePayloadTargetIndex | None = replay_history_ops.timeline_payload_target_index  # type: ignore[assignment]
+    if index is None or index.indexed_len > cur_len:
+        earliest_effective_by_path: dict[Path, str] = {}
+        start = 0
+    else:
+        earliest_effective_by_path = index.earliest_effective_by_path
+        start = index.indexed_len
+    if start < cur_len:
+        for idx in range(start, cur_len):
+            lo = replay_history_ops[idx]
+            if lo.payload is None:
+                continue
+            effective = lo.source.effective if lo.source is not None else ""
+            _record_payload_descendant_paths(
+                lo.target.path,
+                lo.payload,
+                effective=effective,
+                earliest_effective_by_path=earliest_effective_by_path,
+            )
+        replay_history_ops.timeline_payload_target_index = _TimelinePayloadTargetIndex(
+            earliest_effective_by_path=earliest_effective_by_path,
+            indexed_len=cur_len,
+        )
+    earliest_effective = earliest_effective_by_path.get(tuple(target_path))
+    if earliest_effective is None:
+        return False
+    if not before_effective:
+        return True
+    return not earliest_effective or earliest_effective < before_effective
 
 
 def _container_replace_prior_child_paths(
@@ -888,9 +1127,54 @@ def _emit_section_snapshot(
     normalized_target_norm = _norm_num_token(target_norm)
 
     op_source = _snapshot_op_source(group_rops, amendment_id, source_title, source_issue_date, source_effective_date)
+    base_provision_index = _base_provision_index_for_replay_history(lo_ops_out, base_ir)
 
     def _timeline_path(tree_path: Path) -> Path:
         return tuple((k, v) for k, v in tree_path if v)
+
+    def _timeline_target_exists_for_snapshot(
+        target_path: Path,
+        *,
+        replay_history_ops: List[_LegalOperation],
+        base_ir: IRNode | None,
+        before_effective: str = "",
+    ) -> bool:
+        if not replay_history_ops:
+            return _base_target_exists_for_replay_history(lo_ops_out, base_ir, tuple(target_path))
+        normalized_target_path = tuple(target_path)
+        cache: dict[tuple[object, ...], bool] | None = None
+        if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
+            if lo_ops_out.timeline_target_exists_cache is None:
+                lo_ops_out.timeline_target_exists_cache = {}
+            cache = lo_ops_out.timeline_target_exists_cache  # type: ignore[assignment]
+        history_key = id(replay_history_ops) if replay_history_ops else 0
+        true_key = (normalized_target_path, history_key, id(base_ir), before_effective)
+        len_key = (normalized_target_path, history_key, len(replay_history_ops), id(base_ir), before_effective)
+        if cache is not None:
+            if cache.get(true_key) is True:
+                return True
+            cached = cache.get(len_key)
+            if cached is not None:
+                return cached
+        if _timeline_exact_target_exists_in_history(
+            replay_history_ops,
+            normalized_target_path,
+            before_effective=before_effective,
+        ):
+            exists = True
+        elif _base_target_exists_for_replay_history(lo_ops_out, base_ir, normalized_target_path):
+            exists = True
+        else:
+            exists = _timeline_payload_target_exists_in_history(
+                replay_history_ops,
+                normalized_target_path,
+                before_effective=before_effective,
+            )
+        if cache is not None:
+            if exists:
+                cache[true_key] = True
+            cache[len_key] = exists
+        return exists
 
     resolved_path: Optional[Path] = None
     payload: Optional[IRNode] = None
@@ -1683,12 +1967,7 @@ def _emit_section_snapshot(
         )
 
     def _latest_snapshot_for_path(target_path: Path) -> _LegalOperation | None:
-        for lo in reversed(lo_ops_out):
-            if lo.target.special is not None:
-                continue
-            if lo.target.path == target_path:
-                return lo
-        return None
+        return _latest_target_op_for_path(lo_ops_out, target_path)
 
     def _drop_expired_temporary_paragraph_children(
         child_path: Path,
@@ -2020,6 +2299,24 @@ def _emit_section_snapshot(
         if section_payload.kind is not IRNodeKind.SECTION:
             return None
 
+        def _targets_current_section(rop: ResolvedOp) -> bool:
+            section_label = rop.resolved_target_section_label or rop.target_norm
+            if _norm_num_token(str(section_label or "")) != normalized_target_norm:
+                return False
+            rop_chapter = rop.resolved_target_scope_chapter_label
+            if target_chapter and rop_chapter and _norm_num_token(rop_chapter) != _norm_num_token(target_chapter):
+                return False
+            rop_part = rop.resolved_target_scope_part_label
+            if target_part and rop_part and _norm_num_token(rop_part) != _norm_num_token(target_part):
+                return False
+            return True
+
+        section_group_rops = [
+            rop for rop in group_rops if _targets_current_section(rop)
+        ]
+        if not section_group_rops:
+            return None
+
         subsection_payloads: dict[str, IRNode] = {}
         pending_subsection_payloads: list[_PendingSubsectionSnapshotPayload] = []
         repealed_item_labels_by_subsection: dict[str, set[str]] = {}
@@ -2027,8 +2324,7 @@ def _emit_section_snapshot(
         renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
-        has_payload_bearing_renumber = False
-        for rop in group_rops:
+        for rop in section_group_rops:
             if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
                 continue
             if rop.is_renumber_action and rop.targets_subsection_only():
@@ -2050,7 +2346,6 @@ def _emit_section_snapshot(
                         return None
                     subsection_payloads[destination_label] = relabelled
                     whole_subsection_targets.add(destination_label)
-                    has_payload_bearing_renumber = True
                 continue
             if rop.is_repeal_action:
                 if not (
@@ -2128,10 +2423,8 @@ def _emit_section_snapshot(
                     pending_payload.item_norm
                 )
 
-        if not (has_insert or has_payload_bearing_renumber) or (
-            len(subsection_payloads) < 2 and not renumber_destinations
-        ):
-            has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
+        if len(subsection_payloads) < 2 and not renumber_destinations:
+            has_item_payload = any(rop.resolved_target_item_label is not None for rop in section_group_rops)
             if not has_item_payload or not subsection_payloads:
                 return None
 
@@ -2243,7 +2536,7 @@ def _emit_section_snapshot(
             if not payload_items:
                 item_labels = {
                     _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
-                    for rop in group_rops
+                    for rop in section_group_rops
                     if _norm_num_token(str(rop.resolved_target_subsection_label or "").strip()) == label
                     and rop.resolved_target_item_label
                 }
@@ -2336,13 +2629,14 @@ def _emit_section_snapshot(
                     + flattened_item_payload_count,
                 )
             )
-        return IRNode(
+        merged_section = IRNode(
             kind=section_payload.kind,
             label=section_payload.label,
             text=section_payload.text,
             attrs=dict(section_payload.attrs),
             children=tuple(current_children[:first_current_subsection] + merged_subsections),
         )
+        return _drop_shifted_expired_temporary_subsection_payload(section_path, merged_section) or merged_section
 
     def _whole_target_renumber_without_payload() -> bool:
         if payload is not None:
@@ -2449,6 +2743,7 @@ def _emit_section_snapshot(
                     normalized_target_norm,
                     scope_kind="chapter" if target_chapter else None,
                     scope_label=target_chapter,
+                    label_index=base_provision_index,
                 )
         elif target_unit_kind == "chapter":
             raw_path = _lookup_container_path_in_tree(base_ir, "chapter")
@@ -2528,7 +2823,7 @@ def _emit_section_snapshot(
             return False
         return (
             _base_resolved_path() is None
-            and _timeline_target_exists(
+            and _timeline_target_exists_for_snapshot(
                 tuple(resolved_path),
                 replay_history_ops=lo_ops_out,
                 base_ir=base_ir,
@@ -2665,13 +2960,26 @@ def _emit_section_snapshot(
                 target_chapter,
                 target_part,
             )
-            if live_raw_path is not None:
+            if payload is None and live_raw_path is not None:
                 live_payload = _tops.resolve(state.ir, live_raw_path)
                 if live_payload is not None:
                     payload = live_payload
                     if resolved_path is None:
                         emitted_path = _project_snapshot_path(live_raw_path) or live_raw_path
                         resolved_path = _timeline_path(emitted_path)
+            if payload is None and resolved_path is not None:
+                for rop in group_rops:
+                    source_payload = rop.muutos_ir
+                    if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
+                        continue
+                    if (
+                        source_payload.label
+                        and _norm_num_token(source_payload.label) != normalized_target_norm
+                    ):
+                        continue
+                    payload = source_payload
+                    payload_from_muutos_ir = True
+                    break
         if payload is None:
             expected_kind = _group_payload_kind()
             if expected_kind is not None:
@@ -2868,7 +3176,7 @@ def _emit_section_snapshot(
         and action is StructuralAction.REPLACE
         and target_unit_kind in {"chapter", "part"}
         and _base_resolved_path() is None
-        and not _timeline_target_exists(
+        and not _timeline_target_exists_for_snapshot(
             tuple(resolved_path),
             replay_history_ops=lo_ops_out,
             base_ir=base_ir,
@@ -2893,7 +3201,12 @@ def _emit_section_snapshot(
             prior_path = lo.target.path
             break
         if prior_path is None and base_ir is not None:
-            base_raw_path = _tops.find(base_ir, "section", target_norm)
+            base_raw_path = _tops.find(
+                base_ir,
+                "section",
+                target_norm,
+                label_index=base_provision_index,
+            )
             if base_raw_path is not None:
                 base_path = tuple(_timeline_path(base_raw_path))
                 if base_path != current_path:
@@ -2944,7 +3257,7 @@ def _emit_section_snapshot(
         action is StructuralAction.REPLACE
         and payload is not None
         and base_path is None
-        and _timeline_target_exists(
+        and _timeline_target_exists_for_snapshot(
             tuple(resolved_path),
             replay_history_ops=lo_ops_out,
             base_ir=base_ir,
@@ -3023,6 +3336,16 @@ def _emit_section_snapshot(
         source_pathologies_out=source_pathologies_out,
         source_statute=op_source.statute_id,
     )
+    if (
+        action in {StructuralAction.REPLACE, StructuralAction.INSERT}
+        and resolved_path is not None
+        and target_unit_kind == "section"
+        and payload is not None
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
+        if pruned_payload is not None:
+            payload = pruned_payload
     lo_ops_out.append(
         _LegalOperation(
             op_id=_snapshot_op_id(target_unit_kind, target_norm),
@@ -3111,12 +3434,12 @@ def _emit_section_snapshot(
                 if rop_source is not None:
                     child_source = rop_source
                     break
-            child_base_exists = _timeline_target_exists(
+            child_base_exists = _timeline_target_exists_for_snapshot(
                 child_path,
                 replay_history_ops=[],
                 base_ir=base_ir,
             )
-            child_replay_exists = _timeline_target_exists(
+            child_replay_exists = _timeline_target_exists_for_snapshot(
                 child_path,
                 replay_history_ops=lo_ops_out,
                 base_ir=base_ir,
@@ -3158,7 +3481,7 @@ def _emit_section_snapshot(
             if _norm_num_token(target_label) in payload_subsection_labels:
                 continue
             child_path = section_path + (("subsection", target_label),)
-            if not _timeline_target_exists(
+            if not _timeline_target_exists_for_snapshot(
                 child_path,
                 replay_history_ops=lo_ops_out,
                 base_ir=base_ir,

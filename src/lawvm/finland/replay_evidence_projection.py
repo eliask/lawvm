@@ -54,6 +54,7 @@ class ReplayEvidenceProjectionRequest:
     replay_meta_out: Optional[Dict[str, object]]
     strict_profile: Optional[StrictProfile]
     replay_print: Callable[[str], None]
+    mutation_invariant_reports: list[ApplyMutationInvariantReport] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,12 +298,14 @@ def _replay_evidence_meta_projections(
 def _append_mutation_report_findings(
     request: ReplayEvidenceProjectionRequest,
 ) -> tuple[ApplyMutationInvariantReport, ...]:
-    if not request.mutation_events:
+    if request.mutation_invariant_reports:
+        mutation_invariant_reports = tuple(request.mutation_invariant_reports)
+    elif request.mutation_events:
+        mutation_invariant_reports = build_apply_mutation_invariant_reports(
+            request.mutation_events
+        )
+    else:
         return ()
-
-    mutation_invariant_reports = build_apply_mutation_invariant_reports(
-        request.mutation_events
-    )
     seen_apply_mutation_findings: set[tuple[str, str, str, str]] = set()
     for report in mutation_invariant_reports:
         for accounting_result in report.results:

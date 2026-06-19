@@ -38,6 +38,13 @@ from lawvm.core.parse_witness import ParseWitness
 from lawvm.finland.source_verb import SourceVerb
 
 _SPLIT_PYKALA_SUFFIXES = frozenset({"n", "in", "en", "ään", "iin", "aan", "een", "ää", "ssä", "stä", "ksi"})
+_WHITESPACE_RE = re.compile(r"\s+")
+_PYKALA_APOSTROPHE_RE = re.compile(r"§:'")
+_MISSING_PYKALA_RE = re.compile(
+    r"(\d+):n\s+(\d+)\s+(momentti|momentin|kohta|kohdan)\b"
+)
+_GLUED_NUMERIC_CONJ_RE = re.compile(r"^(\d+[a-z]?)(ja|sekä)$", re.I)
+_PLAIN_NUMERIC_LABEL_RE = re.compile(r"^\d+[a-z]?$", re.I)
 
 
 def tokenize(text: str) -> list[Token]:
@@ -57,17 +64,13 @@ def _tokenize_tuple(text: str) -> tuple[Token, ...]:
     support character-level span highlighting in the viewer.
     """
     # Normalize whitespace — offsets are relative to this normalized form
-    text = re.sub(r"\s+", " ", text).strip()
+    text = _WHITESPACE_RE.sub(" ", text).strip()
     # Normalize §-suffix apostrophes: "§:'ään" → "§:ään" (Finlex XML artifact)
-    text = re.sub(r"§:'", "§:", text)
+    text = _PYKALA_APOSTROPHE_RE.sub("§:", text)
     # Normalize missing § in "N:n M momentti/kohta" patterns (source pathology).
     # Some johtolause texts accidentally omit the § sign before the genitive suffix,
     # e.g. "94:n 1 momentti" instead of "94 §:n 1 momentti".  Restore the §.
-    text = re.sub(
-        r"(\d+):n\s+(\d+)\s+(momentti|momentin|kohta|kohdan)\b",
-        r"\1 §:n \2 \3",
-        text,
-    )
+    text = _MISSING_PYKALA_RE.sub(r"\1 §:n \2 \3", text)
 
     # Split into raw fragments, tracking their positions in the normalized text
     raw_parts: list[tuple[str, int]] = []  # (fragment, char_start)
@@ -128,7 +131,7 @@ def _tokenize_tuple(text: str) -> tuple[Token, ...]:
 
     def _split_glued_numeric_conjunction(idx: int) -> tuple[list[Token], int] | None:
         raw, char_off = raw_parts[idx]
-        m = re.match(r"^(\d+[a-z]?)(ja|sekä)$", raw, flags=re.I)
+        m = _GLUED_NUMERIC_CONJ_RE.match(raw)
         if not m:
             return None
         if idx + 2 >= len(raw_parts):
@@ -136,7 +139,7 @@ def _tokenize_tuple(text: str) -> tuple[Token, ...]:
 
         next_raw = raw_parts[idx + 1][0]
         next_next_raw = raw_parts[idx + 2][0].lower()
-        if not re.match(r"^\d+[a-z]?$", next_raw, flags=re.I):
+        if not _PLAIN_NUMERIC_LABEL_RE.match(next_raw):
             return None
         if next_next_raw not in {"§", "momentti", "momentin", "kohta", "kohdan", "luku", "luvun"}:
             return None

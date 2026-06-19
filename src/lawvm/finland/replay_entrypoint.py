@@ -15,11 +15,12 @@ from typing import Optional, cast
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
 from lawvm.finland.amendment_selection import resolve_applicable_amendment_records
 from lawvm.finland.chapter_seed import seed_missing_chapters as _seed_missing_chapters
-from lawvm.finland.consolidated_store import (
-    ConsolidatedArtifactSelector,
-    select_cached_consolidated_artifact_with_info as _select_artifact_with_info,
+from lawvm.finland.consolidated_store import ConsolidatedArtifactSelector
+from lawvm.finland.corpus import (
+    _get_corpus_store,
+    _selected_consolidated_locator_and_provenance_for_statute,
+    get_consolidated_oracle_suspect,
 )
-from lawvm.finland.corpus import _get_corpus_store, get_consolidated_oracle_suspect
 from lawvm.finland.future_repeal import build_future_repeal_suffix
 from lawvm.finland.future_repeal_prescan import _pre_scan_repeal_targets
 from lawvm.finland.helpers import _fi_label_postprocessor
@@ -197,6 +198,7 @@ def replay_xml(
                 replay_meta_out=replay_meta_out,
                 strict_profile=strict_profile,
                 replay_print=_replay_print,
+                mutation_invariant_reports=signals.mutation_invariant_reports,
             )
         )
         products = assemble_replay_products(
@@ -246,11 +248,13 @@ def _oracle_selector_info(
     archive = getattr(corpus, "_archive", None)
     if archive is None or not hasattr(archive, "locators"):
         return None
-    _artifact, provenance = _select_artifact_with_info(
-        archive,
+    _locator, provenance = _selected_consolidated_locator_and_provenance_for_statute(
         parent_id,
+        corpus,  # type: ignore[arg-type]
         selector=cast(Optional[ConsolidatedArtifactSelector], oracle_selector),
     )
+    if provenance is None:
+        return None
     return OracleSelectorInfo(
         selector_mode=provenance.selector_mode,
         chosen_artifact_version=provenance.chosen_version_tag,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace as dc_replace
+from functools import lru_cache
 from typing import List, Literal, Optional, Set, TYPE_CHECKING
 
 import lxml.etree as etree
@@ -42,6 +43,12 @@ VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID = "PARSE.VTS_PARAGRAPHIZED_REPEAL_FR
 # attribute the divergence back to this transitional-provision repeal-extraction lane
 # instead of dropping it into the unattributed blind-spot bucket.
 FI_VTS_VOIMAANTULO_REPEAL_RULE_ID = "fi.repeal_vts_voimaantulo"
+
+
+def _source_may_contain_vts_repeal(xml_bytes: bytes) -> bool:
+    """Return True when raw XML contains a VTS repeal trigger family."""
+    lowered = xml_bytes.lower()
+    return b"kumotaan" in lowered or (b"ottamatta" in lowered and b"voimaan" in lowered)
 
 
 @dataclass(frozen=True)
@@ -171,6 +178,7 @@ def _parent_title_variants(parent_title: str) -> List[str]:
     return list(dict.fromkeys(v for v in variants if v))
 
 
+@lru_cache(maxsize=1024)
 def _vts_parent_citation_re(parent_id: str) -> "re.Pattern[str] | None":
     if not parent_id:
         return None
@@ -309,7 +317,8 @@ def _classify_vts_source_diagnostic(
             source_statute=parent_id,
             source_excerpt=_vts_source_excerpt(xml_bytes),
         )
-    if not _vts_candidate_containers(tree):
+    candidate_containers = _vts_candidate_containers(tree)
+    if not candidate_containers:
         return VtsSourceDiagnostic(
             rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
             reason_code="no_candidate_containers",
@@ -317,9 +326,11 @@ def _classify_vts_source_diagnostic(
             source_statute=parent_id,
             source_excerpt=_vts_source_excerpt(xml_bytes),
         )
+    if b"kumotaan" not in xml_bytes.lower():
+        return None
     citation_re = _vts_parent_citation_re(parent_id)
     title_variants = _parent_title_variants(parent_title)
-    for container in reversed(_vts_candidate_containers(tree)):
+    for container in reversed(candidate_containers):
         paragraphs = container.findall(".//{*}paragraph")
         if not paragraphs:
             continue
@@ -356,6 +367,7 @@ def _classify_vts_source_diagnostic(
 # ("sovelletaan"). Distinguishing the two requires checking that an enacting
 # "kumotaan" precedes the parent reference within the same sentence.
 _VTS_REPEAL_ENACT_RE = re.compile(r"\bkumotaan\b", re.IGNORECASE)
+_CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b', re.IGNORECASE)
 
 
 def _has_repeal_enactment_before(text: str, ref_start: int) -> bool:
@@ -667,22 +679,9 @@ def _voimaantulo_force_except_fragment_for_parent(
     """
     if not parent_id:
         return ""
-    try:
-        parent_year, parent_num_str = parent_id.split("/")
-        parent_num = int(parent_num_str)
-    except (ValueError, AttributeError):
+    citation_re = _vts_parent_citation_re(parent_id)
+    if citation_re is None:
         return ""
-    parent_year_short = parent_year[-2:]
-    citation_re = re.compile(
-        r"\(\s*"
-        + re.escape(str(parent_num))
-        + r"\s*/\s*(?:"
-        + re.escape(parent_year)
-        + r"|"
-        + re.escape(parent_year_short)
-        + r")\s*\)",
-        re.IGNORECASE,
-    )
     title_variants = _parent_title_variants(parent_title)
     try:
         tree = etree.fromstring(xml_bytes)
@@ -787,6 +786,13 @@ def extract_voimaantulo_repeals(
     All returned ops carry ``op_type='REPEAL'`` and typed
     ``voimaantulo_repeal=True`` provenance.
     """
+    if not _source_may_contain_vts_repeal(xml_bytes):
+        if source_diagnostics_out is not None:
+            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
+            if diagnostic is not None:
+                source_diagnostics_out.append(diagnostic)
+        return []
+
     fragment = _voimaantulo_repeal_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
         fragment = _voimaantulo_force_except_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
@@ -801,8 +807,7 @@ def extract_voimaantulo_repeals(
     seen_labels: Set[tuple[str, int | None, str | None, str | None] | str] = set()
 
     def _chapter_scoped_address_blocks(text: str) -> List[tuple[str | None, List[ParsedLegalAddress]]]:
-        chapter_marker_re = re.compile(r'(\d+(?:\s*[a-z])?)\s+luvun\b', re.IGNORECASE)
-        markers = list(chapter_marker_re.finditer(text))
+        markers = list(_CHAPTER_MARKER_RE.finditer(text))
         if not markers:
             return [(None, parse_legal_addresses(text))]
 

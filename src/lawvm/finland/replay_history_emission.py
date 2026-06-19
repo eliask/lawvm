@@ -12,7 +12,11 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland.source_pathology import build_temporary_section_rebase_pathology
 from lawvm.finland.apply_ir_ops import _relabel_subsection_ir
-from lawvm.finland.apply_runtime_support import _snapshot_op_source, _valid_target_group_path_hint
+from lawvm.finland.apply_runtime_support import (
+    _base_provision_index_for_replay_history,
+    _snapshot_op_source,
+    _valid_target_group_path_hint,
+)
 from lawvm.finland.ops import ResolvedOp
 
 if TYPE_CHECKING:
@@ -73,7 +77,17 @@ def emit_granular_subsection_timeline_ops(
     first_group = first.resolved_group_key_view
     if first_group.unit_kind != "section":
         return False
-    if base_ir is None or _tops.find(base_ir, "section", first_group.target_norm) is None:
+    base_provision_index = _base_provision_index_for_replay_history(lo_ops_out, base_ir)
+    if (
+        base_ir is None
+        or _tops.find(
+            base_ir,
+            "section",
+            first_group.target_norm,
+            label_index=base_provision_index,
+        )
+        is None
+    ):
         return False
 
     for rop in group_rops:

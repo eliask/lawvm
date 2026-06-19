@@ -42,10 +42,10 @@ _ITEM_TAGS = frozenset({"paragraph", "point", "item"})
 # eId label extractors — the SAME forms the reference resolver parses
 # (``chp_N``, ``sec_M[vNNN]``, ``subsec_K[vNNN]``, ``para_L``). Version suffix
 # ``vNNNN`` is stripped so the label is version-agnostic.
-_CHP_EID_RE = re.compile(r"(?:^|__)chp_([0-9a-zA-Z]+?)(?:v\d+)?(?=__|$)")
-_SEC_EID_RE = re.compile(r"(?:^|__)sec_([0-9a-zA-Z]+?)(?:v\d+)?(?=__|$)")
-_SUBSEC_EID_RE = re.compile(r"(?:^|__)subsec_(\d+)(?:v\d+)?(?=__|$)")
-_ITEM_EID_RE = re.compile(r"(?:^|__)(?:para|point|item)_([0-9a-zA-Z]+?)(?:v\d+)?(?=__|$)")
+_CHP_EID_RE = re.compile(r"(?:^|__)chp_([0-9a-zA-Z]{1,32})v\d{1,8}(?=__|$)|(?:^|__)chp_([0-9a-zA-Z]{1,32})(?=__|$)")
+_SEC_EID_RE = re.compile(r"(?:^|__)sec_([0-9a-zA-Z]{1,32})v\d{1,8}(?=__|$)|(?:^|__)sec_([0-9a-zA-Z]{1,32})(?=__|$)")
+_SUBSEC_EID_RE = re.compile(r"(?:^|__)subsec_(\d{1,8})v\d{1,8}(?=__|$)|(?:^|__)subsec_(\d{1,8})(?=__|$)")
+_ITEM_EID_RE = re.compile(r"(?:^|__)(?:para|point|item)_([0-9a-zA-Z]{1,32})v\d{1,8}(?=__|$)|(?:^|__)(?:para|point|item)_([0-9a-zA-Z]{1,32})(?=__|$)")
 
 # Bare label from a ``<num>`` surface, used when a container carries no eId
 # (pre-eId Finlex consolidations). ``1 §`` -> ``1``; ``115 a §`` -> ``115a``;
@@ -57,6 +57,13 @@ _NUM_ALPHA_RE = re.compile(r"([a-zA-Z\xe4\xf6\xc4\xd6])")
 def _localname(tag: object) -> str:
     if isinstance(tag, str):
         return tag.rsplit("}", 1)[-1]
+    return ""
+
+
+def _first_match_group(match: re.Match[str]) -> str:
+    for value in match.groups():
+        if value:
+            return value
     return ""
 
 
@@ -124,7 +131,7 @@ def _apply_container(state: _PathState, el: ET.Element, local: str) -> None:
         if eid:
             m = _CHP_EID_RE.search(eid)
             if m is not None:
-                label = m.group(1)
+                label = _first_match_group(m)
         if label is None and num is not None:
             label = _section_label_from_num(num)
         if label is not None:
@@ -135,7 +142,7 @@ def _apply_container(state: _PathState, el: ET.Element, local: str) -> None:
         if eid:
             m = _SEC_EID_RE.search(eid)
             if m is not None:
-                label = m.group(1)
+                label = _first_match_group(m)
         if label is None and num is not None:
             label = _section_label_from_num(num)
         if label is not None:
@@ -146,7 +153,7 @@ def _apply_container(state: _PathState, el: ET.Element, local: str) -> None:
         if eid:
             m = _SUBSEC_EID_RE.search(eid)
             if m is not None:
-                n = int(m.group(1))
+                n = int(_first_match_group(m))
         if n is not None:
             state.subsection_num = n
             state.mapped = True
@@ -155,7 +162,7 @@ def _apply_container(state: _PathState, el: ET.Element, local: str) -> None:
         if eid:
             m = _ITEM_EID_RE.search(eid)
             if m is not None:
-                label = m.group(1)
+                label = _first_match_group(m)
         if label is None and num is not None:
             label = _item_label_from_num(num)
         if label is not None:

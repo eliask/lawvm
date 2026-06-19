@@ -62,6 +62,7 @@ if TYPE_CHECKING:
 
 
 _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE = "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
+_CONTINUATION_ROW_PREFIX_RE = re.compile(r"^(\d+)\.\s+")
 
 
 class SubsectionSlotMap(MutableMapping[int, IRNode]):
@@ -2608,8 +2609,6 @@ def _fold_continuation_row_subsections_into_previous_subsection(
     if ctx.live_node is None:
         return muutos_ir
 
-    row_re = re.compile(r"^(\d+)\.\s+")
-
     def _content_text(sub: IRNode) -> str:
         if len(sub.children) != 1:
             return ""
@@ -2629,7 +2628,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             continue
 
         base_text = _content_text(child)
-        if not base_text or row_re.match(base_text):
+        if not base_text or _CONTINUATION_ROW_PREFIX_RE.match(base_text):
             new_children.append(child)
             i += 1
             continue
@@ -2641,7 +2640,7 @@ def _fold_continuation_row_subsections_into_previous_subsection(
             if sibling.kind is not IRNodeKind.SUBSECTION:
                 break
             row_text = _content_text(sibling)
-            m = row_re.match(row_text)
+            m = _CONTINUATION_ROW_PREFIX_RE.match(row_text)
             if not m:
                 break
             continuation_rows.append(
@@ -2679,7 +2678,21 @@ def _fold_continuation_row_subsections_into_previous_subsection(
     return _tops._with_children(muutos_ir, new_children)
 
 
-_TEXT_TABLE_ROW_RE = re.compile(r"^[^\d\s].{0,90}\s+\d+(?:[,.]\d+)?$")
+def _looks_like_text_table_row(text: str) -> bool:
+    if not text or text[0].isdigit() or text[0].isspace() or "\n" in text:
+        return False
+    if len(text) > 120:
+        return False
+    head, sep, amount = text.rpartition(" ")
+    if not sep or not head:
+        return False
+    amount = amount.replace(",", ".", 1)
+    if amount.count(".") > 1:
+        return False
+    whole, dot, frac = amount.partition(".")
+    if not whole.isdigit() or len(whole) > 12:
+        return False
+    return not dot or (frac.isdigit() and 1 <= len(frac) <= 6)
 
 
 def _content_only_subsection_text(sub: IRNode) -> str:
@@ -2697,7 +2710,7 @@ def _is_text_table_row_subsection(sub: IRNode) -> bool:
         return False
     if "." in text or ":" in text:
         return False
-    return bool(_TEXT_TABLE_ROW_RE.match(text))
+    return _looks_like_text_table_row(text)
 
 
 def _fold_text_table_row_subsections_into_target_subsection(

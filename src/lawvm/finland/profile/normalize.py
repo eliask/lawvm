@@ -136,6 +136,7 @@ _FLAT_DASH_ITEM_RE = re.compile(r"^[–—\-]\s")
 # Leading ``N)`` marker on an inline kohta item, where the body may be empty
 # (the marker sits alone in its own table cell) or follow immediately.
 _INLINE_KOHTA_MARKER_RE = re.compile(r"^\s*(\d+[a-z]?)\)\s*(.*)$", re.DOTALL)
+_LOWER_ALPHA_LABEL_RE = re.compile(r"^[a-z]+$")
 
 
 # ---------------------------------------------------------------------------
@@ -429,13 +430,12 @@ def _apply_recover_intro_labeled_paragraphs(children: List[IRNode]) -> List[IRNo
 
 def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     """Nest letter-labeled paragraphs as subparagraph children of the correct digit paragraph."""
-    _letter_re = re.compile(r"^[a-z]+$")
 
     def _is_digit_label(lbl: Optional[str]) -> bool:
         return bool(lbl and lbl.rstrip(".)").isdigit())
 
     def _is_letter_label(lbl: Optional[str]) -> bool:
-        return bool(lbl and _letter_re.match(lbl))
+        return bool(lbl and _LOWER_ALPHA_LABEL_RE.match(lbl))
 
     para_label_counts: Dict[str, int] = {}
     for child in children:
@@ -462,13 +462,13 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     def _is_roman_label(lbl: Optional[str]) -> bool:
         return bool(lbl and _roman_to_arabic(lbl) is not None)
 
-    if duplicate_labels and not any(_letter_re.match(lbl) for lbl in duplicate_labels):
+    if duplicate_labels and not any(_LOWER_ALPHA_LABEL_RE.match(lbl) for lbl in duplicate_labels):
         if not can_nest_unique_letters_under_introducer:
             return children
 
     has_mixed_compound_family = any(
-        len(lbl) == 1 and cnt > 1 for lbl, cnt in para_label_counts.items() if _letter_re.match(lbl)
-    ) and any(len(lbl) > 1 for lbl in para_label_counts if _letter_re.match(lbl))
+        len(lbl) == 1 and cnt > 1 for lbl, cnt in para_label_counts.items() if _LOWER_ALPHA_LABEL_RE.match(lbl)
+    ) and any(len(lbl) > 1 for lbl in para_label_counts if _LOWER_ALPHA_LABEL_RE.match(lbl))
     duplicate_roman_labels = {
         lbl for lbl, cnt in para_label_counts.items()
         if cnt > 1 and _is_roman_label(lbl)
@@ -547,7 +547,7 @@ def _apply_nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
                 and lbl in duplicate_roman_labels
                 and pending_parent.label is not None
                 and len(str(pending_parent.label)) == 1
-                and _letter_re.match(str(pending_parent.label))
+                and _LOWER_ALPHA_LABEL_RE.match(str(pending_parent.label))
             ):
                 sub = _make_subparagraph(child)
                 pending_parent = _attach_subs(pending_parent, [sub])
@@ -571,13 +571,12 @@ def _apply_nest_repeated_alpha_subparagraphs_under_alpha_parents(
     children: List[IRNode],
 ) -> List[IRNode]:
     """Nest repeated alphabetic subitems under alphabetic parent items with introducers."""
-    alpha_re = re.compile(r"^[a-z]+$")
     para_label_counts: Dict[str, int] = {}
     for child in children:
-        if child.kind == IRNodeKind.PARAGRAPH and child.label and alpha_re.match(child.label):
+        if child.kind == IRNodeKind.PARAGRAPH and child.label and _LOWER_ALPHA_LABEL_RE.match(child.label):
             para_label_counts[child.label] = para_label_counts.get(child.label, 0) + 1
     duplicate_alpha_labels = {
-        lbl for lbl, cnt in para_label_counts.items() if cnt > 1 and alpha_re.match(lbl)
+        lbl for lbl, cnt in para_label_counts.items() if cnt > 1 and _LOWER_ALPHA_LABEL_RE.match(lbl)
     }
     if not duplicate_alpha_labels:
         return children
@@ -610,7 +609,7 @@ def _apply_nest_repeated_alpha_subparagraphs_under_alpha_parents(
             pending_parent = None
 
     for child in children:
-        if child.kind != IRNodeKind.PARAGRAPH or not child.label or not alpha_re.match(child.label):
+        if child.kind != IRNodeKind.PARAGRAPH or not child.label or not _LOWER_ALPHA_LABEL_RE.match(child.label):
             _flush_pending()
             result.append(child)
             continue

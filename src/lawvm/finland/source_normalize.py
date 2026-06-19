@@ -2302,19 +2302,22 @@ def normalize_source_ir(
         children_changed = True
     new_children = stripped_children
 
-    hoisted_children = _hoist_cross_heading_siblings(new_children, statute_id, current_path, facts)
-    if len(hoisted_children) != len(new_children) or any(a is not b for a, b in zip(hoisted_children, new_children, strict=True)):
-        children_changed = True
-    new_children = hoisted_children
+    if len(new_children) >= 2:
+        hoisted_children = _hoist_cross_heading_siblings(new_children, statute_id, current_path, facts)
+        if len(hoisted_children) != len(new_children) or any(
+            a is not b for a, b in zip(hoisted_children, new_children, strict=True)
+        ):
+            children_changed = True
+        new_children = hoisted_children
 
-    reparented_children = _reparent_trailing_chapters_into_preceding_part(
-        new_children, statute_id, current_path, facts
-    )
-    if len(reparented_children) != len(new_children) or any(
-        a is not b for a, b in zip(reparented_children, new_children, strict=True)
-    ):
-        children_changed = True
-    new_children = reparented_children
+        reparented_children = _reparent_trailing_chapters_into_preceding_part(
+            new_children, statute_id, current_path, facts
+        )
+        if len(reparented_children) != len(new_children) or any(
+            a is not b for a, b in zip(reparented_children, new_children, strict=True)
+        ):
+            children_changed = True
+        new_children = reparented_children
 
     # Step 4: rebuild the node with updated children if anything changed.
     working: IRNode = ir
@@ -2340,18 +2343,21 @@ def normalize_source_ir(
         facts,
     )
     # Step 7: split malformed paragraph-local digit resets before generic numbering checks.
-    new_children = list(working.children)
-    repaired_children = _split_digit_reset_subparagraph_runs(
-        new_children, statute_id, current_path, facts
-    )
-    if len(repaired_children) != len(new_children) or any(a is not b for a, b in zip(repaired_children, new_children, strict=True)):
-        working = IRNode(
-            kind=working.kind,
-            label=working.label,
-            text=working.text,
-            attrs=working.attrs,
-            children=tuple(repaired_children),
+    if working.children:
+        new_children = list(working.children)
+        repaired_children = _split_digit_reset_subparagraph_runs(
+            new_children, statute_id, current_path, facts
         )
+        if len(repaired_children) != len(new_children) or any(
+            a is not b for a, b in zip(repaired_children, new_children, strict=True)
+        ):
+            working = IRNode(
+                kind=working.kind,
+                label=working.label,
+                text=working.text,
+                attrs=working.attrs,
+                children=tuple(repaired_children),
+            )
 
     # Step 8 is intentionally disabled.
     #
@@ -2430,18 +2436,19 @@ def normalize_source_ir(
             )
 
     # Step 9: detect numbering anomalies (gaps/duplicates) among siblings.
-    new_children = list(working.children)
-    deduped_children = _detect_numbering_anomalies(
-        new_children, statute_id, current_path, facts
-    )
-    if len(deduped_children) != len(new_children):
-        working = IRNode(
-            kind=working.kind,
-            label=working.label,
-            text=working.text,
-            attrs=working.attrs,
-            children=tuple(deduped_children),
+    if len(working.children) >= 2:
+        new_children = list(working.children)
+        deduped_children = _detect_numbering_anomalies(
+            new_children, statute_id, current_path, facts
         )
+        if len(deduped_children) != len(new_children):
+            working = IRNode(
+                kind=working.kind,
+                label=working.label,
+                text=working.text,
+                attrs=working.attrs,
+                children=tuple(deduped_children),
+            )
 
     return working, facts
 

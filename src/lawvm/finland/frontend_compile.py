@@ -1994,13 +1994,22 @@ def _amendment_tree_metadata(
     amendment_id: str,
     muutos_tree: "etree._Element",
 ) -> _AmendmentTreeMetadata:
+    raw_text = etree.tostring(muutos_tree, method="text", encoding="unicode")
     return _AmendmentTreeMetadata(
         source_issue_date=_statute_issue_date(muutos_tree),
         source_title=_tree_title(muutos_tree),
         effective_date=_amendment_effective_date(muutos_tree),
-        expiry_date=_amendment_expiry_date(muutos_tree),
-        provision_expiry_overrides=_temporary_provision_expiry_overrides(muutos_tree, amendment_id),
-        section_expiry_overrides=_temporary_section_expiry_overrides(muutos_tree, amendment_id),
+        expiry_date=_amendment_expiry_date(muutos_tree, raw_text=raw_text),
+        provision_expiry_overrides=_temporary_provision_expiry_overrides(
+            muutos_tree,
+            amendment_id,
+            raw_text=raw_text,
+        ),
+        section_expiry_overrides=_temporary_section_expiry_overrides(
+            muutos_tree,
+            amendment_id,
+            raw_text=raw_text,
+        ),
     )
 
 

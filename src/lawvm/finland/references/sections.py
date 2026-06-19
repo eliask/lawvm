@@ -106,15 +106,48 @@ _CHAPTER_TAIL_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 # A clause separator between successive chapter clauses under one statute head
-# (``… 18 §:ssä, 20 luvussa``): a comma and/or a coordinating joiner. Anchored
-# with ``match`` at the offset just past the consumed text, so only a separator
-# that DIRECTLY follows the consumed run is treated as a clause boundary; the
-# outer loop's chapter-prefix requirement then decides whether a real chapter
-# clause follows. Bounded literals only (§1.11).
-_CLAUSE_SEP_RE = re.compile(
-    r"\s*(?:,\s*)?(?:(?:ja|sek\xe4|tai)\s+)?",
-    re.IGNORECASE,
-)
+# (``… 18 §:ssä, 20 luvussa``): a comma and/or a coordinating joiner. Kept as a
+# scanner rather than an all-optional regex so the empty-separator case remains
+# explicit and bounded.
+@dataclass(frozen=True, slots=True)
+class _ClauseSepMatch:
+    end_pos: int
+
+    def end(self) -> int:
+        return self.end_pos
+
+
+def _match_clause_sep(text: str, pos: int) -> _ClauseSepMatch:
+    i = pos
+    limit = len(text)
+    ws_seen = 0
+    while i < limit and text[i].isspace() and ws_seen < 20:
+        i += 1
+        ws_seen += 1
+    if i < limit and text[i] == ",":
+        i += 1
+        ws_seen = 0
+        while i < limit and text[i].isspace() and ws_seen < 20:
+            i += 1
+            ws_seen += 1
+    lower_tail = text[i : i + 5].lower()
+    for joiner in ("sekä", "tai", "ja"):
+        if not lower_tail.startswith(joiner):
+            continue
+        after = i + len(joiner)
+        if after < limit and not text[after].isspace():
+            continue
+        ws_seen = 0
+        j = after
+        while j < limit and text[j].isspace() and ws_seen < 20:
+            j += 1
+            ws_seen += 1
+        if j > after:
+            i = j
+        break
+    return _ClauseSepMatch(i)
+
+
 # Chapter-run splitter / range / spaced-letter-suffix patterns (module scope per
 # §1.11; bounded quantifiers only).
 _CH_COORD_SPLIT_RE = re.compile(r"\s*(?:,|\bja\b|\bsek\xe4\b|\btai\b)\s*", re.IGNORECASE)
@@ -440,9 +473,7 @@ def parse_body_provision_tail_spanned(tail_text: str) -> BodyTailParse:
         # separator does not introduce a fresh chapter clause.
         first_clause = False
         next_pos = consumed_end
-        sep_m = _CLAUSE_SEP_RE.match(normalized, next_pos)
-        if sep_m is None:
-            break
+        sep_m = _match_clause_sep(normalized, next_pos)
         clause_base = sep_m.end()
 
     if not targets:

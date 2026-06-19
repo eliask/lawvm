@@ -22,18 +22,23 @@ from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
-    check_apply_mutation_accounting,
-    check_apply_mutation_invariant_reports,
 )
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.replay_findings import (
-    _apply_mutation_boundary_violation_finding,
     _apply_mutation_fallback_event_finding,
     _apply_mutation_invariant_report_finding,
 )
 from lawvm.finland.restructure_plan import StructuralTransformPlan
 from lawvm.finland.vts import VtsSkippedTarget
+
+_APPLY_FALLBACK_FINDING_KINDS: tuple[str, ...] = (
+    "APPLY.LEGACY_DISPATCH_FALLBACK",
+    "APPLY.RELABEL_SKIPPED",
+    "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
+    "APPLY.SAME_WAVE_MIGRATION_REBASE",
+    "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
+)
 
 
 @dataclass(slots=True)
@@ -129,28 +134,32 @@ class ProcessResultBuilder:
                 for p in self.buffers.source_pathologies
             )
         if self.buffers.elaboration_observations:
-            merged_findings.extend(
-                Finding(
-                    kind=str(o.get("kind", "")),
-                    role=(
-                        spec.role
-                        if (spec := get_finding_spec(str(o.get("kind", "")).strip())) is not None
-                        and spec.role != "barrier"
-                        else "observation"
-                    ),
-                    stage="process_muutoslaki",
-                    detail=dict(o),
-                    source_statute=str(o.get("source_statute", self.amendment_id)),
-                    blocking=(
-                        spec.role != "observation"
-                        and spec.default_enforcement in ("strict_fail", "hard_fail")
-                        if (spec := get_finding_spec(str(o.get("kind", "")).strip())) is not None
-                        else False
-                    ),
+            for observation in self.buffers.elaboration_observations:
+                kind = str(observation.get("kind", "")).strip()
+                if not kind:
+                    continue
+                spec = get_finding_spec(kind)
+                role = (
+                    spec.role
+                    if spec is not None and spec.role != "barrier"
+                    else "observation"
                 )
-                for o in self.buffers.elaboration_observations
-                if str(o.get("kind", "")).strip()
-            )
+                blocking = (
+                    spec.role != "observation"
+                    and spec.default_enforcement in ("strict_fail", "hard_fail")
+                    if spec is not None
+                    else False
+                )
+                merged_findings.append(
+                    Finding(
+                        kind=str(observation.get("kind", "")),
+                        role=role,
+                        stage="process_muutoslaki",
+                        detail=dict(observation),
+                        source_statute=str(observation.get("source_statute", self.amendment_id)),
+                        blocking=blocking,
+                    )
+                )
         if self.buffers.vts_skipped_targets:
             merged_findings.extend(
                 Finding(
@@ -183,19 +192,6 @@ class ProcessResultBuilder:
             self.sinks.mutation_invariant_reports_out.extend(mutation_invariant_reports)
         self._append_apply_mutation_findings(merged_findings, mutation_invariant_reports)
         self._append_apply_fallback_findings(merged_findings)
-        boundary_violations = (
-            check_apply_mutation_invariant_reports(mutation_invariant_reports)
-            if mutation_invariant_reports
-            else check_apply_mutation_accounting(self.sinks.mutation_events_out or [])
-        )
-        if boundary_violations and not mutation_invariant_reports:
-            merged_findings.extend(
-                _apply_mutation_boundary_violation_finding(
-                    violation=violation,
-                    source_statute=self.amendment_id,
-                )
-                for violation in boundary_violations
-            )
 
         self.project_compat_sinks()
         return PhaseResult(
@@ -245,13 +241,18 @@ class ProcessResultBuilder:
     def _append_apply_fallback_findings(self, merged_findings: list[Finding]) -> None:
         seen: set[tuple[str, str, str, str]] = set()
         for event in self.sinks.mutation_events_out or []:
-            for fallback_kind in (
-                "APPLY.LEGACY_DISPATCH_FALLBACK",
-                "APPLY.RELABEL_SKIPPED",
-                "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
-                "APPLY.SAME_WAVE_MIGRATION_REBASE",
-                "APPLY.RESOLVER_BINDING_CONTRACT_ERROR",
-            ):
+            if not event.used_fallback_tags:
+                continue
+            fallback_tags = frozenset(
+                str(tag).strip()
+                for tag in event.used_fallback_tags
+                if str(tag).strip()
+            )
+            if not fallback_tags:
+                continue
+            for fallback_kind in _APPLY_FALLBACK_FINDING_KINDS:
+                if fallback_kind not in fallback_tags:
+                    continue
                 finding = _apply_mutation_fallback_event_finding(
                     event=event,
                     fallback_kind=fallback_kind,

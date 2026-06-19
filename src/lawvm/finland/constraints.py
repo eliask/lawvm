@@ -34,6 +34,9 @@ _PART_CROSS_HEADING_RE = re.compile(
     r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
     flags=re.I,
 )
+_NON_WORD_DIGIT_RE = re.compile(r"[^\d\w]")
+_LETTER_SUFFIX_TARGET_RE = re.compile(r"^(\d+)[a-z]$")
+_ITEM_LABEL_DECORATION_RE = re.compile(r"[)\s.]")
 
 _CONSTRAINT_REASON_CODES: dict[str, str] = {
     "_c_language_variant": "ELAB.REJECTED_LANGUAGE_VARIANT_ONLY",
@@ -76,7 +79,7 @@ def _find_muutos_node(
 
     def _num_norm(el):
         n = el.find("{*}num")
-        return re.sub(r"[^\d\w]", "", n.text).lower() if n is not None and n.text else ""
+        return _NON_WORD_DIGIT_RE.sub("", n.text).lower() if n is not None and n.text else ""
 
     def _localname(el: "etree._Element") -> str:
         tag = el.tag
@@ -327,7 +330,7 @@ def _find_muutos_node(
             return node
     # Letter-suffix fallback: 5a → try base 5
     if target_unit_kind_text == "section":
-        m = re.match(r"^(\d+)[a-z]$", target_norm)
+        m = _LETTER_SUFFIX_TARGET_RE.match(target_norm)
         if m:
             for node in nodes:
                 if _num_norm(node) == m.group(1):
@@ -773,7 +776,7 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
 
 
 def _normalized_item_label(label: object) -> str:
-    return re.sub(r"[)\s.]", "", str(label or "")).strip().lower()
+    return _ITEM_LABEL_DECORATION_RE.sub("", str(label or "")).strip().lower()
 
 
 def _paragraph_labels(node: IRNode) -> tuple[str, ...]:

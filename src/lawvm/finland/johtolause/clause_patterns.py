@@ -106,6 +106,7 @@ _KNOWN_COMPOUND_REGIONAL_ROW_NAMES = frozenset(
         "turun ja porin",
     }
 )
+_WHITESPACE_RE = re.compile(r"\s+")
 
 _MODIFIER_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
     ("version_qualifier", re.compile(r"\bsellais(?:ena|ina)\b", flags=re.I)),
@@ -120,7 +121,7 @@ _MODIFIER_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
 def _clean_clause_text(text: str) -> str:
     # Callers always pass johto-derived text, which is already Zs-normalized
     # by _normalize_fi_parse_text upstream of normalize_and_compile_ops.
-    return re.sub(r"\s+", " ", text or "").strip()
+    return _WHITESPACE_RE.sub(" ", text or "").strip()
 
 
 def _is_section_reference(text: str) -> bool:

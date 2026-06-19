@@ -78,6 +78,7 @@ _KUMOTTU_STUBS_RE = re.compile(
     rf')[^.]*\.?',
     re.DOTALL | re.IGNORECASE,
 )
+_KUMOTTU_STUB_SURFACE_RE = re.compile(r"\b(?:on|ovat)\s+kumottu\b|:ll[äa]\b", re.IGNORECASE)
 
 _EMBEDDED_FIVE_AS_I_OCR_RE = re.compile(
     r"(?<=[A-Za-zÄÖÅäöå]{2})5(?=[A-Za-zÄÖÅäöå]{2})"
@@ -91,13 +92,69 @@ def _normalize_embedded_five_as_i_ocr(text: str) -> str:
     return _EMBEDDED_FIVE_AS_I_OCR_RE.sub("i", text)
 
 
+_CHEMICAL_LIST_FOLLOW_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÅäöå(")
+
+
+def _normalize_chemical_list_formatting(text: str) -> str:
+    """Linear equivalent of the legacy chemical-list presentation regex."""
+    if "  " not in text and ";;" not in text and " ;" not in text:
+        return text
+    pieces: list[str] = []
+    last = 0
+    i = 0
+    changed = False
+    text_len = len(text)
+    while i < text_len:
+        semicolon_at = text.find(";", i)
+        double_space_at = text.find("  ", i)
+        if semicolon_at < 0 and double_space_at < 0:
+            break
+        if semicolon_at < 0:
+            run_start = double_space_at
+        elif double_space_at < 0:
+            run_start = semicolon_at
+        else:
+            run_start = min(semicolon_at, double_space_at)
+        while run_start > last and text[run_start - 1] in "; ":
+            run_start -= 1
+        run_end = run_start
+        while run_end < text_len and text[run_end] in "; ":
+            run_end += 1
+        if run_end - run_start >= 2:
+            lookahead = run_end
+            while lookahead < text_len and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < text_len and text[lookahead] in _CHEMICAL_LIST_FOLLOW_CHARS:
+                pieces.append(text[last:run_start])
+                pieces.append("; ")
+                last = run_end
+                changed = True
+                i = run_end
+                continue
+        i = max(run_end, run_start + 1)
+    if not changed:
+        return text
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+def _normalize_kumottu_stub_sentences(text: str) -> str:
+    """Remove Finlex kumottu stub sentences after a cheap surface prefilter."""
+    if "kumottu" not in text:
+        return text
+    if _KUMOTTU_STUB_SURFACE_RE.search(text) is None:
+        return text
+    return _KUMOTTU_STUBS_RE.sub('', text)
+
+
 _FINLEX_ORACLE_COMPARISON_RULES = (
     ComparisonNormalizationRule(
         name="fi_oracle_kumottu_stub_sentence",
         rule_class="presentation_cleanup",
-        kind="regex",
+        kind="callable",
         description="Remove Finlex kumottu stub sentences from oracle comparison text.",
-        pattern=_KUMOTTU_STUBS_RE,
+        transform=_normalize_kumottu_stub_sentences,
+        required_substring="kumottu",
     ),
     ComparisonNormalizationRule(
         name="fi_oracle_dot_leader_table_formatting",
@@ -105,6 +162,7 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
         kind="regex",
         description="Remove dot-leader alignment runs (........) used in Finlex for printed fee tables/schedules in small decisions. Pure presentation; content words remain for comparison.",
         pattern=re.compile(r"\.{3,}"),
+        required_substring="...",
     ),
     ComparisonNormalizationRule(
         name="fi_oracle_amendment_date_parenthetical",
@@ -112,6 +170,7 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
         kind="regex",
         description="Remove Finlex amendment-date parenthetical residue from oracle comparison text.",
         pattern=re.compile(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)'),
+        required_substring="(",
     ),
     ComparisonNormalizationRule(
         name="fi_oracle_aiempi_sanamuoto_marker",
@@ -146,14 +205,15 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
             r'|tässä mainittuja aineita sisältävät valmisteet lukuun ottama).*?(?:\.|$)',
             re.IGNORECASE | re.DOTALL
         ),
+        required_any_substrings=("valmisteet", "aineiden suolat"),
     ),
     ComparisonNormalizationRule(
         name="fi_oracle_chemical_list_formatting",
         rule_class="presentation_cleanup",
-        kind="regex",
+        kind="callable",
         description="Normalize common artifacts in Finnish implementations of chemical/controlled substance lists (1961 convention etc.): Greek letter variants, extra punctuation around names like 'Safroli;'. Content names are preserved.",
-        pattern=re.compile(r'[; ]{2,}(?=\s*(?:[A-ZÄÖÅa-zäöå]|\())'),
-        replacement='; ',
+        transform=_normalize_chemical_list_formatting,
+        required_any_substrings=(";", "  "),
     ),
     ComparisonNormalizationRule(
         name="fi_oracle_value_table_formatting",
@@ -162,6 +222,7 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
         description="Normalize monetary value / compensation table artifacts in FI decisions (species values, fees, pinta-alakorvaus etc.): collapse runs of dots or alignment ws in amount columns. Preserves the name + amount semantics.",
         pattern=re.compile(r'\.{2,}\s*|\s{2,}(?=[\d])'),
         replacement=' ',
+        required_any_substrings=("..", "  "),
     ),
 )
 
@@ -246,9 +307,7 @@ def normalize_kumottu_stubs(text: str) -> str:
     This is the canonical Finland oracle-normalization function.  All scoring
     and comparison paths should use this instead of ad-hoc per-file regex subs.
     """
-    if "kumottu" not in text:
-        return text
-    return _KUMOTTU_STUBS_RE.sub('', text)
+    return _normalize_kumottu_stub_sentences(text)
 
 
 def normalize_finlex_oracle_comparison_text(text: str, *, strip_editorial: bool = False) -> str:
@@ -310,6 +369,11 @@ _GROUP_LABEL = re.compile(
 _CHEM_NAMEISH = re.compile(
     r'(?:α|β|γ|[-][a-z]+yl\b|N-\[|fenetyyli|piperidyyli|morfiini|amfetamiini|barbituuri|diatsepiini)', re.I
 )
+_VALUE_ITEM_RE = re.compile(r'[\w\säöåÄÖÅ.,()-]+(?:\d+[\s,]*[€mk]|mk|€|\d+[\s,]*[€mk]|\.{2,}\s*\d)', re.I)
+_BARE_VALUE_ROW_RE = re.compile(r'[\w\säöåÄÖÅ.,()-]{1,500}\s{1,16}\d{1,6}\s{0,16}$', re.I)
+_CHEM_ITEM_RE = re.compile(r';', re.I)
+_WRAPUP_QUALIFIER_RE = re.compile(r'(?:tässä luettelossa|mainittuja aineita sisältävät|tämän luettelon aineiden suolat|valmisteet lukuun ottama)', re.I)
+_DOT_LEADER_RE = re.compile(r'[.]{2,}')
 
 
 def _normalize_for_pres_text(t: str) -> str:
@@ -390,12 +454,6 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
     if not events:
         return False
 
-    _VALUE_ITEM = re.compile(r'[\w\säöåÄÖÅ.,()-]+(?:\d+[\s,]*[€mk]|mk|€|\d+[\s,]*[€mk]|\.{2,}\s*\d)', re.I)
-    _BARE_VALUE_ROW = re.compile(r'[\w\säöåÄÖÅ.,()-]+\s+\d{1,6}\s*$', re.I)
-    _CHEM_ITEM = re.compile(r';', re.I)
-    _WRAPUP_QUALIFIER = re.compile(r'(?:tässä luettelossa|mainittuja aineita sisältävät|tämän luettelon aineiden suolat|valmisteet lukuun ottama)', re.I)
-    _DOT_LEADER = re.compile(r'[\w\säöåÄÖÅ.,()-]+[.]{2,}')
-
     cleaned_text_diffs = 0
     presentation_units = 0
 
@@ -440,8 +498,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
                 and not re.search(r'\b(on|ovat|säädetään|määrätään|tulee|voi|voidaan|ratkaisee|päättää|annetaan)\b', present, re.I)
             )
             group_match = _GROUP_LABEL.search(present) or _GROUP_LABEL.search(present_norm)
-            if (_VALUE_ITEM.search(present) or _BARE_VALUE_ROW.search(present) or _CHEM_ITEM.search(present) or
-                _DOT_LEADER.search(present) or _WRAPUP_QUALIFIER.search(present) or
+            if (_VALUE_ITEM_RE.search(present) or _BARE_VALUE_ROW_RE.search(present) or _CHEM_ITEM_RE.search(present) or
+                _DOT_LEADER_RE.search(present) or _WRAPUP_QUALIFIER_RE.search(present) or
                 name_match or group_match or
                 _TABLE_HEADERISH.search(present) or _CHEM_NAMEISH.search(present)):
                 presentation_units += 1

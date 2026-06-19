@@ -52,6 +52,7 @@ _TABLE_TAG_TO_KIND: Dict[str, IRNodeKind] = {
     "td": IRNodeKind.CELL,
     "th": IRNodeKind.HEADER_CELL,
 }
+_NUM_DECORATION_RE = re.compile(r"[)\s§]")
 
 
 def _tag(el: etree._Element) -> str:
@@ -64,7 +65,7 @@ def _known_ir_kind(tag: str) -> IRNodeKind | None:
 
 def _norm_num(text: str) -> str:
     """Normalize a legal coordinate label (e.g. '12 a §' -> '12a')."""
-    return re.sub(r"[)\s§]", "", text or "").strip().lower()
+    return _NUM_DECORATION_RE.sub("", text or "").strip().lower()
 
 
 def _node_label(

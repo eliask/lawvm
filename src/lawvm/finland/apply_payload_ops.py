@@ -64,11 +64,19 @@ def _find_amend_paragraph(
             return text
         return text[match.end():].lstrip()
 
-    def _as_numbered_payload_paragraph(paragraph: IRNode) -> IRNode:
+    def _as_numbered_payload_paragraph(paragraph: IRNode, *, strip_marker: bool = True) -> IRNode:
+        if not strip_marker:
+            return IRNode(
+                kind=paragraph.kind,
+                label=item_norm,
+                text=paragraph.text,
+                attrs=dict(paragraph.attrs),
+                children=tuple(paragraph.children),
+            )
         children: list[IRNode] = []
         stripped = False
         for child in paragraph.children:
-            if not stripped and child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and child.text:
+            if strip_marker and not stripped and child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and child.text:
                 children.append(
                     IRNode(
                         kind=child.kind,
@@ -108,7 +116,7 @@ def _find_amend_paragraph(
                 continue
             explicit = _leading_item_label(p)
             if explicit == item_norm:
-                return _as_numbered_payload_paragraph(p)
+                return _as_numbered_payload_paragraph(p, strip_marker=False)
         return None
 
     if amend_sub is not None:

@@ -8,16 +8,17 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from functools import lru_cache
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Set, Tuple
 
 import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.finland.body_pairing import build_observed_body_inventory
+from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.ops import (
     ScopeConfidence,
@@ -43,6 +44,145 @@ _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
 # Module-scope constants for restrict_sec1_fallback_to_parent hot path
 _FI_NUMBERED_ITEM_RE = re.compile(r"^\d+\)\s*", re.M)
 _FI_CUT_RE = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiitä\s+on\b", re.I)
+
+
+@dataclass(frozen=True, slots=True)
+class _ChapterSectionIndex:
+    chapter_sections_by_part: dict[str | None, dict[str, set[str]]]
+    section_chapters_by_part: dict[str | None, dict[str, set[str]]]
+
+    def has_section_in_chapter(
+        self,
+        section_label: str,
+        chapter_label: str,
+        *,
+        part_label: str | None = None,
+    ) -> bool:
+        section_norm = _norm_num_token(section_label)
+        chapter_norm = _norm_num_token(chapter_label)
+        part_norm = _norm_num_token(part_label) if part_label else None
+        return section_norm in self.chapter_sections_by_part.get(part_norm, {}).get(chapter_norm, set())
+
+    def section_chapters(
+        self,
+        section_label: str,
+        *,
+        part_label: str | None = None,
+    ) -> set[str]:
+        section_norm = _norm_num_token(section_label)
+        part_norm = _norm_num_token(part_label) if part_label else None
+        return set(self.section_chapters_by_part.get(part_norm, {}).get(section_norm, set()))
+
+    def has_section_in_different_chapter(
+        self,
+        section_label: str,
+        chapter_label: str,
+        *,
+        part_label: str | None = None,
+    ) -> bool:
+        chapter_norm = _norm_num_token(chapter_label)
+        return any(
+            candidate != chapter_norm
+            for candidate in self.section_chapters(section_label, part_label=part_label)
+        )
+
+
+_CHAPTER_SECTION_INDEX_CACHE: dict[tuple[int, int], tuple[IRNode, _ChapterSectionIndex]] = {}
+_CHAPTER_SECTION_INDEX_BY_PROVISION_INDEX_CACHE: dict[int, tuple[object, _ChapterSectionIndex]] = {}
+_PART_SCOPED_CHAPTERS_CACHE: dict[tuple[int, int, str | None], tuple[IRNode, list[IRNode]]] = {}
+
+
+@lru_cache(maxsize=65536)
+def _chapter_section_scope_for_path(
+    path: tuple[tuple[str, str], ...],
+) -> tuple[str | None, str, str] | None:
+    if len(path) < 2 or path[-1][0] != "section" or not path[-1][1]:
+        return None
+    parent_kind, parent_label = path[-2]
+    if parent_kind != "chapter" or not parent_label:
+        return None
+    part_norm = None
+    for kind, label in path[:-2]:
+        if kind == "part" and label:
+            part_norm = _norm_num_token(label)
+    return part_norm, _norm_num_token(parent_label), _norm_num_token(path[-1][1])
+
+
+def _chapter_section_index(master: "ReplayState") -> _ChapterSectionIndex:
+    cache_key = (id(master.ir), getattr(master, "revision", 0))
+    cached = _CHAPTER_SECTION_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] is master.ir:
+        return cached[1]
+
+    chapter_sections_by_part: dict[str | None, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    section_chapters_by_part: dict[str | None, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+
+    provision_index = getattr(master, "provision_index", None)
+    if provision_index is not None:
+        provision_index_cache_key = id(provision_index)
+        cached_by_provision_index = _CHAPTER_SECTION_INDEX_BY_PROVISION_INDEX_CACHE.get(
+            provision_index_cache_key
+        )
+        if (
+            cached_by_provision_index is not None
+            and cached_by_provision_index[0] is provision_index
+        ):
+            index = cached_by_provision_index[1]
+            _CHAPTER_SECTION_INDEX_CACHE[cache_key] = (master.ir, index)
+            return index
+        for (_kind, _label_norm), paths in provision_index.items():
+            if _kind != "section":
+                continue
+            for path in paths:
+                scope = _chapter_section_scope_for_path(path)
+                if scope is None:
+                    continue
+                part_norm, chapter_norm, section_norm = scope
+                chapter_sections_by_part[None][chapter_norm].add(section_norm)
+                section_chapters_by_part[None][section_norm].add(chapter_norm)
+                if part_norm is not None:
+                    chapter_sections_by_part[part_norm][chapter_norm].add(section_norm)
+                    section_chapters_by_part[part_norm][section_norm].add(chapter_norm)
+    else:
+        def _walk(node: IRNode, current_part: str | None) -> None:
+            next_part = current_part
+            if node.kind is IRNodeKind.PART and node.label:
+                next_part = _norm_num_token(node.label)
+            if node.kind is IRNodeKind.CHAPTER and node.label:
+                chapter_norm = _norm_num_token(node.label)
+                for child in node.children:
+                    if child.kind is IRNodeKind.SECTION and child.label:
+                        section_norm = _norm_num_token(child.label)
+                        chapter_sections_by_part[None][chapter_norm].add(section_norm)
+                        section_chapters_by_part[None][section_norm].add(chapter_norm)
+                        if next_part is not None:
+                            chapter_sections_by_part[next_part][chapter_norm].add(section_norm)
+                            section_chapters_by_part[next_part][section_norm].add(chapter_norm)
+            for child in node.children:
+                _walk(child, next_part)
+
+        _walk(master.ir, None)
+    index = _ChapterSectionIndex(
+        chapter_sections_by_part={
+            part: dict(chapters)
+            for part, chapters in chapter_sections_by_part.items()
+        },
+        section_chapters_by_part={
+            part: dict(sections)
+            for part, sections in section_chapters_by_part.items()
+        },
+    )
+    if len(_CHAPTER_SECTION_INDEX_CACHE) > 512:
+        _CHAPTER_SECTION_INDEX_CACHE.clear()
+    _CHAPTER_SECTION_INDEX_CACHE[cache_key] = (master.ir, index)
+    if provision_index is not None:
+        if len(_CHAPTER_SECTION_INDEX_BY_PROVISION_INDEX_CACHE) > 512:
+            _CHAPTER_SECTION_INDEX_BY_PROVISION_INDEX_CACHE.clear()
+        _CHAPTER_SECTION_INDEX_BY_PROVISION_INDEX_CACHE[id(provision_index)] = (
+            provision_index,
+            index,
+        )
+    return index
 
 
 @lru_cache(maxsize=1024)
@@ -160,10 +300,12 @@ def _chapter_match_is_repeal_target(text: str, match: "re.Match[str]") -> bool:
 def find_body_section_chapter(
     muutos_tree: etree._Element,
     section_norm: str,
+    *,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
 ) -> str | None:
     """Return the amendment-body chapter label for *section_norm*, if present."""
-    inventory = build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
+    observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
+    for bpu in observed_units:
         if bpu.kind == "section" and _norm_num_token(bpu.label) == section_norm and bpu.chapter_label:
             return bpu.chapter_label
     return None
@@ -350,10 +492,12 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
 def body_has_pseudo_chapter_marker(
     muutos_tree: etree._Element,
     chapter_label: str,
+    *,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
 ) -> bool:
     """Return True if the amendment body contains a pseudo-chapter marker."""
-    inventory = build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
+    observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
+    for bpu in observed_units:
         if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
             tag = getattr(bpu.xml_element, "tag", None)
             if tag is not None and etree.QName(tag).localname == "section":
@@ -364,10 +508,12 @@ def body_has_pseudo_chapter_marker(
 def body_has_real_chapter_container(
     muutos_tree: etree._Element,
     chapter_label: str,
+    *,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
 ) -> bool:
     """Return True when the amendment body contains a real <chapter> container."""
-    inventory = build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
+    observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
+    for bpu in observed_units:
         if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
             tag = getattr(bpu.xml_element, "tag", None)
             if tag is not None and etree.QName(tag).localname == "chapter":
@@ -381,6 +527,11 @@ def _iter_part_scoped_chapters(
     part_label: str | None = None,
 ) -> list[IRNode]:
     wanted_part = _norm_num_token(part_label) if part_label else None
+    cache_key = (id(master.ir), getattr(master, "revision", 0), wanted_part)
+    cached = _PART_SCOPED_CHAPTERS_CACHE.get(cache_key)
+    if cached is not None and cached[0] is master.ir:
+        return cached[1]
+
     chapters: list[IRNode] = []
 
     def _walk(node: IRNode, current_part: str | None) -> None:
@@ -394,6 +545,9 @@ def _iter_part_scoped_chapters(
             _walk(child, next_part)
 
     _walk(master.ir, None)
+    if len(_PART_SCOPED_CHAPTERS_CACHE) > 1024:
+        _PART_SCOPED_CHAPTERS_CACHE.clear()
+    _PART_SCOPED_CHAPTERS_CACHE[cache_key] = (master.ir, chapters)
     return chapters
 
 
@@ -403,7 +557,14 @@ def _master_has_section_in_chapter(
     chapter_label: str,
     *,
     part_label: str | None = None,
+    chapter_section_index: _ChapterSectionIndex | None = None,
 ) -> bool:
+    if chapter_section_index is not None:
+        return chapter_section_index.has_section_in_chapter(
+            section_label,
+            chapter_label,
+            part_label=part_label,
+        )
     section_norm = _norm_num_token(section_label)
     chapter_norm = _norm_num_token(chapter_label)
     for node in _iter_part_scoped_chapters(master, part_label=part_label):
@@ -425,6 +586,7 @@ def _master_has_section_in_stated_part_different_chapter(
     chapter_label: str,
     *,
     part_label: str | None = None,
+    chapter_section_index: _ChapterSectionIndex | None = None,
 ) -> bool:
     """Return True if the section exists in master within the stated part scope but NOT in the stated chapter.
 
@@ -440,6 +602,12 @@ def _master_has_section_in_stated_part_different_chapter(
     which is the signal that the explicit_chunk scope might be a legitimate
     stale-but-needed scope for the retarget mechanism.
     """
+    if chapter_section_index is not None:
+        return chapter_section_index.has_section_in_different_chapter(
+            section_label,
+            chapter_label,
+            part_label=part_label,
+        )
     section_norm = _norm_num_token(section_label)
     chapter_norm = _norm_num_token(chapter_label)
     for node in _iter_part_scoped_chapters(master, part_label=part_label):
@@ -460,7 +628,13 @@ def _unique_section_chapter(
     section_label: str,
     *,
     part_label: str | None = None,
+    chapter_section_index: _ChapterSectionIndex | None = None,
 ) -> str | None:
+    if chapter_section_index is not None:
+        chapters = chapter_section_index.section_chapters(section_label, part_label=part_label)
+        if len(chapters) != 1:
+            return None
+        return next(iter(chapters))
     section_norm = _norm_num_token(section_label)
     chapters: set[str] = set()
     for node in _iter_part_scoped_chapters(master, part_label=part_label):
@@ -478,11 +652,17 @@ def infer_letter_suffix_section_chapter_from_stem_host(
     section_label: str,
     *,
     part_label: str | None = None,
+    chapter_section_index: _ChapterSectionIndex | None = None,
 ) -> str | None:
     """Infer chapter scope for §Nα when only the bare stem §N still lives."""
     section_norm = _norm_num_token(section_label)
-    if master.find_section_path(section_norm, None, part_label) is not None:
-        return None
+    if chapter_section_index is not None:
+        if chapter_section_index.section_chapters(section_norm, part_label=part_label):
+            return None
+    else:
+        find_section_path = getattr(master, "find_section_path", None)
+        if callable(find_section_path) and find_section_path(section_norm, None, part_label) is not None:
+            return None
     stem_match = re.fullmatch(r"(\d+)([a-z])", section_norm, flags=re.I)
     if stem_match is None:
         return None
@@ -491,6 +671,7 @@ def infer_letter_suffix_section_chapter_from_stem_host(
         master,
         stem,
         part_label=part_label,
+        chapter_section_index=chapter_section_index,
     )
     if stem_chapter is None:
         return None
@@ -499,6 +680,7 @@ def infer_letter_suffix_section_chapter_from_stem_host(
         stem,
         stem_chapter,
         part_label=part_label,
+        chapter_section_index=chapter_section_index,
     ):
         return None
     return stem_chapter
@@ -509,12 +691,18 @@ def _unique_base_section_chapter(
     section_label: str,
     *,
     part_label: str | None = None,
+    chapter_section_index: _ChapterSectionIndex | None = None,
 ) -> str | None:
     norm = _norm_num_token(section_label)
     match = re.fullmatch(r"(\d+)([a-z])", norm, flags=re.I)
     if match is None:
         return None
     base_norm = match.group(1)
+    if chapter_section_index is not None:
+        chapters = chapter_section_index.section_chapters(base_norm, part_label=part_label)
+        if len(chapters) != 1:
+            return None
+        return next(iter(chapters))
     chapters: set[str] = set()
     for node in _iter_part_scoped_chapters(master, part_label=part_label):
         for child in node.children:
@@ -966,6 +1154,7 @@ def assign_chapter_scope_from_johtolause(
     master: "ReplayState",
 ) -> List[_LegalOperation]:
     duplicate_labels = _duplicate_section_labels(master)
+    chapter_section_index = _chapter_section_index(master)
     chunks = chapter_chunks_from_johtolause(johto)
 
     result = list(los)
@@ -990,6 +1179,7 @@ def assign_chapter_scope_from_johtolause(
                 section_label,
                 last_section_chapter,
                 part_label=part_label,
+                chapter_section_index=chapter_section_index,
             )
         ):
             lo_new = _lo_with_path_update(lo, chapter=last_section_chapter)
@@ -997,10 +1187,111 @@ def assign_chapter_scope_from_johtolause(
             continue
 
         if lo.action is StructuralAction.INSERT:
+            stem_host_chapter = infer_letter_suffix_section_chapter_from_stem_host(
+                master,
+                section_label,
+                part_label=part_label,
+                chapter_section_index=chapter_section_index,
+            )
+            if stem_host_chapter is not None:
+                lo_new = _lo_with_path_update(lo, chapter=stem_host_chapter)
+                result[i] = lo_with_scope_confidence(
+                    lo_with_added_scope_tag(
+                        lo_new,
+                        "chapter_scope_from_letter_suffix_stem_host",
+                    ),
+                    ScopeConfidence(
+                        tag="chapter_scope_from_letter_suffix_stem_host",
+                        source="live_stem_host",
+                        confidence="inferred",
+                        resolved_chapter=stem_host_chapter,
+                    ),
+                )
+                last_section_norm = section_norm
+                last_section_chapter = stem_host_chapter
+                continue
+
+        if chunks:
+            matched_chunk = False
+            for idx in range(cursor, len(chunks)):
+                chapter_label, chunk = chunks[idx]
+                if _chapter_chunk_mentions_lo(chunk, lo):
+                    if lo.action is StructuralAction.INSERT and (
+                        pd.get("subsection")
+                        or pd.get("item")
+                        or pd.get("paragraph")
+                        or facet in {"intro", "heading"}
+                    ):
+                        find_section_path = getattr(master, "find_section_path", None)
+                        live_path = (
+                            find_section_path(section_norm, None, part_label)
+                            if callable(find_section_path)
+                            else None
+                        )
+                        live_chapter = (
+                            next((label for kind, label in live_path if kind == "chapter"), None)
+                            if live_path is not None
+                            else None
+                        )
+                        if (
+                            live_path is not None
+                            and live_chapter is None
+                            and section_norm not in duplicate_labels
+                            and not _johtolause_explicitly_mentions_chaptered_section_target(
+                                johto,
+                                chapter_label,
+                                section_label,
+                            )
+                        ):
+                            continue
+                    if (
+                        lo.action is not StructuralAction.INSERT
+                        and not _master_has_section_in_chapter(
+                            master,
+                            section_label,
+                            chapter_label,
+                            part_label=part_label,
+                            chapter_section_index=chapter_section_index,
+                        )
+                    ):
+                        continue
+                    lo_new = _lo_with_path_update(lo, chapter=chapter_label)
+                    note = (
+                        "chapter_scope_from_preamble"
+                        if section_norm in duplicate_labels
+                        else "chapter_scope_from_explicit_chunk"
+                    )
+                    result[i] = lo_with_scope_confidence(
+                        lo_with_added_scope_tag(lo_new, note),
+                        ScopeConfidence(
+                            tag=note,
+                            source=(
+                                "preamble"
+                                if note == "chapter_scope_from_preamble"
+                                else "explicit_chunk"
+                            ),
+                            confidence=(
+                                "inferred"
+                                if note == "chapter_scope_from_preamble"
+                                else "explicit"
+                            ),
+                            resolved_chapter=chapter_label,
+                        ),
+                    )
+                    last_section_norm = section_norm
+                    last_section_chapter = chapter_label
+                    cursor = idx
+                    matched_chunk = True
+                    break
+            if matched_chunk:
+                continue
+
+        if lo.action is StructuralAction.INSERT:
             exact_chapter = _unique_section_chapter(
                 master,
                 section_label,
                 part_label=part_label,
+                chapter_section_index=chapter_section_index,
             )
             if exact_chapter is not None:
                 lo_new = _lo_with_path_update(lo, chapter=exact_chapter)
@@ -1012,6 +1303,7 @@ def assign_chapter_scope_from_johtolause(
                 master,
                 section_label,
                 part_label=part_label,
+                chapter_section_index=chapter_section_index,
             )
             if base_chapter is not None:
                 lo_new = _lo_with_path_update(lo, chapter=base_chapter)
@@ -1025,6 +1317,7 @@ def assign_chapter_scope_from_johtolause(
                 master,
                 section_label,
                 part_label=part_label,
+                chapter_section_index=chapter_section_index,
             )
             if (
                 exact_chapter is not None
@@ -1033,6 +1326,7 @@ def assign_chapter_scope_from_johtolause(
                     section_label,
                     exact_chapter,
                     part_label=part_label,
+                    chapter_section_index=chapter_section_index,
                 )
             ):
                 lo_new = _lo_with_path_update(lo, chapter=exact_chapter)
@@ -1047,6 +1341,7 @@ def assign_chapter_scope_from_johtolause(
                 master,
                 section_label,
                 part_label=part_label,
+                chapter_section_index=chapter_section_index,
             )
             if stem_host_chapter is not None:
                 lo_new = _lo_with_path_update(lo, chapter=stem_host_chapter)
@@ -1058,77 +1353,8 @@ def assign_chapter_scope_from_johtolause(
                 last_section_chapter = stem_host_chapter
                 continue
 
-        if not chunks:
-            last_section_norm = None
-            last_section_chapter = None
-            continue
-
-        for idx in range(cursor, len(chunks)):
-            chapter_label, chunk = chunks[idx]
-            if _chapter_chunk_mentions_lo(chunk, lo):
-                if lo.action is StructuralAction.INSERT and (
-                    pd.get("subsection")
-                    or pd.get("item")
-                    or pd.get("paragraph")
-                    or facet in {"intro", "heading"}
-                ):
-                    live_path = master.find_section_path(section_norm, None, part_label)
-                    live_chapter = (
-                        next((label for kind, label in live_path if kind == "chapter"), None)
-                        if live_path is not None
-                        else None
-                    )
-                    if (
-                        live_path is not None
-                        and live_chapter is None
-                        and section_norm not in duplicate_labels
-                        and not _johtolause_explicitly_mentions_chaptered_section_target(
-                            johto,
-                            chapter_label,
-                            section_label,
-                        )
-                    ):
-                        continue
-                if (
-                    lo.action is not StructuralAction.INSERT
-                    and not _master_has_section_in_chapter(
-                        master,
-                        section_label,
-                        chapter_label,
-                        part_label=part_label,
-                    )
-                ):
-                    continue
-                lo_new = _lo_with_path_update(lo, chapter=chapter_label)
-                note = (
-                    "chapter_scope_from_preamble"
-                    if section_norm in duplicate_labels
-                    else "chapter_scope_from_explicit_chunk"
-                )
-                result[i] = lo_with_scope_confidence(
-                    lo_with_added_scope_tag(lo_new, note),
-                    ScopeConfidence(
-                        tag=note,
-                        source=(
-                            "preamble"
-                            if note == "chapter_scope_from_preamble"
-                            else "explicit_chunk"
-                        ),
-                        confidence=(
-                            "inferred"
-                            if note == "chapter_scope_from_preamble"
-                            else "explicit"
-                        ),
-                        resolved_chapter=chapter_label,
-                    ),
-                )
-                last_section_norm = section_norm
-                last_section_chapter = chapter_label
-                cursor = idx
-                break
-        else:
-            last_section_norm = None
-            last_section_chapter = None
+        last_section_norm = None
+        last_section_chapter = None
     return result
 
 

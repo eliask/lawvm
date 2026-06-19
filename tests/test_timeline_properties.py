@@ -2301,6 +2301,78 @@ def test_rekey_timelines_with_migration_events_retargets_root_content_in_core() 
     assert migrated.children[0].text == "159 §"
 
 
+def test_rekey_timelines_splits_undated_renumber_with_same_source_timeline_witness() -> None:
+    source_addr = LegalAddress(path=(("section", "70p"), ("subsection", "1")))
+    destination_addr = LegalAddress(path=(("section", "70p"), ("subsection", "3")))
+    timelines = {
+        source_addr: ProvisionTimeline(
+            address=source_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="1995-12-22",
+                    enacted="1995-12-22",
+                    content=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="old occupant"),
+                    source=OperationSource(statute_id="1995/1695", effective="1995-12-22"),
+                ),
+                ProvisionVersion(
+                    effective="2011-06-17",
+                    enacted="2011-06-17",
+                    content=None,
+                    source=OperationSource(statute_id="2011/743", effective="2011-06-17"),
+                ),
+                ProvisionVersion(
+                    effective="2011-06-17",
+                    enacted="2011-06-17",
+                    content=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="native rebirth"),
+                    source=OperationSource(statute_id="2011/743", effective="2011-06-17"),
+                ),
+                ProvisionVersion(
+                    effective="2013-09-01",
+                    enacted="2013-01-31",
+                    content=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="later native write"),
+                    source=OperationSource(statute_id="2013/101", effective="2013-09-01"),
+                ),
+            ],
+        ),
+    }
+    migration_event = MigrationEvent(
+        event_id="mig:test:70p/1->70p/3",
+        kind="renumber",
+        from_address=source_addr,
+        to_address=destination_addr,
+        source_statute="2011/743",
+    )
+
+    classification = classify_materialization_lineage_bridge(
+        timelines,
+        (migration_event,),
+        as_of_date="2020-01-01",
+        address_prefix_matches=_address_prefix_matches,
+    )
+    rekeyed = rekey_timelines_with_migration_events(
+        timelines,
+        (migration_event,),
+        as_of_date="2020-01-01",
+        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: current_address_with_prefix_migrations_from_events(
+            address,
+            events,
+            as_of_date=as_of_date,
+        ),
+        address_prefix_matches=_address_prefix_matches,
+    )
+
+    assert classification.native_rebirth_after_renumber is True
+    assert set(rekeyed) == {source_addr, destination_addr}
+    assert [
+        irnode_to_text(version.content) if version.content is not None else "<tombstone>"
+        for version in rekeyed[destination_addr].versions
+    ] == ["old occupant"]
+    assert [
+        irnode_to_text(version.content) if version.content is not None else "<tombstone>"
+        for version in rekeyed[source_addr].versions
+    ] == ["<tombstone>", "native rebirth", "later native write"]
+
+
 def test_rekey_timelines_native_rebirth_follows_later_descendant_migration() -> None:
     born_addr = LegalAddress(path=(("part", "7"), ("chapter", "2"), ("section", "268")))
     final_addr = LegalAddress(path=(("part", "7"), ("chapter", "32"), ("section", "268")))

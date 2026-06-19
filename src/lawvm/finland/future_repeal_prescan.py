@@ -1,10 +1,10 @@
 """Future-repeal pre-scan for uncovered body recovery."""
 from __future__ import annotations
 
-import datetime as dt
 import re
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+import datetime as dt
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, Mapping, Optional
 
 import lxml.etree as etree
 
@@ -71,6 +71,7 @@ class PreScanRepealTargetsRequest:
     parent_id: str = ""
     parent_title: str = ""
     cutoff_date: Optional[dt.date] = None
+    effective_dates_by_amendment: Mapping[str, dt.date] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +123,7 @@ def _pre_scan_repeal_targets(
     parent_id = request.parent_id
     parent_title = request.parent_title
     cutoff_date = request.cutoff_date
+    effective_dates_by_amendment = request.effective_dates_by_amendment
     vts_skipped_targets_out = sinks.vts_skipped_targets_out if sinks is not None else None
     vts_source_diagnostics_out = sinks.vts_source_diagnostics_out if sinks is not None else None
     prescan_diagnostics_out = sinks.prescan_diagnostics_out if sinks is not None else None
@@ -141,19 +143,24 @@ def _pre_scan_repeal_targets(
             per_amendment.append(targets)
             continue
         try:
-            tree = etree.fromstring(xml_bytes)
-            eff_date = _amendment_effective_date(tree)
+            eff_date = effective_dates_by_amendment.get(amendment_id)
+            if eff_date is None:
+                tree = etree.fromstring(xml_bytes)
+                eff_date = _amendment_effective_date(tree)
             if cutoff_date is not None and eff_date is not None and eff_date > cutoff_date:
                 per_amendment.append(targets)
                 continue
-            acquisition = build_amendment_acquisition_result(
-                xml_bytes=xml_bytes,
-                parent_id=parent_id,
-                amendment_id=amendment_id,
-                source_title="",
-                parent_title=parent_title,
-            )
-            johto = acquisition.decision.chosen_normalized_text
+            if b"kumotaan" in xml_bytes.lower():
+                acquisition = build_amendment_acquisition_result(
+                    xml_bytes=xml_bytes,
+                    parent_id=parent_id,
+                    amendment_id=amendment_id,
+                    source_title="",
+                    parent_title=parent_title,
+                )
+                johto = acquisition.decision.chosen_normalized_text
+            else:
+                johto = ""
             if johto and "kumotaan" in johto.lower():
                 legal_ops = extract_johtolause_legal_ops(johto)
                 for lo in legal_ops:

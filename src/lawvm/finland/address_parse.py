@@ -153,6 +153,36 @@ _CH_SINGLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_WHITESPACE_RE = re.compile(r"\s+")
+_ALPHA_SUFFIX_SECTION_RE = re.compile(r"(\d+)([a-z])", re.IGNORECASE)
+_SEC_ITEM_RANGE_RE = re.compile(
+    rf"({_SEC_TOKEN})\s*[–—―\-]\s*({_SEC_TOKEN})",
+    re.IGNORECASE,
+)
+_ADDRESS_SPLIT_RE = re.compile(r"\s*(?:,|ja)\s*")
+_SEC_GEN_MARKER_RE = re.compile(
+    rf"({_SEC_TOKEN})\s*(?:§:n|pykälän)\b",
+    re.IGNORECASE,
+)
+_NEXT_BARE_SECTION_RE = re.compile(
+    rf"\b{_SEC_TOKEN}\s*§",
+    re.IGNORECASE,
+)
+_COORDINATED_BARE_SECTION_TAIL_RE = re.compile(
+    rf"(?:,|ja|sekä)\s+{_SEC_ITEM}\s*§\s*$",
+    re.IGNORECASE,
+)
+_SENTENCE_STOP_RE = re.compile(r"[;.]")
+_LEADING_SECTION_RE = re.compile(r"(\d+[a-z]?)\s*§", re.IGNORECASE)
+_LEADING_PART_RE = re.compile(
+    r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+(?:osa|osasto)\b",
+    re.IGNORECASE,
+)
+_LEADING_CHAPTER_RE = re.compile(
+    r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+luku\b",
+    re.IGNORECASE,
+)
+
 # Heading / intro keywords in Finnish
 _HEADING_WORDS = frozenset({"otsikko", "otsikon", "väliotsikko", "väliotsikon"})
 _INTRO_WORDS = frozenset({"johdantokappale", "johdantolause", "johdantokappaleen"})
@@ -160,7 +190,7 @@ _INTRO_WORDS = frozenset({"johdantokappale", "johdantolause", "johdantokappaleen
 
 def _norm_section(raw: str) -> str:
     """Normalize a section token: strip spaces, lowercase letter suffix."""
-    return re.sub(r"\s+", "", raw.strip()).lower()
+    return _WHITESPACE_RE.sub("", raw.strip()).lower()
 
 
 def _expand_sec_range(start: str, end: str) -> List[str]:
@@ -170,8 +200,8 @@ def _expand_sec_range(start: str, end: str) -> List[str]:
         if s <= e:
             return [str(i) for i in range(s, e + 1)]
         return [start]
-    m_s = re.fullmatch(r"(\d+)([a-z])", start, re.IGNORECASE)
-    m_e = re.fullmatch(r"(\d+)([a-z])", end, re.IGNORECASE)
+    m_s = _ALPHA_SUFFIX_SECTION_RE.fullmatch(start)
+    m_e = _ALPHA_SUFFIX_SECTION_RE.fullmatch(end)
     if m_s and m_e and m_s.group(1) == m_e.group(1):
         base = m_s.group(1)
         s_c = m_s.group(2).lower()
@@ -189,11 +219,7 @@ def _expand_sec_range(start: str, end: str) -> List[str]:
 def _expand_sec_item(raw_item: str) -> List[str]:
     """Expand a single section item (range or single token) to normalized labels."""
     raw_item = raw_item.strip()
-    range_m = re.fullmatch(
-        rf"({_SEC_TOKEN})\s*[–—―\-]\s*({_SEC_TOKEN})",
-        raw_item,
-        re.IGNORECASE,
-    )
+    range_m = _SEC_ITEM_RANGE_RE.fullmatch(raw_item)
     if range_m:
         s = _norm_section(range_m.group(1))
         e = _norm_section(range_m.group(2))
@@ -249,7 +275,7 @@ def _parse_genitive_tail(section: str, tail: str) -> List[ParsedLegalAddress]:
     # "1 ja 2 momentti" — subsection list (nominative)
     m = _SUBSEC_STANDALONE_RE.match(tail)
     if m:
-        for part in re.split(r"\s*(?:,|ja)\s*", m.group(1)):
+        for part in _ADDRESS_SPLIT_RE.split(m.group(1)):
             part = part.strip()
             if part.isdigit():
                 addresses.append(ParsedLegalAddress(section=section, subsection=int(part)))
@@ -319,11 +345,7 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
     # their character spans consumed so Pass 2 doesn't re-match the numeral.
     # "pykälän" (genitive of "pykälä") appears in VTS repeal clauses where the
     # drafter spelled out the word instead of using the § symbol.
-    for m in re.finditer(
-        rf"({_SEC_TOKEN})\s*(?:§:n|pykälän)\b",
-        text,
-        re.IGNORECASE,
-    ):
+    for m in _SEC_GEN_MARKER_RE.finditer(text):
         if m.start() in consumed:
             continue
         consumed.update(range(m.start(), m.end()))
@@ -336,21 +358,13 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
         # Stop at next § unless it is coordinated into the same phrase
         # ("6 §:n 2 ja 3 momentti sekä 10 a–10 f §"), in which case the tail
         # parser must still see the later section sign.
-        next_sec = re.search(
-            rf"\b{_SEC_TOKEN}\s*§",
-            text[tail_start:],
-            re.IGNORECASE,
-        )
+        next_sec = _NEXT_BARE_SECTION_RE.search(text[tail_start:])
         if next_sec:
             _candidate_tail_end = tail_start + next_sec.start()
             _coordinated_tail = text[tail_start:tail_start + next_sec.end()]
-            if not re.search(
-                rf"(?:,|ja|sekä)\s+{_SEC_ITEM}\s*§\s*$",
-                _coordinated_tail,
-                re.IGNORECASE,
-            ):
+            if not _COORDINATED_BARE_SECTION_TAIL_RE.search(_coordinated_tail):
                 tail_end = _candidate_tail_end
-        for stop in re.finditer(r"[;.]", text[tail_start:tail_end]):
+        for stop in _SENTENCE_STOP_RE.finditer(text[tail_start:tail_end]):
             tail_end = tail_start + stop.start()
             break
 
@@ -368,7 +382,7 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
         if m.start() in consumed:
             continue
         raw_list = m.group(1)
-        for raw_item in re.split(r"\s*(?:,|ja)\s*", raw_list):
+        for raw_item in _ADDRESS_SPLIT_RE.split(raw_list):
             for label in _expand_sec_item(raw_item):
                 if label:
                     addresses.append(ParsedLegalAddress(section=label))
@@ -378,7 +392,7 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
     for m in _SUBSEC_STANDALONE_RE.finditer(text):
         if m.start() in consumed:
             continue
-        for part in re.split(r"\s*(?:,|ja)\s*", m.group(1)):
+        for part in _ADDRESS_SPLIT_RE.split(m.group(1)):
             part = part.strip()
             if part.isdigit():
                 addresses.append(ParsedLegalAddress(subsection=int(part)))
@@ -406,7 +420,7 @@ def parse_legal_addresses(text: str) -> List[ParsedLegalAddress]:
         if m.start() in consumed or m.start() in consumed_ch:
             continue
         consumed_ch.update(range(m.start(), m.end()))
-        for token in re.split(r"\s*(?:,|ja)\s*", m.group(1)):
+        for token in _ADDRESS_SPLIT_RE.split(m.group(1)):
             norm = _norm_section(token)
             if norm:
                 addresses.append(ParsedLegalAddress(chapter=norm))
@@ -437,18 +451,16 @@ def parse_leading_structural_address_path(text: str) -> List[tuple[str, str]]:
 
     window = prefix[:240]
 
-    section_m = re.search(r"(\d+[a-z]?)\s*§", window, re.IGNORECASE)
+    section_m = _LEADING_SECTION_RE.search(window)
     if section_m is not None:
         leading = window[: section_m.start()]
         path: List[tuple[str, str]] = []
 
-        part_m = list(
-            re.finditer(r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+(?:osa|osasto)\b", leading, re.IGNORECASE)
-        )
+        part_m = list(_LEADING_PART_RE.finditer(leading))
         if part_m:
             path.append(("part", _norm_section(part_m[-1].group(1))))
 
-        chapter_m = list(re.finditer(r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+luku\b", leading, re.IGNORECASE))
+        chapter_m = list(_LEADING_CHAPTER_RE.finditer(leading))
         if chapter_m:
             path.append(("chapter", _norm_section(chapter_m[-1].group(1))))
 
@@ -456,13 +468,11 @@ def parse_leading_structural_address_path(text: str) -> List[tuple[str, str]]:
         return path
 
     # Chapter/part-only bodies are rare, but keep them recoverable too.
-    part_m = list(
-        re.finditer(r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+(?:osa|osasto)\b", window, re.IGNORECASE)
-    )
+    part_m = list(_LEADING_PART_RE.finditer(window))
     if part_m:
         return [("part", _norm_section(part_m[-1].group(1)))]
 
-    chapter_m = list(re.finditer(r"([IVXLCM]+|\d+(?:\s*[a-z])?)\s+luku\b", window, re.IGNORECASE))
+    chapter_m = list(_LEADING_CHAPTER_RE.finditer(window))
     if chapter_m:
         return [("chapter", _norm_section(chapter_m[-1].group(1)))]
 

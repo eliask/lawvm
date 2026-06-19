@@ -19,6 +19,7 @@ _TARGET_ZONE_CUT_RE = re.compile(
     r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
     re.IGNORECASE,
 )
+_WHITESPACE_RE = re.compile(r"\s+")
 _AFFECTED_HEAD_RE = re.compile(
     r"(?:(?P<day>\d{1,2})\s{1,4}+päivänä\s{1,4}+(?P<month>[a-zäöå]{1,15})\s{1,4}+(?P<year>\d{4})\s{1,4}+)?"
     r"annetun\s{1,4}+(?P<title>[^()]{1,220}?)\s{0,4}+\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
@@ -158,7 +159,7 @@ def _strip_delegated_authority_prefix_when_target_follows(compact: str) -> str:
 def target_zone(text: str) -> str:
     """Return the part of a johtolause where target-statute citations live."""
 
-    compact = re.sub(r"\s+", " ", text or "")
+    compact = _WHITESPACE_RE.sub(" ", text or "")
     compact = _strip_delegated_authority_prefix_when_target_follows(compact)
     cut = _TARGET_ZONE_CUT_RE.search(compact)
     return compact[: cut.start()] if cut else compact
@@ -179,8 +180,8 @@ def _parse_finnish_date(day_s: str | None, month_s: str | None, year_s: str | No
 def normalize_source_citation_id(raw: str, source_year: int) -> str | None:
     """Normalize textual source citations like ``631/2022`` or ``631/22``."""
 
-    raw = re.sub(r"\s+", "", (raw or ""))
-    match = re.fullmatch(r"(\d{1,4})/(\d{2,4})", raw)
+    raw = _WHITESPACE_RE.sub("", (raw or ""))
+    match = re.fullmatch(r"(\d{1,5})/(\d{2,4})", raw)
     if not match:
         return None
     left, right = match.groups()

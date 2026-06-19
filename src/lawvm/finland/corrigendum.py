@@ -137,6 +137,12 @@ class ParsedCorrigendumResult:
         return self.ops[index]
 
 
+@dataclass(frozen=True, slots=True)
+class _NearDuplicatePatchCandidate:
+    wrong_compact: str
+    correct_compact: str
+
+
 def _corrigendum_text_replace_op(
     *,
     op_id: str,
@@ -337,6 +343,7 @@ def extract_inline_corrections(
 _HERE = Path(__file__).resolve()
 _LAWVM_DIR = _HERE.parent.parent.parent.parent  # src/lawvm/finland/ → LawVM/
 _MANUAL_YAML = _LAWVM_DIR / "data" / "finland" / "corrigendum_manual.yaml"
+_WHITESPACE_RE = re.compile(r"\s+")
 
 # ---------------------------------------------------------------------------
 # Regex-first parser
@@ -1876,6 +1883,8 @@ class CorrigendumPatchTable:
         _ell_re = re.compile(r"\s*(?:\.{3,}|(?:\. ){2,}\.|…)\s*")
         _seen: set[tuple[str, str, str, str, str]] = set()
         _kept_text_pairs: dict[str, list[tuple[str, str, str]]] = {}
+        _kept_location_variants: dict[tuple[str, str], list[_NearDuplicatePatchCandidate]] = {}
+        _near_duplicate_ratio_cache: dict[tuple[str, str], float] = {}
 
         def _contains_same_text_family(
             amendment_id: str,
@@ -1907,39 +1916,40 @@ class CorrigendumPatchTable:
         def _is_near_duplicate_location_variant(
             amendment_id: str,
             corr_type: str,
-            location: str,
-            wrong_norm: str,
-            correct_norm: str,
+            norm_location: str,
+            wrong_compact: str,
+            correct_compact: str,
         ) -> bool:
-            if not location:
+            if not norm_location:
                 return False
             if corr_type not in _STATUTE_BODY_TYPES | {"body_text"}:
                 return False
-
-            norm_location = re.sub(r"\s+", " ", _normalize_ws(location)).strip()
-            wrong_compact = "".join(wrong_norm.split())
-            correct_compact = "".join(correct_norm.split())
             if not wrong_compact or not correct_compact:
                 return False
 
-            for kept_corr_type, kept_wrong_norm, kept_correct_norm in _kept_text_pairs.get(amendment_id, []):
-                kept_location = ""
-                if "::" in kept_corr_type:
-                    kept_corr_type, kept_location = kept_corr_type.split("::", 1)
-                if kept_corr_type not in _STATUTE_BODY_TYPES | {"body_text"}:
+            def _can_reach_similarity(left_len: int, right_len: int) -> bool:
+                return (2 * min(left_len, right_len)) / (left_len + right_len) >= 0.985
+
+            def _compact_similarity(left: str, right: str) -> float:
+                if left == right:
+                    return 1.0
+                key = (left, right)
+                if key in _near_duplicate_ratio_cache:
+                    return _near_duplicate_ratio_cache[key]
+                ratio = difflib.SequenceMatcher(None, left, right, autojunk=False).ratio()
+                _near_duplicate_ratio_cache[key] = ratio
+                return ratio
+
+            for kept in _kept_location_variants.get((amendment_id, norm_location), ()):
+                kept_wrong_compact = kept.wrong_compact
+                kept_correct_compact = kept.correct_compact
+                if not (
+                    _can_reach_similarity(len(wrong_compact), len(kept_wrong_compact))
+                    and _can_reach_similarity(len(correct_compact), len(kept_correct_compact))
+                ):
                     continue
-                if kept_location != norm_location:
-                    continue
-                kept_wrong_compact = "".join(kept_wrong_norm.split())
-                kept_correct_compact = "".join(kept_correct_norm.split())
-                if not kept_wrong_compact or not kept_correct_compact:
-                    continue
-                wrong_ratio = difflib.SequenceMatcher(
-                    None, wrong_compact, kept_wrong_compact, autojunk=False
-                ).ratio()
-                correct_ratio = difflib.SequenceMatcher(
-                    None, correct_compact, kept_correct_compact, autojunk=False
-                ).ratio()
+                wrong_ratio = _compact_similarity(wrong_compact, kept_wrong_compact)
+                correct_ratio = _compact_similarity(correct_compact, kept_correct_compact)
                 if wrong_ratio >= 0.985 and correct_ratio >= 0.985:
                     return True
             return False
@@ -1971,8 +1981,15 @@ class CorrigendumPatchTable:
             if statute_id_raw and amendment_id not in table._amendment_to_statute:
                 table._amendment_to_statute[amendment_id] = statute_id_raw
 
-            wrong_norm = re.sub(r"\s+", " ", _normalize_ws(_ell_re.sub("…", wrong))).strip()
-            correct_norm = re.sub(r"\s+", " ", _normalize_ws(_ell_re.sub("…", correct))).strip()
+            wrong_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", wrong))).strip()
+            correct_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", correct))).strip()
+            location_key = (
+                _WHITESPACE_RE.sub(" ", _normalize_ws(location)).strip()
+                if location and corr_type in _STATUTE_BODY_TYPES | {"body_text"}
+                else ""
+            )
+            wrong_compact = "".join(wrong_norm.split())
+            correct_compact = "".join(correct_norm.split())
             # Deduplicate across extractor variants: same amendment + location +
             # normalised wrong/correct (ellipsis style may differ between LLM and vision).
             dedup_key = (amendment_id, corr_type, location, wrong_norm, correct_norm)
@@ -1992,17 +2009,23 @@ class CorrigendumPatchTable:
             if _is_near_duplicate_location_variant(
                 amendment_id,
                 corr_type,
-                location,
-                wrong_norm,
-                correct_norm,
+                location_key,
+                wrong_compact,
+                correct_compact,
             ):
                 continue
             _seen.add(dedup_key)
             kept_type = corr_type
             if location and corr_type in _STATUTE_BODY_TYPES | {"body_text"}:
-                location_key = re.sub(r"\s+", " ", _normalize_ws(location)).strip()
                 kept_type = f"{corr_type}::{location_key}"
             _kept_text_pairs.setdefault(amendment_id, []).append((kept_type, wrong_norm, correct_norm))
+            if location and corr_type in _STATUTE_BODY_TYPES | {"body_text"}:
+                _kept_location_variants.setdefault((amendment_id, location_key), []).append(
+                    _NearDuplicatePatchCandidate(
+                        wrong_compact=wrong_compact,
+                        correct_compact=correct_compact,
+                    )
+                )
 
             op = _corrigendum_text_replace_op(
                 op_id=f"corr/{amendment_id_numyr}/{idx}",
@@ -2059,8 +2082,8 @@ class CorrigendumPatchTable:
                     amendment_id = _to_grafter_mid(amendment_id_numyr)
                     if amendment_id is None:
                         continue
-                    wrong_norm = re.sub(r"\s+", " ", _normalize_ws(_ell_re.sub("…", wrong))).strip()
-                    correct_norm = re.sub(r"\s+", " ", _normalize_ws(_ell_re.sub("…", correct))).strip()
+                    wrong_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", wrong))).strip()
+                    correct_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", correct))).strip()
                     # body_text corrections go to a separate dict — not johtolause
                     if corr_type == "body_text":
                         if _contains_same_text_family(

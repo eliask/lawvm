@@ -73,6 +73,7 @@ def build_process_runtime(process_call: ResolvedProcessAmendmentCall) -> Process
             mutation_events_out=process_call.mutation_events_out,
             mutation_invariant_reports_out=process_call.mutation_invariant_reports_out,
         ),
+        mutation_cursor=len(process_call.mutation_events_out or ()),
     )
     return ProcessRuntimeContext(
         signals=signals,

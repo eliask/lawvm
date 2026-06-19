@@ -1,6 +1,7 @@
 """Explicit replay-plan stages for the Finnish frontend."""
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
@@ -19,6 +20,7 @@ from lawvm.finland.future_repeal_prescan import (
     PreScanRepealTargetsRequest,
     PreScanRepealTargetsSinks,
 )
+from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.restructure_plan import StructuralTransformPlan
@@ -82,6 +84,7 @@ class ReplaySignalBuffers:
     regex_recognition_coverages: list[RegexRecognitionCoverage]
     commencement_expiry_overrides: list[dict[str, object]]
     mutation_events: list[ApplyMutationEvent]
+    mutation_invariant_reports: list[Any]
     write_audits: list[ObservedWriteAudit]
     migration_events: list[MigrationEvent]
     temporal_events: list[Any]
@@ -98,6 +101,7 @@ class ReplaySignalBuffers:
             regex_recognition_coverages=[],
             commencement_expiry_overrides=[],
             mutation_events=[],
+            mutation_invariant_reports=[],
             write_audits=[],
             migration_events=[],
             temporal_events=[],
@@ -146,6 +150,7 @@ class ReplaySignalBuffers:
                 else []
             ),
             mutation_events=mutation_events_out if mutation_events_out is not None else [],
+            mutation_invariant_reports=[],
             write_audits=write_audits_out if write_audits_out is not None else [],
             migration_events=(
                 migration_events_out if migration_events_out is not None else []
@@ -175,6 +180,7 @@ class ReplaySignalBuffers:
             regex_recognition_coverage_out=self.regex_recognition_coverages,
             commencement_expiry_overrides_out=self.commencement_expiry_overrides,
             mutation_events_out=self.mutation_events,
+            mutation_invariant_reports_out=self.mutation_invariant_reports,
             write_audits_out=self.write_audits,
             migration_events_out=migration_events_out,
             restructure_plans_out=self.restructure_plans,
@@ -465,6 +471,18 @@ def build_prescan_finding(
     )
 
 
+def _effective_dates_by_amendment_record(
+    amendment_records: list[dict[str, Any]],
+) -> dict[str, dt.date]:
+    effective_dates: dict[str, dt.date] = {}
+    for record in amendment_records:
+        amendment_id = str(record.get("statute_id") or "")
+        effective_date = _parse_iso_date(str(record.get("effective_date") or ""))
+        if amendment_id and effective_date is not None:
+            effective_dates[amendment_id] = effective_date
+    return effective_dates
+
+
 def execute_replay_plan(
     plan: ReplayPlan,
     *,
@@ -555,6 +573,9 @@ def execute_replay_plan(
             parent_id=plan.parent_id,
             parent_title=plan.ctx.title,
             cutoff_date=plan.cutoff_date,
+            effective_dates_by_amendment=_effective_dates_by_amendment_record(
+                plan.amendment_records,
+            ),
         ),
         PreScanRepealTargetsSinks(
             vts_skipped_targets_out=vts_skipped_targets,

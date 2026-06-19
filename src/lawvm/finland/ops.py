@@ -1066,39 +1066,52 @@ class ResolvedOp:
     @property
     def resolved_target_scope_view(self) -> "ResolvedTargetScopeView":
         address = self.resolved_target_address
-        labels: Dict[str, str] = {}
+        section_label: str | None = None
+        chapter_label: str | None = None
+        part_label: str | None = None
+        subsection_label: str | None = None
+        item_label: str | None = None
         resolved_special: str | None = None
         if address is not None:
-            labels = {kind: label for kind, label in address.path}
+            for kind, label in address.path:
+                if kind == "section":
+                    section_label = label
+                elif kind == "chapter":
+                    chapter_label = label
+                elif kind == "part":
+                    part_label = label
+                elif kind == "subsection":
+                    subsection_label = label
+                elif kind == "item":
+                    item_label = label
             if address.special == FacetKind.HEADING:
                 resolved_special = "otsikko"
             elif address.special == FacetKind.INTRO:
                 resolved_special = "johd"
 
         if self.target_unit_kind == "chapter":
-            target_norm = labels.get("chapter") or self.target_norm
+            target_norm = chapter_label or self.target_norm
             target_chapter = None
-            target_part = labels.get("part")
+            target_part = part_label
         elif self.target_unit_kind == "part":
-            target_norm = labels.get("part") or self.target_norm
+            target_norm = part_label or self.target_norm
             target_chapter = None
-            target_part = labels.get("part") or self.target_norm
+            target_part = part_label or self.target_norm
         else:
-            target_norm = labels.get("section") or self.target_norm
-            target_chapter = labels.get("chapter")
-            target_part = labels.get("part")
+            target_norm = section_label or self.target_norm
+            target_chapter = chapter_label
+            target_part = part_label
 
         target_paragraph: int | None = None
-        resolved_subsection = labels.get("subsection")
-        if resolved_subsection is not None and resolved_subsection.isdigit():
-            target_paragraph = int(resolved_subsection)
+        if subsection_label is not None and subsection_label.isdigit():
+            target_paragraph = int(subsection_label)
 
         return ResolvedTargetScopeView(
             target_norm=target_norm,
             target_chapter=target_chapter,
             target_part=target_part,
             target_paragraph=target_paragraph,
-            target_item=labels.get("item"),
+            target_item=item_label,
             target_special=resolved_special,
         )
 
@@ -1258,6 +1271,15 @@ class ResolvedOp:
                 return label
         return None
 
+    def _resolved_target_path_label_last(self, kind: str) -> str | None:
+        address = self.resolved_target_address
+        if address is None:
+            return None
+        for part_kind, label in reversed(address.path):
+            if part_kind == kind:
+                return label
+        return None
+
     @property
     def resolved_target_part_label(self) -> str | None:
         return self._resolved_target_path_label("part")
@@ -1291,34 +1313,55 @@ class ResolvedOp:
 
     @property
     def resolved_target_label(self) -> str:
-        scope = self.resolved_target_scope_view
         if self.target_unit_kind == "part":
-            return scope.target_part or scope.target_norm
-        return scope.target_norm
+            return self._resolved_target_path_label_last("part") or self.target_norm
+        if self.target_unit_kind == "chapter":
+            return self._resolved_target_path_label_last("chapter") or self.target_norm
+        return self._resolved_target_path_label_last("section") or self.target_norm
 
     @property
     def resolved_target_scope_chapter_label(self) -> str | None:
         if self.target_unit_kind != "section":
             return None
-        return self.resolved_target_scope_view.target_chapter
+        return self._resolved_target_path_label_last("chapter")
 
     @property
     def resolved_target_scope_part_label(self) -> str | None:
         if self.target_unit_kind not in {"section", "chapter"}:
             return None
-        return self.resolved_target_scope_view.target_part
+        return self._resolved_target_path_label_last("part")
 
     @property
     def effective_target_item_label(self) -> str | None:
-        return self.resolved_target_scope_view.target_item
+        address = self.resolved_target_address
+        if address is None:
+            return None
+        for kind, label in reversed(address.path):
+            if kind == "item":
+                return label
+        return None
 
     @property
     def effective_target_paragraph(self) -> int | None:
-        return self.resolved_target_scope_view.target_paragraph
+        address = self.resolved_target_address
+        if address is None:
+            return None
+        for kind, label in reversed(address.path):
+            if kind == "subsection":
+                if label.isdigit():
+                    return int(label)
+                return None
+        return None
 
     @property
     def effective_target_special(self) -> str | None:
-        resolved_special = self.resolved_target_scope_view.target_special
+        address = self.resolved_target_address
+        resolved_special: str | None = None
+        if address is not None:
+            if address.special == FacetKind.HEADING:
+                resolved_special = "otsikko"
+            elif address.special == FacetKind.INTRO:
+                resolved_special = "johd"
         target_special = self._target_special_override
         if resolved_special == "otsikko" and target_special == "otsikko_edella":
             return target_special
@@ -1332,11 +1375,18 @@ class ResolvedOp:
     @property
     def resolved_section_lookup_scope_view(self) -> "ResolvedSectionLookupScopeView":
         """Return the neutral section lookup scope for state/path resolution."""
-        scope = self.resolved_target_scope_view
         return ResolvedSectionLookupScopeView(
-            target_norm=scope.target_norm,
-            target_chapter=scope.target_chapter if self.target_unit_kind == "section" else None,
-            target_part=scope.target_part if self.target_unit_kind in {"section", "chapter"} else None,
+            target_norm=self.resolved_target_label,
+            target_chapter=(
+                self.resolved_target_scope_chapter_label
+                if self.target_unit_kind == "section"
+                else None
+            ),
+            target_part=(
+                self.resolved_target_scope_part_label
+                if self.target_unit_kind in {"section", "chapter"}
+                else None
+            ),
         )
 
     @property

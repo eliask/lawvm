@@ -1,6 +1,7 @@
 """Unit tests for lawvm.finland.vts — voimaantulosäännös repeal extraction."""
 import re
 
+import lawvm.finland.vts as vts
 from lawvm.corpus_store import get_corpus_store
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.finland.vts import (
@@ -273,6 +274,29 @@ def test_extract_voimaantulo_repeals_returns_empty_when_no_match() -> None:
     # Parent is 1979/925 but amendment cites 999/2000
     ops = extract_voimaantulo_repeals(xml, "1979/925")
     assert ops == []
+
+
+def test_extract_voimaantulo_repeals_skips_fragment_extraction_without_repeal_trigger(monkeypatch) -> None:
+    def _fail_fragment_extraction(*_args, **_kwargs):
+        raise AssertionError("VTS fragment extraction should be skipped without repeal trigger text")
+
+    monkeypatch.setattr(vts, "_voimaantulo_repeal_fragment_for_parent", _fail_fragment_extraction)
+    monkeypatch.setattr(vts, "_voimaantulo_force_except_fragment_for_parent", _fail_fragment_extraction)
+    diagnostics: list[VtsSourceDiagnostic] = []
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <body>'
+        f'    <section eId="sec_1"><num>1 §</num>'
+        f'      <content><p>Tämä laki tulee voimaan 1 päivänä tammikuuta 2025.</p></content>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode("utf-8")
+
+    ops = extract_voimaantulo_repeals(xml, "1979/925", source_diagnostics_out=diagnostics)
+
+    assert ops == []
+    assert diagnostics == []
 
 
 def test_extract_voimaantulo_repeals_does_not_mix_parent_citation_from_one_paragraph_with_kumotaan_in_sibling() -> None:

@@ -2298,7 +2298,7 @@ def _apply_whole_section_op(
                             source_statute=_source_statute or "",
                             source_pathologies_out=source_pathologies_out,
                         )
-                        return _with_preserved_provision_index(state, moved_ir)
+                        return state.with_ir(moved_ir)
         if _target_chapter:
             ch_path = None
             if _target_part:

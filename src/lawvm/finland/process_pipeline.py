@@ -33,7 +33,12 @@ from lawvm.finland.elaboration_rule_dispatch import (
     run_registered_elaboration_stage,
     validate_elaboration_pipeline,
 )
-from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _tree_title, normalize_and_compile_ops
+from lawvm.finland.frontend_compile import (
+    _amendment_tree_metadata,
+    _enrich_ops_from_amendment_tree,
+    _tree_title,
+    normalize_and_compile_ops,
+)
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
 from lawvm.finland.process_apply_fold import normalize_process_apply_fold
@@ -332,6 +337,11 @@ def process_muutoslaki_resolved(
         else:
             skip_to_compile = False
 
+        amendment_tree_metadata = _amendment_tree_metadata(
+            amendment_id=amendment_id,
+            muutos_tree=muutos_tree,
+        )
+
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",
             lambda: ProcessPrecompileSelectionContext(
@@ -355,6 +365,7 @@ def process_muutoslaki_resolved(
                 replay_print=_replay_print,
                 extract_vts_repeals=extract_vts_repeals_fallback,
                 enrich_ops_from_amendment_tree=_enrich_ops_from_amendment_tree,
+                amendment_metadata=amendment_tree_metadata,
             ).select(),
             process_findings=process_findings,
             parent_id=parent_id,
@@ -386,6 +397,7 @@ def process_muutoslaki_resolved(
                     strict_profile=strict_profile,
                     regex_recognition_coverage_out=regex_recognition_coverage_out,
                     normalize_and_compile_ops=normalize_and_compile_ops,
+                    amendment_metadata=amendment_tree_metadata,
                 ).run(),
                 process_findings=process_findings,
                 parent_id=parent_id,
@@ -545,6 +557,7 @@ def process_muutoslaki_resolved(
                 commencement_expiry_override_notes=commencement_expiry_override_notes,
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
+                section_expiry_overrides=amendment_tree_metadata.section_expiry_overrides,
             ).run(),
             process_findings=process_findings,
             parent_id=parent_id,

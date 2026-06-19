@@ -1474,7 +1474,7 @@ def _apply_intent_relabel(
                     from_addr = intent.source.address
                     to_addr = intent.destination.address
                     source = rop.resolved_op_source
-                    effective = source.effective if source is not None else ""
+                    effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
                         from_addr,
                         to_addr,
@@ -1574,7 +1574,7 @@ def _apply_intent_relabel(
                     from_addr = intent.source.address
                     to_addr = intent.destination.address
                     source = rop.resolved_op_source
-                    effective = source.effective if source is not None else ""
+                    effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
                         from_addr,
                         to_addr,
@@ -1682,7 +1682,7 @@ def _apply_intent_relabel(
             from_addr = intent.source.address
             to_addr = intent.destination.address
             source = rop.resolved_op_source
-            effective = source.effective if source is not None else ""
+            effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
                 from_addr,
                 to_addr,
@@ -1812,7 +1812,7 @@ def _apply_intent_relabel(
             from_addr = intent.source.address
             to_addr = intent.destination.address
             source = rop.resolved_op_source
-            effective = source.effective if source is not None else ""
+            effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
                 from_addr,
                 to_addr,
@@ -1938,7 +1938,7 @@ def _apply_intent_move(
 
     if migration_ledger is not None:
         source = rop.resolved_op_source
-        effective = source.effective if source is not None else ""
+        effective = (source.effective or source.enacted) if source is not None else ""
         destination_address = LegalAddress(path=destination_path, special=source_addr.special)
         migration_ledger.record_move(
             source_addr,

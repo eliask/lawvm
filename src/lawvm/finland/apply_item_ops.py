@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
 
 logger = logging.getLogger(__name__)
+_COMPOUND_SUBPARAGRAPH_LABEL_RE = re.compile(r"^\d+[a-z]+$")
 
 
 @dataclass(frozen=True)
@@ -755,11 +756,10 @@ def _apply_item_replace(
             # siblings, so including them here would produce a duplicate.
             # Pure letter subparagraphs (a, b, c …) are legitimate sub-enumerations and
             # must NOT be stripped.
-            _compound_sp_re = re.compile(r"^\d+[a-z]+$")
             _has_compound_sp = any(
                 c.kind == IRNodeKind.SUBPARAGRAPH
                 and c.label
-                and _compound_sp_re.match(normalized_label_key(c.label))
+                and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                 for c in amend_para.children
             )
             if _has_compound_sp:
@@ -769,7 +769,7 @@ def _apply_item_replace(
                     if not (
                         c.kind == IRNodeKind.SUBPARAGRAPH
                         and c.label
-                        and _compound_sp_re.match(normalized_label_key(c.label))
+                        and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                     )
                 )
                 amend_para = IRNode(
@@ -795,7 +795,7 @@ def _apply_item_replace(
                                     for c in orig_children
                                     if c.kind == IRNodeKind.SUBPARAGRAPH
                                     and c.label
-                                    and _compound_sp_re.match(normalized_label_key(c.label))
+                                    and _COMPOUND_SUBPARAGRAPH_LABEL_RE.match(normalized_label_key(c.label))
                                 ]
                             ),
                         )

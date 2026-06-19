@@ -14,6 +14,9 @@ from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.helpers import _expand_section_range
 
 
+_CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
+
+
 @dataclass(frozen=True)
 class KumotaanRecycleGuardResult:
     """Typed witness for kumotaan-vs-muutetaan recycle suppression.
@@ -244,8 +247,7 @@ def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], Li
         return {}
 
     # Find chapter markers: "N luvun" or "N a luvun"
-    chapter_marker_re = re.compile(r'(\d+(?:\s*[a-z])?)\s+luvun\b')
-    markers = list(chapter_marker_re.finditer(muutetaan_text))
+    markers = list(_CHAPTER_MARKER_RE.finditer(muutetaan_text))
 
     if not markers:
         # No chapter markers — fall back to global extraction
@@ -421,8 +423,7 @@ def _extract_kumotaan_chapter_section_map(johto: str) -> Dict[Optional[str], Lis
         return {}
 
     # Find chapter markers: "N luvun" or "N a luvun" etc.
-    chapter_marker_re = re.compile(r'(\d+(?:\s*[a-z])?)\s+luvun\b')
-    markers = list(chapter_marker_re.finditer(kumotaan_text))
+    markers = list(_CHAPTER_MARKER_RE.finditer(kumotaan_text))
 
     if not markers:
         # No chapter markers — fall back to global extraction

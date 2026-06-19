@@ -100,7 +100,7 @@ _EXPLICIT_REF_AFTER_NOUN = re.compile(
 #: Applicability matrices. EXCEPTION (``ei [kuitenkaan] sovelleta`` / ``estämättä``)
 #: vs CONDITION (``sovelletaan``).
 _MATRIX_EXCEPTION_RE = re.compile(
-    r"\b(ei\s+(?:kuitenkaan\s+)?sovelleta|estämättä)\b", re.IGNORECASE
+    r"\b(ei\s{1,8}kuitenkaan\s{1,8}sovelleta|ei\s{1,8}sovelleta|estämättä)\b", re.IGNORECASE
 )
 _MATRIX_CONDITION_RE = re.compile(r"\bsovelletaan\b", re.IGNORECASE)
 

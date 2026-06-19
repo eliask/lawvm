@@ -194,6 +194,37 @@ def _make_state(body_ir: IRNode) -> ReplayState:
     return ReplayState(ir=body_ir)
 
 
+def test_replay_state_section_path_cache_is_state_local() -> None:
+    state = ReplayState(
+        ir=_body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(_sec("5", _content("old")),),
+            )
+        )
+    )
+
+    assert state.find_section_path("5", "1") == (("chapter", "1"), ("section", "5"))
+    assert state._section_path_cache == {
+        ("5", "1", None): (("chapter", "1"), ("section", "5"))
+    }
+    assert state.find_section_path("5", "1") == (("chapter", "1"), ("section", "5"))
+
+    next_state = state.with_ir(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(_sec("5", _content("new")),),
+            )
+        )
+    )
+    assert next_state._section_path_cache is None
+    assert next_state.find_section_path("5", "1") is None
+    assert next_state.find_section_path("5", "2") == (("chapter", "2"), ("section", "5"))
+
+
 def _ctx(base_ir: IRNode | None = None) -> StatuteContext:
     """Type-checking shim for legacy SimpleNamespace test contexts."""
     return cast(StatuteContext, SimpleNamespace(base_ir=base_ir))
@@ -12501,6 +12532,7 @@ def test_replay_state_can_preserve_provision_index_across_section_internal_chang
 
     first_path = state.find_section_path("3", "2")
     cached_index = state._provision_index
+    cached_section_paths = state._section_path_cache
 
     new_state = state.with_ir(
         _body(
@@ -12515,6 +12547,7 @@ def test_replay_state_can_preserve_provision_index_across_section_internal_chang
 
     assert first_path == (("chapter", "2"), ("section", "3"))
     assert new_state._provision_index is cached_index
+    assert new_state._section_path_cache is cached_section_paths
     assert new_state.find_section_path("3", "2") == first_path
 
 

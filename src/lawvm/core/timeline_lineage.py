@@ -108,6 +108,14 @@ class RekeyTimelineEntry:
     timeline: ProvisionTimeline
 
 
+@dataclass(frozen=True, slots=True)
+class MigrationBoundary:
+    """A migration event paired with the effective date proven by a timeline."""
+
+    event: MigrationEvent
+    effective: str
+
+
 def _validate_bool_field(carrier_name: str, field_name: str, value: bool) -> None:
     if not isinstance(value, bool):
         raise ValueError(f"{carrier_name}.{field_name} must be a bool")
@@ -115,6 +123,25 @@ def _validate_bool_field(carrier_name: str, field_name: str, value: bool) -> Non
 
 _RetargetVersionContentFn = Callable[[ProvisionVersion, LegalAddress], ProvisionVersion]
 _MergeBucketCleanupFn = Callable[[list[ProvisionVersion]], list[ProvisionVersion]]
+
+
+def _migration_effective_from_timeline(
+    event: MigrationEvent,
+    timeline: ProvisionTimeline,
+) -> str:
+    """Return the migration boundary date witnessed by the affected timeline."""
+    if event.effective:
+        return event.effective
+    if not event.source_statute:
+        return ""
+    candidates = [
+        version.effective
+        for version in timeline.versions
+        if version.effective
+        and version.source is not None
+        and version.source.statute_id == event.source_statute
+    ]
+    return min(candidates, default="")
 
 
 def has_native_rebirth_after_renumber(
@@ -128,18 +155,22 @@ def has_native_rebirth_after_renumber(
         return False
 
     for address, timeline in timelines.items():
-        matching_renumbers = [
-            event
+        matching_renumbers = (
+            MigrationBoundary(event=event, effective=effective)
             for event in migration_events
             if event.kind == "renumber"
-            and event.effective
             and address_prefix_matches(address, event.from_address)
-        ]
-        if not matching_renumbers:
+            and (effective := _migration_effective_from_timeline(event, timeline))
+        )
+        event_boundary = min(
+            matching_renumbers,
+            key=lambda boundary: (boundary.effective, migration_event_sort_key(boundary.event)),
+            default=None,
+        )
+        if event_boundary is None:
             continue
-        event = sorted(matching_renumbers, key=migration_event_sort_key)[0]
-        has_before = any(version.effective < event.effective for version in timeline.versions)
-        has_after = any(version.effective >= event.effective for version in timeline.versions)
+        has_before = any(version.effective < event_boundary.effective for version in timeline.versions)
+        has_after = any(version.effective >= event_boundary.effective for version in timeline.versions)
         if has_before and has_after:
             return True
     return False
@@ -608,12 +639,13 @@ def rekey_timelines_with_migration_events(
         address: LegalAddress,
         versions: list[ProvisionVersion],
     ) -> list[TimelineSplitBucket]:
+        timeline = ProvisionTimeline(address=address, versions=versions)
         matching_renumbers = [
-            event
+            MigrationBoundary(event=event, effective=effective)
             for event in migration_events
             if event.kind == "renumber"
-            and event.effective
             and address_prefix_matches(address, event.from_address)
+            and (effective := _migration_effective_from_timeline(event, timeline))
         ]
         if not matching_renumbers:
             return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
@@ -634,36 +666,41 @@ def rekey_timelines_with_migration_events(
             default="",
         )
         renumbers_from_birth = [
-            event
-            for event in matching_renumbers
-            if not lineage_birth or event.effective >= lineage_birth
+            boundary
+            for boundary in matching_renumbers
+            if not lineage_birth or boundary.effective >= lineage_birth
         ]
         boundary_renumbers = renumbers_from_birth or matching_renumbers
-        event = sorted(boundary_renumbers, key=migration_event_sort_key)[0]
-        before_versions = [version for version in versions if version.effective < event.effective]
-        native_versions = [version for version in versions if version.effective >= event.effective]
+        boundary = min(
+            boundary_renumbers,
+            key=lambda item: (item.effective, migration_event_sort_key(item.event)),
+        )
+        event = boundary.event
+        boundary_effective = boundary.effective
+        before_versions = [version for version in versions if version.effective < boundary_effective]
+        native_versions = [version for version in versions if version.effective >= boundary_effective]
         if before_versions and not native_versions:
             return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
         if native_versions and not before_versions:
             same_wave_incoming = _has_same_wave_incoming_migration_prefix(
                 address,
-                at_effective=event.effective,
+                at_effective=boundary_effective,
             )
             same_wave_incoming_to_source_prefix = _has_same_wave_incoming_to_source_prefix(
                 event.from_address,
-                at_effective=event.effective,
+                at_effective=boundary_effective,
             )
             force_native = (
                 _has_prior_incoming_migration_prefix(
                     address,
-                    before_effective=event.effective,
+                    before_effective=boundary_effective,
                 )
                 or same_wave_incoming_to_source_prefix
                 or (
                     not same_wave_incoming
                     and _source_prefix_has_native_rebirth(
                         event.from_address,
-                        at_effective=event.effective,
+                        at_effective=boundary_effective,
                     )
                 )
             )
@@ -672,7 +709,7 @@ def rekey_timelines_with_migration_events(
                     address=address,
                     versions=versions,
                     force_native=force_native,
-                    native_boundary=event.effective if force_native else "",
+                    native_boundary=boundary_effective if force_native else "",
                 )
             ]
         buckets: list[TimelineSplitBucket] = []
@@ -684,7 +721,7 @@ def rekey_timelines_with_migration_events(
                     address=address,
                     versions=native_versions,
                     force_native=True,
-                    native_boundary=event.effective,
+                    native_boundary=boundary_effective,
                 )
             )
         return buckets
@@ -723,14 +760,15 @@ def rekey_timelines_with_migration_events(
         for entry in entries
         if entry.is_native_lineage
     }
+    migrated_descendant_prefix_paths = {
+        entry.migrated_address.path[:prefix_len]
+        for entry in entries
+        for prefix_len in range(1, len(entry.migrated_address.path))
+    }
     migrated_prefix_addresses = {
         outer.migrated_address
         for outer in entries
-        if any(
-            inner.migrated_address.has_path_prefix(outer.migrated_address)
-            and len(inner.migrated_address.path) > len(outer.migrated_address.path)
-            for inner in entries
-        )
+        if outer.migrated_address.path in migrated_descendant_prefix_paths
     }
     rekeyed: dict[LegalAddress, ProvisionTimeline] = {}
     for entry in sorted(

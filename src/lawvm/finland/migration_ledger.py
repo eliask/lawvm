@@ -12,6 +12,7 @@ tree surgery succeeds, and the finished ledger is surfaced through the
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import lru_cache
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.mutation_boundary import TreePath
@@ -49,6 +50,7 @@ def normalize_address_path(path: TreePath) -> TreePath:
     )
 
 
+@lru_cache(maxsize=65536)
 def _normalize_address(address: LegalAddress) -> LegalAddress:
     return LegalAddress(path=normalize_address_path(address.path), special=address.special)
 
@@ -128,10 +130,11 @@ class MigrationLedger:
     one amendment-at-a-time application is the norm.
     """
 
-    __slots__ = ("_events",)
+    __slots__ = ("_events", "_prefix_cache")
 
     def __init__(self, events: Iterable[MigrationEvent] = ()) -> None:
         self._events: list[MigrationEvent] = list(events)
+        self._prefix_cache: dict[tuple[LegalAddress, str, str], LegalAddress] = {}
 
     # ------------------------------------------------------------------
     # Recording
@@ -168,6 +171,7 @@ class MigrationLedger:
             witness=witness,
         )
         self._events.append(event)
+        self._prefix_cache.clear()
         return event
 
     def record_move(
@@ -192,6 +196,7 @@ class MigrationLedger:
             witness=witness,
         )
         self._events.append(event)
+        self._prefix_cache.clear()
         return event
 
     # ------------------------------------------------------------------
@@ -238,9 +243,15 @@ class MigrationLedger:
         own content lineage, so a section born into a renumber-vacated slot does
         not inherit the prior occupant's stale renumber chain.
         """
-        return current_address_with_prefix_migrations_from_events(
+        key = (original_address, as_of_date, not_before)
+        cached = self._prefix_cache.get(key)
+        if cached is not None:
+            return cached
+        resolved = current_address_with_prefix_migrations_from_events(
             original_address, tuple(self._events), as_of_date, not_before=not_before
         )
+        self._prefix_cache[key] = resolved
+        return resolved
 
     # ------------------------------------------------------------------
     # Accessors

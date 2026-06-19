@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult
 
 logger = logging.getLogger(__name__)
+_ITEM_RANGE_TARGET_RE = re.compile(r"^(\d+)\s*[―–—\-]+\s*(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -475,8 +476,7 @@ def _apply_deterministic_subsection_op(
     _target_chapter = routing.target_chapter
     _target_part = routing.target_part
 
-    range_re = re.compile(r"^(\d+)\s*[―–—\-]+\s*(\d+)$")
-    if _target_item and (range_m := range_re.match(_target_item)):
+    if _target_item and (range_m := _ITEM_RANGE_TARGET_RE.match(_target_item)):
         start, end = int(range_m.group(1)), int(range_m.group(2))
         if start < end:
             any_handled = False

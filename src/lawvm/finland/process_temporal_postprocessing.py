@@ -35,7 +35,6 @@ from lawvm.finland.metadata import (
     _commencement_expiry_override,
     _section_commencement_effective_override,
     _section_subsection_commencement_effective_override,
-    _temporary_section_expiry_overrides,
     get_operative_body_repeal_candidate,
 )
 from lawvm.finland.temporal_rewrites import (
@@ -77,6 +76,7 @@ class ProcessTemporalPostprocessContext:
     commencement_expiry_override_notes: list[dict[str, object]]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
+    section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
 
     def run(self) -> None:
         self.collect_law_level_text_patches()
@@ -102,7 +102,17 @@ class ProcessTemporalPostprocessContext:
     def apply_commencement_expiry_overrides(self) -> None:
         # Accepted voimaantulosäännös-only amendments may extend or expire prior
         # ops even when this amendment emitted no section-level replacement ops.
-        accepted = _commencement_expiry_override(self.muutos_tree, self.amendment_id)
+        has_foreign_scoped_expiry = any(
+            target_mid != self.amendment_id
+            for target_mid, _labels, _expiry in self.section_expiry_overrides
+        )
+        accepted = None
+        if has_foreign_scoped_expiry or b"voimaantulos" in self.xml_bytes.lower():
+            accepted = _commencement_expiry_override(
+                self.muutos_tree,
+                self.amendment_id,
+                section_expiry_overrides=self.section_expiry_overrides,
+            )
         if accepted is not None:
             target_mid, labels, expiry = accepted
             if target_mid != self.amendment_id and _rewrite_lo_op_source_expiry(
@@ -129,10 +139,7 @@ class ProcessTemporalPostprocessContext:
                     }
                 )
 
-        for target_mid, labels, expiry in _temporary_section_expiry_overrides(
-            self.muutos_tree,
-            self.amendment_id,
-        ):
+        for target_mid, labels, expiry in self.section_expiry_overrides:
             if target_mid == self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,

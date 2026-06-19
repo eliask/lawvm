@@ -23,6 +23,10 @@ def _part(label: str, *children: IRNode) -> IRNode:
     return IRNode(kind=IRNodeKind.PART, label=label, children=tuple(children))
 
 
+def _hcontainer(*children: IRNode) -> IRNode:
+    return IRNode(kind=IRNodeKind.HCONTAINER, children=tuple(children))
+
+
 def _body(*children: IRNode) -> IRNode:
     return IRNode(kind=IRNodeKind.BODY, children=tuple(children))
 
@@ -59,6 +63,67 @@ def test_scoped_section_path_normalizes_roman_part_scope_without_dropping_it() -
         target_part="II",
         find_path=find_path,
     ) is None
+
+
+def test_chapter_scoped_section_path_uses_index_without_hijacking_ambiguity() -> None:
+    ir = _body(
+        _part("1", _chapter("6", _sec("7"))),
+        _part("2", _chapter("6", _sec("7"))),
+        _part("3", _chapter("8", _sec("7"))),
+    )
+    index = _tops.build_label_index(ir)
+
+    def find_path(kind: str, label: str, scope_kind: str | None, scope_label: str | None) -> Path | None:
+        return _tops.find(
+            ir,
+            kind,
+            label,
+            scope_kind=scope_kind,
+            scope_label=scope_label,
+            label_index=index,
+        )
+
+    assert find_scoped_section_path(
+        ir,
+        target_section="7",
+        target_chapter="8",
+        find_path=find_path,
+        provision_index=index,
+    ) == (("part", "3"), ("chapter", "8"), ("section", "7"))
+
+    assert find_scoped_section_path(
+        ir,
+        target_section="7",
+        target_chapter="6",
+        find_path=find_path,
+        provision_index=index,
+    ) is None
+
+
+def test_chapter_scoped_section_path_canonicalizes_hcontainer_wrapper_duplicates() -> None:
+    ir = _body(
+        _chapter("5", _sec("83")),
+        _hcontainer(_chapter("5", _sec("83"))),
+    )
+    index = _tops.build_label_index(ir)
+
+    def find_path(kind: str, label: str, scope_kind: str | None, scope_label: str | None) -> Path | None:
+        return _tops.find(
+            ir,
+            kind,
+            label,
+            scope_kind=scope_kind,
+            scope_label=scope_label,
+            label_index=index,
+        )
+
+    assert find_scoped_section_path(
+        ir,
+        target_section="83",
+        target_chapter="5",
+        find_path=find_path,
+        provision_index=index,
+    ) == (("chapter", "5"), ("section", "83"))
 
 
 def test_scoped_section_insert_parent_path_keeps_missing_scope_policies_explicit() -> None:

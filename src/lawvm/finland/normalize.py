@@ -65,6 +65,10 @@ _RE_NEW_ITEM = re.compile(
     r"\s+kohta\b"
 )
 _RE_STATUTE_CREATION_CHAPTER = re.compile(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b")
+_INSERT_ROOT_PART_FALLBACK_RE = re.compile(
+    r"\blakiin\s+uusi\s+((?:[ivxlcdm]+|\d+)\s*[a-z]?)\s+osa\b",
+    flags=re.I,
+)
 _INSERT_CHAPTER_SECTION_FALLBACK_RE = re.compile(
     r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§",
     flags=re.I,
@@ -556,18 +560,32 @@ def _regex_label_clause_ignored_spans(
 
 
 def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
-    """Recover chapter-scoped section inserts (``N lukuun uusi M §``).
+    """Recover bounded container insert fallbacks.
 
     FALLBACK: Compensates for the new parser dropping chapter-scoped section
     inserts that sit inside long heterogeneous insertion lists (where a mid-list
-    anomaly halts the native continuation loop). The root-level chapter / part /
-    combined ``lakiin uusi N luku [ja M §]`` / ``lakiin uusi N osa`` lanes were
-    retired (the new parser owns those natively). Remove when the parser's
-    insertion continuation loop owns the chapter-scoped form inside mixed lists
-    too — verify with bench.
+    anomaly halts the native continuation loop), plus the narrow citation-prose
+    shape ``lakiin uusi N osa`` where fallback parsing may see the root part
+    insertion after surface parsing has declined. Root-level chapter and
+    combined ``lakiin uusi N luku [ja M §]`` lanes remain parser-owned.
     """
     ops: List[AmendmentOp] = []
     seen_sections: Set[Tuple[str, str]] = set()
+    seen_parts: Set[str] = set()
+
+    for m in _INSERT_ROOT_PART_FALLBACK_RE.finditer(cleaned):
+        part = _norm_num_token(m.group(1))
+        if not part or part in seen_parts:
+            continue
+        seen_parts.add(part)
+        ops.append(
+            AmendmentOp(
+                op_id="",
+                op_type="INSERT",
+                target_section=part,
+                target_unit_kind="part",
+            )
+        )
 
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
@@ -599,6 +617,28 @@ def _extract_insert_container_ops_fallback_with_coverage(
     coverage_rows: list[RegexRecognitionCoverage] = []
     source_hash = regex_source_text_hash(cleaned)
     seen_sections: Set[Tuple[str, str]] = set()
+    seen_parts: Set[str] = set()
+
+    for m in _INSERT_ROOT_PART_FALLBACK_RE.finditer(cleaned):
+        part = _norm_num_token(m.group(1))
+        if not part or part in seen_parts:
+            continue
+        seen_parts.add(part)
+        coverage_rows.append(
+            _regex_recognition_coverage_row(
+                recognizer_id="fi_insert_root_part_fallback",
+                source_hash=source_hash,
+                source_artifact_id=source_artifact_id,
+                matched_span=(m.start(), m.end()),
+                semantic_slots={
+                    "action": "INSERT",
+                    "target_unit_kind": "part",
+                    "target_part": part,
+                },
+                ignored_spans=(),
+                matched_text=cleaned[m.start():m.end()],
+            )
+        )
 
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
