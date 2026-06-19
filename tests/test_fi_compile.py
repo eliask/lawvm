@@ -698,15 +698,10 @@ def test_replay_xml_preserves_letter_suffix_item_spacing_for_2014_346() -> None:
     assert num_text == "3 a)"
 
 
-def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_authority(
+def test_replay_xml_absorbs_2008_342_section_21_tail_subsection_with_authority(
     replay_1987_990_finlex_oracle: ReplayResult,
 ) -> None:
-    """Sparse tail prose stays in the following moment unless a frontend repair owns it.
-
-    LawVM currently does not treat this source shape as auto-repair authority, so
-    the carried tail remains as plain content in the next subsection rather than
-    being reattached under item 7.
-    """
+    """2008/342 encodes the list tail as a sibling subsection; apply recovery owns it."""
     section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:5/section:21"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -718,12 +713,19 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
     )
     subparagraphs = [child for child in seventh_para.children if child.kind == IRNodeKind.SUBPARAGRAPH]
     assert subparagraphs == []
+    first_wrapup_text = " ".join(
+        (child.text or "").strip()
+        for child in seventh_para.children
+        if child.kind == IRNodeKind.WRAP_UP
+    )
+    assert "ydinenergian käyttö muutoinkin täyttää" in first_wrapup_text
+
     second_subsection_text = " ".join(
         (child.text or "").strip()
         for child in subsections[1].children
         if child.kind in {IRNodeKind.CONTENT, IRNodeKind.INTRO}
     )
-    assert "ydinenergian käyttö muutoinkin täyttää 5-7" in second_subsection_text
+    assert "Edellä 1 momentissa tarkoitettuun ydinenergian käyttöön" in second_subsection_text
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:

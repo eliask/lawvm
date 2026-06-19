@@ -429,6 +429,20 @@ def _insert_item_with_suffix_renumber_ir(
     if base_children and base_children[-1].kind == IRNodeKind.WRAP_UP:
         trailing_wrapup = base_children.pop()
 
+    inserted_tail_norm = ""
+    for child in inserted_para.children:
+        if child.kind == IRNodeKind.WRAP_UP and child.attrs.get("__tail_subsection__"):
+            inserted_tail_norm = (
+                irnode_to_text(child)
+                .replace("―", "-")
+                .replace("–", "-")
+                .replace("§", "")
+                .replace(" ", "")
+                .strip(" .;,:")
+                .lower()
+            )
+            break
+
     new_children: List[IRNode] = []
     para_pos = 0
     inserted = False
@@ -467,9 +481,32 @@ def _insert_item_with_suffix_renumber_ir(
                 next_num = current_num + 1
         renumbered_children.append(child)
 
-    # Re-attach trailing wrapUp after all paragraphs (including newly inserted)
+    # Re-attach trailing wrapUp after all paragraphs (including newly inserted),
+    # unless the source payload already moved the same text under the inserted item.
     if trailing_wrapup is not None:
-        renumbered_children.append(trailing_wrapup)
+        trailing_tail_norm = (
+            irnode_to_text(trailing_wrapup)
+            .replace("―", "-")
+            .replace("–", "-")
+            .replace("§", "")
+            .replace(" ", "")
+            .strip(" .;,:")
+            .lower()
+        )
+        if inserted_tail_norm and trailing_tail_norm and inserted_tail_norm == trailing_tail_norm:
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=source_statute,
+                        target_unit_kind="section",
+                        target_label=item_norm,
+                        recovery_kind="item_insert_tail_wrapup_absorb",
+                        live_sibling_count=1,
+                        payload_sibling_count=1,
+                    )
+                )
+        else:
+            renumbered_children.append(trailing_wrapup)
     if renumbered_count and source_pathologies_out is not None:
         source_pathologies_out.append(
             build_destructive_shape_loss_risk_pathology(
