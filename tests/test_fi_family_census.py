@@ -6,6 +6,9 @@ citation census, on synthetic in-memory plug-points — no corpus.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any, cast
+
 from lawvm.finland.legal_surface.family_census import (
     CENSUS_BUCKETS,
     CensusUnit,
@@ -45,9 +48,10 @@ def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
     import sys
     import types
 
+    previous_farchive = sys.modules.get("farchive")
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = lambda *_a, **_k: object()
-    sys.modules.setdefault("farchive", fake_farchive)
+    cast(Any, fake_farchive).Farchive = lambda *_a, **_k: object()
+    sys.modules["farchive"] = fake_farchive
 
     # Monkeypatch the three lazily-imported symbols inside run_family_census by
     # injecting fakes into the modules it imports from.
@@ -60,9 +64,9 @@ def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
         bundle_mod.decode_body_text,
         pb_mod._archive_path,
     )
-    ts_mod.TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
-    bundle_mod.decode_body_text = lambda xb: xb.decode()
-    pb_mod._archive_path = lambda: "unused"
+    cast(Any, ts_mod).TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
+    cast(Any, bundle_mod).decode_body_text = lambda xb: xb.decode()
+    cast(Any, pb_mod)._archive_path = lambda: "unused"
     try:
         return fc.run_family_census(
             family="synthetic",
@@ -78,6 +82,10 @@ def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
             bundle_mod.decode_body_text,
             pb_mod._archive_path,
         ) = saved
+        if previous_farchive is None:
+            sys.modules.pop("farchive", None)
+        else:
+            sys.modules["farchive"] = previous_farchive
 
 
 def test_engine_partition_and_buckets() -> None:
@@ -148,8 +156,10 @@ def test_engine_threads_oracle_prepare_context_per_statute() -> None:
     import sys
     import types
 
-    sys.modules.setdefault("farchive", types.ModuleType("farchive"))
-    sys.modules["farchive"].Farchive = lambda *_a, **_k: object()
+    previous_farchive = sys.modules.get("farchive")
+    fake_farchive = types.ModuleType("farchive")
+    cast(Any, fake_farchive).Farchive = lambda *_a, **_k: object()
+    sys.modules["farchive"] = fake_farchive
 
     import lawvm.finland.legal_surface.bundle as bundle_mod
     import lawvm.finland.transparent_store as ts_mod
@@ -160,9 +170,12 @@ def test_engine_threads_oracle_prepare_context_per_statute() -> None:
         bundle_mod.decode_body_text,
         pb_mod._archive_path,
     )
-    ts_mod.TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
-    bundle_mod.decode_body_text = lambda xb: xb.decode()
-    pb_mod._archive_path = lambda: "unused"
+    cast(Any, ts_mod).TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
+    cast(Any, bundle_mod).decode_body_text = lambda xb: xb.decode()
+    cast(Any, pb_mod)._archive_path = lambda: "unused"
+
+    def _oracle_from_context(_unit: CensusUnit, ctx: object) -> set[str]:
+        return set(cast(Iterable[str], ctx)) if ctx else set()
 
     def _prepare(sid: str, body: str) -> object:
         prepare_calls.append((sid, body))
@@ -174,7 +187,7 @@ def test_engine_threads_oracle_prepare_context_per_statute() -> None:
             segment_selector=lambda sid, body: iter(units[sid]),
             projection_fn=lambda unit, sid: projections[unit.text],
             # oracle reads the threaded per-statute context, ignoring the unit
-            oracle_fn=lambda unit, ctx: set(ctx) if ctx else set(),
+            oracle_fn=_oracle_from_context,
             miss_shape_fn=lambda missing, marker: "shape",
             oracle_prepare_fn=_prepare,
         )
@@ -184,6 +197,10 @@ def test_engine_threads_oracle_prepare_context_per_statute() -> None:
             bundle_mod.decode_body_text,
             pb_mod._archive_path,
         ) = saved
+        if previous_farchive is None:
+            sys.modules.pop("farchive", None)
+        else:
+            sys.modules["farchive"] = previous_farchive
 
     assert prepare_calls == [("7/2025", "7/2025")]
     assert res.buckets["match"] == 1  # projection {a} == oracle-from-context {a}

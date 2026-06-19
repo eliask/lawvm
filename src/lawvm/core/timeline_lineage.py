@@ -9,6 +9,7 @@ from typing import Callable, Mapping, Protocol
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent, migration_event_sort_key
+from lawvm.core.semantic_types import FacetKind
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.timeline_results import (
     MaterializationLineageDecision,
@@ -44,9 +45,9 @@ class _PrefixMigrationEventSignature:
     event_id: str
     kind: str
     from_path: TreePath
-    from_special: object | None
+    from_special: FacetKind | None
     to_path: TreePath
-    to_special: object | None
+    to_special: FacetKind | None
     effective: str
     source_statute: str
 

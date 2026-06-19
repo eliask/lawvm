@@ -137,6 +137,7 @@ def test_single_candidate_slot_gets_single_admissibility() -> None:
         amend_subs=tuple(subs),
         payload_subsec_ops=(op,),
         intro_subsec_ops=(),
+        renumber_subsec_ops=(),
         duplicate_targets=(),
     )
     result = _assign_subsection_slots(inputs)
@@ -155,6 +156,7 @@ def test_multiple_same_label_slots_gets_ambiguous() -> None:
         amend_subs=tuple(subs),
         payload_subsec_ops=(op,),
         intro_subsec_ops=(),
+        renumber_subsec_ops=(),
         duplicate_targets=(),
     )
     result = _assign_subsection_slots(inputs)
@@ -172,6 +174,7 @@ def test_fallback_binding_when_labels_dont_match() -> None:
         amend_subs=tuple(subs),
         payload_subsec_ops=(op,),
         intro_subsec_ops=(),
+        renumber_subsec_ops=(),
         duplicate_targets=(),
     )
     result = _assign_subsection_slots(inputs)
@@ -189,6 +192,7 @@ def test_mixed_single_and_fallback() -> None:
         amend_subs=tuple(subs),
         payload_subsec_ops=(op1, op2),
         intro_subsec_ops=(),
+        renumber_subsec_ops=(),
         duplicate_targets=(),
     )
     result = _assign_subsection_slots(inputs)
@@ -210,6 +214,7 @@ def test_no_ops_produces_empty_certificates() -> None:
         amend_subs=(_make_subsection("1"),),
         payload_subsec_ops=(),
         intro_subsec_ops=(),
+        renumber_subsec_ops=(),
         duplicate_targets=(),
     )
     result = _assign_subsection_slots(inputs)

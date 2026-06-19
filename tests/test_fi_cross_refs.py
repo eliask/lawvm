@@ -286,9 +286,12 @@ def test_nojalla_act_typing_agrees_across_projections() -> None:
     lens_issued = [
         m
         for m in res.mentions
-        if m.phrase_lemma == "ISSUED_UNDER" and m.target_provision_ref.statute_id == "2014/1301"
+        if m.phrase_lemma == "ISSUED_UNDER"
+        and m.target_provision_ref is not None
+        and m.target_provision_ref.statute_id == "2014/1301"
     ]
     assert len(lens_issued) == 1
+    assert lens_issued[0].target_provision_ref is not None
     assert lens_issued[0].cite_kind is CiteKind.CROSS_STATUTE
     assert lens_issued[0].target_provision_ref.section_label == "60a"
 

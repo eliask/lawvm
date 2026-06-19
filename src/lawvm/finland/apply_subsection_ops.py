@@ -707,14 +707,14 @@ def _merge_sparse_omission_item_rows_into_subsection(
     if live_nums != sorted(live_nums) or len(set(live_nums)) != len(live_nums):
         return None
 
-    live_by_num = dict(zip(live_nums, live_rows))
+    live_by_num = dict(zip(live_nums, live_rows, strict=True))
     max_live = live_nums[-1]
     extension_nums = [num for num in payload_nums if num not in live_by_num]
     if extension_nums:
         if extension_nums != list(range(max_live + 1, max_live + 1 + len(extension_nums))):
             return None
 
-    payload_by_num = dict(zip(payload_nums, payload_rows))
+    payload_by_num = dict(zip(payload_nums, payload_rows, strict=True))
     merged_nums = sorted(set(live_nums).union(payload_nums))
     merged_rows = [
         payload_by_num[num] if num in payload_by_num else live_by_num[num]

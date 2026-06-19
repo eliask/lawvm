@@ -484,12 +484,16 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A metadata-carried 'at the end add' insert appends the payload at the provision end.",
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch":
         "A metadata-carried at-end substitute insert appends the substituted payload at the end.",
+    "uk_effect_metadata_carried_at_end_insert_quoted_text_patch":
+        "A metadata-carried at-end insert appends the explicitly quoted payload at the provision end.",
     "uk_effect_metadata_carried_range_insert_substitution_text_patch":
         "A metadata-carried range insert/substitution rewrites the spanned text with the carried payload.",
     "uk_effect_metadata_carried_substituting_words_text_patch":
         "A metadata-carried 'substituting the words' patch rewrites the named words at the target.",
     "uk_effect_metadata_pseudo_definition_entry_insert_text_patch":
         "A metadata pseudo-definition entry insert adds a definition-shaped entry as a text patch.",
+    "uk_payload_foreign_source_id_retargeted":
+        "A foreign-source payload id that can be retargeted to the affected provision is recorded with an explicit retargeting rule.",
     "uk_effect_compound_lettered_text_patch_instruction":
         "A compound lettered instruction is lowered to per-letter text patches at the addressed children.",
     "uk_effect_flat_target_paragraph_substitution_text_payload":

@@ -126,6 +126,35 @@ def _group_has_scope_that_overrides_body_wrapper(
     return False
 
 
+def _group_has_live_scoped_target_path(
+    master: ReplayState,
+    group_ops: list[AmendmentOp],
+    *,
+    target_norm: str,
+    target_chapter: str,
+    target_part: Optional[str],
+) -> bool:
+    if master.find_section_path(target_norm, target_chapter, target_part) is None:
+        return False
+    matching_ops = [
+        op
+        for op in group_ops
+        if op.target_unit_kind == "section"
+        and _norm_num_token(op.target_section or "") == target_norm
+    ]
+    if not matching_ops:
+        return False
+    for op in matching_ops:
+        if op.target_chapter != target_chapter:
+            return False
+        if op.lo is None:
+            return False
+        lo_chapter = next((label for kind, label in op.lo.target.path if kind == "chapter"), None)
+        if lo_chapter != target_chapter:
+            return False
+    return True
+
+
 def _source_body_is_single_mixed_chapter_wrapper(
     source_model: AmendmentSourceModel,
     body_chapter: str,
@@ -362,6 +391,24 @@ def _maybe_apply_body_chapter_insert_correction(
             target_chapter=request.target_chapter,
         )
     )
+    body_wrapper_overridden_by_live_target = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and _source_body_is_single_mixed_chapter_wrapper(
+            request.source_model,
+            body_chapter,
+            request.master,
+        )
+        and not body_chapter_is_inserted
+        and _group_has_live_scoped_target_path(
+            request.master,
+            request.group_ops,
+            target_norm=request.target_norm,
+            target_chapter=request.target_chapter,
+            target_part=request.target_part,
+        )
+    )
     group_targets_whole_section = any(
         op.target_unit_kind == "section"
         and _norm_num_token(op.target_section or "") == request.target_norm
@@ -389,6 +436,7 @@ def _maybe_apply_body_chapter_insert_correction(
         )
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and not body_wrapper_overridden_by_scope
+        and not body_wrapper_overridden_by_live_target
     )
     source_owned_existing_chapter_scope = (
         body_chapter is not None
@@ -400,6 +448,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not body_wrapper_overridden_by_scope
+        and not body_wrapper_overridden_by_live_target
     )
     if body_chapter is not None and (
         group_targets_whole_section

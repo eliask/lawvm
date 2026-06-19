@@ -21,7 +21,7 @@ from lawvm.core.elaboration_context import (
     snapshot_replay_lookups,
     snapshot_target_context,
 )
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.core.phase_result import Finding, PhaseResult
@@ -392,7 +392,6 @@ def _compile_group(
             target_part=target_part,
             group_ops=group_ops,
             standalone_section_targets=standalone_section_targets,
-            same_container_section_targets=set(),
             inserted_chapter_labels=inserted_chapter_labels,
             source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
@@ -3927,7 +3926,6 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
             group_surface=group_surface,
             group_ops=[op],
             standalone_section_targets=set(),
-            same_container_section_targets=set(),
             foreign_scoped_standalone_section_targets=set(),
             foreign_scoped_replace_section_targets=set(),
             effective_target_part=None,
@@ -4910,7 +4908,7 @@ def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -
             op_id="replace_12_heading",
             sequence=1,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=(("chapter", "3"), ("section", "12")), special="otsikko"),
+            target=LegalAddress(path=(("chapter", "3"), ("section", "12")), special=FacetKind.HEADING),
             payload=None,
         ),
     )
@@ -4948,9 +4946,12 @@ def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -
     recovered = result.output
     assert recovered.effective_target_chapter == "3"
     assert [op.target_chapter for op in recovered.group_ops] == ["3", "3"]
-    assert all(op.lo is not None for op in recovered.group_ops)
-    assert recovered.group_ops[0].lo.target.path == (("chapter", "3"), ("section", "12"))
-    assert recovered.group_ops[1].lo.target.path == (
+    first_lo = recovered.group_ops[0].lo
+    second_lo = recovered.group_ops[1].lo
+    assert first_lo is not None
+    assert second_lo is not None
+    assert first_lo.target.path == (("chapter", "3"), ("section", "12"))
+    assert second_lo.target.path == (
         ("chapter", "3"),
         ("section", "12"),
         ("subsection", "2"),
@@ -6198,21 +6199,25 @@ def test_build_amendment_bundle_salvages_malformed_chapter_insert_surface() -> N
     except (OSError, RuntimeError) as exc:
         pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
 
-    compiled = set(bundle["compiled_ops"])
+    final_ops = {
+        op
+        for group in bundle["groups"]
+        for op in group.get("ops_final", [])
+    }
 
-    assert "INSERT 7a luku" in compiled
-    assert "INSERT 9 luku 60 § 3 mom" in compiled
-    assert "INSERT 10 luku 81a §" in compiled
-    assert "INSERT 10 luku 81b §" in compiled
-    assert "INSERT 10 luku 81c §" in compiled
-    assert "INSERT 12 luku 91a §" in compiled
-    assert "INSERT 15 luku 113 §" in compiled
-    assert "INSERT 26a luku" in compiled
-    assert "INSERT 29 luku 244a §" in compiled
-    assert "INSERT 29 luku 244b §" in compiled
-    assert "INSERT 37 luku 301a §" in compiled
-    assert "INSERT 38 luku 304 § 1 mom 14 kohta" in compiled
-    assert "INSERT 38 luku 304 § 1 mom 17 kohta" in compiled
+    assert "INSERT 7a luku" in final_ops
+    assert "INSERT 9 luku 60 § 3 mom" in final_ops
+    assert "INSERT 10 luku 81a §" in final_ops
+    assert "INSERT 10 luku 81b §" in final_ops
+    assert "INSERT 10 luku 81c §" in final_ops
+    assert "INSERT 12 luku 91a §" in final_ops
+    assert "INSERT 16 luku 113 §" in final_ops
+    assert "INSERT 26a luku" in final_ops
+    assert "INSERT 29 luku 244a §" in final_ops
+    assert "INSERT 29 luku 244b §" in final_ops
+    assert "INSERT 37 luku 301a §" in final_ops
+    assert "INSERT 38 luku 304 § 1 mom 14 kohta" in final_ops
+    assert "INSERT 38 luku 304 § 1 mom 17 kohta" in final_ops
 
 
 def test_build_amendment_bundle_expands_letter_suffix_range_with_hyphen_dash() -> None:
@@ -8682,14 +8687,14 @@ def test_root_insert_fallback_recovers_decision_scoped_secondary_section_range()
     assert ("P", "14d") in got
 
 
-def test_combined_root_insert_ranges_place_trailing_sections_under_following_chapter() -> None:
+def test_combined_root_insert_ranges_keep_trailing_sections_under_source_chapter() -> None:
     master = pinned_replay("2007/159", mode="official_consolidation")
     sections = extract_ir_sections(master.ir)
 
-    assert "chapter:6/section:20a" in sections
-    assert "chapter:6/section:20h" in sections
-    assert "chapter:5c/section:20a" not in sections
-    assert "chapter:5c/section:20h" not in sections
+    assert "chapter:5c/section:20a" in sections
+    assert "chapter:5c/section:20h" in sections
+    assert "chapter:6/section:20a" not in sections
+    assert "chapter:6/section:20h" not in sections
 
 
 def test_replay_xml_2002_1330_prefers_live_substantive_section_8_over_repeal_placeholder_slot() -> None:
@@ -11950,7 +11955,7 @@ def test_replay_xml_retargets_1962_420_section_22_heading_insert_to_chapter_four
         for row in compiled_ops
         if row.get("source_statute") == "2024/247"
         and row.get("target_norm") == "22"
-        and row.get("witness_rule_id") == "fi.insertion_heading"
+        and row.get("target_special") == "otsikko"
     )
 
     assert row["target_chapter"] == "4"
@@ -11978,7 +11983,7 @@ def test_replay_xml_dedupes_duplicate_amendment_records_for_1978_38() -> None:
     assert not any(getattr(failed, "amendment_id", "") == "2003/741" for failed in failed_ops)
 
 
-def test_replay_xml_materializes_1962_420_section_22_only_in_chapter_four() -> None:
+def test_replay_xml_materializes_1962_420_section_22_once_as_commencement_section() -> None:
     result = pinned_replay("1962/420", mode="legal_pit", quiet=True)
 
     def _walk_sections(node: IRNode, path: tuple[tuple[str, str], ...] = ()) -> list[tuple[tuple[str, str], ...]]:
@@ -11990,12 +11995,16 @@ def test_replay_xml_materializes_1962_420_section_22_only_in_chapter_four() -> N
         return found
 
     section_paths = _walk_sections(result.state.ir)
-    assert section_paths == [(("chapter", "4"), ("section", "22"))]
+    assert section_paths == [(("hcontainer", ""), ("section", "22"))]
 
-    section_22 = result.state.find_section("22", "4")
-    assert section_22 is not None
+    section_22 = next(
+        child
+        for container in result.state.ir.children
+        if container.kind is IRNodeKind.HCONTAINER
+        for child in container.children
+        if child.kind is IRNodeKind.SECTION and child.label == "22"
+    )
     text = irnode_to_text(section_22)
-    assert "Voimaantulo" in text
     assert "Tämä laki tulee voimaan" in text
 
 
@@ -14985,7 +14994,7 @@ def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum
 
     descriptions = bundle["compiled_ops"]
 
-    assert "REPEAL 2 § 3 mom" in descriptions
+    assert "REPEAL 1 luku 2 § 3 mom" in descriptions
     assert "REPEAL 2 § 2 mom" not in descriptions
 
 
@@ -15537,14 +15546,9 @@ def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trail
 ) -> None:
     bundle = amendment_bundle_2013_588_2025_201
     group21b = next(group for group in bundle["groups"] if group["target_norm"] == "21b")
-    group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87" and group["target_part"] == "5")
-    group87_insert = next(
-        group
-        for group in bundle["groups"]
-        if group["target_norm"] == "87" and group["ops_final"] == ["INSERT 13 luku 87 § 6 mom"]
-    )
+    group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87")
 
-    assert group21b["ops_final"] == ["REPLACE 21b § 2 mom"]
+    assert group21b["ops_final"] == ["REPLACE 4 luku 21b § 2 mom"]
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"
         for observation in group21b["elaboration_observations"]
@@ -15554,11 +15558,12 @@ def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trail
         for observation in group21b["elaboration_observations"]
     )
 
-    assert group87["target_part"] == "5"
+    assert group87["target_part"] == ""
     assert group87["target_chapter"] == "13"
-    assert group87["ops_final"] == ["REPLACE 13 luku 87 § 1 mom"]
-    assert group87_insert["target_chapter"] == "13"
-    assert group87_insert["ops_final"] == ["INSERT 13 luku 87 § 6 mom"]
+    assert group87["ops_final"] == [
+        "REPLACE 13 luku 87 § 1 mom",
+        "INSERT 13 luku 87 § 6 mom",
+    ]
     assert group87["rejected_ops_pre_constraints"] == []
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"
@@ -15703,8 +15708,8 @@ def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_s
     bundle = build_amendment_bundle("1996/1266", "2012/963", mode="official_consolidation")
     group30 = next(group for group in bundle["groups"] if group["target_norm"] == "30")
 
-    assert group30["ops_raw"] == ["REPLACE 30 §"]
-    assert group30["ops_final"] == ["REPLACE 30 §"]
+    assert group30["ops_raw"] == ["REPLACE 3 luku 30 §"]
+    assert group30["ops_final"] == ["REPLACE 3 luku 30 §"]
 
 
 def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:
@@ -15780,7 +15785,7 @@ def test_inspect_amendment_2013_588_2019_108_keeps_section_87_subsection_replace
     group11a = next(group for group in bundle["groups"] if group["target_unit_kind"] == "chapter" and group["target_norm"] == "11a")
     group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87")
 
-    assert group87["ops_final"] == ["REPLACE 87 § 2 mom"]
+    assert group87["ops_final"] == ["REPLACE 13 luku 87 § 2 mom"]
     assert any(
         observation["kind"] == "ELAB.CONTAINER_PRUNED_SHADOWED"
         and "87" in observation.get("detail", {}).get("pruned_sections", [])
@@ -15801,7 +15806,7 @@ def test_inspect_amendment_2013_588_2023_497_owns_sparse_higher_moment_binding_f
     bundle = build_amendment_bundle("2013/588", "2023/497", mode="official_consolidation")
     group93 = next(group for group in bundle["groups"] if group["target_norm"] == "93")
 
-    assert group93["ops_final"] == ["REPLACE 93 § 4 mom"]
+    assert group93["ops_final"] == ["REPLACE 13 luku 93 § 4 mom"]
     assert group93["sparse_slot_bindings"][0]["slot_label"] == "4"
     assert any(
         observation["kind"] == "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"

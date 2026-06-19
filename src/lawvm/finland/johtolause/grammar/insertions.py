@@ -524,7 +524,7 @@ def _recognize_alakohta_insert_into_item(
     """
     saved = scan.pos
     item_nums = _number_list(scan)
-    if len(item_nums) != 1 or not _at_cat_cases(scan, "KOHTA", "ILL", "GEN"):
+    if item_nums is None or len(item_nums) != 1 or not _at_cat_cases(scan, "KOHTA", "ILL", "GEN"):
         scan.goto(saved)
         return None
     base_item = item_nums[0][0] + item_nums[0][1]

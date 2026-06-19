@@ -73,10 +73,10 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # The both-parser drop-recovery round added 12 NEW-better recoveries (6 nimike
     # + 4 labelled-subheading + 2 nojalla-authority), a class of its own.
     assert len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0) == 12
-    # The insertion-recovery round added 5 NEW-better recoveries where the legacy
+    # The insertion-recovery round added 7 NEW-better recoveries where the legacy
     # parser flattened/dropped a ``lisätään ... uusi X`` insertion to a bare ref
     # (or dropped the LISATA group); NEW emits the correct SurfaceInsertion.
-    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0) == 5
+    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0) == 7
     # The four adjudication sets are mutually disjoint (no sid double-counted).
     assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0

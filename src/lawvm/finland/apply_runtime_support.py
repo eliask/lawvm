@@ -313,7 +313,10 @@ def _base_provision_index_for_replay_history(
         return None
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
         return _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
-    cache: dict[int, tuple[IRNode, LabelIndex]] | None = replay_history_ops.base_provision_index_cache  # type: ignore[assignment]
+    cache = cast(
+        dict[int, tuple[IRNode, LabelIndex]] | None,
+        replay_history_ops.base_provision_index_cache,
+    )
     if cache is None:
         cache = {}
         replay_history_ops.base_provision_index_cache = cache
@@ -335,7 +338,10 @@ def _base_target_exists_for_replay_history(
         return False
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
         return _tops.resolve(base_ir, target_path) is not None
-    cache: dict[int, tuple[IRNode, dict[Path, bool]]] | None = replay_history_ops.base_target_exists_cache  # type: ignore[assignment]
+    cache = cast(
+        dict[int, tuple[IRNode, dict[Path, bool]]] | None,
+        replay_history_ops.base_target_exists_cache,
+    )
     if cache is None:
         cache = {}
         replay_history_ops.base_target_exists_cache = cache
@@ -432,7 +438,7 @@ def _snapshot_section_los_for_identity(
         return [replay_history_ops[i] for i in indices]
 
     cur_len = len(replay_history_ops)
-    index: _SectionSnapshotIndex | None = replay_history_ops.snapshot_index  # type: ignore[assignment]
+    index = cast(_SectionSnapshotIndex | None, replay_history_ops.snapshot_index)
     if index is None or index.indexed_len > cur_len:
         idx = {}
         start = 0
@@ -869,7 +875,7 @@ def _timeline_exact_target_exists_in_history(
         return False
 
     cur_len = len(replay_history_ops)
-    index: _TimelineExactTargetIndex | None = replay_history_ops.timeline_exact_target_index  # type: ignore[assignment]
+    index = cast(_TimelineExactTargetIndex | None, replay_history_ops.timeline_exact_target_index)
     if index is None or index.indexed_len > cur_len:
         earliest_effective_by_path: dict[Path, str] = {}
         start = 0
@@ -908,7 +914,7 @@ def _latest_target_op_for_path(
         return None
 
     cur_len = len(replay_history_ops)
-    index: _TimelineLatestTargetOpIndex | None = replay_history_ops.timeline_latest_target_op_index  # type: ignore[assignment]
+    index = cast(_TimelineLatestTargetOpIndex | None, replay_history_ops.timeline_latest_target_op_index)
     if index is None or index.indexed_len > cur_len:
         latest_by_path: dict[Path, _LegalOperation] = {}
         start = 0
@@ -942,7 +948,7 @@ def _record_payload_descendant_paths(
     ]
     while stack:
         path, node = stack.pop()
-        node_path = path + ((_kind_str(node.kind), node.label),)
+        node_path = path + ((_kind_str(node.kind), cast(str, node.label)),)
         existing = earliest_effective_by_path.get(node_path)
         if existing is None or not effective or (existing and effective < existing):
             earliest_effective_by_path[node_path] = effective
@@ -973,7 +979,7 @@ def _timeline_payload_target_exists_in_history(
         )
 
     cur_len = len(replay_history_ops)
-    index: _TimelinePayloadTargetIndex | None = replay_history_ops.timeline_payload_target_index  # type: ignore[assignment]
+    index = cast(_TimelinePayloadTargetIndex | None, replay_history_ops.timeline_payload_target_index)
     if index is None or index.indexed_len > cur_len:
         earliest_effective_by_path: dict[Path, str] = {}
         start = 0
@@ -1153,7 +1159,7 @@ def _emit_section_snapshot(
         if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
             if lo_ops_out.timeline_target_exists_cache is None:
                 lo_ops_out.timeline_target_exists_cache = {}
-            cache = lo_ops_out.timeline_target_exists_cache  # type: ignore[assignment]
+            cache = cast(dict[tuple[object, ...], bool], lo_ops_out.timeline_target_exists_cache)
         history_key = id(replay_history_ops) if replay_history_ops else 0
         true_key = (normalized_target_path, history_key, id(base_ir), before_effective)
         len_key = (normalized_target_path, history_key, len(replay_history_ops), id(base_ir), before_effective)
@@ -2769,6 +2775,8 @@ def _emit_section_snapshot(
 
     def _base_section_payload_for_complete_replacement() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind != "section":
+            return None
+        if base_provision_index is None:
             return None
         base_path = _base_resolved_path()
         base_node = _tops.resolve(base_ir, base_path) if base_path is not None else None

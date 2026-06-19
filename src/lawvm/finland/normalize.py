@@ -635,7 +635,7 @@ def _extract_insert_container_ops_fallback_with_coverage(
                     "target_unit_kind": "part",
                     "target_part": part,
                 },
-                ignored_spans=(),
+                ignored_spans=[],
                 matched_text=cleaned[m.start():m.end()],
             )
         )

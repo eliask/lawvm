@@ -10,7 +10,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.phase_result import PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
-from lawvm.finland.body_coverage import extract_body_coverage
+from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import build_observed_body_inventory
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.ops import AmendmentOp
@@ -712,10 +712,19 @@ def test_source_model_payload_lookup_converts_only_selected_source_unit(
     calls = 0
     real_payload_from_node = payload_lookup._payload_ir_from_muutos_node
 
-    def counted_payload_from_node(*args: object, **kwargs: object):
+    def counted_payload_from_node(
+        muutos_sec: etree._Element,
+        *,
+        target_unit_kind: str,
+        target_norm: str,
+    ):
         nonlocal calls
         calls += 1
-        return real_payload_from_node(*args, **kwargs)
+        return real_payload_from_node(
+            muutos_sec,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+        )
 
     monkeypatch.setattr(
         payload_lookup,
@@ -854,6 +863,8 @@ def test_source_model_payload_lookup_resolves_duplicate_coverage_refs_by_unit_id
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/11")
     coverage_units = model.body_coverage_units()
     source_refs = [unit.payload_ref for unit in coverage_units]
+    assert isinstance(source_refs[0], BodyCoveragePayloadRef)
+    assert isinstance(source_refs[1], BodyCoveragePayloadRef)
 
     first = model.lookup_payload_ir_for_coverage_ref(source_refs[0])
     second = model.lookup_payload_ir_for_coverage_ref(source_refs[1])

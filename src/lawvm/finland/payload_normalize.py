@@ -1216,7 +1216,7 @@ def _assign_numbered_table_companion_slot_ops(
         _obs(
             "ELAB.NUMBERED_TABLE_COMPANION_SUBSECTION_BINDING",
             "sparse_subsection_elaboration",
-            source_target_paragraph=int(op.target_paragraph),
+            source_target_paragraph=int(op.target_paragraph or 0),
             structural_payload_label=str(sub.label or ""),
             numbered_table_targets=list(op.numbered_table_targets),
             op_description=op.description(),

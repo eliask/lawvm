@@ -182,10 +182,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "(nested quantifiers; CATEGORY false-positives resolved by A18). "
         "Pre-existing baseline."
     ),
-    "src/lawvm/finland/cross_refs.py": (
-        "Pre-existing baseline: _REF_PATTERN has nested quantifiers. "
-        "Pre-existing baseline."
-    ),
     "src/lawvm/finland/frontend_compile.py": (
         "Pre-existing baseline: address/label patterns with adjacent repeats "
         "(CATEGORY false-positives partially resolved by A18; genuine nested "
@@ -214,12 +210,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "near-misses, no catastrophic blowup. The static lint flags the adjacent "
         "bounded-lazy .{0,N}? pair as overlapping; benign-linear false positive."
     ),
-    "src/lawvm/finland/inline_citation_extractor.py": (
-        "Pre-existing baseline from inline-citation inventory: compact citation "
-        "recognizers for ombudsman, chancellor, audit, and committee references. "
-        "These are source-evidence extractors, not replay regexes; batch-clean "
-        "with the parser-smell inventory."
-    ),
     "src/lawvm/finland/johtolause/clause_patterns.py": (
         "Pre-existing baseline: _SINGLE_ROW_{REPLACE,REPEAL}_RE have complex "
         "adjacent quantifier patterns (partially fixed by A10; lint still flags "
@@ -243,11 +233,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: embedded-number patterns with adjacent repeats "
         "(CATEGORY false-positives partially resolved by A18; bounded .{N} "
         "adjacent pairs remain). Pre-existing baseline."
-    ),
-    "src/lawvm/finland/preparatory_reference_extractor.py": (
-        "Pre-existing baseline from preparatory-reference extraction: government "
-        "proposal href and Official Journal citation recognizers. Evidence-only "
-        "surface; clean up with the citation/reference extractor pass."
     ),
     "src/lawvm/finland/ref_mention_extractor.py": (
         "Pre-existing baseline: verbose plain-text Finnish statute mention "

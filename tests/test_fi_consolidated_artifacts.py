@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import cast
 
+from lawvm.corpus_store import CorpusStore
 from lawvm.finland import consolidated_store
 from lawvm.finland import corpus as fi_corpus
 from lawvm.finland.consolidated_artifacts import (
@@ -334,15 +336,16 @@ def test_selected_consolidated_locator_cache_is_scoped_to_corpus_and_clearable()
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
     corpus = DummyCorpus()
+    corpus_typed = cast(CorpusStore, corpus)
 
-    first = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
-    second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    first = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
+    second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
 
     assert first == second == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
     assert corpus._archive.locator_calls == 1
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
-    third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
 
     assert third == first
     assert corpus._archive.locator_calls == 2
@@ -382,15 +385,16 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
     corpus = DummyCorpus()
+    corpus_typed = cast(CorpusStore, corpus)
 
-    first = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
-    second = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    first = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus_typed)
+    second = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus_typed)
 
     assert first == second == (dt.date(2024, 1, 2), "2024/12")
     assert corpus.read_locator_calls == 1
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
-    third = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus)  # type: ignore[arg-type]
+    third = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus_typed)
 
     assert third == first
     assert corpus.read_locator_calls == 2

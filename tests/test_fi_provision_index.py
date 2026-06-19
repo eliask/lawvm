@@ -82,7 +82,8 @@ def _query(body: str, idx: ProvisionIndex, needle: str) -> ProvisionSpan:
     assert pos >= 0, needle
     sp = idx.provision_at(pos, pos + len(needle))
     assert sp is not AMBIGUOUS, needle
-    return sp  # type: ignore[return-value]
+    assert isinstance(sp, ProvisionSpan), needle
+    return sp
 
 
 def test_recovers_momentti_paths() -> None:
@@ -126,6 +127,7 @@ def test_preface_p_is_unmapped_failloud_not_fabricated() -> None:
     pos = body.find("123/2024 Esimerkkilaki")
     sp = idx.provision_at(pos, pos + len("123/2024 Esimerkkilaki"))
     assert sp is not AMBIGUOUS
+    assert isinstance(sp, ProvisionSpan)
     assert sp.mapped is False
     assert sp.unmapped_reason  # non-empty witness
     assert sp.provision_path() == ""

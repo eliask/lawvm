@@ -1,7 +1,7 @@
 from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.compile_group_scope_recovery import (
     CompileGroupScopeRecoveryRequest,
     resolve_compile_group_scope_recovery,
@@ -60,7 +60,7 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
             op_id="replace_25_heading",
             sequence=1,
             action=StructuralAction.REPLACE,
-            target=LegalAddress(path=(("chapter", "6"), ("section", "25")), special="heading"),
+            target=LegalAddress(path=(("chapter", "6"), ("section", "25")), special=FacetKind.HEADING),
             payload=None,
         ),
     )

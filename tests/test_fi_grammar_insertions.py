@@ -27,6 +27,7 @@ from lawvm.finland.johtolause.grammar.parser import OutOfScope
 from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
+    SurfaceTargetRef,
     TargetKind,
 )
 
@@ -110,7 +111,11 @@ def test_conj_before_uusi_after_citation_is_owned() -> None:
         new_parser.parse,
     )
     (vg2,) = chained.verb_groups
-    labels = {(_as_insertion(n).label, _as_insertion(n).sub_target.momentti) for n in vg2.nodes}
+    labels = set()
+    for n in vg2.nodes:
+        insertion = _as_insertion(n)
+        assert insertion.sub_target is not None
+        labels.add((insertion.label, insertion.sub_target.momentti))
     assert labels == {("10", 3), ("18a", 4)}
 
 
@@ -235,7 +240,11 @@ def test_doc_section_chain_shares_one_batch_witness_span() -> None:
     (vg,) = model.verb_groups
     labels = [_as_insertion(n).label for n in vg.nodes]
     assert labels == ["5", "6", "7"]
-    spans = {_as_insertion(n).witness.source_span for n in vg.nodes if n.witness}
+    spans = set()
+    for n in vg.nodes:
+        insertion = _as_insertion(n)
+        assert insertion.witness is not None
+        spans.add(insertion.witness.source_span)
     assert len(spans) == 1, f"expected one shared batch span, got {spans}"
 
 
@@ -249,7 +258,11 @@ def test_section_ill_sub_target_folds_trailing_whole_section() -> None:
     )
     (vg,) = model.verb_groups
     assert [_as_insertion(n).label for n in vg.nodes] == ["130", "130", "145a"]
-    spans = {_as_insertion(n).witness.source_span for n in vg.nodes if n.witness}
+    spans = set()
+    for n in vg.nodes:
+        insertion = _as_insertion(n)
+        assert insertion.witness is not None
+        spans.add(insertion.witness.source_span)
     assert len(spans) == 1, f"expected one shared batch span, got {spans}"
 
 
@@ -575,7 +588,7 @@ def test_trailing_whole_part_carries_label_as_scope() -> None:
     assert report.equal, f"delta on {text!r}:\n{report.summary()}"
     model = parse_text_with(text, new_parser.parse)
     (vg,) = model.verb_groups
-    by_label = {n.label: n for n in vg.nodes}
+    by_label = {n.label: n for n in vg.nodes if isinstance(n, SurfaceTargetRef)}
     assert by_label["86"].part == "V"
     assert by_label["97"].part == "V"
 

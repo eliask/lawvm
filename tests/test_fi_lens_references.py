@@ -6,6 +6,8 @@ assembler mints them into a firewall-safe graph whose intrinsic edges resolve.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 from lawvm.core.legal_surface_assembler import assemble_surface_graph
 from lawvm.core.legal_surface_graph import SourceUnitRef
 from lawvm.core.legal_surface_lens import SurfaceAnalysisContext
@@ -304,15 +306,15 @@ class _VersionedStubRegistry:
     ``valid_from <= as_of`` so a past instant narrows a multi-version name.
     """
 
-    def __init__(self, table: dict[str, list[tuple[str, object]]]) -> None:
+    def __init__(self, table: dict[str, list[tuple[str, dt.date]]]) -> None:
         self._table = table
 
-    def lookup(self, name: str, as_of: object = None) -> _StubLookupResult:
+    def lookup(self, name: str, as_of: dt.date | None = None) -> _StubLookupResult:
         versions = self._table.get(name, [])
         if as_of is None:
             ids = [sid for sid, _vf in versions]
         else:
-            ids = [sid for sid, vf in versions if vf <= as_of]  # type: ignore[operator]
+            ids = [sid for sid, vf in versions if vf <= as_of]
         return _StubLookupResult(ids)
 
 

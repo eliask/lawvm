@@ -5391,7 +5391,7 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     assert got.rejected_ops == ()
     assert _pathologies(got) == ()
     assert got.subsec_map is not None
-    mapped = got.subsec_map.get(subsection_op)
+    mapped = got.subsec_map.for_op(subsection_op)
     assert mapped is not None
     assert mapped.label == "1"
     assert "New first moment" in " ".join(irnode_to_text(mapped).split())
@@ -6931,10 +6931,18 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
 
     assignment = _assign_subsection_slots(slot_inputs)
 
-    assert assignment.for_op(insert2).label == "2"
-    assert assignment.for_op(replace3).label == "3"
-    assert assignment.for_op(renumber3).label == "4"
-    assert assignment.for_op(renumber4).label == "5"
+    insert2_slot = assignment.for_op(insert2)
+    replace3_slot = assignment.for_op(replace3)
+    renumber3_slot = assignment.for_op(renumber3)
+    renumber4_slot = assignment.for_op(renumber4)
+    assert insert2_slot is not None
+    assert replace3_slot is not None
+    assert renumber3_slot is not None
+    assert renumber4_slot is not None
+    assert insert2_slot.label == "2"
+    assert replace3_slot.label == "3"
+    assert renumber3_slot.label == "4"
+    assert renumber4_slot.label == "5"
     assert assignment.unassigned_payload_slots == ()
     assert [obs.kind for obs in assignment.binding_observations].count(
         "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT"
