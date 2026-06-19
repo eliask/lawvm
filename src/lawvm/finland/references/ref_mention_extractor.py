@@ -1939,7 +1939,11 @@ def extract_inline_id_construction_mentions(
         text = _PLAIN_TEXT_RECOGNIZER._collect_non_ref_text(p_el)
         if not text or _PLAIN_TEXT_GUARD_PAREN not in text:
             continue
-        sp = parse_citation_sentence(text)
+        # Thread the CITING statute id so the construction lane's 2-digit-year
+        # century pivot is bounded causally — a cited act cannot post-date the
+        # statute that cites it (e.g. a 1950 statute's ``(1/19)`` is 1919, not
+        # 2019). Unknown citing year falls back to the legacy fixed pivot.
+        sp = parse_citation_sentence(text, source_statute_id=statute_id)
         if not sp.citations:
             continue
         # Per-<p> span cache so multiple targets from one anchor share a span.
@@ -2274,43 +2278,68 @@ def extract_all_reference_mentions(
         valid_at_interval=valid_at_interval,
     )
 
-    # Delegation-authority (``… nojalla``) lane.
+    # Delegation-authority (``… nojalla``) lane — construction PRIMARY.
     #
-    # PRIMARY: the delegation/authority construction parse recognizes the asetus
-    # authority-basis construction in the preamble and lifts each basis to an
-    # ISSUED_UNDER mention (canonical YEAR/NUMBER orientation, drafting-kind typing).
-    # FALLBACK: the production ``extract_asetus_authority`` regex — already consumed
-    # upstream by ``extract_cross_refs`` into the metadata/``domestic`` ISSUED_UNDER
-    # edges — is kept as the typed-residue safety net: nothing it found disappears
-    # (§1.8). The construction adds ONLY the bases the existing ISSUED_UNDER set did
-    # NOT carry (deduped by canonical parent id), each marked
-    # ``phrase_lemma="delegation_construction"`` so the construction-recall frontier
-    # is auditable. Skipped in annotation-independence measurement mode (the
-    # ISSUED_UNDER metadata lane is part of the suppressed ``<ref>``/metadata lane).
+    # The authority-basis family is OWNED by the construction parse
+    # (:func:`extract_delegation_construction_authority_mentions`): it recognizes
+    # the well-formed ``[act-name] (NUM/YEAR) N §:n nojalla`` basis in the preamble
+    # and lifts each to an ISSUED_UNDER mention (canonical YEAR/NUMBER orientation,
+    # per-basis drafting-kind typing, references-recognized section path). The
+    # construction is the SOLE source for every basis it covers.
+    #
+    # The production ``extract_asetus_authority`` regex — consumed upstream by
+    # ``extract_cross_refs`` → ``_merge_authority_basis`` into the ``domestic``
+    # ISSUED_UNDER mentions (metadata edges enriched / nojalla-only edges appended)
+    # — is DEMOTED to the typed-residue FALLBACK at the mention surface: for a
+    # parent the construction COVERS, the construction's (richer, sectioned) mention
+    # supersedes the regex-derived ``domestic`` ISSUED_UNDER mention, which is
+    # dropped here so the covered basis is single-sourced (no double-emission and no
+    # sectionless-regex shadow of a sectioned construction basis). The regex-derived
+    # ``domestic`` ISSUED_UNDER mention is KEPT only for the construction-DECLINED
+    # residue — the genuine shapes the construction refuses (fail-loud on noise):
+    # the ``… N §:n, sellaisena kuin se on laissa NNN/YYYY, nojalla`` amendment-
+    # history interjection (the dominant residue class) and OCR/abbreviation noise
+    # (``§;n`` / ``§.n``, ``mom.`` / ``mom:n``, ``7§:n``, ``sekä. 33 §:n``, glued
+    # ``nojallapäättänyt``). Empirically (full Finlex corpus) the construction owns
+    # the overwhelming majority of bases with their sections; the regex residue is
+    # ~727 source statutes / ~1076 (parent, section) tuples, ~92% the ``sellaisena
+    # kuin`` interjection. NOTHING the regex shipped at the PARENT level is lost
+    # (§1.8); the demotion only prefers the construction's typing/sections where
+    # both cover the same parent. The cross_refs ``_merge_authority_basis``
+    # enrichment of the StatuteGraph is untouched — this demotion is purely at the
+    # ``extract_all_reference_mentions`` surface. Skipped in annotation-independence
+    # measurement mode (the ISSUED_UNDER metadata lane is part of the suppressed
+    # ``<ref>``/metadata lane).
     authority = ExtractionResult()
+    domestic_mentions: List[ReferenceMention] = domestic.mentions
     if not ignore_annotations:
-        existing_issued_targets: set[str] = {
-            m.target_provision_ref.statute_id
-            for m in domestic.mentions
-            if m.edge_subtype == "ISSUED_UNDER" and m.target_provision_ref is not None
-        }
-        constr_authority, _covered = extract_delegation_construction_authority_mentions(
-            xml_bytes,
-            statute_id,
-            valid_at_interval=valid_at_interval,
+        constr_authority, construction_covered = (
+            extract_delegation_construction_authority_mentions(
+                xml_bytes,
+                statute_id,
+                valid_at_interval=valid_at_interval,
+            )
         )
-        for m in constr_authority.mentions:
-            tgt = m.target_provision_ref
-            if tgt is not None and tgt.statute_id in existing_issued_targets:
-                # The existing metadata/regex ISSUED_UNDER mention already owns this
-                # authority basis — keep that one (it carries the byte span); drop
-                # the construction duplicate so nothing is double-emitted.
-                continue
-            authority.mentions.append(m)
+        # Construction PRIMARY: emit every construction basis.
+        authority.mentions.extend(constr_authority.mentions)
+        # Regex residue ONLY: drop the regex/metadata-derived ``domestic``
+        # ISSUED_UNDER mention for any parent the construction already covers
+        # (single-source the covered basis); keep it for construction-declined
+        # residue parents and keep ALL non-ISSUED_UNDER domestic mentions intact.
+        if construction_covered:
+            domestic_mentions = [
+                m
+                for m in domestic.mentions
+                if not (
+                    m.edge_subtype == "ISSUED_UNDER"
+                    and m.target_provision_ref is not None
+                    and m.target_provision_ref.statute_id in construction_covered
+                )
+            ]
 
     combined = ExtractionResult()
     combined.mentions = (
-        domestic.mentions + affected.mentions + eu.mentions + plain.mentions
+        domestic_mentions + affected.mentions + eu.mentions + plain.mentions
         + surface.mentions + preparatory.mentions + authority.mentions
     )
     combined.rejected = (

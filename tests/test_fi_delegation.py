@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lawvm.finland.delegation import (
     DelegationDiagnostic,
+    _normalize_year,
     extract_asetus_authority,
     extract_delegations,
 )
@@ -173,3 +174,32 @@ def test_extract_asetus_authority_decree_basis_kind_not_act() -> None:
     assert [
         (e.parent_statute_id, e.parent_section, e.parent_kind) for e in edges
     ] == [("2005/1248", "3", "decree")]
+
+
+def test_normalize_year_bounded_by_citing_year() -> None:
+    # An authority basis cannot post-date the decree it authorizes: when the
+    # decree's year is known it bounds the 2-digit pivot. ``04`` cited by a 1990
+    # decree is 1904 (2004 post-dates 1990); cited by a 2010 decree it is 2004.
+    assert _normalize_year("04", 1990) == "1904"
+    assert _normalize_year("04", 2010) == "2004"
+    assert _normalize_year("86", 1990) == "1986"
+    # 4-digit untouched, with or without a citing year.
+    assert _normalize_year("1986", 1990) == "1986"
+    # Unknown citing year preserves the legacy fixed cutoff (no regression).
+    assert _normalize_year("04") == "2004"
+    assert _normalize_year("86") == "1986"
+
+
+def test_extract_asetus_authority_two_digit_year_bounded_to_citing_decree() -> None:
+    # A pre-2000 decree's preamble cites its authorizing law with a 2-digit year.
+    # The cited law cannot post-date the citing decree, so ``(82/16)`` cited by a
+    # 1952 decree is 1916, not 2016.
+    xml = _preamble_xml(
+        "Säädetään maanmittauslain (82/16) 3 §:n nojalla:".encode("utf-8")
+    )
+
+    edges = extract_asetus_authority(xml, "1952/407")
+
+    assert [
+        (e.parent_statute_id, e.parent_section) for e in edges
+    ] == [("1916/82", "3")]

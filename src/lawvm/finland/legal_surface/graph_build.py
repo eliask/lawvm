@@ -34,8 +34,14 @@ from lawvm.core.legal_surface_lints import (
     run_lint_passes,
 )
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
+from lawvm.finland.legal_surface.annotation_compare import (
+    GrammarAnnotationComparePass,
+)
 from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
 from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
+from lawvm.finland.legal_surface.lenses.annotation_witness import (
+    AnnotationWitnessLens,
+)
 from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
 from lawvm.finland.legal_surface.lenses.delegated_instrument import (
     DelegatedInstrumentLens,
@@ -110,6 +116,15 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     SanctionLens(),
     ExceptionConditionLens(),
     AnaphoraLens(),
+    # ADDITIVE annotation-witness surface (grammar7 §13-A). Mints one
+    # annotation_reference_witness node per inline <ref> element — the markup
+    # surface, explicitly NOT a reference_expr. It is a SEPARATE emitter: the
+    # grammar productions (the ReferenceLens above) never consume it, and adding
+    # it does not change the existing reference extraction. It runs ALONGSIDE the
+    # ReferenceLens so the grammar-induced reference set can be compared against
+    # the unmodified <ref> surface (the GrammarAnnotationComparePass below).
+    # "delete annotation DEPENDENCE, not annotation USE."
+    AnnotationWitnessLens(),
 )
 
 # Cross-lens edge passes, run in declared order after assembly (Pro r5 §D5).
@@ -127,6 +142,14 @@ DEFAULT_EDGE_PASSES: tuple[SurfaceEdgePass, ...] = (
     FrameTemporalColocationPass(),
     ExceptionScopesFramePass(),
     FrameActorColocationPass(),
+    # ADDITIVE grammar-vs-annotation comparison (grammar7 §13-B). Contrasts the
+    # grammar-induced reference_expr set against the annotation_reference_witness
+    # surface and mints grammar_annotation_compared edges carrying one of the
+    # SEVEN NEUTRAL comparison statuses (§14: a contrast, never a conclusion —
+    # grammar_only is NOT an "annotation bug", annotation_only is NOT a "parser
+    # miss"). A surface_only QA affordance; it adds edges only, never perturbing
+    # the existing reference nodes/edges.
+    GrammarAnnotationComparePass(),
 )
 
 # Lint passes (graph queries; Pro r5 §D6). Not run by build_legal_surface_graph

@@ -87,6 +87,16 @@ NODE_KINDS: frozenset[str] = frozenset(
         # at. Surface-only; records the instrument's surface form, never that the
         # delegation is legally valid.
         "delegated_instrument",
+        # The ANNOTATION-WITNESS surface (grammar7 §13-A). Minted by the
+        # annotation-witness lens from each inline AKN ``<ref>`` element: its
+        # href-resolved target + byte span + displayed surface text. It is a
+        # WITNESS — explicitly NOT a reference_expr / asserted reference. The
+        # grammar productions never consume it (they parse text spans → references
+        # independently); this node is a SEPARATE emitter so the grammar-induced
+        # reference set can be compared against the unmodified annotation surface.
+        # Surface-only; records what the ``<ref>`` markup SAYS, never that the
+        # citation is legally valid. "delete annotation DEPENDENCE, not USE."
+        "annotation_reference_witness",
         "surface_residual",
     }
 )
@@ -214,6 +224,26 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # the penalty is governed by that provision must leave the graph through a
         # named authorization object.
         "sanction_defers_to_provision",
+        # ── Grammar-vs-annotation comparison (grammar7 §13-B, §14 NEUTRAL) ─────
+        # A QA/contrast edge linking a grammar-induced reference_expr to the
+        # annotation_reference_witness it was matched against (or a self-edge on
+        # the single present side for the one-sided statuses). The NEUTRAL
+        # comparison verdict rides ``payload["comparison_status"]`` — one of the
+        # SEVEN grammar7 statuses:
+        #   both_same_target          — grammar and annotation agree on target
+        #   both_same_span_diff_target— same source span, divergent target
+        #   both_same_target_diff_span— same target, divergent source span
+        #   grammar_only              — grammar found it, no <ref> witness (self-edge
+        #                               on the reference_expr)
+        #   annotation_only           — <ref> witness with no grammar mention
+        #                               (self-edge on the witness)
+        #   both_present_noncomparable— both present but neither span nor target
+        #                               can be compared (e.g. unparseable href)
+        # CRUCIAL (§14): these are a CONTRAST, never a conclusion. grammar_only is
+        # NOT an "annotation bug"; annotation_only is NOT a "parser miss" — either
+        # side can be right, adjudication is a downstream per-case act. A SURFACE
+        # QA affordance, never a legal claim (§D7).
+        "grammar_annotation_compared",
     }
 )
 

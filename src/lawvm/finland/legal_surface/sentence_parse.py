@@ -176,33 +176,60 @@ def _is_fraction_paren(text: str, paren_start: int, paren_end: int) -> bool:
     return False
 
 
-def _expand_year(year_raw: str) -> str:
+def _expand_year(year_raw: str, citing_year: int | None = None) -> str:
     """Expand a 2-digit paren year to 4-digit (``95`` -> ``1995``); 4-digit as-is.
 
-    Same convention the plain-text by-id lane and :func:`parse_citation_sentence`
-    use: ``yy <= current two-digit year`` -> ``20yy`` else ``19yy``. Factored so the
-    citation parse AND the segment-paren orientation lookup expand identically (a
-    two-digit-year paren like ``(1767/95)`` must compare against the 4-digit
-    ``1767/1995`` form the projection and the oracle both carry).
+    The 2-digit form ``yy`` is genuinely ambiguous between ``19yy`` and ``20yy``.
+    The PRINCIPLED disambiguator is causal: a citation cannot post-date the statute
+    that makes it, so when the CITING statute's own enactment year is known it is an
+    UPPER BOUND on the cited year. The pivot then picks the LATEST century reading
+    that does NOT post-date the citing statute:
+
+      * if ``20yy <= citing_year`` -> ``20yy`` (the cited act is 21st-century and
+        still no later than the citing statute);
+      * else -> ``19yy`` (the 20th-century reading; the only one that can pre-date a
+        citing statute enacted before 20yy).
+
+    Example: a statute enacted in 1950 citing ``(1/19)`` means **1919**, because
+    ``2019`` post-dates 1950. (The 18xx/19xx ambiguity is OUT of this two-century
+    window — the fixed heuristic never reached it either — so the 19yy reading is
+    the floor here, left to the year-sanity filter downstream.)
+
+    Falls back to the legacy fixed century pivot (``yy <= current two-digit year``
+    -> ``20yy`` else ``19yy``) ONLY when ``citing_year`` is unknown, so call sites
+    that cannot thread the citing year keep their exact prior behavior.
+
+    Factored so the citation parse AND the segment-paren orientation lookup expand
+    identically (a two-digit-year paren like ``(1767/95)`` must compare against the
+    4-digit ``1767/1995`` form the projection and the oracle both carry).
     """
     if len(year_raw) == 2:
+        yy = int(year_raw)
+        if citing_year is not None:
+            # Causal bound: the cited act cannot post-date the citing statute.
+            # Prefer the 20yy reading only when it still does not post-date the
+            # citing statute; otherwise fall to the 19yy reading.
+            century = 2000 if (2000 + yy) <= citing_year else 1900
+            return str(century + yy)
         from datetime import date
 
-        yy = int(year_raw)
         current_yy = date.today().year % 100
         century = 2000 if yy <= current_yy else 1900
         return str(century + yy)
     return year_raw
 
 
-def _segment_id_parens(text: str) -> set[str]:
+def _segment_id_parens(text: str, citing_year: int | None = None) -> set[str]:
     """The inline ``(NUMBER/YEAR)`` parens in ``text``, as ``NUMBER/YEAR`` strings.
 
     Year normalized to 4-digit (:func:`_expand_year`) so a two-digit-year paren
     matches the canonical 4-digit orientation the oracle/projection keys carry.
+    ``citing_year`` (the enacting statute's year), when known, bounds the 2-digit
+    century pivot so the normalized form matches the same causally-bounded
+    expansion the citation parse produces.
     """
     return {
-        f"{m.group(1)}/{_expand_year(m.group(2))}"
+        f"{m.group(1)}/{_expand_year(m.group(2), citing_year)}"
         for m in _ID_PAREN_RE.finditer(text)
     }
 
@@ -292,7 +319,27 @@ def _find_declaration_marker(text_low: str) -> tuple[str, tuple[int, int]] | Non
     return m.group(0), (m.start(), m.end())
 
 
-def parse_citation_sentence(text: str) -> SentenceParse:
+def _citing_year_of(source_statute_id: str | None) -> int | None:
+    """Enactment year of a ``YEAR/NUMBER`` (or ``NUMBER/YEAR``) statute id, or None.
+
+    The citing statute's year is the causal UPPER BOUND on any 2-digit-year cite it
+    carries (:func:`_expand_year`). Statute ids are the canonical corpus key
+    ``YEAR/NUMBER`` (year first); we take whichever leading component is a plausible
+    enactment year (1700–2100). Returns ``None`` for an unparseable/absent id so the
+    pivot falls back to its legacy fixed heuristic (no regression where the citing
+    year is unknown).
+    """
+    if not source_statute_id or "/" not in source_statute_id:
+        return None
+    head = source_statute_id.split("/", 1)[0]
+    if head.isdigit() and 1700 <= int(head) <= 2100:
+        return int(head)
+    return None
+
+
+def parse_citation_sentence(
+    text: str, source_statute_id: str | None = None
+) -> SentenceParse:
     """Parse one sentence/clause span into a citation-bearing construction frame.
 
     ``text`` is the EXACT segment text (a sentence or clause span produced by the
@@ -303,10 +350,16 @@ def parse_citation_sentence(text: str) -> SentenceParse:
     declaration cue if present, and emit EXPLICIT residuals for every other span
     so the whole segment is owned (no silent drop).
 
+    ``source_statute_id`` (the CITING statute, when known) bounds the 2-digit-year
+    century pivot causally — a cited act cannot post-date the statute that cites it
+    (:func:`_expand_year`). Omitted/unknown -> the legacy fixed pivot (no
+    regression where the citing year is unavailable).
+
     Declines (``kind="declined"``, ``parser_lane=DECLINED``, the whole segment as
     one residual) when no ``(id)`` anchor is present — the segment is not in this
     family and is handed back as typed residue, never a guessed parse.
     """
+    citing_year = _citing_year_of(source_statute_id)
     n = len(text)
     text_low = text.casefold()
 
@@ -314,9 +367,10 @@ def parse_citation_sentence(text: str) -> SentenceParse:
     citations: list[CitationConstruction] = []
     for m in _ID_PAREN_RE.finditer(text):
         num = int(m.group(1))
-        # Two-digit year expansion, identical convention to the production
-        # plain-text lane (yy <= current => 20xx else 19xx).
-        year = _expand_year(m.group(2))
+        # Two-digit year expansion. When the citing statute's year is known it
+        # bounds the century pivot (a cite cannot post-date its citing statute);
+        # otherwise the legacy fixed convention (yy <= current => 20xx else 19xx).
+        year = _expand_year(m.group(2), citing_year)
         year_int = int(year)
         if year_int < 1700 or year_int > 2100 or num <= 0 or num > 999999:
             continue

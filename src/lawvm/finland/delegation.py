@@ -365,11 +365,23 @@ def _classify_authority_kind(name_word: str) -> str:
     return ''
 
 
-def _normalize_year(year_str: str) -> str:
-    """Normalize 2-digit year string to 4-digit (e.g. '86' → '1986', '04' → '2004')."""
+def _normalize_year(year_str: str, citing_year: Optional[int] = None) -> str:
+    """Normalize a 2-digit year string to 4-digit (e.g. '86' → '1986', '04' → '2004').
+
+    A 2-digit ``yy`` is ambiguous between ``19yy`` and ``20yy``. When the CITING
+    statute's enactment year is known it is a causal UPPER BOUND on the cited act
+    (a decree's authorizing-law cite cannot post-date the decree): pick the ``20yy``
+    reading only when it does not post-date the citing year, else ``19yy``.
+
+    Falls back to the legacy fixed cutoff (17-99 → 1917-1999, 00-16 → 2000-2016)
+    ONLY when ``citing_year`` is unknown, so callers that cannot supply it keep
+    their exact prior behavior.
+    """
     if len(year_str) == 4:
         return year_str
     y = int(year_str)
+    if citing_year is not None:
+        return str(2000 + y) if (2000 + y) <= citing_year else str(1900 + y)
     # Finnish laws: 17-99 → 1917-1999, 00-16 → 2000-2016
     return str(1900 + y) if y >= 17 else str(2000 + y)
 
@@ -606,6 +618,12 @@ def extract_asetus_authority(
     results: List[AuthorityEdge] = []
     seen: set[tuple[str, str, str]] = set()
 
+    # The decree's own enactment year is the causal upper bound on the year of any
+    # authorizing-law cite in its preamble (an authority basis cannot post-date the
+    # decree it authorizes). ``asetus_id`` is the canonical ``YEAR/NUMBER`` key.
+    _asetus_head = asetus_id.split("/", 1)[0]
+    citing_year = int(_asetus_head) if _asetus_head.isdigit() else None
+
     # A ``nojalla`` clause may coordinate several authority bases with
     # ``ja`` / ``sekä`` / ``,`` before one terminal ``nojalla``. Distribute that
     # single ``nojalla`` authority over ALL coordinated conjuncts: for each
@@ -620,7 +638,7 @@ def extract_asetus_authority(
         for m in _PAT_NOJALLA_CONJUNCT.finditer(window):
             name_word = (m.group(1) or '').strip()
             num, year = m.group(2), m.group(3)
-            parent_id = f"{_normalize_year(year)}/{num}"
+            parent_id = f"{_normalize_year(year, citing_year)}/{num}"
             # Glue the optional letter suffix onto the section number ("60 a §" →
             # "60a"), matching the AKN sec_ / inline-CITES "60a" convention. A bare
             # number with no suffix stays "60".
