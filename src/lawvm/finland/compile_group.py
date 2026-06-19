@@ -55,6 +55,7 @@ def compile_group_typed(
             muutos_tree=muutos_tree,
             strict_profile=strict_profile,
             body_inventory=request.body_inventory,
+            source_model=request.source_model,
         )
     )
     recovery = recovery_result.output
@@ -80,6 +81,7 @@ def compile_group_typed(
             target_norm=target_norm,
             target_chapter=recovery.surface_target_chapter,
             target_part=recovery.surface_target_part,
+            source_model=request.source_model,
         )
     )
 
@@ -94,6 +96,7 @@ def compile_group_typed(
             foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
             effective_target_part=recovery.effective_target_part,
             muutos_tree=muutos_tree,
+            source_model=request.source_model,
             johto=johto,
             profile=profile,
             strict_profile=strict_profile,

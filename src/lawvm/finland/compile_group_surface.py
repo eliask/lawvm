@@ -17,6 +17,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_normalize import normalize_source_ir
 from lawvm.finland.source_pathology import (
     build_recodification_omission_only_section_shell_pathology,
@@ -62,6 +63,7 @@ def collect_recodification_omission_only_section_shell_pathologies(
     target_norm: str,
     target_chapter: Optional[str],
     target_part: Optional[str],
+    source_model: AmendmentSourceModel | None = None,
 ) -> tuple[SourcePathology, ...]:
     """Record source limits for renumber-only destination omission shells."""
     if target_unit_kind != "section":
@@ -88,12 +90,16 @@ def collect_recodification_omission_only_section_shell_pathologies(
     if has_destination_payload_op:
         return ()
 
-    destination_ir, _destination_cross_ir = _find_muutos_ir(
-        muutos_tree,
-        target_unit_kind,
-        destination_section,
-        None,
-        None,
+    destination_ir, _destination_cross_ir = (
+        source_model.find_payload_ir(target_unit_kind, destination_section, None, None)
+        if source_model is not None
+        else _find_muutos_ir(
+            muutos_tree,
+            target_unit_kind,
+            destination_section,
+            None,
+            None,
+        )
     )
     if not _is_sparse_source_shell(destination_ir):
         return ()
@@ -119,6 +125,7 @@ class BuildGroupSurfaceRequest:
     target_norm: str
     target_chapter: Optional[str]
     target_part: Optional[str]
+    source_model: AmendmentSourceModel | None = None
 
 
 def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupSurface]:
@@ -143,12 +150,21 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     )
     surface_findings: list[Finding] = []
 
-    muutos_ir, cross_ir = _find_muutos_ir(
-        muutos_tree,
-        target_unit_kind,
-        target_norm,
-        target_chapter,
-        target_part,
+    muutos_ir, cross_ir = (
+        request.source_model.find_payload_ir(
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+        if request.source_model is not None
+        else _find_muutos_ir(
+            muutos_tree,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
+        )
     )
     if target_unit_kind == "section":
         destination_section = _renumber_destination_section_label(group_ops)
@@ -171,12 +187,21 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
         source_shell = _is_sparse_source_shell(muutos_ir)
         source_surface = "missing" if muutos_ir is None else "sparse_omission_shell"
         if destination_section is not None and has_followup_payload_op and (muutos_ir is None or source_shell):
-            destination_ir, destination_cross_ir = _find_muutos_ir(
-                muutos_tree,
-                target_unit_kind,
-                destination_section,
-                None,
-                None,
+            destination_ir, destination_cross_ir = (
+                request.source_model.find_payload_ir(
+                    target_unit_kind,
+                    destination_section,
+                    None,
+                    None,
+                )
+                if request.source_model is not None
+                else _find_muutos_ir(
+                    muutos_tree,
+                    target_unit_kind,
+                    destination_section,
+                    None,
+                    None,
+                )
             )
             if destination_ir is not None and not _is_sparse_source_shell(destination_ir):
                 muutos_ir, cross_ir = destination_ir, destination_cross_ir

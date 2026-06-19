@@ -59,6 +59,7 @@ from lawvm.finland.restructure_plan_replay import (
     execute_restructure_plan_with_evidence as _execute_restructure_plan_with_evidence,
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ class ApplySupplementalRecoveryRequest:
     executed_restructure_plan_ids: Set[str]
     standalone_section_targets: frozenset[StandaloneSectionTarget]
     migration_ledger: Optional[MigrationLedger]
+    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,6 +275,7 @@ def run_apply_supplemental_recovery(
                 op_source=uncov_src,
                 new_chapter_labels=set(new_chapter_labels)
                 | set(pre_pseudo_chapter_labels),
+                source_model=request.source_model,
             ),
             UncoveredBodyRecoverySinks(
                 failed_ops_out=sinks.failed_ops_out,

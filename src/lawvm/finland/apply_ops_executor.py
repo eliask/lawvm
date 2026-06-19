@@ -347,6 +347,7 @@ def _apply_ops_to_tree_typed(
             executed_restructure_plan_ids=executed_restructure_plan_ids,
             standalone_section_targets=_standalone_section_targets,
             migration_ledger=migration_ledger,
+            source_model=request.source_model,
         ),
         ApplySupplementalRecoverySinks(
             compiled_ops_out=compiled_ops_out,

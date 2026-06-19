@@ -25,6 +25,7 @@ from lawvm.finland.group_ops import (
 )
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.compile_group_surface import (
     collect_recodification_omission_only_section_shell_pathologies,
 )
@@ -202,6 +203,7 @@ class ElaborateGroupRequest:
     foreign_scoped_replace_section_targets: set[str]
     effective_target_part: str | None
     muutos_tree: etree._Element
+    source_model: AmendmentSourceModel | None
     johto: str
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
@@ -220,6 +222,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
     target_part = request.effective_target_part
     muutos_tree = request.muutos_tree
+    source_model = request.source_model
     johto = request.johto
     profile = request.profile
     strict_profile = request.strict_profile
@@ -255,7 +258,12 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     )
 
     local_rejected_ops: list[FailedOp] = []
-    fctx = _FilterCtx(muutos_ir=muutos_ir, muutos_tree=muutos_tree, johto=johto)
+    fctx = _FilterCtx(
+        muutos_ir=muutos_ir,
+        muutos_tree=muutos_tree,
+        johto=johto,
+        source_model=source_model,
+    )
     group_ops = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=local_rejected_ops)
     group_ops, shadowed_replace_rejections = drop_payloadless_source_replace_shadowed_by_same_group_relabel(
         group_ops,
@@ -312,6 +320,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
             target_norm=target_norm,
             target_chapter=target_chapter,
             target_part=target_part,
+            source_model=source_model,
         )
     )
     local_elaboration_observations: list[dict[str, object]] = [

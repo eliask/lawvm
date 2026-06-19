@@ -18,7 +18,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Iterator, List, Optional, Tuple
 
 import lxml.etree as etree
 
@@ -31,6 +31,9 @@ from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.replay_notices import replay_print
 
 DEBUG = False  # set to True for per-constraint debug output
+
+if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 _PART_CROSS_HEADING_RE = re.compile(
     r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
@@ -468,6 +471,7 @@ class _FilterCtx:
     johto: str
     slot_assignment: Optional[SubsectionSlotAssignmentResult] = None
     subsec_map: Optional[SubsectionSlotMap] = None
+    source_model: "AmendmentSourceModel | None" = None
     _has_heading: Optional[bool] = None
     _is_lang_variant: Optional[bool] = None
 
@@ -527,12 +531,24 @@ def _c_false_positive_reference(op: AmendmentOp, all_ops: List[AmendmentOp], ctx
     if ctx.has_amendment_section:
         return True, ""
     target_section = op.target_section
+    source_node = (
+        ctx.source_model.find_xml_node(
+            op.target_unit_kind,
+            _norm_num_token(target_section),
+        )
+        if ctx.source_model is not None and target_section
+        else (
+            _find_muutos_node(ctx.muutos_tree, op.target_unit_kind, _norm_num_token(target_section))
+            if target_section
+            else None
+        )
+    )
     if (
         op.target_unit_kind == "section"
         and op.op_type != "REPEAL"
         and target_section
         and not op.target_special
-        and _find_muutos_node(ctx.muutos_tree, op.target_unit_kind, _norm_num_token(target_section)) is None
+        and source_node is None
         and not _johtolause_mentions_section(ctx.johto, target_section)
     ):
         return False, "cross-reference false positive"

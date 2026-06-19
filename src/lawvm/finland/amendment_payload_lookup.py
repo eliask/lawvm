@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Optional, Tuple, cast
+from typing import TYPE_CHECKING, Optional, Tuple, cast
 
 import lxml.etree as etree
 
@@ -28,6 +28,9 @@ from lawvm.finland.helpers import (
     _roman_label_to_arabic,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
+
+if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
@@ -344,18 +347,29 @@ def _find_muutos_ir(
     target_norm: str,
     target_chapter: Optional[str] = None,
     target_part: Optional[str] = None,
+    *,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> Tuple[Optional[IRNode], Optional[IRNode]]:
     """Find amendment section and preceding cross-heading as IRNodes.
 
     Returns (muutos_ir, cross_ir). Encapsulates all lxml-to-IRNode conversion
     for amendment section lookup.
     """
-    muutos_sec = _find_muutos_node(
-        muutos_tree,
-        cast(TargetUnitKind, target_unit_kind),
-        target_norm,
-        target_chapter,
-        target_part,
+    muutos_sec = (
+        source_model.find_xml_node(
+            cast(TargetUnitKind, target_unit_kind),
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+        if source_model is not None
+        else _find_muutos_node(
+            muutos_tree,
+            cast(TargetUnitKind, target_unit_kind),
+            target_norm,
+            target_chapter,
+            target_part,
+        )
     )
     if muutos_sec is None:
         return None, None

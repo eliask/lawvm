@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import lxml.etree as etree
 
@@ -10,6 +11,9 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.constraints import _find_muutos_node
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.ops import AmendmentOp, projection_scope_confidence
+
+if TYPE_CHECKING:
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 
 def group_has_scope_source(group_ops: Iterable[AmendmentOp], source: str) -> bool:
@@ -47,6 +51,7 @@ def allow_unscoped_live_section_retarget(
 def source_body_chapter_for_scoped_section_target(
     *,
     muutos_tree: etree._Element,
+    source_model: "AmendmentSourceModel | None" = None,
     target_norm: str,
     target_chapter: str,
     target_part: str | None,
@@ -58,12 +63,21 @@ def source_body_chapter_for_scoped_section_target(
     body.  Compile-time scope preservation must distinguish that fallback from a
     true payload that already lives under the scoped target chapter.
     """
-    node = _find_muutos_node(
-        muutos_tree,
-        "section",
-        target_norm,
-        target_chapter,
-        target_part,
+    node = (
+        source_model.find_xml_node(
+            "section",
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+        if source_model is not None
+        else _find_muutos_node(
+            muutos_tree,
+            "section",
+            target_norm,
+            target_chapter,
+            target_part,
+        )
     )
     if node is None:
         return None
@@ -133,6 +147,7 @@ def source_body_scope_for_section_target(
 def resolve_group_surface_scope(
     *,
     muutos_tree: etree._Element,
+    source_model: "AmendmentSourceModel | None" = None,
     target_unit_kind: TargetUnitKind,
     target_norm: str,
     target_chapter: str | None,
@@ -161,19 +176,37 @@ def resolve_group_surface_scope(
         return None, None
     if target_chapter and body_scope is not None:
         body_part, body_chapter = body_scope
-        scoped_node = _find_muutos_node(
-            muutos_tree,
-            "section",
-            target_norm,
-            target_chapter,
-            target_part,
+        scoped_node = (
+            source_model.find_xml_node(
+                "section",
+                target_norm,
+                target_chapter,
+                target_part,
+            )
+            if source_model is not None
+            else _find_muutos_node(
+                muutos_tree,
+                "section",
+                target_norm,
+                target_chapter,
+                target_part,
+            )
         )
-        body_node = _find_muutos_node(
-            muutos_tree,
-            "section",
-            target_norm,
-            body_chapter,
-            body_part,
+        body_node = (
+            source_model.find_xml_node(
+                "section",
+                target_norm,
+                body_chapter,
+                body_part,
+            )
+            if source_model is not None
+            else _find_muutos_node(
+                muutos_tree,
+                "section",
+                target_norm,
+                body_chapter,
+                body_part,
+            )
         )
         if (
             scoped_node is None

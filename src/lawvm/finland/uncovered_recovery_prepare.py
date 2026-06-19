@@ -14,14 +14,12 @@ from lawvm.core.phase_result import Finding
 from lawvm.finland.body_coverage import (
     analyze_coverage,
     collect_coverage_claims,
-    extract_body_coverage,
 )
 from lawvm.finland.body_pairing import (
     PayloadAssignment,
     assign_body_units_subtree_aware,
     build_chapter_subtree_coverage,
     build_clause_claims as _bp_build_clause_claims,
-    build_observed_body_inventory,
     clause_ast_from_amendment_ops as _bp_clause_ast_from_ops,
     enforce_pairing_invariants,
 )
@@ -34,6 +32,7 @@ from lawvm.finland.restructure_plan import (
     StructuralTransformPlan,
     build_restructure_plan,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.uncovered_recovery_context import (
     UncoveredRecoveryContext,
     build_uncovered_recovery_context,
@@ -74,6 +73,7 @@ class UncoveredRecoveryPreparationRequest:
     findings_out: Optional[List[Finding]]
     analyze_coverage_fn: AnalyzeCoverageFn = analyze_coverage
     assign_body_units_fn: AssignBodyUnitsFn = assign_body_units_subtree_aware
+    source_model: AmendmentSourceModel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,13 +97,17 @@ def prepare_uncovered_body_recovery(
     muutos_tree = request.muutos_tree
     statute_id = request.statute_id
     amendment_id = request.amendment_id
+    source_model = request.source_model or AmendmentSourceModel.from_tree(
+        muutos_tree,
+        source_ref=amendment_id,
+    )
     findings_out = request.findings_out
 
     covered_labels = _build_peg_covered_sets(ops, request.failed_ops_out)
 
     ignored_units: list[CoverageIgnoredUnit] = []
     rejected_claims: list[CoverageRejectedClaim] = []
-    cov_units = extract_body_coverage(muutos_tree, ignored_units_out=ignored_units)
+    cov_units = list(source_model.body_coverage_units(ignored_units_out=ignored_units))
     cov_claims = collect_coverage_claims(ops, rejected_claims_out=rejected_claims)
     cov_report = request.analyze_coverage_fn(
         cov_units,
@@ -116,7 +120,7 @@ def prepare_uncovered_body_recovery(
     body_pairing_assignments: object = ()
     chapter_payload_owned_sections: set[UncoveredSectionKey] = set()
     restructure_plan: Optional[StructuralTransformPlan] = None
-    has_body = muutos_tree.find(".//{*}body") is not None
+    has_body = source_model.has_body
     if has_body:
         restructure_uncov_count = _restructure_uncovered_count(cov_report)
         total_units = len(cov_units)
@@ -138,6 +142,7 @@ def prepare_uncovered_body_recovery(
             amendment_id=amendment_id,
             ops=ops,
             muutos_tree=muutos_tree,
+            source_model=source_model,
             assign_body_units_fn=request.assign_body_units_fn,
         )
         body_pairing_assignments = body_pairing.assignments
@@ -277,9 +282,10 @@ def _prepare_body_pairing(
     amendment_id: str,
     ops: List[AmendmentOp],
     muutos_tree: etree._Element,
+    source_model: AmendmentSourceModel,
     assign_body_units_fn: AssignBodyUnitsFn,
 ) -> _BodyPairingPreparation:
-    inventory = build_observed_body_inventory(muutos_tree)
+    inventory = list(source_model.observed_body_inventory())
     ast = _bp_clause_ast_from_ops(ops)
     claims = _bp_build_clause_claims(ast, statute_id)
     assignments = cast(List[PayloadAssignment], assign_body_units_fn(inventory, claims, statute_id))

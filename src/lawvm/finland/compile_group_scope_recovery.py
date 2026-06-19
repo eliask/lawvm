@@ -37,6 +37,7 @@ from lawvm.finland.scope import (
     retarget_duplicate_body_section_scope_from_close_live_siblings,
     retarget_heading_insert_body_chapter_from_close_live_sibling,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
 
@@ -61,6 +62,7 @@ class CompileGroupScopeRecoveryRequest:
     muutos_tree: etree._Element
     strict_profile: Optional[StrictProfile]
     body_inventory: Sequence[ObservedBodyUnit] | None = None
+    source_model: AmendmentSourceModel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,6 +521,7 @@ def _maybe_retarget_live_section(
         if request.target_chapter:
             source_body_chapter = source_body_chapter_for_scoped_section_target(
                 muutos_tree=request.muutos_tree,
+                source_model=request.source_model,
                 target_norm=request.target_norm,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
@@ -679,6 +682,7 @@ def resolve_compile_group_scope_recovery(
     """Resolve pre-snapshot scope/action recovery for one compile group."""
     surface_target_chapter, surface_target_part = resolve_group_surface_scope(
         muutos_tree=request.muutos_tree,
+        source_model=request.source_model,
         target_unit_kind=request.target_unit_kind,
         target_norm=request.target_norm,
         target_chapter=request.target_chapter,

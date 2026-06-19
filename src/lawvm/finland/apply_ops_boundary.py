@@ -18,6 +18,7 @@ from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -43,6 +44,7 @@ class ApplyOpsRequest:
     strict_profile: Optional[StrictProfile]
     vts_ops_enrich_done: bool
     future_repeals: Optional[Set[RepealTargetRef]] = None
+    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)

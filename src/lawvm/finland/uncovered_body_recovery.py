@@ -19,6 +19,7 @@ from lawvm.finland.johto_scope_mentions import (
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.uncovered_recovery_iteration import (
     peg_owned_section_targets,
     run_uncovered_candidate_iteration,
@@ -52,6 +53,7 @@ class UncoveredBodyRecoveryRequest:
     future_repeals: Optional[Set[RepealTargetRef]] = None
     op_source: Optional[OperationSource] = None
     new_chapter_labels: Optional[Set[str]] = None
+    source_model: Optional[AmendmentSourceModel] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,7 @@ def recover_uncovered_body_ops(
                 findings_out=sinks.findings_out,
                 analyze_coverage_fn=analyze_coverage,
                 assign_body_units_fn=assign_body_units_subtree_aware,
+                source_model=request.source_model,
             )
         ),
         findings_out=sinks.findings_out,
