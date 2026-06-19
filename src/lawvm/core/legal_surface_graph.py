@@ -79,6 +79,18 @@ NODE_KINDS: frozenset[str] = frozenset(
         "procedure_frame",
         "sanction_frame",
         "exception_condition_cue",
+        # The ENCLOSING-PROVISION ANAPHOR cue (``Tätä pykälää / Tätä momenttia ei
+        # sovelleta …`` / ``Tämän pykälän estämättä …`` / ``Tätä lakia
+        # sovelletaan …``). Minted by the enclosing-anaphora lens — one node per
+        # determiner+noun+applicability-matrix cue whose referent is the SECTION /
+        # SUBSECTION / WHOLE-LAW it sits in (a structural identity the flattened
+        # body decode drops). DISTINCT from exception_condition_cue so it never
+        # pollutes the H6 cue census (the H6 recognizer does not key on the
+        # ``ei sovelleta`` / ``sovelletaan`` applicability matrix). Surface-only:
+        # records the anaphor's form + named scope, never a legal conclusion that
+        # the provision is conditioned/excepted. The enclosing-anaphora edge pass
+        # joins it to the deontic cores of its OWN provision.
+        "enclosing_anaphor_cue",
         # The LOWER INSTRUMENT a delegation grants the power to issue (the asetus /
         # määräys / päätös the delegation_frame authorizes). Minted by the
         # delegated_instrument lens from the construction delegation parse's

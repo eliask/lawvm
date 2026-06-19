@@ -48,6 +48,9 @@ from lawvm.finland.legal_surface.lenses.delegated_instrument import (
 )
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
 from lawvm.finland.legal_surface.lenses.deontic_core import DeonticCoreLens
+from lawvm.finland.legal_surface.lenses.enclosing_anaphora import (
+    EnclosingAnaphoraLens,
+)
 from lawvm.finland.legal_surface.lenses.exception_condition import (
     ExceptionConditionLens,
 )
@@ -79,6 +82,7 @@ from lawvm.finland.legal_surface.norm_composition import (
     condition_attachment_passes,
     delegation_instrument_passes,
     deontic_frame_attachment_passes,
+    enclosing_anaphora_passes,
     norm_subject_attachment_passes,
     procedure_governance_passes,
     sanction_reference_passes,
@@ -115,6 +119,15 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     ProcedureLens(),
     SanctionLens(),
     ExceptionConditionLens(),
+    # ADDITIVE enclosing-provision anaphor surface (Layer-2). Mints one
+    # enclosing_anaphor_cue node per ``Tätä pykälää / Tätä momenttia ei sovelleta
+    # …`` cue — the applicability anaphor whose referent is the section/subsection
+    # it sits in. A DISTINCT node kind from exception_condition_cue (it never
+    # pollutes the H6 cue census; the H6 recognizer does not key on the ``ei
+    # sovelleta`` / ``sovelletaan`` matrix). The enclosing-anaphora edge pass
+    # resolves it against the unit's provision_index and joins it to its own
+    # provision's deontic cores.
+    EnclosingAnaphoraLens(),
     AnaphoraLens(),
     # ADDITIVE annotation-witness surface (grammar7 §13-A). Mints one
     # annotation_reference_witness node per inline <ref> element — the markup
@@ -258,6 +271,15 @@ def build_legal_surface_graph(
     # surface_only, candidate-not-asserted (one deferral ref "asserted"; several
     # "ambiguous"; none → no edge, a standalone offence correctly left to
     # co-occurrence).
+    #
+    # The enclosing-section anaphora pass (enclosing_anaphora_passes) resolves
+    # ``Tätä pykälää / Tätä momenttia ei sovelleta …`` against the unit's
+    # provision_index: the anaphor's enclosing §/momentti IS the referent, so the
+    # qualifier attaches (via the SAME condition/exception edge kinds, reason
+    # ``resolved_by_enclosing_provision``) to that provision's deontic cores.
+    # Spliced in ADDITIVELY, surface_only; a STRICT SUPERSET of the intra/cross-
+    # sentence attachments (it fires only on the closed enclosing-anaphor cue
+    # shapes those passes do not key on, never altering an existing edge).
     all_edge_passes = (
         edge_passes
         + condition_attachment_passes(bundle)
@@ -266,6 +288,7 @@ def build_legal_surface_graph(
         + procedure_governance_passes(bundle)
         + delegation_instrument_passes(bundle)
         + sanction_reference_passes(bundle)
+        + enclosing_anaphora_passes(bundle)
     )
 
     return assemble_surface_graph(
