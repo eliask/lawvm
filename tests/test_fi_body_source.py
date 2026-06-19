@@ -9,6 +9,7 @@ an active statute (oracle has real content) must be returned unchanged.
 from __future__ import annotations
 
 from lawvm.finland.legal_surface.body_source import (
+    has_consolidated_text_state,
     is_content_absent_body,
     read_reference_body,
 )
@@ -110,3 +111,34 @@ def test_absent_oracle_no_source_falls_through_to_amendment() -> None:
         amendment={sid: _real_body("AMEND")},
     )
     assert read_reference_body(store, sid) == _real_body("AMEND")
+
+
+# ---------------------------------------------------------------------------
+# has_consolidated_text_state — the broken-refs citer-scope predicate
+# ---------------------------------------------------------------------------
+
+
+def test_consolidated_text_state_true_for_real_oracle() -> None:
+    sid = "731/1999"
+    store = _FakeStore(oracle={sid: _real_body("ORACLE")}, source={})
+    assert has_consolidated_text_state(store, sid) is True
+
+
+def test_consolidated_text_state_false_for_contentabsent_oracle() -> None:
+    # A repealed/expired statute serving a contentAbsent stub has no in-force
+    # text-state to scope the broken-refs check to.
+    sid = "2013/872"
+    store = _FakeStore(
+        oracle={sid: _content_absent_oracle()},
+        source={sid: _real_body("SOURCE")},
+    )
+    assert has_consolidated_text_state(store, sid) is False
+
+
+def test_consolidated_text_state_false_for_amendment_act_no_oracle() -> None:
+    # An amendment act ("Laki ... muuttamisesta") has no consolidated oracle of
+    # its own; its only body is the amended-law-relative payload (source). Out of
+    # scope — this is the characterized false-positive class.
+    sid = "1953/427"
+    store = _FakeStore(oracle={}, source={sid: _real_body("AMEND-PAYLOAD")})
+    assert has_consolidated_text_state(store, sid) is False

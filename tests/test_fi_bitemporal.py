@@ -576,12 +576,132 @@ def test_scan_current_state_no_body_is_not_an_error() -> None:
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_HAS_SEC5
 
+    # A citer with no oracle has no consolidated text-state -> out of scope, so
+    # it is skipped (not checked), but never an error.
     report = scan_current_state(
         ["711/2022"],
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
+        in_scope=lambda sid: True,  # force in-scope so "no body" path is exercised
     )
     assert report.statutes_scanned == 1
     assert report.statutes_errored == []
     assert report.mentions_checked == 0
+    assert report.total_findings == 0
+
+
+# ---------------------------------------------------------------------------
+# CITER SCOPE GATE: amendment-act / source-only citers are skipped, not checked
+# ---------------------------------------------------------------------------
+#
+# These pin the characterized false-positive guard: a citer with no consolidated
+# text-state (an amendment act whose body is amended-law-relative payload) is
+# SKIPPED as out of scope — surfaced as a count, never silently dropped, never
+# checked (so its amended-law-relative internal refs never produce findings).
+
+
+def test_out_of_scope_citer_is_skipped_not_checked() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5  # would yield a finding IF the citer were checked
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+        in_scope=lambda sid: False,  # no consolidated text-state -> out of scope
+    )
+    assert result.error is None
+    assert result.skipped is not None
+    assert result.skipped.sid == "711/2022"
+    assert "consolidated text-state" in result.skipped.reason
+    # Skipped citers are NOT checked: no findings manufactured.
+    assert result.findings == ()
+    assert result.unavailable == ()
+    assert result.mentions_checked == 0
+
+
+def test_scan_current_state_surfaces_skipped_count() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF, "712/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
+
+    # 711/2022 in scope (checked -> a finding); 712/2022 out of scope (skipped).
+    report = scan_current_state(
+        ["711/2022", "712/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+        in_scope=lambda sid: sid == "711/2022",
+    )
+    assert report.statutes_scanned == 2
+    assert report.skipped_count == 1
+    assert report.statutes_with_findings == 1
+    assert report.total_findings == 1
+    assert report.statutes_errored == []
+
+
+def test_in_scope_citer_is_still_checked() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+        in_scope=lambda sid: True,
+    )
+    assert result.skipped is None
+    assert len(result.findings) == 1
+    assert result.findings[0].target.statute_id == "2010/500"
+
+
+# A citer body whose ref is an INTERNAL self-reference: a bare "9 §:ssä" that the
+# extractor resolves to SELF (target statute == the citing statute 711/2022). The
+# product scopes to CROSS-statute citations, so this must be excluded (surfaced),
+# never checked against the citer's own parsed body and never made a finding.
+_BODY_WITH_SELF_REF = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    '<body><section eId="sec_1"><num>1 §</num>'
+    "<p>Mitä 9 §:ssä säädetään, sovelletaan tässä.</p>"
+    "</section></body></akomaNtoso>"
+).encode("utf-8")
+
+
+def test_self_reference_is_excluded_not_checked() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_SELF_REF})
+
+    # body_for must never be consulted for an excluded self-ref; if it were and
+    # returned a body lacking §5, that would (wrongly) become a finding.
+    def body_for(statute_id: str) -> Optional[bytes]:
+        return _TARGET_NO_SEC5
+
+    result = scan_one_statute_current_state(
+        "711/2022",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=body_for,
+        in_scope=lambda sid: True,
+    )
+    assert result.error is None
+    assert result.skipped is None
+    # The self-ref is excluded (surfaced), NOT checked -> no finding manufactured.
+    assert result.self_refs_excluded >= 1
+    assert result.findings == ()
+    assert result.mentions_checked == 0
+
+
+def test_scan_current_state_surfaces_self_refs_excluded() -> None:
+    store = _FakeStore({"711/2022": _BODY_WITH_SELF_REF})
+
+    report = scan_current_state(
+        ["711/2022"],
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=lambda sid: _TARGET_NO_SEC5,
+        in_scope=lambda sid: True,
+    )
+    assert report.self_refs_excluded >= 1
     assert report.total_findings == 0

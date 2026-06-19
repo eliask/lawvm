@@ -82,6 +82,7 @@ __all__ = [
     # Current-state (no-replay) default mode
     "CurrentStateFinding",
     "CurrentStateUnavailable",
+    "CurrentStateSkipped",
     "CurrentStateScanResult",
     "CurrentStateReport",
     "BodyFor",
@@ -628,6 +629,12 @@ def scan_broken_references(
 BodyFor = Callable[[str], Optional[bytes]]
 """``(statute_id) -> current consolidated body XML, or None if unavailable.``"""
 
+# Injected SCOPE predicate: does this citer have a real consolidated text-state
+# the broken-refs product can meaningfully scope its check to? Defaults to
+# ``body_source.has_consolidated_text_state`` over the store; tests inject a fake.
+InScope = Callable[[str], bool]
+"""``(statute_id) -> whether the citer has a consolidated (in-force) text-state.``"""
+
 
 @dataclass(frozen=True, slots=True)
 class CurrentStateFinding:
@@ -678,11 +685,40 @@ class CurrentStateUnavailable:
     rule_id: str = "fi.refs.current_state.unavailable"
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentStateSkipped:
+    """A citing statute skipped because it has no consolidated text-state to scope to.
+
+    The broken-refs product checks citations *in the law as it stands* — against
+    a consolidated/in-force text-state where an internal "N §" self-reference is
+    meaningful. A citer with no consolidated oracle (only an enacted-source /
+    amendment-act payload) is OUT OF SCOPE: its internal refs are
+    amended-law-relative, so checking them against its own body manufactured the
+    characterized false-positive class (amendment-act self-refs). Such citers are
+    SKIPPED explicitly (this record, surfaced as a count) — never silently
+    dropped, never checked.
+
+    Attributes:
+        sid: The skipped citing statute id.
+        reason: Why it is out of scope (no consolidated text-state).
+        rule_id: Stable rule identifier.
+    """
+
+    sid: str
+    reason: str
+    rule_id: str = "fi.refs.current_state.out_of_scope"
+
+
 @dataclass(frozen=True)
 class CurrentStateScanResult:
     """Per-statute current-state scan outcome (always returned — errors recorded).
 
     Mirrors ``StatuteScanResult`` for the no-replay default mode.
+
+    ``skipped`` is set (and the statute is NOT checked) when the citer has no
+    consolidated text-state to scope the check to (amendment-act / source-only
+    body) — fail-loud out-of-scope, surfaced in the report's ``skipped_count``,
+    never silently dropped.
     """
 
     sid: str
@@ -690,6 +726,8 @@ class CurrentStateScanResult:
     findings: tuple[CurrentStateFinding, ...]
     unavailable: tuple[CurrentStateUnavailable, ...]
     error: Optional[str] = None
+    skipped: Optional[CurrentStateSkipped] = None
+    self_refs_excluded: int = 0
 
 
 @dataclass
@@ -703,6 +741,13 @@ class CurrentStateReport:
         mentions_checked: Total resolved cross-statute mentions inspected.
         kind_counts: Findings tallied by surface-fact ``kind``.
         unavailable_count: Total ``CurrentStateUnavailable`` records (fail-loud).
+        skipped_count: Citers skipped as out-of-scope (no consolidated
+            text-state — amendment-act / source-only body). Fail-loud, surfaced,
+            never silently dropped.
+        self_refs_excluded: Internal self-references excluded from the check (the
+            product scopes to CROSS-statute citations; an internal "N §" self-ref
+            checked against the citer's own parsed body is a parser-quirk-prone
+            second false-positive class). Surfaced, never silently dropped.
         per_statute: All ``CurrentStateScanResult`` rows.
     """
 
@@ -712,6 +757,8 @@ class CurrentStateReport:
     mentions_checked: int = 0
     kind_counts: dict[str, int] = field(default_factory=dict)
     unavailable_count: int = 0
+    skipped_count: int = 0
+    self_refs_excluded: int = 0
     per_statute: list[CurrentStateScanResult] = field(default_factory=list)
 
     @property
@@ -805,6 +852,21 @@ def _check_current_presence(ref: "ProvisionRef", sections):
     return (finding.kind, finding.message)
 
 
+def _default_in_scope(store: "CorpusStore") -> InScope:
+    """Default citer-scope predicate: a real consolidated text-state over the store.
+
+    Delegates to :func:`body_source.has_consolidated_text_state`. Archive-only,
+    no replay. ``True`` only when the citer has its own non-``contentAbsent``
+    consolidated oracle — so amendment-act / source-only citers are out of scope.
+    """
+    from lawvm.finland.legal_surface.body_source import has_consolidated_text_state
+
+    def _scope(statute_id: str) -> bool:
+        return has_consolidated_text_state(store, statute_id)  # type: ignore[arg-type]
+
+    return _scope
+
+
 def _default_body_for(store: "CorpusStore") -> BodyFor:
     """Default current-body accessor: ``corpus_lints._read_body`` over the store.
 
@@ -825,6 +887,7 @@ def scan_one_statute_current_state(
     store: "CorpusStore",
     *,
     body_for: Optional[BodyFor] = None,
+    in_scope: Optional[InScope] = None,
 ) -> CurrentStateScanResult:
     """Scan one citing statute for citations absent in the target's CURRENT text-state.
 
@@ -834,12 +897,51 @@ def scan_one_statute_current_state(
     current consolidated body (reused corpus_lints access + structure parse +
     presence check). NO point-in-time replay. Always returns a result — a
     body/extraction failure is recorded in ``error``, never raised away.
+
+    CITER SCOPE (false-positive guard). The product checks citations *in the law
+    as it stands*. A citer with no consolidated text-state (an amendment act /
+    source-only body) is OUT OF SCOPE — its internal "N §" refs are
+    amended-law-relative, not self-refs into its own structure, so checking them
+    manufactured the characterized amendment-act self-ref false positives. Such a
+    citer is SKIPPED (``CurrentStateScanResult.skipped`` set, surfaced as a
+    count), never silently dropped and never checked. ``in_scope`` defaults to
+    ``has_consolidated_text_state`` over the store; tests inject a fake.
     """
     from lawvm.finland.legal_surface.corpus_lints import _parse_target_sections
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
 
     if body_for is None:
         body_for = _default_body_for(store)
+    if in_scope is None:
+        in_scope = _default_in_scope(store)
+
+    # CITER SCOPE GATE — fail-loud out-of-scope, never silently dropped.
+    try:
+        citer_in_scope = in_scope(sid)
+    except Exception as exc:  # noqa: BLE001 — scope read failure → record, don't crash
+        return CurrentStateScanResult(
+            sid=sid,
+            mentions_checked=0,
+            findings=(),
+            unavailable=(),
+            error=f"scope: {exc!r}",
+        )
+    if not citer_in_scope:
+        return CurrentStateScanResult(
+            sid=sid,
+            mentions_checked=0,
+            findings=(),
+            unavailable=(),
+            skipped=CurrentStateSkipped(
+                sid=sid,
+                reason=(
+                    "citer has no consolidated text-state (amendment-act / "
+                    "source-only body); its internal references are "
+                    "amended-law-relative, out of scope for the current-state "
+                    "broken-reference check"
+                ),
+            ),
+        )
 
     try:
         xb = _resolved_body(store, sid)
@@ -875,14 +977,28 @@ def scan_one_statute_current_state(
     findings: list[CurrentStateFinding] = []
     unavailable: list[CurrentStateUnavailable] = []
     checked = 0
+    self_refs_excluded = 0
     for mention in extraction.mentions:
         if not _will_check(mention):
             continue
-        checked += 1
         target = mention.target_provision_ref
         assert target is not None and target.statute_id  # guarded by _will_check
         source = mention.source_provision_ref
         target_statute = target.statute_id
+
+        # SELF-REF SCOPE GATE (second false-positive guard). The product checks
+        # CROSS-statute citations (its stated unit). An internal "N §" self-ref
+        # is resolved to SELF and would be checked against the citer's OWN parsed
+        # body, where deterministic-parse quirks (merged range-headings like
+        # "3 a–4 §", subsection-level resolution) manufacture spurious absences.
+        # Internal-ref integrity is a distinct lint, not this cross-statute
+        # dangling-citation product. Excluded here and surfaced as a count —
+        # never silently dropped.
+        if target_statute == sid:
+            self_refs_excluded += 1
+            continue
+
+        checked += 1
 
         if target_statute not in parsed:
             body = body_for(target_statute)
@@ -924,6 +1040,7 @@ def scan_one_statute_current_state(
         mentions_checked=checked,
         findings=tuple(findings),
         unavailable=tuple(unavailable),
+        self_refs_excluded=self_refs_excluded,
     )
 
 
@@ -932,6 +1049,7 @@ def scan_current_state(
     store: "CorpusStore",
     *,
     body_for: Optional[BodyFor] = None,
+    in_scope: Optional[InScope] = None,
 ) -> CurrentStateReport:
     """Corpus current-state (no-replay) broken-reference scan over ``statute_ids``.
 
@@ -941,17 +1059,33 @@ def scan_current_state(
     enough to run corpus-wide. Aggregates findings by surface-fact ``kind`` and
     counts ``CurrentStateUnavailable`` separately (fail-loud — undetermined,
     never absent).
+
+    Citers with no consolidated text-state (amendment-act / source-only bodies)
+    are SKIPPED as out-of-scope and surfaced in ``skipped_count`` (the
+    characterized false-positive guard) — never silently dropped. ``in_scope``
+    defaults to a real-consolidated-text-state predicate over the store.
     """
     report = CurrentStateReport()
     kind_ct: collections.Counter[str] = collections.Counter()
 
+    # Build the default scope predicate once (one oracle read per citer) rather
+    # than per-statute inside scan_one_statute_current_state.
+    if in_scope is None:
+        in_scope = _default_in_scope(store)
+
     for sid in statute_ids:
-        result = scan_one_statute_current_state(sid, store, body_for=body_for)
+        result = scan_one_statute_current_state(
+            sid, store, body_for=body_for, in_scope=in_scope
+        )
         report.per_statute.append(result)
         report.statutes_scanned += 1
         if result.error is not None:
             report.statutes_errored.append((result.sid, result.error))
             continue
+        if result.skipped is not None:
+            report.skipped_count += 1
+            continue
+        report.self_refs_excluded += result.self_refs_excluded
         report.mentions_checked += result.mentions_checked
         if result.findings:
             report.statutes_with_findings += 1

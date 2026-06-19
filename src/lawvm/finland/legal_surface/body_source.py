@@ -82,6 +82,35 @@ def is_content_absent_body(xml_bytes: bytes) -> bool:
     return False
 
 
+def has_consolidated_text_state(store: BodyStore, sid: str) -> bool:
+    """True iff ``sid`` has a real consolidated (in-force) text-state.
+
+    The broken-refs product asks whether a citation dangles *in the law as it
+    stands* — i.e. against a consolidated text-state where an internal "N §"
+    self-reference is meaningful. That is only true when the statute has its own
+    consolidated oracle body with substantive content.
+
+    A statute with NO consolidated oracle (or only a ``contentAbsent`` stub) is
+    NOT a standalone in-force law for this purpose: the only body
+    :func:`read_reference_body` can return for it is the enacted source / the
+    amendment-act payload. For an amendment act ("Laki ... muuttamisesta") that
+    payload is the *diff text inserted into the amended law*, so a bare internal
+    "N §" in it is amended-law-relative, NOT a self-reference into the amendment
+    act's own (non-existent) §N structure. Checking such internal refs against
+    the amendment act's body yields spurious ``target_provision_absent``
+    findings — the characterized false-positive class this gate excludes.
+
+    Returns ``True`` only when ``read_oracle`` yields non-``contentAbsent``
+    bytes. Read errors / absence both yield ``False`` (out of scope), never a
+    crash. This is a SCOPE predicate, not a brokenness verdict.
+    """
+    try:
+        xb = store.read_oracle(sid)
+    except Exception:  # noqa: BLE001 — oracle absence is normal, out of scope
+        return False
+    return bool(xb) and not is_content_absent_body(xb)
+
+
 def read_reference_body(store: BodyStore, sid: str) -> bytes | None:
     """Best available body XML for reference extraction (oracle preferred).
 

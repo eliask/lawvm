@@ -232,6 +232,8 @@ def _emit_current_json(report: CurrentStateReport, top: int, elapsed: float) -> 
         "findings_total": report.total_findings,
         "findings_by_kind": report.kind_counts,
         "unavailable_total": report.unavailable_count,
+        "skipped_out_of_scope": report.skipped_count,
+        "self_refs_excluded": report.self_refs_excluded,
         "top_statutes": [
             {
                 "sid": r.sid,
@@ -262,12 +264,16 @@ def _emit_current_text(report: CurrentStateReport, top: int, elapsed: float) -> 
         "  (DEFAULT no-replay mode: a finding = the cited target provision is "
         "absent in the\n   target's CURRENT consolidated text-state; NOT a legal "
         "conclusion. Use --provenance\n   for the repealed/renumbered/never-existed "
-        "temporal classification via replay.)"
+        "temporal classification via replay.\n   Citers with no consolidated "
+        "text-state (amendment acts / source-only) are SKIPPED\n   as out of scope "
+        "— their internal refs are amended-law-relative, not self-refs.)"
     )
     print(f"  wall-clock (s)              : {elapsed:.2f}")
     print(f"  statutes scanned            : {report.statutes_scanned}")
     print(f"  statutes with findings      : {report.statutes_with_findings}")
     print(f"  statutes errored            : {len(report.statutes_errored)}")
+    print(f"  skipped (out of scope)      : {report.skipped_count}")
+    print(f"  self-refs excluded          : {report.self_refs_excluded}")
     print(f"  cross-statute cites checked : {report.mentions_checked}")
     print(f"  absent-target findings      : {report.total_findings}")
     print(f"  undetermined (unavailable)  : {report.unavailable_count}")
