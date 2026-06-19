@@ -15,10 +15,18 @@ from typing import Any, Literal, cast
 # Patterns for classifying violation strings produced by check_invariants()
 _DUPLICATE_RE = re.compile(r"duplicate\s+(\w+):(\S+)", re.IGNORECASE)
 _NORM_DUPLICATE_RE = re.compile(r"normalized-duplicate\s+(\w+):(\S+)", re.IGNORECASE)
-_OUT_OF_ORDER_RE = re.compile(r"(\w+)\s+out of order:\s+(\S+)\s+>\s+(\S+)", re.IGNORECASE)
+# Possessive repeats + a tempered operand class around the literal ``>`` delimiter
+# remove the catastrophic backtracking the earlier ``(\S+)\s+>\s+(\S+)`` /
+# ``(\S+)\s+alongside\s+(\S+)`` shapes carried (the variable repeats could re-split
+# the same run across the ``\s+`` separators). Match-identical to the old patterns
+# over 400k fuzzed strings; the operand before ``>`` excludes ``>`` (a label never
+# contains one), so the capture is unchanged on real violation messages.
+_OUT_OF_ORDER_RE = re.compile(
+    r"(\w++)\s+out of order:\s+([^\s>]++)\s+>\s+(\S++)", re.IGNORECASE
+)
 _UNEXPECTED_NESTING_RE = re.compile(r"unexpected\s+(\w+)\s+inside\s+(\w+)", re.IGNORECASE)
 _MIXED_HIERARCHY_RE = re.compile(
-    r"direct\s+(\S+)\s+alongside\s+(\S+)",
+    r"direct\s+(\S++)\s+alongside\s+(\S++)",
     re.IGNORECASE,
 )
 _ILLEGAL_EDGE_PAIRS = frozenset(

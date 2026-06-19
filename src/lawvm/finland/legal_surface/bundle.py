@@ -25,6 +25,7 @@ from lawvm.finland.legal_surface.clause_segment import (
     build_clause_index,
     build_segmentation_graph,
 )
+from lawvm.finland.legal_surface.provision_index import build_provision_index
 from lawvm.finland.legal_surface.tokenize import (
     build_morph_overlay,
     build_token_tape,
@@ -104,10 +105,25 @@ def build_surface_bundle(
         # consumes, NOT a graph input (the assembler's graph_id is computed over
         # node/edge payloads + subject only, never over unit metadata, so this
         # cannot perturb the assembled surface graph).
+        # ProvisionIndex (additive provision-boundary substrate): maps each body
+        # paragraph's char range to its enclosing AKN provision (§/momentti/kohta
+        # + eId), recovered from the structure the body decode drops. Attached via
+        # ``metadata`` like ``segmentation_graph`` so it stays additive without
+        # touching the universal unit schema (and, like the segmentation graph, it
+        # is a unit view the assembler's graph_id never folds in — it cannot
+        # perturb the assembled surface graph). It unblocks enclosing-section
+        # anaphora + span-scoped composition: a consumer queries
+        # ``provision_index.provision_at(char_start, char_end)``.
         metadata={
             "xml_bytes": xml_bytes,
             "segmentation_graph": build_segmentation_graph(
                 source_unit_id, raw_text
+            ),
+            "provision_index": build_provision_index(
+                xml_bytes,
+                source_unit_id,
+                body_text=raw_text,
+                text_hash=text_hash,
             ),
         },
         # Phase 7 (§D4): populate the source-preserving token view additively.

@@ -84,7 +84,12 @@ from lawvm.core.legal_surface_lens import (
     SourceSurfaceUnit,
     SurfaceEdgeSeed,
 )
-from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.core.legal_surface_tokens import (
+    AMBIGUOUS,
+    ProvisionIndex,
+    ProvisionSpan,
+    TokenTape,
+)
 from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.condition_exception_parse import (
     ATTACH_AMBIGUOUS,
@@ -1867,10 +1872,348 @@ def procedure_governance_passes(
     return (ProcedureGovernancePass(units=bundle.units),)
 
 
+# ── enclosing-section anaphora — Tätä pykälää/momenttia ei sovelleta … ─────────
+#
+# The intra-sentence pass attaches a qualifier to a deontic core in its OWN
+# sentence; the cross-sentence pass attaches a back-reference EXCEPTION cue
+# ("sen estämättä mitä N §:ssä …") to the INTERNAL reference it names. NEITHER
+# can resolve an ENCLOSING-PROVISION ANAPHOR —
+#   "Tätä pykälää ei sovelleta …"      (this SECTION is not applied …)
+#   "Tätä momenttia ei kuitenkaan sovelleta …"  (this SUBSECTION …)
+#   "Tämän pykälän estämättä …"        (notwithstanding this section …)
+# — because the anaphor's referent is the SECTION/SUBSECTION it itself sits in,
+# a structural identity the flattened body decode drops (no <num> markers in the
+# coordinate space). The provision-boundary substrate now restores it: the unit's
+# ``metadata["provision_index"]`` answers ``provision_at(char_start, char_end) ->
+# ProvisionSpan`` (the enclosing §/momentti of any char span). The anaphor's
+# enclosing provision is THE referent; its deontic cores are the norm(s) the
+# qualifier scopes.
+#
+# This is a STRICT SUPERSET of the intra/cross-sentence behaviour — it fires ONLY
+# on the closed enclosing-anaphor cue shapes below (which the condition/exception
+# construction does NOT key on, so they were never attached by the prior passes)
+# and NEVER alters an existing edge. It runs as its OWN pass (its own pass_id /
+# edge kinds reused: condition_attaches_norm / exception_excepts_norm), keyed off
+# the provision_index rather than the construction parse.
+#
+# Scope-granularity (candidate-not-asserted, never over-attach):
+#   * ``pykälää`` / ``pykälän`` → SECTION scope: attach to every deontic core whose
+#     enclosing provision has the SAME ``section_label`` (any subsection).
+#   * ``momenttia`` / ``momentin`` → SUBSECTION scope: attach to every core whose
+#     enclosing provision has the same ``section_label`` AND ``subsection_num`` —
+#     and ONLY when the anaphor's own enclosing provision carries a
+#     ``subsection_num`` (else the target momentti is unidentifiable → diagnostic).
+#   * ``lakia`` / ``lain`` → WHOLE-LAW scope: too broad to be a single attachment
+#     target (it would attach to every core in the statute). Left a typed
+#     diagnostic, never over-attached.
+#
+# Resolution outcomes (mirroring the family discipline):
+#   * the enclosing provision (correctly scoped) has EXACTLY ONE matching core →
+#     ONE edge, status "asserted" (``attachment=resolved_by_enclosing_provision``);
+#   * SEVERAL matching cores (a multi-subsection section, several cores in the
+#     momentti) → ONE edge per core, status "ambiguous", full candidate-core set
+#     in payload — the qualifier scopes the whole provision, the consumer sees
+#     every core it covers (never a silent pick of one);
+#   * the enclosing provision has NO deontic core → NO edge, a typed
+#     :data:`NO_CORE_IN_ENCLOSING_PROVISION` diagnostic;
+#   * ``provision_at`` returns AMBIGUOUS (the cue span crosses a provision boundary
+#     / lands on a between-paragraph gap) → typed
+#     :data:`AMBIGUOUS_ENCLOSING_PROVISION` diagnostic;
+#   * whole-law anaphor → typed :data:`ENCLOSING_SCOPE_WHOLE_LAW` diagnostic;
+#   * momentti anaphor whose enclosing provision has no ``subsection_num`` →
+#     typed :data:`NO_SUBSECTION_FOR_MOMENTTI_ANAPHOR` diagnostic.
+#
+# The cue surface is recorded but it is NOT a legal conclusion — surface_only /
+# replay_authorized=False holds (the assembler mints every edge that way).
+
+PASS_ID_ENCLOSING = "fi.norm_composition.enclosing_anaphora.v0"
+
+#: The attachment reason that rides in the edge payload's ``attachment`` field,
+#: distinguishing an enclosing-anaphor resolution from intra/cross-sentence ones.
+ATTACHMENT_RESOLVED_BY_ENCLOSING = "resolved_by_enclosing_provision"
+ATTACHMENT_AMBIGUOUS_BY_ENCLOSING = "ambiguous_by_enclosing_provision"
+
+#: Why an enclosing-anaphor cue produced NO asserted edge (typed diagnostics).
+NO_CORE_IN_ENCLOSING_PROVISION = "no_deontic_core_in_enclosing_provision"
+AMBIGUOUS_ENCLOSING_PROVISION = "ambiguous_enclosing_provision_for_anaphor"
+ENCLOSING_SCOPE_WHOLE_LAW = "enclosing_anaphor_scope_whole_law_too_broad"
+NO_SUBSECTION_FOR_MOMENTTI_ANAPHOR = "no_subsection_num_for_momentti_anaphor"
+NO_PROVISION_INDEX_FOR_UNIT = "no_provision_index_for_unit"
+
+#: The enclosing-anaphor named scopes (the referent level the cue carries — set by
+#: the :class:`~lawvm.finland.legal_surface.lenses.enclosing_anaphora.EnclosingAnaphoraLens`
+#: in the node payload's ``anaphor_scope`` field).
+_SCOPE_SECTION = "section"
+_SCOPE_SUBSECTION = "subsection"
+_SCOPE_WHOLE_LAW = "whole_law"
+
+#: The source node this pass joins: the ``enclosing_anaphor_cue`` node the
+#: EnclosingAnaphoraLens mints (one per determiner+noun+matrix cue, carrying its
+#: named scope + spans in the payload). DISTINCT from the H6 ``exception_condition_cue``
+#: node, so the H6 cue census is untouched.
+ENCLOSING_CUE_NODE_KIND = "enclosing_anaphor_cue"
+
+
+@dataclass(frozen=True)
+class UnattachedAnaphor:
+    """An enclosing-provision anaphor cue that produced NO asserted edge (tagged).
+
+    Carried for the differential report — never an edge. ``scope`` is the named
+    referent level (``section`` / ``subsection`` / ``whole_law``); ``reason`` is
+    one of the typed enclosing-anaphor diagnostics.
+    """
+
+    source_unit_id: str
+    kind: str
+    cue: str
+    scope: str
+    cue_char_start: int
+    cue_char_end: int
+    reason: str
+
+
+def _cores_in_provision(
+    core_nodes: list[tuple[str, SourceSpanRef]],
+    pidx: ProvisionIndex,
+    target: ProvisionSpan,
+    *,
+    subsection_scoped: bool,
+) -> list[tuple[str, SourceSpanRef]]:
+    """The deontic-core nodes whose enclosing provision matches ``target``'s scope.
+
+    SECTION scope (``subsection_scoped=False``): same ``section_label`` (any
+    subsection). SUBSECTION scope: same ``section_label`` AND ``subsection_num``.
+    A core whose own ``provision_at`` is AMBIGUOUS / unmapped / lacks a section
+    label is excluded (never matched on a missing identity — fail by absence).
+    Returned in source order (the index already sorts by char_start).
+    """
+    out: list[tuple[str, SourceSpanRef]] = []
+    for nid, ref in core_nodes:
+        cres = pidx.provision_at(ref.char_start, ref.char_end)
+        if cres is AMBIGUOUS or not isinstance(cres, ProvisionSpan):
+            continue
+        if not cres.mapped or not cres.section_label:
+            continue
+        if cres.section_label != target.section_label:
+            continue
+        if subsection_scoped and cres.subsection_num != target.subsection_num:
+            continue
+        out.append((nid, ref))
+    return out
+
+
+def _int_span(value: object) -> tuple[int, int] | None:
+    """Read a ``[start, end]`` payload span into a typed pair (or None)."""
+    if (
+        isinstance(value, (list, tuple))
+        and len(value) == 2
+        and isinstance(value[0], int)
+        and isinstance(value[1], int)
+    ):
+        return int(value[0]), int(value[1])
+    return None
+
+
+@dataclass
+class EnclosingAnaphoraPass:
+    """Edge pass: enclosing-provision anaphor → the cores of its OWN provision.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`. Built
+    per-statute from the bundle units (it needs each unit's ``provision_index``
+    metadata to locate the anaphor's enclosing provision). Mints NO nodes; it
+    joins the EXISTING ``enclosing_anaphor_cue`` (source, minted by the
+    EnclosingAnaphoraLens) and ``deontic_core`` (target) nodes, scoping the target
+    set to the enclosing provision the :class:`ProvisionIndex` reports for the
+    anaphor cue's char span.
+
+    STRICT SUPERSET of the intra/cross-sentence passes: it fires only on the
+    closed enclosing-anaphor cue nodes (whose cue shapes those passes do not key
+    on) and never alters an existing edge. candidate-not-asserted throughout.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_ENCLOSING
+    reads_node_kinds: tuple[str, ...] = (ENCLOSING_CUE_NODE_KIND, CORE_NODE_KIND)
+    emits_edge_kinds: tuple[str, ...] = (
+        EDGE_CONDITION_ATTACHES,
+        EDGE_EXCEPTION_EXCEPTS,
+    )
+    # Typed diagnostics for anaphor cues that produced no asserted edge. Populated
+    # on run(); read by the differential report. NOT a graph element.
+    unattached: list[UnattachedAnaphor] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        anaphor_index = _node_index_by_unit_kind(graph.nodes, ENCLOSING_CUE_NODE_KIND)
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+        pidx_by_unit = {
+            u.source_unit_id: u.metadata.get("provision_index") for u in self.units
+        }
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit_id, anaphor_nodes in sorted(anaphor_index.items()):
+            pidx = pidx_by_unit.get(unit_id)
+            core_nodes = core_index.get(unit_id, [])
+            for nid, ref in anaphor_nodes:
+                seeds.extend(
+                    self._cue_edges(
+                        graph.nodes[nid].payload,
+                        cue_ref=ref,
+                        cue_node_id=nid,
+                        unit_id=unit_id,
+                        pidx=pidx,
+                        core_nodes=core_nodes,
+                    )
+                )
+        return tuple(seeds)
+
+    def _cue_edges(
+        self,
+        payload: Mapping[str, object],
+        *,
+        cue_ref: SourceSpanRef,
+        cue_node_id: str,
+        unit_id: str,
+        pidx: object,
+        core_nodes: list[tuple[str, SourceSpanRef]],
+    ) -> list[SurfaceEdgeSeed]:
+        kind = payload.get("qualifier_kind")
+        scope = payload.get("anaphor_scope")
+        cue = payload.get("cue")
+        if not isinstance(kind, str) or not isinstance(scope, str) or not isinstance(cue, str):
+            return []
+        # Resolve the anaphor cue's OWN char span to query the provision index. The
+        # lens carries the determiner+noun span; the cue node's source_ref covers
+        # the whole determiner..matrix run. Use the determiner+noun span (where the
+        # anaphor sits) for the enclosing-provision query.
+        det_noun = _int_span(payload.get("det_noun_span")) or (
+            cue_ref.char_start,
+            cue_ref.char_end,
+        )
+        cue_abs_start, cue_abs_end = det_noun
+
+        # Whole-law scope is too broad to be a single attachment target.
+        if scope == _SCOPE_WHOLE_LAW:
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      ENCLOSING_SCOPE_WHOLE_LAW)
+            return []
+        if not isinstance(pidx, ProvisionIndex):
+            # No provision substrate for this unit → cannot resolve (never guess
+            # without the boundary index).
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      NO_PROVISION_INDEX_FOR_UNIT)
+            return []
+
+        target = pidx.provision_at(cue_abs_start, cue_abs_end)
+        if target is AMBIGUOUS or not isinstance(target, ProvisionSpan):
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      AMBIGUOUS_ENCLOSING_PROVISION)
+            return []
+        if not target.mapped or not target.section_label:
+            # The enclosing provision carries no §-level identity (the anaphor sits
+            # above the section level, e.g. a chapter chapeau). Not a resolvable
+            # section/subsection referent.
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      AMBIGUOUS_ENCLOSING_PROVISION)
+            return []
+        if scope == _SCOPE_SUBSECTION and target.subsection_num is None:
+            # "Tätä momenttia" but the enclosing provision span has no momentti
+            # number — the target momentti is unidentifiable. Diagnostic, not a
+            # section-wide over-attach (never widen the scope to guess).
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      NO_SUBSECTION_FOR_MOMENTTI_ANAPHOR)
+            return []
+
+        subsection_scoped = scope == _SCOPE_SUBSECTION
+        matched = _cores_in_provision(
+            core_nodes, pidx, target, subsection_scoped=subsection_scoped
+        )
+        if not matched:
+            self._tag(unit_id, kind, cue, scope, cue_abs_start, cue_abs_end,
+                      NO_CORE_IN_ENCLOSING_PROVISION)
+            return []
+
+        ambiguous = len(matched) > 1
+        edge_status = "ambiguous" if ambiguous else "asserted"
+        attachment = (
+            ATTACHMENT_AMBIGUOUS_BY_ENCLOSING
+            if ambiguous
+            else ATTACHMENT_RESOLVED_BY_ENCLOSING
+        )
+        edge_kind = _KIND_EDGE[kind]
+        rule_id = _KIND_RULE[kind]
+        candidate_core_spans = [[r.char_start, r.char_end] for _, r in matched]
+        out: list[SurfaceEdgeSeed] = []
+        for nid, ref in matched:
+            edge_payload: dict[str, object] = {
+                "qualifier_kind": kind,
+                "cue": cue,
+                "anaphor_scope": scope,
+                "attachment": attachment,
+                "cue_span": [cue_abs_start, cue_abs_end],
+                "core_span": [ref.char_start, ref.char_end],
+                "enclosing_provision": target.provision_path(),
+                "enclosing_provision_eid": target.eid,
+                "source": "construction_enclosing_anaphora",
+                "experimental": True,
+            }
+            if ambiguous:
+                # full candidate set — the qualifier scopes the whole enclosing
+                # provision; the consumer sees every core it covers.
+                edge_payload["candidate_core_spans"] = candidate_core_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=edge_kind,
+                    src_local=cue_node_id,
+                    dst_local=nid,
+                    rule_id=rule_id,
+                    status=edge_status,
+                    payload=edge_payload,
+                )
+            )
+        return out
+
+    def _tag(
+        self,
+        unit_id: str,
+        kind: str,
+        cue: str,
+        scope: str,
+        cue_abs_start: int,
+        cue_abs_end: int,
+        reason: str,
+    ) -> None:
+        self.unattached.append(
+            UnattachedAnaphor(
+                source_unit_id=unit_id,
+                kind=kind,
+                cue=cue,
+                scope=scope,
+                cue_char_start=cue_abs_start,
+                cue_char_end=cue_abs_end,
+                reason=reason,
+            )
+        )
+
+
+def enclosing_anaphora_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[EnclosingAnaphoraPass, ...]:
+    """Build the per-statute enclosing-section anaphora edge pass(es).
+
+    Needs the source text + each unit's ``provision_index`` metadata, so it is
+    constructed from the bundle units. Returns a one-tuple so the caller can
+    splice it into the edge-pass sequence ADDITIVELY (alongside the
+    condition/exception, cross-sentence, and proximity incumbents).
+    """
+    return (EnclosingAnaphoraPass(units=bundle.units),)
+
+
 __all__ = [
     "ACTOR_FRAME_KIND",
     "CORE_NODE_KIND",
     "CUE_NODE_KIND",
+    "ENCLOSING_CUE_NODE_KIND",
     "DELEGATED_INSTRUMENT_KIND",
     "DELEGATION_FRAME_KIND",
     "PROCEDURE_FRAME_KIND",
@@ -1879,6 +2222,7 @@ __all__ = [
     "ConditionAttachmentPass",
     "DelegationInstrumentPass",
     "DeonticFrameAttachmentPass",
+    "EnclosingAnaphoraPass",
     "NormSubjectAttachmentPass",
     "ProcedureGovernancePass",
     "SanctionReferencePass",
@@ -1890,8 +2234,15 @@ __all__ = [
     "EDGE_NORM_HAS_SUBJECT",
     "EDGE_SANCTIONED_BY",
     "EDGE_SANCTION_DEFERS",
+    "ATTACHMENT_RESOLVED_BY_ENCLOSING",
+    "ATTACHMENT_AMBIGUOUS_BY_ENCLOSING",
+    "AMBIGUOUS_ENCLOSING_PROVISION",
+    "ENCLOSING_SCOPE_WHOLE_LAW",
+    "NO_CORE_IN_ENCLOSING_PROVISION",
     "NO_CORE_IN_SENTENCE",
     "NO_DEFERRAL_REFERENCE",
+    "NO_PROVISION_INDEX_FOR_UNIT",
+    "NO_SUBSECTION_FOR_MOMENTTI_ANAPHOR",
     "NO_FRAME_IN_SENTENCE",
     "NO_GRAPH_NODE_FOR_CORE",
     "NO_GRAPH_NODE_FOR_CUE",
@@ -1899,6 +2250,7 @@ __all__ = [
     "NO_SUBJECT_NODE_FOR_ADDRESSEE",
     "SUBJECT_UNDERSPECIFIED",
     "PASS_ID",
+    "PASS_ID_ENCLOSING",
     "PASS_ID_DELEG_INSTRUMENT",
     "PASS_ID_DEONTIC_FRAME",
     "PASS_ID_NORM_SUBJECT",
@@ -1912,11 +2264,13 @@ __all__ = [
     "RULE_NORM_HAS_SUBJECT",
     "RULE_SANCTIONED_BY",
     "RULE_SANCTION_DEFERS",
+    "UnattachedAnaphor",
     "UnattachedCore",
     "UnattachedFrame",
     "UnattachedQualifier",
     "UnattachedSanction",
     "condition_attachment_passes",
+    "enclosing_anaphora_passes",
     "delegation_instrument_passes",
     "deontic_frame_attachment_passes",
     "norm_subject_attachment_passes",
