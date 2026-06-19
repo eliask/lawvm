@@ -41,10 +41,19 @@ reusing the merged morphology engine (``lawvm.finland.morphology``):
 
 This makes the inflected match a *generated, deterministic* set rather than a
 fuzzy suffix heuristic. The precomputed ``inflected surface -> lemma`` map is
-built once at import time. A nickname whose head is not a known morphology head
-falls back to a conservative head-suffix-tolerant match (lemma-prefix + any of
-the small fixed Finnish nominal endings) so the table never silently fails to
-match a legitimately inflected surface; such entries are flagged in the seed.
+built once at import time.
+
+A multi-word nickname (``yleinen tietosuoja-asetus``) is a Finnish *nominative
+phrase* whose words agree in case, so its surfaces are the case-synchronized
+DIAGONAL — for each grammatical case, every word inflected into THAT case and
+joined (``yleisen tietosuoja-asetuksen``) — which is O(words x cases), NOT the
+Cartesian product of independent per-word variant sets. The same engine is
+reused by ``eu_nickname_binding.build_statute_local_nicknames`` on
+ARBITRARY-LENGTH, already-inflected document-derived defined-term aliases; those
+are NOT clean nominative phrases, so above a small word bound only the head is
+inflected (modifier prefix held at its bound surface). Both forms are bounded —
+never the unbounded Cartesian product that explodes (~2e8 strings, OOM) and
+fabricates incoherent mixed-case surfaces. See :func:`_inflected_surfaces`.
 """
 from __future__ import annotations
 
@@ -53,10 +62,12 @@ from enum import Enum
 from typing import Optional
 
 from lawvm.finland.morphology import (
+    classify,
     generate_forms,
     head_entry,
     is_known_head,
 )
+from lawvm.finland.morphology.api import MorphCase, MorphEntry
 
 # ---------------------------------------------------------------------------
 # Curated seed: lemma (nominative) -> tuple of CELEX candidate ids.
@@ -131,28 +142,16 @@ _SEED: dict[str, tuple[str, ...]] = {
 # nickname. (Subset of the closed statute-head class; checked at build time.)
 _NICKNAME_HEADS: tuple[str, ...] = ("direktiivi", "asetus")
 
-# Conservative fallback endings for a nickname whose head is NOT a known
-# morphology head — the small fixed set of Finnish nominal singular case endings
-# the head could carry. Used only by the suffix-tolerant fallback path.
-_FALLBACK_ENDINGS: tuple[str, ...] = (
-    "",
-    "n",
-    "a",
-    "ä",
-    "ksi",
-    "ssa",
-    "ssä",
-    "sta",
-    "stä",
-    "lla",
-    "llä",
-    "lta",
-    "ltä",
-    "lle",
-    "in",
-    "een",
-    "seen",
-)
+# A coined nickname is a *nominative phrase* of at most a few words whose words
+# agree in case. ``build_statute_local_nicknames`` (eu_nickname_binding.py),
+# however, reuses ``_inflected_surfaces`` on ARBITRARY-LENGTH, already-inflected
+# document-derived defined-term aliases (e.g. ``tutkimuslääkkeiden hyviä
+# tuotantotapoja koskeva delegoitu asetus``), which are NOT clean nominative
+# phrases. Above this many words a phrase is treated as such a coined alias: we
+# inflect only its head and hold the modifier prefix at its bound surface,
+# rather than attempting whole-phrase case agreement (which would both explode
+# combinatorially and fabricate incoherent forms for non-nominative fragments).
+_MAX_AGREEING_WORDS: int = 3
 
 
 class RegistryStatus(Enum):
@@ -207,58 +206,136 @@ def _split_head(lemma: str) -> Optional[tuple[str, str]]:
     return best
 
 
-def _word_variants(word: str) -> set[str]:
-    """Inflected variants of a single ``word`` (lowercase).
+def _head_case_forms(word: str) -> Optional[dict[MorphCase, set[str]]]:
+    """Per-case inflected forms of ``word`` if it ends in a known head.
 
-    The head-bearing noun (last word) is inflected via the morphology engine
-    when its head is known; any other word — and any word whose head is not a
-    known morphology head — uses the conservative fixed-ending fallback. This
-    also covers a leading adjective that agrees in case with the head
-    (``yleinen`` -> ``yleisen``).
+    Returns ``{case: {surfaces}}`` (modifier prefix + each generated head form,
+    keyed by the form's grammatical case) or ``None`` if ``word`` does not end
+    in a known morphology head.
     """
-    variants: set[str] = {word}
     split = _split_head(word)
-    if split is not None:
-        modifier, head = split
-        for form in generate_forms(head_entry(head)):
-            if form.surface and form.certainty == "deterministic":
-                variants.add(modifier + form.surface)
-        return variants
-    # Conservative fallback: word stem + fixed nominal endings. For words whose
-    # nominative ends in a vowel we also try dropping it, covering the common
-    # gradationless cases (and adjective stems like ``yleine`` -> ``yleisen``).
-    stems = {word}
-    if word and word[-1] in "aeiouyäö":
-        stems.add(word[:-1])
-    if word.endswith("nen"):  # adjective/noun -nen -> -se- stem (yleinen->yleise-)
-        stems.add(word[:-3] + "se")
-    for stem in stems:
-        for ending in _FALLBACK_ENDINGS:
-            variants.add(stem + ending)
-    return variants
+    if split is None:
+        return None
+    modifier, head = split
+    by_case: dict[MorphCase, set[str]] = {}
+    for form in generate_forms(head_entry(head)):
+        if form.surface and form.certainty == "deterministic":
+            by_case.setdefault(form.case, set()).add(modifier + form.surface)
+    return by_case
+
+
+def _word_case_forms(word: str) -> Optional[dict[MorphCase, set[str]]]:
+    """Per-case inflected forms of a single nominative ``word`` (lowercase).
+
+    Returns ``{case: {surfaces}}`` keyed by grammatical case when ``word`` is a
+    clean nominative we can confidently inflect — either it ends in a known
+    morphology head, or it classifies to a generable paradigm (e.g. a ``-nen``
+    adjective like ``yleinen`` -> ``yleisen``). Returns ``None`` when ``word``
+    cannot be confidently treated as a nominative to inflect by case; the caller
+    then declines the case-synchronized diagonal for the whole phrase.
+
+    Building per-case forms (rather than a flat untyped variant set) lets the
+    caller join words on a SHARED case — the linguistically real
+    case-agreeing diagonal — instead of the Cartesian product of independent
+    per-word variant sets (which is both combinatorially explosive and
+    fabricates incoherent mixed-case surfaces that never occur in text).
+    """
+    head_forms = _head_case_forms(word)
+    if head_forms is not None:
+        # Always carry the bare nominative under NOM (the head may not emit it).
+        head_forms.setdefault(MorphCase.NOM, set()).add(word)
+        return head_forms
+    cls = classify(word)
+    if cls.status != "resolved" or not cls.morph_class:
+        return None
+    entry = MorphEntry(
+        lemma_id=f"nickname-word:{word}",
+        lemma=word,
+        referent_kind="common",
+        morph_class=cls.morph_class,
+    )
+    by_case: dict[MorphCase, set[str]] = {}
+    for form in generate_forms(entry):
+        if form.surface and form.certainty == "deterministic":
+            by_case.setdefault(form.case, set()).add(form.surface)
+    by_case.setdefault(MorphCase.NOM, set()).add(word)
+    return by_case
+
+
+def _head_only_surfaces(words: list[str]) -> set[str]:
+    """Inflect only the head (last word); hold the modifier prefix invariant.
+
+    Used for document-derived coined aliases that are NOT clean nominative
+    phrases (already-inflected fragments, > ``_MAX_AGREEING_WORDS`` words). The
+    case ending of a re-used coined alias lands on its head noun; the modifier
+    fragment stays at its bound surface. This is O(cases), never combinatorial,
+    and never fabricates incoherent inflections of the modifier fragment.
+    """
+    prefix = " ".join(words[:-1])
+    head_forms = _head_case_forms(words[-1])
+    surfaces: set[str] = set()
+    if head_forms is None:
+        return surfaces
+    for forms in head_forms.values():
+        for surface in forms:
+            surfaces.add(f"{prefix} {surface}" if prefix else surface)
+    return surfaces
 
 
 def _inflected_surfaces(lemma: str) -> set[str]:
     """All inflected surface forms of a (possibly multi-word) ``lemma``.
 
-    Each whitespace-separated word is independently expanded to its inflected
-    variants (Finnish modifiers agree in case with their head noun), then the
-    per-word variant sets are combined positionally. Always includes the bare
-    lemma itself. All output is lowercase.
+    For a short clean nominative phrase (the curated seed nicknames, which are
+    at most a few words) the words agree in case, so the surfaces that actually
+    occur are the case-synchronized DIAGONAL: for each grammatical case, inflect
+    every word into THAT case and join. This is O(words x cases) — tens of
+    surfaces — NOT the Cartesian product of independent per-word variant sets.
+    The product is both explosive (a 6-word document alias reaches ~2e8 strings,
+    OOM-ing import/extraction) AND wrong (it fabricates incoherent mixed-case
+    combos that never appear in text).
+
+    Above ``_MAX_AGREEING_WORDS`` words — or when any word is not a clean
+    nominative we can inflect by case — the phrase is a document-derived coined
+    alias, not an agreeing nominative phrase: only the head is inflected and the
+    modifier prefix is held at its bound surface (``_head_only_surfaces``).
+    Either way the expansion is bounded; there is no unbounded growth.
+
+    Always includes the bare lemma itself. All output is lowercase.
     """
     words = lemma.split()
     if not words:
         return {lemma}
-    per_word = [_word_variants(w) for w in words]
-    surfaces: set[str] = set()
-    # Cartesian product across words; the seed nicknames are <=3 words so this
-    # stays tiny (built once at import).
-    stack: list[list[str]] = [[]]
-    for choices in per_word:
-        stack = [prefix + [choice] for prefix in stack for choice in choices]
-    for combo in stack:
-        surfaces.add(" ".join(combo))
-    surfaces.add(lemma)
+
+    surfaces: set[str] = {lemma}
+
+    if len(words) <= _MAX_AGREEING_WORDS:
+        per_word = [_word_case_forms(w) for w in words]
+        if all(forms is not None for forms in per_word):
+            # Every word is a clean, case-inflectable nominative.
+            word_forms: list[dict[MorphCase, set[str]]] = [
+                forms for forms in per_word if forms is not None
+            ]
+            # Case-synchronized diagonal: join words on a SHARED case. A given
+            # word may emit several surfaces for one case (gradation/override);
+            # the per-case combination stays tiny (<= a handful per case).
+            for case in MorphCase:
+                choices = [forms[case] for forms in word_forms if case in forms]
+                if len(choices) != len(words):
+                    continue  # not every word inflects in this case — skip it
+                stack: list[list[str]] = [[]]
+                for word_choices in choices:
+                    stack = [
+                        prefix + [choice]
+                        for prefix in stack
+                        for choice in sorted(word_choices)
+                    ]
+                for combo in stack:
+                    surfaces.add(" ".join(combo))
+            return surfaces
+
+    # Document-derived coined alias (too long, or a non-nominative fragment):
+    # inflect the head only, modifier prefix invariant. Bounded by construction.
+    surfaces |= _head_only_surfaces(words)
     return surfaces
 
 

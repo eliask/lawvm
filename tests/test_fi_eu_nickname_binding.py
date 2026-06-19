@@ -99,6 +99,32 @@ def test_local_alias_resolves_later_article_reference() -> None:
     assert refs[0].mention.cite_kind is CiteKind.EU
 
 
+def test_long_coined_alias_binds_bounded_no_blowup() -> None:
+    # Regression: a long (6-word) coined alias whose words are already-inflected
+    # fragments must bind WITHOUT materializing the per-word Cartesian product
+    # (which here is ~2e8 strings → OOM). The fix inflects only the head
+    # (``asetus``) and holds the modifier fragment invariant, so the table stays
+    # small and a later head-inflected use of the SAME alias still resolves.
+    text = (
+        "komission delegoitua asetusta (EU) 2017/1569 (jäljempänä "
+        "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetus) "
+        "sovelletaan. Lisäksi tutkimuslääkkeiden hyviä tuotantotapoja koskeva "
+        "delegoitu asetuksen 3 artiklan mukaan toimitaan."
+    )
+    table = build_statute_local_nicknames(text)
+    key = "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetus"
+    assert table.celex_by_lemma == {key: "32017R1569"}
+    # The bound alias resolves on its head-inflected (genitive) surface.
+    assert (
+        table.lookup(
+            "tutkimuslääkkeiden hyviä tuotantotapoja koskeva delegoitu asetuksen"
+        )
+        == "32017R1569"
+    )
+    # The surface index is bounded (O(cases)), not the explosive product.
+    assert len(table._surface_to_lemma) <= 16
+
+
 def test_local_alias_article_coordination_enumerates_each_member() -> None:
     text = (
         "asetuksen (EY) N:o 999/2001 (jäljempänä TSE-asetus) nojalla. "
