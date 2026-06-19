@@ -928,16 +928,25 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             flags=re.I,
         )
     )
+    for sec, moments in re.findall(
+        r"(\d+\s*[a-z]?)\s*§\s*(?::n\s*)?"
+        r"(\d+(?:\s*(?:,|ja)\s*\d+){0,12})\s+moment(?:ti|in)",
+        cleaned,
+        flags=re.I,
+    ):
+        refs.extend((sec, mom) for mom in re.findall(r"\d+", moments))
     refs.extend(
         (sec, None)
         for sec in re.findall(
-            r"(\d+\s*[a-z]?)\s*§(?!\s*:)",
+            r"(\d+\s*[a-z]?)\s*§(?!\s*:)"
+            r"(?!\s*\d+(?:\s*(?:,|ja)\s*\d+){0,12}\s+moment)",
             cleaned,
             flags=re.I,
         )
     )
     for sec_list in re.findall(
-        r"((?:\d+\s*[–—―-]\s*\d+|\d+)(?:\s*(?:,|ja)\s*(?:\d+\s*[–—―-]\s*\d+|\d+))*)\s*§(?!\s*:)",
+        r"((?:\d+\s*[–—―-]\s*\d+|\d+)(?:\s*(?:,|ja)\s*(?:\d+\s*[–—―-]\s*\d+|\d+))*)"
+        r"\s*§(?!\s*:)(?!\s*\d+(?:\s*(?:,|ja)\s*\d+){0,12}\s+moment)",
         cleaned,
         flags=re.I,
     ):

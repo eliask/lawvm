@@ -11365,6 +11365,74 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
 
 
+def test_supplement_mixed_explicit_clause_ops_does_not_treat_repeal_body_sections_as_targets() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="repeal_9",
+            op_type="REPEAL",
+            target_section="9",
+            target_kind=TargetKind.SECTION,
+        )
+    ]
+    johto = (
+        "Tällä asetuksella kumotaan poliisin henkilörekistereistä 15 päivänä "
+        "syyskuuta 1995 annetun asetuksen (1116/1995) 9 §, sellaisena kuin se "
+        "on asetuksessa 1144/1998. Seuraavasti: 1 § Tällä asetuksella kumotaan "
+        "9 §. 2 § Tämä asetus tulee voimaan 1 päivänä syyskuuta 2002."
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert got == ops
+
+
+def test_supplement_mixed_explicit_clause_ops_keeps_possessive_moment_refs_child_scoped() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_2_2",
+            op_type="REPLACE",
+            target_section="2",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=2,
+        )
+    ]
+    johto = (
+        "muutetaan 2 § n 2 momentti, 4 § n 2 ja 3 momentti, "
+        "5 § n 1 momentti sekä 6 § seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+    ] == [
+        ("REPLACE", "2", 2),
+        ("REPLACE", "6", None),
+    ]
+
+
+def test_parse_ops_fallback_recovers_colonless_moment_target_list() -> None:
+    johto = (
+        "muutetaan vähemmistövaltuutetusta 26 päivänä heinäkuuta 2001 annetun "
+        "valtioneuvoston asetuksen (687/2001) 2 § 2 momentti, "
+        "4 § 2 ja 3 momentti, 5 § 1 momentti ja 6 § seuraavasti:"
+    )
+
+    got = parse_ops_fallback_heuristic(johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+    ] == [
+        ("REPLACE", "2", 2),
+        ("REPLACE", "4", 2),
+        ("REPLACE", "4", 3),
+        ("REPLACE", "5", 1),
+        ("REPLACE", "6", None),
+    ]
+
+
 def test_numbered_table_proxy_splits_from_child_targets_before_group_compile() -> None:
     table_proxy = AmendmentOp(
         op_id="table_proxy",

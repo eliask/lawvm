@@ -71,7 +71,7 @@ _INSERT_MOMENT_RE = re.compile(
     flags=re.I,
 )
 _BARE_REPLACE_SECTION_RE = re.compile(
-    r"(?<![/\d])(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?!\s*:)",
+    r"(?<![/\d])(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?!\s*:)(?!\s*n\b)",
     flags=re.I,
 )
 _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
@@ -674,7 +674,20 @@ def _parse_item_replace_clauses(johto: str) -> tuple[ItemReplaceClause, ...]:
 
 
 def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceClause, ...]:
-    muutetaan_segment = re.split(r"\blisätään\b", johto or "", maxsplit=1, flags=re.I)[0]
+    muutetaan_match = re.search(r"\bmuutetaan\b", johto or "", flags=re.I)
+    if muutetaan_match is None:
+        return ()
+    muutetaan_segment = (johto or "")[muutetaan_match.end() :]
+    stop_matches = [
+        match.start()
+        for match in re.finditer(
+            r"\b(?:lisätään|kumotaan|seuraavasti)\b",
+            muutetaan_segment,
+            flags=re.I,
+        )
+    ]
+    if stop_matches:
+        muutetaan_segment = muutetaan_segment[: min(stop_matches)]
     clauses: list[BareSectionReplaceClause] = []
     seen: set[str] = set()
     for match in _BARE_REPLACE_SECTION_RE.finditer(muutetaan_segment):
