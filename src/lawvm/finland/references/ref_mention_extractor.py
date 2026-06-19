@@ -2296,16 +2296,25 @@ def extract_all_reference_mentions(
     # dropped here so the covered basis is single-sourced (no double-emission and no
     # sectionless-regex shadow of a sectioned construction basis). The regex-derived
     # ``domestic`` ISSUED_UNDER mention is KEPT only for the construction-DECLINED
-    # residue — the genuine shapes the construction refuses (fail-loud on noise):
-    # the ``… N §:n, sellaisena kuin se on laissa NNN/YYYY, nojalla`` amendment-
-    # history interjection (the dominant residue class) and OCR/abbreviation noise
-    # (``§;n`` / ``§.n``, ``mom.`` / ``mom:n``, ``7§:n``, ``sekä. 33 §:n``, glued
-    # ``nojallapäättänyt``). Empirically (full Finlex corpus) the construction owns
-    # the overwhelming majority of bases with their sections; the regex residue is
-    # ~727 source statutes / ~1076 (parent, section) tuples, ~92% the ``sellaisena
-    # kuin`` interjection. NOTHING the regex shipped at the PARENT level is lost
-    # (§1.8); the demotion only prefers the construction's typing/sections where
-    # both cover the same parent. The cross_refs ``_merge_authority_basis``
+    # residue — the genuine shapes the construction refuses (fail-loud on noise).
+    # The construction now ALSO owns the ``… N §:n, sellaisena kuin se on laissa
+    # NNN/YYYY, nojalla`` amendment-history interjection: it blanks the interjection
+    # (amendment-version metadata about WHICH act amended the basis provision — the
+    # inner ``(NNN/YYYY)`` is the AMENDING act, never the basis) and binds the OUTER
+    # ``[act] (NUM/YEAR) N §:n … nojalla``. So the interjection is no longer residue.
+    # What genuinely REMAINS for the regex fallback is: voimaantulo-/siirtymäsäännös
+    # bases (a ``voimaantulosäännöksen nojalla`` with no ``§`` provision path),
+    # momentti-only/budget-momentti bases (``… momentin 28.37.40 nojalla``), prose
+    # provision paths (``10 §:n nimikkeen … kohdalla olevan säännöksen nojalla``),
+    # and OCR/abbreviation noise (``§;n`` / ``§.n``, ``mom.`` / ``mom:n``, ``7§:n``,
+    # ``sekä. 33 §:n``, ``#:n``, glued ``nojallapäättänyt``). Empirically (full
+    # Finlex corpus) the construction owns the overwhelming majority of bases with
+    # their sections; the sellaisena interjection class (~707 parents / ~476
+    # statutes, formerly the dominant regex residue) is now construction-owned with
+    # NO loss and NO amending-act mis-binding, leaving a smaller genuine-residue
+    # tail. NOTHING the regex shipped at the PARENT level is lost (§1.8); the
+    # demotion only prefers the construction's typing/sections where both cover the
+    # same parent. The cross_refs ``_merge_authority_basis``
     # enrichment of the StatuteGraph is untouched — this demotion is purely at the
     # ``extract_all_reference_mentions`` surface. Skipped in annotation-independence
     # measurement mode (the ISSUED_UNDER metadata lane is part of the suppressed
