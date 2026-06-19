@@ -308,9 +308,36 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
   2. fold-vs-materialized gap: section nodes in `replay_fold_state` without
      matching timeline `lo_ops` at `part:5/chapter:25` (PIT drops them);
   3. `RECODIFICATION_SOURCE_CHAIN_GAP` skip for `part:6/chapter:2/section:7`.
+- 2026-06-19 refresh (`run_20260619T0310` plus current-tree targeted diff):
+  section score is now about `90.91%`; the `209§`–`215§` fold/materialization
+  gap is no longer the visible top failure in the dirty current tree. The
+  remaining lowest-similarity rows are mostly text-present-under-stale-container
+  cases (e.g. oracle `part:2/chapter:2/section:8` text exists in replay at
+  `part:2/chapter:4/section:8`), i.e. container-membership/recodification
+  topology rather than missing text.
+- Bounded relabel-miss audit for the three visible `2019/371` warnings:
+  - `part:5/chapter:4/section:2 -> section:234`: source explicitly says
+    `4 luvun ... 2 §:n numero 234:ksi` and the body carries full `234 §`
+    text. Pre-wave `part:5/chapter:4` has no section `2`; the plausible
+    old source under the part-migration frame was already consumed by the
+    separate `-> section:210` relabel. Reusing it would violate no double
+    consumption / no target hijacking.
+  - `part:5/chapter:5/section:2 -> section:237`: source explicitly says
+    `5 luvun 1 ja 2 §:n numero 236 ja 237:ksi`, but body `237 §` is
+    omission-only. Keep `RECODIFICATION_SOURCE_CHAIN_GAP`.
+  - `part:6/chapter:2/section:7 -> section:268`: source explicitly says
+    `2 luvun ... 7 §:n numero 268:ksi`; body `268 §` has only partial
+    subsection payload plus special commencement. Existing pending-lineage
+    handling is the right current behavior; do not broaden lookup.
+- Possible future fix: a named source-chain payload-bootstrap family for
+  failed relabel + same-source full destination body payload. It may apply to
+  `234` only, with strict-mode barrier, explicit finding/rule ID, no
+  double-consumption, negative tests for omission-only `237`, and corpus tests
+  preserving `268` as deferred lineage/source-chain gap.
 - Status: **partial fix landed** (relabel ledger, `part:2a` alias, post-apply
   dedup); next family fix is owned timeline snapshot emission for recovered /
-  late-chain inserts — not oracle text injection.
+  late-chain inserts or a carefully owned source-chain payload bootstrap — not
+  oracle text injection or target lookup broadening.
 
 ## Fixed Actionable Family: Cross-Act Repeal Routing
 
