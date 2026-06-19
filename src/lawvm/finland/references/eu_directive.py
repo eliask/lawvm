@@ -63,6 +63,7 @@ from lawvm.finland.references.eu_reference import (
     recognize_eu_year_first_slash,
 )
 from lawvm.finland.references.lemma_gate import (
+    head_case_forms,
     head_plural_external_local_forms,
     head_surface_forms,
 )
@@ -202,6 +203,40 @@ _ALAKOHTA_ITEM = r"(?:[a-zåäö]{1,2}|\d{1,3})"
 _ALAKOHTA_LIST = (
     rf"{_ALAKOHTA_ITEM}(?:{_ALAKOHTA_CONNECTOR}{_ALAKOHTA_ITEM}){{0,10}}"
 )
+# The ``kohta`` (point/paragraph) head, M1-backed. The hand-written
+# ``koh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?`` arm was
+# a truncated stem (``koh``) spanning the ``ht``/``hd`` consonant gradation with a
+# hand-typed case suffix list — the gradation-substring smell ``lemma_gate``
+# retires elsewhere (and its trailing ``?`` even let a bare ``koh`` match). It is
+# replaced by the M1-generated full surfaces of ``kohta`` over the exact curated
+# case set the suffix list encoded, so each alternative is a real M1 output of a
+# closed head, not a stem guess. The curated set is a strict equal of the old
+# forms (no precision change): a kohta reference appears in precisely these cases
+# in EU-article body prose; widening to the full paradigm (plural inessive
+# ``kohdissa`` etc.) is unnecessary and unverified here.
+_KOHTA_CASE_NUMBERS: tuple[tuple[str, str], ...] = (
+    ("NOM", "SG"),   # kohta
+    ("INE", "SG"),   # kohdassa
+    ("ELA", "SG"),   # kohdasta
+    ("ILL", "SG"),   # kohtaan
+    ("GEN", "SG"),   # kohdan
+    ("PART", "SG"),  # kohtaa
+    ("TRA", "SG"),   # kohdaksi
+    ("ADE", "SG"),   # kohdalla
+    ("ABL", "SG"),   # kohdalta
+    ("ALL", "SG"),   # kohdalle
+    ("NOM", "PL"),   # kohdat
+    ("GEN", "PL"),   # kohtien
+)
+_KOHTA_HEAD_ALT = "|".join(head_case_forms("kohta", _KOHTA_CASE_NUMBERS))
+# ``alakohta`` (lettered sub-point) is not an M1 head, but it is the invariant
+# prefix ``ala`` + ``kohta``, so its paradigm is ``kohta``'s with ``ala``
+# prepended — derive it soundly from the same M1 surfaces rather than re-typing a
+# second truncated ``alakoh`` stem.
+_ALAKOHTA_HEAD_ALT = "|".join(
+    "ala" + form for form in head_case_forms("kohta", _KOHTA_CASE_NUMBERS)
+)
+
 # A kohta tail anchored at the start of the post-article remainder: a
 # (possibly coordinated) kohta number list + the ``kohta`` head, then an optional
 # (possibly coordinated) ``alakohta`` lettered/numbered sub-point list. The
@@ -210,9 +245,9 @@ _ALAKOHTA_LIST = (
 _KOHTA_TAIL_RE = re.compile(
     r"^\s+"
     rf"(?P<kohdat>{_KOHTA_ITEM}(?:{_ARTIKLA_CONNECTOR}{_KOHTA_ITEM}){{0,10}})"
-    r"\s*koh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b"
+    rf"\s*(?:{_KOHTA_HEAD_ALT})\b"
     rf"(?:\s+(?P<alakohta>{_ALAKOHTA_LIST})\s*"
-    r"alakoh(?:ta|dassa|dasta|taan|dan|taa|daksi|dalla|dalta|dalle|dat|tien)?\b)?",
+    rf"(?:{_ALAKOHTA_HEAD_ALT})\b)?",
     re.IGNORECASE,
 )
 # Splits an alakohta label list ("a ja b", "1, 2 ja 3") on the explicit
