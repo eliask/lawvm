@@ -70,6 +70,7 @@ from lawvm.finland.legal_surface.delegation_parse import (
     INSTRUMENT_ASETUS,
     INSTRUMENT_MAARAYS,
     KIND_AGENCY,
+    KIND_ASETUS,
     assert_total_ownership,
     delegation_key,
     parse_delegation_sentence,
@@ -102,6 +103,66 @@ def _instrument_for_delegation_type(delegation_type: str) -> str:
     if delegation_type == KIND_AGENCY:
         return INSTRUMENT_MAARAYS
     return INSTRUMENT_ASETUS
+
+
+# ---------------------------------------------------------------------------
+# Honest-comparison key normalization (the weak-oracle reconciliation layer)
+# ---------------------------------------------------------------------------
+#
+# The production forward extractor is a fallible TEACHER, not ground truth (the
+# differential-reconstruction discipline). Two of its regex-window pathologies
+# diverge its grant KEY from the construction's correct key for the SAME physical
+# grant — NOT because the construction missed a grant, but because the oracle
+# resolved it less precisely or mis-classified it. To keep the per-sentence key
+# comparison HONEST (identical coordinate space), both pathologies are normalized:
+#
+#   (1) ISSUER-RESOLUTION granularity. The construction reads the genitive issuer
+#       the oracle's bounded ``{0,N}`` window truncated, so it emits a SPECIFIC
+#       asetus class (VN / MIN / PRES) where the oracle emitted the generic
+#       ``ASETUS`` for the same ``asetus`` instrument (and vice versa). The issuer
+#       CLASS is exactly the oracle's UNRELIABLE axis — its match_text window
+#       routinely clips the issuer NP — so the per-grant comparison is made on the
+#       INSTRUMENT-level canonical key (every asetus class → one ``asetus`` grant),
+#       collapsing VN / MIN / PRES / generic onto the canonical asetus key on BOTH
+#       sides. This is the honest coordinate space: "did the construction find an
+#       asetus grant here", not "did it guess the same issuer class the (clipped)
+#       oracle window did". The issuer class stays available on the cores as
+#       enrichment; it is simply not the comparison axis.
+#
+#   (2) OBJECT-MÄÄRÄYS oracle false-positive. The ``tarkempia säännöksiä JA
+#       MÄÄRÄYKSIÄ … annetaan asetuksella`` drafting shape lists "määräyksiä" as
+#       the regulated OBJECT of an ASETUS grant, not as an agency instrument. The
+#       oracle's ``_classify_delegation_type`` keys on the substring ``määräyksi``
+#       BEFORE the generic fallback, so it mis-keys the whole ASETUS grant as
+#       ``AGENCY:määräys``. The tell is unambiguous: a genuine agency grant
+#       (``voi antaa määräyksiä``) never carries ``asetuksella`` in its match_text,
+#       whereas this false-positive always does. So an oracle ``AGENCY`` edge whose
+#       match_text contains ``asetuksella`` is RE-KEYED to the generic
+#       ``ASETUS:asetus`` it actually is, before bucketing — correcting the oracle's
+#       object-confusion rather than forcing the construction to replicate it.
+#
+# Both are documented oracle-defect corrections, not magnitude scoring; the
+# construction asserts nothing it did not parse.
+
+_CANONICAL_ASETUS_KEY = delegation_key(KIND_ASETUS, INSTRUMENT_ASETUS)
+_ASETUS_KIND_KEYS = frozenset(
+    {
+        delegation_key("VN_ASETUS", INSTRUMENT_ASETUS),
+        delegation_key("MIN_ASETUS", INSTRUMENT_ASETUS),
+        delegation_key("PRES_ASETUS", INSTRUMENT_ASETUS),
+        delegation_key(KIND_ASETUS, INSTRUMENT_ASETUS),
+    }
+)
+
+
+def _canonicalize_keys(keys: set[str]) -> set[str]:
+    """Collapse every asetus-issuer-class key onto the canonical ``asetus`` key.
+
+    The issuer class (VN / MIN / PRES / generic) is the oracle's unreliable axis;
+    the comparison is at instrument granularity (one ``asetus`` grant per asetus
+    instrument). Non-asetus keys (the agency ``määräys``) pass through unchanged.
+    """
+    return {(_CANONICAL_ASETUS_KEY if k in _ASETUS_KIND_KEYS else k) for k in keys}
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +233,20 @@ def _build_delegation_oracle(statute_id: str, body: str) -> _DelegationOracleCon
         mt = _norm_ws(edge.match_text)
         if not mt:
             continue
+        delegation_type = edge.delegation_type
+        # OBJECT-MÄÄRÄYS oracle false-positive correction: an AGENCY edge whose
+        # match_text carries ``asetuksella`` is a mis-keyed ASETUS grant (the
+        # "määräyksiä" is the regulated object, not an agency instrument). Re-key it
+        # to the generic ASETUS it actually is. A genuine agency grant never carries
+        # ``asetuksella``, so this never reclassifies a real agency edge.
+        if delegation_type == KIND_AGENCY and "asetuksella" in mt.lower():
+            delegation_type = KIND_ASETUS
         key = delegation_key(
-            edge.delegation_type, _instrument_for_delegation_type(edge.delegation_type)
+            delegation_type, _instrument_for_delegation_type(delegation_type)
         )
+        # Collapse the issuer class onto the canonical asetus key (the comparison
+        # is instrument-granular; the issuer class is the oracle's unreliable axis).
+        key = next(iter(_canonicalize_keys({key})))
         for sn in sent_norms:
             if mt in sn:
                 by_sentence.setdefault(sn, set()).add(key)
@@ -232,7 +304,9 @@ def _delegation_segment_selector(sid: str, body: str) -> Iterator[CensusUnit]:
 
 
 def _delegation_projection(unit: CensusUnit, sid: str) -> set[str]:
-    return projection_grant_keys(parse_delegation_sentence(unit.text))
+    # Canonicalized to instrument granularity (the asetus issuer class is the
+    # oracle's unreliable axis — see the honest-comparison normalization above).
+    return _canonicalize_keys(projection_grant_keys(parse_delegation_sentence(unit.text)))
 
 
 def _delegation_miss_shape(missing_keys: set[str], declared_marker: str) -> str:

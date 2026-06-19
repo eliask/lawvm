@@ -25,6 +25,7 @@ from lawvm.finland.legal_surface.delegation_parse import (
     KIND_VN_ASETUS,
     assert_total_ownership,
     delegation_key,
+    extract_authority_bases,
     parse_delegation_sentence,
     projection_grant_keys,
 )
@@ -219,6 +220,56 @@ def test_bare_mukaan_without_provision_is_not_a_basis() -> None:
     assert dp.cores[0].basis_start is None
 
 
+def test_basis_adjacency_guard_rejects_longrange_anaphoric_nojalla() -> None:
+    # The minor enrichment FP: a ``varhaiskasvatuslain (540/2018) 1 §:n`` ref under
+    # ``tämän lain mukaista`` sitting far to the LEFT of a bare anaphoric ``sen
+    # nojalla`` must NOT be grabbed as the authority basis (the prose between the id
+    # and the terminal fails the adjacency guard).
+    text = (
+        "Jos tämän lain mukaista esiopetusta järjestetään varhaiskasvatuslain "
+        "(540/2018) 1 §:n 2 momentin 1 tai 2 kohdassa tarkoitetussa päiväkodissa, "
+        "esiopetukseen sovelletaan, jollei tässä laissa tai sen nojalla "
+        "asetuksella toisin säädetä, mitä siellä säädetään."
+    )
+    dp = parse_delegation_sentence(text)
+    assert all(c.basis_targets == () for c in dp.cores)
+
+
+# ---------------------------------------------------------------------------
+# Standalone authority-basis recognizer (the … nojalla REVERSE direction)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_authority_bases_single_act_basis() -> None:
+    bases = extract_authority_bases(
+        "Opetusministerin esittelystä säädetään ammatillisista oppilaitoksista "
+        "annetun lain (487/87) nojalla:"
+    )
+    assert [(b.num, b.year, b.name_word, b.section_labels) for b in bases] == [
+        ("487", "87", "lain", ())
+    ]
+
+
+def test_extract_authority_bases_coordinated_with_sections() -> None:
+    bases = extract_authority_bases(
+        "säädetään lukiolain (629/1998) 36 §:n ja valtion maksuperustelain "
+        "(150/1992) 8 §:n nojalla:"
+    )
+    triples = {(b.num, b.year, b.section_labels) for b in bases}
+    assert ("629", "1998", ("36",)) in triples
+    assert ("150", "1992", ("8",)) in triples
+
+
+def test_extract_authority_bases_decree_kind() -> None:
+    bases = extract_authority_bases("Säädetään esimerkkiasetuksen (1248/2005) 3 §:n nojalla:")
+    assert [(b.num, b.year, b.name_word) for b in bases] == [("1248", "2005", "esimerkkiasetuksen")]
+
+
+def test_extract_authority_bases_anaphoric_sen_nojalla_yields_nothing() -> None:
+    # ``sen nojalla`` (no own id) is not an authority basis.
+    assert extract_authority_bases("jollei tässä laissa tai sen nojalla toisin säädetä") == []
+
+
 # ---------------------------------------------------------------------------
 # Projection keys + census classification
 # ---------------------------------------------------------------------------
@@ -246,6 +297,48 @@ def test_census_classify_match_superset_miss() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Multi-core: coordinated instruments sharing one verb in ONE clause
+# ---------------------------------------------------------------------------
+
+
+def test_multicore_two_coordinated_asetus_anchors() -> None:
+    # One clause, one verb, TWO coordinated ``asetuksella`` decree anchors → TWO
+    # cores (one per instrument anchor), sharing the single power verb, with total
+    # ownership preserved. (Issuer-class precision on tightly-coordinated dual-
+    # asetus is bounded by the holder NP recognizer and not the comparison axis —
+    # the census collapses asetus issuer classes onto one instrument-granular key.)
+    text = (
+        "Tarkemmat säännökset annetaan valtioneuvoston asetuksella "
+        "ja ministeriön asetuksella."
+    )
+    dp = parse_delegation_sentence(text)
+    assert len(dp.cores) == 2
+    assert all(c.instrument == INSTRUMENT_ASETUS for c in dp.cores)
+    # The two cores own two DISTINCT instrument anchors.
+    anchors = {(c.instrument_start, c.instrument_end) for c in dp.cores}
+    assert len(anchors) == 2
+    assert_total_ownership(dp)
+
+
+def test_multicore_coordinated_bare_asetus_not_misbound_to_later_issuer() -> None:
+    # The canonical coordinated multi-instrument clause (repro 1995/1062): one verb
+    # delegates to a BARE ``asetuksella`` plus a ministry ``päätöksellä`` and a
+    # municipal ``järjestyksellä``. The bare ``asetuksella`` is a GENERIC asetus —
+    # its issuer must NOT be the ``ympäristöministeriön`` genitive that binds the
+    # later ``päätöksellä`` (adjacency rule). The non-modelled päätös/järjestys
+    # instruments stay benign residual.
+    text = (
+        "Tarkempia säännöksiä ja määräyksiä rakentamisesta annetaan asetuksella, "
+        "ympäristöministeriön päätöksellä ja kunnan rakennusjärjestyksellä."
+    )
+    dp = parse_delegation_sentence(text)
+    assert len(dp.cores) == 1
+    assert dp.cores[0].kind == KIND_ASETUS  # bare asetus, NOT MIN_ASETUS
+    assert dp.cores[0].holder_underspecified is True
+    assert_total_ownership(dp)
+
+
 def test_two_clauses_two_cores() -> None:
     # Two delegation clauses in one sentence (period boundary) → two cores.
     text = (
@@ -259,3 +352,51 @@ def test_two_clauses_two_cores() -> None:
     assert KIND_VN_ASETUS in kinds
     assert KIND_AGENCY in kinds
     assert_total_ownership(dp)
+
+
+# ---------------------------------------------------------------------------
+# Production flip: construction-primary authority-basis mention lane
+# ---------------------------------------------------------------------------
+
+
+def _preamble_xml(preamble_text: str) -> bytes:
+    return (
+        '<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<act><preamble><p>" + preamble_text + "</p></preamble>"
+        "<body><section><num>1 §</num></section></body></act>"
+        "</akomaNtoso>"
+    ).encode("utf-8")
+
+
+def test_authority_mention_lane_lifts_construction_basis_canonical_orientation() -> None:
+    from lawvm.core.reference_mention import CiteKind
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_delegation_construction_authority_mentions,
+    )
+
+    xml = _preamble_xml(
+        "Maa- ja metsätalousministeriön päätöksen mukaisesti säädetään "
+        "annetun lain (1048/2016) 37 §:n nojalla:"
+    )
+    res, covered = extract_delegation_construction_authority_mentions(xml, "2018/1158")
+    assert covered == {"2016/1048"}  # canonical YEAR/NUMBER, not inverted
+    assert len(res.mentions) == 1
+    m = res.mentions[0]
+    assert m.edge_subtype == "ISSUED_UNDER"
+    assert m.phrase_lemma == "delegation_construction"
+    assert m.cite_kind == CiteKind.CROSS_STATUTE  # a laki basis
+    assert m.target_provision_ref is not None
+    assert m.target_provision_ref.statute_id == "2016/1048"
+    assert m.target_provision_ref.section_label == "37"
+
+
+def test_authority_mention_lane_decree_basis_is_non_statutory() -> None:
+    from lawvm.core.reference_mention import CiteKind
+    from lawvm.finland.references.ref_mention_extractor import (
+        extract_delegation_construction_authority_mentions,
+    )
+
+    xml = _preamble_xml("Säädetään esimerkkiasetuksen (1248/2005) 3 §:n nojalla:")
+    res, _covered = extract_delegation_construction_authority_mentions(xml, "2099/1")
+    assert len(res.mentions) == 1
+    assert res.mentions[0].cite_kind == CiteKind.NON_STATUTORY_INSTRUMENT
