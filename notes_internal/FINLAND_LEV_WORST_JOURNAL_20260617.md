@@ -30,6 +30,9 @@ Current top Levenshtein gaps from the refresh run:
   `run_20260619T0815`; chapter-8a migration/repeal fix landed; residual
   structural/text gap is list-topology plus editorial-heading/repeal-note
   projection; journaled below.
+- `1995/509`: lev `0.859610`, structural `0.928571` in
+  `run_20260619T0815`; inserted chapter child-scope fix landed; residual is
+  editorial/oracle-stale plus missing XML topology for `14 §`; journaled below.
 
 Purpose: track high-Levenshtein-gap Finnish statutes, root-cause classification,
 and whether the case is actionable or deferred. Entries here are working notes:
@@ -631,6 +634,46 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
     without a named source-normalization family and broader evidence.
 - Current status: replay bug fixed; remaining gap belongs to editorial
   projection / source-topology comparison, not a queued universal mutation fix.
+
+### `1995/509` — Laki poliisin henkilörekistereistä
+
+- Run row (`run_20260619T0815`): Levenshtein `0.859610`, structural
+  `0.928571`. Focused post-fix bench: `uv run lawvm bench --statute 1995/509
+  --no-save --top 5` reports structural `95.24%`, Levenshtein `86.06%`.
+- Fixed root cause: amendment `1998/4` inserts `25 §:n edelle uusi 6 a luvun
+  otsikko` and inserts a new `25 §:n 2 momentti`; the source body places
+  `25 §` under a real `<chapter><num>6 a luku</num>`. The compiler emitted the
+  whole-section/chapter creation for `6a/25`, but the sparse child group kept
+  stale `chapter:6` scope for the heading and new subsection, producing an
+  extra `chapter:6/section:25` and leaving `chapter:6a/section:25` incomplete.
+- Fix landed: compile-time body-chapter scope recovery now applies to
+  non-carry-forward INSERT groups mixed only with heading-facet replacements
+  when the real source-body chapter is a newly introduced letter-suffix chapter
+  of the stale target chapter. The existing carry-forward guard remains in
+  place. The replace-to-insert move bridge now ignores heading-facet
+  replacements, so it no longer emits an action-family recovery finding for
+  heading-only changes.
+- Regression:
+  `tests/test_fi_compile_group_scope_recovery.py::
+  test_inserted_body_chapter_scopes_following_child_section_insert`; carry-
+  forward negative guard:
+  `tests/test_fi_grafter_fallback.py::
+  test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new_container`.
+- Verification:
+  - `uv run lawvm ops 1995/509 --source 1998/4` now shows
+    `REPLACE chapter:6a/section:25/otsikko` and
+    `INSERT chapter:6a/section:25/subsection:2`.
+  - `uv run lawvm diff 1995/509 --text --threshold 0.999 --compile-summary`
+    improved from `2` replay-extra sections and score `97.47%` to `1`
+    replay-extra section and score `98.86%`; `6a/25` is no longer a worst
+    compared section.
+  - `uv run lawvm oracle-check 1995/509` after the fix reports
+    `EDITORIAL_CONVENTION=6`, `ORACLE_STALE=1`, with no replay-bug bucket.
+- Residual classification: `13 §` and `20 §` are comparison/editorial surfaces
+  around sparse item/repeal-note presentation and Schengen/Europol wording
+  order; `14 §` is reported as `missing_from_xml` in the oracle-check topology.
+  Do not synthesize additional replay state for this statute without a source
+  witness beyond the current editorial/oracle surface.
 
 ### `1987/322`
 
