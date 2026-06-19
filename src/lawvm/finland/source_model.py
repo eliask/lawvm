@@ -104,6 +104,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _amendment_metadata_cache: dict[str, "_AmendmentTreeMetadata"] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
     @classmethod
     def from_tree(
@@ -441,6 +446,20 @@ class AmendmentSourceModel:
         from lawvm.finland.metadata import _amendment_expiry_date
 
         return _amendment_expiry_date(self.muutos_tree)
+
+    def amendment_tree_metadata(
+        self,
+        amendment_id: str,
+    ) -> "_AmendmentTreeMetadata":
+        """Return cached frontend metadata derived from this amendment source."""
+        if amendment_id not in self._amendment_metadata_cache:
+            from lawvm.finland.frontend_compile import _amendment_tree_metadata
+
+            self._amendment_metadata_cache[amendment_id] = _amendment_tree_metadata(
+                amendment_id=amendment_id,
+                muutos_tree=self.muutos_tree,
+            )
+        return self._amendment_metadata_cache[amendment_id]
 
     def commencement_expiry_override(
         self,

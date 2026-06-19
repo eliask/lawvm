@@ -35,7 +35,6 @@ from lawvm.finland.elaboration_rule_dispatch import (
     validate_elaboration_pipeline,
 )
 from lawvm.finland.frontend_compile import (
-    _amendment_tree_metadata,
     _enrich_ops_from_amendment_tree,
     _tree_title,
     normalize_and_compile_ops,
@@ -345,10 +344,7 @@ def process_muutoslaki_resolved(
         else:
             skip_to_compile = False
 
-        amendment_tree_metadata = _amendment_tree_metadata(
-            amendment_id=amendment_id,
-            muutos_tree=muutos_tree,
-        )
+        amendment_tree_metadata = source_model.amendment_tree_metadata(amendment_id)
 
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",

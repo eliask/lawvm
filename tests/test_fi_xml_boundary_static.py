@@ -166,3 +166,10 @@ def test_frontend_normalization_runs_through_source_model() -> None:
     assert "muutos_tree" not in source
     assert "source_model.normalize_and_compile_ops(" in source
     assert "source_model=source_model" in pipeline_source
+
+
+def test_process_pipeline_metadata_reads_use_source_model() -> None:
+    source = _source("src/lawvm/finland/process_pipeline.py")
+
+    assert "_amendment_tree_metadata" not in source
+    assert "source_model.amendment_tree_metadata(" in source

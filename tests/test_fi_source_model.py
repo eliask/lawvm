@@ -250,6 +250,12 @@ def test_source_model_exposes_metadata_surfaces() -> None:
     assert model.effective_date() == dt.date(2020, 3, 4)
     assert model.effective_date_with_step() == (dt.date(2020, 3, 4), "metadata")
     assert model.expiry_date() is None
+    metadata = model.amendment_tree_metadata("2020/1")
+    assert metadata is model.amendment_tree_metadata("2020/1")
+    assert metadata.source_title == "Testilaki"
+    assert metadata.source_issue_date == dt.date(2020, 1, 2)
+    assert metadata.effective_date == dt.date(2020, 3, 4)
+    assert metadata.expiry_date is None
 
 
 def test_source_model_exposes_commencement_expiry_override() -> None:
