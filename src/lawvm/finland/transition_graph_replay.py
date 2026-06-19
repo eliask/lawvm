@@ -69,5 +69,6 @@ def materialize_fi_transition_graph_tree(bundle: ReplayBundle, as_of: str):
         synthesize_repeal_placeholders=True,
         temporal_events=result.products.temporal_events,
         migration_events=result.products.migration_events,
+        fold_backfill_preview_cache=bundle.materialization_cache,
     )
     return products.materialized_state.ir

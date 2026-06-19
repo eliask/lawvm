@@ -1353,6 +1353,8 @@ def build_replay_products(
     strict_johto_temporal: bool = True,
     migration_events: tuple[MigrationEvent, ...] = (),
     expires_as_of: str = "",
+    fold_backfill_preview_raw_timelines: dict["LegalAddress", ProvisionTimeline] | None = None,
+    fold_backfill_preview_cache: dict[object, object] | None = None,
 ) -> ReplayProducts:
     """Build typed PIT materialization artifacts from a replay fold state.
 
@@ -1431,6 +1433,28 @@ def build_replay_products(
     _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
     from lawvm.finland.replay_fold_timeline_backfill import append_fold_timeline_backfill_ops
 
+    preview_raw_timelines = fold_backfill_preview_raw_timelines
+    if preview_raw_timelines is None and fold_backfill_preview_cache is not None:
+        cache_key = (
+            "fold_backfill_preview_raw_timelines",
+            statute_id,
+            _base_enacted_date,
+            len(lo_ops),
+            len(resolved_temporal_events),
+        )
+        cached = fold_backfill_preview_cache.get(cache_key)
+        if isinstance(cached, dict):
+            preview_raw_timelines = cast(dict[LegalAddress, ProvisionTimeline], cached)
+        else:
+            preview_raw_timelines = compile_timelines(
+                base_ir,
+                lo_ops,
+                base_enacted_date=_base_enacted_date,
+                label_norm=fi_label_norm,
+                temporal_events=resolved_temporal_events,
+            )
+            fold_backfill_preview_cache[cache_key] = preview_raw_timelines
+
     fold_timeline_backfills = append_fold_timeline_backfill_ops(
         lo_ops=lo_ops,
         replay_fold_ir=replay_fold_state.ir,
@@ -1441,6 +1465,7 @@ def build_replay_products(
         as_of=as_of,
         temporal_events=resolved_temporal_events,
         base_enacted_date=_base_enacted_date,
+        preview_raw_timelines=preview_raw_timelines,
     )
     if fold_timeline_backfills.records:
         backfill_temporal_events = _temporal_events_from_lo_ops(

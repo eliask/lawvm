@@ -178,19 +178,21 @@ def _preview_rekeyed_timelines(
     as_of: str,
     temporal_events: tuple[object, ...],
     base_enacted_date: str,
+    raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
 ) -> FoldTimelineBackfillResult:
     from lawvm.finland.replay_products import (
         _rekey_timelines_with_migration_events,
         fi_label_norm,
     )
 
-    raw_timelines = compile_timelines(
-        base_ir,
-        lo_ops,
-        base_enacted_date=base_enacted_date,
-        label_norm=fi_label_norm,
-        temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
-    )
+    if raw_timelines is None:
+        raw_timelines = compile_timelines(
+            base_ir,
+            lo_ops,
+            base_enacted_date=base_enacted_date,
+            label_norm=fi_label_norm,
+            temporal_events=cast(tuple[TemporalEvent, ...], temporal_events),
+        )
     rekeyed_timelines = _rekey_timelines_with_migration_events(
         raw_timelines,
         migration_events,
@@ -214,6 +216,7 @@ def append_fold_timeline_backfill_ops(
     as_of: str,
     temporal_events: tuple[object, ...] = (),
     base_enacted_date: str = "",
+    preview_raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
 ) -> FoldTimelineBackfillResult:
     """Append snapshot LOs for fold sections that lack timeline authority.
 
@@ -234,6 +237,7 @@ def append_fold_timeline_backfill_ops(
         as_of=as_of,
         temporal_events=temporal_events,
         base_enacted_date=base_enacted_date,
+        raw_timelines=preview_raw_timelines,
     )
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []

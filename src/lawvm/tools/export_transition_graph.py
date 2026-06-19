@@ -659,6 +659,7 @@ class ReplayBundle:
     replay_findings: List[Any] = dataclasses.field(default_factory=list)
     failed_ops: List[Any] = dataclasses.field(default_factory=list)
     source_pathologies: List[Any] = dataclasses.field(default_factory=list)
+    materialization_cache: Dict[object, object] = dataclasses.field(default_factory=dict)
 
 
 def run_engine_replay(
