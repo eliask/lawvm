@@ -22,9 +22,6 @@ from lawvm.core.timeline_lineage import (
     PrefixMigrationEventSignature,
     current_address_with_prefix_migrations_from_event_signatures as _core_prefix_migration_signatures,
 )
-from lawvm.core.timeline_lineage import (
-    current_address_with_prefix_migrations_from_events as _core_prefix_migrations,
-)
 from lawvm.core.timeline_lineage import prefix_migration_event_signatures
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import _norm_num_token
@@ -60,6 +57,25 @@ def normalize_address_path(path: TreePath) -> TreePath:
 @lru_cache(maxsize=65536)
 def _normalize_address(address: LegalAddress) -> LegalAddress:
     return LegalAddress(path=normalize_address_path(address.path), special=address.special)
+
+
+@lru_cache(maxsize=1024)
+def _normalized_prefix_event_signatures(
+    migration_event_signatures: tuple[PrefixMigrationEventSignature, ...],
+) -> tuple[PrefixMigrationEventSignature, ...]:
+    return tuple(
+        PrefixMigrationEventSignature(
+            event_id=event_signature.event_id,
+            kind=event_signature.kind,
+            from_path=normalize_address_path(event_signature.from_path),
+            from_special=event_signature.from_special,
+            to_path=normalize_address_path(event_signature.to_path),
+            to_special=event_signature.to_special,
+            effective=event_signature.effective,
+            source_statute=event_signature.source_statute,
+        )
+        for event_signature in migration_event_signatures
+    )
 
 
 @lru_cache(maxsize=1024)
@@ -149,19 +165,12 @@ def current_address_with_prefix_migrations_from_events(
     duplicated instead of merged. Path-reshaping normalizations (e.g. dropping
     an empty ``hcontainer`` wrapper) are not applied to an unmigrated address.
     """
-    normalized_original = _normalize_address(original_address)
-    migrated = _core_prefix_migrations(
+    return current_address_with_prefix_migrations_from_event_signatures(
         original_address,
-        migration_events,
+        prefix_migration_event_signatures(migration_events),
         as_of_date=as_of_date,
         not_before=not_before,
-        normalize_address_fn=_normalize_address,
     )
-    if migrated == normalized_original:
-        if len(normalized_original.path) == len(original_address.path):
-            return normalized_original
-        return original_address
-    return migrated
 
 
 def current_address_with_prefix_migrations_from_event_signatures(
@@ -172,19 +181,21 @@ def current_address_with_prefix_migrations_from_event_signatures(
 ) -> LegalAddress:
     """Finland wrapper over precomputed shared prefix migration signatures."""
     normalized_original = _normalize_address(original_address)
+    normalized_event_signatures = _normalized_prefix_event_signatures(
+        migration_event_signatures
+    )
     source_paths = _prefix_source_paths_from_event_signatures(
-        migration_event_signatures,
+        normalized_event_signatures,
         as_of_date,
         not_before,
     )
     if not _address_may_match_prefix_source(normalized_original, source_paths):
         return _unmigrated_normalized_address_result(original_address, normalized_original)
     migrated = _core_prefix_migration_signatures(
-        original_address,
-        migration_event_signatures,
+        normalized_original,
+        normalized_event_signatures,
         as_of_date=as_of_date,
         not_before=not_before,
-        normalize_address_fn=_normalize_address,
     )
     if migrated == normalized_original:
         return _unmigrated_normalized_address_result(original_address, normalized_original)
