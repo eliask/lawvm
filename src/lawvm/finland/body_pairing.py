@@ -241,7 +241,7 @@ def build_observed_body_inventory(
     but producing ObservedBodyUnit objects with explicit chapter
     context.
     """
-    body = muutos_tree.find(".//{*}body")
+    body = muutos_tree if _localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
         return []
     body = _body_with_orphan_subsections_attached(body)

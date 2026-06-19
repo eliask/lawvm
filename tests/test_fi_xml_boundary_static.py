@@ -134,6 +134,17 @@ def test_source_model_has_source_node_uses_inventory_not_xml_nodes() -> None:
     assert "_find_muutos_node" not in method_body
 
 
+def test_source_model_scope_retarget_adapters_use_inventory_not_xml_root() -> None:
+    source = _source("src/lawvm/finland/source_model.py")
+    method_body = source.split(
+        "    def retarget_duplicate_body_section_scope_from_close_live_siblings(",
+        1,
+    )[1].split("    def resolve_group_surface_scope(", 1)[0]
+
+    assert "self.muutos_tree" not in method_body
+    assert "observed_body_inventory()" in method_body
+
+
 def test_apply_executor_precreates_chapters_through_source_model() -> None:
     source = _source("src/lawvm/finland/apply_ops_executor.py")
     boundary_source = _source("src/lawvm/finland/apply_ops_boundary.py")

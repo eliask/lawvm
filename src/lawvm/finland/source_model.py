@@ -838,7 +838,7 @@ class AmendmentSourceModel:
         from lawvm.finland.scope import retarget_duplicate_body_section_scope_from_close_live_siblings
 
         return retarget_duplicate_body_section_scope_from_close_live_siblings(
-            muutos_tree=self.muutos_tree,
+            inventory=self.observed_body_inventory(),
             section_norm=section_norm,
             body_chapter=body_chapter,
             body_part=body_part,
@@ -856,7 +856,7 @@ class AmendmentSourceModel:
         from lawvm.finland.scope import retarget_heading_insert_body_chapter_from_close_live_sibling
 
         return retarget_heading_insert_body_chapter_from_close_live_sibling(
-            muutos_tree=self.muutos_tree,
+            inventory=self.observed_body_inventory(),
             section_norm=section_norm,
             body_chapter=body_chapter,
             master=master,
