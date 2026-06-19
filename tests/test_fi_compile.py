@@ -4738,3 +4738,12 @@ def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalizati
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
     result = pinned_replay("2002/1290", mode="official_consolidation", quiet=True, build_full_products=False)
     assert result is not None
+
+
+@pytest.mark.slow
+def test_replay_xml_1995_386_rebuilds_dead_preserved_provision_index() -> None:
+    """1999/466 leaves a stale preserved index entry that 2003/444 later probes."""
+    result = pinned_replay("1995/386", mode="official_consolidation", quiet=True, build_full_products=False)
+
+    assert result is not None
+    assert result.replay_fold_state.find_section_path("25", "6a") is None

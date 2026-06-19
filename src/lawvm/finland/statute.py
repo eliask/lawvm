@@ -438,6 +438,11 @@ class ReplayState:
             )
         return self._provision_index
 
+    def _drop_provision_lookup_caches(self) -> None:
+        self._provision_index = None
+        self._duplicate_section_labels = None
+        self._section_path_cache = None
+
     @property
     def duplicate_section_labels(self) -> Set[str]:
         """Section labels that appear under more than one labeled chapter."""
@@ -484,6 +489,18 @@ class ReplayState:
             scope_label=scope_label,
             label_index=label_index,
         )
+        if path is not None and self.resolve(path) is None and label_index is self._provision_index:
+            self._drop_provision_lookup_caches()
+            path = _tops.find(
+                self.ir,
+                kind,
+                label,
+                scope_kind=scope_kind,
+                scope_label=scope_label,
+                label_index=self.provision_index,
+            )
+            if path is not None and self.resolve(path) is None:
+                return None
         return path
 
     def resolve(self, path: Path) -> Optional[IRNode]:
@@ -522,7 +539,11 @@ class ReplayState:
         if self._section_path_cache is None:
             self._section_path_cache = {}
         elif cache_key in self._section_path_cache:
-            return self._section_path_cache[cache_key]
+            cached_path = self._section_path_cache[cache_key]
+            if cached_path is None or self.resolve(cached_path) is not None:
+                return cached_path
+            self._drop_provision_lookup_caches()
+            self._section_path_cache = {}
         path = find_scoped_section_path(
             self.ir,
             target_section=target_norm,
@@ -531,6 +552,20 @@ class ReplayState:
             find_path=self.find,
             provision_index=self.provision_index,
         )
+        if path is not None and self.resolve(path) is None:
+            self._drop_provision_lookup_caches()
+            path = find_scoped_section_path(
+                self.ir,
+                target_section=target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+                find_path=self.find,
+                provision_index=self.provision_index,
+            )
+            if path is not None and self.resolve(path) is None:
+                path = None
+        if self._section_path_cache is None:
+            self._section_path_cache = {}
         self._section_path_cache[cache_key] = path
         return path
 
