@@ -69,6 +69,8 @@ from lawvm.finland.legal_surface.cross_lens_passes import (
 from lawvm.finland.legal_surface.norm_composition import (
     condition_attachment_passes,
     deontic_frame_attachment_passes,
+    norm_subject_attachment_passes,
+    procedure_governance_passes,
 )
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
@@ -202,10 +204,18 @@ def build_legal_surface_graph(
     # in ADDITIVELY too: it joins power cores to co-sentence delegation_frames and
     # prohibition/obligation cores to co-sentence sanction_frames, alongside (never
     # replacing) the proximity FrameActorColocationPass / ExceptionScopesFramePass.
+    #
+    # The norm-subject pass (norm_has_subject) binds each deontic core to the
+    # actor_modal_frame carrying its addressee; the procedure-governance pass
+    # (governed_by_procedure) joins obligation/power cores to co-sentence
+    # procedure_frames. Both ADDITIVE, surface_only, candidate-not-asserted —
+    # alongside (never replacing) the proximity incumbents.
     all_edge_passes = (
         edge_passes
         + condition_attachment_passes(bundle)
         + deontic_frame_attachment_passes(bundle)
+        + norm_subject_attachment_passes(bundle)
+        + procedure_governance_passes(bundle)
     )
 
     return assemble_surface_graph(
