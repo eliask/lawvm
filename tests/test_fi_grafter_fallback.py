@@ -15252,6 +15252,31 @@ def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
     assert expiry == dt.date(2007, 5, 31)
 
 
+def test_temporary_section_expiry_override_ignores_self_scoped_body_text() -> None:
+    """Body payload expiry wording is law text, not the amending act's own expiry."""
+    from lxml import etree
+    from lawvm.finland.metadata import _temporary_section_expiry_override
+
+    xml_text = """<act>
+  <body>
+    <section>
+      <num>61 a §</num>
+      <content>
+        <p>Lain 61 a § on voimassa 31 päivään joulukuuta 1993.</p>
+      </content>
+    </section>
+  </body>
+  <conclusions>
+    <hcontainer name="entryIntoForce">
+      <content><p>Tämä laki tulee voimaan 1 päivänä tammikuuta 1992.</p></content>
+    </hcontainer>
+  </conclusions>
+</act>"""
+    tree = etree.fromstring(xml_text.encode())
+
+    assert _temporary_section_expiry_override(tree, "1991/1673") is None
+
+
 # ---------------------------------------------------------------------------
 # Part-hint routing tests (2003/1274 → 1993/1054 pattern)
 # ---------------------------------------------------------------------------

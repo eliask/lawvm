@@ -1286,14 +1286,20 @@ def _temporary_section_expiry_overrides(
             norm = _normalize_textual_statute_id(cited.group(1))
             if norm:
                 target_mid_from_cited = norm
+    expiry_scan_text = (
+        full_text
+        if target_mid_from_cited != source_statute_id
+        else _normalized_entry_into_force_text(tree, full_text)
+    )
+    expiry_scan_casefold = expiry_scan_text.casefold()
 
     month_map = {
         'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
         'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
         'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
     }
-    if "päivään" in full_text_casefold:
-        for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(full_text):
+    if "päivään" in expiry_scan_casefold:
+        for m in _TEMPORARY_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
             month = month_map.get(m.group(4).lower())
             if month is None:
                 continue
@@ -1310,7 +1316,7 @@ def _temporary_section_expiry_overrides(
         # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
         # The expiry is still section-scoped for replay stamping: the amendment op
         # target carries the exact subsection/item granularity.
-        for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(full_text):
+        for m in _TEMPORARY_SUBSECTION_EXPIRY_RE.finditer(expiry_scan_text):
             month = month_map.get(m.group(3).lower())
             if month is None:
                 continue
@@ -1324,7 +1330,7 @@ def _temporary_section_expiry_overrides(
         # "on voimassa", e.g.:
         #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
         #    toukokuuta 2021."
-        for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(full_text):
+        for m_chain in _TEMPORARY_CHAINED_SECTION_EXPIRY_RE.finditer(expiry_scan_text):
             first_month = month_map.get(m_chain.group(3).lower())
             if first_month is not None:
                 try:
@@ -1352,8 +1358,8 @@ def _temporary_section_expiry_overrides(
                     tail_expiry,
                 )
 
-    if "vuoden" in full_text_casefold and "loppuun" in full_text_casefold:
-        for m_yend in _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE.finditer(full_text):
+    if "vuoden" in expiry_scan_casefold and "loppuun" in expiry_scan_casefold:
+        for m_yend in _TEMPORARY_SECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
             try:
                 expiry = dt.date(int(m_yend.group(2)), 12, 31)
             except ValueError:
@@ -1362,7 +1368,7 @@ def _temporary_section_expiry_overrides(
             labels = _parse_section_list_labels(raw_secs)
             _append_override(target_mid_from_cited, labels, expiry)
 
-        for m_yend_moment in _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE.finditer(full_text):
+        for m_yend_moment in _TEMPORARY_SUBSECTION_YEAR_END_EXPIRY_RE.finditer(expiry_scan_text):
             try:
                 expiry = dt.date(int(m_yend_moment.group(2)), 12, 31)
             except ValueError:
@@ -1373,8 +1379,8 @@ def _temporary_section_expiry_overrides(
                 expiry,
             )
 
-    if "lakkaa" in full_text_casefold and "muilta osin" in full_text_casefold:
-        for m_lakkaa in _TEMPORARY_SECTION_CESSATION_RE.finditer(full_text):
+    if "lakkaa" in expiry_scan_casefold and "muilta osin" in expiry_scan_casefold:
+        for m_lakkaa in _TEMPORARY_SECTION_CESSATION_RE.finditer(expiry_scan_text):
             cessation_date = _amendment_effective_date(tree)
             if cessation_date is None:
                 continue
