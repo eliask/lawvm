@@ -35,9 +35,11 @@ from lawvm.core.manual_claims.composer import (
 from lawvm.core.manual_claims.hashing import compute_claim_id
 from lawvm.core.manual_claims.precedence import (
     AmbiguousClaimSet,
-    PrecedenceRegistry,
+    ClaimPrecedenceInput,
     LayerPrecedenceRule,
+    PrecedenceRegistry,
     load_precedence_registry,
+    resolve_precedence,
 )
 from lawvm.core.manual_claims.primitive import (
     ClaimConfidence,
@@ -814,6 +816,31 @@ def test_precedence_registry_missing_file(tmp_path: Path):
     """load_precedence_registry raises FileNotFoundError on missing file."""
     with pytest.raises(FileNotFoundError, match="claim_precedence.yaml"):
         load_precedence_registry(tmp_path / "nonexistent.yaml")
+
+
+def test_precedence_resolution_accepts_named_claim_inputs():
+    """Claim precedence inputs are named carriers, not semantic 4-tuples."""
+    winner_id, ambig = resolve_precedence(
+        claims_with_values=[
+            ClaimPrecedenceInput(
+                claim_id="claim-low",
+                value="1234/2020",
+                validator_status="span_verified",
+                source_witness_type="operator_filing",
+            ),
+            ClaimPrecedenceInput(
+                claim_id="claim-high",
+                value="5678/2021",
+                validator_status="entailment_verified",
+                source_witness_type="operator_filing",
+            ),
+        ],
+        layer="extraction",
+        registry=_minimal_precedence_registry(),
+    )
+
+    assert winner_id == "claim-high"
+    assert ambig is None
 
 
 def test_is_semantic_compilation_false_for_inline_statute():
