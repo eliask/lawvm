@@ -47,7 +47,7 @@ _DECREE_SET_PATTERN = re.compile(
     r"asetuksella\s+säädettävänä\s+ajankohtana"
     r"|valtioneuvoston\s+(?:asetuksella|päätöksellä)"
     r"|erikseen\s+säädettävän[aä]"
-    r"|voimaantulosta\s+säädetään\s+asetuksella",
+    r"|voimaantulosta\s+säädetään\s+(?:asetuksella|erikseen\s+lailla)",
     re.IGNORECASE,
 )
 

@@ -1772,7 +1772,7 @@ def _amendment_effective_date_with_step(
     ):
         return None, 'contingent_text'
     if re.search(
-        r'(?:Tämän|Taman|Lain|Asetuksen|Päätöksen)\s+voimaantulosta\s+säädetään\s+asetuksella',
+        r'(?:Tämän|Taman|Lain|Asetuksen|Päätöksen)\s+voimaantulosta\s+säädetään\s+(?:asetuksella|erikseen\s+lailla)',
         full_text,
         flags=re.IGNORECASE,
     ):

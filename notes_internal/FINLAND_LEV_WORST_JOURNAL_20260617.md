@@ -1886,3 +1886,40 @@ fix-or-journal discipline.
   target resolution, or replay text for this row unless a source-owned section
   divergence reappears. A future benchmark cleanup may add an adjusted
   full-text lane, but that is a reporting change, not legal-state repair.
+
+### `2005/623` — Laki alusliikennepalvelulain muuttamisesta
+
+- Current row (`20260619T0829`): structural `0.754098`, Levenshtein
+  `0.832737`; 14 amendments.
+- Re-triage commands:
+  - `uv run lawvm diff 2005/623 --text --threshold 1.0 --compile-summary`
+    reports 61 compared sections, 42 perfect, and residual wording changes
+    concentrated in the 2018 transport-authority rename wave plus later
+    `2023/1311` changes.
+  - `uv run lawvm inspect-amendment 2005/623 --source 2018/576 --stage all`
+    shows a broad whole-section rewrite wave whose payload still contains
+    `Liikenteen turvallisuusvirasto` / `Liikennevirasto`.
+  - `uv run lawvm inspect-amendment 2005/623 --source 2018/947 --stage all`
+    shows the corresponding authority-renamed payload with
+    `Liikenne- ja viestintävirasto` / `Väylävirasto`.
+  - Direct metadata inspection now classifies `2018/947` as
+    `(None, 'contingent_text')`; its entry-into-force text says
+    `Tämän lain voimaantulosta säädetään erikseen lailla.`
+  - Source act `2018/937` explicitly brings `laki alusliikennepalvelulain
+    muuttamisesta (947/2018)` into force on `2019-01-01`.
+- Root-cause class:
+  - **External commencement carrier frontier**. The text-writing act
+    `2018/947` is correctly a contingent/deferred act; the force-activating
+    act is separate (`2018/937`). Current replay still orders the `2018/947`
+    operations by source fallback/sequence, then lets `2018/576` (`2019-01-01`)
+    overwrite many same targets with older authority names.
+  - This is not a johtolause target parser gap and should not be fixed by
+    authority-name substitution or by reordering `2018/947` by statute number.
+    The proper fix is a typed external commencement link from `2018/937` to
+    `2018/947`, with provenance on `OperationSource.commencement_source` or
+    equivalent temporal-event evidence.
+- Disposition: **defer replay fix until external commencement linking is
+  implemented**. Do not patch the section text or invent a local precedence
+  rule for `2018/576`/`2018/947`. The metadata classifier gap for
+  `erikseen lailla` is fixed separately so future diagnostics expose the
+  unresolved temporal carrier.

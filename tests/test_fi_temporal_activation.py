@@ -77,6 +77,15 @@ class TestActivationRulesFromMetaClauses:
         assert len(rules) == 1
         assert rules[0].kind == "pending_decree"
 
+    def test_commencement_separately_enacted_by_law(self) -> None:
+        clause = _meta_clause(
+            MetaClauseKind.COMMENCEMENT,
+            "Tämän lain voimaantulosta säädetään erikseen lailla.",
+        )
+        rules = activation_rules_from_meta_clauses([clause])
+        assert len(rules) == 1
+        assert rules[0].kind == "pending_decree"
+
     def test_commencement_simultaneous_entry(self) -> None:
         clause = _meta_clause(
             MetaClauseKind.COMMENCEMENT,

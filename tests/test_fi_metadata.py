@@ -341,6 +341,26 @@ def test_amendment_effective_date_marks_voimaantulosta_saadetaan_asetuksella_as_
     assert step == "contingent_text"
 
 
+def test_amendment_effective_date_marks_erikseen_lailla_commencement_as_contingent() -> None:
+    tree = _make_tree(
+        "<meta>"
+        "  <identification>"
+        "    <FRBRWork>"
+        "      <FRBRdate name='dateIssued' date='2018-11-23'/>"
+        "    </FRBRWork>"
+        "  </identification>"
+        "</meta>"
+        "<body><section><content>"
+        "Tämän lain voimaantulosta säädetään erikseen lailla."
+        "</content></section></body>"
+    )
+
+    result, step = _amendment_effective_date_with_step(tree)
+
+    assert result is None
+    assert step == "contingent_text"
+
+
 def test_statute_issue_date_prefers_signature_when_frbr_year_conflicts_with_doc_number_year() -> None:
     tree = _make_tree(
         "<meta>"
