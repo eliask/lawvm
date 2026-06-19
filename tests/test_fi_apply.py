@@ -6387,6 +6387,49 @@ class TestGroupPlanRomanNormalization:
         assert part == "5"
 
 
+def test_apply_part_insert_cross_heading_marker_creates_part_scaffold() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(kind=IRNodeKind.PART, label="1"),
+                    IRNode(kind=IRNodeKind.PART, label="4"),
+                ),
+            )
+        )
+    )
+    op = AmendmentOp(
+        op_id="insert_part_5",
+        op_type="INSERT",
+        target_section="V",
+        target_unit_kind="part",
+        source_statute="2001/1226",
+        source_issue_date=_DATE,
+    )
+    payload = IRNode(
+        kind=IRNodeKind.CROSS_HEADING,
+        text="V OSA KANSAINVÄLISEN YKSITYISOIKEUDEN ALAAN KUULUVAT SÄÄNNÖKSET",
+    )
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "[2001/1226] INSERT V osa",
+    )
+
+    result = _modified(state, result)
+    hcontainer = result.ir.children[0]
+    part_5 = next(child for child in hcontainer.children if child.kind is IRNodeKind.PART and child.label == "5")
+    assert [(child.kind, child.text) for child in part_5.children] == [
+        (IRNodeKind.NUM, "V OSA"),
+        (IRNodeKind.HEADING, "KANSAINVÄLISEN YKSITYISOIKEUDEN ALAAN KUULUVAT SÄÄNNÖKSET"),
+    ]
+    assert not any(child.kind is IRNodeKind.CROSS_HEADING for child in hcontainer.children)
+
+
 # ---------------------------------------------------------------------------
 # _apply_subsection_repeal
 # ---------------------------------------------------------------------------

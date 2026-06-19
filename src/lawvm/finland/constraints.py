@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from lawvm.finland.source_model import AmendmentSourceModel
 
 _PART_CROSS_HEADING_RE = re.compile(
-    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
+    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)\b(?:\s+.*)?$",
     flags=re.I,
 )
 _NON_WORD_DIGIT_RE = re.compile(r"[^\d\w]")

@@ -2655,6 +2655,42 @@ def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() 
     } == {label: "2" for label in target_labels}
 
 
+def test_replay_1929_234_does_not_duplicate_titled_part_heading_sections() -> None:
+    replay = pinned_replay(
+        "1929/234",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    def _section_paths(
+        node: IRNode,
+        label: str,
+        path: tuple[tuple[str, str], ...] = (),
+    ) -> list[tuple[tuple[str, str], ...]]:
+        found: list[tuple[tuple[str, str], ...]] = []
+        if node.kind is IRNodeKind.SECTION and node.label == label:
+            found.append(tuple(step for step in path if step[0] != "hcontainer"))
+        for child in node.children:
+            found.extend(
+                _section_paths(
+                    child,
+                    label,
+                    path + ((child.kind.value, child.label or ""),),
+                )
+            )
+        return found
+
+    expected_110 = [(("part", "5"), ("chapter", "1"), ("section", "110"))]
+    expected_129 = [(("part", "5"), ("chapter", "4"), ("section", "129"))]
+
+    assert _section_paths(replay.replay_fold_state.ir, "110") == expected_110
+    assert _section_paths(replay.replay_fold_state.ir, "129") == expected_129
+    assert _section_paths(replay.ir, "110") == expected_110
+    assert _section_paths(replay.ir, "129") == expected_129
+    assert replay.find_section("129", "4", "5") is not None
+    assert replay.find_section("129", "4", "1") is None
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment(
     replay_1987_990_finlex_oracle: ReplayResult,
 ) -> None:

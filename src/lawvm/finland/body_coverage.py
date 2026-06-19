@@ -92,7 +92,7 @@ def _normalize_part_label(raw: str) -> str:
 
 
 _PART_CROSS_HEADING_RE = re.compile(
-    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
+    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)\b(?:\s+.*)?$",
     flags=re.I,
 )
 

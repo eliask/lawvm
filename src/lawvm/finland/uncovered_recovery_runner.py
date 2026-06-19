@@ -511,6 +511,7 @@ class UncoveredRecoveryRun:
             self.new_chapter_labels,
             self.owned_chapter_labels,
             self.source_owned_insert_chapter_labels,
+            self.part_insert_labels,
         )
         effective_chapter = insert_ch.effective_chapter
         effective_part = insert_ch.effective_part
