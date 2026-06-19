@@ -10,20 +10,17 @@ from lawvm.core.compile_result import ActivationRule, StrictProfile, TemporalEve
 from lawvm.core.effect_lowering import lower_effect_intents_to_temporal_events
 from lawvm.core.elaboration_context import TargetUnitKind, snapshot_replay_lookups
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
 from lawvm.finland.effect_lowering import UnsupportedMetaClause, lower_johto_effects
-from lawvm.finland.frontend_compile import _tree_title
 from lawvm.finland.group_plan import (
     coalesce_same_target_mixed_scope_section_groups,
     group_ops_by_target,
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.metadata import _amendment_effective_date, _statute_issue_date
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
-from lawvm.finland.scope import find_body_section_chapter
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_section_targets,
@@ -115,28 +112,22 @@ def compile_amendment_ops(
     source_ref: str = "",
     source_title: str = "",
     target_statute: str = "",
+    source_model: AmendmentSourceModel | None = None,
 ) -> PhaseResult[list[ResolvedOp]]:
     """Compile grouped amendment ops into resolved ops ready for application."""
     profile = get_replay_profile(replay_mode)
-    source_title = source_title or _tree_title(muutos_tree)
-    amendment_issue_date = _statute_issue_date(muutos_tree)
-    amendment_effective_date = _amendment_effective_date(muutos_tree)
-    body_inventory_cache: tuple[ObservedBodyUnit, ...] | None = None
-
-    def _body_inventory() -> tuple[ObservedBodyUnit, ...]:
-        nonlocal body_inventory_cache
-        if body_inventory_cache is None:
-            body_inventory_cache = tuple(build_observed_body_inventory(muutos_tree))
-        return body_inventory_cache
+    source_model = source_model or AmendmentSourceModel.from_tree(
+        muutos_tree,
+        source_ref=source_ref,
+    )
+    source_title = source_title or source_model.title()
+    amendment_issue_date = source_model.issue_date()
+    amendment_effective_date = source_model.effective_date()
 
     section_groups = coalesce_same_target_mixed_scope_section_groups(
         group_ops_by_target(ops),
         master=master,
-        find_body_section_chapter=lambda target_norm: find_body_section_chapter(
-            muutos_tree,
-            target_norm,
-            inventory=_body_inventory(),
-        ),
+        find_body_section_chapter=source_model.first_body_section_chapter,
     )
     inserted_chapter_labels = {
         _norm_num_token(op.target_section or "")
@@ -193,12 +184,11 @@ def compile_amendment_ops(
                     foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
                     foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
                     inserted_chapter_labels=inserted_chapter_labels,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     johto=johto,
                     profile=profile,
                     strict_profile=strict_profile,
                     lookups=precomputed_lookups,
-                    body_inventory=_body_inventory(),
                 ),
                 CompileGroupSinks(compiled_ops_out=compiled_ops_out),
             )

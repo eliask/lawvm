@@ -2753,6 +2753,22 @@ def _emit_section_snapshot(
             raw_path = None
         return _timeline_path(_tops._as_path(raw_path)) if raw_path else None
 
+    def _base_section_payload_for_complete_replacement() -> Optional[IRNode]:
+        if base_ir is None or target_unit_kind != "section":
+            return None
+        base_path = _base_resolved_path()
+        base_node = _tops.resolve(base_ir, base_path) if base_path is not None else None
+        if base_node is not None and base_node.kind is IRNodeKind.SECTION:
+            return base_node
+        base_matches = base_provision_index.get(
+            ("section", normalized_label_key(normalized_target_norm)),
+            [],
+        )
+        if len(base_matches) != 1:
+            return None
+        unique_base_node = _tops.resolve(base_ir, base_matches[0])
+        return unique_base_node if unique_base_node is not None and unique_base_node.kind is IRNodeKind.SECTION else None
+
     def _latest_scoped_section_snapshot_path() -> Optional[Path]:
         if target_unit_kind != "section" or not target_chapter:
             return None
@@ -3270,12 +3286,56 @@ def _emit_section_snapshot(
         and _scoped_commencement_replay_owned_address()
     ):
         action = StructuralAction.INSERT
+    complete_section_replacement_missing_subsections: dict[str, str] = {}
     complete_source_section_payload = _complete_whole_section_source_payload()
     if (
         action in {StructuralAction.REPLACE, StructuralAction.INSERT}
         and resolved_path is not None
         and complete_source_section_payload is not None
     ):
+        if (
+            action is StructuralAction.REPLACE
+            and payload is not None
+            and payload.kind is IRNodeKind.SECTION
+            and complete_source_section_payload.kind is IRNodeKind.SECTION
+        ):
+            authoritative_subsection_labels = {
+                _norm_num_token(child.label)
+                for child in complete_source_section_payload.children
+                if child.kind is IRNodeKind.SUBSECTION and child.label
+            }
+            prior_section_payloads = [payload]
+            base_section_payload = (
+                None if op_source.expires else _base_section_payload_for_complete_replacement()
+            )
+            if base_section_payload is not None and base_section_payload is not payload:
+                prior_section_payloads.append(base_section_payload)
+            for prior_section_payload in prior_section_payloads:
+                for child in prior_section_payload.children:
+                    if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                        continue
+                    child_norm = _norm_num_token(child.label)
+                    if child_norm in authoritative_subsection_labels:
+                        continue
+                    complete_section_replacement_missing_subsections.setdefault(child_norm, child.label)
+            if complete_section_replacement_missing_subsections and source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=op_source.statute_id,
+                        target_unit_kind="section",
+                        target_label=target_norm,
+                        recovery_kind="section_snapshot_repeal_absent_complete_replacement_subsection",
+                        live_sibling_count=len(
+                            {
+                                _norm_num_token(child.label)
+                                for prior_section_payload in prior_section_payloads
+                                for child in prior_section_payload.children
+                                if child.kind is IRNodeKind.SUBSECTION and child.label
+                            }
+                        ),
+                        payload_sibling_count=len(authoritative_subsection_labels),
+                    )
+                )
         payload = complete_source_section_payload
         payload_from_muutos_ir = True
     elif (
@@ -3490,6 +3550,11 @@ def _emit_section_snapshot(
                 continue
             if target_label not in missing_repealed_subsections:
                 missing_repealed_subsections.append(target_label)
+        for child_norm, child_label in complete_section_replacement_missing_subsections.items():
+            if child_norm in payload_subsection_labels or child_norm in explicitly_repealed_subsection_labels:
+                continue
+            if child_label not in missing_repealed_subsections:
+                missing_repealed_subsections.append(child_label)
         for target_label in missing_repealed_subsections:
             lo_ops_out.append(
                 _LegalOperation(

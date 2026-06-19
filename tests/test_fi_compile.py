@@ -2441,6 +2441,94 @@ def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reins
     assert section_3.lo is None or section_3.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
 
 
+def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_siblings() -> None:
+    before = replay_xml("2016/1227", stop_before="2022/1149", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2022/1149")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2022/1149",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2016/1227",
+        strict_profile=None,
+    )
+
+    section_79_ops = [
+        op
+        for op in phase.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "79"
+    ]
+
+    assert [op.description() for op in section_79_ops] == ["REPLACE 8 luku 79 § 1 mom"]
+    assert section_79_ops[0].witness_rule_id == "fi_flat_body_replace_scope_from_bracketing_live_siblings"
+    assert section_79_ops[0].lo is not None
+    assert tuple(section_79_ops[0].lo.target.path) == (
+        ("chapter", "8"),
+        ("section", "79"),
+        ("subsection", "1"),
+    )
+
+
+def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_siblings() -> None:
+    before = replay_xml("2004/485", stop_before="2018/955", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2018/955")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2018/955",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2004/485",
+        strict_profile=None,
+    )
+
+    section_20a_ops = [
+        op
+        for op in phase.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "20a"
+    ]
+
+    assert [op.description() for op in section_20a_ops] == ["REPLACE 4 luku 20a §"]
+    assert section_20a_ops[0].lo is not None
+    assert tuple(section_20a_ops[0].lo.target.path) == (
+        ("chapter", "4"),
+        ("section", "20a"),
+    )
+
+
+def test_replay_xml_2004_485_applies_2025_314_item_intro_and_subparagraph_payload() -> None:
+    replay = replay_xml("2004/485", mode="official_consolidation", quiet=True, build_full_products=False)
+    section = replay.materialized_state.find_section("4", "2")
+    assert section is not None
+    subsection = next(c for c in section.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
+    paragraph = next(c for c in subsection.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+    intro = next(c for c in paragraph.children if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT})
+    subparagraph_a = next(c for c in paragraph.children if c.kind == IRNodeKind.SUBPARAGRAPH and c.label == "a")
+
+    assert "suorittaa satamarakenteiden ja satamien turva-arvioinnit" in irnode_to_text(intro)
+    assert "Liikenne- ja viestintävirasto toimii turvatoimiasetuksen" not in irnode_to_text(intro)
+    assert "7 g §:ssä tarkoitetuille henkilöille" in irnode_to_text(subparagraph_a)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

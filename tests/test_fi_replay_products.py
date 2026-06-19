@@ -1291,6 +1291,32 @@ def test_replay_xml_2013_185_cited_version_group_keeps_new_inserted_items() -> N
     assert "11) täydennysveron tietoilmoitusta koskevien tietojen ilmoittamisen automaattisella tietojenvaihdolla" in section_3_text
 
 
+def test_replay_xml_2009_862_complete_section_replace_retires_old_transition_subsections() -> None:
+    pathologies: list[object] = []
+    replay = replay_xml_for_test(
+        "2009/862",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+        source_pathologies_out=pathologies,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_6_text = " ".join(irnode_to_text(sections["chapter:3/section:6"]).split())
+    section_7_text = " ".join(irnode_to_text(sections["chapter:3/section:7"]).split())
+
+    assert "Väylävirasto voi siirtää yksityiselle tai julkiselle palveluntarjoajalle" in section_6_text
+    assert "Väylävirasto kantaa ja vastaa valtion puolesta" in section_7_text
+    assert "Ratahallintokeskuksen, Tiehallinnon ja Merenkulkulaitoksen" not in section_6_text
+    assert "Tämän lain voimaan tullessa vireillä olevat" not in section_6_text
+    assert "Liikennevirastoon perustetaan liikenne- ja viestintäministeriön" not in section_7_text
+    assert any(
+        getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and getattr(pathology, "detail", {}).get("recovery_kind")
+        == "section_snapshot_repeal_absent_complete_replacement_subsection"
+        for pathology in pathologies
+    )
+
+
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:
     """1999/1249 must preserve both the migrated 5 c § and the new native 5 b §."""
     replay = pinned_replay("1958/496", mode="legal_pit", quiet=True, stop_before="2004/697")

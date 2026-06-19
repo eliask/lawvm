@@ -54,6 +54,7 @@ from lawvm.finland.replay_pipeline import (
     build_tree_invariant_finding,
     execute_replay_plan,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -481,7 +482,7 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
                 ctx=ctx,
                 resolved=[rop],
                 ops=[op],
-                muutos_tree=muutos_tree,
+                source_model=AmendmentSourceModel.from_tree(muutos_tree),
                 johto="muutetaan",
                 amendment_id="1994/318",
                 source_title="Laki",

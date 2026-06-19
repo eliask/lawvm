@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional, Protocol, Tuple, cast
+from typing import Iterable, Optional, Protocol, Tuple
 
-import lxml.etree as etree
-
+from lawvm.finland.body_coverage import BodyCoveragePayloadRef
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp
 
@@ -21,12 +20,7 @@ class UncoveredCandidateProcessor(Protocol):
         amend_part_label: Optional[str] = None,
     ) -> None: ...
 
-    def process_section_candidate(
-        self,
-        sec: etree._Element,
-        label: str,
-        amend_chapter_label: Optional[str],
-    ) -> None: ...
+    def process_section_candidate(self, candidate: "UncoveredSectionCandidate") -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +29,16 @@ class PegOwnedSectionTargets:
 
     by_chapter: frozenset[Tuple[Optional[str], str]]
     labels: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredSectionCandidate:
+    """Typed candidate identity for uncovered-body section recovery."""
+
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+    source_ref: BodyCoveragePayloadRef
 
 
 def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTargets:
@@ -68,9 +72,6 @@ def run_uncovered_candidate_iteration(
         unit = getattr(gap, "unit", None)
         if unit is None or getattr(unit, "kind", None) != "section":
             continue
-        section_el = getattr(unit, "payload_ref", None)
-        if section_el is None:
-            continue
         label = getattr(unit, "observed_label", "") or ""
         if not label:
             continue
@@ -81,4 +82,15 @@ def run_uncovered_candidate_iteration(
         if label in peg_owned_targets.labels:
             processor.record_skip("peg_owned_label_collision", label, chapter)
             continue
-        processor.process_section_candidate(cast(etree._Element, section_el), label, chapter)
+        source_ref = getattr(unit, "payload_ref", None)
+        if not isinstance(source_ref, BodyCoveragePayloadRef) or source_ref.unit_kind != "section":
+            processor.record_skip("missing_source_payload_ref", label, chapter)
+            continue
+        processor.process_section_candidate(
+            UncoveredSectionCandidate(
+                label=label,
+                amend_chapter_label=chapter,
+                amend_part_label=source_ref.part,
+                source_ref=source_ref,
+            )
+        )

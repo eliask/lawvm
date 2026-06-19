@@ -94,8 +94,8 @@ class CoverageUnit:
         parent_label: Label of the enclosing container (e.g. the chapter
             number for a section inside a chapter node).  ``None`` at top
             level.
-        payload_ref: Opaque reference into the body surface — typically an
-            ``IRNode`` or an XPath-style path.  Used by downstream synthesis
+        payload_ref: Opaque typed reference into the body surface, such as a
+            frontend-local source-unit lookup.  Used by downstream synthesis
             to locate the payload without re-parsing.
         tags: Free-form classification tags attached during extraction.
             Common values: ``'nonoperative'``, ``'provenance'``, ``'context'``,

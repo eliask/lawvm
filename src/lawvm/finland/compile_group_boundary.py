@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set
-
-import lxml.etree as etree
+from typing import Dict, List, Optional, Set
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetUnitKind
-from lawvm.finland.body_pairing import ObservedBodyUnit
 from lawvm.finland.ops import AmendmentOp, ReplayProfile
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
 
@@ -26,14 +24,13 @@ class CompileGroupRequest:
     group_ops: List[AmendmentOp]
     standalone_section_targets: Set[str]
     inserted_chapter_labels: Set[str]
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     johto: str
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
     foreign_scoped_standalone_section_targets: Set[str]
     foreign_scoped_replace_section_targets: Set[str]
     lookups: Optional[ReplayLookups] = None
-    body_inventory: Optional[Sequence[ObservedBodyUnit]] = None
 
 
 @dataclass(frozen=True, slots=True)

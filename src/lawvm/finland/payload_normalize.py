@@ -2997,7 +2997,17 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         # Foreign-scoped standalone section targets elsewhere in the amendment
         # (for example another chapter's "1 §") must not delete a new
         # container member that just happens to share the same section label.
+        # When the same payload has already exposed foreign-scoped REPLACE
+        # members, however, the container is carrying overwrapped context from
+        # outside the new chapter/part; a separately owned foreign-scoped
+        # INSERT belongs to that context too and must not be smuggled into the
+        # new container.
         if child_label in foreign_scoped_standalone_section_targets:
+            if payload_section_labels & foreign_scoped_replace_section_targets:
+                changed = True
+                pruned_labels.append(child_label)
+                pruned_witnesses.append(child_witness)
+                continue
             new_children.append(child)
             continue
         changed = True

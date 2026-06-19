@@ -498,10 +498,8 @@ def body_has_pseudo_chapter_marker(
     """Return True if the amendment body contains a pseudo-chapter marker."""
     observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
     for bpu in observed_units:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "section":
-                return True
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.source_tag == "section":
+            return True
     return False
 
 
@@ -514,10 +512,8 @@ def body_has_real_chapter_container(
     """Return True when the amendment body contains a real <chapter> container."""
     observed_units = inventory if inventory is not None else build_observed_body_inventory(muutos_tree)
     for bpu in observed_units:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "chapter":
-                return True
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.source_tag == "chapter":
+            return True
     return False
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable, Mapping, Protocol
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
@@ -17,6 +18,104 @@ from lawvm.core.timeline_results import (
 
 class _SelectionResult(Protocol):
     version: ProvisionVersion | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PrefixMigrationEvent:
+    from_address: LegalAddress
+    to_address: LegalAddress
+    effective: str
+    source_statute: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PrefixMigrationWave:
+    events_by_specificity: tuple[_PrefixMigrationEvent, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PrefixMigrationWavePlan:
+    waves: tuple[_PrefixMigrationWave, ...]
+
+
+_PrefixMigrationEventSignature = tuple[str, str, TreePath, object | None, TreePath, object | None, str, str]
+
+
+def _migration_event_signature(event: MigrationEvent) -> _PrefixMigrationEventSignature:
+    source_statute = event.source_statute if event.source_statute is not None else ""
+    return (
+        event.event_id,
+        event.kind,
+        event.from_address.path,
+        event.from_address.special,
+        event.to_address.path,
+        event.to_address.special,
+        event.effective,
+        source_statute,
+    )
+
+
+def _prefix_migration_wave_plan(
+    migration_events: tuple[MigrationEvent, ...],
+    *,
+    as_of_date: str,
+    not_before: str,
+) -> _PrefixMigrationWavePlan:
+    return _prefix_migration_wave_plan_from_signature(
+        tuple(_migration_event_signature(event) for event in migration_events),
+        as_of_date,
+        not_before,
+    )
+
+
+@lru_cache(maxsize=16)
+def _prefix_migration_wave_plan_from_signature(
+    events_signature: tuple[_PrefixMigrationEventSignature, ...],
+    as_of_date: str,
+    not_before: str,
+) -> _PrefixMigrationWavePlan:
+    waves: dict[tuple[str, str], list[_PrefixMigrationEvent]] = {}
+    for (
+        _event_id,
+        _kind,
+        from_path,
+        from_special,
+        to_path,
+        to_special,
+        effective,
+        source_statute,
+    ) in events_signature:
+        if as_of_date and effective and effective > as_of_date:
+            continue
+        if not_before and effective and effective < not_before:
+            continue
+        waves.setdefault((effective, source_statute), []).append(
+            _PrefixMigrationEvent(
+                from_address=LegalAddress(path=from_path, special=from_special),
+                to_address=LegalAddress(path=to_path, special=to_special),
+                effective=effective,
+                source_statute=source_statute,
+            )
+        )
+
+    return _PrefixMigrationWavePlan(
+        waves=tuple(
+            _PrefixMigrationWave(
+                events_by_specificity=tuple(
+                    sorted(
+                        wave_events,
+                        key=lambda item: (
+                            len(item.from_address.path),
+                            str(item.from_address),
+                            str(item.to_address),
+                        ),
+                        reverse=True,
+                    )
+                )
+            )
+            for _, wave_events in sorted(waves.items(), key=lambda item: item[0])
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -480,38 +579,23 @@ def current_address_with_prefix_migrations_from_events(
     normalize = normalize_address_fn or (lambda address: address)
     current = normalize(original_address)
     visited: set[str] = {str(current)}
-    waves: dict[tuple[str, str], list[MigrationEvent]] = {}
-    for event in migration_events:
-        if as_of_date and event.effective and event.effective > as_of_date:
-            continue
-        if not_before and event.effective and event.effective < not_before:
-            continue
-        source_statute = event.source_statute if event.source_statute is not None else ""
-        waves.setdefault((event.effective, source_statute), []).append(event)
+    wave_plan = _prefix_migration_wave_plan(
+        migration_events,
+        as_of_date=as_of_date,
+        not_before=not_before,
+    )
 
-    for wave_events in sorted(
-        waves.values(),
-        key=lambda events: (events[0].effective, events[0].source_statute if events[0].source_statute is not None else ""),
-    ):
+    for wave in wave_plan.waves:
         wave_start = normalize(current)
-        applicable_wave_events: list[MigrationEvent] = []
+        applicable_wave_events: list[tuple[_PrefixMigrationEvent, LegalAddress]] = []
         applied_specificity: list[int] = []
         allowed_destination_source_prefixes: set[TreePath] = set()
-        for event in sorted(
-            wave_events,
-            key=lambda item: (
-                len(item.from_address.path),
-                str(item.from_address),
-                str(item.to_address),
-            ),
-            reverse=True,
-        ):
+        for event in wave.events_by_specificity:
             normalized_event_from = normalize(event.from_address)
             if not wave_start.has_path_prefix(normalized_event_from):
                 continue
-            applicable_wave_events.append(event)
-        for event in applicable_wave_events:
-            normalized_event_from = normalize(event.from_address)
+            applicable_wave_events.append((event, normalized_event_from))
+        for event, normalized_event_from in applicable_wave_events:
             normalized_current = normalize(current)
             if not normalized_current.has_path_prefix(normalized_event_from):
                 continue
@@ -538,15 +622,7 @@ def current_address_with_prefix_migrations_from_events(
         if not applied_specificity:
             continue
         max_specificity = max(applied_specificity)
-        for event in sorted(
-            wave_events,
-            key=lambda item: (
-                len(item.from_address.path),
-                str(item.from_address),
-                str(item.to_address),
-            ),
-            reverse=True,
-        ):
+        for event in wave.events_by_specificity:
             normalized_event_from = normalize(event.from_address)
             if len(normalized_event_from.path) >= max_specificity:
                 continue

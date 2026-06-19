@@ -45,6 +45,7 @@ from lawvm.finland.process_call import ResolvedProcessAmendmentCall
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.group_ops import (
     remap_body_root_replace_group_before_terminal_voimaantulo,
     sort_group_ops_for_apply,
@@ -2136,7 +2137,7 @@ class TestCompileAmendmentOps:
         sinks = seen["sinks"]
         assert isinstance(request, CompileGroupRequest)
         assert request.master is master
-        assert request.muutos_tree is muutos_tree
+        assert request.source_model.muutos_tree is muutos_tree
         assert request.johto == "muutetaan 3 §"
         assert request.lookups is not None
         assert request.target_norm == "3"
@@ -2425,7 +2426,7 @@ def apply_ops_to_tree(
             ctx=ctx,
             resolved=resolved,
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
             amendment_id=amendment_id,
             source_title=source_title,
@@ -2554,7 +2555,7 @@ class TestApplyOpsToTree:
                 ctx=ctx,
                 resolved=[],
                 ops=[],
-                muutos_tree=muutos_tree,
+                source_model=AmendmentSourceModel.from_tree(muutos_tree),
                 johto="",
                 amendment_id="2010/100",
                 source_title="Laki",

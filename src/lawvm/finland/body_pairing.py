@@ -72,7 +72,8 @@ class ObservedBodyUnit:
     label: str
     chapter_label: str = ""
     part_label: str = ""
-    xml_element: object = None  # lxml element (opaque for downstream)
+    source_tag: str = ""
+    source_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -274,7 +275,8 @@ def build_observed_body_inventory(
                 label=label,
                 chapter_label=chapter_label,
                 part_label=part_label,
-                xml_element=xml_element,
+                source_tag=_localname(xml_element),
+                source_text=_direct_text(xml_element),
             )
         )
 

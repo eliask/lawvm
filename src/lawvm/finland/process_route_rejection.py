@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, List, Mapping, Optional
 
-from lxml import etree
-
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
@@ -23,9 +21,8 @@ from lawvm.finland.citation_routing import (
     _title_explicitly_targets_other_statute,
     johtolause_cited_target_ids,
 )
-from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
-from lawvm.finland.metadata import _commencement_expiry_override
 from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
 from lawvm.finland.vts import VtsSkippedTarget, extract_vts_cross_statute_repeals
 
@@ -143,7 +140,7 @@ class ProcessRouteRejectionContext:
     source_title: str
     johto: str
     xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     route_reason: str
     route_target_amendment_id: str
     strict_profile: Optional[StrictProfile]
@@ -188,10 +185,9 @@ class ProcessRouteRejectionContext:
                 should_return_state=True,
             )
 
-        ops = _enrich_ops_from_amendment_tree(
-            vts_ops,
-            self.amendment_id,
-            self.muutos_tree,
+        ops = self.source_model.enrich_amendment_ops(
+            ops=vts_ops,
+            amendment_id=self.amendment_id,
             johto=self.johto,
         )
         self.replay_print(
@@ -274,7 +270,7 @@ class ProcessRouteRejectionContext:
         )
 
     def _apply_skipped_amendment_expiry_override(self) -> None:
-        expiry_override = _commencement_expiry_override(self.muutos_tree, self.amendment_id)
+        expiry_override = self.source_model.commencement_expiry_override(self.amendment_id)
         if expiry_override is None:
             return
         target_mid, labels, expiry = expiry_override

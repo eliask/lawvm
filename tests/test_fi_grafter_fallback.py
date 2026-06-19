@@ -153,6 +153,7 @@ from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.frontend_compile import (
     _attach_target_version_selectors,
@@ -266,7 +267,7 @@ def _recover_uncovered_body_ops(
             state=state,
             ctx=ctx,
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             amendment_id=amendment_id,
             future_repeals=future_repeals,
             op_source=op_source,
@@ -387,7 +388,7 @@ def _compile_group(
             group_ops=group_ops,
             standalone_section_targets=standalone_section_targets,
             inserted_chapter_labels=inserted_chapter_labels,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
             profile=profile,
             strict_profile=strict_profile,
@@ -431,7 +432,7 @@ def apply_ops_to_tree(
             ctx=ctx,
             resolved=resolved,
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
             amendment_id=amendment_id,
             source_title=source_title,
@@ -867,7 +868,7 @@ def test_apply_ops_to_tree_preserves_uncovered_candidate_audits(monkeypatch: pyt
             ctx=ctx,
             resolved=[],
             ops=ops,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto="",
             amendment_id="1996/1261",
             source_title="",
@@ -931,7 +932,7 @@ def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.M
             ctx=ctx,
             resolved=[rop],
             ops=[op],
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto="muutetaan 7 §",
             amendment_id="1996/1261",
             source_title="",
@@ -2260,11 +2261,11 @@ def test_build_group_surface_does_not_use_unscoped_unique_section_for_carry_forw
     result = _build_group_surface(
         _BuildGroupSurfaceRequest(
             group_ops=[op],
-            muutos_tree=root,
             target_unit_kind="section",
             target_norm="159",
             target_chapter="2",
             target_part="III",
+            source_model=AmendmentSourceModel.from_tree(root),
         )
     )
 
@@ -2316,11 +2317,11 @@ def test_build_group_surface_does_not_drop_part_for_grouped_part_scope() -> None
     result = _build_group_surface(
         _BuildGroupSurfaceRequest(
             group_ops=[op],
-            muutos_tree=root,
             target_unit_kind="section",
             target_norm="159",
             target_chapter="2",
             target_part="III",
+            source_model=AmendmentSourceModel.from_tree(root),
         )
     )
 
@@ -3878,11 +3879,11 @@ def test_build_group_surface_uses_renumber_destination_payload_when_source_label
     result = _build_group_surface(
         _BuildGroupSurfaceRequest(
             group_ops=[renumber, heading_replace],
-            muutos_tree=root,
             target_unit_kind="section",
             target_norm="5",
             target_chapter="2",
             target_part="III",
+            source_model=AmendmentSourceModel.from_tree(root),
         )
     )
 
@@ -3903,11 +3904,11 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
     group_surface_result = _build_group_surface(
         _BuildGroupSurfaceRequest(
             group_ops=[op],
-            muutos_tree=muutos_tree,
             target_unit_kind="section",
             target_norm="5",
             target_chapter=None,
             target_part=None,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
         )
     )
     group_surface = group_surface_result.output
@@ -3923,7 +3924,7 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
             foreign_scoped_standalone_section_targets=set(),
             foreign_scoped_replace_section_targets=set(),
             effective_target_part=None,
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto="ruotsinkielinen sanamuoto",
             profile=get_replay_profile("legal_pit"),
             strict_profile=None,
@@ -4272,6 +4273,55 @@ def test_prune_container_payload_sections_keeps_foreign_scoped_shadow_in_new_cha
     assert changed is False
     assert got is muutos_ir
     assert pruned == []
+
+
+def test_prune_container_payload_sections_prunes_foreign_insert_when_payload_is_overwrapped_context() -> None:
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+                        IRNode(kind=IRNodeKind.SECTION, label="8"),
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                    ),
+                ),
+            ),
+        )
+    )
+    lookups = snapshot_replay_lookups(state)
+    ctx = build_payload_elaboration_context(
+        snapshot_target_context(state, "chapter", "2a", None, lookups),
+        lookups,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="2a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="2 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="7a"),
+            IRNode(kind=IRNodeKind.SECTION, label="8"),
+            IRNode(kind=IRNodeKind.SECTION, label="20a"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets_impl(
+        ctx,
+        "chapter",
+        "2a",
+        muutos_ir,
+        {"8", "20a"},
+        foreign_scoped_standalone_section_targets={"20a"},
+        foreign_scoped_replace_section_targets={"8"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["8", "20a"]
+    assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["7a"]
 
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_replaces() -> None:
@@ -8302,7 +8352,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
             state=state,
             ctx=ctx,
             ops=[],
-            muutos_tree=muutos_tree,
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
             amendment_id="2021/1215",
         ),
         UncoveredBodyRecoverySinks(failed_ops_out=[]),
@@ -10283,6 +10333,101 @@ def test_flat_body_insert_chapter_scope_rejects_one_sided_live_sibling() -> None
     )
 
     got = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
+def test_flat_body_replace_scope_uses_letter_suffix_bracketing_live_siblings() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_replace_scope_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2a",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="20a"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="20"),
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="21"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>20 a §</num><content><p>replacement</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="20a",
+    )
+
+    got = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got == (None, "4")
+
+
+def test_flat_body_replace_scope_rejects_letter_suffix_disagreeing_brackets() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_replace_scope_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="20"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="20a"),
+                        IRNode(kind=IRNodeKind.SECTION, label="21"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>20 a §</num><content><p>replacement</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="20a",
+    )
+
+    got = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
         op=op,
         muutos_tree=muutos_tree,
         master=master,

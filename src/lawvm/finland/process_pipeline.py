@@ -27,6 +27,7 @@ from lawvm.finland.citation_routing import (
     johtolause_cited_target_ids,
 )
 from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.constraints import muutos_node_lookup_cache_scope
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
     emit_elaboration_pipeline_observation,
@@ -34,7 +35,6 @@ from lawvm.finland.elaboration_rule_dispatch import (
     validate_elaboration_pipeline,
 )
 from lawvm.finland.frontend_compile import (
-    _amendment_tree_metadata,
     _enrich_ops_from_amendment_tree,
     _tree_title,
     normalize_and_compile_ops,
@@ -56,6 +56,7 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_notices import replay_print as _replay_print
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
 
@@ -243,6 +244,10 @@ def process_muutoslaki_resolved(
         )
         xml_bytes = acquired.xml_bytes
         muutos_tree = acquired.muutos_tree
+        source_model = AmendmentSourceModel.from_tree(
+            muutos_tree,
+            source_ref=amendment_id,
+        )
         lacks_operative_structure = acquired.lacks_operative_structure
         operative_tags = list(acquired.operative_tags)
         johto = acquired.johto
@@ -264,7 +269,7 @@ def process_muutoslaki_resolved(
                     source_title=source_title,
                     johto=johto,
                     xml_bytes=xml_bytes,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     route_reason=route_reason,
                     route_target_amendment_id=acquisition.decision.route_target_amendment_id,
                     strict_profile=strict_profile,
@@ -308,7 +313,7 @@ def process_muutoslaki_resolved(
                     source_title=source_title,
                     johto=johto,
                     xml_bytes=xml_bytes,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     route_reason="citation_mismatch_skip",
                     route_target_amendment_id="",
                     strict_profile=strict_profile,
@@ -337,10 +342,7 @@ def process_muutoslaki_resolved(
         else:
             skip_to_compile = False
 
-        amendment_tree_metadata = _amendment_tree_metadata(
-            amendment_id=amendment_id,
-            muutos_tree=muutos_tree,
-        )
+        amendment_tree_metadata = source_model.amendment_tree_metadata(amendment_id)
 
         precompile_selection = _run_process_stage(
             "fi.process.precompile_selection",
@@ -351,7 +353,7 @@ def process_muutoslaki_resolved(
                 source_title=source_title,
                 johto=johto,
                 xml_bytes=xml_bytes,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 strict_profile=strict_profile,
                 acquisition=acquisition,
                 skip_to_compile=skip_to_compile,
@@ -387,7 +389,7 @@ def process_muutoslaki_resolved(
                 "fi.process.frontend_normalization",
                 lambda: ProcessFrontendNormalizationContext(
                     johto=johto,
-                    muutos_tree=muutos_tree,
+                    source_model=source_model,
                     state=state,
                     base_ir=ctx.base_ir,
                     amendment_id=amendment_id,
@@ -429,7 +431,7 @@ def process_muutoslaki_resolved(
             lambda: ProcessTemporalAuthorityContext(
                 amendment_id=amendment_id,
                 johto=johto,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 record_finding=record_process_finding,
             ).derive(),
             process_findings=process_findings,
@@ -440,18 +442,20 @@ def process_muutoslaki_resolved(
         amendment_expiry_date = temporal_authority.expiry_date
         amendment_issue_date = temporal_authority.issue_date
 
-        compile_result = compile_amendment_ops(
-            state,
-            ops,
-            muutos_tree,
-            johto,
-            replay_mode,
-            compiled_ops_out=compiled_ops_out,
-            strict_profile=strict_profile,
-            source_ref=amendment_id,
-            source_title=source_title,
-            target_statute=ctx.id,
-        )
+        with muutos_node_lookup_cache_scope():
+            compile_result = compile_amendment_ops(
+                state,
+                ops,
+                muutos_tree,
+                johto,
+                replay_mode,
+                compiled_ops_out=compiled_ops_out,
+                strict_profile=strict_profile,
+                source_ref=amendment_id,
+                source_title=source_title,
+                target_statute=ctx.id,
+                source_model=source_model,
+            )
         resolved = compile_result.output
 
         _run_process_stage(
@@ -483,7 +487,7 @@ def process_muutoslaki_resolved(
                 ctx=ctx,
                 resolved=resolved,
                 ops=ops,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 johto=johto,
                 amendment_id=amendment_id,
                 source_title=source_title,
@@ -544,8 +548,7 @@ def process_muutoslaki_resolved(
                 ctx_id=ctx.id,
                 source_title=source_title,
                 johto=johto,
-                xml_bytes=xml_bytes,
-                muutos_tree=muutos_tree,
+                source_model=source_model,
                 base_ir=ctx.base_ir,
                 state=state,
                 replay_mode=replay_mode,
