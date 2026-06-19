@@ -59,7 +59,7 @@ def test_bench_cli_help_matches_fi_tooling_defaults(
     out = capsys.readouterr().out
     assert "data/finland/bench_corpus.csv" in out
     assert "FI default: min(16, cpu_count)" in out
-    assert "UK/EE use jurisdiction-specific defaults" in out
+    assert "UK/EE default: min(cpu_count, 8)" in out
 
 
 @lru_cache(maxsize=1)
