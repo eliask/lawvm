@@ -175,11 +175,13 @@ def _body_chapter_corrected_ops(
     target_norm: str,
     target_chapter: Optional[str],
     resolved_body_chapter: str,
+    body_chapter_move_from: Optional[str] = None,
 ) -> list[AmendmentOp]:
     return [
         dc_replace(
             op,
             target_chapter=resolved_body_chapter,
+            body_chapter_move_from=body_chapter_move_from or op.body_chapter_move_from,
             scope_confidence=normalize_scope_confidence(
                 projection_scope_confidence(
                     scope_confidence=op.scope_confidence,
@@ -455,6 +457,9 @@ def _maybe_apply_body_chapter_insert_correction(
             target_norm=request.target_norm,
             target_chapter=request.target_chapter,
             resolved_body_chapter=resolved_body_chapter,
+            body_chapter_move_from=(
+                request.target_chapter if source_owned_existing_chapter_scope else None
+            ),
         ),
     )
     finding = Finding(

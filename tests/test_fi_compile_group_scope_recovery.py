@@ -180,6 +180,7 @@ def test_real_inserted_body_chapter_overrides_nonexplicit_family_target() -> Non
 
     assert result.output.effective_target_chapter == "6"
     assert result.output.group_ops[0].target_chapter == "6"
+    assert result.output.group_ops[0].body_chapter_move_from == "5"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6"), ("section", "37a"))
     assert [finding.kind for finding in result.findings()] == [

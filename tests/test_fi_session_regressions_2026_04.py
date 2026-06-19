@@ -2096,6 +2096,21 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
     assert findings
 
 
+def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
+    """Real corpus anchor for uncovered chapter payload moving 32 § from chapter 5 to 4."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1992/733",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("32", "4") is not None
+    assert replay.materialized_state.find_section("32", "5") is None
+
+
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
     from lawvm.provision_state import resolve_provision_state
