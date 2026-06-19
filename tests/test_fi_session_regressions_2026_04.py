@@ -1850,6 +1850,121 @@ def test_2002_197_2011_535_inserted_chapter3a_does_not_keep_shadowed_sections_20
     assert "chapter:4/section:21" in sections
 
 
+def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() -> None:
+    """Chapter heading insertions move existing flat sections into declared spans."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+    )
+
+    state = ReplayState(ir=_body(_sec("1"), _sec("2"), _sec("3"), _sec("4")))
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <hcontainer name="statuteProvisionsWrapper">
+                <chapter>
+                  <num>1 luku</num>
+                  <heading>Ensimmäinen</heading>
+                  <section><num>1 §</num></section>
+                </chapter>
+                <chapter>
+                  <num>2 luku</num>
+                  <heading>Toinen</heading>
+                  <section><num>3 §</num></section>
+                </chapter>
+              </hcontainer>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            muutos_tree=muutos_tree,
+            amendment_id="2025/1",
+            vts_ops_enrich_done=False,
+            johto=(
+                "lisätään 1 §:n edelle uusi 1 luvun otsikko ja "
+                "3 §:n edelle uusi 2 luvun otsikko seuraavasti"
+            ),
+        )
+    )
+
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in result.state.ir.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+    direct_sections = [
+        child.label for child in result.state.ir.children if child.kind is IRNodeKind.SECTION
+    ]
+
+    assert chapters == {"1": ["1", "2"], "2": ["3", "4"]}
+    assert direct_sections == []
+    assert [migration.section_label for migration in result.membership_migrations] == [
+        "1",
+        "2",
+        "3",
+        "4",
+    ]
+
+
+def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() -> None:
+    """Real corpus anchor for chapter-heading starts around already-live sections."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2019/571",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+    root = replay.materialized_state.ir
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in root.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+    direct_hcontainer_sections = [
+        grand.label
+        for child in root.children
+        if child.kind is IRNodeKind.HCONTAINER
+        for grand in child.children
+        if grand.kind is IRNodeKind.SECTION
+    ]
+    migrations = [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2025/863"
+        and getattr(event, "kind", "") == "move"
+        and isinstance(getattr(event, "witness", None), dict)
+        and event.witness.get("rule_id") == "fi.chapter_membership_migration_from_source_starts"
+    ]
+    findings = [
+        finding
+        for finding in getattr(replay, "findings", ())
+        if getattr(finding, "kind", "") == "APPLY.CHAPTER_MEMBERSHIP_MIGRATION"
+        and getattr(finding, "source_statute", "") == "2025/863"
+    ]
+
+    assert chapters["1"][:2] == ["1", "1a"]
+    assert "2" in chapters["1"]
+    assert chapters["2"][:3] == ["3", "3a", "4"]
+    assert "17" in chapters["2"]
+    assert chapters["3"] == ["17a", "17b", "17c", "17d", "17e", "17f", "17g", "17h"]
+    assert chapters["4"] == ["18"]
+    assert direct_hcontainer_sections == []
+    assert len(migrations) >= 12
+    assert findings
+
+
 def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scope() -> None:
     """Synthetic anchor for stale chunk scope on new letter-suffix sections."""
     from lxml import etree
@@ -1935,6 +2050,55 @@ def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
     )
 
     assert got is None
+
+
+def test_body_chapter_scope_allows_source_declared_unborn_chapter_wave() -> None:
+    """Chapter-heading waves own new source-body chapters before replay creates them."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _body_chapter_scope_for_section_op
+    from lawvm.finland.ops import ScopeConfidence
+
+    master = ReplayState(ir=_body(_chapter("2", _sec("17"))))
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>2 luku</num>
+            <section><num>17 §</num><content><p>old location end</p></content></section>
+          </chapter>
+          <chapter>
+            <num>3 luku</num>
+            <section><num>17 a §</num><content><p>new 17a</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="17a",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_carry_forward",
+            source="carry_forward",
+            confidence="inferred",
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_carry_forward",),
+    )
+
+    got = _body_chapter_scope_for_section_op(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+        johto=(
+            "lisätään lakiin uusi 17 a-17 h § ja niiden edelle uusi "
+            "3 luvun otsikko sekä 18 §:n edelle uusi 4 luvun otsikko seuraavasti"
+        ),
+    )
+
+    assert got == "3"
 
 
 def test_letter_suffix_insert_skips_multi_unborn_chapter_batch() -> None:

@@ -164,6 +164,22 @@ def test_insert_family_in_other_chapter_overrides(monkeypatch) -> None:
     assert r.reason == "family_base_override"
 
 
+def test_insert_source_owned_new_chapter_beats_family_base_override(monkeypatch) -> None:
+    _patch_find_family(monkeypatch, (("chapter", "2"), ("section", "17")))
+    r = resolve_insert_chapter(
+        "17a",
+        "3",
+        None,
+        FakeIRState(),
+        [],
+        new_chapter_labels={"3"},
+        owned_chapter_labels={"3"},
+        source_owned_chapter_labels={"3"},
+    )
+    assert r.effective_chapter == "3"
+    assert r.reason == "source_owned_chapter"
+
+
 def test_insert_family_base_repealed_keeps_declared(monkeypatch) -> None:
     _patch_find_family(monkeypatch, (("chapter", "3"), ("section", "5")))
     ops = [FakeOp("REPEAL", "5")]

@@ -85,6 +85,7 @@ class UncoveredRecoveryRun:
     johto_mentioned_replaced_chapters: Set[str]
     moved_section_destinations: Dict[str, str]
     owned_chapter_labels: Set[str]
+    source_owned_insert_chapter_labels: Set[str]
     part_insert_labels: Set[str]
 
     def record_skip(
@@ -491,6 +492,7 @@ class UncoveredRecoveryRun:
             self.ops,
             self.new_chapter_labels,
             self.owned_chapter_labels,
+            self.source_owned_insert_chapter_labels,
         )
         effective_chapter = insert_ch.effective_chapter
         effective_part = insert_ch.effective_part

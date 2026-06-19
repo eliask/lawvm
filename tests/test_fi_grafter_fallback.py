@@ -59,6 +59,7 @@ from lawvm.finland.group_plan import (
     coalesce_same_target_mixed_scope_section_groups as _coalesce_same_target_mixed_scope_section_groups_impl,
 )
 from lawvm.finland.johto_scope_mentions import (
+    collect_johto_chapter_scope_mentions as _collect_johto_chapter_scope_mentions,
     collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels,
 )
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
@@ -13661,6 +13662,16 @@ def test_collect_johto_mentioned_section_labels_expands_alpha_suffix_ranges() ->
     )
 
     assert {"20a", "21a", "21b", "21c", "23a", "49a"} <= labels
+
+
+def test_collect_johto_chapter_mentions_accepts_luvun_otsikko_form() -> None:
+    mentions = _collect_johto_chapter_scope_mentions(
+        "lisätään 1 §:n edelle uusi 1 luvun otsikko, "
+        "lakiin uusi 17 a-17 h § ja niiden edelle uusi 3 luvun otsikko sekä "
+        "18 §:n edelle uusi 4 luvun otsikko"
+    )
+
+    assert {"1", "3", "4"} <= set(mentions.new_chapter_labels)
 
 
 def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169() -> None:

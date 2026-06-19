@@ -31,9 +31,9 @@ _SECTION_RANGE_SEGMENT_RE = re.compile(
 _ALPHA_SUFFIX_LABEL_RE = re.compile(r"(\d+)([a-z])")
 _NEW_CHAPTER_RE = re.compile(
     r"(?:lisätään\s+(?:lakiin\s+)?|uusi\s+)"
-    r"(\d{1,4}+\s{0,3}+[a-z]?)"
-    r"(?:\s*" + _DASH_CHARS + r"\s*(\d{1,4}+\s{0,3}+[a-z]?))?"
-    r"\s+luku",
+    r"(\d{1,4}(?:\s{0,3}[a-z](?![a-z]))?)"
+    r"(?:\s*" + _DASH_CHARS + r"\s*(\d{1,4}(?:\s{0,3}[a-z](?![a-z]))?))?"
+    r"\s+(?:luku(?:un)?|luvun|luvut)\b",
     re.I,
 )
 _MOVE_DESTINATION_CHAPTER_RE = re.compile(

@@ -71,6 +71,7 @@ ProofCategory = Literal[
     "safety_invariant",        # "internal state is inside the admissible model"
     "temporal_selection",      # "at date D, version V governs because..."
     "lineage",                 # "provision P descends from these acts"
+    "migration",               # "provision identity/path moved under an owned migration event"
     "negative",                # "no later amendment touched this; no source supports oracle"
     "strictness",              # "compiled under profile P without non-permitted recoveries"
     "comparative",             # "divergence attributed to X, not vague mismatch"
@@ -319,6 +320,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "chapter_seed",
                 "missing chapter container was inserted from an amendment body before replay",
                 ("preservation", "strictness"), role="observation"),
+    FindingSpec("APPLY.CHAPTER_MEMBERSHIP_MIGRATION", "replay_apply",
+                "recovery", "warn", "grafter",
+                "existing flat section was moved into a source-declared chapter introduced by the same amendment",
+                ("preservation", "migration", "parse_witness"), role="observation"),
     FindingSpec("ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY", "execute_replay_plan",
                 "source_pathology", "strict_fail", "chapter_seed",
                 "chapter-seed pre-scan could not inspect a source artifact needed to prove completeness",

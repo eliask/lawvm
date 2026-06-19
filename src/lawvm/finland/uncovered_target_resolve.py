@@ -218,6 +218,7 @@ def resolve_insert_chapter(
     ops: Iterable[Any],
     new_chapter_labels: Optional[Set[str]],
     owned_chapter_labels: Sequence[str] | Set[str],
+    source_owned_chapter_labels: Optional[Set[str]] = None,
 ) -> InsertChapter:
     """Decide the effective chapter/part for a NEW section INSERT.
 
@@ -241,6 +242,8 @@ def resolve_insert_chapter(
         chapter_is_new = amend_chapter not in owned
     if not chapter_is_new:
         return InsertChapter(effective_chapter, effective_part, "declared_chapter_not_new")
+    if amend_chapter in set(source_owned_chapter_labels or ()):
+        return InsertChapter(effective_chapter, effective_part, "source_owned_chapter")
 
     # First look for the family base within the declared chapter; if absent, look
     # in any chapter (but never match a same-numbered base in an unrelated chapter

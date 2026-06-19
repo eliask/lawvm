@@ -8,6 +8,7 @@ operation parsing.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
@@ -15,6 +16,7 @@ import lxml.etree as etree
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 
@@ -24,6 +26,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID = "fi.chapter_membership_migration_from_source_starts"
+_CHAPTER_HEADING_ANCHOR_RE = re.compile(
+    r"(?P<section>\d{1,4}(?:[a-z]|\s[a-z])?)\s{0,10}§:n\s+edelle\s+uusi\s+"
+    r"(?P<chapter>\d{1,4}(?:[a-z]|\s[a-z])?)\s+luvun\s+otsikko",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ChapterRef:
@@ -31,6 +40,32 @@ class ChapterRef:
 
     part_label: str
     chapter_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterMembershipMigration:
+    """One source-owned move of an existing flat section into a new chapter."""
+
+    section_label: str
+    part_label: str
+    chapter_label: str
+    from_path: TreePath
+    to_path: TreePath
+    from_legal_path: TreePath
+    to_legal_path: TreePath
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID,
+            "family": "ontology_normalization",
+            "section_label": self.section_label,
+            "part_label": self.part_label,
+            "chapter_label": self.chapter_label,
+            "from_path": _path_text(self.from_path),
+            "to_path": _path_text(self.to_path),
+            "from_legal_path": _path_text(self.from_legal_path),
+            "to_legal_path": _path_text(self.to_legal_path),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +85,7 @@ class PrecreateApplyChaptersRequest:
     muutos_tree: etree._Element
     amendment_id: str
     vts_ops_enrich_done: bool
+    johto: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,10 +95,73 @@ class PrecreateApplyChaptersResult:
     state: ReplayState
     real_chapter_refs: tuple[ChapterRef, ...]
     pseudo_chapter_refs: tuple[ChapterRef, ...]
+    membership_migrations: tuple[ChapterMembershipMigration, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SourceChapter:
+    part_label: str
+    chapter_label: str
+    section_labels: tuple[str, ...]
 
 
 def _tag(el: etree._Element) -> str:
     return el.tag.rsplit("}", 1)[-1] if isinstance(el.tag, str) else ""
+
+
+def _path_text(path: TreePath) -> str:
+    return "/".join(f"{kind}:{label}" for kind, label in path if label)
+
+
+def _legal_path(path: TreePath) -> TreePath:
+    return tuple(
+        (kind, label)
+        for kind, label in path
+        if label and kind not in {"body", "hcontainer"}
+    )
+
+
+def _section_label_from_num_text(text: str) -> str:
+    return _norm_num_token(text).removesuffix("§")
+
+
+def _source_chapters(muutos_body: etree._Element) -> tuple[SourceChapter, ...]:
+    chapters: list[SourceChapter] = []
+    for ch_el in muutos_body.findall(".//{*}chapter"):
+        ch_num = ch_el.find("{*}num")
+        if ch_num is None or not ch_num.text:
+            continue
+        ch_label = _norm_num_token(ch_num.text).removesuffix("luku")
+        if not ch_label:
+            continue
+        section_labels: list[str] = []
+        for sec_el in ch_el.findall("{*}section"):
+            sec_num = sec_el.find("{*}num")
+            if sec_num is None or not sec_num.text:
+                continue
+            section_label = _section_label_from_num_text(sec_num.text)
+            if section_label:
+                section_labels.append(section_label)
+        chapters.append(
+            SourceChapter(
+                part_label=_part_label_for_element(ch_el),
+                chapter_label=ch_label,
+                section_labels=tuple(section_labels),
+            )
+        )
+    return tuple(chapters)
+
+
+def _chapter_heading_anchors(johto: str) -> dict[str, str]:
+    anchors: dict[str, str] = {}
+    if "luvun otsikko" not in johto or "§:n edelle" not in johto:
+        return anchors
+    for match in _CHAPTER_HEADING_ANCHOR_RE.finditer(johto):
+        section_label = _section_label_from_num_text(match.group("section"))
+        chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
+        if section_label and chapter_label:
+            anchors[chapter_label] = section_label
+    return anchors
 
 
 def _part_label_for_element(el: etree._Element) -> str:
@@ -148,6 +247,7 @@ def precreate_apply_chapters(
             state=request.state,
             real_chapter_refs=(),
             pseudo_chapter_refs=(),
+            membership_migrations=(),
         )
     muutos_body = request.muutos_tree.find(".//{*}body")
     if muutos_body is None:
@@ -155,8 +255,14 @@ def precreate_apply_chapters(
             state=request.state,
             real_chapter_refs=(),
             pseudo_chapter_refs=(),
+            membership_migrations=(),
         )
 
+    chapterization_labels = _chapterization_required_labels(
+        request.state,
+        muutos_body,
+        request.johto,
+    )
     required_real_chapters = {
         (
             _norm_num_token(rop.resolved_target_scope_part_label or "")
@@ -177,6 +283,7 @@ def precreate_apply_chapters(
             rop.resolved_target_chapter_label,
         )
     }
+    required_real_chapters.update(chapterization_labels)
     real_chapters = _pre_create_amendment_chapters(
         request.state,
         muutos_body,
@@ -188,11 +295,179 @@ def precreate_apply_chapters(
         muutos_body,
         request.amendment_id,
     )
+    migrated_state, membership_migrations = _migrate_flat_sections_into_source_chapters(
+        pseudo_chapters.state,
+        muutos_body,
+        request.johto,
+        created_refs=real_chapters.created_refs,
+    )
     return PrecreateApplyChaptersResult(
-        state=pseudo_chapters.state,
+        state=migrated_state,
         real_chapter_refs=real_chapters.created_refs,
         pseudo_chapter_refs=pseudo_chapters.created_refs,
+        membership_migrations=membership_migrations,
     )
+
+
+def _chapterization_required_labels(
+    state: ReplayState,
+    muutos_body: etree._Element,
+    johto: str,
+) -> set[tuple[str, str]]:
+    anchors = _chapter_heading_anchors(johto)
+    if not anchors:
+        return set()
+    required: set[tuple[str, str]] = set()
+    for chapter in _source_chapters(muutos_body):
+        if chapter.chapter_label not in anchors:
+            continue
+        if state_has_scoped_chapter(state, chapter.part_label, chapter.chapter_label):
+            continue
+        required.add((chapter.part_label, chapter.chapter_label))
+    return required
+
+
+def _chapter_start_labels(
+    *,
+    muutos_body: etree._Element,
+    johto: str,
+    created_refs: tuple[ChapterRef, ...],
+) -> tuple[tuple[str, str, str], ...]:
+    created = {(ref.part_label, ref.chapter_label) for ref in created_refs}
+    if not created:
+        return ()
+    anchors = _chapter_heading_anchors(johto)
+    starts: list[tuple[str, str, str]] = []
+    for chapter in _source_chapters(muutos_body):
+        chapter_ref = (chapter.part_label, chapter.chapter_label)
+        if chapter_ref not in created:
+            continue
+        start_label = anchors.get(chapter.chapter_label)
+        if start_label is None and chapter.section_labels:
+            start_label = chapter.section_labels[0]
+        if start_label:
+            starts.append((chapter.part_label, chapter.chapter_label, start_label))
+    return tuple(starts)
+
+
+def _chapter_for_section_label(
+    section_label: str,
+    starts: tuple[tuple[str, str, str], ...],
+) -> tuple[str, str] | None:
+    section_key = _tops.default_label_sort_key(section_label)
+    sorted_starts = sorted(starts, key=lambda item: _tops.default_label_sort_key(item[2]))
+    selected: tuple[str, str] | None = None
+    for part_label, chapter_label, start_label in sorted_starts:
+        if _tops.default_label_sort_key(start_label) <= section_key:
+            selected = (part_label, chapter_label)
+        else:
+            break
+    return selected
+
+
+def _find_direct_flat_section_path(
+    tree: IRNode,
+    section_label: str,
+) -> TreePath | None:
+    parent_path = _tops.find_provisions_parent(tree) or ()
+    parent = _tops.resolve(tree, parent_path) if parent_path else tree
+    if parent is None:
+        return None
+    for child in parent.children:
+        if child.kind is not IRNodeKind.SECTION or not child.label:
+            continue
+        if _norm_num_token(child.label) == section_label:
+            return tuple(parent_path) + (("section", child.label),)
+    return None
+
+
+def _chapter_has_section(
+    tree: IRNode,
+    chapter_path: TreePath,
+    section_label: str,
+) -> bool:
+    chapter = _tops.resolve(tree, chapter_path)
+    if chapter is None:
+        return False
+    return any(
+        child.kind is IRNodeKind.SECTION
+        and child.label
+        and _norm_num_token(child.label) == section_label
+        for child in chapter.children
+    )
+
+
+def _flat_section_labels(tree: IRNode) -> tuple[str, ...]:
+    parent_path = _tops.find_provisions_parent(tree) or ()
+    parent = _tops.resolve(tree, parent_path) if parent_path else tree
+    if parent is None:
+        return ()
+    labels = [
+        _norm_num_token(child.label)
+        for child in parent.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    ]
+    return tuple(label for label in labels if label)
+
+
+def _migrate_flat_sections_into_source_chapters(
+    state: ReplayState,
+    muutos_body: etree._Element,
+    johto: str,
+    *,
+    created_refs: tuple[ChapterRef, ...],
+) -> tuple[ReplayState, tuple[ChapterMembershipMigration, ...]]:
+    starts = _chapter_start_labels(
+        muutos_body=muutos_body,
+        johto=johto,
+        created_refs=created_refs,
+    )
+    if len(starts) < 2:
+        return state, ()
+
+    migrations: list[ChapterMembershipMigration] = []
+    for section_label in sorted(_flat_section_labels(state.ir), key=_tops.default_label_sort_key):
+        destination = _chapter_for_section_label(section_label, starts)
+        if destination is None:
+            continue
+        part_label, chapter_label = destination
+        from_path = _find_direct_flat_section_path(state.ir, section_label)
+        if from_path is None:
+            continue
+        moving_node = _tops.resolve(state.ir, from_path)
+        if moving_node is None:
+            continue
+        chapter_path = _find_existing_chapter_path(state, chapter_label, part_label)
+        if chapter_path is None or _chapter_has_section(state.ir, tuple(chapter_path), section_label):
+            continue
+        without_section = _tops.remove_at_required(state.ir, from_path)
+        after_remove = state.with_ir(without_section)
+        chapter_path_after_remove = _find_existing_chapter_path(
+            after_remove,
+            chapter_label,
+            part_label,
+        )
+        if chapter_path_after_remove is None:
+            continue
+        to_path = tuple(chapter_path_after_remove) + (("section", moving_node.label or ""),)
+        inserted = _tops.insert_sorted_required(
+            without_section,
+            chapter_path_after_remove,
+            moving_node,
+        )
+        state = state.with_ir(inserted)
+        migrations.append(
+            ChapterMembershipMigration(
+                section_label=section_label,
+                part_label=part_label,
+                chapter_label=chapter_label,
+                from_path=tuple(from_path),
+                to_path=to_path,
+                from_legal_path=_legal_path(tuple(from_path)),
+                to_legal_path=_legal_path(to_path),
+            )
+        )
+    return state, tuple(migrations)
 
 
 def _chapter_insert_parent(
@@ -207,7 +482,7 @@ def _chapter_insert_parent(
     family = _tops.find_family(state.ir, "chapter", chapter_label)
     if family is not None:
         return family[:-1]
-    return (("body", ""),) if state.ir.kind is IRNodeKind.BODY else ()
+    return ()
 
 
 def _pre_create_amendment_chapters(

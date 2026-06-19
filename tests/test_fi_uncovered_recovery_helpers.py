@@ -305,6 +305,7 @@ def _empty_run(
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},
         owned_chapter_labels=owned_chapter_labels or set(),
+        source_owned_insert_chapter_labels=set(),
         part_insert_labels=part_insert_labels or set(),
     )
 

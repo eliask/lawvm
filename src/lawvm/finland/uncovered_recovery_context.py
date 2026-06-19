@@ -29,6 +29,7 @@ class UncoveredRecoveryContext:
     moved_section_destinations: dict[str, str]
     relabel_destination_sections: frozenset[UncoveredSectionKey]
     owned_chapter_labels: frozenset[str]
+    source_owned_insert_chapter_labels: frozenset[str]
     part_insert_labels: frozenset[str]
     johto_moment_targets: dict[str, frozenset[int]]
     johto_numbered_table_targets: dict[str, frozenset[str]]
@@ -125,6 +126,7 @@ def build_uncovered_recovery_context(
         moved_section_destinations=moved_section_destinations,
         relabel_destination_sections=frozenset(relabel_destination_sections),
         owned_chapter_labels=frozenset(owned_chapter_labels),
+        source_owned_insert_chapter_labels=frozenset(johto_mentioned_new_chapters),
         part_insert_labels=_part_insert_labels_from_ops(ops),
         johto_moment_targets=johto_moment_targets,
         johto_numbered_table_targets=johto_numbered_table_targets,

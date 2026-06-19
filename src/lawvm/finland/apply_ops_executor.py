@@ -9,8 +9,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lawvm.core import tree_ops as _tops
+from lawvm.core.ir import LegalAddress
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_chapter_precreate import (
+    FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID,
     PrecreateApplyChaptersRequest as _PrecreateApplyChaptersRequest,
     precreate_apply_chapters as _precreate_apply_chapters,
 )
@@ -172,11 +175,44 @@ def _apply_ops_to_tree_typed(
             muutos_tree=muutos_tree,
             amendment_id=amendment_id,
             vts_ops_enrich_done=_vts_ops_enrich_done,
+            johto=johto,
         )
     )
     state = _precreate_chapters.state
     _pre_real_chapter_refs = _precreate_chapters.real_chapter_refs
     _pre_pseudo_chapter_refs = _precreate_chapters.pseudo_chapter_refs
+    if _precreate_chapters.membership_migrations:
+        effective = amendment_effective_date.isoformat() if amendment_effective_date is not None else ""
+        for migration in _precreate_chapters.membership_migrations:
+            if migration_ledger is not None:
+                migration_ledger.record_move(
+                    LegalAddress(path=migration.from_legal_path),
+                    LegalAddress(path=migration.to_legal_path),
+                    effective=effective,
+                    source_statute=amendment_id,
+                    witness={
+                        "rule_id": FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID,
+                        "section_label": migration.section_label,
+                        "chapter_label": migration.chapter_label,
+                    },
+                )
+            if findings_out is not None:
+                findings_out.append(
+                    Finding(
+                        kind="APPLY.CHAPTER_MEMBERSHIP_MIGRATION",
+                        role="observation",
+                        stage="replay_apply",
+                        detail={
+                            "message": (
+                                "Existing flat section moved into a source-declared "
+                                "chapter introduced by this amendment."
+                            ),
+                            **migration.as_detail(),
+                        },
+                        source_statute=amendment_id,
+                        blocking=False,
+                    )
+                )
 
     # Snapshot chapter-to-part mapping before the main apply loop.
     # Used after the loop to detect chapters that moved to a genuinely NEW part,

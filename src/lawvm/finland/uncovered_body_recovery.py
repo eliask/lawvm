@@ -148,6 +148,9 @@ def recover_uncovered_body_ops(
             ),
             moved_section_destinations=preparation.context.moved_section_destinations,
             owned_chapter_labels=set(preparation.context.owned_chapter_labels),
+            source_owned_insert_chapter_labels=set(
+                preparation.context.source_owned_insert_chapter_labels
+            ),
             part_insert_labels=set(preparation.context.part_insert_labels),
         ),
         findings_out=sinks.findings_out,

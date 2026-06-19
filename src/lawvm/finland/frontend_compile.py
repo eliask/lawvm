@@ -845,6 +845,7 @@ def _body_chapter_scope_for_section_op(
     op: AmendmentOp,
     muutos_tree: "etree._Element",
     master: "ReplayState",
+    johto: str = "",
 ) -> str | None:
     """Infer a body chapter for a chapterless section op when the chapter already exists.
 
@@ -918,10 +919,16 @@ def _body_chapter_scope_for_section_op(
 
     chapter_label, chapter_node = next(iter(candidate_chapters.items()))
 
-    if master.find_chapter(chapter_label) is None:
-        return None
     if op.target_chapter and chapter_label == op.target_chapter:
         return None
+    if master.find_chapter(chapter_label) is None:
+        if not (
+            op.target_chapter
+            and scope_witness is not None
+            and scope_witness.source == "carry_forward"
+            and _source_declares_chapter_heading_wave(muutos_tree=muutos_tree, johto=johto)
+        ):
+            return None
 
     return chapter_label
 
@@ -1608,6 +1615,27 @@ def _source_chapter_direct_section_count(
     return 0
 
 
+def _source_body_direct_chapter_count(muutos_tree: etree._Element) -> int:
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return 0
+    return sum(1 for chapter in body.findall(".//{*}chapter") if chapter.find("{*}num") is not None)
+
+
+def _source_declares_chapter_heading_wave(
+    *,
+    muutos_tree: etree._Element,
+    johto: str,
+) -> bool:
+    if "luvun otsikko" not in johto or "edelle uusi" not in johto:
+        return False
+    return _source_body_direct_chapter_count(muutos_tree) >= 2
+
+
 def _master_has_any_chapter(master: "ReplayState") -> bool:
     stack = [master.ir]
     while stack:
@@ -1869,6 +1897,7 @@ def _enrich_ops_from_amendment_tree(
                     op=scoped_op,
                     muutos_tree=muutos_tree,
                     master=master,
+                    johto=johto,
                 )
                 if inferred_chapter is None:
                     reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
