@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
+        SourceChapter,
     )
     from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
     from lawvm.finland.ops import AmendmentOp, ResolvedOp
@@ -116,6 +117,11 @@ class AmendmentSourceModel:
     )
     _payload_ir_cache: dict[SourceUnitLookup, SourcePayloadLookupResult] = field(
         default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _source_chapters_cache: tuple["SourceChapter", ...] | None = field(
+        default=None,
         init=False,
         repr=False,
     )
@@ -485,6 +491,14 @@ class AmendmentSourceModel:
             amendment_id,
         )
 
+    def source_chapters(self) -> tuple["SourceChapter", ...]:
+        """Return cached typed source-body real chapter declarations."""
+        if self._source_chapters_cache is None:
+            from lawvm.finland.amendment_chapter_precreate import source_chapters_from_tree
+
+            self._source_chapters_cache = source_chapters_from_tree(self.muutos_tree)
+        return self._source_chapters_cache
+
     def precreate_apply_chapters(
         self,
         *,
@@ -508,6 +522,7 @@ class AmendmentSourceModel:
                 amendment_id=amendment_id,
                 vts_ops_enrich_done=vts_ops_enrich_done,
                 johto=johto,
+                source_chapters=self.source_chapters(),
             )
         )
 

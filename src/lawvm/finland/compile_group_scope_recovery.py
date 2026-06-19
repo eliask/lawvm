@@ -105,6 +105,27 @@ def _group_has_explicit_chapter_scope(group_ops: list[AmendmentOp]) -> bool:
     return False
 
 
+def _group_has_scope_that_overrides_body_wrapper(
+    group_ops: list[AmendmentOp],
+    *,
+    target_chapter: str,
+) -> bool:
+    """Return True when earlier scope recovery owns a non-body target chapter."""
+    for op in group_ops:
+        witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if (
+            witness is not None
+            and witness.resolved_chapter == target_chapter
+            and witness.source in {"live_stem_host", "explicit_scope_rewrite"}
+        ):
+            return True
+    return False
+
+
 def _body_chapter_corrected_ops(
     group_ops: list[AmendmentOp],
     *,
@@ -270,6 +291,20 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and re.fullmatch(r"\d+[a-z]+", body_chapter, re.I) is not None
     )
+    body_chapter_is_live = (
+        body_chapter is not None
+        and request.master.find_chapter(body_chapter) is not None
+    )
+    body_wrapper_overridden_by_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and not body_chapter_is_live
+        and _group_has_scope_that_overrides_body_wrapper(
+            request.group_ops,
+            target_chapter=request.target_chapter,
+        )
+    )
     group_targets_whole_section = any(
         op.target_unit_kind == "section"
         and _norm_num_token(op.target_section or "") == request.target_norm
@@ -291,6 +326,7 @@ def _maybe_apply_body_chapter_insert_correction(
             )
         )
         and request.source_model.body_has_real_chapter_container(body_chapter)
+        and not body_wrapper_overridden_by_scope
     )
     if body_chapter is not None and (
         group_targets_whole_section
@@ -298,7 +334,6 @@ def _maybe_apply_body_chapter_insert_correction(
             not request.target_chapter
             or body_chapter_is_subchapter
             or (not explicit_chapter_scoped and body_chapter == request.target_chapter)
-            or body_chapter == request.target_chapter
         )
     ):
         sibling_consensus_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(

@@ -127,6 +127,7 @@ def test_apply_executor_precreates_chapters_through_source_model() -> None:
     assert "AmendmentSourceModel.from_tree" not in source
     assert "request.muutos_tree" not in source
     assert "source_model.precreate_apply_chapters(" in source
+    assert "source_chapters=self.source_chapters()" in _source("src/lawvm/finland/source_model.py")
     assert "import lxml.etree as etree" not in boundary_source
     assert "etree._Element" not in boundary_source
     assert "muutos_tree" not in boundary_source

@@ -91,6 +91,7 @@ class PrecreateApplyChaptersRequest:
     amendment_id: str
     vts_ops_enrich_done: bool
     johto: str = ""
+    source_chapters: tuple[SourceChapter, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +156,14 @@ def _source_chapters(muutos_body: etree._Element) -> tuple[SourceChapter, ...]:
             )
         )
     return tuple(chapters)
+
+
+def source_chapters_from_tree(muutos_tree: etree._Element) -> tuple[SourceChapter, ...]:
+    """Return typed real chapter declarations from an amendment source tree."""
+    muutos_body = muutos_tree.find(".//{*}body")
+    if muutos_body is None:
+        return ()
+    return _source_chapters(muutos_body)
 
 
 def _chapter_heading_anchors(johto: str) -> dict[str, str]:
@@ -275,7 +284,7 @@ def precreate_apply_chapters(
 
     chapterization_labels = _chapterization_required_labels(
         request.state,
-        muutos_body,
+        request.source_chapters or _source_chapters(muutos_body),
         request.johto,
     )
     required_real_chapters = {
@@ -312,7 +321,7 @@ def precreate_apply_chapters(
     )
     migrated_state, membership_migrations = _migrate_flat_sections_into_source_chapters(
         pseudo_chapters.state,
-        muutos_body,
+        request.source_chapters or _source_chapters(muutos_body),
         request.johto,
         created_refs=real_chapters.created_refs,
     )
@@ -326,7 +335,7 @@ def precreate_apply_chapters(
 
 def _chapterization_required_labels(
     state: ReplayState,
-    muutos_body: etree._Element,
+    source_chapters: tuple[SourceChapter, ...],
     johto: str,
 ) -> set[tuple[str, str]]:
     anchors = _chapter_heading_anchors(johto)
@@ -334,7 +343,7 @@ def _chapterization_required_labels(
     if not anchors and not unnumbered_anchor_labels:
         return set()
     required: set[tuple[str, str]] = set()
-    for chapter in _source_chapters(muutos_body):
+    for chapter in source_chapters:
         source_start_label = chapter.section_labels[0] if chapter.section_labels else ""
         if (
             chapter.chapter_label not in anchors
@@ -349,7 +358,7 @@ def _chapterization_required_labels(
 
 def _chapter_start_labels(
     *,
-    muutos_body: etree._Element,
+    source_chapters: tuple[SourceChapter, ...],
     johto: str,
     created_refs: tuple[ChapterRef, ...],
 ) -> tuple[tuple[str, str, str], ...]:
@@ -359,7 +368,7 @@ def _chapter_start_labels(
     anchors = _chapter_heading_anchors(johto)
     unnumbered_anchor_labels = _unnumbered_chapter_heading_anchor_labels(johto)
     starts: list[tuple[str, str, str]] = []
-    for chapter in _source_chapters(muutos_body):
+    for chapter in source_chapters:
         chapter_ref = (chapter.part_label, chapter.chapter_label)
         if chapter_ref not in created:
             continue
@@ -518,13 +527,13 @@ def _flat_section_labels(tree: IRNode) -> tuple[str, ...]:
 
 def _migrate_flat_sections_into_source_chapters(
     state: ReplayState,
-    muutos_body: etree._Element,
+    source_chapters: tuple[SourceChapter, ...],
     johto: str,
     *,
     created_refs: tuple[ChapterRef, ...],
 ) -> tuple[ReplayState, tuple[ChapterMembershipMigration, ...]]:
     starts = _chapter_start_labels(
-        muutos_body=muutos_body,
+        source_chapters=source_chapters,
         johto=johto,
         created_refs=created_refs,
     )
@@ -537,7 +546,7 @@ def _migrate_flat_sections_into_source_chapters(
         *(_flat_section_labels(state.ir)),
         *(
             _norm_num_token(label)
-            for chapter in _source_chapters(muutos_body)
+            for chapter in source_chapters
             for label in chapter.section_labels
             if label
         ),

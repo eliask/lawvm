@@ -1757,6 +1757,14 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
         target_part=op.target_part,
     ):
         return None
+    if body_scope is not None:
+        body_part, body_chapter = body_scope
+        if body_part == op.target_part and _container_path_exists_in_master(
+            master=master,
+            part=body_part,
+            chapter=body_chapter,
+        ):
+            return None
     if op.target_chapter is not None and master.find_section_path(
         section_label,
         op.target_chapter,

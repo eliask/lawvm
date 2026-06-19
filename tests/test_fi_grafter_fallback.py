@@ -4698,6 +4698,169 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
     )
 
 
+def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chapter() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="9",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="62"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>1 luku</num>
+                <section><num>62 a §</num><content><p>payload 62a</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_62a_inferred_home_chapter",
+        op_type="INSERT",
+        target_section="62a",
+        target_unit_kind="section",
+        target_chapter="9",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source="live_stem_host",
+            confidence="inferred",
+            resolved_chapter="9",
+        ),
+        source_statute="2010/661",
+        lo=LegalOperation(
+            op_id="insert_62a_inferred_home_chapter",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "9"), ("section", "62a"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "62a",
+        "9",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_chapter == "9"
+    assert rop.scope_confidence is not None
+    assert rop.scope_confidence.source == "live_stem_host"
+    assert rop.scope_confidence.resolved_chapter == "9"
+    assert rop.op.lo is not None
+    assert rop.op.lo.target.path == (("chapter", "9"), ("section", "62a"))
+    assert not any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="6", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>6 luku</num>
+                <section><num>37 a §</num><content><p>payload 37a</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a_inferred_home_chapter",
+        op_type="INSERT",
+        target_section="37a",
+        target_unit_kind="section",
+        target_chapter="5",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source="live_stem_host",
+            confidence="inferred",
+            resolved_chapter="5",
+        ),
+        source_statute="2025/500",
+        lo=LegalOperation(
+            op_id="insert_37a_inferred_home_chapter",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "5"), ("section", "37a"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "37a",
+        "5",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_chapter == "6"
+    assert rop.op.lo is not None
+    assert rop.op.lo.target.path == (("chapter", "6"), ("section", "37a"))
+    assert any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        and finding.detail["body_chapter"] == "6"
+        and finding.detail["target_chapter"] == "5"
+        for finding in result.findings()
+    )
+
+
 def test_compile_group_retargets_descendant_insert_from_body_wrapper_to_live_section() -> None:
     master = ReplayState(
         ir=IRNode(
@@ -10480,7 +10643,7 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
     assert got == "6"
 
 
-def test_enrich_ops_prefers_letter_suffix_stem_host_before_body_wrapper_for_unscoped_insert() -> None:
+def test_enrich_ops_prefers_live_body_chapter_before_letter_suffix_stem_host_for_unscoped_insert() -> None:
     master = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
@@ -10491,6 +10654,49 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_body_wrapper_for_unsc
                     children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
                 ),
                 IRNode(kind=IRNodeKind.CHAPTER, label="6", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 luku</num>
+            <section>
+              <num>37 a §</num>
+              <content><p>new section</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="37a",
+    )
+
+    got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
+
+    assert len(got) == 1
+    assert got[0].target_chapter == "6"
+    assert got[0].witness_rule_id == "fi_body_chapter_scope_from_source_body"
+    assert got[0].scope_confidence is not None
+    assert got[0].scope_confidence.source == "carry_forward"
+    assert got[0].scope_confidence.resolved_chapter == "6"
+
+
+def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_for_unscoped_insert() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
             ),
         )
     )
