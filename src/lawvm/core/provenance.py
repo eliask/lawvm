@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from lawvm.core.mutation_boundary import TreePath
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExpiryOverride:
     """One link in a temporary amendment's expiry extension chain."""
 
@@ -30,7 +30,7 @@ class ExpiryOverride:
         object.__setattr__(self, "section_labels", labels)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OperationSource:
     """Provenance for a legal operation.
 
@@ -72,7 +72,7 @@ class OperationSource:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MigrationEvent:
     """Address continuity through an explicit migration event."""
 
