@@ -541,6 +541,7 @@ class SurfaceTextSpanPlacer:
     """
 
     segments_by_date: dict[str, list[RenderedTextSegment]]
+    known_locators: frozenset[str] | None = None
     _cache: Dict[tuple[str, str], list[tuple[str, RenderedTextSegment, int]]] = (
         dataclasses.field(default_factory=dict)
     )
@@ -614,6 +615,38 @@ class SurfaceTextSpanPlacer:
         self,
     ) -> dict[str, list[tuple[str, list[RenderedTextSegment]]]]:
         by_locator_date: dict[str, dict[str, list[RenderedTextSegment]]] = {}
+        if self.known_locators is not None:
+            single_part_locators = {
+                locator for locator in self.known_locators if locator and "/" not in locator
+            }
+            multi_part_locators_by_width: dict[int, set[str]] = {}
+            for locator in self.known_locators:
+                if not locator or "/" not in locator:
+                    continue
+                width = len(locator.split("/"))
+                multi_part_locators_by_width.setdefault(width, set()).add(locator)
+            for date, segments in self.segments_by_date.items():
+                for segment in segments:
+                    parts = segment.address.split("/")
+                    for part in parts:
+                        if part in single_part_locators:
+                            by_locator_date.setdefault(part, {}).setdefault(
+                                date, []
+                            ).append(segment)
+                    for width, locators in multi_part_locators_by_width.items():
+                        if width > len(parts):
+                            continue
+                        for start in range(len(parts) - width + 1):
+                            locator = "/".join(parts[start : start + width])
+                            if locator in locators:
+                                by_locator_date.setdefault(locator, {}).setdefault(
+                                    date, []
+                                ).append(segment)
+            return {
+                locator: list(by_date.items())
+                for locator, by_date in by_locator_date.items()
+            }
+
         for date, segments in self.segments_by_date.items():
             for segment in segments:
                 parts = segment.address.split("/")
@@ -722,7 +755,12 @@ def place_lawvm_interlinks(
     segments_by_date: dict[str, list[RenderedTextSegment]],
 ) -> list[LawvmInterlinkRow]:
     placed: list[LawvmInterlinkRow] = []
-    placer = SurfaceTextSpanPlacer(segments_by_date)
+    known_locators = frozenset(
+        _normalize_interlink_locator(row.source_locator)
+        for row in rows
+        if not row.rendered_address and _has_placeable_surface(row)
+    )
+    placer = SurfaceTextSpanPlacer(segments_by_date, known_locators=known_locators)
     for row in rows:
         if row.rendered_address:
             placed.append(row)

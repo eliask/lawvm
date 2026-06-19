@@ -32,7 +32,10 @@ from lawvm.finland.interlink_targets import (
 )
 from lawvm.finland.ops import FailedOp
 from lawvm.tools import export_transition_graph as etg
-from lawvm.tools.transition_graph_interlinks import LawvmInterlinkTargetRow
+from lawvm.tools.transition_graph_interlinks import (
+    LawvmInterlinkTargetRow,
+    SurfaceTextSpanPlacer,
+)
 from lawvm.tools.transition_graph_jurisdictions import transition_graph_adapter_for_jurisdiction
 
 
@@ -873,6 +876,51 @@ def test_lawvm_interlink_placement_token_index_keeps_subtoken_candidates() -> No
         )
         for link in placed
     ] == [("2010-01-01", "section:1", 0, 1, 5)]
+
+
+def test_surface_text_placer_known_locator_index_matches_default_index() -> None:
+    segments_by_date = {
+        "2010-01-01": [
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="part:1/chapter:2/section:3/subsection:4",
+                segment_index=0,
+                text="alpha beta",
+            ),
+            etg.RenderedTextSegment(
+                date="2010-01-01",
+                address="part:1/chapter:2/section:5",
+                segment_index=1,
+                text="alpha beta",
+            ),
+        ],
+        "2015-01-01": [
+            etg.RenderedTextSegment(
+                date="2015-01-01",
+                address="part:1/chapter:2/section:3/subsection:4",
+                segment_index=0,
+                text="alpha beta",
+            )
+        ],
+    }
+
+    default = SurfaceTextSpanPlacer(segments_by_date).place(
+        "alpha beta",
+        "section:3/subsection:4",
+    )
+    known = SurfaceTextSpanPlacer(
+        segments_by_date,
+        known_locators=frozenset({"section:3/subsection:4"}),
+    ).place(
+        "alpha beta",
+        "section:3/subsection:4",
+    )
+
+    assert known == default
+    assert [(date, segment.address, start) for date, segment, start in known] == [
+        ("2010-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
+        ("2015-01-01", "part:1/chapter:2/section:3/subsection:4", 0),
+    ]
 
 
 @pytest.mark.parametrize(
