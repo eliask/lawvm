@@ -211,6 +211,77 @@ class TestMigrationLedgerUnit:
         ) == _addr(("chapter", "2"), ("section", "5"))
         assert calls == 2
 
+    def test_unmatched_prefix_migration_query_skips_core_resolver(self, monkeypatch) -> None:
+        import lawvm.finland.migration_ledger as migration_ledger
+
+        calls = 0
+        real_resolver = migration_ledger.current_address_with_prefix_migrations_from_event_signatures
+
+        def counted_resolver(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_resolver(*args, **kwargs)
+
+        monkeypatch.setattr(
+            migration_ledger,
+            "current_address_with_prefix_migrations_from_event_signatures",
+            counted_resolver,
+        )
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("chapter", "1")),
+            _addr(("chapter", "2")),
+            effective="2020-01-01",
+            source_statute="2020/1",
+        )
+
+        assert ledger.current_address_with_prefix_migrations(_addr(("section", "9"))) == _addr(
+            ("section", "9")
+        )
+        assert calls == 0
+
+        assert ledger.current_address_with_prefix_migrations(
+            _addr(("chapter", "1"), ("section", "9"))
+        ) == _addr(("chapter", "2"), ("section", "9"))
+        assert calls == 1
+
+    def test_unmatched_signature_prefix_query_skips_core_resolver(self, monkeypatch) -> None:
+        import lawvm.finland.migration_ledger as migration_ledger
+
+        calls = 0
+        real_core_resolver = migration_ledger._core_prefix_migration_signatures
+
+        def counted_core_resolver(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_core_resolver(*args, **kwargs)
+
+        monkeypatch.setattr(
+            migration_ledger,
+            "_core_prefix_migration_signatures",
+            counted_core_resolver,
+        )
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("chapter", "1")),
+            _addr(("chapter", "2")),
+            effective="2020-01-01",
+            source_statute="2020/1",
+        )
+        signatures = migration_ledger.prefix_migration_event_signatures(ledger.events)
+
+        assert migration_ledger.current_address_with_prefix_migrations_from_event_signatures(
+            _addr(("section", "9")),
+            signatures,
+        ) == _addr(("section", "9"))
+        assert calls == 0
+
+        assert migration_ledger.current_address_with_prefix_migrations_from_event_signatures(
+            _addr(("chapter", "1"), ("section", "9")),
+            signatures,
+        ) == _addr(("chapter", "2"), ("section", "9"))
+        assert calls == 1
+
     def test_query_lineage_both_directions(self) -> None:
         ledger = MigrationLedger()
         addr_a = _addr(("section", "1"))

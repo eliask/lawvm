@@ -62,6 +62,40 @@ def _normalize_address(address: LegalAddress) -> LegalAddress:
     return LegalAddress(path=normalize_address_path(address.path), special=address.special)
 
 
+@lru_cache(maxsize=1024)
+def _prefix_source_paths_from_event_signatures(
+    migration_event_signatures: tuple[PrefixMigrationEventSignature, ...],
+    as_of_date: str,
+    not_before: str,
+) -> frozenset[TreePath]:
+    return frozenset(
+        normalize_address_path(event_signature.from_path)
+        for event_signature in migration_event_signatures
+        if event_signature.from_path
+        and not (as_of_date and event_signature.effective and event_signature.effective > as_of_date)
+        and not (not_before and event_signature.effective and event_signature.effective < not_before)
+    )
+
+
+def _address_may_match_prefix_source(
+    normalized_address: LegalAddress,
+    source_paths: frozenset[TreePath],
+) -> bool:
+    if not source_paths:
+        return False
+    path = normalized_address.path
+    return any(path[:depth] in source_paths for depth in range(1, len(path) + 1))
+
+
+def _unmigrated_normalized_address_result(
+    original_address: LegalAddress,
+    normalized_address: LegalAddress,
+) -> LegalAddress:
+    if len(normalized_address.path) == len(original_address.path):
+        return normalized_address
+    return original_address
+
+
 def migration_lower_bound_for_op(op: object) -> str:
     """Lower-bound enactment date for following prefix migrations of *op*'s address.
 
@@ -138,6 +172,13 @@ def current_address_with_prefix_migrations_from_event_signatures(
 ) -> LegalAddress:
     """Finland wrapper over precomputed shared prefix migration signatures."""
     normalized_original = _normalize_address(original_address)
+    source_paths = _prefix_source_paths_from_event_signatures(
+        migration_event_signatures,
+        as_of_date,
+        not_before,
+    )
+    if not _address_may_match_prefix_source(normalized_original, source_paths):
+        return _unmigrated_normalized_address_result(original_address, normalized_original)
     migrated = _core_prefix_migration_signatures(
         original_address,
         migration_event_signatures,
@@ -146,9 +187,7 @@ def current_address_with_prefix_migrations_from_event_signatures(
         normalize_address_fn=_normalize_address,
     )
     if migrated == normalized_original:
-        if len(normalized_original.path) == len(original_address.path):
-            return normalized_original
-        return original_address
+        return _unmigrated_normalized_address_result(original_address, normalized_original)
     return migrated
 
 
@@ -159,12 +198,18 @@ class MigrationLedger:
     one amendment-at-a-time application is the norm.
     """
 
-    __slots__ = ("_events", "_prefix_cache", "_prefix_signature_cache")
+    __slots__ = (
+        "_events",
+        "_prefix_cache",
+        "_prefix_signature_cache",
+        "_prefix_source_paths_cache",
+    )
 
     def __init__(self, events: Iterable[MigrationEvent] = ()) -> None:
         self._events: list[MigrationEvent] = list(events)
         self._prefix_cache: dict[tuple[LegalAddress, str, str], LegalAddress] = {}
         self._prefix_signature_cache: tuple[PrefixMigrationEventSignature, ...] | None = None
+        self._prefix_source_paths_cache: frozenset[TreePath] | None = None
 
     # ------------------------------------------------------------------
     # Recording
@@ -203,6 +248,7 @@ class MigrationLedger:
         self._events.append(event)
         self._prefix_cache.clear()
         self._prefix_signature_cache = None
+        self._prefix_source_paths_cache = None
         return event
 
     def record_move(
@@ -229,6 +275,7 @@ class MigrationLedger:
         self._events.append(event)
         self._prefix_cache.clear()
         self._prefix_signature_cache = None
+        self._prefix_source_paths_cache = None
         return event
 
     # ------------------------------------------------------------------
@@ -256,6 +303,18 @@ class MigrationLedger:
         """
         return current_address_from_migration_events(original_address, tuple(self._events), as_of_date=as_of_date)
 
+    def _prefix_migration_can_match(self, normalized_address: LegalAddress) -> bool:
+        if self._prefix_source_paths_cache is None:
+            self._prefix_source_paths_cache = frozenset(
+                _normalize_address(event.from_address).path
+                for event in self._events
+                if event.from_address.path
+            )
+        return _address_may_match_prefix_source(
+            normalized_address,
+            self._prefix_source_paths_cache,
+        )
+
     def current_address_with_prefix_migrations(
         self,
         original_address: LegalAddress,
@@ -279,6 +338,11 @@ class MigrationLedger:
         cached = self._prefix_cache.get(key)
         if cached is not None:
             return cached
+        normalized_original = _normalize_address(original_address)
+        if not self._prefix_migration_can_match(normalized_original):
+            resolved = _unmigrated_normalized_address_result(original_address, normalized_original)
+            self._prefix_cache[key] = resolved
+            return resolved
         if self._prefix_signature_cache is None:
             self._prefix_signature_cache = prefix_migration_event_signatures(
                 tuple(self._events)
