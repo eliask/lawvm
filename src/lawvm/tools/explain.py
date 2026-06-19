@@ -76,6 +76,7 @@ from lawvm.finland.statute import ReplayState, StatuteContext
 
 PRE_BLAME_IMPROVEMENT_EPS = 0.01
 _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_editorial()
+_SEQUENCE_MATCHER_SNIPPET_CHAR_BUDGET = 20_000
 
 
 def _blame_title_snippet(blame_op: dict[str, Any], limit: int = 50) -> str:
@@ -374,12 +375,49 @@ def _load_johtolause(source_amendment_id: str) -> str:
 # Divergence snippet via difflib
 # ---------------------------------------------------------------------------
 
+def _linear_divergence_snippet(
+    r_text: str,
+    o_text: str,
+    *,
+    ctx: int,
+    max_len: int,
+) -> str:
+    """Return a bounded divergence snippet without quadratic diff work."""
+    prefix = 0
+    shortest = min(len(r_text), len(o_text))
+    while prefix < shortest and r_text[prefix] == o_text[prefix]:
+        prefix += 1
+
+    r_suffix = len(r_text)
+    o_suffix = len(o_text)
+    while (
+        r_suffix > prefix
+        and o_suffix > prefix
+        and r_text[r_suffix - 1] == o_text[o_suffix - 1]
+    ):
+        r_suffix -= 1
+        o_suffix -= 1
+
+    r_lo = max(0, prefix - ctx)
+    o_lo = max(0, prefix - ctx)
+    r_snip = r_text[
+        r_lo : min(len(r_text), max(prefix + ctx, r_suffix))
+    ].replace("\n", " ")[:max_len]
+    o_snip = o_text[
+        o_lo : min(len(o_text), max(prefix + ctx, o_suffix))
+    ].replace("\n", " ")[:max_len]
+    return f'replay: "{r_snip}" / oracle: "{o_snip}"'
+
+
 def _find_divergence_snippet(r_text: str, o_text: str, ctx: int = 15,
                               max_len: int = 90) -> str:
     """Find the first significant difference between two texts.
 
     Returns a human-readable string showing the diverging fragment in both.
     """
+    if len(r_text) + len(o_text) > _SEQUENCE_MATCHER_SNIPPET_CHAR_BUDGET:
+        return _linear_divergence_snippet(r_text, o_text, ctx=ctx, max_len=max_len)
+
     s = difflib.SequenceMatcher(None, r_text, o_text, autojunk=False)
     for op, i1, i2, j1, j2 in s.get_opcodes():
         if op == 'equal':
