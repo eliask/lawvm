@@ -108,6 +108,48 @@ def test_get_johtolause_keeps_formula_text_outside_blocks_when_it_is_operative()
     assert "lisätään 18 §:ään uusi 2 momentti" in result
 
 
+def test_get_johtolause_keeps_as_amended_qualifier_citations() -> None:
+    xml = _xml(
+        "<preamble>"
+        "  <formula name='enactingClause'>"
+        "    <blockContainer>"
+        "      <block name='substitutions'>"
+        "muutetaan öljyvahinkojen torjunnasta annetun asetuksen ( 636/1993 ) "
+        "3 §, 4 §, 5 §:n 2 momentti, sellaisina kuin ne ovat asetuksessa "
+        "(1410/2004), 6 § seuraavasti:"
+        "      </block>"
+        "    </blockContainer>"
+        "  </formula>"
+        "</preamble>"
+    )
+
+    result = " ".join(get_johtolause(xml).split())
+
+    assert "( 636/1993 ) 3 §, 4 §, 5 §:n 2 momentti" in result
+    assert "(1410/2004), 6 §" in result
+    assert not result.startswith("muutetaan (1410/2004)")
+
+
+def test_get_johtolause_strips_cross_law_descriptive_context() -> None:
+    xml = _xml(
+        "<preamble>"
+        "  <formula name='enactingClause'>"
+        "    <blockContainer>"
+        "      <block name='substitutions'>"
+        "muutetaan valmiuslain 106 §:n 1 momentissa ja 107 §:ssä säädettyjen "
+        "toimivaltuuksien käyttöönotosta annetun asetuksen (186/2021) "
+        "2 ja 3 § seuraavasti:"
+        "      </block>"
+        "    </blockContainer>"
+        "  </formula>"
+        "</preamble>"
+    )
+
+    result = " ".join(get_johtolause(xml).split())
+
+    assert result == "muutetaan (186/2021) 2 ja 3 § seuraavasti:"
+
+
 def test_get_operative_body_repeal_candidate_extracts_body_prose_repeal() -> None:
     xml = _xml(
         "<preamble><formula name='enactingClause'><p>säädetään:</p></formula></preamble>"

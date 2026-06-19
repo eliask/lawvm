@@ -159,6 +159,7 @@ _CROSS_LAW_DESC_PAT = re.compile(
     r'(?:§:[nä]|§:ss[aä])(?:(?!\(\s*\d{3,4}/\d{4}\s*\)).){0,400}+\(\s*(\d{3,4}/\d{4})\s*\)',
     re.DOTALL,
 )
+_AS_AMENDED_QUALIFIER_PAT = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b", re.IGNORECASE)
 _NOMINATIVE_TARGET_PAT = re.compile(r'\d+\s*(?:ja\s+\d+\s*)?§(?!\s*:)')
 _OPERATIVE_KEYWORD_PAT = re.compile(
     r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b",
@@ -239,6 +240,8 @@ def _strip_cross_law_description(text: str) -> str:
     """
     m = _CROSS_LAW_DESC_PAT.search(text)
     if not m:
+        return text
+    if _AS_AMENDED_QUALIFIER_PAT.search(m.group(0)):
         return text
     after = text[m.end():]
     if not _NOMINATIVE_TARGET_PAT.search(after):
