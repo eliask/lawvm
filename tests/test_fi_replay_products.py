@@ -1849,9 +1849,11 @@ def test_replay_xml_can_skip_full_products_for_fast_bench() -> None:
     assert replay.materialization_spec is None
 
 
-def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -> None:
+def test_fold_timeline_backfill_materializes_restructure_renumbered_sections(monkeypatch) -> None:
     """Fold-owned sections must survive PIT when only payload-less RENUMBER LOs exist."""
     from lawvm.core.provenance import MigrationEvent
+    import lawvm.core.timeline as timeline_mod
+    import lawvm.finland.replay_fold_timeline_backfill as backfill_mod
     from lawvm.finland.replay_fold_timeline_backfill import FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID
 
     def _section(label: str, heading: str) -> IRNode:
@@ -1953,6 +1955,17 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -
             source_statute="2020/1256",
         ),
     )
+    compile_calls = 0
+    real_compile_timelines = timeline_mod.compile_timelines
+
+    def counting_compile_timelines(*args, **kwargs):
+        nonlocal compile_calls
+        compile_calls += 1
+        return real_compile_timelines(*args, **kwargs)
+
+    monkeypatch.setattr(timeline_mod, "compile_timelines", counting_compile_timelines)
+    monkeypatch.setattr(backfill_mod, "compile_timelines", counting_compile_timelines)
+
     products = build_replay_products(
         ctx=ctx,
         statute_id="synthetic/fold-backfill",
@@ -1964,6 +1977,7 @@ def test_fold_timeline_backfill_materializes_restructure_renumbered_sections() -
     addr_210 = LegalAddress(path=(("part", "5"), ("chapter", "25"), ("section", "210")))
 
     assert products.timelines is not None
+    assert compile_calls == 1
     assert addr_209 in products.timelines
     assert addr_210 in products.timelines
     assert products.materialized_state.find_section("209", "25", "5") is not None

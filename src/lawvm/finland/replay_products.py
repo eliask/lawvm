@@ -11,7 +11,7 @@ from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
-from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
@@ -1337,6 +1337,105 @@ def _select_pit_lineage_inputs(
     )
 
 
+def _day_after_iso_for_backfill(effective: str) -> str:
+    from datetime import date, timedelta
+
+    try:
+        return (date.fromisoformat(effective) + timedelta(days=1)).isoformat()
+    except ValueError:
+        return effective
+
+
+def _active_temporary_expiry_for_backfill_insert(
+    timelines: dict["LegalAddress", ProvisionTimeline],
+    target: "LegalAddress",
+    effective: str,
+) -> str:
+    """Mirror compile_timelines' temporary-expiry inheritance for backfill inserts."""
+    from lawvm.core.timeline import select_active_version, select_background_version
+
+    timeline = timelines.get(target)
+    if timeline is not None:
+        previous = select_active_version(timeline, effective)
+        if previous is not None:
+            if previous.expires and previous.expires > _day_after_iso_for_backfill(effective):
+                background = select_background_version(
+                    timeline,
+                    effective,
+                    query_type="governing",
+                    territory=None,
+                )
+                if background is None:
+                    return previous.expires
+            return ""
+
+    current = LegalAddress(path=target.path[:-1])
+    while current.path:
+        timeline = timelines.get(current)
+        if timeline is not None:
+            previous = select_active_version(timeline, effective)
+            if previous is not None and previous.expires and previous.expires > effective:
+                return previous.expires
+        current = LegalAddress(path=current.path[:-1])
+    return ""
+
+
+def _with_fold_backfill_versions(
+    raw_timelines: dict["LegalAddress", ProvisionTimeline],
+    backfill_ops: tuple[LegalOperation, ...],
+) -> dict["LegalAddress", ProvisionTimeline]:
+    """Return timelines with replay-fold backfill insert ops projected directly.
+
+    The fold-backfill operation family is deliberately narrow: exact-section
+    INSERTs with an already-stamped payload and an OperationSource effective date.
+    Recompiling the entire statute operation stream for every transition date
+    just to append those versions is equivalent but very expensive.
+    """
+    if not backfill_ops:
+        return raw_timelines
+
+    timelines = dict(raw_timelines)
+    copied: set[LegalAddress] = set()
+    for op in backfill_ops:
+        if op.payload is None or op.source is None:
+            continue
+        effective = op.source.effective
+        if not effective:
+            continue
+        target = op.target
+        timeline = timelines.get(target)
+        if timeline is None:
+            timeline = ProvisionTimeline(address=target)
+            timelines[target] = timeline
+            copied.add(target)
+        elif target not in copied:
+            timeline = ProvisionTimeline(address=timeline.address, versions=list(timeline.versions))
+            timelines[target] = timeline
+            copied.add(target)
+
+        expires = op.source.expires or _active_temporary_expiry_for_backfill_insert(
+            raw_timelines,
+            target,
+            effective,
+        )
+        timeline.versions.append(
+            ProvisionVersion(
+                effective=effective,
+                enacted=op.source.enacted,
+                expires=expires,
+                variant_kind="temporary" if expires else "permanent",
+                content=op.payload,
+                source=op.source,
+                applicability=list(op.applicability),
+                content_hash=irnode_content_hash(op.payload),
+            )
+        )
+
+    for address in copied:
+        timelines[address].versions.sort(key=lambda version: (version.effective, version.enacted))
+    return timelines
+
+
 def build_replay_products(
     *,
     ctx: "StatuteContext",
@@ -1501,12 +1600,9 @@ def build_replay_products(
             )
     _assert_finland_timeline_safe_ops(lo_ops)
     if fold_timeline_backfills.records:
-        raw_timelines = compile_timelines(
-            base_ir,
-            lo_ops,
-            base_enacted_date=_base_enacted_date,
-            label_norm=fi_label_norm,
-            temporal_events=resolved_temporal_events,
+        raw_timelines = _with_fold_backfill_versions(
+            fold_timeline_backfills.raw_timelines,
+            fold_timeline_backfills.backfill_ops,
         )
         timelines = _rekey_timelines_with_migration_events(
             raw_timelines,

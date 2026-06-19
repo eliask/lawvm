@@ -39,6 +39,7 @@ class FoldTimelineBackfillResult:
     records: tuple[FoldTimelineBackfillRecord, ...]
     raw_timelines: dict[LegalAddress, ProvisionTimeline]
     rekeyed_timelines: dict[LegalAddress, ProvisionTimeline]
+    backfill_ops: tuple[LegalOperation, ...] = ()
 
 
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
@@ -241,6 +242,7 @@ def append_fold_timeline_backfill_ops(
     )
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
+    backfill_ops: list[LegalOperation] = []
     for path, node in _iter_fold_section_nodes(replay_fold_ir):
         if _content_is_repeal_placeholder(node):
             continue
@@ -257,24 +259,24 @@ def append_fold_timeline_backfill_ops(
         op_id = f"snapshot_section_{node.label}_fold_timeline_backfill"
         if op_id in existing_op_ids:
             continue
-        lo_ops.append(
-            LegalOperation(
-                op_id=op_id,
-                sequence=0,
-                action=StructuralAction.INSERT,
-                target=address,
-                payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
-                source=OperationSource(
-                    statute_id=source_statute,
-                    title="Fold timeline backfill",
-                    enacted=effective,
-                    effective=effective,
-                    raw_text="",
-                ),
-                group_id=f"finland-fold-backfill:{source_statute}:{address}",
-                witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
-            )
+        backfill_op = LegalOperation(
+            op_id=op_id,
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=address,
+            payload=_stamp_exact_section_snapshot_payload(copy.deepcopy(node)),
+            source=OperationSource(
+                statute_id=source_statute,
+                title="Fold timeline backfill",
+                enacted=effective,
+                effective=effective,
+                raw_text="",
+            ),
+            group_id=f"finland-fold-backfill:{source_statute}:{address}",
+            witness_rule_id=FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID,
         )
+        lo_ops.append(backfill_op)
+        backfill_ops.append(backfill_op)
         existing_op_ids.add(op_id)
         records.append(
             FoldTimelineBackfillRecord(
@@ -287,6 +289,7 @@ def append_fold_timeline_backfill_ops(
         records=tuple(records),
         raw_timelines=preview.raw_timelines,
         rekeyed_timelines=preview.rekeyed_timelines,
+        backfill_ops=tuple(backfill_ops),
     )
 
 
