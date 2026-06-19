@@ -27,6 +27,17 @@ _HEADS: dict[str, tuple[str, bool, str]] = {
     "ohje": ("e_contract", False, "statute_head"),
     "ilmoitus": ("-Us->-Ukse-", False, "statute_head"),
     "direktiivi": ("vowel_final", False, "statute_head"),  # stable loan, no grad
+    # The historical CODES (-kaari): oikeudenkäymiskaari, maakaari, kauppakaari,
+    # perintökaari, ulosottokaari ... A Kotus-26 -i noun with an -e- oblique stem
+    # (kaaren / kaaressa / kaareen), no gradation.  A closed historical set
+    # (new codes are not minted) cited by name like any statute head.
+    "kaari": ("-i->-e-", False, "statute_head"),
+    # Constitutional / procedural instruments that carry their OWN nominal stem
+    # instead of ``laki``: ``valtiopäiväjärjestys`` (old parliament act), an
+    # organ's ``työjärjestys`` (rules of procedure), ``hallitusmuoto`` (the old
+    # constitution).  Compound-only by-name statute heads.
+    "järjestys": ("-Us->-Ukse-", False, "statute_head"),  # -> järjestyksen
+    "muoto": ("vowel_final", True, "statute_head"),  # t->d: muoto -> muodon
     # Agency / organ heads.
     "virasto": ("vowel_final", False, "agency"),  # no gradation
     "hallinto": ("vowel_final", True, "agency"),  # nt->nn: hallinnon
@@ -39,6 +50,7 @@ _HEADS: dict[str, tuple[str, bool, str]] = {
     "pykälä": ("vowel_final", False, "structural"),  # pl pykälien/pykäliä
     "momentti": ("vowel_final", True, "structural"),  # tt->t: momenteissa
     "kohta": ("vowel_final", True, "structural"),  # nt? no: ht->hd: kohdissa
+    "luku": ("vowel_final", True, "structural"),  # single-k k->v: luku -> luvun
 }
 
 

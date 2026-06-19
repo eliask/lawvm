@@ -160,6 +160,25 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # sanctioned must leave the graph through a named authorization object.
         "delegates_to",
         "sanctioned_by",
+        # A deontic core (deontic_core node) -> the actor_modal_frame node that
+        # carries its norm SUBJECT/addressee. The modal parse records the core's
+        # addressee_span (the overt subject NP preceding the cue); this edge binds
+        # the core to the actor_modal_frame whose span COVERS that addressee span
+        # (the production actor recognizer typed that subject). status "candidate"
+        # (one covering actor frame) or "ambiguous" (several; full set in payload).
+        # When the addressee is underspecified (impersonal/passive register) no
+        # subject is fixed by the text -> NO edge, a typed subject_underspecified
+        # diagnostic. Still a SURFACE candidate, never a legal conclusion (§D7) —
+        # the reading that this actor is the norm's legal subject must leave the
+        # graph through a named authorization object.
+        "norm_has_subject",
+        # An obligation/power deontic core (deontic_core node) -> a co-SENTENCE
+        # procedure_frame node (the process the obligation/power runs through).
+        # Sentence-local, candidate-not-asserted (one target "candidate"; several
+        # "ambiguous" with the full set in payload; none -> typed diagnostic),
+        # the same shape as delegates_to/sanctioned_by. A SURFACE candidate, never
+        # a legal conclusion (§D7).
+        "governed_by_procedure",
     }
 )
 

@@ -625,6 +625,12 @@ class DeonticFrameAttachmentPass:
                             targets=deleg_by_sent.get(sent_i, []),
                             edge_kind=EDGE_DELEGATES_TO,
                             rule_id=RULE_DELEGATES_TO,
+                            # delegates_to has a PRINCIPLED attachment index, not
+                            # mere co-occurrence: the delegating verb that mints the
+                            # power core is PART of the delegation_frame span, so a
+                            # delegation_frame whose span CONTAINS the core cue is
+                            # the one this power grants (see _resolved_target).
+                            resolve_by_containment=True,
                         )
                     )
                 elif core_kind in _SANCTIONABLE_KINDS:
@@ -671,6 +677,7 @@ class DeonticFrameAttachmentPass:
         targets: list[tuple[str, SourceSpanRef]],
         edge_kind: str,
         rule_id: str,
+        resolve_by_containment: bool = False,
     ) -> list[SurfaceEdgeSeed]:
         if not targets:
             self.unattached.append(
@@ -684,12 +691,53 @@ class DeonticFrameAttachmentPass:
                 )
             )
             return []
+        core_span = [core_ref.char_start, core_ref.char_end]
+
+        # PRINCIPLED ATTACHMENT (delegates_to): the delegating verb that mints a
+        # power core is PART of the delegation_frame span, so a frame whose span
+        # CONTAINS the core cue is the instrument this very power grants — a
+        # structural attachment index, strictly stronger than sentence
+        # co-occurrence. When EXACTLY ONE co-sentence frame contains the cue, the
+        # attachment is RESOLVED → one edge, status "asserted" (the construction's
+        # own confidence rides in payload["attachment"]="resolved_by_containment").
+        # When zero or several frames contain it, no principled pick exists; fall
+        # back to the co-occurrence candidate/ambiguous discipline below (never a
+        # silent pick).
+        if resolve_by_containment:
+            containing = [
+                (fid, fref)
+                for fid, fref in targets
+                if fref.char_start <= core_ref.char_start
+                and core_ref.char_end <= fref.char_end
+            ]
+            if len(containing) == 1:
+                frame_id, frame_ref = containing[0]
+                return [
+                    SurfaceEdgeSeed(
+                        edge_kind=edge_kind,
+                        src_local=core_id,
+                        dst_local=frame_id,
+                        rule_id=rule_id,
+                        status="asserted",
+                        payload={
+                            "core_kind": core_kind,
+                            "core_span": core_span,
+                            "frame_span": [
+                                frame_ref.char_start,
+                                frame_ref.char_end,
+                            ],
+                            "attachment": "resolved_by_containment",
+                            "source": "deontic_frame_cue_in_frame",
+                            "experimental": True,
+                        },
+                    )
+                ]
+
         # candidate-not-asserted: one target → "candidate"; several → one edge per
         # candidate, "ambiguous", each carrying the full candidate-frame set.
         ambiguous = len(targets) > 1
         edge_status = "ambiguous" if ambiguous else "candidate"
         candidate_spans = [[fref.char_start, fref.char_end] for _, fref in targets]
-        core_span = [core_ref.char_start, core_ref.char_end]
         out: list[SurfaceEdgeSeed] = []
         for frame_id, frame_ref in targets:
             payload: dict[str, object] = {
@@ -729,29 +777,414 @@ def deontic_frame_attachment_passes(
     return (DeonticFrameAttachmentPass(units=bundle.units),)
 
 
+# ── norm_has_subject — bind each deontic core to its norm SUBJECT/addressee ────
+#
+# The highest-EV, most self-contained Layer-2 deontic edge: the modal parse
+# already records, per core, the overt SUBJECT NP span (``addressee_span``) and
+# whether the addressee is UNDERSPECIFIED (the impersonal/passive register —
+# ``säädetään`` / ``on tehtävä`` with no overt subject). This pass binds the core
+# to the ACTOR node that owns that subject text — the production
+# ``actor_modal_frame`` node whose span COVERS the core's addressee span (the
+# production actor recognizer typed that very subject NP). It does NOT re-parse the
+# subject; it consumes the addressee span the modal parse already computed and joins
+# it to an existing actor node.
+#
+# Candidate-not-asserted (never a silent pick, never a fabricated subject):
+#   * addressee UNDERSPECIFIED (passive/impersonal) → NO edge; a typed
+#     ``UnattachedCore`` (``SUBJECT_UNDERSPECIFIED``) diagnostic. The text fixes no
+#     subject; the pass invents none.
+#   * addressee span present + EXACTLY ONE actor_modal_frame covers it → ONE edge,
+#     status ``"candidate"`` (a surface co-reference, not a legal-subject claim);
+#   * addressee span present + SEVERAL covering actor frames → ONE edge per frame,
+#     status ``"ambiguous"``, full candidate set in payload;
+#   * addressee span present + NO covering actor frame (the production actor
+#     recognizer emitted no node for this subject NP — a coordinate-bridge miss) →
+#     NO edge; a typed ``UnattachedCore`` (``NO_SUBJECT_NODE_FOR_ADDRESSEE``)
+#     diagnostic, never an invented subject.
+
+EDGE_NORM_HAS_SUBJECT = "norm_has_subject"
+
+PASS_ID_NORM_SUBJECT = "fi.norm_composition.norm_subject.v0"
+RULE_NORM_HAS_SUBJECT = "fi.norm_composition.norm_has_subject"
+
+#: The actor node kind a deontic core's subject binds to.
+ACTOR_FRAME_KIND = "actor_modal_frame"
+
+#: Why a deontic core produced no norm_has_subject edge (typed diagnostics).
+SUBJECT_UNDERSPECIFIED = "subject_underspecified"
+NO_SUBJECT_NODE_FOR_ADDRESSEE = "no_actor_node_for_addressee_span"
+
+
+def _spans_cover(outer: SourceSpanRef, start: int, end: int) -> bool:
+    """True when ``outer`` fully covers ``[start, end)`` (raw_text coordinates)."""
+    return outer.char_start <= start and end <= outer.char_end
+
+
+def _int_pair(value: object) -> tuple[int, int] | None:
+    """Narrow an ``object`` payload value to an ``[int, int]`` span pair, or None.
+
+    Node payload spans are typed ``object`` (the payload Mapping is untyped at the
+    value level), so this guards the addressee-span read before arithmetic.
+    """
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+    first, second = value[0], value[1]
+    if isinstance(first, int) and isinstance(second, int):
+        return first, second
+    return None
+
+
+@dataclass
+class NormSubjectAttachmentPass:
+    """Edge pass: deontic core → its norm SUBJECT (actor_modal_frame) NORM edge.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`. Joins
+    EXISTING ``deontic_core`` (source) and ``actor_modal_frame`` (target) nodes; it
+    mints no nodes and re-parses nothing. The core's ``addressee_span`` (computed by
+    the modal parse) is matched to the actor frame that COVERS it.
+
+    Underspecified (impersonal/passive) cores get a typed diagnostic, never a
+    fabricated subject; a present addressee with no covering actor node gets a
+    typed coordinate-bridge diagnostic. One covering actor → ``"candidate"``;
+    several → one edge per actor, ``"ambiguous"`` with the full set in payload.
+
+    Determinism: units in declared order; cores by char_start; covering actor
+    frames by char_start. The assembler recomputes graph_id over the edge set. The
+    pass needs no source text (it reads node payload spans only), but is built per-
+    statute for symmetry with the other Layer-2 passes.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_NORM_SUBJECT
+    reads_node_kinds: tuple[str, ...] = (CORE_NODE_KIND, ACTOR_FRAME_KIND)
+    emits_edge_kinds: tuple[str, ...] = (EDGE_NORM_HAS_SUBJECT,)
+    # Typed diagnostics for cores that produced no subject edge. NOT a graph
+    # element; read by the differential report.
+    unattached: list[UnattachedCore] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+        actor_index = _node_index_by_unit_kind(graph.nodes, ACTOR_FRAME_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            cores = core_index.get(unit_id, [])
+            if not cores:
+                continue
+            actors = actor_index.get(unit_id, [])
+            for nid, ref in cores:
+                node = graph.nodes[nid]
+                seeds.extend(
+                    self._core_subject_edges(
+                        unit_id=unit_id,
+                        core_id=nid,
+                        core_ref=ref,
+                        payload=node.payload,
+                        actors=actors,
+                    )
+                )
+        return tuple(seeds)
+
+    def _core_subject_edges(
+        self,
+        *,
+        unit_id: str,
+        core_id: str,
+        core_ref: SourceSpanRef,
+        payload: Mapping[str, object],
+        actors: list[tuple[str, SourceSpanRef]],
+    ) -> list[SurfaceEdgeSeed]:
+        core_kind = str(payload.get("kind"))
+        core_span = [core_ref.char_start, core_ref.char_end]
+
+        # Underspecified addressee (impersonal/passive register): the text fixes no
+        # subject. Tag it; never invent one.
+        if payload.get("addressee_underspecified"):
+            self._tag_subject(unit_id, core_kind, core_ref, SUBJECT_UNDERSPECIFIED)
+            return []
+
+        addressee = payload.get("addressee_span")
+        a_span = _int_pair(addressee)
+        if a_span is None:
+            # Neither an overt int span nor flagged underspecified — defensive; treat
+            # as underspecified (no subject to bind).
+            self._tag_subject(unit_id, core_kind, core_ref, SUBJECT_UNDERSPECIFIED)
+            return []
+        a_start, a_end = a_span
+
+        # The actor node(s) whose span covers the addressee NP — the production
+        # recognizer typed THIS subject. Deterministic by char_start.
+        covering = [
+            (aid, aref) for aid, aref in actors if _spans_cover(aref, a_start, a_end)
+        ]
+        if not covering:
+            # The modal parse found an overt subject NP, but no actor_modal_frame
+            # node backs it (coordinate-bridge miss). No asserted subject.
+            self._tag_subject(
+                unit_id, core_kind, core_ref, NO_SUBJECT_NODE_FOR_ADDRESSEE
+            )
+            return []
+
+        ambiguous = len(covering) > 1
+        edge_status = "ambiguous" if ambiguous else "candidate"
+        candidate_spans = [[aref.char_start, aref.char_end] for _, aref in covering]
+        out: list[SurfaceEdgeSeed] = []
+        for actor_id, actor_ref in covering:
+            payload_out: dict[str, object] = {
+                "core_kind": core_kind,
+                "core_span": core_span,
+                "addressee_span": [a_start, a_end],
+                "actor_span": [actor_ref.char_start, actor_ref.char_end],
+                "source": "deontic_core_addressee",
+                "experimental": True,
+            }
+            if ambiguous:
+                payload_out["candidate_actor_spans"] = candidate_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=EDGE_NORM_HAS_SUBJECT,
+                    src_local=core_id,
+                    dst_local=actor_id,
+                    rule_id=RULE_NORM_HAS_SUBJECT,
+                    status=edge_status,
+                    payload=payload_out,
+                )
+            )
+        return out
+
+    def _tag_subject(
+        self,
+        unit_id: str,
+        core_kind: str,
+        core_ref: SourceSpanRef,
+        reason: str,
+    ) -> None:
+        self.unattached.append(
+            UnattachedCore(
+                source_unit_id=unit_id,
+                edge_kind=EDGE_NORM_HAS_SUBJECT,
+                core_kind=core_kind,
+                core_char_start=core_ref.char_start,
+                core_char_end=core_ref.char_end,
+                reason=reason,
+            )
+        )
+
+
+def norm_subject_attachment_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[NormSubjectAttachmentPass, ...]:
+    """Build the per-statute deontic-core → norm-subject (norm_has_subject) pass.
+
+    Returns a one-tuple so the caller can splice it into the edge-pass sequence
+    ADDITIVELY (alongside the condition/exception, delegates_to/sanctioned_by, and
+    procedure passes and the proximity incumbents).
+    """
+    return (NormSubjectAttachmentPass(units=bundle.units),)
+
+
+# ── governed_by_procedure — obligation/power core → co-sentence procedure_frame ─
+#
+# Same Layer-2 family + discipline as delegates_to / sanctioned_by (sentence-local,
+# candidate-not-asserted, additive, surface_only firewall), on the SAME dense
+# ``deontic_core`` substrate, joining to the EXISTING ``procedure_frame`` node the
+# H5 ProcedureLens already mints (verified to exist). An obligation/power core and a
+# procedure_frame in the SAME sentence co-occur in one provision: the process the
+# duty/power runs through. There is NO construction parse emitting a (core →
+# procedure_frame) attachment index, so — unlike delegates_to — there is no
+# principled containment to resolve on; this stays a sentence-local co-occurrence
+# candidate (one target "candidate"; several "ambiguous", full set in payload; none
+# → typed UnattachedCore diagnostic).
+
+EDGE_GOVERNED_BY_PROCEDURE = "governed_by_procedure"
+
+PASS_ID_PROCEDURE = "fi.norm_composition.procedure.v0"
+RULE_GOVERNED_BY_PROCEDURE = "fi.norm_composition.governed_by_procedure"
+
+#: The procedure node kind this pass joins (the H5 ProcedureLens node).
+PROCEDURE_FRAME_KIND = "procedure_frame"
+
+#: deontic-core ``kind`` values that license a governed_by_procedure edge.
+_PROCEDURE_GOVERNED_KINDS = frozenset({"obligation", "power"})
+
+
+@dataclass
+class ProcedureGovernancePass:
+    """Edge pass: obligation/power core → co-sentence procedure_frame NORM edge.
+
+    Implements :class:`lawvm.core.legal_surface_assembler.SurfaceEdgePass`. Built
+    per-statute from the bundle units (re-derives sentence boundaries via
+    :func:`build_clause_index` to bound the join to one sentence). Mints NO nodes;
+    joins EXISTING ``deontic_core`` (source) and ``procedure_frame`` (target) nodes.
+    The same candidate/ambiguous/diagnostic discipline as
+    :class:`DeonticFrameAttachmentPass`.
+    """
+
+    units: tuple[SourceSurfaceUnit, ...]
+    pass_id: str = PASS_ID_PROCEDURE
+    reads_node_kinds: tuple[str, ...] = (CORE_NODE_KIND, PROCEDURE_FRAME_KIND)
+    emits_edge_kinds: tuple[str, ...] = (EDGE_GOVERNED_BY_PROCEDURE,)
+    unattached: list[UnattachedCore] = field(default_factory=list)
+
+    def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
+        self.unattached = []
+        core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
+        proc_index = _node_index_by_unit_kind(graph.nodes, PROCEDURE_FRAME_KIND)
+
+        seeds: list[SurfaceEdgeSeed] = []
+        for unit in self.units:
+            unit_id = unit.source_unit_id
+            cores = core_index.get(unit_id, [])
+            if not cores:
+                continue
+            procs = proc_index.get(unit_id, [])
+            if not procs:
+                continue
+            tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+            try:
+                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+            except Exception:
+                continue
+            sentences = [(s.char_start, s.char_end) for s in index.sentences]
+            if not sentences:
+                continue
+            proc_by_sent = _bucket_frames_by_sentence(procs, sentences)
+            for nid, ref in cores:
+                node = graph.nodes[nid]
+                core_kind = node.payload.get("kind")
+                if core_kind not in _PROCEDURE_GOVERNED_KINDS:
+                    continue
+                sent_i = _sentence_of(ref.char_start, sentences)
+                if sent_i < 0:
+                    continue
+                seeds.extend(
+                    self._core_procedure_edges(
+                        unit_id=unit_id,
+                        core_id=nid,
+                        core_ref=ref,
+                        core_kind=str(core_kind),
+                        targets=proc_by_sent.get(sent_i, []),
+                    )
+                )
+        return tuple(seeds)
+
+    def _core_procedure_edges(
+        self,
+        *,
+        unit_id: str,
+        core_id: str,
+        core_ref: SourceSpanRef,
+        core_kind: str,
+        targets: list[tuple[str, SourceSpanRef]],
+    ) -> list[SurfaceEdgeSeed]:
+        if not targets:
+            self.unattached.append(
+                UnattachedCore(
+                    source_unit_id=unit_id,
+                    edge_kind=EDGE_GOVERNED_BY_PROCEDURE,
+                    core_kind=core_kind,
+                    core_char_start=core_ref.char_start,
+                    core_char_end=core_ref.char_end,
+                    reason=NO_FRAME_IN_SENTENCE,
+                )
+            )
+            return []
+        ambiguous = len(targets) > 1
+        edge_status = "ambiguous" if ambiguous else "candidate"
+        candidate_spans = [[fref.char_start, fref.char_end] for _, fref in targets]
+        core_span = [core_ref.char_start, core_ref.char_end]
+        out: list[SurfaceEdgeSeed] = []
+        for frame_id, frame_ref in targets:
+            payload: dict[str, object] = {
+                "core_kind": core_kind,
+                "core_span": core_span,
+                "frame_span": [frame_ref.char_start, frame_ref.char_end],
+                "source": "deontic_procedure_sentence_local",
+                "experimental": True,
+            }
+            if ambiguous:
+                payload["candidate_frame_spans"] = candidate_spans
+            out.append(
+                SurfaceEdgeSeed(
+                    edge_kind=EDGE_GOVERNED_BY_PROCEDURE,
+                    src_local=core_id,
+                    dst_local=frame_id,
+                    rule_id=RULE_GOVERNED_BY_PROCEDURE,
+                    status=edge_status,
+                    payload=payload,
+                )
+            )
+        return out
+
+
+def _bucket_frames_by_sentence(
+    frames: list[tuple[str, SourceSpanRef]],
+    sentences: list[tuple[int, int]],
+) -> dict[int, list[tuple[str, SourceSpanRef]]]:
+    """Group frame (id, ref) pairs by EVERY sentence their span overlaps.
+
+    Module-level twin of :meth:`DeonticFrameAttachmentPass._bucket_by_sentence`,
+    shared by the procedure pass. A frame span (the whole recognised clause) can
+    straddle a sentence boundary, so it may land in more than one bucket. Frames
+    within each bucket stay sorted by (char_start, char_end, id).
+    """
+    buckets: dict[int, list[tuple[str, SourceSpanRef]]] = {}
+    for fid, fref in frames:
+        for si in _sentences_overlapped(fref.char_start, fref.char_end, sentences):
+            buckets.setdefault(si, []).append((fid, fref))
+    return buckets
+
+
+def procedure_governance_passes(
+    bundle: SourceSurfaceBundle,
+) -> tuple[ProcedureGovernancePass, ...]:
+    """Build the per-statute obligation/power core → procedure_frame pass.
+
+    Returns a one-tuple so the caller can splice it into the edge-pass sequence
+    ADDITIVELY.
+    """
+    return (ProcedureGovernancePass(units=bundle.units),)
+
+
 __all__ = [
+    "ACTOR_FRAME_KIND",
     "CORE_NODE_KIND",
     "CUE_NODE_KIND",
     "DELEGATION_FRAME_KIND",
+    "PROCEDURE_FRAME_KIND",
     "SANCTION_FRAME_KIND",
     "ConditionAttachmentPass",
     "DeonticFrameAttachmentPass",
+    "NormSubjectAttachmentPass",
+    "ProcedureGovernancePass",
     "EDGE_CONDITION_ATTACHES",
     "EDGE_DELEGATES_TO",
     "EDGE_EXCEPTION_EXCEPTS",
+    "EDGE_GOVERNED_BY_PROCEDURE",
+    "EDGE_NORM_HAS_SUBJECT",
     "EDGE_SANCTIONED_BY",
     "NO_CORE_IN_SENTENCE",
     "NO_FRAME_IN_SENTENCE",
     "NO_GRAPH_NODE_FOR_CORE",
     "NO_GRAPH_NODE_FOR_CUE",
+    "NO_SUBJECT_NODE_FOR_ADDRESSEE",
+    "SUBJECT_UNDERSPECIFIED",
     "PASS_ID",
     "PASS_ID_DEONTIC_FRAME",
+    "PASS_ID_NORM_SUBJECT",
+    "PASS_ID_PROCEDURE",
     "RULE_CONDITION",
     "RULE_DELEGATES_TO",
     "RULE_EXCEPTION",
+    "RULE_GOVERNED_BY_PROCEDURE",
+    "RULE_NORM_HAS_SUBJECT",
     "RULE_SANCTIONED_BY",
     "UnattachedCore",
     "UnattachedQualifier",
     "condition_attachment_passes",
     "deontic_frame_attachment_passes",
+    "norm_subject_attachment_passes",
+    "procedure_governance_passes",
 ]

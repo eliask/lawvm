@@ -85,6 +85,46 @@ def test_virasto_no_gradation() -> None:
     assert _forms(head_entry("virasto"))["GEN"] == "viraston"
 
 
+def test_luku_chapter_single_k_v() -> None:
+    """luku (chapter head): single-k realizes as v -> luvun, NOT *lukun."""
+    f = _forms(head_entry("luku"))
+    assert f["GEN"] == "luvun"
+    assert f["INE"] == "luvussa"
+    assert f["ELA"] == "luvusta"
+    assert f["ILL"] == "lukuun"  # vowel stem keeps the strong grade
+    assert f["GEN"] != "lukun"
+    pl = _pl_forms(head_entry("luku"))
+    assert pl["NOM"] == "luvut"
+    assert pl["INE"] == "luvuissa"
+
+
+def test_kaari_i_to_e_code() -> None:
+    """kaari (historical code head): Kotus-26 -i noun, -e- oblique stem."""
+    f = _forms(head_entry("kaari"))
+    assert f["GEN"] == "kaaren"  # NOT *kaarin
+    assert f["INE"] == "kaaressa"
+    assert f["ELA"] == "kaaresta"
+    assert f["ILL"] == "kaareen"
+    assert f["ADE"] == "kaarella"
+    assert f["TRA"] == "kaareksi"
+    assert f["PART"] == "kaarta"  # type-26 -ta partitive on the consonant stem
+    pl = _pl_forms(head_entry("kaari"))
+    assert pl["NOM"] == "kaaret"
+    assert pl["GEN"] == "kaarien"
+    assert pl["PART"] == "kaaria"
+    assert pl["INE"] == "kaarissa"
+
+
+def test_jarjestys_muoto_name_heads() -> None:
+    """järjestys / muoto: by-name constitutional-instrument heads, gradation-correct."""
+    j = _forms(head_entry("järjestys"))
+    assert j["GEN"] == "järjestyksen"  # -Us->-Ukse-
+    assert j["INE"] == "järjestyksessä"
+    m = _forms(head_entry("muoto"))
+    assert m["GEN"] == "muodon"  # t->d gradation, NOT *muoton
+    assert m["INE"] == "muodossa"
+
+
 # --------------------------------------------------------------------------- #
 # Gradation RULES (no stored form)
 # --------------------------------------------------------------------------- #

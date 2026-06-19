@@ -86,10 +86,21 @@ def test_power_core_delegates_to_delegation_frame() -> None:
         assert graph.nodes[edge.src].node_kind == "deontic_core"
         assert graph.nodes[edge.src].payload.get("kind") == "power"
         assert graph.nodes[edge.dst].node_kind == "delegation_frame"
-        assert edge.payload.get("source") == "deontic_frame_sentence_local"
         assert edge.payload.get("core_kind") == "power"
-        # single target → candidate (a co-occurrence affordance, not asserted)
-        assert edge.status == "candidate"
+        # delegates_to now resolves by a PRINCIPLED attachment index: the
+        # delegating verb that mints the power core is PART of the delegation_frame
+        # span, so a frame whose span CONTAINS the core cue is the instrument this
+        # power grants → status "asserted" (resolved), source "deontic_frame_cue_in_frame".
+        # The sentence-local co-occurrence fallback (no containment / several
+        # containers) stays "candidate"/"ambiguous", source "deontic_frame_sentence_local".
+        assert edge.status in ("asserted", "candidate", "ambiguous")
+        if edge.status == "asserted":
+            assert edge.payload.get("attachment") == "resolved_by_containment"
+            assert edge.payload.get("source") == "deontic_frame_cue_in_frame"
+            # the core cue span lies INSIDE the frame span
+            cs = edge.payload["core_span"]
+            fs = edge.payload["frame_span"]
+            assert fs[0] <= cs[0] and cs[1] <= fs[1]
 
 
 # ── (b) obligation/prohibition core → co-sentence sanction_frame ─────────────
@@ -170,7 +181,9 @@ def test_deontic_frame_edges_obey_the_firewall() -> None:
     for edge in edges:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("candidate", "ambiguous")
+        # delegates_to resolves by containment to "asserted"; the co-occurrence
+        # cases stay "candidate"/"ambiguous". The firewall holds for all.
+        assert edge.status in ("asserted", "candidate", "ambiguous")
 
 
 # ── (f) determinism ──────────────────────────────────────────────────────────

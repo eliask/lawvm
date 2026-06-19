@@ -54,6 +54,7 @@ from lawvm.core.reference_mention import (
 from lawvm.finland.johtolause.grammar import sections as _sections  # noqa: F401  (load order: break subref circular import)
 from lawvm.finland.johtolause.grammar.subref import recognize_sub_refs
 from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.references.lemma_gate import chapter_head_alternation
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
     parse_body_provision_tail,
@@ -159,7 +160,15 @@ def _strip_leading_year(surface: str, before: str) -> str:
 # ``luvut`` plural, ``lukuun`` …). Matched as a trailing prefix on the context
 # BEFORE a section surface; the captured chapter run is applied to every target
 # the following §-tail expands to.
-_CHAPTER_HEAD = r"(?:luvun|luvussa|luvusta|lukuun|luvut|luvuissa|luku)"
+#
+# The head surfaces are M1-GENERATED from the closed ``luku`` head over the
+# curated chapter case set (genitive / inessive / elative / illative + plural
+# nominative/inessive + nominative), not a hand-typed paradigm table. This is the
+# sound, single, shared chapter-head recognizer the body-tail lane
+# (``references.sections``) reuses; it kills the single-k gradation substring bug
+# class (``luku`` -> ``luvu-`` is generated, never inferred) and the rule-of-three
+# table duplication. See ``lemma_gate.chapter_head_alternation``.
+_CHAPTER_HEAD = rf"(?:{chapter_head_alternation()})"
 _CHAPTER_PREFIX_RE = re.compile(
     rf"(?P<chnums>{_NUM_RUN})\s+{_CHAPTER_HEAD}\s*$",
     re.IGNORECASE,
@@ -230,24 +239,60 @@ _PRECEDING_STATUTE_ID_RE = re.compile(
 # The historical CODES (``-kaari``: oikeudenkäymiskaari, maakaari, kauppakaari,
 # perintökaari, …) are by-name EXTERNAL statutes too. ``kaari`` declines as a
 # Kotus type-26 ``-i`` noun with oblique stem ``kaare-`` (genitive ``kaaren``,
-# inessive ``kaaressa``, elative ``kaaresta``, illative ``kaareen``, adessive
-# ``kaarella``, ablative ``kaarelta``, allative ``kaarelle``, translative
-# ``kaareksi``, essive ``kaarena``) plus the partitive ``kaarta``. A ``§`` tail
-# preceded by such a head (``oikeudenkäymiskaaren 12 luvun 32 §:ää``) is owned by
-# the cross-statute by-name lane, NOT an internal self-reference — without this
-# arm it leaked the section in as a bogus internal target. The forms mirror the
-# by-name lane's ``_KAARI_OBLIQUE_ALT`` exactly; the compound-only ``[chars]+``
+# inessive ``kaaressa``, illative ``kaareen`` …). A ``§`` tail preceded by such a
+# head (``oikeudenkäymiskaaren 12 luvun 32 §:ää``) is owned by the cross-statute
+# by-name lane, NOT an internal self-reference. The compound-only ``[chars]+``
 # capture keeps the common nouns (``sateenkaari``, ``hammaskaari``) reachable but
 # they never carry a ``§`` tail.
-_NAME_SUFFIX = (
-    r"(?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|laki"
-    r"|asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi"
-    r"|asetuksella|asetukselle|asetukselta|asetus"
-    r"|j\xe4rjestyksen|j\xe4rjestyst\xe4|j\xe4rjestyksess\xe4|j\xe4rjestyksest\xe4|j\xe4rjestys"
-    r"|muodon|muotoa|muodossa|muodosta|muoto"
-    r"|kaaren|kaaressa|kaaresta|kaareen|kaarella|kaarelta|kaarelle"
-    r"|kaareksi|kaarena|kaartta|kaarin|kaarta)"
+#
+# The suffix surfaces are M1-GENERATED from the closed name-head lemma set —
+# paradigm inversion, not a hand-typed table that duplicates (and drifts from) the
+# by-name lane and risks a consonant-gradation substring bug. Each head is
+# generated over the EXACT ``(case, number)`` set the old hand table encoded for
+# it (not the full paradigm): widening to the full paradigm would add forms the
+# old table deliberately omitted — the plural ``työjärjestykset`` and the illative
+# ``asetukseen`` — which, for an EXCLUSION recognizer, would EXCLUDE genuine
+# internal references (``Työjärjestykset 3 §``, ``lisätään asetukseen … 11 §``,
+# the statute's own heading / johtolause), i.e. a recall regression, not a gain.
+# So this is a strict-EQUAL replacement of the recognitions (gradation-correct by
+# construction), not a recall-changing superset. The curated case sets:
+#   laki / asetus : GEN PART INE ELA TRA ADE ABL ALL NOM (sg)
+#   järjestys / muoto : GEN PART INE ELA NOM (sg)
+#   kaari : GEN PART INE ELA ILL ADE ABL ALL TRA (sg) — no NOM (the bare ``kaari``
+#     collides with the common noun ``sateenkaari`` and with the code's OWN title
+#     heading a chapter, ``Maakaari 1 LUKU`` in 1734/1).
+_FULL_OBLIQUE_SG: tuple[tuple[str, str], ...] = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ABL", "SG"), ("ALL", "SG"), ("NOM", "SG"),
 )
+_GRAMMATICAL_OBLIQUE_SG: tuple[tuple[str, str], ...] = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"), ("NOM", "SG"),
+)
+_KAARI_OBLIQUE_SG: tuple[tuple[str, str], ...] = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"), ("ILL", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ABL", "SG"), ("ALL", "SG"),
+)
+# reference_v1 profile gap supplement: the kaari essive + instructive the old hand
+# table carried but M1's reference_v1 case profile omits (documented M1 boundary).
+# (The old table's ``kaartta`` is dropped — it is a wrong partitive form; the real
+# ``kaarta`` IS generated, so no genuine recognition is lost.)
+_NAME_SUFFIX_SUPPLEMENT: tuple[str, ...] = ("kaarena", "kaarin")
+
+
+def _build_name_suffix() -> str:
+    """Build the M1-backed name-head exclusion alternation (longest-first)."""
+    from lawvm.finland.references.lemma_gate import head_case_forms
+
+    forms: set[str] = set(_NAME_SUFFIX_SUPPLEMENT)
+    forms.update(head_case_forms("laki", _FULL_OBLIQUE_SG))
+    forms.update(head_case_forms("asetus", _FULL_OBLIQUE_SG))
+    forms.update(head_case_forms("järjestys", _GRAMMATICAL_OBLIQUE_SG))
+    forms.update(head_case_forms("muoto", _GRAMMATICAL_OBLIQUE_SG))
+    forms.update(head_case_forms("kaari", _KAARI_OBLIQUE_SG))
+    return "(?:{})".format("|".join(sorted(forms, key=lambda s: (-len(s), s))))
+
+
+_NAME_SUFFIX = _build_name_suffix()
 _PRECEDING_NAME_HEAD_RE = re.compile(
     rf"(?P<prev>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)?\s*"
     rf"(?P<head>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]*{_NAME_SUFFIX})\s*$",

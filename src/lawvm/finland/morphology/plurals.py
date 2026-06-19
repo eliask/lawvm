@@ -225,6 +225,25 @@ def _drop_vowel_plural(strong: str, weak: str) -> PluralStem:
     )
 
 
+def _plural_i_to_e(lemma: str, stems: Stems) -> PluralStem:  # noqa: ARG001
+    """``-i->-e-`` nouns (Kotus 26: kaari -> kaaret/kaarien/kaaria/kaarissa).
+
+    The ``-e`` oblique stem drops back to the bare consonant stem before the
+    plural ``-i-`` marker (``kaare`` -> ``kaar`` + ``i`` = ``kaari`` ->
+    ``kaarissa``); the genitive/partitive attach ``-ien``/``-iA`` to that
+    consonant stem (``kaarien`` / ``kaaria``).  ``nominative`` (weak stem + t,
+    ``kaaret``) is set centrally in :func:`build_plural`.
+    """
+    cons = stems.vowel_stem[:-1]  # kaare -> kaar
+    return PluralStem(
+        weak_i_stem=cons + "i",  # kaari -> kaarissa / kaarista
+        gen_stem=cons,
+        gen_ending="ien",  # kaarien
+        part_stem=cons,
+        part_ending="iA",  # kaaria
+    )
+
+
 def _plural_us_kse(lemma: str, stems: Stems) -> PluralStem:  # noqa: ARG001
     """Deverbal -Ukse-/-Okse- (asetus, paatos): e drops, legal -ten genitive."""
     stem = stems.vowel_stem  # asetukse
@@ -282,6 +301,7 @@ _PLURAL_BUILDERS = {
     "-Os->-Okse-": _plural_us_kse,
     "-Uus->-Ude-": _plural_uus_ude,
     "e_contract": _plural_e_contract,
+    "-i->-e-": _plural_i_to_e,
 }
 
 

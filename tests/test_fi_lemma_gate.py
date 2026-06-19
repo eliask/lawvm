@@ -239,3 +239,57 @@ def test_negative_paradigm_genuine_sopimuslaki_not_shadowed() -> None:
     ):
         assert np.longest_suffix_match(tok) is None, tok
         assert lemma_gate(tok).verdict is GateVerdict.UNKNOWN
+
+
+# --------------------------------------------------------------------------- #
+# M1-backed recognizer alternations (chapter head + name-head exclusion).
+# --------------------------------------------------------------------------- #
+
+
+def test_chapter_head_alternation_is_m1_backed_table() -> None:
+    """The shared ``luku`` chapter-head alternation equals the old hand table.
+
+    Replaces the verbatim ``(?:luvun|luvussa|...|luku)`` duplicated across the
+    internal-ref and body-tail lanes with one M1-generated set (paradigm
+    inversion, gradation-correct: ``luku`` -> ``luvu-``). Strict-equal to the old
+    table — no recall change, only the rule-of-three duplication retired.
+    """
+    from lawvm.finland.references.lemma_gate import chapter_head_alternation
+
+    got = set(chapter_head_alternation().split("|"))
+    hand = {"luvun", "luvussa", "luvusta", "lukuun", "luvut", "luvuissa", "luku"}
+    assert got == hand
+
+
+def test_chapter_head_shared_across_lanes() -> None:
+    """internal_refs and sections build the chapter head from the SAME M1 source."""
+    import lawvm.finland.references.internal_refs as ir
+    import lawvm.finland.references.sections as sec
+
+    assert ir._CHAPTER_HEAD == sec._CHAPTER_TAIL_HEAD
+
+
+def test_name_suffix_exclusion_is_m1_superset_of_hand_table() -> None:
+    """The M1-backed name-head exclusion alternation reproduces the old table.
+
+    Every form the hand ``_NAME_SUFFIX`` recognized is generated (gradation-
+    correct: ``muodon`` / ``järjestyksen`` / ``kaaren``); the only difference is
+    the dropped wrong-partitive ``kaartta`` (the real ``kaarta`` is kept), which
+    is not a genuine recognition. No new form is added (full-paradigm widening
+    would EXCLUDE genuine internal refs — a recall regression — so it is avoided).
+    """
+    import lawvm.finland.references.internal_refs as ir
+
+    got = set(ir._NAME_SUFFIX[3:-1].split("|"))  # strip the (?: ... )
+    hand = set(
+        "lain lakia laissa laista laiksi laille lailla lailta laki "
+        "asetuksen asetusta asetuksessa asetuksesta asetukseksi asetuksella "
+        "asetukselle asetukselta asetus "
+        "järjestyksen järjestystä järjestyksessä järjestyksestä järjestys "
+        "muodon muotoa muodossa muodosta muoto "
+        "kaaren kaaressa kaaresta kaareen kaarella kaarelta kaarelle kaareksi "
+        "kaarena kaarin kaarta".split()
+    )
+    assert got == hand, (got - hand, hand - got)
+    # the bare nominative ``kaari`` is deliberately NOT an exclusion trigger
+    assert "kaari" not in got
