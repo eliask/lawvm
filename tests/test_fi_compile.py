@@ -2399,6 +2399,21 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
+    replay = pinned_replay("1996/1200", mode="official_consolidation", quiet=True)
+    section9 = extract_ir_sections(replay.materialized_state.ir)["section:9"]
+    text = " ".join(irnode_to_text(section9).split())
+
+    assert "5) hakkuun metsälain 5 §:n 1 momentin" in text
+    assert "6) uudistushakkuussa metsiköittäin" in text
+    assert "pääasiallinen puulaji sekä maanpinnan käsittelymenetelmä;" in text
+    assert "pääasiallinen puulaji, maanpinnan käsittelymenetelmä sekä taimikon" not in text
+    assert "7) jos metsätalousmaata otetaan metsälain 3 §:ssä" in text
+    assert "8) onko kysymyksessä metsälain 12 §:ssä" in text
+    assert "9) jos metsän käsittely koskee metsälain 10 §:n" in text
+    assert "10) metsänkäyttöilmoituksen laatijan nimi ja yhteystiedot." in text
+
+
 def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
     replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
     section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]

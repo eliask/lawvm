@@ -16995,3 +16995,98 @@ def test_strip_context_carried_omission_rejects_genuine_sparse_tail() -> None:
     assert (
         _strip_context_carried_omission_for_complete_numbered_replace(payload) is None
     )
+
+
+def test_subsection_replace_merges_section_level_sparse_omission_item_rows() -> None:
+    live_first = _sub(
+        "1",
+        _intro("Metsan kayttoilmoituksessa tulee antaa seuraavat tiedot:"),
+        *[_para(str(num), f"old item {num}") for num in range(1, 10)],
+    )
+    sec = _sec("9", live_first, _sub("2", _content("old second moment")))
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="9", target_paragraph=1)
+    muutos_ir = _sec(
+        "9",
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("", _content("6) new item 6;")),
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("", _content("8) new item 8;")),
+        _sub("", _content("9) new item 9; seka")),
+        _sub("", _content("10) new item 10.")),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "9")],
+        sec,
+        [live_first, sec.children[1]],
+        _sub("2", _content("6) new item 6;")),
+        muutos_ir,
+        _LEGAL_PIT,
+        "9 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_sec = next(c for c in result.ir.children if c.kind is IRNodeKind.SECTION)
+    first = next(c for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION and c.label == "1")
+    assert [child.label for child in first.children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+    ]
+    text = irnode_to_text(first)
+    assert "old item 5" in text
+    assert "old item 6" not in text
+    assert "6) new item 6" in text
+    assert "old item 7" in text
+    assert "10) new item 10" in text
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
+
+
+def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -> None:
+    live_first = _sub(
+        "1",
+        _intro("List intro:"),
+        *[_para(str(num), f"old item {num}") for num in range(1, 4)],
+    )
+    sec = _sec("9", live_first)
+    state = _make_state(_body(sec))
+    op = _op(op_type="REPLACE", target_section="9", target_paragraph=1)
+    muutos_ir = _sec(
+        "9",
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("", _content("2) new item 2;")),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        [("section", "9")],
+        sec,
+        [live_first],
+        _sub("2", _content("2) new item 2;")),
+        muutos_ir,
+        _LEGAL_PIT,
+        "9 § 1 mom",
+        source_pathologies_out=pathologies,
+        strict_profile=default_finland_strict_profile(),
+    )
+
+    assert result is None
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
