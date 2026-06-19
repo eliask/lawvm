@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+_REPO = Path(__file__).resolve().parents[1]
+
+
+def _source(path: str) -> str:
+    return (_REPO / path).read_text(encoding="utf-8")
+
+
+def test_uncovered_recovery_runner_stays_source_model_primary() -> None:
+    source = _source("src/lawvm/finland/uncovered_recovery_runner.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "fi_xml_to_ir_node" not in source
+    assert "_xml_part_label" not in source
+    assert "find_payload_ir(" in source
+
+
+def test_uncovered_candidate_iteration_does_not_dispatch_xml_nodes() -> None:
+    source = _source("src/lawvm/finland/uncovered_recovery_iteration.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "UncoveredSectionCandidate" in source
+
+
+def test_finland_body_coverage_payload_refs_are_typed_not_xml_handles() -> None:
+    source = _source("src/lawvm/finland/body_coverage.py")
+
+    assert "payload_ref=el" not in source
+    assert "payload_ref=child" not in source
+    assert "payload_ref=muutos_tree" not in source
+    assert "BodyCoveragePayloadRef(" in source
