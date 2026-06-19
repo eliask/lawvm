@@ -5219,6 +5219,29 @@ def test_peg_keeps_comma_continued_intro_items_and_later_sections() -> None:
     ]
 
 
+def test_peg_keeps_bare_johdanto_targets_and_later_sections() -> None:
+    text = (
+        "muutetaan 1 §, 2 §:n otsikko ja 1 momentin johdanto, "
+        "5 §:n 1 momentin 3 kohta, 9 §:n otsikko ja 3 momentti, "
+        "10 § sekä 11 §:n johdanto ja 2 kohta seuraavasti:"
+    )
+
+    ops = parse_clause(text).parsed_ops
+    got = [op.code() for op in ops]
+
+    assert got == [
+        "M P 1",
+        "M P 2 o",
+        "M P 2 1 j",
+        "M P 5 1 3",
+        "M P 9 o",
+        "M P 9 3",
+        "M P 10",
+        "M P 11 j",
+        "M P 11 1 2",
+    ]
+
+
 def test_peg_keeps_item_heading_target_and_later_same_section_items() -> None:
     text = "muutetaan 1 §:n 4 kohdan otsikko sekä 1 §:n 5, 6 ja 12 kohta"
 
@@ -14659,8 +14682,15 @@ def test_inspect_amendment_2012_1020_2015_1328_keeps_bare_johdanto_targets_and_l
     got = {group["target_norm"]: group["ops_final"] for group in bundle["groups"]}
 
     assert got["1"] == ["REPLACE 1 luku 1 §"]
-    assert got["2"] == ["REPLACE 2 luku 2 § otsikko"]
-    assert got["11"] == ["REPEAL 5 luku 11 § 1 mom 4 kohta"]
+    assert got["2"] == ["REPLACE 2 luku 2 § johd", "REPLACE 2 luku 2 § otsikko"]
+    assert got["5"] == ["REPLACE 2 luku 5 § 1 mom 3 kohta"]
+    assert got["9"] == ["REPLACE 3 luku 9 § 3 mom", "REPLACE 3 luku 9 § otsikko"]
+    assert got["10"] == ["REPLACE 4 luku 10 §"]
+    assert got["11"] == [
+        "REPLACE 5 luku 11 § 1 mom 2 kohta",
+        "REPEAL 5 luku 11 § 1 mom 4 kohta",
+        "REPLACE 5 luku 11 § johd",
+    ]
 
 
 def test_inspect_amendment_2013_588_2025_201_recovers_section_49a_item_10_insert(

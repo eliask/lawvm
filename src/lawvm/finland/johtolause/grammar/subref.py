@@ -43,6 +43,25 @@ from lawvm.finland.johtolause.lexicon import Token
 # ---------------------------------------------------------------------------
 
 
+_INTRO_WORDS = frozenset({"johdanto", "johdannon"})
+
+
+def _is_intro_token(token: Token | None) -> bool:
+    """Return true for intro-facet words in a sub-reference position."""
+    if token is None:
+        return False
+    if token.cat == "JOHD":
+        return True
+    return token.cat == "WORD" and (token.text or "").lower() in _INTRO_WORDS
+
+
+def _consume_intro_token(scan: _Scan) -> bool:
+    if _is_intro_token(scan.peek()):
+        scan.advance()
+        return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class SubRef:
     """A parsed sub-reference: momentti, item, facet, or named descriptor.
@@ -134,9 +153,7 @@ def _letter_list(scan: _Scan) -> Optional[list[str]]:
 
 
 def _parse_after_gen_kohta(scan: _Scan) -> Optional[FacetKind]:
-    t = scan.peek()
-    if t and t.cat == "JOHD":
-        scan.advance()
+    if _consume_intro_token(scan):
         return FacetKind.INTRO
     return None
 
@@ -154,10 +171,9 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
             is_kohta_gen = t2.case == "GEN"
             scan.advance()
             if is_kohta_gen:
-                t3 = scan.peek()
-                if t3 and t3.cat == "JOHD":
-                    scan.advance()
+                if _consume_intro_token(scan):
                     return [SubRef(mom_ctx, let, facet=FacetKind.INTRO) for let in letters]
+                t3 = scan.peek()
                 if t3 and t3.cat == "OTSIKKO":
                     scan.advance()
                 return [SubRef(mom_ctx, let) for let in letters]
@@ -201,8 +217,7 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
                 scan.goto(saved_lk)
 
             t3 = scan.peek()
-            if t3 and t3.cat == "JOHD":
-                scan.advance()
+            if _consume_intro_token(scan):
                 return [SubRef(mom, facet=FacetKind.INTRO) for mom in mom_vals]
             if t3 and t3.cat == "OTSIKKO":
                 scan.advance()
@@ -224,8 +239,7 @@ def _parse_descendant_coordination(scan: _Scan, mom_ctx: int = 0) -> Optional[li
 
         if is_kohta_gen:
             t3 = scan.peek()
-            if t3 and t3.cat == "JOHD":
-                scan.advance()
+            if _consume_intro_token(scan):
                 return [SubRef(mom_ctx, n + sf, facet=FacetKind.INTRO) for n, sf in nums]
             if t3 and t3.cat == "OTSIKKO":
                 scan.advance()  # consume but do not set facet
@@ -396,8 +410,7 @@ def _sub_ref(scan: _Scan, allow_descriptor: bool = False) -> Optional[list[SubRe
     if t and t.cat == "OTSIKKO":
         scan.advance()
         return [SubRef(facet=FacetKind.HEADING)]
-    if t and t.cat == "JOHD":
-        scan.advance()
+    if _consume_intro_token(scan):
         return [SubRef(facet=FacetKind.INTRO)]
 
     # "edellä oleva (luvun) otsikko" — heading-CHANGE reference (locative

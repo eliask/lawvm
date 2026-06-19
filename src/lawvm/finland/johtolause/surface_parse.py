@@ -898,6 +898,24 @@ class SubRef:
     facet: Optional[FacetKind] = None
 
 
+_INTRO_WORDS = frozenset({"johdanto", "johdannon"})
+
+
+def _is_intro_token(token: Token | None) -> bool:
+    if token is None:
+        return False
+    if token.cat == "JOHD":
+        return True
+    return token.cat == "WORD" and (token.text or "").lower() in _INTRO_WORDS
+
+
+def _consume_intro_token(s: Stream) -> bool:
+    if _is_intro_token(s.peek()):
+        s.pos += 1
+        return True
+    return False
+
+
 def _parse_after_gen_kohta(s: Stream) -> Optional[FacetKind]:
     """Check for JOHD after a genitive KOHTA under a momentti context.
 
@@ -908,9 +926,7 @@ def _parse_after_gen_kohta(s: Stream) -> Optional[FacetKind]:
     branch — it is consumed but NOT preserved as a facet (item-level heading
     ops are treated as whole-item ops by the grafter).
     """
-    t = s.peek()
-    if t and t.cat == "JOHD":
-        s.pos += 1
+    if _consume_intro_token(s):
         return FacetKind.INTRO
     return None
 
@@ -952,10 +968,9 @@ def _parse_descendant_coordination(s: Stream, mom_ctx: int = 0) -> Optional[list
             s.pos += 1
 
             if is_kohta_gen:
-                t3 = s.peek()
-                if t3 and t3.cat == "JOHD":
-                    s.pos += 1
+                if _consume_intro_token(s):
                     return [SubRef(mom_ctx, let, facet=FacetKind.INTRO) for let in letters]
+                t3 = s.peek()
                 if t3 and t3.cat == "OTSIKKO":
                     s.pos += 1
                 return [SubRef(mom_ctx, let) for let in letters]
@@ -1007,8 +1022,7 @@ def _parse_descendant_coordination(s: Stream, mom_ctx: int = 0) -> Optional[list
             # Try trailing qualifier shared across all momenti:
             # "N ja M momentin johdantokappale" -> all get INTRO facet
             t3 = s.peek()
-            if t3 and t3.cat == "JOHD":
-                s.pos += 1
+            if _consume_intro_token(s):
                 return [SubRef(mom, facet=FacetKind.INTRO) for mom in mom_vals]
             if t3 and t3.cat == "OTSIKKO":
                 s.pos += 1
@@ -1034,8 +1048,7 @@ def _parse_descendant_coordination(s: Stream, mom_ctx: int = 0) -> Optional[list
             # OTSIKKO: consumed but NOT preserved as a facet — item-level heading
             # ops are treated as whole-item ops by the grafter.
             t3 = s.peek()
-            if t3 and t3.cat == "JOHD":
-                s.pos += 1
+            if _consume_intro_token(s):
                 return [SubRef(mom_ctx, n + sf, facet=FacetKind.INTRO) for n, sf in nums]
             if t3 and t3.cat == "OTSIKKO":
                 s.pos += 1  # consume but do not set facet
@@ -1067,8 +1080,7 @@ def _sub_ref(s: Stream) -> Optional[list[SubRef]]:
     if t and t.cat == "OTSIKKO":
         s.pos += 1
         return [SubRef(facet=FacetKind.HEADING)]
-    if t and t.cat == "JOHD":
-        s.pos += 1
+    if _consume_intro_token(s):
         return [SubRef(facet=FacetKind.INTRO)]
 
     # "edellä oleva (väli)otsikko" — heading-CHANGE reference (locative
