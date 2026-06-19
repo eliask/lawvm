@@ -3136,6 +3136,54 @@ def test_is_presentation_structural_diff_item_suffix_vs_wrapup_owner_projection(
     assert is_presentation_structural_diff(sd, changed_events) is False
 
 
+def test_is_presentation_structural_diff_value_table_subsections_vs_items() -> None:
+    # 2020/82 § 4 style: source/replay owns two unlabeled table blocks as
+    # subsection siblings, while Finlex projects the same blocks as list items.
+    sd = {"label": ""}
+    intro = (
+        "Sovellettaessa verontilityslain 5 a §:ssä tarkoitettua takuutilitystä "
+        "verovuodelta 2020 suoritettavissa mainitun lain 5 §:n mukaisissa "
+        "tilityksissä käytetään seuraavia työnantajasuoritusten vähimmäismääriä:"
+    )
+    table_a = (
+        "Ennakonpidätysten vähimmäismäärä Vuosi Tilityskuukausi Euroa "
+        "2020 Toukokuu 2 347 000 000 Kesäkuu 2 212 000 000 "
+        "2021 Tammikuu 2 702 000 000"
+    )
+    table_b = (
+        "Työnantajan sairausvakuutusmaksun vähimmäismäärä Vuosi "
+        "Tilityskuukausi Euroa 2020 Toukokuu 101 210 000 Kesäkuu "
+        "99 200 000 2021 Tammikuu 96 880 000"
+    )
+    events = [
+        {
+            "kind": "facet_added",
+            "semantic_path": ["section:4", "subsection:1", "intro"],
+            "right_badge": "johdanto",
+            "left_text": None,
+            "right_text": intro,
+        },
+        {
+            "kind": "wording_text_changed",
+            "semantic_path": ["section:4", "subsection:1"],
+            "left_text": intro,
+            "right_text": None,
+        },
+        {"kind": "unit_missing_left", "left_text": None, "right_text": table_a},
+        {"kind": "unit_missing_left", "left_text": None, "right_text": table_b},
+        {"kind": "unit_missing_right", "left_text": table_a, "right_text": None},
+        {"kind": "unit_missing_right", "left_text": table_b, "right_text": None},
+    ]
+
+    assert is_presentation_structural_diff(sd, events) is True
+
+    changed_events = [
+        *events[:-1],
+        {"kind": "unit_missing_right", "left_text": table_b.replace("96 880 000", "96 999 000"), "right_text": None},
+    ]
+    assert is_presentation_structural_diff(sd, changed_events) is False
+
+
 def test_is_presentation_structural_diff_negative_real_content_change() -> None:
     # A real wording change (not prefix, not artifact) must not be treated as presentation.
     sd = {"label": ""}

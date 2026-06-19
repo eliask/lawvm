@@ -455,6 +455,22 @@ def _event_is_wrapup_facet_delta(event: dict[str, Any]) -> bool:
     }
 
 
+def _event_is_intro_facet_delta(event: dict[str, Any]) -> bool:
+    """Return True for one-sided intro/johdanto facet ownership events."""
+
+    if event.get("kind") not in {"facet_added", "facet_removed"}:
+        return False
+    path = event.get("semantic_path")
+    if isinstance(path, list) and any(str(part).endswith("intro") for part in path):
+        return True
+    if isinstance(path, str) and "intro" in path:
+        return True
+    return "johdanto" in {
+        str(event.get("left_badge") or "").lower(),
+        str(event.get("right_badge") or "").lower(),
+    }
+
+
 def _is_wrapup_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     """Detect same-text item-vs-wrapUp owner projection differences.
 
@@ -494,6 +510,73 @@ def _is_wrapup_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return right_norm == left_norm + tail_norm
 
 
+def _one_sided_event_text(event: dict[str, Any]) -> str:
+    left = (event.get("left_text") or "").strip()
+    right = (event.get("right_text") or "").strip()
+    if bool(left) == bool(right):
+        return ""
+    return left or right
+
+
+def _looks_like_value_table_unit(text: str) -> bool:
+    if _looks_like_value_table(text):
+        return True
+    if not re.search(r"\b(?:Euroa|Tilityskuukausi|vähimmäismäärä|Vuosi)\b", text, re.I):
+        return False
+    return len(re.findall(r"\b\d{2,}\b", text)) >= 3
+
+
+def _is_value_table_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
+    """Detect conserved value-table blocks projected at different unit kinds.
+
+    Provenance: 2020/82 § 4, where source/replay carries two unlabeled table
+    blocks as subsection siblings while Finlex projects the same blocks as
+    items under one subsection.  This is comparison-only and requires exact
+    normalized text conservation for every table block.
+    """
+
+    left_units: list[str] = []
+    right_units: list[str] = []
+    raw_unit_texts: list[str] = []
+    other_events: list[dict[str, Any]] = []
+    for event in events:
+        kind = event.get("kind", "")
+        if kind == "unit_missing_right":
+            text = (event.get("left_text") or "").strip()
+            if not text:
+                return False
+            left_units.append(_normalize_for_pres_text(text))
+            raw_unit_texts.append(text)
+            continue
+        if kind == "unit_missing_left":
+            text = (event.get("right_text") or "").strip()
+            if not text:
+                return False
+            right_units.append(_normalize_for_pres_text(text))
+            raw_unit_texts.append(text)
+            continue
+        other_events.append(event)
+
+    if not left_units or sorted(left_units) != sorted(right_units):
+        return False
+    if not all(_looks_like_value_table_unit(text) for text in raw_unit_texts):
+        return False
+    if not other_events:
+        return True
+    if len(other_events) != 2:
+        return False
+
+    intro_events = [event for event in other_events if _event_is_intro_facet_delta(event)]
+    wording_events = [event for event in other_events if event.get("kind") == "wording_text_changed"]
+    if len(intro_events) != 1 or len(wording_events) != 1:
+        return False
+    intro_text = _one_sided_event_text(intro_events[0])
+    wording_text = _one_sided_event_text(wording_events[0])
+    if not intro_text or not wording_text:
+        return False
+    return _normalize_for_pres_text(intro_text) == _normalize_for_pres_text(wording_text)
+
+
 def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
     """Return True if the section diff is purely FI oracle presentation artifact
     in lists, tables, schedules, or appendices (for bench structural scoring).
@@ -510,6 +593,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
         return False
 
     if _is_wrapup_owner_projection_diff(events):
+        return True
+    if _is_value_table_owner_projection_diff(events):
         return True
 
     cleaned_text_diffs = 0
