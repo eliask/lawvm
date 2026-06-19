@@ -437,6 +437,7 @@ def process_muutoslaki_resolved(
                 johto=johto,
                 muutos_tree=muutos_tree,
                 record_finding=record_process_finding,
+                source_model=source_model,
             ).derive(),
             process_findings=process_findings,
             parent_id=parent_id,

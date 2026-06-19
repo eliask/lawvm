@@ -407,6 +407,18 @@ class AmendmentSourceModel:
 
         return _amendment_effective_date(self.muutos_tree)
 
+    def effective_date_with_step(self) -> tuple[dt.date | None, str]:
+        """Return source amendment effective date and derivation step."""
+        from lawvm.finland.metadata import _amendment_effective_date_with_step
+
+        return _amendment_effective_date_with_step(self.muutos_tree)
+
+    def expiry_date(self) -> dt.date | None:
+        """Return the source amendment expiry date through the source-model adapter."""
+        from lawvm.finland.metadata import _amendment_expiry_date
+
+        return _amendment_expiry_date(self.muutos_tree)
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(

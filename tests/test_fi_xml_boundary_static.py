@@ -102,3 +102,15 @@ def test_compile_amendment_metadata_reads_use_source_model() -> None:
     assert "source_model.title()" in source
     assert "source_model.issue_date()" in source
     assert "source_model.effective_date()" in source
+
+
+def test_temporal_authority_date_reads_use_source_model() -> None:
+    source = _source("src/lawvm/finland/process_temporal_authority.py")
+
+    assert "from lawvm.finland.metadata import" not in source
+    assert "_amendment_effective_date_with_step" not in source
+    assert "_amendment_expiry_date" not in source
+    assert "_statute_issue_date" not in source
+    assert "source_model.effective_date_with_step()" in source
+    assert "source_model.expiry_date()" in source
+    assert "source_model.issue_date()" in source

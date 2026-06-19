@@ -225,6 +225,8 @@ def test_source_model_exposes_metadata_surfaces() -> None:
     assert model.title() == "Testilaki"
     assert model.issue_date() == dt.date(2020, 1, 2)
     assert model.effective_date() == dt.date(2020, 3, 4)
+    assert model.effective_date_with_step() == (dt.date(2020, 3, 4), "metadata")
+    assert model.expiry_date() is None
 
 
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
