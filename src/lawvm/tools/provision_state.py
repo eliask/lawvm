@@ -27,7 +27,11 @@ from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.temporal_scheduler import TemporalScheduleDelta
 from lawvm.core.timeline import materialize_pit
 from lawvm.core.timeline_lineage import lineage_address_chain
-from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
+from lawvm.core.timeline_selection import (
+    VersionSelectionCertificate,
+    VersionSelectionResult,
+    select_active_version_ex,
+)
 from lawvm.core.timeline_selection import content_is_repeal_placeholder
 from lawvm.core.tree_ops import resolve as resolve_tree
 from lawvm.roman import arabic_to_roman
@@ -306,6 +310,14 @@ def build_provision_state_response(
         query_type=query_type,
         territory=territory,
     )
+    selection = _mask_descendant_selection_by_ancestor_tombstone(
+        timelines=timelines,
+        address=resolution.address,
+        selection=selection,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+    )
     overlay = (
         None
         if tl_blocking
@@ -336,6 +348,77 @@ def build_provision_state_response(
         findings=findings,
         source_xml_provider=source_xml_provider,
     )
+
+
+def _mask_descendant_selection_by_ancestor_tombstone(
+    *,
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    address: LegalAddress | None,
+    selection: VersionSelectionResult,
+    as_of: str,
+    query_type: str,
+    territory: str | None,
+) -> VersionSelectionResult:
+    """Make direct provision reads respect selected ancestor tombstones.
+
+    PIT materialization already suppresses descendants under a selected
+    whole-node repeal tombstone. A single-address provision-state query must
+    expose the same legal state; otherwise a repealed chapter can disappear from
+    the materialized statute while its child sections remain directly readable.
+    """
+
+    if address is None or selection.status != "selected" or selection.version is None:
+        return selection
+    child_version = selection.version
+    for depth in range(len(address.path) - 1, 0, -1):
+        ancestor_address = LegalAddress(path=address.path[:depth])
+        ancestor_timeline = timelines.get(ancestor_address)
+        if ancestor_timeline is None:
+            continue
+        ancestor_selection = select_active_version_ex(
+            ancestor_timeline,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+        )
+        ancestor_version = ancestor_selection.version
+        if ancestor_version is None:
+            continue
+        if (
+            ancestor_version.content is not None
+            and not content_is_repeal_placeholder(ancestor_version.content)
+        ):
+            continue
+        if (ancestor_version.effective, ancestor_version.enacted) < (
+            child_version.effective,
+            child_version.enacted,
+        ):
+            continue
+        ancestor_certificate = ancestor_selection.certificate
+        return VersionSelectionResult(
+            status="selected",
+            version=replace(ancestor_version, content=None, content_hash=""),
+            certificate=VersionSelectionCertificate(
+                address=address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail=(
+                    ancestor_certificate.selected_rail
+                    if ancestor_certificate is not None
+                    and ancestor_certificate.selected_rail in {"overlay", "background"}
+                    else "background"
+                ),
+                candidate_count=(
+                    ancestor_certificate.candidate_count
+                    if ancestor_certificate is not None
+                    else 0
+                ),
+                selected_effective=ancestor_version.effective,
+                selected_enacted=ancestor_version.enacted,
+            ),
+        )
+    return selection
 
 
 def provision_selector_diagnostic(

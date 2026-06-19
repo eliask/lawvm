@@ -164,6 +164,58 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert {"build_id", "git_commit", "git_dirty", "repository"} <= set(payload["engine"])
 
 
+def test_provision_state_masks_descendant_under_selected_chapter_tombstone() -> None:
+    chapter_address = LegalAddress(path=(("chapter", "8a"),))
+    section_address = LegalAddress(path=(("chapter", "8a"), ("section", "68a")))
+    section = IRNode(kind=IRNodeKind.SECTION, label="68a", text="Live child text")
+    timelines = {
+        chapter_address: ProvisionTimeline(
+            address=chapter_address,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2019-12-01",
+                    content=IRNode(kind=IRNodeKind.CHAPTER, label="8a"),
+                    source=OperationSource(statute_id="2019/1", effective="2020-01-01"),
+                ),
+                ProvisionVersion(
+                    effective="2025-01-01",
+                    enacted="2024-12-01",
+                    content=None,
+                    source=OperationSource(statute_id="2024/1", effective="2025-01-01"),
+                ),
+            ],
+        ),
+        section_address: ProvisionTimeline(
+            address=section_address,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2019-12-01",
+                    content=section,
+                    source=OperationSource(statute_id="2019/1", effective="2020-01-01"),
+                    content_hash=irnode_content_hash(section),
+                ),
+            ],
+        ),
+    }
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:8a/section:68a",
+        as_of="2026-01-01",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["resolved_address"]["text"] == "chapter:8a/section:68a"
+    assert payload["version"]["content_state"] == "tombstone"
+    assert payload["source"]["statute_id"] == "2024/1"
+    assert payload["text"]["available"] is False
+
+
 def test_operation_source_locator_anchors_exact_raw_quote_in_source_xml() -> None:
     source_xml = (
         b"""

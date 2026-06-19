@@ -1916,6 +1916,72 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
     ]
 
 
+def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections() -> None:
+    """A source-body chapter number can own an unnumbered ``uusi luvun otsikko``."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("7", _sec("66i"), _sec("68a"), _sec("68b")),
+            _chapter("9", _sec("69"), _sec("71")),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>8 a luku</num>
+                <heading>Hallituksen vuosikertomus</heading>
+                <section><num>68 a §</num></section>
+                <section><num>68 b §</num></section>
+                <section><num>71 §</num></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            muutos_tree=muutos_tree,
+            amendment_id="2016/118",
+            vts_ops_enrich_done=False,
+            johto=(
+                "muutetaan 67 §:n edellä oleva väliotsikko, 68 a ja 68 b § "
+                "sekä 71 §:n 2 momentti, lisätään 68 a §:n edelle uusi "
+                "luvun otsikko seuraavasti:"
+            ),
+        )
+    )
+
+    chapter_7 = result.state.find_chapter("7")
+    chapter_8a = result.state.find_chapter("8a")
+    chapter_9 = result.state.find_chapter("9")
+    assert chapter_7 is not None
+    assert chapter_8a is not None
+    assert chapter_9 is not None
+    assert [child.label for child in chapter_7.children if child.kind is IRNodeKind.SECTION] == ["66i"]
+    assert [child.label for child in chapter_8a.children if child.kind is IRNodeKind.SECTION] == [
+        "68a",
+        "68b",
+    ]
+    assert [child.label for child in chapter_9.children if child.kind is IRNodeKind.SECTION] == [
+        "69",
+        "71",
+    ]
+    assert [migration.section_label for migration in result.membership_migrations] == ["68a", "68b"]
+
+
 def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() -> None:
     """Real corpus anchor for chapter-heading starts around already-live sections."""
     replay = call_replay_xml(
@@ -1963,6 +2029,50 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
     assert direct_hcontainer_sections == []
     assert len(migrations) >= 12
     assert findings
+
+
+def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
+    """Real corpus anchor for single unnumbered chapter-heading migration."""
+    from lawvm.provision_state import resolve_provision_state
+
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1992/1243",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("68a", "7") is None
+    assert replay.materialized_state.find_section("68b", "7") is None
+    assert replay.materialized_state.find_section("68a", "8a") is None
+    assert replay.materialized_state.find_section("68b", "8a") is None
+
+    migrations = [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2016/118"
+        and getattr(event, "kind", "") == "move"
+        and isinstance(getattr(event, "witness", None), dict)
+        and event.witness.get("rule_id") == "fi.chapter_membership_migration_from_source_starts"
+    ]
+    migrated_labels = {
+        event.witness.get("section_label")
+        for event in migrations
+    }
+    assert {"68a", "68b"} <= migrated_labels
+
+    payload = resolve_provision_state(
+        statute_id="1992/1243",
+        jurisdiction="fi",
+        provision="chapter:8a/section:68a",
+        as_of="2026-06-19",
+        query_type="in_force",
+    )
+    assert payload["resolved_address"]["text"] == "chapter:8a/section:68a"
+    assert payload["version"]["content_state"] == "tombstone"
+    assert payload["source"]["statute_id"] == "2024/853"
 
 
 def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scope() -> None:

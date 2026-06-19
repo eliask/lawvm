@@ -28,8 +28,13 @@ logger = logging.getLogger(__name__)
 
 FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID = "fi.chapter_membership_migration_from_source_starts"
 _CHAPTER_HEADING_ANCHOR_RE = re.compile(
-    r"(?P<section>\d{1,4}(?:[a-z]|\s[a-z])?)\s{0,10}§:n\s+edelle\s+uusi\s+"
-    r"(?P<chapter>\d{1,4}(?:[a-z]|\s[a-z])?)\s+luvun\s+otsikko",
+    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
+    r"(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luvun\s+otsikko",
+    re.IGNORECASE,
+)
+_UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
+    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
+    r"luvun\s+otsikko",
     re.IGNORECASE,
 )
 
@@ -162,6 +167,16 @@ def _chapter_heading_anchors(johto: str) -> dict[str, str]:
         if section_label and chapter_label:
             anchors[chapter_label] = section_label
     return anchors
+
+
+def _unnumbered_chapter_heading_anchor_labels(johto: str) -> frozenset[str]:
+    if "luvun otsikko" not in johto or "§:n edelle" not in johto:
+        return frozenset()
+    labels = {
+        _section_label_from_num_text(match.group("section"))
+        for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE.finditer(johto)
+    }
+    return frozenset(label for label in labels if label)
 
 
 def _part_label_for_element(el: etree._Element) -> str:
@@ -315,11 +330,16 @@ def _chapterization_required_labels(
     johto: str,
 ) -> set[tuple[str, str]]:
     anchors = _chapter_heading_anchors(johto)
-    if not anchors:
+    unnumbered_anchor_labels = _unnumbered_chapter_heading_anchor_labels(johto)
+    if not anchors and not unnumbered_anchor_labels:
         return set()
     required: set[tuple[str, str]] = set()
     for chapter in _source_chapters(muutos_body):
-        if chapter.chapter_label not in anchors:
+        source_start_label = chapter.section_labels[0] if chapter.section_labels else ""
+        if (
+            chapter.chapter_label not in anchors
+            and source_start_label not in unnumbered_anchor_labels
+        ):
             continue
         if state_has_scoped_chapter(state, chapter.part_label, chapter.chapter_label):
             continue
@@ -337,12 +357,19 @@ def _chapter_start_labels(
     if not created:
         return ()
     anchors = _chapter_heading_anchors(johto)
+    unnumbered_anchor_labels = _unnumbered_chapter_heading_anchor_labels(johto)
     starts: list[tuple[str, str, str]] = []
     for chapter in _source_chapters(muutos_body):
         chapter_ref = (chapter.part_label, chapter.chapter_label)
         if chapter_ref not in created:
             continue
         start_label = anchors.get(chapter.chapter_label)
+        if (
+            start_label is None
+            and chapter.section_labels
+            and chapter.section_labels[0] in unnumbered_anchor_labels
+        ):
+            start_label = chapter.section_labels[0]
         if start_label is None and chapter.section_labels:
             start_label = chapter.section_labels[0]
         if start_label:
@@ -379,6 +406,85 @@ def _find_direct_flat_section_path(
         if _norm_num_token(child.label) == section_label:
             return tuple(parent_path) + (("section", child.label),)
     return None
+
+
+def _find_unique_section_path_outside_chapter(
+    state: ReplayState,
+    section_label: str,
+    *,
+    destination_chapter: str,
+    destination_part: str,
+) -> TreePath | None:
+    matches = [
+        tuple(path)
+        for path in state.provision_index.get(("section", _tops.normalized_label_key(section_label)), [])
+    ]
+    filtered: list[TreePath] = []
+    for path in matches:
+        labels = {kind: label for kind, label in path if label}
+        if labels.get("chapter") == destination_chapter and labels.get("part", "") == destination_part:
+            continue
+        filtered.append(path)
+    if len(filtered) == 1:
+        return filtered[0]
+    return None
+
+
+def _first_section_label(node: IRNode) -> str:
+    for child in node.children:
+        if child.kind is IRNodeKind.SECTION and child.label:
+            return _norm_num_token(child.label)
+    return ""
+
+
+def _existing_chapter_start_labels(tree: IRNode) -> tuple[str, ...]:
+    starts: list[str] = []
+
+    def walk(node: IRNode) -> None:
+        if node.kind is IRNodeKind.CHAPTER:
+            first = _first_section_label(node)
+            if first:
+                starts.append(first)
+        for child in node.children:
+            walk(child)
+
+    walk(tree)
+    return tuple(starts)
+
+
+def _next_start_after(
+    start_label: str,
+    starts: tuple[tuple[str, str, str], ...],
+    existing_chapter_starts: tuple[str, ...],
+) -> str:
+    start_key = _tops.default_label_sort_key(start_label)
+    candidates = [
+        label
+        for _part_label, _chapter_label, label in starts
+        if _tops.default_label_sort_key(label) > start_key
+    ]
+    candidates.extend(
+        label
+        for label in existing_chapter_starts
+        if _tops.default_label_sort_key(label) > start_key
+    )
+    if not candidates:
+        return ""
+    return min(candidates, key=_tops.default_label_sort_key)
+
+
+def _section_label_is_in_chapter_span(
+    section_label: str,
+    *,
+    start_label: str,
+    next_start_label: str,
+) -> bool:
+    section_key = _tops.default_label_sort_key(section_label)
+    if section_key < _tops.default_label_sort_key(start_label):
+        return False
+    if next_start_label and section_key >= _tops.default_label_sort_key(next_start_label):
+        return False
+    return True
 
 
 def _chapter_has_section(
@@ -422,16 +528,44 @@ def _migrate_flat_sections_into_source_chapters(
         johto=johto,
         created_refs=created_refs,
     )
-    if len(starts) < 2:
+    if not starts:
         return state, ()
 
     migrations: list[ChapterMembershipMigration] = []
-    for section_label in sorted(_flat_section_labels(state.ir), key=_tops.default_label_sort_key):
+    existing_chapter_starts = _existing_chapter_start_labels(state.ir)
+    candidate_labels = {
+        *(_flat_section_labels(state.ir)),
+        *(
+            _norm_num_token(label)
+            for chapter in _source_chapters(muutos_body)
+            for label in chapter.section_labels
+            if label
+        ),
+    }
+    for section_label in sorted(candidate_labels, key=_tops.default_label_sort_key):
         destination = _chapter_for_section_label(section_label, starts)
         if destination is None:
             continue
         part_label, chapter_label = destination
+        start_label = next(
+            start
+            for start_part, start_chapter, start in starts
+            if (start_part, start_chapter) == destination
+        )
+        if not _section_label_is_in_chapter_span(
+            section_label,
+            start_label=start_label,
+            next_start_label=_next_start_after(start_label, starts, existing_chapter_starts),
+        ):
+            continue
         from_path = _find_direct_flat_section_path(state.ir, section_label)
+        if from_path is None:
+            from_path = _find_unique_section_path_outside_chapter(
+                state,
+                section_label,
+                destination_chapter=chapter_label,
+                destination_part=part_label,
+            )
         if from_path is None:
             continue
         moving_node = _tops.resolve(state.ir, from_path)
