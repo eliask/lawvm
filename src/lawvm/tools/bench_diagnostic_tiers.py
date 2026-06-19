@@ -51,6 +51,8 @@ def classify_bench_diagnostic_key(key: str) -> BenchDiagnosticTier:
         return "timeline_variant"
     if key.startswith("structural:"):
         return "structural"
+    if key.startswith("oracle_check:"):
+        return "oracle"
     if key in {"source_adjudication:oracle_suspect", "oracle_suspect"}:
         return "oracle"
     if key in {"timeline_invariant"}:
@@ -85,6 +87,8 @@ def classify_bench_diagnostic_key(key: str) -> BenchDiagnosticTier:
 def _collapse_audit_display_key(key: str) -> str:
     if key == "source_adjudication:oracle_suspect":
         return "oracle_suspect"
+    if key.startswith("oracle_check:top_diagnosis:"):
+        return "oracle_check:" + key.removeprefix("oracle_check:top_diagnosis:")
     finding_kind = _finding_kind_from_key(key)
     if finding_kind in _REGISTRY_AUDIT_KINDS:
         return "registry_stage"

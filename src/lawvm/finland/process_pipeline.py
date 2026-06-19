@@ -58,7 +58,7 @@ from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostpro
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
-from lawvm.finland.vts import extract_vts_cross_statute_repeals, extract_vts_repeals_fallback
+from lawvm.finland.vts import extract_vts_repeals_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def _accepted_route_should_use_vts_side_repeal_only(
     parent_title: str,
     source_title: str,
     johto: str,
-    xml_bytes: bytes,
+    source_model: AmendmentSourceModel,
     strict_profile: StrictProfile | None,
 ) -> bool:
     """Detect accepted routes whose only parent effect is a VTS side repeal."""
@@ -126,11 +126,10 @@ def _accepted_route_should_use_vts_side_repeal_only(
     if johtolause_cited_target_ids(johto, source_year):
         return False
     return bool(
-        extract_vts_cross_statute_repeals(
-            xml_bytes,
-            parent_id,
-            parent_title,
-            strict_profile,
+        source_model.extract_vts_cross_statute_repeals(
+            parent_id=parent_id,
+            parent_title=parent_title,
+            strict_profile=strict_profile,
             skipped_targets_out=None,
         )
     )
@@ -242,12 +241,7 @@ def process_muutoslaki_resolved(
             parent_id=parent_id,
             amendment_id=amendment_id,
         )
-        xml_bytes = acquired.xml_bytes
-        muutos_tree = acquired.muutos_tree
-        source_model = AmendmentSourceModel.from_tree(
-            muutos_tree,
-            source_ref=amendment_id,
-        )
+        source_model = acquired.source_model
         lacks_operative_structure = acquired.lacks_operative_structure
         operative_tags = list(acquired.operative_tags)
         johto = acquired.johto
@@ -268,7 +262,6 @@ def process_muutoslaki_resolved(
                     parent_title=ctx.title,
                     source_title=source_title,
                     johto=johto,
-                    xml_bytes=xml_bytes,
                     source_model=source_model,
                     route_reason=route_reason,
                     route_target_amendment_id=acquisition.decision.route_target_amendment_id,
@@ -301,7 +294,7 @@ def process_muutoslaki_resolved(
             parent_title=ctx.title,
             source_title=source_title,
             johto=johto,
-            xml_bytes=xml_bytes,
+            source_model=source_model,
             strict_profile=strict_profile,
         ):
             route_rejection = _run_process_stage(
@@ -312,7 +305,6 @@ def process_muutoslaki_resolved(
                     parent_title=ctx.title,
                     source_title=source_title,
                     johto=johto,
-                    xml_bytes=xml_bytes,
                     source_model=source_model,
                     route_reason="citation_mismatch_skip",
                     route_target_amendment_id="",
@@ -352,7 +344,6 @@ def process_muutoslaki_resolved(
                 parent_title=ctx.title,
                 source_title=source_title,
                 johto=johto,
-                xml_bytes=xml_bytes,
                 source_model=source_model,
                 strict_profile=strict_profile,
                 acquisition=acquisition,
@@ -446,7 +437,7 @@ def process_muutoslaki_resolved(
             compile_result = compile_amendment_ops(
                 state,
                 ops,
-                muutos_tree,
+                source_model,
                 johto,
                 replay_mode,
                 compiled_ops_out=compiled_ops_out,
@@ -454,7 +445,6 @@ def process_muutoslaki_resolved(
                 source_ref=amendment_id,
                 source_title=source_title,
                 target_statute=ctx.id,
-                source_model=source_model,
             )
         resolved = compile_result.output
 

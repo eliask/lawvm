@@ -907,6 +907,55 @@ def test_merge_section_with_omission_trims_duplicate_prefix_from_preserved_maste
     assert "Updated middle" in irnode_to_text(result)
 
 
+def test_merge_section_with_leading_omission_preserves_same_subsection_anchor_prefix() -> None:
+    """A leading section omission can own a prefix inside the same subsection.
+
+    Regression shape for 1993/1709 amended by 1996/704: the amendment replaces
+    the psychotropic-list suffix of §1, while the live 1961-list prefix remains
+    legally in force.
+    """
+    master_sec = _sec(
+        "1",
+        _sub(
+            "1",
+            _content("Vuoden 1961 huumausaineyleissopimuksen luettelo I"),
+            _para("1", "Old 1961 substance"),
+            _content("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I"),
+            _para("2", "Old DET line"),
+        ),
+    )
+    amend_sec = _sec(
+        "1",
+        _omission(),
+        _sub(
+            "1",
+            _content("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I"),
+            _para("1", "New DET line"),
+        ),
+    )
+
+    result = _merge_section_with_omission_ir(master_sec, amend_sec)
+
+    assert result is not None
+    result_text = irnode_to_text(result)
+    assert "Vuoden 1961 huumausaineyleissopimuksen luettelo I" in result_text
+    assert "Old 1961 substance" in result_text
+    assert "Psykotrooppisia aineita koskevan yleissopimuksen luettelo I" in result_text
+    assert "New DET line" in result_text
+    assert "Old DET line" not in result_text
+
+    result_sub = next(child for child in result.children if child.kind is IRNodeKind.SUBSECTION)
+    assert result_sub.attrs["lawvm_payload_normalization_rule"] == (
+        "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE",
+    )
+    labeled_paragraphs = [
+        (child.label, irnode_to_text(child))
+        for child in result_sub.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+    assert labeled_paragraphs == [("1", "Old 1961 substance")]
+
+
 def test_merge_subsection_with_omission_fails_closed_on_duplicate_paragraph_labels() -> None:
     master_sub = _sub(
         "1",

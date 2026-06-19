@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from lxml import etree
 from types import SimpleNamespace
 import warnings
@@ -50,6 +50,16 @@ from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
 from tests.corpus_pin_helpers import pinned_replay
 
 
+@dataclass(frozen=True, slots=True)
+class _ReplayCompileInputs:
+    parent_id: str
+    replay_result: ReplayResult
+    compiled_ops: tuple[dict[str, object], ...]
+    replay_meta: dict[str, object]
+    canonical_ops: tuple[LegalOperation, ...]
+    failed_ops: tuple[Any, ...]
+
+
 def compile_fi_facade(*args: Any, **kwargs: Any) -> Any:
     from lawvm.finland.compile import compile_fi_facade as _real_compile_fi_facade
 
@@ -70,6 +80,21 @@ def get_corpus_store() -> Any:
 
 def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
     from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    if "muutos_tree" in kwargs:
+        tree = kwargs.pop("muutos_tree")
+        kwargs["source_model"] = AmendmentSourceModel.from_tree(
+            tree,
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+    elif len(args) >= 3 and not isinstance(args[2], AmendmentSourceModel):
+        patched_args = list(args)
+        patched_args[2] = AmendmentSourceModel.from_tree(
+            args[2],
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+        args = tuple(patched_args)
 
     return _real_compile_amendment_ops(*args, **kwargs)
 
@@ -219,13 +244,65 @@ def _compile_facade_with_replay(
 
 
 @pytest.fixture(scope="module")
+def replay_compile_inputs_2002_1090_legal_pit() -> _ReplayCompileInputs:
+    compiled_ops: list[dict[str, object]] = []
+    replay_meta: dict[str, object] = {}
+    canonical_ops: list[LegalOperation] = []
+    failed_ops: list[Any] = []
+    replay_result = replay_xml(
+        "2002/1090",
+        mode="legal_pit",
+        compiled_ops_out=compiled_ops,
+        replay_meta_out=replay_meta,
+        lo_ops_out=canonical_ops,
+        failed_ops_out=failed_ops,
+        strict_profile=None,
+        build_full_products=False,
+    )
+    return _ReplayCompileInputs(
+        parent_id="2002/1090",
+        replay_result=replay_result,
+        compiled_ops=tuple(compiled_ops),
+        replay_meta=dict(replay_meta),
+        canonical_ops=tuple(canonical_ops),
+        failed_ops=tuple(failed_ops),
+    )
+
+
+def _compile_facade_from_inputs(
+    inputs: _ReplayCompileInputs,
+    *,
+    compile_mode: Literal["strict", "quirks"] = "strict",
+    strict_profile: StrictProfile | None = None,
+) -> Any:
+    return compile_fi_facade_from_replay(
+        parent_id=inputs.parent_id,
+        replay_result=inputs.replay_result,
+        replay_mode="legal_pit",
+        compile_mode=compile_mode,
+        strict_profile=strict_profile,
+        compiled_ops=list(inputs.compiled_ops),
+        replay_meta=dict(inputs.replay_meta),
+        canonical_ops=list(inputs.canonical_ops),
+        failed_ops=list(inputs.failed_ops),
+    )
+
+
+@pytest.fixture(scope="module")
 def replay_1987_990_finlex_oracle() -> ReplayResult:
     return cast(ReplayResult, pinned_replay("1987/990", mode="official_consolidation", quiet=True))
 
 
 @pytest.fixture(scope="module")
-def facade_2009_953_legal_pit_quirks() -> Any:
-    return compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
+def replay_and_facade_2009_953_legal_pit_quirks() -> tuple[ReplayResult, Any]:
+    return _compile_facade_with_replay("2009/953", replay_mode="legal_pit", compile_mode="quirks")
+
+
+@pytest.fixture(scope="module")
+def facade_2009_953_legal_pit_quirks(
+    replay_and_facade_2009_953_legal_pit_quirks: tuple[ReplayResult, Any],
+) -> Any:
+    return replay_and_facade_2009_953_legal_pit_quirks[1]
 
 
 def test_strict_fail_reasons_detect_known_recovery_paths() -> None:
@@ -650,7 +727,7 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:
-    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True)
+    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True, build_full_products=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:2"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -1509,8 +1586,13 @@ def test_compile_fi_facade_keeps_temporal_bundle_empty_when_replay_events_absent
     assert facade.bundle.temporal_events == ()
 
 
-def test_compile_fi_surfaces_known_recovery_paths_and_source_flags() -> None:
-    facade = compile_fi_facade("2002/1090", replay_mode="legal_pit", compile_mode="quirks")
+def test_compile_fi_surfaces_known_recovery_paths_and_source_flags(
+    replay_compile_inputs_2002_1090_legal_pit: _ReplayCompileInputs,
+) -> None:
+    facade = _compile_facade_from_inputs(
+        replay_compile_inputs_2002_1090_legal_pit,
+        compile_mode="quirks",
+    )
 
     # 2002/1090 is a well-exercised compile target. It should always produce
     # source_adjudication and derived oracle comparability regardless of recovery mix.
@@ -2202,8 +2284,10 @@ def test_compile_fi_surfaces_sparse_slot_bindings_as_projection_rows(
     assert cast(dict[str, Any], binding_projection_rows[0]["detail"])["payload_slot_label"] == "2"
 
 
-def test_replay_xml_exposes_fold_and_materialized_state() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit", quiet=True)
+def test_replay_xml_exposes_fold_and_materialized_state(
+    replay_and_facade_2009_953_legal_pit_quirks: tuple[ReplayResult, Any],
+) -> None:
+    replay = replay_and_facade_2009_953_legal_pit_quirks[0]
 
     assert replay.replay_fold_state is not None
     assert replay.materialized_state is replay.state
@@ -2311,6 +2395,27 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "kihlakunnantuomarin virka B 4" in text
     assert "ulosottoapulaisen toimi V 18" in text
     assert "henkikirjoittajan" not in text
+
+
+def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
+    replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
+    section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]
+    text = " ".join(irnode_to_text(section1).split())
+
+    assert text.index("Vuoden 1961 huumausaineyleissopimuksen luettelo I") < text.index(
+        "Psykotrooppisia aineita koskevan yleissopimuksen luettelo I"
+    )
+    assert text.index("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I") < text.index(
+        "Dietyylitryptamiini (DET)"
+    )
+    assert "Dietyylitryptamiini (DET)" in text
+    assert "Tetrahydrokannabinoli" in text
+    subsection1 = next(
+        child
+        for child in section1.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    assert "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE" in subsection1.attrs["lawvm_payload_normalization_rule"]
 
 
 def test_replay_xml_2021_1289_applies_explicit_heading_and_first_moment_replace() -> None:
@@ -2529,6 +2634,20 @@ def test_replay_xml_2004_485_applies_2025_314_item_intro_and_subparagraph_payloa
     assert "7 g §:ssä tarkoitetuille henkilöille" in irnode_to_text(subparagraph_a)
 
 
+def test_replay_xml_2012_999_prunes_stale_item_tail_when_2018_207_supplies_new_tail() -> None:
+    replay = replay_xml("2012/999", mode="official_consolidation", quiet=True, build_full_products=False)
+    section = replay.materialized_state.find_section("87", "12")
+    assert section is not None
+
+    section_text = irnode_to_text(section)
+    assert "jollei teosta muualla laissa säädetä ankarampaa rangaistusta" not in section_text
+    assert section_text.count("jollei siitä muualla laissa säädetä ankarampaa rangaistusta") == 1
+
+    subsection = next(c for c in section.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
+    item_4 = next(c for c in subsection.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "4")
+    assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in item_4.children)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()
@@ -2568,8 +2687,109 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
     )
 
 
-def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
-    replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
+def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() -> None:
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    before = replay_xml(
+        "2004/1287",
+        stop_before="2018/1359",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2018/1359")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2018/1359")
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2018/1359",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2004/1287",
+        strict_profile=None,
+        source_model=source_model,
+    )
+    target_labels = {"14a", "14b", "14c", "15a", "15b", "15c", "15d", "15e"}
+    normalized_inserts = {
+        op.target_section: op
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in target_labels
+    }
+    assert set(normalized_inserts) == target_labels
+    assert {op.target_chapter for op in normalized_inserts.values()} == {"2"}
+
+    compiled_rows: list[dict[str, object]] = []
+    compile_result = compile_amendment_ops(
+        before.state,
+        phase.output,
+        source_model,
+        johto,
+        "official_consolidation",
+        compiled_ops_out=compiled_rows,
+        source_ref="2018/1359",
+        target_statute="2004/1287",
+    )
+
+    compiled_scope_by_label = {
+        str(row["target_norm"]): str(row["target_chapter"])
+        for row in compiled_rows
+        if row.get("action") == "insert" and row.get("target_norm") in target_labels
+    }
+    assert compiled_scope_by_label == {label: "2" for label in target_labels}
+    assert {
+        rop.resolved_target_label: rop.resolved_target_scope_chapter_label
+        for rop in compile_result.output
+        if rop.resolved_action_type == "INSERT" and rop.resolved_target_label in target_labels
+    } == {label: "2" for label in target_labels}
+
+
+def test_replay_1929_234_does_not_duplicate_titled_part_heading_sections() -> None:
+    replay = pinned_replay(
+        "1929/234",
+        mode="official_consolidation",
+        quiet=True,
+    )
+
+    def _section_paths(
+        node: IRNode,
+        label: str,
+        path: tuple[tuple[str, str], ...] = (),
+    ) -> list[tuple[tuple[str, str], ...]]:
+        found: list[tuple[tuple[str, str], ...]] = []
+        if node.kind is IRNodeKind.SECTION and node.label == label:
+            found.append(tuple(step for step in path if step[0] != "hcontainer"))
+        for child in node.children:
+            found.extend(
+                _section_paths(
+                    child,
+                    label,
+                    path + ((child.kind.value, child.label or ""),),
+                )
+            )
+        return found
+
+    expected_110 = [(("part", "5"), ("chapter", "1"), ("section", "110"))]
+    expected_129 = [(("part", "5"), ("chapter", "4"), ("section", "129"))]
+
+    assert _section_paths(replay.replay_fold_state.ir, "110") == expected_110
+    assert _section_paths(replay.replay_fold_state.ir, "129") == expected_129
+    assert _section_paths(replay.ir, "110") == expected_110
+    assert _section_paths(replay.ir, "129") == expected_129
+    assert replay.find_section("129", "4", "5") is not None
+    assert replay.find_section("129", "4", "1") is None
+
+
+def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    replay = replay_1987_990_finlex_oracle
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -3062,10 +3282,11 @@ def test_replay_2009_1599_keeps_section_31_heading_despite_2023_280_sparse_paylo
     assert heading.text == "Päätös kaikkien osakkeenomistajien rahoittamasta uudistuksesta"
 
 
-def test_compile_fi_respects_more_permissive_strict_profile() -> None:
-    facade = compile_fi_facade(
-        "2002/1090",
-        replay_mode="legal_pit",
+def test_compile_fi_respects_more_permissive_strict_profile(
+    replay_compile_inputs_2002_1090_legal_pit: _ReplayCompileInputs,
+) -> None:
+    facade = _compile_facade_from_inputs(
+        replay_compile_inputs_2002_1090_legal_pit,
         compile_mode="quirks",
         strict_profile=StrictProfile(
             name="finland_relaxed_ingestion_v1",

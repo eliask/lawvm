@@ -330,6 +330,36 @@ def build_label_index(
     return index
 
 
+def build_provision_label_index(
+    tree: IRNode,
+    *,
+    indexed_kinds: FrozenSet[str] = frozenset({"part", "chapter", "section"}),
+    terminal_kinds: FrozenSet[str] = frozenset({"section"}),
+) -> LabelIndex:
+    """Build a sparse provision-container label index.
+
+    This is for hot paths that only resolve provision containers.  Sections are
+    terminal for this index, so subsection/paragraph/item descendants are not
+    walked merely to discover that their kinds are not indexed.
+    """
+    index: LabelIndex = {}
+
+    def _walk(node: IRNode, prefix: Path) -> None:
+        for child in node.children:
+            child_kind = _kind_str(child.kind)
+            step = (child_kind, child.label or "")
+            path = prefix + (step,)
+            if child.label and child_kind in indexed_kinds:
+                key = (child_kind, _norm(child.label))
+                index.setdefault(key, []).append(path)
+            if child_kind in terminal_kinds:
+                continue
+            _walk(child, path)
+
+    _walk(tree, ())
+    return index
+
+
 def find_all(
     tree: IRNode,
     kind: str,

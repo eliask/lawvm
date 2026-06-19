@@ -287,6 +287,32 @@ The allowlist is limited to acquisition, corrigendum, XML adapter/model-builder
 modules, oracle ingestion/adjudication, export projection, and explicit debug
 witness rendering.
 
+## Current Implementation Snapshot
+
+As of the source-model frontier merge, the production process path has crossed
+the first hard boundary:
+
+- `process_acquisition` constructs `AmendmentSourceModel` from the corrected
+  source bytes and returns the model as the acquisition product.
+- `process_pipeline` does not receive or thread `muutos_tree` or corrected XML
+  bytes after acquisition.
+- `compile_amendment_ops`, `ApplyOpsRequest`, temporal authority, temporal
+  postprocessing, route rejection, and precompile VTS enrichment require
+  `AmendmentSourceModel` instead of XML roots.
+- Debug amendment inspection wraps the parsed source in `AmendmentSourceModel`
+  before invoking the compiler boundary.
+- Static tests currently guard these phase boundaries and fail if process,
+  compile, apply, temporal, route rejection, or precompile selection code
+  reintroduces XML roots or source-byte fields after acquisition.
+
+This is not the final model. `AmendmentSourceModel` is still a transitional
+adapter in several places: it owns the remaining root, delegates many lookups to
+XML-oriented helpers, serializes source bytes for VTS-oriented legacy parsers,
+and exposes payload lookup through compatibility methods. Those uses are
+permitted only while they stay behind the source-model boundary and continue to
+emit the same operations, findings, rejected operations, strict behavior, and
+temporal facts.
+
 ## Process And Cache Requirements
 
 The source model should be built in one bounded ingest pass per source artifact.
@@ -321,9 +347,9 @@ ingest result, not be reparsed during product assembly.
   not climb XML parents or re-query source XML.
 - Chapter precreation should consume typed `SourceChapterDeclaration` facts,
   not body XML containers.
-- Process/apply/temporal signatures should stop carrying `xml_bytes` and
-  `muutos_tree` after the source model exists, except in explicit adapter
-  phases.
+- VTS extraction should consume model-owned VTS facts instead of serialized
+  source bytes. The current source-model methods are boundary-preserving
+  adapters, not the final typed representation.
 
 ## Non-Goals
 
@@ -352,8 +378,12 @@ ingest result, not be reparsed during product assembly.
    temporary payload text, and metadata enrichment.
 5. Port chapter precreation and apply preparation to typed source declarations.
 6. Port temporal authority and postprocessing to model-owned temporal surfaces.
+   Boundary signatures are already source-model based; the remaining work is
+   replacing delegated XML helper internals with typed temporal facts.
 7. Remove `muutos_tree` from process, frontend, compile, apply, and temporal
-   phase request types.
+   phase request types. Process, compile, apply, and temporal request types are
+   now source-model based; frontend helper internals still need typed
+   source-unit and payload-surface replacements.
 8. Add static lxml exposure gates, parity tests for lookup/coverage/pairing/
    temporal metadata, strict-mode parity, and corpus replay parity for hard
    statutes such as `1992/1535`, `2017/320`, and `2009/862`.

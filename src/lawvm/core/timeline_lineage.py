@@ -38,21 +38,40 @@ class _PrefixMigrationWavePlan:
     waves: tuple[_PrefixMigrationWave, ...]
 
 
-_PrefixMigrationEventSignature = tuple[str, str, TreePath, object | None, TreePath, object | None, str, str]
+@dataclass(frozen=True, slots=True)
+class _PrefixMigrationEventSignature:
+    event_id: str
+    kind: str
+    from_path: TreePath
+    from_special: object | None
+    to_path: TreePath
+    to_special: object | None
+    effective: str
+    source_statute: str
+
+
+PrefixMigrationEventSignature = _PrefixMigrationEventSignature
 
 
 def _migration_event_signature(event: MigrationEvent) -> _PrefixMigrationEventSignature:
     source_statute = event.source_statute if event.source_statute is not None else ""
-    return (
-        event.event_id,
-        event.kind,
-        event.from_address.path,
-        event.from_address.special,
-        event.to_address.path,
-        event.to_address.special,
-        event.effective,
-        source_statute,
+    return _PrefixMigrationEventSignature(
+        event_id=event.event_id,
+        kind=event.kind,
+        from_path=event.from_address.path,
+        from_special=event.from_address.special,
+        to_path=event.to_address.path,
+        to_special=event.to_address.special,
+        effective=event.effective,
+        source_statute=source_statute,
     )
+
+
+def prefix_migration_event_signatures(
+    migration_events: tuple[MigrationEvent, ...],
+) -> tuple[PrefixMigrationEventSignature, ...]:
+    """Return stable prefix-migration cache keys for migration events."""
+    return tuple(_migration_event_signature(event) for event in migration_events)
 
 
 def _prefix_migration_wave_plan(
@@ -70,31 +89,28 @@ def _prefix_migration_wave_plan(
 
 @lru_cache(maxsize=16)
 def _prefix_migration_wave_plan_from_signature(
-    events_signature: tuple[_PrefixMigrationEventSignature, ...],
+    events_signature: tuple[PrefixMigrationEventSignature, ...],
     as_of_date: str,
     not_before: str,
 ) -> _PrefixMigrationWavePlan:
     waves: dict[tuple[str, str], list[_PrefixMigrationEvent]] = {}
-    for (
-        _event_id,
-        _kind,
-        from_path,
-        from_special,
-        to_path,
-        to_special,
-        effective,
-        source_statute,
-    ) in events_signature:
-        if as_of_date and effective and effective > as_of_date:
+    for event_signature in events_signature:
+        if as_of_date and event_signature.effective and event_signature.effective > as_of_date:
             continue
-        if not_before and effective and effective < not_before:
+        if not_before and event_signature.effective and event_signature.effective < not_before:
             continue
-        waves.setdefault((effective, source_statute), []).append(
+        waves.setdefault((event_signature.effective, event_signature.source_statute), []).append(
             _PrefixMigrationEvent(
-                from_address=LegalAddress(path=from_path, special=from_special),
-                to_address=LegalAddress(path=to_path, special=to_special),
-                effective=effective,
-                source_statute=source_statute,
+                from_address=LegalAddress(
+                    path=event_signature.from_path,
+                    special=event_signature.from_special,
+                ),
+                to_address=LegalAddress(
+                    path=event_signature.to_path,
+                    special=event_signature.to_special,
+                ),
+                effective=event_signature.effective,
+                source_statute=event_signature.source_statute,
             )
         )
 
@@ -575,12 +591,29 @@ def current_address_with_prefix_migrations_from_events(
     from inheriting the prior occupant's stale renumber chain. Same-wave
     follows (``effective == not_before``) remain in scope.
     """
+    return current_address_with_prefix_migrations_from_event_signatures(
+        original_address,
+        prefix_migration_event_signatures(migration_events),
+        as_of_date=as_of_date,
+        not_before=not_before,
+        normalize_address_fn=normalize_address_fn,
+    )
 
+
+def current_address_with_prefix_migrations_from_event_signatures(
+    original_address: LegalAddress,
+    migration_event_signatures: tuple[PrefixMigrationEventSignature, ...],
+    *,
+    as_of_date: str = "",
+    not_before: str = "",
+    normalize_address_fn: Callable[[LegalAddress], LegalAddress] | None = None,
+) -> LegalAddress:
+    """Follow prefix migrations using precomputed event signatures."""
     normalize = normalize_address_fn or (lambda address: address)
     current = normalize(original_address)
     visited: set[str] = {str(current)}
-    wave_plan = _prefix_migration_wave_plan(
-        migration_events,
+    wave_plan = _prefix_migration_wave_plan_from_signature(
+        migration_event_signatures,
         as_of_date=as_of_date,
         not_before=not_before,
     )
@@ -648,6 +681,11 @@ def rekey_timelines_with_migration_events(
     *,
     as_of_date: str,
     current_address_with_prefix_migrations_fn: Callable[[LegalAddress, tuple[MigrationEvent, ...], str], LegalAddress],
+    current_address_with_prefix_migration_signatures_fn: Callable[
+        [LegalAddress, tuple[PrefixMigrationEventSignature, ...], str, str],
+        LegalAddress,
+    ]
+    | None = None,
     address_prefix_matches: Callable[[LegalAddress, LegalAddress], bool],
     retarget_version_content_fn: _RetargetVersionContentFn = _retarget_version_content,
     merge_bucket_cleanup_fn: _MergeBucketCleanupFn | None = None,
@@ -661,6 +699,40 @@ def rekey_timelines_with_migration_events(
     """
     if not migration_events:
         return dict(timelines)
+    migration_event_signatures = prefix_migration_event_signatures(migration_events)
+    native_boundary_signatures: dict[str, tuple[PrefixMigrationEventSignature, ...]] = {}
+
+    def _signatures_after_native_boundary(
+        native_boundary: str,
+    ) -> tuple[PrefixMigrationEventSignature, ...]:
+        cached = native_boundary_signatures.get(native_boundary)
+        if cached is not None:
+            return cached
+        filtered = tuple(
+            event_signature
+            for event_signature in migration_event_signatures
+            if native_boundary
+            and event_signature.effective
+            and event_signature.effective > native_boundary
+        )
+        native_boundary_signatures[native_boundary] = filtered
+        return filtered
+
+    def _current_address_after_prefix_migrations(
+        address: LegalAddress,
+        events: tuple[MigrationEvent, ...],
+        event_signatures: tuple[PrefixMigrationEventSignature, ...],
+        *,
+        not_before: str = "",
+    ) -> LegalAddress:
+        if current_address_with_prefix_migration_signatures_fn is not None:
+            return current_address_with_prefix_migration_signatures_fn(
+                address,
+                event_signatures,
+                as_of_date,
+                not_before,
+            )
+        return current_address_with_prefix_migrations_fn(address, events, as_of_date)
 
     def _has_prior_incoming_migration_prefix(
         address: LegalAddress,
@@ -807,20 +879,21 @@ def rekey_timelines_with_migration_events(
         split_buckets = _split_versions_at_native_renumber_boundary(address, list(timeline.versions))
         for bucket in split_buckets:
             migrated_address = (
-                current_address_with_prefix_migrations_fn(
+                _current_address_after_prefix_migrations(
                     bucket.address,
                     tuple(
                         event
                         for event in migration_events
                         if bucket.native_boundary and event.effective and event.effective > bucket.native_boundary
                     ),
-                    as_of_date,
+                    _signatures_after_native_boundary(bucket.native_boundary),
+                    not_before=bucket.native_boundary,
                 )
                 if bucket.force_native
-                else current_address_with_prefix_migrations_fn(
+                else _current_address_after_prefix_migrations(
                     bucket.address,
                     migration_events,
-                    as_of_date,
+                    migration_event_signatures,
                 )
             )
             entries.append(

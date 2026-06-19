@@ -18,7 +18,14 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.timeline import current_address_from_migration_events
-from lawvm.core.timeline_lineage import current_address_with_prefix_migrations_from_events as _core_prefix_migrations
+from lawvm.core.timeline_lineage import (
+    PrefixMigrationEventSignature,
+    current_address_with_prefix_migrations_from_event_signatures as _core_prefix_migration_signatures,
+)
+from lawvm.core.timeline_lineage import (
+    current_address_with_prefix_migrations_from_events as _core_prefix_migrations,
+)
+from lawvm.core.timeline_lineage import prefix_migration_event_signatures
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import _norm_num_token
 
@@ -123,6 +130,28 @@ def current_address_with_prefix_migrations_from_events(
     return migrated
 
 
+def current_address_with_prefix_migrations_from_event_signatures(
+    original_address: LegalAddress,
+    migration_event_signatures: tuple[PrefixMigrationEventSignature, ...],
+    as_of_date: str = "",
+    not_before: str = "",
+) -> LegalAddress:
+    """Finland wrapper over precomputed shared prefix migration signatures."""
+    normalized_original = _normalize_address(original_address)
+    migrated = _core_prefix_migration_signatures(
+        original_address,
+        migration_event_signatures,
+        as_of_date=as_of_date,
+        not_before=not_before,
+        normalize_address_fn=_normalize_address,
+    )
+    if migrated == normalized_original:
+        if len(normalized_original.path) == len(original_address.path):
+            return normalized_original
+        return original_address
+    return migrated
+
+
 class MigrationLedger:
     """Accumulates MigrationEvent objects during replay.
 
@@ -130,11 +159,12 @@ class MigrationLedger:
     one amendment-at-a-time application is the norm.
     """
 
-    __slots__ = ("_events", "_prefix_cache")
+    __slots__ = ("_events", "_prefix_cache", "_prefix_signature_cache")
 
     def __init__(self, events: Iterable[MigrationEvent] = ()) -> None:
         self._events: list[MigrationEvent] = list(events)
         self._prefix_cache: dict[tuple[LegalAddress, str, str], LegalAddress] = {}
+        self._prefix_signature_cache: tuple[PrefixMigrationEventSignature, ...] | None = None
 
     # ------------------------------------------------------------------
     # Recording
@@ -172,6 +202,7 @@ class MigrationLedger:
         )
         self._events.append(event)
         self._prefix_cache.clear()
+        self._prefix_signature_cache = None
         return event
 
     def record_move(
@@ -197,6 +228,7 @@ class MigrationLedger:
         )
         self._events.append(event)
         self._prefix_cache.clear()
+        self._prefix_signature_cache = None
         return event
 
     # ------------------------------------------------------------------
@@ -247,8 +279,15 @@ class MigrationLedger:
         cached = self._prefix_cache.get(key)
         if cached is not None:
             return cached
-        resolved = current_address_with_prefix_migrations_from_events(
-            original_address, tuple(self._events), as_of_date, not_before=not_before
+        if self._prefix_signature_cache is None:
+            self._prefix_signature_cache = prefix_migration_event_signatures(
+                tuple(self._events)
+            )
+        resolved = current_address_with_prefix_migrations_from_event_signatures(
+            original_address,
+            self._prefix_signature_cache,
+            as_of_date,
+            not_before=not_before,
         )
         self._prefix_cache[key] = resolved
         return resolved

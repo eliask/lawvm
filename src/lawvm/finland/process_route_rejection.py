@@ -24,7 +24,7 @@ from lawvm.finland.citation_routing import (
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
-from lawvm.finland.vts import VtsSkippedTarget, extract_vts_cross_statute_repeals
+from lawvm.finland.vts import VtsSkippedTarget
 
 
 RecordProcessFinding = Callable[..., Finding]
@@ -139,7 +139,6 @@ class ProcessRouteRejectionContext:
     parent_title: str
     source_title: str
     johto: str
-    xml_bytes: bytes
     source_model: AmendmentSourceModel
     route_reason: str
     route_target_amendment_id: str
@@ -170,11 +169,10 @@ class ProcessRouteRejectionContext:
     def handle(self) -> RouteRejectionResult:
         self._record_source_incomplete()
         self._apply_skipped_amendment_expiry_override()
-        vts_ops = extract_vts_cross_statute_repeals(
-            self.xml_bytes,
-            self.parent_id,
-            self.parent_title,
-            self.strict_profile,
+        vts_ops = self.source_model.extract_vts_cross_statute_repeals(
+            parent_id=self.parent_id,
+            parent_title=self.parent_title,
+            strict_profile=self.strict_profile,
             skipped_targets_out=self.vts_skipped_targets,
         )
         if not vts_ops:

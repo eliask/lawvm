@@ -72,7 +72,7 @@ from lawvm.finland.apply_ir_ops import (
     _relabel_section_ir,
     _relabel_subsection_ir,
 )
-from lawvm.finland.apply_runtime_support import _find_insert_parent_path
+from lawvm.finland.apply_runtime_support import _find_insert_parent_path, _with_preserved_provision_index
 from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
 from lawvm.finland.replay_notices import replay_print
 
@@ -1689,7 +1689,7 @@ def _apply_intent_relabel(
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
-        return state.with_ir(new_ir)
+        return _with_preserved_provision_index(state, new_ir)
 
     if dest_label and source_unit_kind == "item":
         source_path = intent.source.address.path
@@ -1819,7 +1819,7 @@ def _apply_intent_relabel(
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
-        return state.with_ir(new_ir)
+        return _with_preserved_provision_index(state, new_ir)
 
     logger.warning(
         "RELABEL_UNHANDLED: %s %s — Relabel target kind %r not yet implemented",

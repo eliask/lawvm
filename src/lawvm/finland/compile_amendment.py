@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional, cast
 
-import lxml.etree as etree
-
 from lawvm.core.compile_result import ActivationRule, StrictProfile, TemporalEvent
 from lawvm.core.effect_lowering import lower_effect_intents_to_temporal_events
 from lawvm.core.elaboration_context import TargetUnitKind, snapshot_replay_lookups
@@ -103,7 +101,7 @@ def _numbered_table_child_group_split_finding(
 def compile_amendment_ops(
     master: ReplayState,
     ops: list[AmendmentOp],
-    muutos_tree: etree._Element,
+    source_model: AmendmentSourceModel,
     johto: str,
     replay_mode: Literal["official_consolidation", "legal_pit"],
     compiled_ops_out: Optional[list[dict[str, object]]] = None,
@@ -112,14 +110,9 @@ def compile_amendment_ops(
     source_ref: str = "",
     source_title: str = "",
     target_statute: str = "",
-    source_model: AmendmentSourceModel | None = None,
 ) -> PhaseResult[list[ResolvedOp]]:
     """Compile grouped amendment ops into resolved ops ready for application."""
     profile = get_replay_profile(replay_mode)
-    source_model = source_model or AmendmentSourceModel.from_tree(
-        muutos_tree,
-        source_ref=source_ref,
-    )
     source_title = source_title or source_model.title()
     amendment_issue_date = source_model.issue_date()
     amendment_effective_date = source_model.effective_date()

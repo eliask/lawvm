@@ -12,17 +12,26 @@ import datetime as dt
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Optional, cast
+from typing import TYPE_CHECKING, Literal, Optional
 
 import lxml.etree as etree
 
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageUnit
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.body_coverage import extract_body_coverage
-from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
-from lawvm.finland.constraints import _find_muutos_node_uncached
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
+from lawvm.finland.body_pairing import (
+    ObservedBodyUnit,
+    _body_with_orphan_subsections_attached,
+    _part_label_from_cross_heading,
+    build_observed_body_inventory,
+)
+from lawvm.finland.helpers import (
+    _normalize_source_part_num,
+    _normalize_source_section_num,
+    _norm_num_token,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
@@ -31,11 +40,14 @@ if TYPE_CHECKING:
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
+        SourceChapter,
+        SourcePseudoChapter,
     )
     from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
     from lawvm.finland.ops import AmendmentOp, ResolvedOp
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.uncovered_recovery_context import UncoveredRecoveryContext
+    from lawvm.finland.vts import VtsSkippedTarget
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,13 +85,289 @@ class SourceBodyLookupResult:
         return self.candidates[0]
 
 
+@dataclass(frozen=True, slots=True)
+class SourcePayloadLookupResult:
+    """Typed payload lookup verdict for a source-body target."""
+
+    status: Literal["unique", "missing", "ambiguous"]
+    query: SourceBodyUnitQuery
+    body_lookup_status: Literal["unique", "missing", "ambiguous"]
+    body_candidates: tuple[ObservedBodyUnit, ...]
+    payload_basis: Literal["body_inventory", "coverage_payload_ref", "none"]
+    payload_ir: IRNode | None
+    cross_heading_ir: IRNode | None
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePayloadTextLookupResult:
+    """Typed text lookup verdict for source payload text consumers."""
+
+    status: Literal["unique", "missing", "ambiguous"]
+    query: SourceBodyUnitQuery
+    payload_lookup_status: Literal["unique", "missing", "ambiguous"]
+    payload_basis: Literal["body_inventory", "coverage_payload_ref", "none"]
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePayloadIrIndex:
+    """Converted source payloads addressable by current transitional unit ids."""
+
+    observed_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+    coverage_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceMetadataSurface:
+    """Model-owned source metadata facts derived during the XML adapter phase."""
+
+    source_issue_date: dt.date | None
+    source_title: str
+    effective_date: dt.date | None
+    effective_date_step: str
+    expiry_date: dt.date | None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyInventoryIndex:
+    """Normalized indexes over observed source-body units."""
+
+    units_by_lookup_key: dict[
+        tuple[str, str, str | None, str | None],
+        tuple[ObservedBodyUnit, ...],
+    ]
+    section_scopes_by_label: dict[str, frozenset[tuple[str | None, str | None]]]
+    first_section_chapter_by_label: dict[str, str]
+    pseudo_chapter_labels: frozenset[str]
+    real_chapter_labels: frozenset[str]
+
+
+def _xml_localname(el: etree._Element) -> str:
+    tag = el.tag
+    if isinstance(tag, str):
+        return tag.rsplit("}", 1)[-1]
+    return ""
+
+
+def _xml_num_text(el: etree._Element) -> str | None:
+    num_el = el.find("{*}num")
+    if num_el is None:
+        num_el = el.find("num")
+    if num_el is None or not num_el.text:
+        return None
+    return num_el.text.strip()
+
+
+def _is_pseudo_chapter_marker(el: etree._Element) -> bool:
+    """Return true for section-shaped source markers such as ``16 b luku``."""
+    return _xml_localname(el) == "section" and bool(
+        _norm_num_token(_xml_num_text(el) or "").endswith("luku")
+    )
+
+
+def _chapter_contains_pseudo_markers(el: etree._Element) -> bool:
+    return any(_is_pseudo_chapter_marker(child) for child in el)
+
+
+def _source_body_inventory_index(
+    inventory: tuple[ObservedBodyUnit, ...],
+) -> SourceBodyInventoryIndex:
+    """Build normalized lookup indexes without collapsing ambiguous units."""
+    by_key_lists: dict[
+        tuple[str, str, str | None, str | None],
+        list[ObservedBodyUnit],
+    ] = {}
+    scope_sets: dict[str, set[tuple[str | None, str | None]]] = {}
+    first_chapter: dict[str, str] = {}
+    pseudo_chapters: set[str] = set()
+    real_chapters: set[str] = set()
+
+    for unit in inventory:
+        kind = str(unit.kind or "")
+        label = _norm_num_token(unit.label)
+        chapter = _norm_num_token(unit.chapter_label) if unit.chapter_label else None
+        part = _norm_num_token(unit.part_label) if unit.part_label else None
+        keys = {
+            (kind, label, None, None),
+            (kind, label, chapter, None),
+            (kind, label, None, part),
+            (kind, label, chapter, part),
+        }
+        for key in keys:
+            by_key_lists.setdefault(key, []).append(unit)
+
+        if kind == "section":
+            scope_sets.setdefault(label, set()).add((part, chapter))
+            if chapter is not None and label not in first_chapter:
+                first_chapter[label] = unit.chapter_label
+        elif kind == "chapter":
+            if unit.source_tag == "section":
+                pseudo_chapters.add(label)
+            elif unit.source_tag == "chapter":
+                real_chapters.add(label)
+
+    return SourceBodyInventoryIndex(
+        units_by_lookup_key={key: tuple(units) for key, units in by_key_lists.items()},
+        section_scopes_by_label={
+            label: frozenset(scopes) for label, scopes in scope_sets.items()
+        },
+        first_section_chapter_by_label=first_chapter,
+        pseudo_chapter_labels=frozenset(pseudo_chapters),
+        real_chapter_labels=frozenset(real_chapters),
+    )
+
+
+def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
+    """Return converted payload IR keyed by observed and coverage unit ids."""
+    from lawvm.finland.amendment_payload_lookup import (
+        _find_muutos_ir,
+        _payload_ir_from_muutos_node,
+    )
+
+    body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
+    if body is None:
+        body = muutos_tree.find(".//body")
+    if body is None:
+        return SourcePayloadIrIndex(observed_by_unit_id={}, coverage_by_unit_id={})
+    body = _body_with_orphan_subsections_attached(body)
+    observed_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    coverage_payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    seen_observed_ids: set[str] = set()
+    seen_coverage_ids: set[str] = set()
+
+    def next_observed_id(kind: str, label: str, chapter_label: str) -> str:
+        base_id = f"{kind}:{chapter_label}/{label}" if chapter_label else f"{kind}:{label}"
+        unit_id = base_id
+        counter = 1
+        while unit_id in seen_observed_ids:
+            unit_id = f"{base_id}#{counter}"
+            counter += 1
+        seen_observed_ids.add(unit_id)
+        return unit_id
+
+    def next_coverage_id(kind: str, label: str, chapter_label: str | None) -> str:
+        base_id = f"{kind}_{label}"
+        if chapter_label:
+            base_id = f"{kind}_{chapter_label}_{label}"
+        unit_id = base_id
+        counter = 1
+        while unit_id in seen_coverage_ids:
+            unit_id = f"{base_id}_{counter}"
+            counter += 1
+        seen_coverage_ids.add(unit_id)
+        return unit_id
+
+    def append_payload(
+        kind: str,
+        label: str,
+        chapter_label: str,
+        el: etree._Element,
+        *,
+        include_observed: bool = True,
+        include_coverage: bool = True,
+    ) -> None:
+        if kind == "chapter" and (
+            _xml_localname(el) != "chapter" or _chapter_contains_pseudo_markers(el)
+        ):
+            payload = _find_muutos_ir(
+                muutos_tree,
+                target_unit_kind=kind,
+                target_norm=label,
+            )
+        else:
+            payload = _payload_ir_from_muutos_node(
+                el,
+                target_unit_kind=kind,
+                target_norm=label,
+            )
+        if include_observed:
+            observed_payloads[next_observed_id(kind, label, chapter_label)] = payload
+        if include_coverage:
+            coverage_payloads[next_coverage_id(kind, label, chapter_label or None)] = payload
+
+    def walk_children(parent: etree._Element, active_chapter: str = "") -> None:
+        current_chapter = active_chapter
+        for child in parent:
+            kind = _xml_localname(child)
+            if kind == "crossHeading":
+                part_label = _part_label_from_cross_heading(child)
+                if part_label:
+                    append_payload(
+                        "part",
+                        part_label,
+                        "",
+                        child,
+                        include_coverage=False,
+                    )
+                    current_chapter = ""
+                    continue
+            if kind == "part":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    part_label = _normalize_source_part_num(raw_num)
+                    if part_label:
+                        append_payload("part", part_label, "", child, include_coverage=False)
+                        walk_children(child, active_chapter="")
+                        current_chapter = active_chapter
+                        continue
+            if kind == "chapter":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    chapter_label = _norm_num_token(raw_num).removesuffix("luku")
+                    if chapter_label:
+                        append_payload("chapter", chapter_label, "", child)
+                        walk_children(child, chapter_label)
+                        current_chapter = active_chapter
+                        continue
+            if kind == "section":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    if _norm_num_token(raw_num).endswith("luku"):
+                        pseudo_chapter = _norm_num_token(raw_num).removesuffix("luku")
+                        if pseudo_chapter:
+                            append_payload("chapter", pseudo_chapter, "", child)
+                            walk_children(child, pseudo_chapter)
+                            current_chapter = pseudo_chapter
+                            continue
+                    section_label = _normalize_source_section_num(raw_num)
+                    if section_label:
+                        append_payload("section", section_label, current_chapter, child)
+                        walk_children(child, current_chapter)
+                        continue
+            if kind == "article":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    article_label = _norm_num_token(raw_num)
+                    if article_label:
+                        append_payload(
+                            "article",
+                            article_label,
+                            current_chapter,
+                            child,
+                            include_observed=False,
+                        )
+            walk_children(child, current_chapter)
+
+    walk_children(body)
+    return SourcePayloadIrIndex(
+        observed_by_unit_id=observed_payloads,
+        coverage_by_unit_id=coverage_payloads,
+    )
+
+
 @dataclass(slots=True)
 class AmendmentSourceModel:
     """Cached read-only projections over one Finland amendment source tree."""
 
     muutos_tree: etree._Element
     source_ref: str = ""
+    source_bytes: bytes | None = None
     _observed_body_inventory: tuple[ObservedBodyUnit, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _body_inventory_index_cache: SourceBodyInventoryIndex | None = field(
         default=None,
         init=False,
         repr=False,
@@ -94,13 +382,23 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
-    _node_cache: dict[SourceUnitLookup, etree._Element | None] = field(
+    _source_payload_ir_index_cache: SourcePayloadIrIndex | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _payload_ir_cache: dict[SourceUnitLookup, SourcePayloadLookupResult] = field(
         default_factory=dict,
         init=False,
         repr=False,
     )
-    _payload_ir_cache: dict[SourceUnitLookup, tuple[IRNode | None, IRNode | None]] = field(
-        default_factory=dict,
+    _source_chapters_cache: tuple["SourceChapter", ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _source_pseudo_chapters_cache: tuple["SourcePseudoChapter", ...] | None = field(
+        default=None,
         init=False,
         repr=False,
     )
@@ -109,7 +407,17 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _metadata_surface_cache: SourceMetadataSurface | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _text_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _text_lower_cache: str | None = field(
         default=None,
         init=False,
         repr=False,
@@ -121,8 +429,13 @@ class AmendmentSourceModel:
         muutos_tree: etree._Element,
         *,
         source_ref: str = "",
+        source_bytes: bytes | None = None,
     ) -> "AmendmentSourceModel":
-        return cls(muutos_tree=muutos_tree, source_ref=source_ref)
+        return cls(
+            muutos_tree=muutos_tree,
+            source_ref=source_ref,
+            source_bytes=source_bytes,
+        )
 
     @property
     def has_body(self) -> bool:
@@ -140,6 +453,13 @@ class AmendmentSourceModel:
                 build_observed_body_inventory(self.muutos_tree)
             )
         return self._observed_body_inventory
+
+    def _body_inventory_index(self) -> SourceBodyInventoryIndex:
+        if self._body_inventory_index_cache is None:
+            self._body_inventory_index_cache = _source_body_inventory_index(
+                self.observed_body_inventory()
+            )
+        return self._body_inventory_index_cache
 
     def body_coverage_units(
         self,
@@ -170,11 +490,10 @@ class AmendmentSourceModel:
     ) -> tuple[str | None, str | None] | None:
         """Return the unique observed body (part, chapter) scope for a section."""
         wanted = _norm_num_token(target_norm)
-        scopes = {
-            (unit.part_label or None, unit.chapter_label or None)
-            for unit in self.observed_body_inventory()
-            if unit.kind == "section" and _norm_num_token(unit.label) == wanted
-        }
+        scopes = self._body_inventory_index().section_scopes_by_label.get(
+            wanted,
+            frozenset(),
+        )
         if len(scopes) != 1:
             return None
         return next(iter(scopes))
@@ -190,36 +509,17 @@ class AmendmentSourceModel:
     def first_body_section_chapter(self, target_norm: str) -> str | None:
         """Return the first observed chapter containing a source body section."""
         wanted = _norm_num_token(target_norm)
-        return next(
-            (
-                unit.chapter_label
-                for unit in self.observed_body_inventory()
-                if unit.kind == "section"
-                and _norm_num_token(unit.label) == wanted
-                and unit.chapter_label
-            ),
-            None,
-        )
+        return self._body_inventory_index().first_section_chapter_by_label.get(wanted)
 
     def body_has_pseudo_chapter_marker(self, chapter_label: str) -> bool:
         """Return True if the observed body has a section-shaped chapter marker."""
         wanted = _norm_num_token(chapter_label)
-        return any(
-            unit.kind == "chapter"
-            and _norm_num_token(unit.label) == wanted
-            and unit.source_tag == "section"
-            for unit in self.observed_body_inventory()
-        )
+        return wanted in self._body_inventory_index().pseudo_chapter_labels
 
     def body_has_real_chapter_container(self, chapter_label: str) -> bool:
         """Return True if the observed body has a real chapter container."""
         wanted = _norm_num_token(chapter_label)
-        return any(
-            unit.kind == "chapter"
-            and _norm_num_token(unit.label) == wanted
-            and unit.source_tag == "chapter"
-            for unit in self.observed_body_inventory()
-        )
+        return wanted in self._body_inventory_index().real_chapter_labels
 
     def lookup_body_unit(
         self,
@@ -236,19 +536,9 @@ class AmendmentSourceModel:
             chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
             part=_norm_num_token(target_part or "") if target_part else None,
         )
-        candidates = tuple(
-            unit
-            for unit in self.observed_body_inventory()
-            if unit.kind == query.unit_kind
-            and _norm_num_token(unit.label) == query.label
-            and (
-                query.chapter is None
-                or _norm_num_token(unit.chapter_label) == query.chapter
-            )
-            and (
-                query.part is None
-                or _norm_num_token(unit.part_label) == query.part
-            )
+        candidates = self._body_inventory_index().units_by_lookup_key.get(
+            (query.unit_kind, query.label, query.chapter, query.part),
+            (),
         )
         if not candidates:
             status: Literal["unique", "missing", "ambiguous"] = "missing"
@@ -295,29 +585,33 @@ class AmendmentSourceModel:
             target_part=target_part,
         )
 
-    def find_xml_node(
-        self,
-        target_unit_kind: TargetUnitKind | str,
-        target_norm: str,
-        target_chapter: Optional[str] = None,
-        target_part: Optional[str] = None,
-    ) -> etree._Element | None:
-        """Return the source XML node for a normalized source-body target."""
-        key = SourceUnitLookup(
-            unit_kind=str(target_unit_kind or ""),
-            label=target_norm,
-            chapter=target_chapter,
-            part=target_part,
+    def has_single_unlabeled_section_payload(self) -> bool:
+        """Return True for the legacy single unlabeled section payload fact.
+
+        This preserves the old source-node fallback as a typed model fact:
+        if the body contains exactly one section candidate and that candidate
+        has no usable number, constraints should treat the body as having a
+        payload rather than rejecting the operation as a cross-reference.
+        """
+        ignored_units: list[CoverageIgnoredUnit] = []
+        coverage_units = self.body_coverage_units(ignored_units_out=ignored_units)
+        labeled_section_count = sum(1 for unit in coverage_units if unit.kind == "section")
+        ignored_section_units = tuple(
+            unit
+            for unit in ignored_units
+            if unit.unit_kind == "section"
+            and unit.reason in {"missing_num", "unusable_num", "pseudo_chapter_marker_unusable"}
         )
-        if key not in self._node_cache:
-            self._node_cache[key] = _find_muutos_node_uncached(
-                self.muutos_tree,
-                cast(TargetUnitKind, key.unit_kind),
-                key.label,
-                key.chapter,
-                key.part,
-            )
-        return self._node_cache[key]
+        return (
+            labeled_section_count == 0
+            and len(ignored_section_units) == 1
+            and ignored_section_units[0].reason == "missing_num"
+        )
+
+    def _source_payload_ir_index(self) -> SourcePayloadIrIndex:
+        if self._source_payload_ir_index_cache is None:
+            self._source_payload_ir_index_cache = _source_payload_ir_index(self.muutos_tree)
+        return self._source_payload_ir_index_cache
 
     def has_source_node(
         self,
@@ -327,14 +621,121 @@ class AmendmentSourceModel:
         target_part: Optional[str] = None,
     ) -> bool:
         """Return whether the source body contains the normalized target."""
-        return (
-            self.find_xml_node(
-                target_unit_kind,
-                target_norm,
-                target_chapter,
-                target_part,
+        lookup = self.lookup_body_unit(
+            str(target_unit_kind or ""),
+            target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        if lookup.status != "missing":
+            return True
+        return str(target_unit_kind or "") == "section" and self.has_single_unlabeled_section_payload()
+
+    def lookup_payload_ir(
+        self,
+        target_unit_kind: TargetUnitKind | str,
+        target_norm: str,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> SourcePayloadLookupResult:
+        """Return cached typed payload lookup for a source-body target."""
+        key = SourceUnitLookup(
+            unit_kind=str(target_unit_kind or ""),
+            label=target_norm,
+            chapter=target_chapter,
+            part=target_part,
+        )
+        if key not in self._payload_ir_cache:
+            body_lookup = self.lookup_body_unit(
+                key.unit_kind,
+                key.label,
+                target_chapter=key.chapter,
+                target_part=key.part,
             )
-            is not None
+            if body_lookup.status != "unique":
+                self._payload_ir_cache[key] = SourcePayloadLookupResult(
+                    status=body_lookup.status,
+                    query=body_lookup.query,
+                    body_lookup_status=body_lookup.status,
+                    body_candidates=body_lookup.candidates,
+                    payload_basis="none",
+                    payload_ir=None,
+                    cross_heading_ir=None,
+                )
+                return self._payload_ir_cache[key]
+
+            observed_unit = body_lookup.unique_unit
+            payload_ir, cross_heading_ir = (
+                self._source_payload_ir_index().observed_by_unit_id.get(
+                    observed_unit.unit_id,
+                    (None, None),
+                )
+                if observed_unit is not None
+                else (None, None)
+            )
+            if payload_ir is not None:
+                status = "unique"
+                payload_basis: Literal["body_inventory", "none"] = "body_inventory"
+            else:
+                status = "missing"
+                payload_basis = "none"
+            self._payload_ir_cache[key] = SourcePayloadLookupResult(
+                status=status,
+                query=body_lookup.query,
+                body_lookup_status=body_lookup.status,
+                body_candidates=body_lookup.candidates,
+                payload_basis=payload_basis,
+                payload_ir=payload_ir,
+                cross_heading_ir=cross_heading_ir,
+            )
+        return self._payload_ir_cache[key]
+
+    def lookup_payload_ir_for_coverage_ref(
+        self,
+        source_ref: BodyCoveragePayloadRef,
+    ) -> SourcePayloadLookupResult:
+        """Return payload IR for one concrete body-coverage source unit."""
+        query = SourceBodyUnitQuery(
+            unit_kind=source_ref.unit_kind,
+            label=_norm_num_token(source_ref.label),
+            chapter=_norm_num_token(source_ref.chapter or "") if source_ref.chapter else None,
+            part=_norm_num_token(source_ref.part or "") if source_ref.part else None,
+        )
+        matching_units = tuple(
+            unit
+            for unit in self.body_coverage_units()
+            if isinstance(unit.payload_ref, BodyCoveragePayloadRef)
+            and unit.payload_ref.unit_id == source_ref.unit_id
+        )
+        body_lookup = self.lookup_body_unit(
+            source_ref.unit_kind,
+            source_ref.label,
+            target_chapter=source_ref.chapter,
+            target_part=source_ref.part,
+        )
+        if len(matching_units) != 1:
+            return SourcePayloadLookupResult(
+                status="missing",
+                query=query,
+                body_lookup_status=body_lookup.status,
+                body_candidates=body_lookup.candidates,
+                payload_basis="none",
+                payload_ir=None,
+                cross_heading_ir=None,
+            )
+
+        payload_ir, cross_heading_ir = self._source_payload_ir_index().coverage_by_unit_id.get(
+            source_ref.unit_id,
+            (None, None),
+        )
+        return SourcePayloadLookupResult(
+            status="unique" if payload_ir is not None else "missing",
+            query=query,
+            body_lookup_status=body_lookup.status,
+            body_candidates=body_lookup.candidates,
+            payload_basis="coverage_payload_ref" if payload_ir is not None else "none",
+            payload_ir=payload_ir,
+            cross_heading_ir=cross_heading_ir,
         )
 
     def find_payload_ir(
@@ -344,32 +745,41 @@ class AmendmentSourceModel:
         target_chapter: Optional[str] = None,
         target_part: Optional[str] = None,
     ) -> tuple[IRNode | None, IRNode | None]:
-        """Return cached payload and cross-heading IR for a source-body target."""
-        key = SourceUnitLookup(
-            unit_kind=str(target_unit_kind or ""),
-            label=target_norm,
-            chapter=target_chapter,
-            part=target_part,
+        """Return payload and cross-heading IR for legacy adapter callers."""
+        result = self.lookup_payload_ir(
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
         )
-        if key not in self._payload_ir_cache:
-            from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
+        return result.payload_ir, result.cross_heading_ir
 
-            source_node = self.find_xml_node(
-                key.unit_kind,
-                key.label,
-                key.chapter,
-                key.part,
-            )
-            self._payload_ir_cache[key] = (
-                _payload_ir_from_muutos_node(
-                    source_node,
-                    target_unit_kind=key.unit_kind,
-                    target_norm=key.label,
-                )
-                if source_node is not None
-                else (None, None)
-            )
-        return self._payload_ir_cache[key]
+    def lookup_section_payload_text(
+        self,
+        section_label: str,
+        *,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> SourcePayloadTextLookupResult:
+        """Return typed source-body payload text for a section target."""
+        payload_lookup = self.lookup_payload_ir(
+            "section",
+            section_label,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+        payload_text = (
+            " ".join(irnode_to_text(payload_lookup.payload_ir).split())
+            if payload_lookup.payload_ir is not None
+            else ""
+        )
+        return SourcePayloadTextLookupResult(
+            status=payload_lookup.status if payload_text else "missing",
+            query=payload_lookup.query,
+            payload_lookup_status=payload_lookup.status,
+            payload_basis=payload_lookup.payload_basis,
+            text=payload_text,
+        )
 
     def pre_create_amendment_chapters(
         self,
@@ -377,17 +787,33 @@ class AmendmentSourceModel:
         amendment_id: str,
     ) -> "PrecreatedChaptersResult | None":
         """Pre-create real source-body chapters through the source-model adapter."""
-        muutos_body = self.muutos_tree.find(".//{*}body")
-        if muutos_body is None:
+        source_chapters = self.source_chapters()
+        if not source_chapters:
             return None
 
-        from lawvm.finland.amendment_chapter_precreate import _pre_create_amendment_chapters
+        from lawvm.finland.amendment_chapter_precreate import _pre_create_source_chapters
 
-        return _pre_create_amendment_chapters(
+        return _pre_create_source_chapters(
             state,
-            muutos_body,
             amendment_id,
+            source_chapters,
         )
+
+    def source_chapters(self) -> tuple["SourceChapter", ...]:
+        """Return cached typed source-body real chapter declarations."""
+        if self._source_chapters_cache is None:
+            from lawvm.finland.amendment_chapter_precreate import source_chapters_from_tree
+
+            self._source_chapters_cache = source_chapters_from_tree(self.muutos_tree)
+        return self._source_chapters_cache
+
+    def source_pseudo_chapters(self) -> tuple["SourcePseudoChapter", ...]:
+        """Return cached typed source-body pseudo-chapter marker declarations."""
+        if self._source_pseudo_chapters_cache is None:
+            from lawvm.finland.amendment_chapter_precreate import source_pseudo_chapters_from_tree
+
+            self._source_pseudo_chapters_cache = source_pseudo_chapters_from_tree(self.muutos_tree)
+        return self._source_pseudo_chapters_cache
 
     def precreate_apply_chapters(
         self,
@@ -408,10 +834,11 @@ class AmendmentSourceModel:
             PrecreateApplyChaptersRequest(
                 state=state,
                 resolved=resolved,
-                muutos_tree=self.muutos_tree,
                 amendment_id=amendment_id,
                 vts_ops_enrich_done=vts_ops_enrich_done,
                 johto=johto,
+                source_chapters=self.source_chapters(),
+                source_pseudo_chapters=self.source_pseudo_chapters(),
             )
         )
 
@@ -432,41 +859,69 @@ class AmendmentSourceModel:
             )
         return self._text_cache
 
+    def source_text_lower(self) -> str:
+        """Return cached lowercased plain source text for classifier prefilters."""
+        if self._text_lower_cache is None:
+            self._text_lower_cache = self.source_text().lower()
+        return self._text_lower_cache
+
     def source_text_contains(self, fragment: str) -> bool:
         """Return whether the plain source text contains ``fragment`` case-insensitively."""
         if not fragment:
             return False
-        return fragment.lower() in self.source_text().lower()
+        return fragment.lower() in self.source_text_lower()
+
+    def source_xml_bytes(self) -> bytes:
+        """Return corrected source XML bytes for byte-oriented ingest adapters."""
+        if self.source_bytes is not None:
+            return self.source_bytes
+        return etree.tostring(self.muutos_tree, encoding="utf-8")
 
     def title(self) -> str:
         """Return the source title through the source-model adapter."""
-        from lawvm.finland.frontend_compile import _tree_title
-
-        return _tree_title(self.muutos_tree)
+        return self.metadata_surface().source_title
 
     def issue_date(self) -> dt.date | None:
         """Return the source issue date through the source-model adapter."""
-        from lawvm.finland.metadata import _statute_issue_date
-
-        return _statute_issue_date(self.muutos_tree)
+        return self.metadata_surface().source_issue_date
 
     def effective_date(self) -> dt.date | None:
         """Return the source amendment effective date through the source-model adapter."""
-        from lawvm.finland.metadata import _amendment_effective_date
-
-        return _amendment_effective_date(self.muutos_tree)
+        return self.metadata_surface().effective_date
 
     def effective_date_with_step(self) -> tuple[dt.date | None, str]:
         """Return source amendment effective date and derivation step."""
-        from lawvm.finland.metadata import _amendment_effective_date_with_step
-
-        return _amendment_effective_date_with_step(self.muutos_tree)
+        surface = self.metadata_surface()
+        return surface.effective_date, surface.effective_date_step
 
     def expiry_date(self) -> dt.date | None:
         """Return the source amendment expiry date through the source-model adapter."""
-        from lawvm.finland.metadata import _amendment_expiry_date
+        return self.metadata_surface().expiry_date
 
-        return _amendment_expiry_date(self.muutos_tree)
+    def metadata_surface(self) -> SourceMetadataSurface:
+        """Return cached source metadata facts used by compile and temporal phases."""
+        if self._metadata_surface_cache is None:
+            from lawvm.finland.frontend_compile import _tree_title
+            from lawvm.finland.metadata import (
+                _amendment_effective_date_with_step,
+                _amendment_expiry_date,
+                _statute_issue_date,
+            )
+
+            effective_date, effective_step = _amendment_effective_date_with_step(
+                self.muutos_tree
+            )
+            self._metadata_surface_cache = SourceMetadataSurface(
+                source_issue_date=_statute_issue_date(self.muutos_tree),
+                source_title=_tree_title(self.muutos_tree),
+                effective_date=effective_date,
+                effective_date_step=effective_step,
+                expiry_date=_amendment_expiry_date(
+                    self.muutos_tree,
+                    raw_text=self.source_text(),
+                ),
+            )
+        return self._metadata_surface_cache
 
     def amendment_tree_metadata(
         self,
@@ -474,11 +929,29 @@ class AmendmentSourceModel:
     ) -> "_AmendmentTreeMetadata":
         """Return cached frontend metadata derived from this amendment source."""
         if amendment_id not in self._amendment_metadata_cache:
-            from lawvm.finland.frontend_compile import _amendment_tree_metadata
+            from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
+            from lawvm.finland.metadata import (
+                _temporary_provision_expiry_overrides,
+                _temporary_section_expiry_overrides,
+            )
 
-            self._amendment_metadata_cache[amendment_id] = _amendment_tree_metadata(
-                amendment_id=amendment_id,
-                muutos_tree=self.muutos_tree,
+            surface = self.metadata_surface()
+            raw_text = self.source_text()
+            self._amendment_metadata_cache[amendment_id] = _AmendmentTreeMetadata(
+                source_issue_date=surface.source_issue_date,
+                source_title=surface.source_title,
+                effective_date=surface.effective_date,
+                expiry_date=surface.expiry_date,
+                provision_expiry_overrides=_temporary_provision_expiry_overrides(
+                    self.muutos_tree,
+                    amendment_id,
+                    raw_text=raw_text,
+                ),
+                section_expiry_overrides=_temporary_section_expiry_overrides(
+                    self.muutos_tree,
+                    amendment_id,
+                    raw_text=raw_text,
+                ),
             )
         return self._amendment_metadata_cache[amendment_id]
 
@@ -522,8 +995,46 @@ class AmendmentSourceModel:
         """Return body-prose repeal text when no structured operative body exists."""
         from lawvm.finland.metadata import get_operative_body_repeal_candidate
 
-        xml_bytes = etree.tostring(self.muutos_tree, encoding="utf-8")
-        return get_operative_body_repeal_candidate(xml_bytes)
+        return get_operative_body_repeal_candidate(self.source_xml_bytes())
+
+    def extract_vts_cross_statute_repeals(
+        self,
+        *,
+        parent_id: str,
+        parent_title: str,
+        strict_profile: "StrictProfile | None",
+        skipped_targets_out: list["VtsSkippedTarget"] | None = None,
+    ) -> list["AmendmentOp"] | None:
+        """Extract cross-statute VTS repeals through the source-model byte adapter."""
+        from lawvm.finland.vts import extract_vts_cross_statute_repeals
+
+        return extract_vts_cross_statute_repeals(
+            self.source_xml_bytes(),
+            parent_id,
+            parent_title,
+            strict_profile,
+            skipped_targets_out=skipped_targets_out,
+        )
+
+    def extract_vts_repeals(
+        self,
+        *,
+        extract_vts_repeals: Callable[..., list["AmendmentOp"] | None],
+        johto: str,
+        parent_id: str,
+        parent_title: str,
+        strict_profile: "StrictProfile | None",
+        skipped_targets_out: list["VtsSkippedTarget"] | None = None,
+    ) -> list["AmendmentOp"] | None:
+        """Extract VTS repeals through the source-model byte adapter."""
+        return extract_vts_repeals(
+            johto,
+            self.source_xml_bytes(),
+            parent_id,
+            parent_title,
+            strict_profile,
+            skipped_targets_out=skipped_targets_out,
+        )
 
     def normalize_and_compile_ops(
         self,
@@ -558,6 +1069,7 @@ class AmendmentSourceModel:
                 parse_result=parse_result,
                 regex_recognition_coverage_out=regex_recognition_coverage_out,
                 amendment_metadata=amendment_metadata,
+                source_model=self,
             )
 
     def enrich_ops_from_amendment_tree(
@@ -641,7 +1153,7 @@ class AmendmentSourceModel:
         from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
 
         return build_uncovered_recovery_context(
-            muutos_tree=self.muutos_tree,
+            preamble_text=self.preamble_text(),
             ops=ops,
             new_chapter_labels=new_chapter_labels,
         )
@@ -683,7 +1195,7 @@ class AmendmentSourceModel:
         from lawvm.finland.scope import retarget_duplicate_body_section_scope_from_close_live_siblings
 
         return retarget_duplicate_body_section_scope_from_close_live_siblings(
-            muutos_tree=self.muutos_tree,
+            inventory=self.observed_body_inventory(),
             section_norm=section_norm,
             body_chapter=body_chapter,
             body_part=body_part,
@@ -701,7 +1213,7 @@ class AmendmentSourceModel:
         from lawvm.finland.scope import retarget_heading_insert_body_chapter_from_close_live_sibling
 
         return retarget_heading_insert_body_chapter_from_close_live_sibling(
-            muutos_tree=self.muutos_tree,
+            inventory=self.observed_body_inventory(),
             section_norm=section_norm,
             body_chapter=body_chapter,
             master=master,
@@ -720,7 +1232,6 @@ class AmendmentSourceModel:
         from lawvm.finland.lowering_scope_recovery import resolve_group_surface_scope
 
         return resolve_group_surface_scope(
-            muutos_tree=self.muutos_tree,
             source_model=self,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,

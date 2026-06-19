@@ -31,6 +31,7 @@ import lxml.etree as etree
 
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
+    from lawvm.finland.source_model import AmendmentSourceModel
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
@@ -1668,17 +1669,26 @@ def _infer_unique_live_section_chapter_scope(
     master: "ReplayState",
 ) -> str | None:
     """Bind chapter scope when johto cites only §N and live tree has one host."""
-    if (
-        op.target_unit_kind != "section"
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.op_type not in {"REPLACE", "REPEAL"}
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
-    ):
+    if op.target_unit_kind != "section" or not op.target_section:
         return None
+    has_child_target = (
+        op.target_paragraph is not None
+        or bool(op.target_item)
+        or bool(op.target_special)
+    )
     section_label = _norm_num_token(op.target_section)
+    if op.op_type in {"REPLACE", "REPEAL"}:
+        if op.target_chapter is not None or has_child_target:
+            return None
+    elif op.op_type == "INSERT" and has_child_target:
+        if op.target_chapter is not None and master.find_section_path(
+            section_label,
+            op.target_chapter,
+            op.target_part,
+        ) is not None:
+            return None
+    else:
+        return None
     unique_chapter = _unique_section_chapter(
         master,
         section_label,
@@ -1690,6 +1700,8 @@ def _infer_unique_live_section_chapter_scope(
         op.target_part,
     ) is not None:
         return unique_chapter
+    if op.op_type == "INSERT" and has_child_target:
+        return None
     return infer_letter_suffix_section_chapter_from_stem_host(
         master,
         section_label,
@@ -1736,16 +1748,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
-            if body_part == op.target_part and body_chapter == op.target_chapter:
-                return None
-            if len(_unborn_source_chapter_labels(muutos_tree=muutos_tree, master=master)) != 1:
-                return None
-            if body_chapter is None or master.find_chapter(body_chapter) is not None:
-                return None
-            if _source_chapter_direct_section_count(
-                muutos_tree=muutos_tree,
-                chapter_label=body_chapter,
-            ) > 20:
+            if body_part != op.target_part:
                 return None
         else:
             return None
@@ -1755,6 +1758,14 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
         target_part=op.target_part,
     ):
         return None
+    if body_scope is not None:
+        body_part, body_chapter = body_scope
+        if body_part == op.target_part and _container_path_exists_in_master(
+            master=master,
+            part=body_part,
+            chapter=body_chapter,
+        ):
+            return None
     if op.target_chapter is not None and master.find_section_path(
         section_label,
         op.target_chapter,
@@ -2031,6 +2042,18 @@ def _retarget_stale_body_scope_for_section_op(
 
     body_part, body_chapter = body_scope
     if (
+        scope_witness is not None
+        and scope_witness.source == "explicit_chunk"
+        and op.op_type == "INSERT"
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+    ):
+        # Explicit chunk scope is source-owned. Do not rehome a whole-section
+        # insert merely because the body wrapper resembles an existing live
+        # section's chapter.
+        return None
+    if (
         op.op_type == "INSERT"
         and op.target_paragraph is None
         and not op.target_item
@@ -2229,6 +2252,29 @@ def _enrich_ops_from_amendment_tree(
                     inferred_part, inferred_chapter = reinstated_scope
                     inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
                 if inferred_chapter is None:
+                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
+                if inferred_chapter is None and not _is_whole_section_insert(scoped_op):
+                    inferred_chapter = _infer_unique_live_section_chapter_scope(
+                        op=scoped_op,
+                        master=master,
+                    )
+                    if inferred_chapter is not None:
+                        inferred_rule_id = (
+                            "fi_unique_live_section_chapter_scope"
+                            if master.find_section_path(
+                                _norm_num_token(scoped_op.target_section or ""),
+                                inferred_chapter,
+                                scoped_op.target_part,
+                            )
+                            is not None
+                            else "fi_letter_suffix_stem_host_chapter_scope"
+                        )
+                if inferred_chapter is None:
                     inferred_chapter = _body_chapter_scope_for_section_op(
                         op=scoped_op,
                         muutos_tree=muutos_tree,
@@ -2236,13 +2282,6 @@ def _enrich_ops_from_amendment_tree(
                         johto=johto,
                     )
                     inferred_rule_id = "fi_body_chapter_scope_from_source_body"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
-                        op=scoped_op,
-                        muutos_tree=muutos_tree,
-                        master=master,
-                    )
-                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
@@ -2284,22 +2323,6 @@ def _enrich_ops_from_amendment_tree(
                 ):
                     inferred_chapter = last_inferred_section_chapter
                     inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
-                if inferred_chapter is None:
-                    inferred_chapter = _infer_unique_live_section_chapter_scope(
-                        op=scoped_op,
-                        master=master,
-                    )
-                    if inferred_chapter is not None:
-                        inferred_rule_id = (
-                            "fi_unique_live_section_chapter_scope"
-                            if master.find_section_path(
-                                _norm_num_token(scoped_op.target_section or ""),
-                                inferred_chapter,
-                                scoped_op.target_part,
-                            )
-                            is not None
-                            else "fi_letter_suffix_stem_host_chapter_scope"
-                        )
             if inferred_chapter is not None:
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(
@@ -2532,7 +2555,8 @@ def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[Tempor
 def _body_text_for_temporary_op(
     op: AmendmentOp,
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> str:
     """Return amendment-body text for a section-targeted temporary op."""
     if op.target_unit_kind != "section" or not op.target_section:
@@ -2540,6 +2564,13 @@ def _body_text_for_temporary_op(
 
     target_label = _norm_num_token(op.target_section)
     if not target_label:
+        return ""
+
+    if source_model is not None:
+        result = source_model.lookup_section_payload_text(target_label)
+        return result.text if result.status == "unique" else ""
+
+    if muutos_tree is None:
         return ""
 
     for section in muutos_tree.findall(".//{*}section"):
@@ -2563,7 +2594,8 @@ def _tag_temporary_ops(
     ops: List[AmendmentOp],
     *,
     amendment_id: str,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[List[AmendmentOp], List[TemporalEvent]]:
     """Return a new list with ``is_temporary=True`` on every op.
 
@@ -2594,7 +2626,11 @@ def _tag_temporary_ops(
             tagged.append(op)
             continue
         tagged_op = dc_replace(op, is_temporary=True)
-        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops([tagged_op], muutos_tree=muutos_tree)[0]
+        tagged_op = _apply_inferred_payload_expiry_to_temporary_ops(
+            [tagged_op],
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )[0]
         temporal_events.extend(_temporary_events_for_op(tagged_op, amendment_id))
         tagged.append(tagged_op)
     return tagged, temporal_events
@@ -2603,7 +2639,8 @@ def _tag_temporary_ops(
 def _apply_inferred_payload_expiry_to_temporary_ops(
     ops: List[AmendmentOp],
     *,
-    muutos_tree: "etree._Element",
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> List[AmendmentOp]:
     """Stamp inferred expiry on temporary ops when payload text names tax years.
 
@@ -2626,7 +2663,11 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
             and not source.expires
         ):
             inferred = _infer_expiry_date_from_temporary_payload_text(
-                _body_text_for_temporary_op(op, muutos_tree=muutos_tree)
+                _body_text_for_temporary_op(
+                    op,
+                    muutos_tree=muutos_tree,
+                    source_model=source_model,
+                )
             )
             if (
                 inferred is not None
@@ -3358,6 +3399,7 @@ def normalize_and_compile_ops(
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
     base_ir: IRNode | None = None,
     amendment_metadata: _AmendmentTreeMetadata | None = None,
+    source_model: "AmendmentSourceModel | None" = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -3644,7 +3686,12 @@ def normalize_and_compile_ops(
     temporary_temporal_events: List[TemporalEvent] = []
     if ops:
         if _is_temporary_whole:
-            ops, temp_events = _tag_temporary_ops(ops, amendment_id=amendment_id, muutos_tree=muutos_tree)
+            ops, temp_events = _tag_temporary_ops(
+                ops,
+                amendment_id=amendment_id,
+                muutos_tree=muutos_tree,
+                source_model=source_model,
+            )
             temporary_temporal_events.extend(temp_events)
         elif _temporary_targets is not None:
             # Section-scoped: only tag ops whose target_section is in the set
@@ -3655,6 +3702,7 @@ def normalize_and_compile_ops(
                         [op],
                         amendment_id=amendment_id,
                         muutos_tree=muutos_tree,
+                        source_model=source_model,
                     )
                     tagged_ops.extend(temp_tagged)
                     temporary_temporal_events.extend(temp_events)
@@ -3662,7 +3710,11 @@ def normalize_and_compile_ops(
                     tagged_ops.append(op)
             ops = tagged_ops
     if ops:
-        ops = _apply_inferred_payload_expiry_to_temporary_ops(ops, muutos_tree=muutos_tree)
+        ops = _apply_inferred_payload_expiry_to_temporary_ops(
+            ops,
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )
     # After tagging, detect ops that are temporary but have no parseable
     # expiry date.  These should produce an explicit degradation observation;
     # the temporal sidecar already carries the real temporary signal.

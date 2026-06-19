@@ -6387,6 +6387,49 @@ class TestGroupPlanRomanNormalization:
         assert part == "5"
 
 
+def test_apply_part_insert_cross_heading_marker_creates_part_scaffold() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(kind=IRNodeKind.PART, label="1"),
+                    IRNode(kind=IRNodeKind.PART, label="4"),
+                ),
+            )
+        )
+    )
+    op = AmendmentOp(
+        op_id="insert_part_5",
+        op_type="INSERT",
+        target_section="V",
+        target_unit_kind="part",
+        source_statute="2001/1226",
+        source_issue_date=_DATE,
+    )
+    payload = IRNode(
+        kind=IRNodeKind.CROSS_HEADING,
+        text="V OSA KANSAINVÄLISEN YKSITYISOIKEUDEN ALAAN KUULUVAT SÄÄNNÖKSET",
+    )
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "[2001/1226] INSERT V osa",
+    )
+
+    result = _modified(state, result)
+    hcontainer = result.ir.children[0]
+    part_5 = next(child for child in hcontainer.children if child.kind is IRNodeKind.PART and child.label == "5")
+    assert [(child.kind, child.text) for child in part_5.children] == [
+        (IRNodeKind.NUM, "V OSA"),
+        (IRNodeKind.HEADING, "KANSAINVÄLISEN YKSITYISOIKEUDEN ALAAN KUULUVAT SÄÄNNÖKSET"),
+    ]
+    assert not any(child.kind is IRNodeKind.CROSS_HEADING for child in hcontainer.children)
+
+
 # ---------------------------------------------------------------------------
 # _apply_subsection_repeal
 # ---------------------------------------------------------------------------
@@ -11420,6 +11463,194 @@ class TestApplyItemReplace:
         new_para7 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "7")
         sp_labels = [c.label for c in new_para7.children if c.kind == IRNodeKind.SUBPARAGRAPH]
         assert sp_labels == ["1"]
+
+    def test_replace_sparse_item_prunes_carried_tail_when_source_has_standalone_tail(self):
+        """Sparse REPLACE must not retain an old item tail when source supplies a new
+        standalone tail after the replaced item list.
+
+        Provenance: 2012/999 §87, amendment 2018/207. The old punishment tail was
+        represented as a subparagraph under item 4; the amendment replaces item 4
+        and carries the new punishment tail as a following content-only subsection.
+        """
+
+        stale_tail = IRNode(
+            kind=IRNodeKind.SUBPARAGRAPH,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="on tuomittava vanhan hannan mukaan."),),
+        )
+        master_para4 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="old item four"), stale_tail),
+        )
+        master_sub = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                _para("1", "item one"),
+                _para("2", "item two"),
+                master_para4,
+            ),
+        )
+        sec = _sec("87", master_sub)
+        state = _make_state(_body(sec))
+        sec_path = [("section", "87")]
+
+        amend_para4 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="new item four"),),
+        )
+        amend_sub = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.OMISSION), amend_para4),
+        )
+        standalone_tail = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="2",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="on tuomittava uuden hannan mukaan."),),
+        )
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub, standalone_tail, IRNode(kind=IRNodeKind.OMISSION)))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="87", target_paragraph=1, target_item="4")
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "87 § 1 mom 4 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "87")
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para4 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "4")
+        assert not any(c.kind == IRNodeKind.SUBPARAGRAPH for c in new_para4.children)
+        assert "old item four" not in irnode_to_text(new_para4)
+        assert "new item four" in irnode_to_text(new_para4)
+        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+        assert pathologies[0].detail["recovery_kind"] == "item_replace_standalone_tail_prune"
+
+    def test_replace_sparse_item_strict_blocks_standalone_tail_prune(self):
+        stale_tail = IRNode(
+            kind=IRNodeKind.SUBPARAGRAPH,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="on tuomittava vanhan hannan mukaan."),),
+        )
+        master_para4 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="old item four"), stale_tail),
+        )
+        sec = _sec("87", IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(master_para4,)))
+        state = _make_state(_body(sec))
+        amend_sub = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.OMISSION),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="new item four"),),
+                ),
+            ),
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.SECTION,
+            children=(
+                amend_sub,
+                IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="tail"),)),
+            ),
+        )
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_replace(
+            state,
+            _op(op_type="REPLACE", target_section="87", target_paragraph=1, target_item="4"),
+            [("section", "87")],
+            sec,
+            [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
+            amend_sub,
+            muutos_ir,
+            "87 § 1 mom 4 k",
+            source_pathologies_out=pathologies,
+            strict_profile=default_finland_strict_profile(),
+        )
+
+        assert result is None
+        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+        assert pathologies[0].detail["recovery_kind"] == "item_replace_standalone_tail_prune"
+
+    def test_replace_sparse_item_keeps_tail_when_following_subsection_is_not_wrapup(self):
+        """A later ordinary content-only subsection is not authority to prune an
+        existing carried item tail.
+
+        Provenance: 1979/1062 §3, amendment 2004/330. The following content-only
+        subsection starts with an uppercase subject and is a real subsection, not a
+        lower-case list wrap-up clause.
+        """
+
+        stale_tail = IRNode(
+            kind=IRNodeKind.SUBPARAGRAPH,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="tail sentence"),),
+        )
+        master_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="old item two"), stale_tail),
+        )
+        sec = _sec(
+            "3",
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(_para("1", "item one"), master_para2)),
+        )
+        state = _make_state(_body(sec))
+        amend_sub = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.OMISSION),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="new item two"),),
+                ),
+            ),
+        )
+        ordinary_following_subsection = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="2",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="Viranomainen voi hyväksyä muitakin varoja."),),
+        )
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub, ordinary_following_subsection))
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_replace(
+            state,
+            _op(op_type="REPLACE", target_section="3", target_paragraph=1, target_item="2"),
+            [("section", "3")],
+            sec,
+            [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
+            amend_sub,
+            muutos_ir,
+            "3 § 1 mom 2 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION and c.label == "3")
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para2 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "2")
+        assert [c.label for c in new_para2.children if c.kind == IRNodeKind.SUBPARAGRAPH] == ["1"]
+        assert pathologies == []
 
     def test_johd_item_replace_preserves_subparagraphs(self):
         """When target_special='johd' and target_item is set, replace only

@@ -476,6 +476,40 @@ def _is_carried_tail_subparagraph(sp: IRNode) -> bool:
     return not label_norm or label_norm.isdigit()
 
 
+def _is_standalone_tail_payload_node(node: IRNode) -> bool:
+    if node.kind == IRNodeKind.WRAP_UP:
+        return bool(irnode_to_text(node).strip())
+    if node.kind != IRNodeKind.SUBSECTION:
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH for child in node.children):
+        return False
+    content_children = [
+        child
+        for child in node.children
+        if child.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO, IRNodeKind.WRAP_UP)
+        and irnode_to_text(child).strip()
+    ]
+    if len(content_children) != 1:
+        return False
+    text = " ".join(irnode_to_text(content_children[0]).split())
+    return bool(text) and text[:1].isalpha() and text[:1].islower()
+
+
+def _has_standalone_tail_payload_after_amend_sub(muutos_ir: Optional[IRNode], amend_sub: Optional[IRNode]) -> bool:
+    if muutos_ir is None:
+        return False
+    seen_target = amend_sub is None
+    for child in muutos_ir.children:
+        if child is amend_sub:
+            seen_target = True
+            continue
+        if not seen_target or _is_omission_ir(child):
+            continue
+        if _is_standalone_tail_payload_node(child):
+            return True
+    return False
+
+
 def _apply_item_repeal(
     state: "ReplayState",
     op: "_ItemApplyView | AmendmentOp | ResolvedOp",
@@ -882,7 +916,28 @@ def _apply_item_replace(
                 if not amend_has_content and amend_has_intro:
                     preserve_master_sps = True
                 elif amend_has_omission and len(master_sps) == 1 and _is_carried_tail_subparagraph(master_sps[0]):
-                    preserve_master_sps = True
+                    preserve_master_sps = not _has_standalone_tail_payload_after_amend_sub(muutos_ir, amend_sub)
+                    if not preserve_master_sps:
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_destructive_shape_loss_risk_pathology(
+                                    source_statute=view.source_statute,
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=(
+                                        f"{view.target_section} § {view.target_paragraph} mom "
+                                        f"{view.target_item} kohta"
+                                    ),
+                                    recovery_kind="item_replace_standalone_tail_prune",
+                                    live_sibling_count=len(master_sps),
+                                    payload_sibling_count=1,
+                                )
+                            )
+                        if strict_profile is not None:
+                            return None
+                        logger.debug(
+                            "  %s → pruned stale carried-tail subparagraph; source has standalone tail payload",
+                            ctx_label,
+                        )
             if preserve_master_sps:
                 amend_para = IRNode(
                     kind=amend_para.kind,

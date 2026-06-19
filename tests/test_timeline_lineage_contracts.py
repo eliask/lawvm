@@ -4,12 +4,16 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_lineage import (
     LineageSegment,
     MaterializationLineageBridgeClassification,
+    PrefixMigrationEventSignature,
     ScopeMigrationClassification,
+    current_address_with_prefix_migrations_from_event_signatures,
+    rekey_timelines_with_migration_events,
 )
 
 
@@ -68,3 +72,60 @@ def test_materialization_lineage_bridge_classification_rejects_non_boolean_flags
         MaterializationLineageBridgeClassification(
             native_rebirth_after_renumber=cast(Any, "true"),
         )
+
+
+def test_rekey_timelines_uses_precomputed_prefix_migration_signatures() -> None:
+    source = _address("1")
+    target = _address("2")
+    event = MigrationEvent(
+        event_id="mig:test:signature",
+        kind="renumber",
+        from_address=source,
+        to_address=target,
+        effective="2020-01-01",
+    )
+    timeline = ProvisionTimeline(
+        address=source,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="one"),
+            )
+        ],
+    )
+    signature_calls = 0
+
+    def event_resolver_should_not_run(
+        _address: LegalAddress,
+        _events: tuple[MigrationEvent, ...],
+        _as_of_date: str,
+    ) -> LegalAddress:
+        raise AssertionError("rekey should use the precomputed signature resolver")
+
+    def signature_resolver(
+        address: LegalAddress,
+        event_signatures: tuple[PrefixMigrationEventSignature, ...],
+        as_of_date: str,
+        not_before: str,
+    ) -> LegalAddress:
+        nonlocal signature_calls
+        signature_calls += 1
+        return current_address_with_prefix_migrations_from_event_signatures(
+            address,
+            event_signatures,
+            as_of_date=as_of_date,
+            not_before=not_before,
+        )
+
+    rekeyed = rekey_timelines_with_migration_events(
+        {source: timeline},
+        (event,),
+        as_of_date="2021-01-01",
+        current_address_with_prefix_migrations_fn=event_resolver_should_not_run,
+        current_address_with_prefix_migration_signatures_fn=signature_resolver,
+        address_prefix_matches=lambda address, prefix: address.has_path_prefix(prefix),
+    )
+
+    assert signature_calls == 1
+    assert tuple(str(address) for address in rekeyed) == ("section:2",)

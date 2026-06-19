@@ -41,6 +41,7 @@ from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_
 class BodyCoveragePayloadRef:
     """Typed source-model lookup for a Finland coverage unit payload."""
 
+    unit_id: str
     unit_kind: str
     label: str
     chapter: Optional[str] = None
@@ -91,7 +92,8 @@ def _normalize_part_label(raw: str) -> str:
 
 
 _PART_CROSS_HEADING_RE = re.compile(
-    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?:osa|osasto)$",
+    r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?:osa|osasto)\b"
+    r"(?:$|\s{1,8}[^\n]{0,200}$)",
     flags=re.I,
 )
 
@@ -300,6 +302,7 @@ def extract_body_coverage(
                 observed_label=observed_label,
                 parent_label=parent_label,
                 payload_ref=BodyCoveragePayloadRef(
+                    unit_id=unit_id,
                     unit_kind=kind,
                     label=observed_label,
                     chapter=parent_label,

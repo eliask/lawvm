@@ -6,6 +6,7 @@ from lawvm.core.tree_ops import (
     AmbiguousLookupError,
     MissingPathError,
     build_label_index,
+    build_provision_label_index,
     find,
     find_all,
     find_unique,
@@ -66,6 +67,31 @@ def test_find_remains_compatibility_first_match_surface() -> None:
     got = find(body, "section", "5", label_index=idx)
 
     assert got == (("chapter", "1"), ("section", "5"))
+
+
+def test_build_provision_label_index_prunes_section_descendants() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="5",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = build_provision_label_index(body)
+
+    assert got[("chapter", "1")] == [(("chapter", "1"),)]
+    assert got[("section", "5")] == [(("chapter", "1"), ("section", "5"))]
+    assert ("subsection", "1") not in got
 
 
 def test_resolve_accepts_list_paths_and_returns_matching_node() -> None:

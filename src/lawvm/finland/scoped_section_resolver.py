@@ -98,6 +98,21 @@ def find_scoped_section_path(
     """
 
     if target_part:
+        if provision_index is not None:
+            candidates = section_paths_for_label(
+                provision_index,
+                target_section,
+                target_part=target_part,
+            )
+            if target_chapter:
+                target_chapter_norm = _norm_num_token(target_chapter)
+                candidates = tuple(
+                    path
+                    for path in candidates
+                    if _path_matches_chapter_scope(path, target_chapter_norm)
+                )
+            return candidates[0] if candidates else None
+
         expected_part = _norm_num_token(target_part)
         part_path = find_path("part", target_part, None, None)
         if part_path is None:

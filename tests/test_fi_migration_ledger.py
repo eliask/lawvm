@@ -167,6 +167,50 @@ class TestMigrationLedgerUnit:
             _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
         ) == _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
 
+    def test_prefix_migration_signature_cache_reused_and_invalidated(self, monkeypatch) -> None:
+        import lawvm.finland.migration_ledger as migration_ledger
+
+        calls = 0
+        real_signature_builder = migration_ledger.prefix_migration_event_signatures
+
+        def counted_signature_builder(events):
+            nonlocal calls
+            calls += 1
+            return real_signature_builder(events)
+
+        monkeypatch.setattr(
+            migration_ledger,
+            "prefix_migration_event_signatures",
+            counted_signature_builder,
+        )
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("section", "1")),
+            _addr(("section", "2")),
+            effective="2020-01-01",
+            source_statute="2020/1",
+        )
+
+        assert ledger.current_address_with_prefix_migrations(_addr(("section", "1"))) == _addr(
+            ("section", "2")
+        )
+        assert ledger.current_address_with_prefix_migrations(_addr(("section", "9"))) == _addr(
+            ("section", "9")
+        )
+        assert calls == 1
+
+        ledger.record_move(
+            _addr(("chapter", "1")),
+            _addr(("chapter", "2")),
+            effective="2021-01-01",
+            source_statute="2021/1",
+        )
+
+        assert ledger.current_address_with_prefix_migrations(
+            _addr(("chapter", "1"), ("section", "5"))
+        ) == _addr(("chapter", "2"), ("section", "5"))
+        assert calls == 2
+
     def test_query_lineage_both_directions(self) -> None:
         ledger = MigrationLedger()
         addr_a = _addr(("section", "1"))

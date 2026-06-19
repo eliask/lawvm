@@ -125,12 +125,57 @@ def test_extract_body_coverage_payload_ref_is_typed_and_part_scoped() -> None:
     assert unit.unit_id == "section_3_9"
     assert isinstance(unit.payload_ref, BodyCoveragePayloadRef)
     assert unit.payload_ref == BodyCoveragePayloadRef(
+        unit_id="section_3_9",
         unit_kind="section",
         label="9",
         chapter="3",
         part="5",
         source_tag="section",
     )
+
+
+def test_extract_body_coverage_part_heading_with_title_scopes_payload_ref() -> None:
+    tree = _body(
+        """
+        <crossHeading>V OSA KANSAINVÄLISEN YKSITYISOIKEUDEN SÄÄNNÖKSET</crossHeading>
+        <chapter>
+          <num>4 luku</num>
+          <section>
+            <num>129 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    section = [unit for unit in units if unit.kind == "section"][0]
+
+    assert section.unit_id == "section_4_129"
+    assert isinstance(section.payload_ref, BodyCoveragePayloadRef)
+    assert section.payload_ref.part == "5"
+    assert section.payload_ref.chapter == "4"
+
+
+def test_extract_body_coverage_cross_heading_without_part_marker_does_not_scope_part() -> None:
+    tree = _body(
+        """
+        <crossHeading>Voimaantulosäännökset</crossHeading>
+        <chapter>
+          <num>4 luku</num>
+          <section>
+            <num>129 §</num>
+            <subsection><content><p>Text.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+
+    units = extract_body_coverage(tree)
+    section = [unit for unit in units if unit.kind == "section"][0]
+
+    assert isinstance(section.payload_ref, BodyCoveragePayloadRef)
+    assert section.payload_ref.part is None
 
 
 # ---------------------------------------------------------------------------

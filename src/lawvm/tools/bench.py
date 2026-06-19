@@ -74,6 +74,7 @@ _REPEALED_THRESHOLD = 0.5  # fraction of <section> elements that are kumottu →
 _EMPTY_MAX_SECTIONS = 3  # ≤N sections AND 0 kumottu AND small body → EMPTY
 _EMPTY_MAX_BYTES = 2000  # body text (tag-stripped) shorter than this → EMPTY
 _ORACLE_STALE_DIAGNOSIS = "ORACLE_STALE"
+_FI_BENCH_DEFAULT_MAX_WORKERS = 16
 # Non-scored statuses that are NOT crashes: the statute simply has no oracle to
 # compare against (fully-superseded decree, missing source, oracle redirected to a
 # different successor statute). These are excluded from scoring but must NOT be
@@ -665,6 +666,7 @@ def _score_one_with_warning_summary(
     *,
     diagnostic_replay: bool = False,
     fast: bool = False,
+    text_scores: bool = True,
 ) -> Tuple[str, float, str, float, Counter[str]]:
     """Return (sid, struct_sim, status, lev_sim, warning_counts).
 
@@ -685,7 +687,7 @@ def _score_one_with_warning_summary(
                 "oracle_selector": _BENCH_CONSOLIDATED_SELECTOR,
             },
         )
-        lev_sim = _lev_sim_fast(sid, master)
+        lev_sim = _lev_sim_fast(sid, master) if (text_scores or fast) else -1.0
         if fast:
             # Use lev as primary metric too; skip structural diff
             if lev_sim < 0:
@@ -973,6 +975,7 @@ def _oracle_stale_adjusted_stats(
     *,
     workers: int,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    diagnostic_counts: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Compute an oracle-stale-aware headline mean over the current bench rows.
 
@@ -991,6 +994,13 @@ def _oracle_stale_adjusted_stats(
         mode=mode,
         progress=False,
     )
+    if diagnostic_counts is not None:
+        for sid, oracle_info in oracle_checks.items():
+            top_diagnosis = str(oracle_info.get("top_diagnosis") or "").strip()
+            if top_diagnosis and top_diagnosis != "UNKNOWN":
+                counts = diagnostic_counts.setdefault(sid, {})
+                key = f"oracle_check:top_diagnosis:{top_diagnosis}"
+                counts[key] = counts.get(key, 0) + 1
 
     kept: List[float] = []
     excluded: List[str] = []
@@ -1023,19 +1033,20 @@ def _oracle_stale_adjusted_stats(
 
 
 def _score_one_with_meta(
-    args: Tuple[int, str, Any, Literal["official_consolidation", "legal_pit"], bool],
+    args: Tuple[int, str, Any, Literal["official_consolidation", "legal_pit"], bool, bool],
 ) -> Tuple[int, str, float, str, float, str, float, Dict[str, int]]:
     """Wrapper for parallel execution — takes (count, sid, diagnostic_replay, mode, fast).
 
     Returns (count, sid, struct_sim, status, elapsed, warning_summary, lev_sim, warning_counts).
     """
-    count, sid, diagnostic_replay, mode, fast = args
+    count, sid, diagnostic_replay, mode, fast, text_scores = args
     t0 = time.time()
     sid, sim, status, lev_sim, warning_counts = _score_one_with_warning_summary(
         sid,
         mode=mode,
         diagnostic_replay=diagnostic_replay,
         fast=fast,
+        text_scores=text_scores,
     )
     elapsed = time.time() - t0
     return (
@@ -1156,9 +1167,10 @@ def _run_benchmark(
     diagnostic_replay: bool = False,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     fast: bool = False,
+    text_scores: bool = True,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
     diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
-) -> Tuple[List[Tuple[int, str, float, str, float]], Dict[str, float]]:
+) -> Tuple[List[Tuple[int, str, float, str, float]], Optional[Dict[str, float]]]:
     """Run benchmark, optionally parallel with ProcessPoolExecutor.
 
     Returns (results, lev_sims) where:
@@ -1170,7 +1182,8 @@ def _run_benchmark(
     corpus_indexed = sorted(enumerate(corpus), key=lambda x: -x[1][0])
     total = len(corpus)
 
-    lev_sims: Dict[str, float] = {}
+    collect_lev_sims = text_scores or fast
+    lev_sims: Optional[Dict[str, float]] = {} if collect_lev_sims else None
 
     if workers > 1:
         # Pre-warm: populate caches in the main process so forked workers
@@ -1195,7 +1208,7 @@ def _run_benchmark(
         results: List[Tuple[int, str, float, str, float]] = cast(List[Tuple[int, str, float, str, float]], [None] * total)
         with ProcessPoolExecutor(max_workers=workers) as pool:
             future_to_idx = {
-                pool.submit(_score_one_with_meta, (count, sid, diagnostic_replay, mode, fast)): orig_idx
+                pool.submit(_score_one_with_meta, (count, sid, diagnostic_replay, mode, fast, text_scores)): orig_idx
                 for orig_idx, (count, sid) in corpus_indexed
             }
             done = 0
@@ -1204,7 +1217,8 @@ def _run_benchmark(
                 result = future.result()
                 count, sid, sim, status, elapsed, warning_summary, lev_sim, warning_counts = result
                 results[idx] = (count, sid, sim, status, elapsed)
-                lev_sims[sid] = lev_sim
+                if lev_sims is not None:
+                    lev_sims[sid] = lev_sim
                 if diagnostic_summaries_out is not None:
                     diagnostic_summaries_out[sid] = warning_summary
                 if diagnostic_counts_out is not None:
@@ -1226,10 +1240,12 @@ def _run_benchmark(
             mode=mode,
             diagnostic_replay=diagnostic_replay,
             fast=fast,
+            text_scores=text_scores,
         )
         elapsed = time.time() - t0
         results.append((count, sid, sim, status, elapsed))
-        lev_sims[sid] = lev_sim
+        if lev_sims is not None:
+            lev_sims[sid] = lev_sim
         warning_summary = _format_bench_warning_summary(warning_counts)
         if diagnostic_summaries_out is not None:
             diagnostic_summaries_out[sid] = warning_summary
@@ -2351,7 +2367,7 @@ def _fi_bench_worker_count(args: Any) -> int:
     """Return the Finland bench worker count requested by CLI args."""
     explicit = getattr(args, "parallel", None)
     if explicit is None:
-        return 1
+        return max(1, min(_FI_BENCH_DEFAULT_MAX_WORKERS, os.cpu_count() or 1))
     if explicit < 1:
         print("ERROR: --parallel must be a positive integer", file=sys.stderr)
         raise SystemExit(2)
@@ -2483,6 +2499,8 @@ def main(args) -> None:
 
     section_score_mode = getattr(args, "section_score", False)
     fast_mode = getattr(args, "fast", False)
+    text_scores = not bool(getattr(args, "no_text_scores", False))
+    no_save = bool(getattr(args, "no_save", False))
     bench_mode = getattr(args, "mode", "official_consolidation") or "official_consolidation"
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
 
@@ -2490,6 +2508,7 @@ def main(args) -> None:
         f"Running benchmark: {len(corpus)} statutes  label={label}  mode={bench_mode}"
         + ("  [+section-score]" if section_score_mode else "")
         + ("  [fast]" if fast_mode else "")
+        + ("  [no-text-scores]" if not text_scores else "")
         + ("  [diagnostic-replay]" if diagnostic_replay else "  [quiet-replay]")
     )
     print()
@@ -2523,6 +2542,7 @@ def main(args) -> None:
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
             fast=fast_mode,
+            text_scores=text_scores,
             diagnostic_summaries_out=diagnostic_summaries,
             diagnostic_counts_out=diagnostic_counts,
         )
@@ -2539,6 +2559,7 @@ def main(args) -> None:
             results,
             workers=workers,
             mode=bench_mode,
+            diagnostic_counts=diagnostic_counts,
         )
 
     verified = _load_verified_statutes()
@@ -2572,45 +2593,47 @@ def main(args) -> None:
             print(f"Structural accuracy: {mean_struct * 100:.2f}%  (section-level structural diff, primary)")
             print(f"Levenshtein:         {mean_lev * 100:.2f}%  (full-text, secondary — tree-structure sanity)")
 
-    # Persist
-    run_path = _save_run(
-        results,
-        label,
-        timestamp,
-        section_results=section_results,
-        lev_sims=lev_sims,
-        diagnostic_summaries=diagnostic_summaries,
-    )
-    _append_history(timestamp, label, stats)
-    evidence_report_path = _write_bench_evidence_surface(
-        run_path=run_path,
-        label=label,
-        timestamp=timestamp,
-        mode=bench_mode,
-        corpus_path=corpus_path,
-        stats=stats,
-        results=results,
-        workers=workers,
-        section_score=section_score_mode,
-        fast_mode=fast_mode,
-        diagnostic_replay=diagnostic_replay,
-        lev_sims=lev_sims,
-        diagnostic_summaries=diagnostic_summaries,
-        oracle_stale_adjusted=oracle_adjusted_summary,
-    )
+    if no_save:
+        print("\nRun not saved (--no-save)")
+    else:
+        run_path = _save_run(
+            results,
+            label,
+            timestamp,
+            section_results=section_results,
+            lev_sims=lev_sims,
+            diagnostic_summaries=diagnostic_summaries,
+        )
+        _append_history(timestamp, label, stats)
+        evidence_report_path = _write_bench_evidence_surface(
+            run_path=run_path,
+            label=label,
+            timestamp=timestamp,
+            mode=bench_mode,
+            corpus_path=corpus_path,
+            stats=stats,
+            results=results,
+            workers=workers,
+            section_score=section_score_mode,
+            fast_mode=fast_mode,
+            diagnostic_replay=diagnostic_replay,
+            lev_sims=lev_sims,
+            diagnostic_summaries=diagnostic_summaries,
+            oracle_stale_adjusted=oracle_adjusted_summary,
+        )
 
-    diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(
-        run_path=run_path,
-        label=label,
-        results=results,
-        diagnostic_counts=diagnostic_counts,
-    )
+        diagnostics_sidecar_path = _save_bench_diagnostic_sidecar(
+            run_path=run_path,
+            label=label,
+            results=results,
+            diagnostic_counts=diagnostic_counts,
+        )
 
-    print(f"\nRun saved: {run_path}")
-    print(f"History  : {_history_path()}")
-    print(f"Evidence : {evidence_report_path}")
-    if diagnostics_sidecar_path is not None:
-        print(f"Diagnostics: {diagnostics_sidecar_path}")
+        print(f"\nRun saved: {run_path}")
+        print(f"History  : {_history_path()}")
+        print(f"Evidence : {evidence_report_path}")
+        if diagnostics_sidecar_path is not None:
+            print(f"Diagnostics: {diagnostics_sidecar_path}")
 
     # Show errors last — the most visible position for tail output
     _show_errors(results)
@@ -2705,7 +2728,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: 1=sequential; UK/EE use "
+            "parallel workers (FI default: min(16, cpu_count); UK/EE use "
             "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),
@@ -2857,7 +2880,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         "--no-save",
         action="store_true",
         dest="no_save",
-        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+        help="print a bench report without writing run CSV/history artifacts",
     )
     bench_p.add_argument(
         "--summary-only",
@@ -2941,7 +2964,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         "--no-text-scores",
         action="store_true",
         dest="no_text_scores",
-        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+        help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
     )
     bench_p.add_argument(
         "--worker-max-tasks",

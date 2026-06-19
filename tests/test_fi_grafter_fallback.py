@@ -148,6 +148,10 @@ from lawvm.finland.compile_group_elaboration import (
 )
 from lawvm.finland.compile_amendment import _split_numbered_table_child_group_ops
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
+from lawvm.finland.compile_group_scope_recovery import (
+    CompileGroupScopeRecoveryRequest,
+    resolve_compile_group_scope_recovery,
+)
 from tests.corpus_pin_helpers import replay_xml_for_test as replay_xml
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
@@ -4533,9 +4537,7 @@ def test_retarget_stale_body_scope_skips_whole_section_insert_when_body_matches_
     assert got is None
 
 
-def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter(
-    monkeypatch,
-) -> None:
+def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter() -> None:
     master = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
@@ -4586,11 +4588,6 @@ def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter(
         ),
     )
 
-    monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.retarget_duplicate_body_section_scope_from_close_live_siblings",
-        lambda **_kwargs: (None, "1"),
-    )
-
     result = _compile_group(
         master,
         "section",
@@ -4616,6 +4613,486 @@ def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter(
     assert rop.op.lo.target.path == (("chapter", "2"), ("section", "2a"))
     assert not any(
         finding.kind == "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="14"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="43"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="9",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="62"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>1 luku</num>
+                <section><num>14 a §</num><content><p>payload 14a</p></content></section>
+                <section><num>43 §</num><content><p>payload 43</p></content></section>
+                <section><num>62 a §</num><content><p>payload 62a</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_62a_inferred_wrapper",
+        op_type="INSERT",
+        target_section="62a",
+        target_unit_kind="section",
+        target_chapter="1",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source="live_stem_host",
+            confidence="inferred",
+            resolved_chapter="1",
+        ),
+        source_statute="2010/661",
+        lo=LegalOperation(
+            op_id="insert_62a_inferred_wrapper",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "62a"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "62a",
+        "1",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_chapter == "9"
+    assert rop.scope_confidence is not None
+    assert rop.scope_confidence.resolved_chapter == "9"
+    assert rop.op.lo is not None
+    assert rop.op.lo.target.path == (("chapter", "9"), ("section", "62a"))
+    assert any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        and finding.detail["body_chapter"] == "1"
+        and finding.detail["resolved_body_chapter"] == "9"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chapter() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="14"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="43"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="9",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="62"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>1 luku</num>
+                <section><num>14 a §</num><content><p>payload 14a</p></content></section>
+                <section><num>43 §</num><content><p>payload 43</p></content></section>
+                <section><num>62 a §</num><content><p>payload 62a</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_62a_inferred_home_chapter",
+        op_type="INSERT",
+        target_section="62a",
+        target_unit_kind="section",
+        target_chapter="9",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source="live_stem_host",
+            confidence="inferred",
+            resolved_chapter="9",
+        ),
+        source_statute="2010/661",
+        lo=LegalOperation(
+            op_id="insert_62a_inferred_home_chapter",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "9"), ("section", "62a"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="62a",
+            target_chapter="9",
+            target_part=None,
+            group_ops=[op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    recovered = result.output
+    assert recovered.effective_target_chapter == "9"
+    assert len(recovered.group_ops) == 1
+    recovered_op = recovered.group_ops[0]
+    assert recovered_op.scope_confidence is not None
+    assert recovered_op.scope_confidence.source == "live_stem_host"
+    assert recovered_op.scope_confidence.resolved_chapter == "9"
+    assert recovered_op.lo is not None
+    assert recovered_op.lo.target.path == (("chapter", "9"), ("section", "62a"))
+    assert not any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="4"),
+                        IRNode(kind=IRNodeKind.SECTION, label="5"),
+                        IRNode(kind=IRNodeKind.SECTION, label="6"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="7"),
+                        IRNode(kind=IRNodeKind.SECTION, label="12"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="16"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>2 luku</num>
+                <section><num>4 §</num><content><p>payload 4</p></content></section>
+                <section><num>5 §</num><content><p>payload 5</p></content></section>
+                <section><num>6 §</num><content><p>payload 6</p></content></section>
+                <section><num>7 §</num><content><p>payload 7</p></content></section>
+                <section>
+                  <num>12 §</num>
+                  <heading>new heading</heading>
+                  <subsection><num>2 mom.</num><content><p>payload 12.2</p></content></subsection>
+                </section>
+                <section><num>16 §</num><content><p>payload 16</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    heading_op = AmendmentOp(
+        op_id="replace_12_heading",
+        op_type="REPLACE",
+        target_section="12",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_special="otsikko",
+        source_statute="2007/930",
+        lo=LegalOperation(
+            op_id="replace_12_heading",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "12")), special="otsikko"),
+            payload=None,
+        ),
+    )
+    subsection_op = AmendmentOp(
+        op_id="insert_12_2",
+        op_type="INSERT",
+        target_section="12",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=2,
+        source_statute="2007/930",
+        lo=LegalOperation(
+            op_id="insert_12_2",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "12"), ("subsection", "2"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="12",
+            target_chapter="3",
+            target_part=None,
+            group_ops=[heading_op, subsection_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    recovered = result.output
+    assert recovered.effective_target_chapter == "3"
+    assert [op.target_chapter for op in recovered.group_ops] == ["3", "3"]
+    assert all(op.lo is not None for op in recovered.group_ops)
+    assert recovered.group_ops[0].lo.target.path == (("chapter", "3"), ("section", "12"))
+    assert recovered.group_ops[1].lo.target.path == (
+        ("chapter", "3"),
+        ("section", "12"),
+        ("subsection", "2"),
+    )
+    assert not any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="6", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>6 luku</num>
+                <section><num>37 a §</num><content><p>payload 37a</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a_inferred_home_chapter",
+        op_type="INSERT",
+        target_section="37a",
+        target_unit_kind="section",
+        target_chapter="5",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_letter_suffix_stem_host",
+            source="live_stem_host",
+            confidence="inferred",
+            resolved_chapter="5",
+        ),
+        source_statute="2025/500",
+        lo=LegalOperation(
+            op_id="insert_37a_inferred_home_chapter",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "5"), ("section", "37a"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "37a",
+        "5",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_chapter == "6"
+    assert rop.op.lo is not None
+    assert rop.op.lo.target.path == (("chapter", "6"), ("section", "37a"))
+    assert any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        and finding.detail["body_chapter"] == "6"
+        and finding.detail["target_chapter"] == "5"
+        for finding in result.findings()
+    )
+
+
+def test_compile_group_retargets_descendant_insert_from_body_wrapper_to_live_section() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="43"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>1 luku</num>
+                <section>
+                  <num>43 §</num>
+                  <subsection><num>3 mom.</num><content><p>payload 43.3</p></content></subsection>
+                </section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_43_3_inferred_wrapper",
+        op_type="INSERT",
+        target_section="43",
+        target_unit_kind="section",
+        target_chapter="1",
+        target_paragraph=3,
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_scope_rewrite",
+            confidence="rewritten",
+            resolved_chapter="1",
+        ),
+        source_statute="2010/661",
+        lo=LegalOperation(
+            op_id="insert_43_3_inferred_wrapper",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "43"), ("subsection", "3"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "43",
+        "1",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.resolved_target_scope_view.target_chapter == "8"
+    assert rop.scope_confidence is not None
+    assert rop.scope_confidence.resolved_chapter == "8"
+    assert rop.op.lo is not None
+    assert rop.op.lo.target.path == (
+        ("chapter", "8"),
+        ("section", "43"),
+        ("subsection", "3"),
+    )
+    assert any(
+        finding.kind == "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
+        and finding.detail["scope_source"] == "explicit_scope_rewrite"
+        and finding.detail["resolved_live_chapter"] == "8"
         for finding in result.findings()
     )
 
@@ -4669,7 +5146,7 @@ def test_compile_group_keeps_scoped_descendant_insert_under_matching_body_chapte
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.retarget_duplicate_body_section_scope_from_close_live_siblings",
+        "lawvm.finland.source_model.AmendmentSourceModel.retarget_duplicate_body_section_scope_from_close_live_siblings",
         lambda **_kwargs: (None, "5"),
     )
 
@@ -4751,15 +5228,11 @@ def test_compile_group_prefers_scoped_body_chapter_for_repeated_explicit_chunk_i
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.source_body_chapter_for_scoped_section_target",
+        "lawvm.finland.source_model.AmendmentSourceModel.source_body_chapter_for_scoped_section_target",
         lambda **_kwargs: "6",
     )
     monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.find_body_section_chapter",
-        lambda *_args, **_kwargs: "2",
-    )
-    monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.retarget_duplicate_body_section_scope_from_close_live_siblings",
+        "lawvm.finland.source_model.AmendmentSourceModel.retarget_duplicate_body_section_scope_from_close_live_siblings",
         lambda **_kwargs: (None, "1"),
     )
 
@@ -4852,7 +5325,7 @@ def test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new
     )
 
     monkeypatch.setattr(
-        "lawvm.finland.compile_group_scope_recovery.retarget_duplicate_body_section_scope_from_close_live_siblings",
+        "lawvm.finland.source_model.AmendmentSourceModel.retarget_duplicate_body_section_scope_from_close_live_siblings",
         lambda **_kwargs: (None, "4"),
     )
 
@@ -10059,6 +10532,64 @@ def test_retarget_stale_body_chapter_scope_respects_stored_scope_confidence_carr
     assert got is None
 
 
+def test_retarget_stale_body_chapter_scope_keeps_explicit_chunk_whole_section_insert() -> None:
+    from lawvm.finland.frontend_compile import _retarget_stale_body_scope_for_section_op
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="5",
+                            children=(IRNode(kind=IRNodeKind.NUM, text="5 §"),),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>1 luku</num>
+              <section><num>5 §</num></section>
+            </chapter>
+          </body>
+        </akn>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_5_explicit_chunk",
+        op_type="INSERT",
+        target_section="5",
+        target_kind=TargetKind.SECTION,
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="2",
+        ),
+    )
+
+    got = _retarget_stale_body_scope_for_section_op(op=op, muutos_tree=muutos_tree, master=master)
+
+    assert got is None
+
+
 def test_retarget_stale_body_chapter_scope_allows_explicit_scope_rewrite_carrier() -> None:
     from lawvm.finland.frontend_compile import _retarget_stale_body_scope_for_section_op
 
@@ -10253,6 +10784,93 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
     got = _body_chapter_scope_for_section_op(op=op, muutos_tree=muutos_tree, master=master)
 
     assert got == "6"
+
+
+def test_enrich_ops_prefers_live_body_chapter_before_letter_suffix_stem_host_for_unscoped_insert() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
+                IRNode(kind=IRNodeKind.CHAPTER, label="6", children=()),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 luku</num>
+            <section>
+              <num>37 a §</num>
+              <content><p>new section</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="37a",
+    )
+
+    got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
+
+    assert len(got) == 1
+    assert got[0].target_chapter == "6"
+    assert got[0].witness_rule_id == "fi_body_chapter_scope_from_source_body"
+    assert got[0].scope_confidence is not None
+    assert got[0].scope_confidence.source == "carry_forward"
+    assert got[0].scope_confidence.resolved_chapter == "6"
+
+
+def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_for_unscoped_insert() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="37"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 luku</num>
+            <section>
+              <num>37 a §</num>
+              <content><p>new section</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_37a",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="37a",
+    )
+
+    got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
+
+    assert len(got) == 1
+    assert got[0].target_chapter == "5"
+    assert got[0].witness_rule_id == "fi_letter_suffix_insert_scope_from_stem_host"
+    assert got[0].scope_confidence is not None
+    assert got[0].scope_confidence.source == "carry_forward"
+    assert got[0].scope_confidence.resolved_chapter == "5"
 
 
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:

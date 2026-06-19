@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget,
@@ -105,17 +105,83 @@ def _group_has_explicit_chapter_scope(group_ops: list[AmendmentOp]) -> bool:
     return False
 
 
+def _group_has_scope_that_overrides_body_wrapper(
+    group_ops: list[AmendmentOp],
+    *,
+    target_chapter: str,
+) -> bool:
+    """Return True when earlier scope recovery owns a non-body target chapter."""
+    for op in group_ops:
+        witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if (
+            witness is not None
+            and witness.resolved_chapter == target_chapter
+            and witness.source in {"live_stem_host", "explicit_scope_rewrite"}
+        ):
+            return True
+    return False
+
+
+def _source_body_is_single_mixed_chapter_wrapper(
+    source_model: AmendmentSourceModel,
+    body_chapter: str,
+    master: ReplayState,
+) -> bool:
+    body_chapter_norm = _norm_num_token(body_chapter)
+    real_chapter_labels = {
+        _norm_num_token(unit.label)
+        for unit in source_model.observed_body_inventory()
+        if unit.kind == "chapter" and unit.source_tag == "chapter"
+    }
+    if real_chapter_labels != {body_chapter_norm}:
+        return False
+
+    foreign_live_chapters: set[str] = set()
+    for unit in source_model.observed_body_inventory():
+        if unit.kind != "section" or _norm_num_token(unit.chapter_label) != body_chapter_norm:
+            continue
+        section_label = _norm_num_token(unit.label)
+        section_path = master.find_section_path(section_label, None, unit.part_label or None)
+        if section_path is None:
+            stem_match = re.fullmatch(r"(\d+)[a-z]+", section_label, re.I)
+            if stem_match is not None:
+                section_path = master.find_section_path(
+                    stem_match.group(1),
+                    None,
+                    unit.part_label or None,
+                )
+        if section_path is None:
+            continue
+        live_chapter = next((label for kind, label in section_path if kind == "chapter"), "")
+        if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
+            foreign_live_chapters.add(_norm_num_token(live_chapter))
+    return len(foreign_live_chapters) >= 2
+
+
+def _live_chapter_has_no_section_children(master: ReplayState, chapter_label: str) -> bool:
+    chapter = master.find_chapter(chapter_label)
+    if chapter is None:
+        return False
+    return not any(child.kind is IRNodeKind.SECTION for child in chapter.children)
+
+
 def _body_chapter_corrected_ops(
     group_ops: list[AmendmentOp],
     *,
     target_norm: str,
     target_chapter: Optional[str],
     resolved_body_chapter: str,
+    body_chapter_move_from: Optional[str] = None,
 ) -> list[AmendmentOp]:
     return [
         dc_replace(
             op,
             target_chapter=resolved_body_chapter,
+            body_chapter_move_from=body_chapter_move_from or op.body_chapter_move_from,
             scope_confidence=normalize_scope_confidence(
                 projection_scope_confidence(
                     scope_confidence=op.scope_confidence,
@@ -266,13 +332,83 @@ def _maybe_apply_body_chapter_insert_correction(
         and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
         is not None
     )
+    body_chapter_is_letter_suffix = (
+        body_chapter is not None
+        and re.fullmatch(r"\d+[a-z]+", body_chapter, re.I) is not None
+    )
+    inserted_chapter_labels = {
+        _norm_num_token(label) for label in request.inserted_chapter_labels
+    }
+    body_chapter_is_inserted = (
+        body_chapter is not None
+        and _norm_num_token(body_chapter) in inserted_chapter_labels
+    )
+    body_chapter_is_empty_live_chapter = (
+        body_chapter is not None
+        and _live_chapter_has_no_section_children(request.master, body_chapter)
+    )
+    body_wrapper_overridden_by_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and _source_body_is_single_mixed_chapter_wrapper(
+            request.source_model,
+            body_chapter,
+            request.master,
+        )
+        and not body_chapter_is_inserted
+        and _group_has_scope_that_overrides_body_wrapper(
+            request.group_ops,
+            target_chapter=request.target_chapter,
+        )
+    )
+    group_targets_whole_section = any(
+        op.target_unit_kind == "section"
+        and _norm_num_token(op.target_section or "") == request.target_norm
+        and op.target_chapter == request.target_chapter
+        and not op.target_paragraph
+        and not op.target_item
+        and not op.target_special
+        for op in request.group_ops
+    )
     source_owned_inserted_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
-        and (body_chapter_is_subchapter or carry_forward_scoped or not explicit_chapter_scoped)
+        and (
+            body_chapter_is_subchapter
+            or (
+                (body_chapter_is_inserted or body_chapter_is_empty_live_chapter)
+                and not explicit_chapter_scoped
+                and not carry_forward_scoped
+            )
+            or (
+                carry_forward_scoped
+                and not body_chapter_is_letter_suffix
+                and body_chapter_is_inserted
+            )
+        )
         and request.source_model.body_has_real_chapter_container(body_chapter)
+        and not body_wrapper_overridden_by_scope
     )
-    if body_chapter is not None and (not request.target_chapter or carry_forward_scoped):
+    source_owned_existing_chapter_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter != request.target_chapter
+        and not explicit_chapter_scoped
+        and not carry_forward_scoped
+        and not group_has_scope_source(request.group_ops, "live_stem_host")
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
+        and not body_wrapper_overridden_by_scope
+    )
+    if body_chapter is not None and (
+        group_targets_whole_section
+        and (
+            not request.target_chapter
+            or body_chapter_is_subchapter
+            or (not explicit_chapter_scoped and body_chapter == request.target_chapter)
+        )
+    ):
         sibling_consensus_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(
             section_norm=request.target_norm,
             body_chapter=body_chapter,
@@ -303,13 +439,15 @@ def _maybe_apply_body_chapter_insert_correction(
         apply_correction = True
     elif not request.target_chapter:
         apply_correction = request.master.find("chapter", resolved_body_chapter) is not None
+    elif source_owned_inserted_chapter_scope:
+        apply_correction = True
+    elif source_owned_existing_chapter_scope:
+        apply_correction = True
     elif carry_forward_scoped:
         apply_correction = (
             re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]", resolved_body_chapter, re.I)
             is not None
         )
-    elif source_owned_inserted_chapter_scope:
-        apply_correction = True
     if not apply_correction:
         return PhaseResult(output=result)
     corrected = dc_replace(
@@ -320,6 +458,9 @@ def _maybe_apply_body_chapter_insert_correction(
             target_norm=request.target_norm,
             target_chapter=request.target_chapter,
             resolved_body_chapter=resolved_body_chapter,
+            body_chapter_move_from=(
+                request.target_chapter if source_owned_existing_chapter_scope else None
+            ),
         ),
     )
     finding = Finding(
@@ -482,16 +623,29 @@ def _maybe_retarget_live_section(
     request: CompileGroupScopeRecoveryRequest,
     result: CompileGroupScopeRecoveryResult,
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
+    all_whole_section_inserts = all(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and not op.target_paragraph
+        and not op.target_item
+        and not op.target_special
+        for op in request.group_ops
+    )
     if (
         request.target_unit_kind != "section"
         or not (request.target_chapter or request.target_part)
-        or all(op.op_type == "INSERT" for op in request.group_ops)
+        or all_whole_section_inserts
     ):
         return PhaseResult(output=result)
     scoped_path = request.master.find_section_path(
         request.target_norm,
         request.target_chapter,
         request.target_part,
+    )
+    authorized_retarget_scope_source = (
+        allow_unscoped_live_section_retarget(request.group_ops)
+        if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels
+        else None
     )
     if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels:
         if request.target_chapter:
@@ -500,10 +654,13 @@ def _maybe_retarget_live_section(
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
             )
-            if source_body_chapter == request.target_chapter:
+            if (
+                source_body_chapter == request.target_chapter
+                and authorized_retarget_scope_source is None
+            ):
                 scoped_path = ()
     retarget_scope_source = (
-        allow_unscoped_live_section_retarget(request.group_ops)
+        authorized_retarget_scope_source
         if scoped_path is None and request.target_norm not in request.master.duplicate_section_labels
         else None
     )

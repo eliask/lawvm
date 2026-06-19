@@ -305,7 +305,7 @@ def _base_provision_index_for_replay_history(
     if base_ir is None:
         return None
     if not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
-        return _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+        return _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
     cache: dict[int, tuple[IRNode, LabelIndex]] | None = replay_history_ops.base_provision_index_cache  # type: ignore[assignment]
     if cache is None:
         cache = {}
@@ -314,7 +314,7 @@ def _base_provision_index_for_replay_history(
     cached = cache.get(key)
     if cached is not None and cached[0] is base_ir:
         return cached[1]
-    index = _tops.build_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
+    index = _tops.build_provision_label_index(base_ir, indexed_kinds=_PROVISION_INDEXED_KINDS)
     cache[key] = (base_ir, index)
     return index
 
@@ -3775,6 +3775,23 @@ def _valid_target_path_hint(
 def _with_preserved_provision_index(state: "ReplayState", new_ir: IRNode) -> "ReplayState":
     """Reuse the provision-path index when section/chapter/part paths stay stable."""
     return state.with_ir(new_ir, preserve_provision_index=True)
+
+
+def _with_replaced_provision_subtree_index(
+    state: "ReplayState",
+    new_ir: IRNode,
+    *,
+    path: Path,
+    old_subtree: IRNode,
+    new_subtree: IRNode,
+) -> "ReplayState":
+    """Reuse the provision-path index after same-path subtree replacement."""
+    return state.with_replaced_provision_subtree_index(
+        new_ir,
+        path=path,
+        old_subtree=old_subtree,
+        new_subtree=new_subtree,
+    )
 
 
 def _same_norm_label(lhs: Optional[str], rhs: Optional[str]) -> bool:

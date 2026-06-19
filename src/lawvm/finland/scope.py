@@ -19,7 +19,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
-from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import (
     ScopeConfidence,
     _lo_path_dict,
@@ -311,9 +311,43 @@ def find_body_section_chapter(
     return None
 
 
+def _observed_units_from_source(
+    *,
+    muutos_tree: etree._Element | None,
+    inventory: Sequence[ObservedBodyUnit] | None,
+) -> Sequence[ObservedBodyUnit]:
+    if inventory is not None:
+        return inventory
+    if muutos_tree is None:
+        return ()
+    return build_observed_body_inventory(muutos_tree)
+
+
+def _unit_part_label(unit: ObservedBodyUnit) -> str | None:
+    return _norm_num_token(unit.part_label) if unit.part_label else None
+
+
+def _body_scope_section_units(
+    observed_units: Sequence[ObservedBodyUnit],
+    *,
+    body_chapter: str,
+    body_part: str | None,
+) -> list[ObservedBodyUnit]:
+    body_chapter_norm = _norm_num_token(body_chapter)
+    body_part_norm = _norm_num_token(body_part) if body_part else None
+    return [
+        unit
+        for unit in observed_units
+        if unit.kind == "section"
+        and _norm_num_token(unit.chapter_label) == body_chapter_norm
+        and _unit_part_label(unit) == body_part_norm
+    ]
+
+
 def retarget_heading_insert_body_chapter_from_close_live_sibling(
     *,
-    muutos_tree: etree._Element,
+    muutos_tree: etree._Element | None = None,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
     section_norm: str,
     body_chapter: str,
     master: "ReplayState",
@@ -322,38 +356,26 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
     if not re.fullmatch(r"\d+", section_norm):
         return body_chapter
 
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    observed_units = _observed_units_from_source(
+        muutos_tree=muutos_tree,
+        inventory=inventory,
     )
-    if body is None:
+    scoped_units = _body_scope_section_units(
+        observed_units,
+        body_chapter=body_chapter,
+        body_part=None,
+    )
+    if not scoped_units:
         return body_chapter
 
     target_num = int(section_norm)
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
+    for target_unit in scoped_units:
+        if _norm_num_token(target_unit.label) != section_norm:
             continue
-        sec_label = _normalize_source_section_num(num_el.text)
-        if sec_label != section_norm:
-            continue
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            return body_chapter
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            return body_chapter
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            return body_chapter
 
         close_live_chapters: dict[int, set[str]] = defaultdict(set)
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _normalize_source_section_num(sibling_num.text)
+        for sibling in scoped_units:
+            sibling_label = _norm_num_token(sibling.label)
             if not re.fullmatch(r"\d+", sibling_label):
                 continue
             distance = abs(int(sibling_label) - target_num)
@@ -377,7 +399,8 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
 
 def retarget_duplicate_body_section_scope_from_close_live_siblings(
     *,
-    muutos_tree: etree._Element,
+    muutos_tree: etree._Element | None = None,
+    inventory: Sequence[ObservedBodyUnit] | None = None,
     section_norm: str,
     body_chapter: str,
     body_part: str | None,
@@ -388,47 +411,24 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
     if target_match is None:
         return None
 
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    observed_units = _observed_units_from_source(
+        muutos_tree=muutos_tree,
+        inventory=inventory,
     )
-    if body is None:
+    scoped_units = _body_scope_section_units(
+        observed_units,
+        body_chapter=body_chapter,
+        body_part=body_part,
+    )
+    if not scoped_units:
         return None
 
     target_num = int(target_match.group(1))
     is_letter_suffix_section = section_norm != str(target_num)
 
-    def _part_label_for_element(el: etree._Element) -> str | None:
-        parent = el.getparent()
-        while parent is not None:
-            if str(parent.tag).rsplit("}", 1)[-1] == "part":
-                part_num = parent.find("{*}num")
-                if part_num is None or not part_num.text:
-                    return None
-                return _normalize_source_part_num(part_num.text) or None
-            parent = parent.getparent()
-        return None
-
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
-            continue
-        sec_label = _normalize_source_section_num(num_el.text)
+    for target_unit in scoped_units:
+        sec_label = _norm_num_token(target_unit.label)
         if sec_label != section_norm:
-            continue
-
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            continue
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            continue
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            continue
-
-        if _part_label_for_element(sec) != body_part:
             continue
 
         # The section being retargeted already has a live home in body_chapter:
@@ -440,13 +440,25 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
         if target_live_path is not None:
             return None
 
+        if (
+            is_letter_suffix_section
+            and str(target_num) not in master.duplicate_section_labels
+        ):
+            stem_live_path = master.find_section_path(str(target_num), None, body_part)
+            if stem_live_path is not None:
+                stem_live_part = next((label for kind, label in stem_live_path if kind == "part"), None)
+                stem_live_chapter = next((label for kind, label in stem_live_path if kind == "chapter"), None)
+                if (
+                    stem_live_chapter
+                    and stem_live_chapter != body_chapter
+                    and stem_live_part == body_part
+                ):
+                    return stem_live_part, stem_live_chapter
+
         close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
         body_chapter_corroborated = False
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _normalize_source_section_num(sibling_num.text)
+        for sibling in scoped_units:
+            sibling_label = _norm_num_token(sibling.label)
             sibling_match = re.fullmatch(r"(\d+)[a-z]?", sibling_label, re.I)
             if sibling_match is None:
                 continue

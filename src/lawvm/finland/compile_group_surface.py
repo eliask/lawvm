@@ -86,13 +86,13 @@ def collect_recodification_omission_only_section_shell_pathologies(
     if has_destination_payload_op:
         return ()
 
-    destination_ir, _destination_cross_ir = source_model.find_payload_ir(
+    destination_payload = source_model.lookup_payload_ir(
         target_unit_kind,
         destination_section,
         None,
         None,
     )
-    if not _is_sparse_source_shell(destination_ir):
+    if not _is_sparse_source_shell(destination_payload.payload_ir):
         return ()
 
     return (
@@ -139,12 +139,14 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     )
     surface_findings: list[Finding] = []
 
-    muutos_ir, cross_ir = request.source_model.find_payload_ir(
+    source_payload = request.source_model.lookup_payload_ir(
         target_unit_kind,
         target_norm,
         target_chapter,
         target_part,
     )
+    muutos_ir = source_payload.payload_ir
+    cross_ir = source_payload.cross_heading_ir
     if target_unit_kind == "section":
         destination_section = _renumber_destination_section_label(group_ops)
         has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)
@@ -166,12 +168,14 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
         source_shell = _is_sparse_source_shell(muutos_ir)
         source_surface = "missing" if muutos_ir is None else "sparse_omission_shell"
         if destination_section is not None and has_followup_payload_op and (muutos_ir is None or source_shell):
-            destination_ir, destination_cross_ir = request.source_model.find_payload_ir(
+            destination_payload = request.source_model.lookup_payload_ir(
                 target_unit_kind,
                 destination_section,
                 None,
                 None,
             )
+            destination_ir = destination_payload.payload_ir
+            destination_cross_ir = destination_payload.cross_heading_ir
             if destination_ir is not None and not _is_sparse_source_shell(destination_ir):
                 muutos_ir, cross_ir = destination_ir, destination_cross_ir
                 surface_findings.append(

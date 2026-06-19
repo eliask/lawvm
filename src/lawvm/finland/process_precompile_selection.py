@@ -23,7 +23,7 @@ class VtsExtractor(Protocol):
     def __call__(
         self,
         johto: str,
-        xml_bytes: bytes,
+        source_xml_bytes: bytes,
         parent_id: str,
         parent_title: str,
         strict_profile: Optional[StrictProfile],
@@ -45,7 +45,6 @@ class ProcessPrecompileSelectionContext:
     parent_title: str
     source_title: str
     johto: str
-    xml_bytes: bytes
     source_model: AmendmentSourceModel
     strict_profile: Optional[StrictProfile]
     acquisition: AmendmentAcquisitionResult
@@ -70,12 +69,12 @@ class ProcessPrecompileSelectionContext:
             )
 
         self._record_post_routing_sec1_fallback()
-        vts_ops = self.extract_vts_repeals(
-            self.johto,
-            self.xml_bytes,
-            self.parent_id,
-            self.parent_title,
-            self.strict_profile,
+        vts_ops = self.source_model.extract_vts_repeals(
+            extract_vts_repeals=self.extract_vts_repeals,
+            johto=self.johto,
+            parent_id=self.parent_id,
+            parent_title=self.parent_title,
+            strict_profile=self.strict_profile,
             skipped_targets_out=self.vts_skipped_targets,
         )
         if vts_ops:

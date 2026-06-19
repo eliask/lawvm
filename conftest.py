@@ -16,6 +16,8 @@ Usage:
     uv run pytest tests/ -m slow                # runs only slow tests
     uv run pytest tests/ -m network             # runs only network tests
 """
+import os
+import re
 import warnings
 
 import pytest
@@ -36,6 +38,19 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "requires_local_llm: test requires a local LLM server at http://localhost:11434",
+    )
+    mark_expr = config.getoption("-m", default="") or ""
+    explicit = mark_expr if isinstance(mark_expr, str) else ""
+    if config.getoption("--run-slow", default=False) or _marker_requested(explicit, "slow"):
+        os.environ["LAWVM_PYTEST_COLLECT_SLOW_GOLD"] = "1"
+    else:
+        os.environ.pop("LAWVM_PYTEST_COLLECT_SLOW_GOLD", None)
+
+
+def _marker_requested(mark_expr: str, marker: str) -> bool:
+    """Return True when a -m expression positively selects ``marker``."""
+    return bool(re.search(rf"\b{re.escape(marker)}\b", mark_expr)) and not bool(
+        re.search(rf"\bnot\s+{re.escape(marker)}\b", mark_expr)
     )
 
 
@@ -75,11 +90,14 @@ def pytest_collection_modifyitems(
     explicit = mark_expr if isinstance(mark_expr, str) else ""
 
     skips: dict[str, pytest.MarkDecorator] = {}
-    if not (config.getoption("--run-slow", default=False) or "slow" in explicit):
+    if not (config.getoption("--run-slow", default=False) or _marker_requested(explicit, "slow")):
         skips["slow"] = pytest.mark.skip(
             reason="slow test — run with --run-slow or -m slow"
         )
-    if not (config.getoption("--run-network", default=False) or "network" in explicit):
+    if not (
+        config.getoption("--run-network", default=False)
+        or _marker_requested(explicit, "network")
+    ):
         skips["network"] = pytest.mark.skip(
             reason="network test (live HTTP) — run with --run-network or -m network"
         )

@@ -61,6 +61,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+_LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE = "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE"
+
 
 @dataclass(frozen=True)
 class MergeContainerContext:
@@ -1008,6 +1011,125 @@ def _merge_section_with_targeted_ops_ir(
     return _tops._with_children(amend_sec, prefix_children + merged_children)
 
 
+def _with_payload_normalization_rule_ir(node: IRNode, rule_id: str) -> IRNode:
+    existing = node.attrs.get(_PAYLOAD_NORMALIZATION_RULE_ATTR, ())
+    rules = tuple(existing) if isinstance(existing, tuple) else ((str(existing),) if existing else ())
+    return IRNode(
+        kind=node.kind,
+        label=node.label,
+        text=node.text,
+        attrs={**dict(node.attrs), _PAYLOAD_NORMALIZATION_RULE_ATTR: tuple(dict.fromkeys((*rules, rule_id)))},
+        children=tuple(node.children),
+    )
+
+
+def _direct_text_key_ir(node: IRNode) -> str:
+    return " ".join(irnode_to_text(node).split())
+
+
+def _has_direct_num_child_ir(node: IRNode) -> bool:
+    return any(child.kind is IRNodeKind.NUM for child in node.children)
+
+
+def _without_synthetic_label_ir(node: IRNode) -> IRNode:
+    attrs = dict(node.attrs)
+    attrs.pop("eId", None)
+    return IRNode(
+        kind=node.kind,
+        label=None,
+        text=node.text,
+        attrs=attrs,
+        children=tuple(node.children),
+    )
+
+
+def _merge_leading_omission_same_subsection_anchor_ir(
+    amend_sec: IRNode,
+    master_subsecs: list[IRNode],
+    amend_subsecs: list[IRNode],
+    *,
+    leading_omissions: int,
+) -> Optional[IRNode]:
+    """Preserve a live same-subsection prefix before an explicit source anchor.
+
+    Some Finnish amendments express "change section N's list X as follows" as a
+    section payload with a leading omission marker and then a subsection whose
+    first text-bearing child is the named list heading.  The omission is not a
+    whole-subsection slot in that shape; it owns the live prefix before the list
+    anchor inside the same subsection.
+    """
+    if leading_omissions <= 0:
+        return None
+    if len(master_subsecs) != 1 or len(amend_subsecs) != 1:
+        return None
+
+    master_sub = master_subsecs[0]
+    amend_sub = amend_subsecs[0]
+    if normalized_label_key(master_sub.label) != normalized_label_key(amend_sub.label):
+        return None
+
+    anchor_idx: int | None = None
+    anchor_text = ""
+    for idx, child in enumerate(amend_sub.children):
+        if _is_omission_ir(child) or child.kind is IRNodeKind.NUM:
+            continue
+        text = _direct_text_key_ir(child)
+        if not text:
+            continue
+        anchor_idx = idx
+        anchor_text = text
+        break
+    if anchor_idx is None:
+        return None
+
+    live_match_idx: int | None = None
+    for idx, child in enumerate(master_sub.children):
+        if _direct_text_key_ir(child) == anchor_text:
+            live_match_idx = idx
+            break
+    if live_match_idx is None or live_match_idx == 0:
+        return None
+
+    prefix_children = tuple(master_sub.children[:live_match_idx])
+    prefix_label_keys = {
+        (child.kind, normalized_label_key(child.label))
+        for child in prefix_children
+        if child.label and child.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.ITEM, IRNodeKind.SUBPARAGRAPH}
+    }
+    suffix_children: list[IRNode] = []
+    for child in amend_sub.children[anchor_idx:]:
+        label_key = (child.kind, normalized_label_key(child.label))
+        if (
+            child.label
+            and label_key in prefix_label_keys
+            and child.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.ITEM, IRNodeKind.SUBPARAGRAPH}
+            and not _has_direct_num_child_ir(child)
+        ):
+            suffix_children.append(_without_synthetic_label_ir(child))
+        else:
+            suffix_children.append(child)
+
+    merged_sub = _tops._with_children(
+        amend_sub,
+        prefix_children + tuple(suffix_children),
+    )
+    merged_sub = _with_payload_normalization_rule_ir(
+        merged_sub,
+        _LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE,
+    )
+
+    section_children = [
+        child
+        for child in amend_sec.children
+        if child.kind is not IRNodeKind.SUBSECTION and not _is_omission_ir(child)
+    ]
+    section_children.append(merged_sub)
+    return _with_payload_normalization_rule_ir(
+        _tops._with_children(amend_sec, section_children),
+        _LEADING_OMISSION_ANCHOR_PREFIX_MERGE_RULE,
+    )
+
+
 def _merge_section_with_omission_ir(
     master_sec: IRNode,
     amend_sec: IRNode,
@@ -1074,6 +1196,15 @@ def _merge_section_with_omission_ir(
         return _relabel_subsection_to_master_slot(resolved or child, slot_idx)
 
     amend_subsecs = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION]
+    leading_anchor_merge = _merge_leading_omission_same_subsection_anchor_ir(
+        amend_sec,
+        master_subsecs,
+        amend_subsecs,
+        leading_omissions=leading_omissions,
+    )
+    if leading_anchor_merge is not None:
+        return leading_anchor_merge
+
     if amend_subsecs and master_subsecs:
         first_amend_label = normalized_label_key(amend_subsecs[0].label)
         if first_amend_label:
