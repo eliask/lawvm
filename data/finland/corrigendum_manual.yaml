@@ -345,3 +345,16 @@
   correction_type: body_text
   notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML section 6 contains escaped stray marker 'touko&gt;kuuta'; official consolidation has 'toukokuuta'. Minimal body_text patch applies only when the exact faulty sentence is present."
   verified: "2026-06-17"
+
+# 762/1986 (Laki valtion virkojen täyttämisestä eräissä tapauksissa ja
+# eräiden asetusten toimittamisesta eduskunnalle) —
+# base XML has two OCR/source typos in section 1:
+# "virnaomainen" → "viranomainen" and "valtioneuvosta" → "valtioneuvosto".
+# The cached consolidated XML (fin@19900674) and Finlex HTML carry the corrected
+# spellings; the exact full sentence is patched so unrelated uses cannot match.
+- amendment_id: "762/1986"
+  wrong_text: "Valtion palvelussuhteen jatkuvuuden turvaaminen voidaan hallitusmuodon 86 §:ssä säädettyjen perusteiden ja muutoin säädettyjen kelpoisuusvaatimusten ohella ottaa huomioon täytettäessä valtion virkaa, johon nimittää muu virnaomainen kuin tasavallan presidentti, valtioneuvosta, korkein oikeus tai korkein hallinto-oikeus."
+  correct_text: "Valtion palvelussuhteen jatkuvuuden turvaaminen voidaan hallitusmuodon 86 §:ssä säädettyjen perusteiden ja muutoin säädettyjen kelpoisuusvaatimusten ohella ottaa huomioon täytettäessä valtion virkaa, johon nimittää muu viranomainen kuin tasavallan presidentti, valtioneuvosto, korkein oikeus tai korkein hallinto-oikeus."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has 'virnaomainen' and 'valtioneuvosta'; cached consolidated XML fin@19900674 and Finlex HTML have 'viranomainen' and 'valtioneuvosto'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"

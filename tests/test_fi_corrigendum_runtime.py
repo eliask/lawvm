@@ -53,6 +53,32 @@ def test_patch_table_loads_from_text_corpus(tmp_path: Path, monkeypatch) -> None
     assert ops[0].payload is None
 
 
+def test_manual_base_source_patch_1986_762_corrects_two_ocr_typos() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrong = (
+        "Valtion palvelussuhteen jatkuvuuden turvaaminen voidaan hallitusmuodon "
+        "86 §:ssä säädettyjen perusteiden ja muutoin säädettyjen "
+        "kelpoisuusvaatimusten ohella ottaa huomioon täytettäessä valtion virkaa, "
+        "johon nimittää muu virnaomainen kuin tasavallan presidentti, "
+        "valtioneuvosta, korkein oikeus tai korkein hallinto-oikeus."
+    )
+    correct = wrong.replace("virnaomainen", "viranomainen").replace(
+        "valtioneuvosta", "valtioneuvosto"
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<akomaNtoso><act><body><section eId="sec_1"><content><p>'
+        f"{wrong}"
+        "</p></content></section></body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1986/762")
+
+    assert applied == ["body_patch/1986/762/0"]
+    assert correct.encode("utf-8") in patched
+    assert wrong.encode("utf-8") not in patched
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"
