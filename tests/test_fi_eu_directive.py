@@ -108,13 +108,31 @@ def test_nickname_article_coordination_exact() -> None:
         assert r.mention.target_provision_ref.statute_id == "celex:32010L0075"
 
 
-def test_unknown_bare_head_without_formal_cite_not_emitted() -> None:
-    # A nickname-shaped head unknown to the registry AND with no adjacent formal
-    # EU cite is NOT a resolvable EU-by-nickname reference: emitting a bare
-    # ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive (the
-    # article number is governed elsewhere) and would double-count against the
-    # formal-cite lane. Fail-loud: emit nothing.
+def test_named_eu_instrument_without_cite_typed_statute_only() -> None:
+    # A registry-MISS *named* EU instrument (a compound EU-head nickname directly
+    # governing an ``N artikla``) with no adjacent formal cite is TYPED as an EU
+    # instrument reference, STATUTE_ONLY/unresolved, routed to ``eu-nickname:`` —
+    # NOT mis-typed as a Finnish ``fi-name:`` statute. Finnish acts use § not
+    # artikla, so the article-governed compound EU-head is unambiguously EU.
+    # Tag-don't-guess: no CELEX is invented.
     refs = recognize_eu_directive_refs("foobardirektiivin 4 artiklassa")
+    assert len(refs) == 1
+    r = refs[0]
+    assert r.status is CiteConfidence.STATUTE_ONLY
+    assert r.mention.cite_kind is CiteKind.EU
+    assert r.mention.target_provision_ref is not None
+    assert r.mention.target_provision_ref.statute_id == "eu-nickname:foobardirektiivin"
+    assert not r.mention.target_provision_ref.statute_id.startswith("celex:")
+    assert r.article == "4"
+
+
+def test_bare_standalone_head_without_modifier_not_emitted() -> None:
+    # A BARE standalone EU head with NO glued compound modifier (the whole token
+    # IS an inflected ``asetus``/``direktiivi``) carries no instrument identity —
+    # it is anaphoric/domestic, its article number governed elsewhere. Emitting a
+    # bare ``eu-nickname:<head>`` STATUTE_ONLY would be a pure false positive and
+    # double-count the formal-cite lane. Fail-loud: emit nothing.
+    refs = recognize_eu_directive_refs("mainitun direktiivin 4 artiklassa")
     assert refs == []
 
 

@@ -335,6 +335,23 @@ _NAME_HOMONYM_OBLIQUES: frozenset[tuple[str, str]] = frozenset(
     {("kauppalaki", "lain")}
 )
 
+# The EU-instrument heads (``asetus`` / ``direktiivi``) that, when a name-head
+# compound is DIRECTLY GOVERNING an ``N artikla``, are NOT a Finnish statute name
+# but an EU-instrument reference owned by the ``eu_directive`` lane. Finnish acts
+# are cited by ``§``, NEVER by ``artikla``; so a ``<compound>asetuksen N artikla``
+# is unambiguously an EU regulation/directive reference (resolved to CELEX where
+# known, or typed STATUTE_ONLY ``eu-nickname:`` when not). The by-name lane must
+# therefore decline it — otherwise it mis-types the EU instrument as a
+# ``fi-name:`` Finnish statute and double-counts the eu_directive lane's mention.
+_EU_NAME_HEADS: frozenset[str] = frozenset({"asetus", "direktiivi"})
+
+# A directly-following article phrase: optional whitespace, a number (with an
+# optional letter suffix), then an inflected ``artikla``. Anchored at the slice
+# start (the caller passes ``text[head_end:]``). Bounded (§1.11).
+_ARTIKLA_AFTER_HEAD_RE = re.compile(
+    r"^\s+\d{1,4}(?:\s?[a-z])?\s*artikla", re.IGNORECASE
+)
+
 # False-positive families (``-lainen``/``-nainen`` adjectives, the ``jokin``
 # pronoun ``joll-`` obliques, the ``-las``/``-läs`` agent-noun plurals, and the
 # determiner+``laki`` orthographic collapse) are no longer matched by hand-written
@@ -1247,6 +1264,17 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # Exclusion: an id-anchored ``(NNN/YYYY)`` right after the head is the
         # plain-text lane's case. Skip — no double-emission.
         if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # Exclusion: an EU-instrument head (``…asetus`` / ``…direktiivi``)
+        # DIRECTLY GOVERNING an ``N artikla`` is an EU regulation/directive
+        # reference owned by the ``eu_directive`` lane (Finnish acts use § not
+        # artikla). Declining it here both avoids mis-typing the EU instrument as
+        # a ``fi-name:`` Finnish statute AND avoids double-counting the
+        # eu_directive lane's EU mention.
+        if head_form.head_lemma in _EU_NAME_HEADS and _ARTIKLA_AFTER_HEAD_RE.match(
+            text[m.end() :]
+        ):
             continue
 
         # Morphology gate (SHARED, M1-derived): reject the non-statute collision

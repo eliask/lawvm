@@ -106,6 +106,18 @@ _SEED: dict[str, tuple[str, ...]] = {
     # Mined from corpus R4 bindings (support 7 across distinct statutes): the SE
     # Statute, Council Reg (EC) 2157/2001 on the Statute for a European company.
     "eurooppayhtiöasetus": ("32001R2157",),
+    # Mined from corpus ``jäljempänä``/parenthetical bindings (CELEX derived from
+    # the co-occurring ``(EU) NNNN/YYYY`` corpus id, never guessed). Each binds the
+    # nickname to the SAME EU act across many distinct statutes:
+    #   ESAP-asetus → corpus id 2023/2859 (support 14): the ESAP Reg (EU) 2023/2859
+    "esap-asetus": ("32023R2859",),
+    #   kryptovaramarkkina-asetus → corpus id 2023/1114 (support 12, bound as
+    #   "EU:n kryptovaramarkkina-asetus"; the EU:n scope qualifier is stripped so
+    #   the bare-use surface resolves): MiCA Reg (EU) 2023/1114
+    "kryptovaramarkkina-asetus": ("32023R1114",),
+    #   markkinoiden väärinkäyttöasetus → corpus id 596/2014 (support 8): MAR
+    #   Reg (EU) 596/2014 (number-first ``N:o 596/2014`` → 32014R0596)
+    "markkinoiden väärinkäyttöasetus": ("32014R0596",),
     # --- Deliberately ambiguous seed (Finnish usage genuinely splits) ---
     # "jätedirektiivi" is used in prose for both the consolidated Waste
     # Framework Directive (2008/98/EY) and, historically, its predecessor

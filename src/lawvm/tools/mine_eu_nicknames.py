@@ -85,6 +85,39 @@ def celex_type_for_term(term: str) -> Optional[str]:
     return None
 
 
+# A leading EU-SCOPE QUALIFIER on a coined nickname (``EU:n kryptovaramarkkina-
+# asetus``, ``Euroopan unionin … -asetus``) is a deictic scope marker, NOT part of
+# the instrument's term-of-art name. A later USE site cites the instrument by the
+# bare nickname (``kryptovaramarkkina-asetuksen 4 artiklassa``), so the registry
+# key must be the bare nickname; keeping the qualifier in the mined lemma makes the
+# generated inflected surfaces (``eu:n kryptovaramarkkina-asetuksen``) miss every
+# bare use. The qualifier is stripped from the mined lemma so the registry key
+# matches the bare use surface. (Bounded, explicit closed list — never a guess.)
+_EU_SCOPE_QUALIFIERS: tuple[str, ...] = (
+    "euroopan parlamentin ja neuvoston ",
+    "euroopan unionin ",
+    "eu:n ",
+)
+
+
+def normalize_nickname_lemma(term: str) -> str:
+    """Normalise a coined-nickname term to its registry lemma key.
+
+    Lowercases, trims, and strips a leading EU-scope qualifier (``EU:n`` /
+    ``Euroopan unionin`` / ``Euroopan parlamentin ja neuvoston``). The result is
+    the bare term-of-art nickname the registry keys on — the SAME surface a later
+    ``<nickname> N artikla`` use carries — so a mined binding seeds a key that the
+    use site actually hits. The instrument identity (the bound CELEX) is
+    unchanged; only the deictic scope prefix is removed.
+    """
+    low = term.strip().lower()
+    for qualifier in _EU_SCOPE_QUALIFIERS:
+        if low.startswith(qualifier):
+            low = low[len(qualifier):].strip()
+            break
+    return low
+
+
 @dataclass(frozen=True, slots=True)
 class CelexConversion:
     """Outcome of converting a binding's EU id surface to a CELEX id.
@@ -247,7 +280,11 @@ def mine_bindings(
             statutes_with += 1
         for b in eu:
             total += 1
-            lemma = b.term.strip().lower()
+            # Key on the BARE nickname (leading EU-scope qualifier stripped) so the
+            # mined lemma matches the bare ``<nickname> N artikla`` use surface a
+            # later citation carries. The CELEX type is derived from the same
+            # (qualifier-free) head.
+            lemma = normalize_nickname_lemma(b.term)
             stat = stats.get(lemma)
             if stat is None:
                 stat = _NicknameStat(lemma=lemma, celex_support={}, unconvertible=[])

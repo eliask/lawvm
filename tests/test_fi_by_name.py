@@ -130,6 +130,19 @@ def test_bare_governed_head_not_emitted() -> None:
     )
 
 
+def test_eu_head_governing_artikla_not_emitted() -> None:
+    """An EU-head compound directly governing ``N artikla`` is NOT a Finnish
+    statute name — it is an EU-instrument reference owned by the eu_directive
+    lane. Finnish acts are cited by ``§``, never by ``artikla``, so the by-name
+    lane must decline it (no ``fi-name:`` mis-typing, no double-count)."""
+    assert recognize_by_name_refs("ESAP-asetuksen 2 artiklan mukaisesti") == []
+    assert (
+        recognize_by_name_refs("kryptovaramarkkina-asetuksen 4 artiklassa") == []
+    )
+    # A § tail (real Finnish statute citation) on the SAME head still fires.
+    assert recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
+
+
 def test_compound_asetus_head() -> None:
     """A compound ``...asetuksen`` head normalizes to its nominative compound."""
     mentions = recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
