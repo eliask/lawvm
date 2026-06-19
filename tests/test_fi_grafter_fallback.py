@@ -9028,6 +9028,7 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip_for_lea
     assert all(f.detail.get("reason") == "same_wave_relabel_destination_owned" for f in skipped)
 
 
+@pytest.mark.slow
 def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
@@ -9154,6 +9155,7 @@ def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> No
     )
 
 
+@pytest.mark.slow
 def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_duplicate_labels() -> None:
     """Same-wave restructure apply may leave transient duplicate labels before fold."""
     from lawvm.core.invariant_profiles import (
@@ -15221,6 +15223,33 @@ def test_temporary_section_expiry_override_simple_pattern_unchanged() -> None:
     assert expiry == dt.date(2021, 12, 31)
     for sec in ["16a", "16b", "16c", "16d", "16e", "16f", "16g"]:
         assert sec in labels, f"§{sec} should be in expiry labels"
+
+
+def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
+    """Scoped expiry may state both start and end dates in the same voimassa clause."""
+    from lxml import etree
+    from lawvm.finland.metadata import _temporary_section_expiry_override
+    import datetime as dt
+
+    xml_text = """<act>
+  <conclusions>
+    <hcontainer name="entryIntoForce">
+      <content>
+        <p>Tämä asetus tulee voimaan 15 päivänä helmikuuta 2007, ja sen
+           5 a-5 c § ovat voimassa 1 päivästä maaliskuuta 31 päivään
+           toukokuuta 2007.</p>
+      </content>
+    </hcontainer>
+  </conclusions>
+</act>"""
+    tree = etree.fromstring(xml_text.encode())
+    result = _temporary_section_expiry_override(tree, "2007/158")
+
+    assert result is not None
+    target_mid, labels, expiry = result
+    assert target_mid == "2007/158"
+    assert labels == {"5a", "5b", "5c"}
+    assert expiry == dt.date(2007, 5, 31)
 
 
 # ---------------------------------------------------------------------------

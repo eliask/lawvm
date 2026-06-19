@@ -1210,6 +1210,24 @@ def test_replay_xml_2019_610_uses_section_specific_oracle_version_horizon() -> N
     assert "Kansainvälisen järjestön Suomessa sijaitsevan toimipaikan merkittävät julkiset tehtävät" in section_11a_text
 
 
+def test_replay_xml_2006_386_cited_asetus_version_replaces_chapter_three_sections() -> None:
+    """2016/1021 points 4a-4c at 2011/81; earlier seasonal inserts expire."""
+    replay = replay_xml_for_test("2006/386", mode="legal_pit", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:2/section:4a" not in sections
+    assert "chapter:3/section:5a" not in sections
+    assert "chapter:3/section:5b" not in sections
+    assert "chapter:3/section:5c" not in sections
+    section_4a = sections["chapter:3/section:4a"]
+    section_4b = sections["chapter:3/section:4b"]
+    section_4c = sections["chapter:3/section:4c"]
+
+    assert "joulukuun alun ja toukokuun lopun" in " ".join(irnode_to_text(section_4a).split())
+    assert "joulukuun alun ja toukokuun lopun" in " ".join(irnode_to_text(section_4b).split())
+    assert "joulukuun alusta toukokuun loppuun" in " ".join(irnode_to_text(section_4c).split())
+
+
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:
     """1999/1249 must preserve both the migrated 5 c § and the new native 5 b §."""
     replay = pinned_replay("1958/496", mode="legal_pit", quiet=True, stop_before="2004/697")

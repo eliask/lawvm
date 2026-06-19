@@ -1015,6 +1015,7 @@ def _parse_section_list_labels(raw: str) -> Set[str]:
     applies that normalization in case it is called directly with raw XML text.
     """
     text = _normalize_fi_parse_text(raw)
+    text = text.replace("-", "\u2013").replace("\u2015", "\u2013")
     # Strip trailing § markers and momentti/pykälä qualifiers that follow §.
     # XXX FIXME: the negated char class `[^,;ja sekä\u2013]` is semantically
     # confused — the author clearly intended to stop at the *words* "ja" and
@@ -1066,8 +1067,8 @@ _TEMPORARY_SECTION_EXPIRY_TEXT_ANCHORS = (
     "voimassa",
     "väliaikaisesta muuttamisesta",
 )
-_TEMPORARY_SECTION_CHARS = r"[\d\w\s,\u2013:§]"
-_TEMPORARY_SECTION_CHARS_SIMPLE = r"[\d\w\s,\u2013]"
+_TEMPORARY_SECTION_CHARS = r"[\d\w\s,\-\u2013\u2015:§]"
+_TEMPORARY_SECTION_CHARS_SIMPLE = r"[\d\w\s,\-\u2013\u2015]"
 _TEMPORARY_SINGLE_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s]"
 _TEMPORARY_CESSATION_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s,\u2013]+"
 _TEMPORARY_CITED_COMMENCEMENT_RE = re.compile(
@@ -1077,7 +1078,8 @@ _TEMPORARY_CITED_COMMENCEMENT_RE = re.compile(
 _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§"
     rf"(?:\s*sekä\s+({_TEMPORARY_SECTION_CHARS_SIMPLE}+?)\s*§[^.]*?(?=\s+(?:ovat|on)\s))?"
-    rf"\s+(?:ovat|on)\s+voimassa\s+(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
+    rf"\s+(?:ovat|on)\s+voimassa\s+(?:\d{{1,2}}\s+päivästä\s+[a-zäöå]+\s+)?"
+    rf"(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})",
     re.IGNORECASE,
 )
 _TEMPORARY_SUBSECTION_EXPIRY_RE = re.compile(

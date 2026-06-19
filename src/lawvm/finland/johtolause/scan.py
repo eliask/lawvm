@@ -226,6 +226,7 @@ def _section_labels_from_tokens(tokens: list[Token], start: int, end: int) -> tu
     """Return normalized section labels from one raw-token provenance fragment."""
     labels: list[str] = []
     pending: list[str] = []
+    pending_has_dash = False
     i = start
     while i < end:
         tok = tokens[i]
@@ -238,20 +239,78 @@ def _section_labels_from_tokens(tokens: list[Token], start: int, end: int) -> tu
             pending.append(label)
             i = j
             continue
+        if tok.cat == "DASH":
+            pending_has_dash = True
+            i += 1
+            continue
         if tok.cat == "PYKALA":
-            for label in pending:
+            pyakala_labels = _expand_section_label_range(pending) if pending_has_dash else tuple(pending)
+            for label in pyakala_labels:
                 normalized = re.sub(r"\s+", "", label).lower()
                 if normalized and normalized not in labels:
                     labels.append(normalized)
             pending.clear()
+            pending_has_dash = False
             i += 1
             continue
         if tok.cat == "CITE":
             pending.clear()
+            pending_has_dash = False
             i += 1
             continue
         i += 1
     return tuple(labels)
+
+
+def _expand_section_label_range(labels: list[str]) -> tuple[str, ...]:
+    """Expand a bounded Finnish section-label range such as ``4a-4c``."""
+    if len(labels) != 2:
+        return tuple(labels)
+    left, right = labels
+    left_match = re.fullmatch(r"(\d+)([a-z])?", left.lower())
+    right_match = re.fullmatch(r"(\d+)([a-z])?", right.lower())
+    if left_match is None or right_match is None:
+        return tuple(labels)
+    left_num, left_suffix = left_match.groups()
+    right_num, right_suffix = right_match.groups()
+    if left_num == right_num and left_suffix and right_suffix:
+        start_ord = ord(left_suffix)
+        end_ord = ord(right_suffix)
+        if 0 <= end_ord - start_ord <= 25:
+            return tuple(f"{left_num}{chr(value)}" for value in range(start_ord, end_ord + 1))
+    if not left_suffix and not right_suffix:
+        start_int = int(left_num)
+        end_int = int(right_num)
+        if 0 <= end_int - start_int <= 100:
+            return tuple(str(value) for value in range(start_int, end_int + 1))
+    return tuple(labels)
+
+
+_TARGET_VERSION_SOURCE_WORDS = frozenset(
+    {
+        "laissa",
+        "lailla",
+        "lakiin",
+        "asetuksessa",
+        "asetuksella",
+        "asetukseen",
+        "päätöksessä",
+        "päätöksellä",
+        "päätökseen",
+    }
+)
+
+
+def _is_target_version_source_word(token: Token) -> bool:
+    return token.text.lower() in _TARGET_VERSION_SOURCE_WORDS
+
+
+def _previous_section_labels_for_provenance(tokens: list[Token], provenance_start: int) -> tuple[str, ...]:
+    """Return the immediately preceding section batch for a provenance anaphor."""
+    start = provenance_start - 1
+    while start >= 0 and tokens[start].cat not in {"VERB", "END"}:
+        start -= 1
+    return _section_labels_from_tokens(tokens, start + 1, provenance_start)
 
 
 def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTargetVersionBinding", ...]:
@@ -276,7 +335,7 @@ def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTarget
             while (
                 k < span_end
                 and not (
-                    tokens[k].text.lower() == "laissa"
+                    _is_target_version_source_word(tokens[k])
                     and k + 1 < span_end
                     and tokens[k + 1].cat == "CITE"
                 )
@@ -285,6 +344,8 @@ def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTarget
             if k >= span_end:
                 break
             target_labels = _section_labels_from_tokens(tokens, labels_start, k)
+            if not target_labels:
+                target_labels = _previous_section_labels_for_provenance(tokens, i)
             if target_labels:
                 cited_statute_id = _normalize_cited_statute_id(tokens[k + 1].text)
                 results.append(

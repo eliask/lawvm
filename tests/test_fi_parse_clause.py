@@ -1291,6 +1291,23 @@ def test_parse_clause_preserves_target_version_bindings_for_2000_755_2018_945() 
     ]
 
 
+def test_parse_clause_preserves_anaphoric_asetus_target_version_binding_range() -> None:
+    text = (
+        "muutetaan varotoimenpiteistä lintuinfluenssan leviämisen ehkäisemiseksi "
+        "luonnonvaraisten lintujen ja siipikarjan välillä annetun maa- ja "
+        "metsätalousministeriön asetuksen (386/2006) 4 a-4 c §, sellaisena "
+        "kuin ne ovat asetuksessa 81/2011, seuraavasti:"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == ["M P 4a", "M P 4b", "M P 4c"]
+    assert [
+        (binding.target_labels, binding.cited_statute_id)
+        for binding in result.target_version_bindings
+    ] == [(("4a", "4b", "4c"), "2011/81")]
+
+
 # ---------------------------------------------------------------------------
 # Anaphoric provenance must not over-consume the resuming target list
 # ---------------------------------------------------------------------------
