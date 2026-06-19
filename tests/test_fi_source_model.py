@@ -84,6 +84,38 @@ def test_source_model_caches_body_inventory_and_coverage() -> None:
     )
 
 
+def test_source_model_body_scope_queries_use_observed_inventory() -> None:
+    tree = _tree()
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert model.body_section_scope("5") == ("5", None)
+    assert model.body_section_chapter("5") is None
+    assert model.body_has_real_chapter_container("2")
+    assert not model.body_has_pseudo_chapter_marker("2")
+
+
+def test_source_model_detects_pseudo_chapter_markers() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>6 a luku</num>
+                <section><num>25 \xc2\xa7</num><content><p>Text.</p></content></section>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert model.body_section_scope("25") == (None, "6a")
+    assert model.body_has_pseudo_chapter_marker("6a")
+    assert not model.body_has_real_chapter_container("6a")
+
+
 def test_source_model_preserves_coverage_ignored_units_side_channel() -> None:
     tree = etree.fromstring(b"<akomaNtoso><act><body><section/></body></act></akomaNtoso>")
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/2")

@@ -44,3 +44,12 @@ def test_uncovered_recovery_prepare_uses_source_model_not_xml_root() -> None:
     assert "build_uncovered_recovery_context,\n" not in source
     assert "source_model.build_uncovered_recovery_context(" in source
     assert "has_uncovered_recovery_content_ops(" in source
+
+
+def test_compile_group_scope_recovery_uses_source_model_not_xml_root() -> None:
+    source = _source("src/lawvm/finland/compile_group_scope_recovery.py")
+
+    assert "source_model.muutos_tree" not in source
+    assert "request.source_model.muutos_tree" not in source
+    assert "muutos_tree=" not in source
+    assert "request.source_model.resolve_group_surface_scope(" in source

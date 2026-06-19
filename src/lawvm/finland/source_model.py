@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Optional, cast
 
 import lxml.etree as etree
@@ -20,6 +21,7 @@ from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.body_coverage import extract_body_coverage
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.constraints import _find_muutos_node_uncached
+from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
     from lawvm.finland.amendment_chapter_precreate import PrecreatedChaptersResult
@@ -113,6 +115,49 @@ class AmendmentSourceModel:
         if ignored_units_out is not None:
             ignored_units_out.extend(self._coverage_ignored_units)
         return self._coverage_units
+
+    def body_section_scope(
+        self,
+        target_norm: str,
+    ) -> tuple[str | None, str | None] | None:
+        """Return the unique observed body (part, chapter) scope for a section."""
+        wanted = _norm_num_token(target_norm)
+        scopes = {
+            (unit.part_label or None, unit.chapter_label or None)
+            for unit in self.observed_body_inventory()
+            if unit.kind == "section" and _norm_num_token(unit.label) == wanted
+        }
+        if len(scopes) != 1:
+            return None
+        return next(iter(scopes))
+
+    def body_section_chapter(self, target_norm: str) -> str | None:
+        """Return the observed body chapter label for a section, if any."""
+        scope = self.body_section_scope(target_norm)
+        if scope is None:
+            return None
+        _part, chapter = scope
+        return chapter
+
+    def body_has_pseudo_chapter_marker(self, chapter_label: str) -> bool:
+        """Return True if the observed body has a section-shaped chapter marker."""
+        wanted = _norm_num_token(chapter_label)
+        return any(
+            unit.kind == "chapter"
+            and _norm_num_token(unit.label) == wanted
+            and unit.source_tag == "section"
+            for unit in self.observed_body_inventory()
+        )
+
+    def body_has_real_chapter_container(self, chapter_label: str) -> bool:
+        """Return True if the observed body has a real chapter container."""
+        wanted = _norm_num_token(chapter_label)
+        return any(
+            unit.kind == "chapter"
+            and _norm_num_token(unit.label) == wanted
+            and unit.source_tag == "chapter"
+            for unit in self.observed_body_inventory()
+        )
 
     def find_xml_node(
         self,
@@ -225,4 +270,94 @@ class AmendmentSourceModel:
             muutos_tree=self.muutos_tree,
             ops=ops,
             new_chapter_labels=new_chapter_labels,
+        )
+
+    def source_body_scope_for_section_target(
+        self,
+        target_norm: str,
+    ) -> tuple[str | None, str | None] | None:
+        """Return the source-body scope for a section through the XML adapter."""
+        from lawvm.finland.lowering_scope_recovery import source_body_scope_for_section_target
+
+        return source_body_scope_for_section_target(
+            muutos_tree=self.muutos_tree,
+            target_norm=target_norm,
+        )
+
+    def source_body_chapter_for_scoped_section_target(
+        self,
+        *,
+        target_norm: str,
+        target_chapter: str,
+        target_part: str | None,
+    ) -> str | None:
+        """Return source-body chapter for a scoped section target."""
+        from lawvm.finland.lowering_scope_recovery import (
+            source_body_chapter_for_scoped_section_target,
+        )
+
+        return source_body_chapter_for_scoped_section_target(
+            muutos_tree=self.muutos_tree,
+            source_model=self,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+        )
+
+    def retarget_duplicate_body_section_scope_from_close_live_siblings(
+        self,
+        *,
+        section_norm: str,
+        body_chapter: str,
+        body_part: str | None,
+        master: "ReplayState",
+    ) -> tuple[str | None, str] | None:
+        """Retarget duplicate body scope through the source-model adapter."""
+        from lawvm.finland.scope import retarget_duplicate_body_section_scope_from_close_live_siblings
+
+        return retarget_duplicate_body_section_scope_from_close_live_siblings(
+            muutos_tree=self.muutos_tree,
+            section_norm=section_norm,
+            body_chapter=body_chapter,
+            body_part=body_part,
+            master=master,
+        )
+
+    def retarget_heading_insert_body_chapter_from_close_live_sibling(
+        self,
+        *,
+        section_norm: str,
+        body_chapter: str,
+        master: "ReplayState",
+    ) -> str:
+        """Retarget heading-only body chapter through the source-model adapter."""
+        from lawvm.finland.scope import retarget_heading_insert_body_chapter_from_close_live_sibling
+
+        return retarget_heading_insert_body_chapter_from_close_live_sibling(
+            muutos_tree=self.muutos_tree,
+            section_norm=section_norm,
+            body_chapter=body_chapter,
+            master=master,
+        )
+
+    def resolve_group_surface_scope(
+        self,
+        *,
+        target_unit_kind: TargetUnitKind,
+        target_norm: str,
+        target_chapter: str | None,
+        target_part: str | None,
+        group_ops: Iterable["AmendmentOp"],
+    ) -> tuple[str | None, str | None]:
+        """Return source-facing group surface scope through the source model."""
+        from lawvm.finland.lowering_scope_recovery import resolve_group_surface_scope
+
+        return resolve_group_surface_scope(
+            muutos_tree=self.muutos_tree,
+            source_model=self,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            group_ops=group_ops,
         )
