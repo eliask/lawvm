@@ -239,8 +239,15 @@ def replay_1987_990_finlex_oracle() -> ReplayResult:
 
 
 @pytest.fixture(scope="module")
-def facade_2009_953_legal_pit_quirks() -> Any:
-    return compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
+def replay_and_facade_2009_953_legal_pit_quirks() -> tuple[ReplayResult, Any]:
+    return _compile_facade_with_replay("2009/953", replay_mode="legal_pit", compile_mode="quirks")
+
+
+@pytest.fixture(scope="module")
+def facade_2009_953_legal_pit_quirks(
+    replay_and_facade_2009_953_legal_pit_quirks: tuple[ReplayResult, Any],
+) -> Any:
+    return replay_and_facade_2009_953_legal_pit_quirks[1]
 
 
 def test_strict_fail_reasons_detect_known_recovery_paths() -> None:
@@ -665,7 +672,7 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:
-    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True)
+    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True, build_full_products=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:2"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -2217,8 +2224,10 @@ def test_compile_fi_surfaces_sparse_slot_bindings_as_projection_rows(
     assert cast(dict[str, Any], binding_projection_rows[0]["detail"])["payload_slot_label"] == "2"
 
 
-def test_replay_xml_exposes_fold_and_materialized_state() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit", quiet=True)
+def test_replay_xml_exposes_fold_and_materialized_state(
+    replay_and_facade_2009_953_legal_pit_quirks: tuple[ReplayResult, Any],
+) -> None:
+    replay = replay_and_facade_2009_953_legal_pit_quirks[0]
 
     assert replay.replay_fold_state is not None
     assert replay.materialized_state is replay.state
@@ -2646,8 +2655,10 @@ def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() 
     } == {label: "2" for label in target_labels}
 
 
-def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
-    replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
+def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    replay = replay_1987_990_finlex_oracle
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
