@@ -11470,6 +11470,159 @@ class TestApplyItemReplace:
         sp_labels = sorted(c.label for c in new_para1.children if c.kind == IRNodeKind.SUBPARAGRAPH and c.label)
         assert sp_labels == ["a", "b"], f"Subitems must be preserved, got {sp_labels}"
 
+    def test_johd_item_replace_uses_nested_item_intro_not_carrier_intro(self):
+        """Sparse johd + alakohta payload must not copy subsection intro into item intro."""
+        master_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item intro:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("old a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="b", children=(_content("old b"),)),
+            ),
+        )
+        master_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="old subsection intro:"), master_para1)
+        sec = _sec("2", master_sub)
+        state = _make_state(_body(sec))
+        sec_path = [("section", "2")]
+        amend_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="new item intro:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("new a"),)),
+            ),
+        )
+        amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
+        muutos_ir = _sec("2", amend_sub)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "2 § 1 mom 1 k johd",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para1 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+        new_intro = next(c for c in new_para1.children if c.kind == IRNodeKind.INTRO)
+        new_subparagraphs = {
+            c.label: irnode_to_text(c)
+            for c in new_para1.children
+            if c.kind == IRNodeKind.SUBPARAGRAPH and c.label
+        }
+
+        assert new_intro.text == "new item intro:"
+        assert new_subparagraphs == {"a": "new a", "b": "old b"}
+        assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+        assert pathologies[0].detail["recovery_kind"] == "item_johd_claimed_subparagraph_merge"
+
+    def test_johd_item_replace_coerces_nested_content_payload_to_intro_facet(self):
+        """AKN may encode item johd text as content; the op target still owns an intro facet."""
+        master_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item intro:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("old a"),)),
+            ),
+        )
+        master_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="old subsection intro:"), master_para1)
+        sec = _sec("2", master_sub)
+        state = _make_state(_body(sec))
+        sec_path = [("section", "2")]
+        amend_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.CONTENT, text="new item intro from content:"),),
+        )
+        amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
+        muutos_ir = _sec("2", amend_sub)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "2 § 1 mom 1 k johd",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para1 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+        first_child = new_para1.children[0]
+        assert first_child.kind == IRNodeKind.INTRO
+        assert first_child.text == "new item intro from content:"
+
+    def test_johd_item_replace_does_not_absorb_numbered_sibling_as_subparagraph(self):
+        """A carried numbered kohta must not be reparented under the johd target."""
+        master_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item intro:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("old a"),)),
+            ),
+        )
+        master_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="old subsection intro:"), master_para1)
+        sec = _sec("2", master_sub)
+        state = _make_state(_body(sec))
+        sec_path = [("section", "2")]
+        amend_para1 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.CONTENT, text="new item intro from content:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("new a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="2", children=(_content("carried sibling item"),)),
+            ),
+        )
+        amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
+        muutos_ir = _sec("2", amend_sub)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "2 § 1 mom 1 k johd",
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para1 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+        subparagraphs = {
+            c.label: irnode_to_text(c)
+            for c in new_para1.children
+            if c.kind == IRNodeKind.SUBPARAGRAPH and c.label
+        }
+
+        assert new_para1.children[0].kind == IRNodeKind.INTRO
+        assert new_para1.children[0].text == "new item intro from content:"
+        assert subparagraphs == {"a": "new a"}
+
     def test_sparse_item_replace_updates_real_section_70_kohta_targets(self):
         """Sparse item replaces must update the targeted kohdat in place."""
         xml_bytes = get_corpus_store().read_source("2019/1468")

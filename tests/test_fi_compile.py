@@ -2515,6 +2515,20 @@ def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_sibling
     )
 
 
+def test_replay_xml_2004_485_applies_2025_314_item_intro_and_subparagraph_payload() -> None:
+    replay = replay_xml("2004/485", mode="official_consolidation", quiet=True, build_full_products=False)
+    section = replay.materialized_state.find_section("4", "2")
+    assert section is not None
+    subsection = next(c for c in section.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
+    paragraph = next(c for c in subsection.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+    intro = next(c for c in paragraph.children if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT})
+    subparagraph_a = next(c for c in paragraph.children if c.kind == IRNodeKind.SUBPARAGRAPH and c.label == "a")
+
+    assert "suorittaa satamarakenteiden ja satamien turva-arvioinnit" in irnode_to_text(intro)
+    assert "Liikenne- ja viestintävirasto toimii turvatoimiasetuksen" not in irnode_to_text(intro)
+    assert "7 g §:ssä tarkoitetuille henkilöille" in irnode_to_text(subparagraph_a)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

@@ -65,6 +65,12 @@ logger = logging.getLogger(__name__)
 _COMPOUND_SUBPARAGRAPH_LABEL_RE = re.compile(r"^\d+[a-z]+$")
 
 
+def _is_lettered_subparagraph_payload(child: IRNode) -> bool:
+    if child.kind != IRNodeKind.SUBPARAGRAPH or not child.label:
+        return False
+    return not normalized_label_key(child.label)[:1].isdigit()
+
+
 @dataclass(frozen=True)
 class _ItemApplyView:
     op_type: str
@@ -579,19 +585,74 @@ def _apply_item_replace(
         para_idx = next((i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm), None)
         if para_idx is not None:
             master_para = paras[para_idx]
-            from lawvm.finland.apply_payload_ops import _find_amend_intro
-            amend_intro = _find_amend_intro(amend_sub, muutos_ir)
+            amend_para = _find_amend_paragraph(item_norm, amend_sub, muutos_ir)
+            amend_intro = None
+            amend_subparagraphs: list[IRNode] = []
+            if amend_para is not None:
+                amend_subparagraphs = [
+                    c for c in amend_para.children if _is_lettered_subparagraph_payload(c)
+                ]
+                amend_intro = next((c for c in amend_para.children if c.kind == IRNodeKind.INTRO), None)
+                if amend_intro is None:
+                    amend_content = next((c for c in amend_para.children if c.kind == IRNodeKind.CONTENT), None)
+                    master_has_subparagraphs = any(c.kind == IRNodeKind.SUBPARAGRAPH for c in master_para.children)
+                    if amend_content is not None and (master_has_subparagraphs or amend_subparagraphs):
+                        amend_intro = IRNode(
+                            kind=IRNodeKind.INTRO,
+                            label=amend_content.label,
+                            text=amend_content.text,
+                            attrs=dict(amend_content.attrs),
+                            children=tuple(amend_content.children),
+                        )
+            if amend_intro is None:
+                amend_intro = _find_amend_intro(amend_sub, muutos_ir)
             if amend_intro is None and muutos_ir is not None:
                 amend_intro = _find_amend_intro(None, muutos_ir)
             if amend_intro is not None:
                 replaced = False
+                subparagraphs_by_label = {
+                    normalized_label_key(child.label): child
+                    for child in amend_subparagraphs
+                    if child.label
+                }
+                used_subparagraph_labels: set[str] = set()
                 new_children = []
                 for c in master_para.children:
                     if c.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT) and not replaced:
                         new_children.append(amend_intro)
                         replaced = True
+                    elif c.kind == IRNodeKind.SUBPARAGRAPH and c.label:
+                        subparagraph_label = normalized_label_key(c.label)
+                        replacement = subparagraphs_by_label.get(subparagraph_label)
+                        if replacement is not None:
+                            new_children.append(replacement)
+                            used_subparagraph_labels.add(subparagraph_label)
+                        else:
+                            new_children.append(c)
                     else:
                         new_children.append(c)
+                for subparagraph_label, child in subparagraphs_by_label.items():
+                    if subparagraph_label not in used_subparagraph_labels:
+                        new_children.append(child)
+                if amend_subparagraphs:
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=view.source_statute,
+                                target_unit_kind=view.target_unit_kind,
+                                target_label=(
+                                    f"{view.target_section} § {view.target_paragraph} mom "
+                                    f"{view.target_item} kohta johd"
+                                ),
+                                recovery_kind="item_johd_claimed_subparagraph_merge",
+                                live_sibling_count=len(
+                                    [c for c in master_para.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+                                ),
+                                payload_sibling_count=len(amend_subparagraphs),
+                            )
+                        )
+                    if strict_profile is not None:
+                        return None
                 new_para = IRNode(
                     kind=master_para.kind,
                     label=master_para.label,
