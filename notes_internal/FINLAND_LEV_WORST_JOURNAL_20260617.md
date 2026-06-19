@@ -1745,3 +1745,31 @@ fix-or-journal discipline.
     `2000/1157` even though the amendment takes effect after the cached
     consolidation cutoff. Do not use this row to tune temporal selection
     without a broader oracle-horizon rule.
+
+### `1999/488` — Laki lääketieteellisestä tutkimuksesta
+
+- Current row (`20260619T0157`): structural `1.000000`, Levenshtein
+  `0.758672`; 14 amendments.
+- Re-triage commands:
+  - `uv run lawvm diff 1999/488 --text --threshold 0.999 --compile-summary`
+    reports `40 compared`, `39 perfect`, no replay-missing sections, no
+    replay-extra sections, and one oracle stub-only section (`21 b §`).
+  - `uv run lawvm oracle-check 1999/488` reports `75.8%` over `13`
+    diverging sections, all classified as `EDITORIAL_CONVENTION`, with
+    missing XML topology for `6 a §`, `10 d §` through `10 i §`, `14 §`,
+    `25 §`, and `26 §`.
+  - `uv run lawvm bench --statute 1999/488 --no-save --top 5` reproduces
+    primary structural accuracy `100.00%` and secondary full-text
+    Levenshtein `75.87%`.
+- Root-cause class:
+  - This is a **metric-surface false positive for the Levenshtein work queue**.
+    Section comparison uses structured section extraction plus the FI
+    comparison normalizer and finds no source-owned replay gap.
+  - The secondary Levenshtein lane compares whole-statute flattened
+    `master.serialize_text()` against flattened Finlex ground truth. It still
+    sees editorial convention/topology surfaces that the primary structural
+    and `oracle-check` lanes already classify.
+- Disposition: **skip for replay/parser work**. Do not change johtolause,
+  target resolution, or replay text for this row unless a source-owned section
+  divergence reappears. A future benchmark cleanup may add an adjusted
+  full-text lane, but that is a reporting change, not legal-state repair.
