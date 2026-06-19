@@ -365,6 +365,94 @@ def test_plural_three_syllable_a_stays_unsupported() -> None:
     assert all(c == "unsupported" for c in cert.values())
 
 
+# --------------------------------------------------------------------------- #
+# Compound vowel-harmony: harmony keys off the FINAL constituent (rightmost
+# non-neutral vowel), not the first vowel encountered left-to-right.
+# --------------------------------------------------------------------------- #
+
+
+def test_compound_harmony_keys_off_final_constituent() -> None:
+    """väliotsikko (front väli- + back otsikko) -> BACK suffixes.
+
+    Regression guard for the left-to-right harmony bug that returned front at
+    the first front vowel (ä) and emitted *väliotsikkossä / *väliotsikkollä.
+    """
+    vo = MorphEntry("c:vo", "väliotsikko", "common", "vowel_final")
+    f = _forms(vo)
+    assert f["INE"] == "väliotsikkossa"  # NOT *väliotsikkossä
+    assert f["ELA"] == "väliotsikkosta"
+    assert f["ADE"] == "väliotsikkolla"  # NOT *väliotsikkollä
+    assert f["ABL"] == "väliotsikkolta"
+    assert f["PART"] == "väliotsikkoa"  # NOT *väliotsikkoä
+
+
+def test_compound_harmony_all_back_unchanged() -> None:
+    """alaotsikko (all back) -> back suffixes (the simplex/agreeing-vowels case)."""
+    ao = MorphEntry("c:ao", "alaotsikko", "common", "vowel_final")
+    f = _forms(ao)
+    assert f["INE"] == "alaotsikkossa"
+    assert f["ADE"] == "alaotsikkolla"
+
+
+def test_harmony_all_neutral_stem_defaults_front() -> None:
+    """An all-neutral (only e/i) stem still defaults to FRONT (not regressed)."""
+    from lawvm.finland.morphology.harmony import is_back_harmony
+
+    assert is_back_harmony("liite") is False
+    assert is_back_harmony("nimi") is False
+    # Simplex front word with a single front vowel stays front.
+    assert is_back_harmony("työ") is False
+    # Simplex back word stays back.
+    assert is_back_harmony("virasto") is True
+
+
+def test_all_neutral_final_i_compound_is_a_classify_wall() -> None:
+    """All-neutral-final -i compounds (kaivovesi) never reach generation.
+
+    The rightmost-non-neutral heuristic would wrongly back-harmonize such a
+    word, but a bare -i final is a classify-level wall -> it is returned as
+    ``ambiguous`` and is never routed to a paradigm, so the heuristic's known
+    limitation cannot surface a wrong form.
+    """
+    assert classify("kaivovesi").status == "ambiguous"
+    assert classify("vesi").status == "ambiguous"
+
+
+# --------------------------------------------------------------------------- #
+# e_contract + gradation: type-48 inflected stem GEMINATES (it is the strong
+# grade), it must NOT be weakened.
+# --------------------------------------------------------------------------- #
+
+
+def test_e_contract_gradation_geminates_not_weakens() -> None:
+    """liite/nimike (type 48, gradating) -> geminate inflected stem.
+
+    Regression guard for the bug that ran weaken_stem on the e_contract cluster
+    and produced *liideen / *nimikeen.  Correct: liite->liitteen,
+    nimike->nimikkeen (the nominative is the WEAK grade; inflection STRENGTHENS).
+    """
+    liite = MorphEntry("c:liite", "liite", "common", "e_contract", gradation=True)
+    f = _forms(liite)
+    assert f["GEN"] == "liitteen"  # NOT *liideen
+    assert f["ILL"] == "liitteeseen"  # NOT *liideeseen
+    assert f["INE"] == "liitteessä"
+    assert f["PART"] == "liitettä"
+
+    nimike = MorphEntry("c:ni", "nimike", "common", "e_contract", gradation=True)
+    g = _forms(nimike)
+    assert g["GEN"] == "nimikkeen"  # NOT *nimikeen
+    assert g["ILL"] == "nimikkeeseen"
+    assert g["PART"] == "nimikettä"
+
+
+def test_e_contract_no_gradation_unchanged() -> None:
+    """A non-gradating -e noun (ohje) is unaffected by the gemination fix."""
+    f = _forms(head_entry("ohje"))
+    assert f["GEN"] == "ohjeen"  # no gemination, no weakening
+    assert f["ILL"] == "ohjeeseen"
+    assert f["INE"] == "ohjeessa"
+
+
 def test_generate_specific_cases() -> None:
     only_gen = generate_forms(head_entry("laki"), cases=(MorphCase.GEN,))
     assert len(only_gen) == 1

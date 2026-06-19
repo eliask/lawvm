@@ -73,4 +73,32 @@ def _ends_in_single_k(stem: str) -> bool:
     return stem.endswith("k") and not stem.endswith("kk")
 
 
-__all__ = ["weaken_stem"]
+# Quantitative gemination: a final single stop -> its geminate.  This is the
+# *inverse* direction of gradation, needed by the Kotus type-48 ``-e`` nouns
+# whose NOMINATIVE is the weak grade and whose INFLECTED stem is the strong
+# (geminate) grade: ``liite`` (weak ``t``) -> ``liitte-`` (strong ``tt``),
+# ``nimike`` (weak ``k``) -> ``nimikke-`` (strong ``kk``).  Only the three
+# quantitative stops geminate; everything else (``ohje`` -> ``ohjee-``) is left
+# alone, so a non-gradating ``-e`` noun is unaffected.
+_GEMINATE: dict[str, str] = {"t": "tt", "k": "kk", "p": "pp"}
+
+
+def strengthen_final_stop(stem: str) -> str:
+    """Return ``stem`` with a final single quantitative stop geminated.
+
+    ``liit`` -> ``liitt``, ``nimik`` -> ``nimikk``, ``ohj`` -> ``ohj`` (no final
+    stop -> unchanged).  An already-geminate cluster (``liitt``) is left as-is.
+    """
+    if not stem:
+        return stem
+    last = stem[-1]
+    geminate = _GEMINATE.get(last)
+    if geminate is None:
+        return stem
+    if len(stem) >= 2 and stem[-2] == last:
+        # Already a geminate (``tt``/``kk``/``pp``) -> do not double again.
+        return stem
+    return stem[:-1] + geminate
+
+
+__all__ = ["strengthen_final_stop", "weaken_stem"]
