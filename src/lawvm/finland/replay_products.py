@@ -19,6 +19,7 @@ from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_violations
 from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.invariant_detectors import run_label_normalization_collision_detector
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -1140,6 +1141,20 @@ def _drop_explicitly_repealed_source_move_events(
     return filtered if len(filtered) != len(migration_events) else migration_events
 
 
+@lru_cache(maxsize=65536)
+def _renumber_source_prefix_may_match_cached(
+    path: TreePath,
+    renumber_source_paths: frozenset[TreePath],
+) -> bool:
+    from lawvm.finland.migration_ledger import normalize_address_path
+
+    normalized_path = normalize_address_path(path)
+    return any(
+        normalized_path[:depth] in renumber_source_paths
+        for depth in range(1, len(normalized_path) + 1)
+    )
+
+
 def _rekey_timelines_with_migration_events(
     timelines: dict["LegalAddress", ProvisionTimeline],
     migration_events: tuple[MigrationEvent, ...],
@@ -1158,7 +1173,6 @@ def _rekey_timelines_with_migration_events(
     from lawvm.finland.migration_ledger import (
         current_address_with_prefix_migrations_from_event_signatures,
         current_address_with_prefix_migrations_from_events,
-        normalize_address_path,
     )
 
     migration_events = _drop_explicitly_repealed_source_move_events(
@@ -1179,10 +1193,9 @@ def _rekey_timelines_with_migration_events(
     def _renumber_source_prefix_may_match(address: LegalAddress) -> bool:
         if has_special_renumber_source:
             return True
-        normalized_path = normalize_address_path(address.path)
-        return any(
-            normalized_path[:depth] in renumber_source_paths
-            for depth in range(1, len(normalized_path) + 1)
+        return _renumber_source_prefix_may_match_cached(
+            address.path,
+            renumber_source_paths,
         )
 
     return _core_rekey_timelines_with_migration_events(

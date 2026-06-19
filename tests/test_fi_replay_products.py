@@ -42,6 +42,7 @@ from lawvm.finland.replay_products import _cleanup_sourceless_base_merge_conflic
 from lawvm.finland.replay_products import _reconcile_materialized_fold_hcontainer_sections
 from lawvm.finland.replay_products import _restore_replay_fold_repeal_placeholders
 from lawvm.finland.replay_products import _rekey_timelines_with_migration_events
+from lawvm.finland.replay_products import _renumber_source_prefix_may_match_cached
 from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
@@ -3910,6 +3911,35 @@ def test_rekey_timelines_prefers_destination_native_lineage_over_migrated_source
     assert len(destination_versions) == 1
     assert destination_versions[0].content is not None
     assert destination_versions[0].content.text == "159 § native lineage"
+
+
+def test_renumber_source_prefix_predicate_reuses_cached_normalized_path(monkeypatch) -> None:
+    import lawvm.finland.migration_ledger as migration_ledger
+
+    calls = 0
+    real_normalize_address_path = migration_ledger.normalize_address_path
+
+    def counted_normalize_address_path(path):
+        nonlocal calls
+        calls += 1
+        return real_normalize_address_path(path)
+
+    path = (("part", "III"), ("chapter", "2"), ("section", "5"))
+    renumber_sources = frozenset({(("part", "3"),)})
+    _renumber_source_prefix_may_match_cached.cache_clear()
+    real_normalize_address_path.cache_clear()
+    monkeypatch.setattr(
+        migration_ledger,
+        "normalize_address_path",
+        counted_normalize_address_path,
+    )
+    try:
+        assert _renumber_source_prefix_may_match_cached(path, renumber_sources)
+        assert _renumber_source_prefix_may_match_cached(tuple(path), renumber_sources)
+        assert calls == 1
+    finally:
+        _renumber_source_prefix_may_match_cached.cache_clear()
+        real_normalize_address_path.cache_clear()
 
 
 def test_rekey_timelines_walks_migration_chains_across_distinct_waves_regardless_of_input_order() -> None:
