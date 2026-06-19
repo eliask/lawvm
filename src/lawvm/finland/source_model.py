@@ -563,6 +563,31 @@ class AmendmentSourceModel:
             metadata=metadata or self.amendment_tree_metadata(amendment_id),
         )
 
+    def enrich_amendment_ops(
+        self,
+        *,
+        ops: list["AmendmentOp"],
+        amendment_id: str,
+        master: "ReplayState | None" = None,
+        johto: str = "",
+        base_ir: IRNode | None = None,
+        parent_id: str = "",
+        metadata: "_AmendmentTreeMetadata | None" = None,
+    ) -> list["AmendmentOp"]:
+        """Stamp source metadata onto ops using the default Finland enricher."""
+        from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
+
+        return self.enrich_ops_from_amendment_tree(
+            enrich_ops=_enrich_ops_from_amendment_tree,
+            ops=ops,
+            amendment_id=amendment_id,
+            master=master,
+            johto=johto,
+            base_ir=base_ir,
+            parent_id=parent_id,
+            metadata=metadata,
+        )
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(

@@ -10,6 +10,7 @@ from lawvm.finland.process_route_rejection import (
     ProcessRouteRejectionContext,
     classify_route_rejection,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 
 
 def _route_context(
@@ -41,7 +42,7 @@ def _route_context(
         source_title=source_title,
         johto=johto,
         xml_bytes=b"<Laki/>",
-        muutos_tree=etree.Element("Laki"),
+        source_model=AmendmentSourceModel.from_tree(etree.Element("Laki")),
         route_reason=route_reason,
         route_target_amendment_id=target_amendment_id,
         strict_profile=None,
