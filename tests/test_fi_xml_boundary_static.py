@@ -131,3 +131,11 @@ def test_route_rejection_expiry_override_uses_source_model() -> None:
     assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
     assert "_commencement_expiry_override(" not in source
     assert "source_model.commencement_expiry_override(" in source
+
+
+def test_temporal_postprocessing_expiry_override_uses_source_model() -> None:
+    source = _source("src/lawvm/finland/process_temporal_postprocessing.py")
+
+    assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
+    assert "_commencement_expiry_override(" not in source
+    assert "source_model.commencement_expiry_override(" in source

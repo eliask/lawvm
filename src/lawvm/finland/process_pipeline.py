@@ -571,6 +571,7 @@ def process_muutoslaki_resolved(
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
                 section_expiry_overrides=amendment_tree_metadata.section_expiry_overrides,
+                source_model=source_model,
             ).run(),
             process_findings=process_findings,
             parent_id=parent_id,

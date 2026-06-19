@@ -32,11 +32,11 @@ from lawvm.finland.kumotaan_replay import (
     _rewrite_kumotaan_snapshot_replaces_to_repeal,
 )
 from lawvm.finland.metadata import (
-    _commencement_expiry_override,
     _section_commencement_effective_override,
     _section_subsection_commencement_effective_override,
     get_operative_body_repeal_candidate,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
     _rewrite_compiled_op_activation_rule_effective,
     _rewrite_compiled_op_activation_rule_effective_for_addresses,
@@ -77,6 +77,7 @@ class ProcessTemporalPostprocessContext:
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
     section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
+    source_model: AmendmentSourceModel | None = None
 
     def run(self) -> None:
         self.collect_law_level_text_patches()
@@ -108,8 +109,11 @@ class ProcessTemporalPostprocessContext:
         )
         accepted = None
         if has_foreign_scoped_expiry or b"voimaantulos" in self.xml_bytes.lower():
-            accepted = _commencement_expiry_override(
+            source_model = self.source_model or AmendmentSourceModel.from_tree(
                 self.muutos_tree,
+                source_ref=self.amendment_id,
+            )
+            accepted = source_model.commencement_expiry_override(
                 self.amendment_id,
                 section_expiry_overrides=self.section_expiry_overrides,
             )
