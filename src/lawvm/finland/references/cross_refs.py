@@ -290,6 +290,108 @@ def _find_section_ancestor(
     return ''
 
 
+@dataclass(frozen=True)
+class AnnotationRefRecord:
+    """A RAW body ``<ref>`` annotation surface — a WITNESS, not an asserted edge.
+
+    This is the faithful 1:1 surface of a single inline AKN ``<ref>`` element in
+    the statute body: the href as written, the href-resolved target (statute_id +
+    provision path, when the href parses), the displayed citation text, and the
+    byte span of the inner phrase. It performs NO interpretation beyond href
+    parsing — no coordinated-member expansion, no dedup, no self-reference
+    filtering, no aggregation. (The production cross-reference path in
+    :func:`extract_cross_refs` does all of that to build asserted graph edges;
+    this iterator deliberately does NOT, so the witness layer can compare the
+    grammar-induced reference set against the *unmodified* annotation surface.)
+
+    ``target_statute_id`` / ``target_section`` are empty when the href does not
+    parse to a known AKN URI family (``parsed_ok=False``) — the annotation is
+    still recorded as a witness (an unparseable href is itself a fact), never
+    silently dropped.
+    """
+
+    href: str
+    target_statute_id: str          # "" when href did not parse
+    target_section: str             # raw AKN provision path, "" if none / unparsed
+    displayed_text: str             # whitespace-collapsed inner citation phrase
+    source_section: str             # nearest section-ancestor num text, "" if none
+    source_byte_offset: Optional[int]  # byte offset of inner phrase into xml_bytes
+    source_byte_len: int
+    parsed_ok: bool                 # True iff the href resolved to a target
+
+
+def iter_body_annotation_refs(xml_bytes: bytes) -> List[AnnotationRefRecord]:
+    """Yield every inline body ``<ref>`` element as a raw annotation witness.
+
+    The annotation-witness surface (grammar7 §13-A): the ``<ref>`` markup as it
+    is, with NO production interpretation. Each body ``<ref>`` becomes exactly one
+    :class:`AnnotationRefRecord` (including self-references and unparseable hrefs)
+    so the witness count equals the literal ``<ref>``-element count in the body.
+
+    Reuses the same byte-span / section-ancestor / href-parse helpers the
+    production cross-reference path uses, scoped to the ``<body>`` range so a
+    duplicate href in the leading metadata block is never matched. Returns ``[]``
+    on XML parse error or a body-less document (fail-soft: no body, no inline
+    ``<ref>`` annotations to witness).
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return []
+    body = root.find('akn:act/akn:body', _NS)
+    if body is None:
+        body = root.find(f'{{{_AKN_NS}}}body')
+    if body is None:
+        body = root.find('.//body')
+    if body is None:
+        return []
+
+    body_lo, body_hi = _body_byte_range(xml_bytes)
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    href_search_cursor: dict[str, int] = {}
+
+    out: List[AnnotationRefRecord] = []
+    for ref_elem in body.iter(f'{{{_AKN_NS}}}ref'):
+        href = ref_elem.get('href', '')
+        displayed = " ".join("".join(ref_elem.itertext()).split())
+        parsed = _parse_ref_href(href)
+        b_off: Optional[int] = None
+        b_len = 0
+        if href:
+            located = _locate_ref_byte_span(
+                xml_bytes, href,
+                search_from=href_search_cursor.get(href, 0),
+                body_lo=body_lo, body_hi=body_hi,
+            )
+            if located is not None:
+                b_off, b_len = located
+                href_search_cursor[href] = b_off + 1
+        if parsed is not None:
+            target_id, prov_path = parsed
+            out.append(AnnotationRefRecord(
+                href=href,
+                target_statute_id=target_id,
+                target_section=prov_path,
+                displayed_text=displayed,
+                source_section=_find_section_ancestor(ref_elem, parent_map),
+                source_byte_offset=b_off,
+                source_byte_len=b_len,
+                parsed_ok=True,
+            ))
+        else:
+            out.append(AnnotationRefRecord(
+                href=href,
+                target_statute_id="",
+                target_section="",
+                displayed_text=displayed,
+                source_section=_find_section_ancestor(ref_elem, parent_map),
+                source_byte_offset=b_off,
+                source_byte_len=b_len,
+                parsed_ok=False,
+            ))
+    return out
+
+
 def _record_self_reference_skip(
     diagnostics_out: Optional[list[CrossRefDiagnostic]],
     *,
