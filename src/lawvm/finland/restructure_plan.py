@@ -689,6 +689,8 @@ def _strip_hcontainer_from_path(
 def _resolve_live_section_snapshot_path(
     tree: IRNode,
     applied_path: tuple[tuple[str, str], ...],
+    *,
+    lookup_cache: _RelabelLookupCache | None = None,
 ) -> tuple[tuple[str, str], ...] | None:
     """Map a relabel-time path to the live post-plan section address.
 
@@ -705,11 +707,11 @@ def _resolve_live_section_snapshot_path(
     for prefix in internal_prefixes:
         if _tops.resolve(tree, (prefix,) + stripped) is not None:
             return stripped
-    found = _find_path_by_suffix(tree, list(stripped))
+    found = _find_path_by_suffix(tree, list(stripped), lookup_cache=lookup_cache)
     if found is not None:
         return _strip_hcontainer_from_path(found)
     if len(stripped) >= 3 and stripped[0][0] == "part":
-        found = _find_path_by_suffix(tree, list(stripped[1:]))
+        found = _find_path_by_suffix(tree, list(stripped[1:]), lookup_cache=lookup_cache)
         if found is not None:
             return _strip_hcontainer_from_path(found)
     return None
