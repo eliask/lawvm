@@ -197,6 +197,34 @@ def test_passive_subjectless_is_underspecified() -> None:
     assert core.addressee_start is None
 
 
+def test_reference_inessive_suffix_is_not_a_subject() -> None:
+    # ``… 69 d–69 g §:ssä säädetään`` — the inessive ending of a § reference glued
+    # to the reference colon (``§:ssä``) must NOT be mis-read as the modal frame's
+    # subject NP (the body class admits ``:``, so the suffix ``ssä`` walked back to
+    # the ``§`` and leaked in as a bogus subject, fragmenting the reference leaf in
+    # the source-syntax forest). The passive ``säädetään`` is impersonal here.
+    text = "sovelletaan mitä 69 d–69 g §:ssä säädetään."
+    mp = parse_modal_sentence(text)
+    cores = [c for c in mp.cores if c.cue == "säädetään"]
+    assert cores, "the passive provision verb cue must still fire"
+    (core,) = cores
+    assert core.voice == VOICE_PASSIVE
+    assert core.addressee_underspecified is True
+    assert core.addressee_start is None
+    # No modal span may overlap the reference inessive ending ``§:ssä``.
+    ssa = text.index("§:ssä")
+    for c in mp.cores:
+        for s, e in (
+            (c.addressee_start, c.addressee_end),
+            (c.object_start, c.object_end),
+        ):
+            if s is None or e is None:
+                continue
+            assert not (s < ssa + len("§:ssä") and e > ssa), (
+                f"modal span ({s},{e}) overlaps the reference ending §:ssä"
+            )
+
+
 # ---------------------------------------------------------------------------
 # Bare ``on`` necessive gate (copula must NOT fire)
 # ---------------------------------------------------------------------------

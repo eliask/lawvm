@@ -69,6 +69,7 @@ Subcommands:
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
     fi-parse-explain <sid>          Dump everything needed to diagnose one statute's johtolause parse.
+    fi-parse                        Visualize Finnish parse structures (forest/johtolause/morph/clauses).
     topic --topic STRING            Keyword/FTS search across statute sections and HE body atoms.
     follow-refs --start REF         Multi-hop reference traversal from a provision.
     pit-timeline --provision REF    Provision amendment history (index-backed).
@@ -10528,6 +10529,65 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON",
     )
 
+    # --- fi-parse ---
+    fi_parse_p = sub.add_parser(
+        "fi-parse",
+        help="visualize Finnish parse structures (forest / johtolause / morph / clauses)",
+        description=(
+            "Render Finnish parse structures from the existing machinery (read-only "
+            "visualization; no new parsing). Pick exactly one view: "
+            "--statute (forest; narrow with --grep/--provision, or add --clauses for "
+            "segmentation), --johtolause TEXT, --morph WORD, or --text TEXT (clauses). "
+            "Every view supports --json."
+        ),
+    )
+    fi_parse_p.add_argument(
+        "--statute",
+        metavar="STATUTE_ID",
+        default="",
+        help="statute id for the FOREST / CLAUSES view, e.g. 2004/301",
+    )
+    fi_parse_p.add_argument(
+        "--grep",
+        metavar="TEXT",
+        default=None,
+        help="forest view: narrow to the provision window around this literal text",
+    )
+    fi_parse_p.add_argument(
+        "--provision",
+        metavar="ADDR",
+        default=None,
+        help="forest view: narrow to the provision matching this eId/address",
+    )
+    fi_parse_p.add_argument(
+        "--clauses",
+        action="store_true",
+        help="with --statute: show sentence/clause segmentation instead of the forest",
+    )
+    fi_parse_p.add_argument(
+        "--johtolause",
+        metavar="TEXT",
+        default=None,
+        help="JOHTOLAUSE view: parse this amendment enacting clause text",
+    )
+    fi_parse_p.add_argument(
+        "--morph",
+        metavar="WORD",
+        default=None,
+        help="MORPH view: generate the case paradigm + reverse-analyze this word",
+    )
+    fi_parse_p.add_argument(
+        "--text",
+        metavar="TEXT",
+        default=None,
+        help="CLAUSES view over raw text (no corpus needed)",
+    )
+    fi_parse_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
@@ -13279,6 +13339,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_explain import main as fi_parse_explain_main
 
         fi_parse_explain_main(args)
+
+    elif args.command == "fi-parse":
+        from lawvm.tools.fi_parse_view import main as fi_parse_view_main
+
+        fi_parse_view_main(args)
 
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main

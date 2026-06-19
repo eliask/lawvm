@@ -213,6 +213,18 @@ def _subject_tail_span(before: str) -> tuple[int, int] | None:
     i = e
     while i > 0 and _SUBJECT_BODY_CHAR_RE.match(before[i - 1]):
         i -= 1
+    # 2a. Reject a reference-inflection suffix mis-read as a subject NP. The
+    # body class admits ``:``, so the inessive/genitive ending glued to a §
+    # reference (``§:ssä`` / ``§:n`` / ``§:ää``) walks back through the colon and
+    # stops at the ``§``; the leftover ``:ssä`` then becomes a bogus "subject"
+    # NP (``… 69 d–69 g §:ssä säädetään`` would give subject ``ssä``). That
+    # suffix belongs to the reference, not to the modal frame. When the body run
+    # is left-bounded by a reference colon (``§:`` immediately before it), there
+    # is no overt subject between the reference and the cue — fail to None so a
+    # passive marker is correctly underspecified and the reference keeps its
+    # whole ``§:ssä`` ending.
+    if 1 <= i < len(before) and before[i] == ":" and before[i - 1] == "\xa7":
+        return None
     # 3. Earliest head letter in [i, e) — the leftmost legal start.
     p = i
     while p < e and not _SUBJECT_HEAD_CHAR_RE.match(before[p]):
