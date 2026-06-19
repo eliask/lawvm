@@ -1305,6 +1305,7 @@ class TestExecuteRelabel:
         assert by_target["part:5"].success is True
         assert [child.label for child in new_tree.children if child.kind is IRNodeKind.PART] == ["4", "5", "6"]
 
+    @pytest.mark.slow
     def test_2017_320_2019_371_single_relabel_resolves_pre_part_frame(
         self,
         live_relabel_plan_2017_320_2019_371: tuple[ReplayResult, StructuralTransformPlan],
@@ -1328,6 +1329,7 @@ class TestExecuteRelabel:
         section_labels = [child.label for child in chapter_1.children if child.kind is IRNodeKind.SECTION]
         assert "153" in section_labels
 
+    @pytest.mark.slow
     def test_2017_320_2019_371_relabel_skip_explains_consumed_pre_part_source(
         self,
         executed_live_relabel_plan_2017_320_2019_371: list[ExecutedOp],
@@ -1339,6 +1341,7 @@ class TestExecuteRelabel:
         assert target_exec.success is True
         assert target_exec.reason_code == ""
 
+    @pytest.mark.slow
     def test_2017_320_2019_371_part_iia_relabel_resolves_structural_label_alias(
         self,
         live_relabel_plan_2017_320_2019_371: tuple[ReplayResult, StructuralTransformPlan],
@@ -1362,6 +1365,7 @@ class TestExecuteRelabel:
             FI_RESTRUCTURE_RELABEL_STRUCTURAL_LABEL_ALIAS_LOOKUP_RULE_ID
         )
 
+    @pytest.mark.slow
     def test_2017_320_2019_371_relabel_skips_classify_sparse_target_families(
         self,
         executed_live_relabel_plan_2017_320_2019_371: list[ExecutedOp],
@@ -1385,6 +1389,7 @@ class TestExecuteRelabel:
         assert pathology.detail["code"] == "RECODIFICATION_SOURCE_CHAIN_GAP"
         assert pathology.detail["target_label"] == "2 luku 7 §"
 
+    @pytest.mark.slow
     def test_2017_320_2020_1256_vi_chapter_26_28_relabels_execute_in_part_vi(
         self,
         live_relabel_plan_2017_320_2020_1256: tuple[ReplayResult, StructuralTransformPlan],
@@ -1508,6 +1513,7 @@ class TestExecuteRelabel:
         ]
         assert chapter_labels == ["15"]
 
+    @pytest.mark.slow
     def test_2017_320_2020_1256_chapter_15_16_relabels_use_prior_part_migration(
         self,
         live_relabel_plan_2017_320_2020_1256: tuple[ReplayResult, StructuralTransformPlan],

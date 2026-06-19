@@ -1935,6 +1935,7 @@ _FINLEX_CORPUS_AVAILABLE = (
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None:
     payload = resolve_provision_state(
         statute_id="1992/1535",
@@ -2237,6 +2238,7 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot() -> None:
     from lawvm.finland.ops import FailedOp
     from tests.corpus_pin_helpers import replay_xml_for_test
@@ -2318,6 +2320,7 @@ def test_specimen_1982_182_failed_container_noops_do_not_claim_tree_touches() ->
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1992_1535_item_replacement_does_not_mutate_section_heading() -> None:
     from tests.corpus_pin_helpers import replay_xml_for_test
 
@@ -2374,6 +2377,7 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() ->
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_2002_1290_repealed_section_insert_occupancy_is_governed_by_snapshot() -> None:
     from tests.corpus_pin_helpers import replay_xml_for_test
 
