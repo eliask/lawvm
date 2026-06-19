@@ -341,7 +341,7 @@ def test_run_benchmark_prints_warning_summary_per_row(monkeypatch, capsys) -> No
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
             sid,
             0.9,
             "OK",
@@ -536,11 +536,33 @@ def test_score_one_with_warning_summary_preserves_structural_event_counts(monkey
     assert counts["structural:missing_section"] == 2
 
 
+def test_score_one_with_warning_summary_can_skip_text_score(monkeypatch) -> None:
+    monkeypatch.setattr(bench, "is_known_missing_source", lambda sid: False)
+    monkeypatch.setattr(
+        bench,
+        "_run_replay_with_bench_warning_capture",
+        lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter()),
+    )
+    monkeypatch.setattr(
+        bench,
+        "_lev_sim_fast",
+        lambda sid, master: pytest.fail("Levenshtein score should be skipped"),
+    )
+    monkeypatch.setattr(bench, "_structural_sim", lambda sid, master: (0.9, {}))
+
+    sid, sim, status, lev_sim, _counts = bench._score_one_with_warning_summary(
+        "2000/1",
+        text_scores=False,
+    )
+
+    assert (sid, sim, status, lev_sim) == ("2000/1", 0.9, "OK", -1.0)
+
+
 def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch) -> None:
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
             sid,
             0.9,
             "OK",
@@ -559,6 +581,70 @@ def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch
 
     assert results[0][:4] == (1, "2000/1", 0.9, "OK")
     assert diagnostics_out == {"2000/1": "  warnings: audit: coverage_degraded×2"}
+
+
+def test_run_benchmark_can_skip_levenshtein_collection(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        bench,
+        "_score_one_with_warning_summary",
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False, text_scores=True: (
+            sid,
+            0.9,
+            "OK",
+            -1.0,
+            {},
+        ),
+    )
+
+    results, lev_sims = bench._run_benchmark(
+        [(1, "2000/1")],
+        verbose=True,
+        workers=1,
+        text_scores=False,
+    )
+
+    assert results[0][:4] == (1, "2000/1", 0.9, "OK")
+    assert lev_sims is None
+    assert " lev " not in capsys.readouterr().out
+
+
+def test_fi_bench_main_no_save_skips_persistence(tmp_path, monkeypatch, capsys) -> None:
+    corpus = tmp_path / "corpus.csv"
+    corpus.write_text("amendments,statute_id\n1,2000/1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        bench,
+        "_run_benchmark",
+        lambda *args, **kwargs: ([(1, "2000/1", 0.9, "OK", 0.1)], None),
+    )
+    monkeypatch.setattr(bench, "_show_summary", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_worst", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_errors", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_load_verified_statutes", lambda: {})
+    monkeypatch.setattr(bench, "_save_run", lambda *args, **kwargs: pytest.fail("run CSV should not be saved"))
+    monkeypatch.setattr(bench, "_append_history", lambda *args, **kwargs: pytest.fail("history should not be appended"))
+    monkeypatch.setattr(
+        bench,
+        "_write_bench_evidence_surface",
+        lambda *args, **kwargs: pytest.fail("evidence should not be written"),
+    )
+    monkeypatch.setattr(
+        bench,
+        "_save_bench_diagnostic_sidecar",
+        lambda *args, **kwargs: pytest.fail("diagnostics sidecar should not be written"),
+    )
+
+    bench.main(
+        argparse.Namespace(
+            corpus=str(corpus),
+            label="nosave",
+            top=5,
+            no_save=True,
+            no_text_scores=True,
+            parallel=None,
+        )
+    )
+
+    assert "Run not saved (--no-save)" in capsys.readouterr().out
 
 
 def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> None:

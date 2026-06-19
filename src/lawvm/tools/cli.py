@@ -1728,7 +1728,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--no-save",
         action="store_true",
         dest="no_save",
-        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+        help="print a bench report without writing run CSV/history artifacts",
     )
     bench_p.add_argument(
         "--summary-only",
@@ -1812,7 +1812,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--no-text-scores",
         action="store_true",
         dest="no_text_scores",
-        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+        help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
     )
     bench_p.add_argument(
         "--worker-max-tasks",

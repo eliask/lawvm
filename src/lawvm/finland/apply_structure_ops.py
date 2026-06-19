@@ -1731,7 +1731,10 @@ def _apply_whole_section_op(
             children=tuple(new_children),
         )
         logger.debug("  %s → section otsikko %s", ctx_label, _op_type)
-        return state.with_ir(_tops.replace_at(state.ir, sec_path, new_sec))
+        return _with_preserved_provision_index(
+            state,
+            _tops.replace_at(state.ir, sec_path, new_sec),
+        )
 
     if _target_special == "otsikko_edella":
         if _op_type == "INSERT" and sec_path is not None and muutos_ir is not None:
