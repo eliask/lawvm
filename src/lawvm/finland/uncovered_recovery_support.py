@@ -220,6 +220,8 @@ def uncovered_disposition_for_op_id(op_id: str) -> tuple[str, str]:
         return "REPLACE", "replace_existing"
     if op_id.startswith("uncovered_merge_"):
         return "MERGE", "omission_merge"
+    if op_id.startswith("uncovered_table_merge_"):
+        return "MERGE", "numbered_table_target_merge"
     if op_id.startswith("uncovered_insert_"):
         return "INSERT", "new_insert"
     return "INSERT", "recovered"

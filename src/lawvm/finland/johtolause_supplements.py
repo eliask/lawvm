@@ -27,10 +27,13 @@ from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_mixed_clauses,
     parse_named_table_row_single_clauses,
 )
+from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets
 from lawvm.finland.ops import AmendmentOp
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
+_NUMBERED_TABLE_TARGET_RULE_ID = "fi.numbered_table_target.v1"
+_NUMBERED_TABLE_TARGET_TAG = "numbered_table_target"
 _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
     r"\bmuut[a-zäöå]{0,12}\b.{0,500}?"
     r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?::[a-zäöå]{1,6})?.{0,300}?"
@@ -389,6 +392,66 @@ def _tag_named_table_row_single_clause_ops(
                 target_section=clause.target_section or "",
                 target_unit_kind="section",
                 named_row_targets=tuple(clause.named_targets),
+            )
+        )
+    return supplemented
+
+
+def _numbered_table_targets_by_section(johto: str) -> dict[str, tuple[str, ...]]:
+    out: dict[str, list[str]] = {}
+    for target in collect_johto_numbered_table_targets(johto):
+        labels = out.setdefault(target.section_label, [])
+        if target.table_label not in labels:
+            labels.append(target.table_label)
+    return {section: tuple(labels) for section, labels in out.items()}
+
+
+def _with_numbered_table_targets(op: AmendmentOp, labels: tuple[str, ...]) -> AmendmentOp:
+    merged = tuple(dict.fromkeys((*op.numbered_table_targets, *labels)))
+    tags = tuple(dict.fromkeys((*op.extraction_provenance_tags, _NUMBERED_TABLE_TARGET_TAG)))
+    return dc_replace(
+        op,
+        numbered_table_targets=merged,
+        extraction_provenance_tags=tags,
+        witness_rule_id=op.witness_rule_id or _NUMBERED_TABLE_TARGET_RULE_ID,
+    )
+
+
+def _tag_numbered_table_target_clause_ops(
+    ops: List[AmendmentOp],
+    johto: str,
+) -> List[AmendmentOp]:
+    """Attach explicit ``N §:n taulukko M`` targets to section replace ops."""
+    targets_by_section = _numbered_table_targets_by_section(johto)
+    if not targets_by_section:
+        return ops
+
+    supplemented = list(ops)
+    for idx, (section, table_labels) in enumerate(targets_by_section.items()):
+        tagged = False
+        for pos, op in enumerate(supplemented):
+            if (
+                op.op_type == "REPLACE"
+                and op.target_section == section
+                and op.target_unit_kind == "section"
+                and op.target_paragraph is None
+                and op.target_item is None
+                and not op.target_special
+            ):
+                supplemented[pos] = _with_numbered_table_targets(op, table_labels)
+                tagged = True
+                break
+        if tagged:
+            continue
+        supplemented.append(
+            AmendmentOp(
+                op_id=f"numbered_table_target_replace_{idx}",
+                op_type="REPLACE",
+                target_section=section,
+                target_unit_kind="section",
+                numbered_table_targets=table_labels,
+                extraction_provenance_tags=(_NUMBERED_TABLE_TARGET_TAG,),
+                witness_rule_id=_NUMBERED_TABLE_TARGET_RULE_ID,
             )
         )
     return supplemented

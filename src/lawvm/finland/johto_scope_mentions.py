@@ -52,6 +52,11 @@ _CHAPTER_NUMBER_RE = re.compile(
     re.I,
 )
 _SECTION_OR_GENITIVE_CHAPTER_RE = re.compile(r"§|luvun", re.I)
+_NUMBERED_TABLE_TARGET_RE = re.compile(
+    r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*n\s+"
+    r"tauluk(?:ko|on)\s+(?P<table>\d{1,4}+\s{0,3}+[a-z]?)\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +71,14 @@ class JohtoChapterScopeMentions:
     replaced_chapter_labels: frozenset[str]
     moved_destination_chapter_labels: frozenset[str]
     moved_section_destinations: tuple[MovedSectionDestination, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NumberedTableTarget:
+    """A Finnish johtolause target naming a numbered table inside a section."""
+
+    section_label: str
+    table_label: str
 
 
 @functools.lru_cache(maxsize=8192)
@@ -122,6 +135,32 @@ def collect_johto_moment_targets(johto_text: str) -> dict[str, frozenset[int]]:
         if section:
             targets.setdefault(section, set()).add(addr.subsection)
     return {section: frozenset(moments) for section, moments in targets.items()}
+
+
+@functools.lru_cache(maxsize=8192)
+def collect_johto_numbered_table_targets(johto_text: str) -> tuple[NumberedTableTarget, ...]:
+    """Return explicit ``N §:n taulukko M`` table targets from a Finnish johtolause."""
+    targets: list[NumberedTableTarget] = []
+    seen: set[tuple[str, str]] = set()
+    for match in _NUMBERED_TABLE_TARGET_RE.finditer(johto_text or ""):
+        section = _norm_num_token(match.group("section"))
+        table = _norm_num_token(match.group("table"))
+        key = (section, table)
+        if not section or not table or key in seen:
+            continue
+        seen.add(key)
+        targets.append(NumberedTableTarget(section_label=section, table_label=table))
+    return tuple(targets)
+
+
+def collect_johto_numbered_table_targets_by_section(
+    johto_text: str,
+) -> dict[str, frozenset[str]]:
+    """Map section labels to explicitly targeted numbered table labels."""
+    out: dict[str, set[str]] = {}
+    for target in collect_johto_numbered_table_targets(johto_text):
+        out.setdefault(target.section_label, set()).add(target.table_label)
+    return {section: frozenset(tables) for section, tables in out.items()}
 
 
 @functools.lru_cache(maxsize=8192)

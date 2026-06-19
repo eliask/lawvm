@@ -614,6 +614,7 @@ class AmendmentOp:
     target_item: Optional[str] = None
     target_special: Optional[str] = None
     named_row_targets: Tuple[str, ...] = ()
+    numbered_table_targets: Tuple[str, ...] = ()
     body_root_replace_fallback: bool = False
     fallback_provenance: bool = False
     sec1_body_johto_fallback: bool = False
@@ -663,6 +664,7 @@ class AmendmentOp:
         target_item: Optional[str] = None,
         target_special: Optional[str] = None,
         named_row_targets: Tuple[str, ...] = (),
+        numbered_table_targets: Tuple[str, ...] = (),
         body_root_replace_fallback: bool = False,
         fallback_provenance: bool = False,
         sec1_body_johto_fallback: bool = False,
@@ -714,6 +716,7 @@ class AmendmentOp:
         self.target_item = target_item
         self.target_special = target_special
         self.named_row_targets = named_row_targets
+        self.numbered_table_targets = numbered_table_targets
         self.body_root_replace_fallback = body_root_replace_fallback
         self.fallback_provenance = fallback_provenance
         self.sec1_body_johto_fallback = sec1_body_johto_fallback
@@ -1025,6 +1028,7 @@ class ResolvedOp:
     post_repeal_item_shift_label: Optional[str] = None
     body_chapter_move_from: Optional[str] = None
     named_row_targets: tuple[str, ...] = ()
+    numbered_table_targets: tuple[str, ...] = ()
     body_root_replace_fallback: bool = False
     fallback_provenance: bool = False
     voimaantulo_repeal: bool = False
@@ -1191,6 +1195,7 @@ class ResolvedOp:
             post_repeal_item_shift_label=op.post_repeal_item_shift_label,
             body_chapter_move_from=op.body_chapter_move_from,
             named_row_targets=op.named_row_targets,
+            numbered_table_targets=op.numbered_table_targets,
             body_root_replace_fallback=op.body_root_replace_fallback,
             fallback_provenance=op.fallback_provenance,
             voimaantulo_repeal=op.voimaantulo_repeal,

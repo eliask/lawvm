@@ -50,6 +50,7 @@ from lawvm.finland.merge import (
     _pre_resolve_omissions,
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
+from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 
 from lawvm.core.elaboration_context import PayloadElaborationContext
 from lawvm.core.payload_surface import PayloadSurface, TargetUnitKind
@@ -1452,6 +1453,27 @@ def prepare_payload_surface(
     ``ctx.parent_node`` (for fallback section lookup in omission resolution).
     """
     target_unit_kind = ctx.target_unit_kind
+    table_labels = tuple(
+        dict.fromkeys(
+            label
+            for op in group_ops
+            for label in op.numbered_table_targets
+            if label
+        )
+    )
+    if table_labels:
+        has_non_table_child_targets = any(
+            op.target_paragraph is not None or op.target_item or op.target_special
+            for op in group_ops
+        )
+        if not has_non_table_child_targets:
+            table_merge = merge_numbered_table_targets_into_live_section(
+                ctx.live_node,
+                muutos_ir,
+                table_labels,
+            )
+            if table_merge.rewritten:
+                return table_merge.node
     muutos_ir = _prepare_sparse_subsection_payload_ir(
         target_unit_kind,
         group_ops,

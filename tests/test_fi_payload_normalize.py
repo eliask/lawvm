@@ -16,6 +16,8 @@ from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.apply_runtime_support import _build_subsection_override_map
 from lawvm.finland.compile_group_elaboration import _payload_normalization_observation_rows
 from lawvm.finland.helpers import _norm_row_anchor_text
+from lawvm.finland.johtolause_supplements import _tag_numbered_table_target_clause_ops
+from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets_by_section
 from lawvm.finland.payload_normalize import SubsectionSlotMap
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, get_replay_profile
 from lawvm.finland.payload_normalize import (
@@ -42,6 +44,7 @@ from lawvm.finland.payload_normalize import (
     elaborate_payload_against_live,
     summarize_slot_assignment,
 )
+from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 
 
 def _observations(
@@ -86,6 +89,228 @@ def _muutos_ir(
     muutos_ir = result.muutos_ir
     assert muutos_ir is not None
     return muutos_ir
+
+
+def _table_subsection(label: str, table_label: str, cell_text: str) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=label,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=f"Taulukko {table_label}. Paloluokat",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(IRNode(kind=IRNodeKind.CELL, text=cell_text),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def _table_subsection_with_rows(label: str, table_label: str, row_texts: tuple[str, ...]) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=label,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=f"Taulukko {table_label}. Paloluokat",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=tuple(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(IRNode(kind=IRNodeKind.CELL, text=row_text),),
+                            )
+                            for row_text in row_texts
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def test_collect_johto_numbered_table_targets_by_section() -> None:
+    johto = (
+        "Muutetaan 13 §:n taulukko 4, 15 §:n taulukko 5, "
+        "33 §:n taulukko 11 ja 2 momentti."
+    )
+
+    assert collect_johto_numbered_table_targets_by_section(johto) == {
+        "13": frozenset({"4"}),
+        "15": frozenset({"5"}),
+        "33": frozenset({"11"}),
+    }
+
+
+def test_numbered_table_target_supplement_tags_and_adds_ops() -> None:
+    johto = (
+        "Muutetaan 13 §:n taulukko 4, 15 §:n taulukko 5 sekä "
+        "33 §:n taulukko 11 ja 2 momentti."
+    )
+    ops = [
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="13",
+        ),
+        AmendmentOp(
+            op_type="REPLACE",
+            target_kind=TargetKind.SECTION,
+            target_section="33",
+            target_paragraph=2,
+        ),
+    ]
+
+    got = _tag_numbered_table_target_clause_ops(ops, johto)
+
+    by_target = {(op.target_section, op.target_paragraph): op for op in got}
+    assert by_target[("13", None)].numbered_table_targets == ("4",)
+    assert by_target[("15", None)].numbered_table_targets == ("5",)
+    assert by_target[("33", None)].numbered_table_targets == ("11",)
+    assert by_target[("33", 2)].numbered_table_targets == ()
+
+
+def test_numbered_table_target_merge_replaces_only_table_child() -> None:
+    live = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Live heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="live prose"),),
+            ),
+            _table_subsection("2", "4", "old table"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="trailing prose"),),
+            ),
+        ),
+    )
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Copied heading"),
+            _table_subsection("1", "4", "new table"),
+        ),
+    )
+
+    result = merge_numbered_table_targets_into_live_section(live, amendment, ("4",))
+
+    assert result.rewritten
+    assert result.node is not None
+    texts = [child.children[0].text for child in result.node.children if child.kind is IRNodeKind.SUBSECTION]
+    assert texts == ["live prose", "Taulukko 4. Paloluokat", "trailing prose"]
+    assert "new table" in irnode_to_text(result.node)
+    assert "old table" not in irnode_to_text(result.node)
+
+
+def test_numbered_table_target_merge_prunes_duplicate_table_note_block() -> None:
+    live = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Live heading"),
+            _table_subsection_with_rows(
+                "2",
+                "4",
+                ("old row", "Qfi,k on vanha."),
+            ),
+        ),
+    )
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Copied heading"),
+            _table_subsection_with_rows(
+                "1",
+                "4",
+                (
+                    "new row",
+                    "Qfi,k on tilastollisesti määritetty.",
+                    "Kellarikerrokset mitoitetaan palo- ja jäähtymisvaiheen rasituksille.",
+                    "1) Ylin kellarikerros, vähintään 600 MJ/m2.",
+                    "2) Ylimmän kellarikerroksen alapuolella sijaitsevat kellarikerrokset, 2,0*Qfi,k, vähintään 900 MJ/m2.",
+                    "Q fi,k on tilastollisesti määritetty.",
+                    "Kellarikerrokset mitoitetaan palo- ja jäähtymisvaiheen rasituksille.",
+                    "1) Ylin kellarikerros, vähintään 600 MJ/m 2.",
+                    "2) Ylimmän kellarikerroksen alapuolella sijaitsevat kellarikerrokset, 2,0*Q fi,k, vähintään 900 MJ/m 2.",
+                ),
+            ),
+        ),
+    )
+
+    result = merge_numbered_table_targets_into_live_section(live, amendment, ("4",))
+
+    assert result.rewritten
+    assert result.node is not None
+    text = irnode_to_text(result.node)
+    assert "MJ/m2" not in text
+    assert "MJ/m 2" in text
+    rules = result.node.children[1].attrs["lawvm_payload_normalization_rule"]
+    assert "ELAB.NUMBERED_TABLE_TARGET_MERGE" in rules
+    assert "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED" in rules
+
+
+def test_prepare_payload_surface_merges_numbered_table_target_without_whole_section_replace() -> None:
+    live = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Live heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="live prose"),),
+            ),
+            _table_subsection("2", "4", "old table"),
+        ),
+    )
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="13",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Copied heading"),
+            _table_subsection("1", "4", "new table"),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    ctx = _mock_ctx("section", "13", live_node=live)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="13",
+        numbered_table_targets=("4",),
+    )
+
+    prepared = prepare_payload_surface(
+        ctx,
+        [op],
+        amendment,
+        _replay_profile_stub(),
+        strict_profile=None,
+    )
+
+    assert prepared is not None
+    assert irnode_to_text(prepared).count("Taulukko 4.") == 1
+    assert "live prose" in irnode_to_text(prepared)
+    assert "new table" in irnode_to_text(prepared)
+    assert "old table" not in irnode_to_text(prepared)
 
 
 def test_payload_elaboration_projection_from_group_result_records_slot_bindings() -> None:

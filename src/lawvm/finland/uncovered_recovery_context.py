@@ -11,6 +11,7 @@ from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions,
     collect_johto_mentioned_section_labels,
     collect_johto_moment_targets,
+    collect_johto_numbered_table_targets_by_section,
 )
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.uncovered_recovery_state import (
@@ -30,6 +31,7 @@ class UncoveredRecoveryContext:
     owned_chapter_labels: frozenset[str]
     part_insert_labels: frozenset[str]
     johto_moment_targets: dict[str, frozenset[int]]
+    johto_numbered_table_targets: dict[str, frozenset[str]]
 
 
 def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
@@ -58,6 +60,7 @@ def build_uncovered_recovery_context(
     """
     johto_mentioned_labels: set[str] = set()
     johto_moment_targets: dict[str, frozenset[int]] = {}
+    johto_numbered_table_targets: dict[str, frozenset[str]] = {}
     johto_mentioned_new_chapters: set[str] = set()
     johto_mentioned_replaced_chapters: set[str] = set()
     moved_section_destinations: dict[str, str] = {}
@@ -103,6 +106,7 @@ def build_uncovered_recovery_context(
         johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
         johto_mentioned_labels.update(collect_johto_mentioned_section_labels(johto_text))
         johto_moment_targets = collect_johto_moment_targets(johto_text)
+        johto_numbered_table_targets = collect_johto_numbered_table_targets_by_section(johto_text)
         chapter_mentions = collect_johto_chapter_scope_mentions(johto_text)
         johto_mentioned_new_chapters.update(chapter_mentions.new_chapter_labels)
         owned_chapter_labels.update(chapter_mentions.moved_destination_chapter_labels)
@@ -123,4 +127,5 @@ def build_uncovered_recovery_context(
         owned_chapter_labels=frozenset(owned_chapter_labels),
         part_insert_labels=_part_insert_labels_from_ops(ops),
         johto_moment_targets=johto_moment_targets,
+        johto_numbered_table_targets=johto_numbered_table_targets,
     )

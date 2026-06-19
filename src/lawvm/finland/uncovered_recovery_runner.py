@@ -14,7 +14,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.future_repeal import RepealTargetRef
-from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.helpers import _fi_label_postprocessor, _norm_num_token
 from lawvm.finland.merge import merge_section_with_omission_invariants
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
@@ -51,6 +51,7 @@ from lawvm.finland.uncovered_target_resolve import (
     resolve_insert_chapter,
     resolve_target,
 )
+from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 
 if TYPE_CHECKING:
@@ -80,6 +81,7 @@ class UncoveredRecoveryRun:
     bp_assignments: object
     johto_mentioned_labels: Set[str]
     johto_moment_targets: Dict[str, frozenset[int]]
+    johto_numbered_table_targets: Dict[str, frozenset[str]]
     johto_mentioned_replaced_chapters: Set[str]
     moved_section_destinations: Dict[str, str]
     owned_chapter_labels: Set[str]
@@ -380,6 +382,27 @@ class UncoveredRecoveryRun:
             chapter=amend_chapter_label,
             section=label,
         )
+        table_labels = self.johto_numbered_table_targets.get(_norm_num_token(label), frozenset())
+        if table_labels and not self.johto_moment_targets.get(_norm_num_token(label)):
+            table_merge = merge_numbered_table_targets_into_live_section(
+                existing,
+                sec_ir,
+                table_labels,
+            )
+            if table_merge.rewritten and table_merge.node is not None:
+                self.append_recovered_rop(
+                    self.make_uncovered_rop(
+                        UncoveredRopDraft(
+                            op_type="REPLACE",
+                            target_label=label,
+                            target_chapter=amend_chapter_label,
+                            target_part=amend_part_label or _part_label_from_path(existing_path),
+                            muutos_ir=table_merge.node,
+                            op_id=f"uncovered_table_merge_{label}",
+                        )
+                    )
+                )
+                return
         if edisp.outcome is ExistingDisposition.REPLACE:
             self.append_recovered_rop(
                 self.make_uncovered_rop(

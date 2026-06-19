@@ -150,6 +150,7 @@ def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
         target_item=scope.target_item,
         target_special=_legacy_target_special_for_scope(scope, rop.effective_target_special),
         named_row_targets=rop.named_row_targets,
+        numbered_table_targets=rop.numbered_table_targets,
         body_root_replace_fallback=rop.body_root_replace_fallback,
         fallback_provenance=rop.fallback_provenance,
         source_statute=rop.resolved_source_statute,

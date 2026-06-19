@@ -142,6 +142,7 @@ def recover_uncovered_body_ops(
             bp_assignments=preparation.body_pairing_assignments,
             johto_mentioned_labels=set(preparation.context.johto_mentioned_labels),
             johto_moment_targets=dict(preparation.context.johto_moment_targets),
+            johto_numbered_table_targets=dict(preparation.context.johto_numbered_table_targets),
             johto_mentioned_replaced_chapters=set(
                 preparation.context.johto_mentioned_replaced_chapters
             ),
