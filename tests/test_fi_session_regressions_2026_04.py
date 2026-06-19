@@ -1860,6 +1860,7 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersRequest,
         precreate_apply_chapters,
+        source_chapters_from_tree,
     )
 
     state = ReplayState(ir=_body(_sec("1"), _sec("2"), _sec("3"), _sec("4")))
@@ -1890,9 +1891,9 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
         PrecreateApplyChaptersRequest(
             state=state,
             resolved=[],
-            muutos_tree=muutos_tree,
             amendment_id="2025/1",
             vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
             johto=(
                 "lisätään 1 §:n edelle uusi 1 luvun otsikko ja "
                 "3 §:n edelle uusi 2 luvun otsikko seuraavasti"
@@ -1926,6 +1927,7 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersRequest,
         precreate_apply_chapters,
+        source_chapters_from_tree,
     )
 
     state = ReplayState(
@@ -1956,9 +1958,9 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
         PrecreateApplyChaptersRequest(
             state=state,
             resolved=[],
-            muutos_tree=muutos_tree,
             amendment_id="2016/118",
             vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
             johto=(
                 "muutetaan 67 §:n edellä oleva väliotsikko, 68 a ja 68 b § "
                 "sekä 71 §:n 2 momentti, lisätään 68 a §:n edelle uusi "

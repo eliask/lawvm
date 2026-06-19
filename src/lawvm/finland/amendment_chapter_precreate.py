@@ -94,7 +94,6 @@ class PrecreateApplyChaptersRequest:
     resolved: list[ResolvedOp]
     amendment_id: str
     vts_ops_enrich_done: bool
-    muutos_tree: etree._Element | None = None
     johto: str = ""
     source_chapters: tuple[SourceChapter, ...] = ()
     source_pseudo_chapters: tuple[SourcePseudoChapter, ...] = ()
@@ -339,11 +338,6 @@ def precreate_apply_chapters(
         )
     source_chapters = request.source_chapters
     source_pseudo_chapters = request.source_pseudo_chapters
-    if request.muutos_tree is not None:
-        if not source_chapters:
-            source_chapters = source_chapters_from_tree(request.muutos_tree)
-        if not source_pseudo_chapters:
-            source_pseudo_chapters = source_pseudo_chapters_from_tree(request.muutos_tree)
     if not source_chapters and not source_pseudo_chapters:
         return PrecreateApplyChaptersResult(
             state=request.state,

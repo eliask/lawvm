@@ -180,6 +180,26 @@ def test_apply_executor_precreates_chapters_through_source_model() -> None:
     assert "source_model: AmendmentSourceModel" in boundary_source
 
 
+def test_precreate_apply_chapters_request_is_typed_source_fact_only() -> None:
+    source = _source("src/lawvm/finland/amendment_chapter_precreate.py")
+    request_body = source.split("class PrecreateApplyChaptersRequest:", 1)[1].split(
+        "@dataclass(frozen=True, slots=True)\nclass PrecreateApplyChaptersResult:",
+        1,
+    )[0]
+    apply_body = source.split("def precreate_apply_chapters(", 1)[1].split(
+        "    chapterization_labels = _chapterization_required_labels(",
+        1,
+    )[0]
+
+    assert "muutos_tree" not in request_body
+    assert "etree._Element" not in request_body
+    assert "request.muutos_tree" not in apply_body
+    assert "source_chapters_from_tree(" not in apply_body
+    assert "source_pseudo_chapters_from_tree(" not in apply_body
+    assert "source_chapters: tuple[SourceChapter, ...]" in request_body
+    assert "source_pseudo_chapters: tuple[SourcePseudoChapter, ...]" in request_body
+
+
 def test_compile_amendment_metadata_reads_use_source_model() -> None:
     source = _source("src/lawvm/finland/compile_amendment.py")
 
