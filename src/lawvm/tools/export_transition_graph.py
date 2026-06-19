@@ -42,6 +42,7 @@ from lawvm.tools.transition_graph_interlinks import (
     RenderedTextSegment,
     enrich_lawvm_interlink_targets,
     place_lawvm_interlinks,
+    placement_summary,
     rendered_text_segments,
 )
 from lawvm.tools.transition_graph_overlays import (
@@ -1524,6 +1525,7 @@ def export_transition_graph(
             statute_id=canonical_id,
             segments_by_date=segments_by_date,
         )
+        interlink_placement_summary = placement_summary(interlink_rows)
 
         # --- lawvm_surface_overlays: the FULL Legal Surface Graph projection ---
         # The jurisdiction adapter projects whole-body overlay rows (defined
@@ -1732,6 +1734,9 @@ def export_transition_graph(
             "lang": export_profile.lang,
             "schema_version": SCHEMA_VERSION,
             "change_dates": bundle.change_dates,
+            # Placement-v0 regression signal: per-status counts over distinct
+            # source occurrences (range/coordination grouped to ONE occurrence).
+            "interlink_placement_summary": interlink_placement_summary,
             "generated_note": (
                 "Certified transition graph exported by LawVM "
                 "export_transition_graph (Design D). The Python replay engine is "
