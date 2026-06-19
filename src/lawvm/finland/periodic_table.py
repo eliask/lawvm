@@ -186,14 +186,6 @@ def finland_periodic_table_cells() -> tuple[PeriodicTableCell, ...]:
             notes="Four-bucket differential census engine (match/superset/miss/decline); grammar migration scoreboard.",
         ),
         PeriodicTableCell(
-            cell_id="scope_carrier_census",
-            axis="lexical",
-            status="filled",
-            module="lawvm.finland.legal_surface.scope_carrier_census",
-            symbol="run_scope_carrier_census",
-            notes="Scope-carrier plug-in; CLI: lawvm fi-scope-carrier-census [--json].",
-        ),
-        PeriodicTableCell(
             cell_id="clause_segment",
             axis="lexical",
             status="filled",
