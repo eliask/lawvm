@@ -472,6 +472,16 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _has_body_cache: bool | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _has_eid_free_body_sections_cache: bool | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     @classmethod
     def from_tree(
@@ -489,12 +499,18 @@ class AmendmentSourceModel:
 
     @property
     def has_body(self) -> bool:
-        return self.muutos_tree.find(".//{*}body") is not None
+        if self._has_body_cache is None:
+            self._has_body_cache = self.muutos_tree.find(".//{*}body") is not None
+        return self._has_body_cache
 
     def has_eid_free_body_sections(self) -> bool:
         """Return True when the source body has sections and none carry eIds."""
-        sections = self.muutos_tree.findall(".//{*}section")
-        return bool(sections) and not any(section.get("eId") for section in sections)
+        if self._has_eid_free_body_sections_cache is None:
+            sections = self.muutos_tree.findall(".//{*}section")
+            self._has_eid_free_body_sections_cache = bool(sections) and not any(
+                section.get("eId") for section in sections
+            )
+        return self._has_eid_free_body_sections_cache
 
     def observed_body_inventory(self) -> tuple[ObservedBodyUnit, ...]:
         """Return cached body-pairing inventory units."""
