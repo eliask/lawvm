@@ -10,7 +10,6 @@ _POST_GRAMMAR_MERGE_REPLAY_PIN_DRIFT_PREFIXES = (
     "tests/test_fi_materialization_invariants.py::TestNoDuplicatesInPIT::test_2017_320_part_2_chapter_1_keeps_section_5",
     "tests/test_fi_materialization_invariants.py::TestNoDuplicatesInPIT::test_2017_320_delayed_section_268_materializes_under_current_chapter_32",
     "tests/test_fi_materialization_invariants.py::TestFoldHcontainerOrphanSectionReconcile::test_1868_31_section_46_stays_under_hcontainer",
-    "tests/test_fi_materialization_invariants.py::test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items",
     "tests/test_fi_parser_facade.py::test_curated_shadow_gate_no_structural_delta",
     "tests/test_fi_provision_state.py::test_specimen_2009_273_section_10_drops_carried_old_subsection_text",
     "tests/test_fi_provision_state.py::test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text",

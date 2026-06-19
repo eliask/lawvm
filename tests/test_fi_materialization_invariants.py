@@ -248,9 +248,8 @@ def test_2017_277_2021_1163_flattened_first_moment_list_preserves_all_items() ->
         mode="legal_pit",
         quiet=True,
         stop_before="2025/1253",
-        build_full_products=False,
     )
-    section_node = replay.find_section("4", None, None)
+    section_node = replay.materialized_state.find_section("4", None, None)
     assert section_node is not None
     subsection = next(
         child
