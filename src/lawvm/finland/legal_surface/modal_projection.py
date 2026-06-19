@@ -60,12 +60,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from lawvm.core.legal_surface_lens import (
+    SourceSurfaceBundle,
+    SurfaceNodeSeed,
+)
+from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.modal_parse import (
     ModalCore,
     modal_key,
     parse_modal_sentence,
 )
-from lawvm.finland.legal_surface.source_syntax_graph import SourceSyntaxGraph
+from lawvm.finland.legal_surface.source_syntax_graph import (
+    SourceSyntaxGraph,
+    assemble_source_syntax_graph,
+)
 from lawvm.finland.references.actor_modal import ActorModalFrame
 
 #: The production actor_modal lane density gate the forest does NOT impose — the
@@ -224,6 +233,99 @@ def project_forest_modal(
         )
     out.sort(key=lambda p: (p.char_start, p.char_end))
     return tuple(out)
+
+
+def _forest_modal_owned_intervals(
+    forest: SourceSyntaxGraph,
+) -> tuple[tuple[int, int], ...]:
+    """The body-coordinate intervals the forest's modal family owns, span-sorted.
+
+    Every construction leaf carrying ``"modal"`` among its ``families`` — the SAME
+    family-membership SET GATE :func:`_modal_gated_leaf_ids` uses (it recovers
+    multi-family modal spans minted under another family's kind). A sentence whose
+    span overlaps any of these is a forest-gated modal sentence.
+    """
+    return tuple(
+        sorted(
+            (
+                (node.char_start, node.char_end)
+                for node in forest.syntax_nodes.values()
+                if MODAL_FAMILY_ID in node.families
+            )
+        )
+    )
+
+
+def _span_overlaps_any(
+    start: int, end: int, intervals: tuple[tuple[int, int], ...]
+) -> bool:
+    """True iff ``[start, end)`` overlaps any of the (sorted) ``intervals``."""
+    for s, e in intervals:
+        if s >= end:
+            break  # intervals sorted by start; no later one can overlap
+        if e > start:
+            return True
+    return False
+
+
+def project_forest_deontic_core_seeds(
+    bundle: SourceSurfaceBundle,
+) -> list[SurfaceNodeSeed]:
+    """Project the production ``deontic_core`` node seeds FROM the cached forest.
+
+    THE PRODUCTION STRANGLE-FLIP (doc-6): the modal/deontic ``deontic_core`` facts
+    the production :class:`DeonticCoreLens` emits now come FROM the cached
+    :class:`SourceSyntaxGraph` forest, not an independent body scan. For each unit
+    we assemble (or reuse) the cached forest, take its modal-family-owned spans as
+    the SET GATE, and for each clause-segmented SENTENCE whose span the forest
+    gated as modal we reconstruct the modal cores via the family's OWN construction
+    parse (:func:`parse_modal_sentence`) and mint each through the SAME node-minting
+    authority the lens uses (:func:`…lenses.deontic_core.mint_deontic_core_seed`).
+
+    0-DELTA BY CONSTRUCTION vs the independent scan
+    ===============================================
+    The forest's modal ownership is computed by running the SAME
+    :func:`parse_modal_sentence` over the SAME per-sentence segmentation
+    (:func:`build_clause_index`) the dense lens uses, via
+    :func:`…union_ownership_census.union_over_sentence` inside the forest
+    assembler. So a sentence carries forest modal ownership IFF its construction
+    parse yields a modal core — exactly the sentences the independent scan emits a
+    node for. Gate-then-reparse therefore reproduces the independent scan's node
+    set node-identically (same cue-span anchor, discriminator, payload), proven
+    0-delta corpus-wide by :mod:`tests.test_fi_modal_projection` /
+    ``.tmp/modal_flip_diff``. Surface-only; reads the forest + the body; authorises
+    no replay.
+    """
+    # Imported lazily-at-module-top would create a cycle (the lens imports this
+    # module); import here keeps the seed-minting authority shared without a cycle.
+    from lawvm.finland.legal_surface.lenses.deontic_core import (
+        mint_deontic_core_seed,
+    )
+
+    seeds: list[SurfaceNodeSeed] = []
+    for unit in bundle.units:
+        forest = assemble_source_syntax_graph(
+            subject=bundle.subject,
+            source_units=(),
+            statute_id=unit.source_unit_id,
+            body=unit.raw_text,
+        )
+        modal_intervals = _forest_modal_owned_intervals(forest)
+        tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
+        index = build_clause_index(
+            unit.source_unit_id, unit.raw_text, token_tape=tape
+        )
+        for sent in index.sentences:
+            if not _span_overlaps_any(
+                sent.char_start, sent.char_end, modal_intervals
+            ):
+                continue
+            base = sent.char_start
+            seg_text = unit.raw_text[sent.char_start : sent.char_end]
+            parse = parse_modal_sentence(seg_text)
+            for core in parse.cores:
+                seeds.append(mint_deontic_core_seed(unit, core, base))
+    return seeds
 
 
 def forest_modal_keys(

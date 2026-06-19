@@ -227,3 +227,68 @@ def test_projected_modal_anchors_to_enclosing_segment() -> None:
     assert p.segment_node_id in forest.syntax_nodes
     assert "voi" in body[p.char_start : p.char_end]
     assert p.cores
+
+
+# ── the PRODUCTION node-seed flip projection (doc-6 strangle-flip) ────────────
+
+
+def test_forest_deontic_core_seed_projection_matches_independent_scan() -> None:
+    """The forest deontic_core seed projection == the independent per-sentence scan.
+
+    The node-level flip gate: ``project_forest_deontic_core_seeds`` (production now
+    reads the forest) reproduces the golden-reference independent scan
+    (``deontic_core_seeds_for_unit``) node-identically over a multi-shape body
+    (permission / impersonal obligation / passive provision verb / prohibition).
+    """
+    from lawvm.finland.legal_surface.modal_projection import (
+        project_forest_deontic_core_seeds,
+    )
+
+    _AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+
+    def _xml(*paras: str) -> bytes:
+        body = "\n".join(f"      <p>{p}</p>" for p in paras)
+        return (
+            f'<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<akomaNtoso xmlns="{_AKN}"><act><body>\n'
+            f'  <section eId="sec_1"><num>1 §</num><content>\n{body}\n'
+            f"  </content></section>\n"
+            f"</body></act></akomaNtoso>\n"
+        ).encode("utf-8")
+
+    from lawvm.finland.legal_surface.bundle import build_surface_bundle
+    from lawvm.finland.legal_surface.lenses.deontic_core import (
+        deontic_core_seeds_for_unit,
+    )
+
+    bundle = build_surface_bundle(
+        _xml(
+            "Hakija voi pyytaa oikaisua.",
+            "Hakemus on toimitettava maaraajassa.",
+            "Asiasta saadetaan valtioneuvoston asetuksella.",
+            "Viranomainen ei saa luovuttaa tietoa.",
+        ),
+        "2026/700",
+    )
+    forest_seeds = project_forest_deontic_core_seeds(bundle)
+    golden = [s for u in bundle.units for s in deontic_core_seeds_for_unit(u)]
+    assert forest_seeds, "expected deontic cores from the forest projection"
+
+    def _fp(seed):
+        ref = seed.source_ref
+        payload = tuple(
+            sorted(
+                (k, tuple(v) if isinstance(v, list) else v)
+                for k, v in dict(seed.payload).items()
+            )
+        )
+        return (
+            seed.node_kind,
+            seed.local_discriminator,
+            seed.rule_id,
+            seed.status,
+            None if ref is None else (ref.char_start, ref.char_end, ref.text_hash),
+            payload,
+        )
+
+    assert {_fp(s) for s in forest_seeds} == {_fp(s) for s in golden}
