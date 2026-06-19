@@ -441,8 +441,10 @@ def snapshot_target_context(
     else:
         raw_path = master.find_section_path(target_norm, target_chapter, target_part)
 
-    node_path: Optional[Path] = _path_to_tuple(raw_path)
     live_node: Optional[IRNode] = _tops.resolve(ir, raw_path) if raw_path is not None else None
+    if raw_path is not None and live_node is None:
+        raw_path = None
+    node_path: Optional[Path] = _path_to_tuple(raw_path)
 
     # ------------------------------------------------------------------
     # Resolve parent
