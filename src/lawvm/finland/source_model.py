@@ -315,15 +315,22 @@ class AmendmentSourceModel:
             part=target_part,
         )
         if key not in self._payload_ir_cache:
-            from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
+            from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
 
-            self._payload_ir_cache[key] = _find_muutos_ir(
-                self.muutos_tree,
+            source_node = self.find_xml_node(
                 key.unit_kind,
                 key.label,
                 key.chapter,
                 key.part,
-                source_model=self,
+            )
+            self._payload_ir_cache[key] = (
+                _payload_ir_from_muutos_node(
+                    source_node,
+                    target_unit_kind=key.unit_kind,
+                    target_norm=key.label,
+                )
+                if source_node is not None
+                else (None, None)
             )
         return self._payload_ir_cache[key]
 

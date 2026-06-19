@@ -69,3 +69,10 @@ def test_compile_group_elaboration_constraint_filter_uses_source_model_not_xml_r
     assert "source_model.muutos_tree" not in source
     assert "muutos_tree=" not in source
     assert "source_model=source_model" in source
+
+
+def test_payload_lookup_does_not_query_source_model_xml_nodes() -> None:
+    source = _source("src/lawvm/finland/amendment_payload_lookup.py")
+
+    assert "source_model.find_xml_node" not in source
+    assert "source_model:" not in source
