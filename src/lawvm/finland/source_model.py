@@ -82,6 +82,7 @@ class SourcePayloadLookupResult:
     query: SourceBodyUnitQuery
     body_lookup_status: Literal["unique", "missing", "ambiguous"]
     body_candidates: tuple[ObservedBodyUnit, ...]
+    payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"]
     payload_ir: IRNode | None
     cross_heading_ir: IRNode | None
 
@@ -408,6 +409,7 @@ class AmendmentSourceModel:
                     query=body_lookup.query,
                     body_lookup_status=body_lookup.status,
                     body_candidates=body_lookup.candidates,
+                    payload_basis="none",
                     payload_ir=None,
                     cross_heading_ir=None,
                 )
@@ -430,13 +432,20 @@ class AmendmentSourceModel:
             )
             if payload_ir is not None:
                 status = "unique"
+                payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"] = (
+                    "body_inventory"
+                    if body_lookup.status == "unique"
+                    else "legacy_xml_fallback"
+                )
             else:
                 status = "missing"
+                payload_basis = "none"
             self._payload_ir_cache[key] = SourcePayloadLookupResult(
                 status=status,
                 query=body_lookup.query,
                 body_lookup_status=body_lookup.status,
                 body_candidates=body_lookup.candidates,
+                payload_basis=payload_basis,
                 payload_ir=payload_ir,
                 cross_heading_ir=cross_heading_ir,
             )

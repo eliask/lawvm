@@ -95,6 +95,7 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
     assert "def lookup_payload_ir(" in source
     assert "body_lookup_status:" in source
     assert "body_candidates:" in source
+    assert "payload_basis:" in source
 
 
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:

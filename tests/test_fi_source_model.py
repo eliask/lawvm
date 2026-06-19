@@ -508,6 +508,7 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
         "5",
     )
     payload_lookup = model.lookup_payload_ir("section", "5", "2", "5")
+    inventory_payload_lookup = model.lookup_payload_ir("section", "5", target_part="5")
 
     assert model.lookup_payload_ir("section", "5", "2", "5") is model.lookup_payload_ir(
         "section",
@@ -517,9 +518,14 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     )
     assert payload_lookup.status == "unique"
     assert payload_lookup.body_lookup_status == "missing"
+    assert payload_lookup.payload_basis == "legacy_xml_fallback"
     assert payload_lookup.payload_ir == direct_ir
     assert payload_lookup.cross_heading_ir == direct_cross_ir
     assert model.find_payload_ir("section", "5", "2", "5") == (direct_ir, direct_cross_ir)
+    assert inventory_payload_lookup.status == "unique"
+    assert inventory_payload_lookup.body_lookup_status == "unique"
+    assert inventory_payload_lookup.payload_basis == "body_inventory"
+    assert inventory_payload_lookup.payload_ir == direct_ir
 
 
 def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() -> None:
@@ -540,6 +546,7 @@ def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() ->
     ambiguous = model.lookup_payload_ir("section", "5")
     assert ambiguous.status == "ambiguous"
     assert ambiguous.body_lookup_status == "ambiguous"
+    assert ambiguous.payload_basis == "none"
     assert tuple(unit.chapter_label for unit in ambiguous.body_candidates) == ("1", "2")
     assert ambiguous.payload_ir is None
     assert ambiguous.cross_heading_ir is None
@@ -547,6 +554,7 @@ def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() ->
     missing = model.lookup_payload_ir("section", "6")
     assert missing.status == "missing"
     assert missing.body_lookup_status == "missing"
+    assert missing.payload_basis == "none"
     assert missing.payload_ir is None
     assert missing.cross_heading_ir is None
 
