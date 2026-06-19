@@ -14,7 +14,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SourceLaneAttempt:
     lane: str
     locator: str = ""
@@ -40,7 +40,7 @@ class SourceLaneAttempt:
         return row
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SourceLaneSelectionEvidence:
     rule_id: str
     phase: str
