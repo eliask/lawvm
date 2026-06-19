@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
         SourceChapter,
+        SourcePseudoChapter,
     )
     from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
     from lawvm.finland.ops import AmendmentOp, ResolvedOp
@@ -121,6 +122,11 @@ class AmendmentSourceModel:
         repr=False,
     )
     _source_chapters_cache: tuple["SourceChapter", ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _source_pseudo_chapters_cache: tuple["SourcePseudoChapter", ...] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -479,16 +485,16 @@ class AmendmentSourceModel:
         amendment_id: str,
     ) -> "PrecreatedChaptersResult | None":
         """Pre-create real source-body chapters through the source-model adapter."""
-        muutos_body = self.muutos_tree.find(".//{*}body")
-        if muutos_body is None:
+        source_chapters = self.source_chapters()
+        if not source_chapters:
             return None
 
-        from lawvm.finland.amendment_chapter_precreate import _pre_create_amendment_chapters
+        from lawvm.finland.amendment_chapter_precreate import _pre_create_source_chapters
 
-        return _pre_create_amendment_chapters(
+        return _pre_create_source_chapters(
             state,
-            muutos_body,
             amendment_id,
+            source_chapters,
         )
 
     def source_chapters(self) -> tuple["SourceChapter", ...]:
@@ -498,6 +504,14 @@ class AmendmentSourceModel:
 
             self._source_chapters_cache = source_chapters_from_tree(self.muutos_tree)
         return self._source_chapters_cache
+
+    def source_pseudo_chapters(self) -> tuple["SourcePseudoChapter", ...]:
+        """Return cached typed source-body pseudo-chapter marker declarations."""
+        if self._source_pseudo_chapters_cache is None:
+            from lawvm.finland.amendment_chapter_precreate import source_pseudo_chapters_from_tree
+
+            self._source_pseudo_chapters_cache = source_pseudo_chapters_from_tree(self.muutos_tree)
+        return self._source_pseudo_chapters_cache
 
     def precreate_apply_chapters(
         self,
@@ -518,11 +532,11 @@ class AmendmentSourceModel:
             PrecreateApplyChaptersRequest(
                 state=state,
                 resolved=resolved,
-                muutos_tree=self.muutos_tree,
                 amendment_id=amendment_id,
                 vts_ops_enrich_done=vts_ops_enrich_done,
                 johto=johto,
                 source_chapters=self.source_chapters(),
+                source_pseudo_chapters=self.source_pseudo_chapters(),
             )
         )
 

@@ -37,6 +37,11 @@ _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
     r"luvun\s+otsikko",
     re.IGNORECASE,
 )
+_SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
+    r"(?P<section>\d{1,4}(?:\s*[a-z])?)\s*§\s*,?\s*joka\s+(?:samalla\s+)?siirretään\s+"
+    r"(?P<chapter>\d{1,4}(?:\s*[a-z])?)\s+lukuun",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,11 +92,12 @@ class PrecreateApplyChaptersRequest:
 
     state: ReplayState
     resolved: list[ResolvedOp]
-    muutos_tree: etree._Element
     amendment_id: str
     vts_ops_enrich_done: bool
+    muutos_tree: etree._Element | None = None
     johto: str = ""
     source_chapters: tuple[SourceChapter, ...] = ()
+    source_pseudo_chapters: tuple[SourcePseudoChapter, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +115,15 @@ class SourceChapter:
     part_label: str
     chapter_label: str
     section_labels: tuple[str, ...]
+    num_text: str = ""
+    heading_text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePseudoChapter:
+    part_label: str
+    chapter_label: str
+    num_text: str
 
 
 def _tag(el: etree._Element) -> str:
@@ -153,6 +168,13 @@ def _source_chapters(muutos_body: etree._Element) -> tuple[SourceChapter, ...]:
                 part_label=_part_label_for_element(ch_el),
                 chapter_label=ch_label,
                 section_labels=tuple(section_labels),
+                num_text=ch_num.text.strip(),
+                heading_text=(
+                    ch_heading.text.strip()
+                    if (ch_heading := ch_el.find("{*}heading")) is not None
+                    and ch_heading.text
+                    else ""
+                ),
             )
         )
     return tuple(chapters)
@@ -160,10 +182,39 @@ def _source_chapters(muutos_body: etree._Element) -> tuple[SourceChapter, ...]:
 
 def source_chapters_from_tree(muutos_tree: etree._Element) -> tuple[SourceChapter, ...]:
     """Return typed real chapter declarations from an amendment source tree."""
-    muutos_body = muutos_tree.find(".//{*}body")
+    muutos_body = muutos_tree if _tag(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if muutos_body is None:
         return ()
     return _source_chapters(muutos_body)
+
+
+def source_pseudo_chapters_from_tree(muutos_tree: etree._Element) -> tuple[SourcePseudoChapter, ...]:
+    """Return typed pseudo-chapter marker declarations from an amendment source tree."""
+    muutos_body = muutos_tree if _tag(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
+    if muutos_body is None:
+        return ()
+    pseudo_chapters: list[SourcePseudoChapter] = []
+    for ch_el in muutos_body.findall(".//{*}chapter"):
+        for child in ch_el:
+            if _tag(child) != "section":
+                continue
+            num_el = child.find("{*}num")
+            if num_el is None or not num_el.text:
+                continue
+            raw_num = num_el.text.strip()
+            if not _norm_num_token(raw_num).endswith("luku"):
+                continue
+            pseudo_label = _norm_num_token(raw_num).removesuffix("luku")
+            if not pseudo_label:
+                continue
+            pseudo_chapters.append(
+                SourcePseudoChapter(
+                    part_label=_part_label_for_element(child),
+                    chapter_label=pseudo_label,
+                    num_text=raw_num,
+                )
+            )
+    return tuple(pseudo_chapters)
 
 
 def _chapter_heading_anchors(johto: str) -> dict[str, str]:
@@ -186,6 +237,19 @@ def _unnumbered_chapter_heading_anchor_labels(johto: str) -> frozenset[str]:
         for match in _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE.finditer(johto)
     }
     return frozenset(label for label in labels if label)
+
+
+def _singular_same_label_move_starts(johto: str) -> dict[str, str]:
+    """Return explicit ``section moved to chapter`` starts named in the source clause."""
+    if "siirret" not in johto or "lukuun" not in johto:
+        return {}
+    starts: dict[str, str] = {}
+    for match in _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE.finditer(johto):
+        section_label = _section_label_from_num_text(match.group("section"))
+        chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
+        if section_label and chapter_label:
+            starts[chapter_label] = section_label
+    return starts
 
 
 def _part_label_for_element(el: etree._Element) -> str:
@@ -273,8 +337,14 @@ def precreate_apply_chapters(
             pseudo_chapter_refs=(),
             membership_migrations=(),
         )
-    muutos_body = request.muutos_tree.find(".//{*}body")
-    if muutos_body is None:
+    source_chapters = request.source_chapters
+    source_pseudo_chapters = request.source_pseudo_chapters
+    if request.muutos_tree is not None:
+        if not source_chapters:
+            source_chapters = source_chapters_from_tree(request.muutos_tree)
+        if not source_pseudo_chapters:
+            source_pseudo_chapters = source_pseudo_chapters_from_tree(request.muutos_tree)
+    if not source_chapters and not source_pseudo_chapters:
         return PrecreateApplyChaptersResult(
             state=request.state,
             real_chapter_refs=(),
@@ -284,7 +354,7 @@ def precreate_apply_chapters(
 
     chapterization_labels = _chapterization_required_labels(
         request.state,
-        request.source_chapters or _source_chapters(muutos_body),
+        source_chapters,
         request.johto,
     )
     required_real_chapters = {
@@ -308,20 +378,20 @@ def precreate_apply_chapters(
         )
     }
     required_real_chapters.update(chapterization_labels)
-    real_chapters = _pre_create_amendment_chapters(
+    real_chapters = _pre_create_source_chapters(
         request.state,
-        muutos_body,
         request.amendment_id,
+        source_chapters,
         required_labels=required_real_chapters,
     )
-    pseudo_chapters = _pre_create_pseudo_marker_chapters(
+    pseudo_chapters = _pre_create_source_pseudo_marker_chapters(
         real_chapters.state,
-        muutos_body,
         request.amendment_id,
+        source_pseudo_chapters,
     )
     migrated_state, membership_migrations = _migrate_flat_sections_into_source_chapters(
         pseudo_chapters.state,
-        request.source_chapters or _source_chapters(muutos_body),
+        source_chapters,
         request.johto,
         created_refs=real_chapters.created_refs,
     )
@@ -363,14 +433,31 @@ def _chapter_start_labels(
     created_refs: tuple[ChapterRef, ...],
 ) -> tuple[tuple[str, str, str], ...]:
     created = {(ref.part_label, ref.chapter_label) for ref in created_refs}
-    if not created:
-        return ()
     anchors = _chapter_heading_anchors(johto)
     unnumbered_anchor_labels = _unnumbered_chapter_heading_anchor_labels(johto)
+    same_label_move_starts = _singular_same_label_move_starts(johto)
+    if not created and not same_label_move_starts:
+        return ()
     starts: list[tuple[str, str, str]] = []
     for chapter in source_chapters:
         chapter_ref = (chapter.part_label, chapter.chapter_label)
-        if chapter_ref not in created:
+        move_start = same_label_move_starts.get(chapter.chapter_label)
+        source_start = chapter.section_labels[0] if chapter.section_labels else ""
+        matching_move_ref_count = sum(
+            1
+            for candidate in source_chapters
+            if candidate.chapter_label == chapter.chapter_label
+            and candidate.section_labels
+            and candidate.section_labels[0] == move_start
+        )
+        explicit_existing_move = bool(
+            move_start
+            and source_start
+            and move_start == source_start
+            and matching_move_ref_count == 1
+            and chapter_ref not in created
+        )
+        if chapter_ref not in created and not explicit_existing_move:
             continue
         start_label = anchors.get(chapter.chapter_label)
         if (
@@ -379,6 +466,8 @@ def _chapter_start_labels(
             and chapter.section_labels[0] in unnumbered_anchor_labels
         ):
             start_label = chapter.section_labels[0]
+        if start_label is None and explicit_existing_move:
+            start_label = move_start
         if start_label is None and chapter.section_labels:
             start_label = chapter.section_labels[0]
         if start_label:
@@ -628,6 +717,43 @@ def _chapter_insert_parent(
     return ()
 
 
+def _pre_create_source_chapters(
+    state: ReplayState,
+    amendment_id: str,
+    source_chapters: tuple[SourceChapter, ...],
+    *,
+    required_labels: Optional[set[tuple[str, str]]] = None,
+) -> PrecreatedChaptersResult:
+    """Pre-create real chapter nodes from typed amendment source declarations."""
+    created_refs: List[ChapterRef] = []
+
+    for source_chapter in source_chapters:
+        ch_label = source_chapter.chapter_label
+        if not ch_label:
+            continue
+        part_label = source_chapter.part_label
+        chapter_ref = (part_label, ch_label)
+        if required_labels is not None and chapter_ref not in required_labels:
+            continue
+        if _find_existing_chapter_path(state, ch_label, part_label) is not None:
+            continue
+        num_text = source_chapter.num_text or f"{ch_label} luku"
+        ch_children: List[IRNode] = [IRNode(kind=IRNodeKind.NUM, text=num_text)]
+        if source_chapter.heading_text:
+            ch_children.append(IRNode(kind=IRNodeKind.HEADING, text=source_chapter.heading_text))
+        new_ch = IRNode(kind=IRNodeKind.CHAPTER, label=ch_label, children=tuple(ch_children))
+        state = state.with_ir(
+            _tops.insert_sorted(
+                state.ir,
+                _chapter_insert_parent(state, part_label=part_label, chapter_label=ch_label),
+                new_ch,
+            )
+        )
+        created_refs.append(ChapterRef(part_label=part_label, chapter_label=ch_label))
+        logger.debug("  [%s] uncovered chapter CREATE %s/%s", amendment_id, part_label or "-", ch_label)
+    return PrecreatedChaptersResult(state=state, created_refs=tuple(created_refs))
+
+
 def _pre_create_amendment_chapters(
     state: ReplayState,
     muutos_body: etree._Element,
@@ -669,6 +795,36 @@ def _pre_create_amendment_chapters(
         )
         created_refs.append(ChapterRef(part_label=part_label, chapter_label=ch_label))
         logger.debug("  [%s] uncovered chapter CREATE %s/%s", amendment_id, part_label or "-", ch_label)
+    return PrecreatedChaptersResult(state=state, created_refs=tuple(created_refs))
+
+
+def _pre_create_source_pseudo_marker_chapters(
+    state: ReplayState,
+    amendment_id: str,
+    source_pseudo_chapters: tuple[SourcePseudoChapter, ...],
+) -> PrecreatedChaptersResult:
+    """Pre-create pseudo-marker chapters from typed amendment source declarations."""
+    created_refs: List[ChapterRef] = []
+
+    for source_pseudo in source_pseudo_chapters:
+        pseudo_label = source_pseudo.chapter_label
+        if not pseudo_label:
+            continue
+        part_label = source_pseudo.part_label
+        if _find_existing_chapter_path(state, pseudo_label, part_label) is not None:
+            continue
+        raw_num = source_pseudo.num_text or f"{pseudo_label} luku"
+        ch_children: List[IRNode] = [IRNode(kind=IRNodeKind.NUM, text=raw_num)]
+        new_ch = IRNode(kind=IRNodeKind.CHAPTER, label=pseudo_label, children=tuple(ch_children))
+        state = state.with_ir(
+            _tops.insert_sorted(
+                state.ir,
+                _chapter_insert_parent(state, part_label=part_label, chapter_label=pseudo_label),
+                new_ch,
+            )
+        )
+        created_refs.append(ChapterRef(part_label=part_label, chapter_label=pseudo_label))
+        logger.debug("  [%s] pseudo-chapter CREATE %s/%s", amendment_id, part_label or "-", pseudo_label)
     return PrecreatedChaptersResult(state=state, created_refs=tuple(created_refs))
 
 

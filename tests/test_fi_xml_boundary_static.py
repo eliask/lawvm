@@ -148,13 +148,20 @@ def test_source_model_scope_retarget_adapters_use_inventory_not_xml_root() -> No
 def test_apply_executor_precreates_chapters_through_source_model() -> None:
     source = _source("src/lawvm/finland/apply_ops_executor.py")
     boundary_source = _source("src/lawvm/finland/apply_ops_boundary.py")
+    source_model = _source("src/lawvm/finland/source_model.py")
+    adapter_body = source_model.split("    def precreate_apply_chapters(", 1)[1].split(
+        "    def preamble_text(",
+        1,
+    )[0]
 
     assert "_PrecreateApplyChaptersRequest" not in source
     assert "precreate_apply_chapters as _precreate_apply_chapters" not in source
     assert "AmendmentSourceModel.from_tree" not in source
     assert "request.muutos_tree" not in source
     assert "source_model.precreate_apply_chapters(" in source
-    assert "source_chapters=self.source_chapters()" in _source("src/lawvm/finland/source_model.py")
+    assert "self.muutos_tree" not in adapter_body
+    assert "source_chapters=self.source_chapters()" in adapter_body
+    assert "source_pseudo_chapters=self.source_pseudo_chapters()" in adapter_body
     assert "import lxml.etree as etree" not in boundary_source
     assert "etree._Element" not in boundary_source
     assert "muutos_tree" not in boundary_source

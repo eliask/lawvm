@@ -1985,6 +1985,68 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     assert [migration.section_label for migration in result.membership_migrations] == ["68a", "68b"]
 
 
+def test_precreate_same_label_move_migrates_section_into_existing_chapter_from_typed_source() -> None:
+    """An explicit same-label move may start an already-live destination chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("5a", _sec("29d"), _sec("29e")),
+            _chapter("5b", _sec("29f"), _sec("29g")),
+        )
+    )
+    muutos_body = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>5 a luku</num>
+            <section><num>29 a §</num></section>
+            <section><num>29 b §</num></section>
+            <section><num>29 c §</num></section>
+            <section><num>29 d §</num></section>
+          </chapter>
+          <chapter>
+            <num>5 b luku</num>
+            <section><num>29 e §</num></section>
+            <section><num>29 g §</num></section>
+          </chapter>
+        </body>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2025/1382",
+            vts_ops_enrich_done=False,
+            johto="muutetaan 29 e §, joka samalla siirretään 5 b lukuun seuraavasti:",
+            source_chapters=source_chapters_from_tree(muutos_body),
+        )
+    )
+
+    chapter_5a = result.state.find_chapter("5a")
+    chapter_5b = result.state.find_chapter("5b")
+    assert chapter_5a is not None
+    assert chapter_5b is not None
+    assert [child.label for child in chapter_5a.children if child.kind is IRNodeKind.SECTION] == ["29d"]
+    assert [child.label for child in chapter_5b.children if child.kind is IRNodeKind.SECTION] == [
+        "29e",
+        "29f",
+        "29g",
+    ]
+    assert [migration.section_label for migration in result.membership_migrations] == ["29e"]
+    migration = result.membership_migrations[0]
+    assert migration.from_legal_path == (("chapter", "5a"), ("section", "29e"))
+    assert migration.to_legal_path == (("chapter", "5b"), ("section", "29e"))
+
+
 def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() -> None:
     """Real corpus anchor for chapter-heading starts around already-live sections."""
     replay = call_replay_xml(

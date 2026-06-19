@@ -614,6 +614,35 @@ def test_source_model_exposes_cached_source_chapter_declarations() -> None:
     assert chapters[0].section_labels == ("45", "46")
 
 
+def test_source_model_exposes_cached_source_pseudo_chapter_declarations() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter>
+                <num>7 luku</num>
+                <section>
+                  <num>7 a luku</num>
+                  <section><num>55 \xc2\xa7</num></section>
+                </section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/6")
+
+    pseudo_chapters = model.source_pseudo_chapters()
+
+    assert pseudo_chapters is model.source_pseudo_chapters()
+    assert len(pseudo_chapters) == 1
+    assert pseudo_chapters[0].part_label == ""
+    assert pseudo_chapters[0].chapter_label == "7a"
+    assert pseudo_chapters[0].num_text == "7 a luku"
+
+
 def test_source_model_precreate_chapters_returns_none_without_body() -> None:
     tree = etree.fromstring(b"<akomaNtoso><act/></akomaNtoso>")
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
