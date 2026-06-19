@@ -225,6 +225,42 @@ def head_plural_external_local_forms(lemmas: tuple[str, ...]) -> tuple[str, ...]
     return tuple(sorted(surfaces, key=lambda s: (-len(s), s)))
 
 
+# The exact ``(case, number)`` set the hand-written ``luku`` chapter-head tables
+# encoded (``luvun`` GEN, ``luvussa`` INE, ``luvusta`` ELA, ``lukuun`` ILL,
+# ``luvut`` PL-NOM, ``luvuissa`` PL-INE, ``luku`` NOM).  Curated rather than the
+# full paradigm so the M1-backed recognizer is a strict-equal superset of the old
+# table (no precision change): chapter references appear in precisely these cases
+# in body prose, and widening to the full paradigm (``luvulla`` adessive,
+# ``lukua`` partitive ...) would let a counting use (``3 lukua`` = "3 chapters")
+# trigger the chapter-reference recognizer.
+_CHAPTER_HEAD_CASE_NUMBERS: tuple[tuple[str, str], ...] = (
+    ("GEN", "SG"),
+    ("INE", "SG"),
+    ("ELA", "SG"),
+    ("ILL", "SG"),
+    ("NOM", "PL"),
+    ("INE", "PL"),
+    ("NOM", "SG"),
+)
+
+
+@lru_cache(maxsize=None)
+def chapter_head_alternation() -> str:
+    """Regex ALTERNATION body of the ``luku`` (chapter) head's inflected surfaces.
+
+    The SOUND replacement for the hand-written ``(?:luvun|luvussa|...|luku)``
+    chapter-head tables that were duplicated verbatim across the internal-ref and
+    body-tail lanes.  Built from M1's generated ``luku`` surfaces over the curated
+    chapter case set (:data:`_CHAPTER_HEAD_CASE_NUMBERS`) --- paradigm inversion,
+    not a suffix guess, so it kills the single-k gradation substring bug class
+    (``luku`` -> ``luvu-`` is generated, never inferred).  Returned as a regex
+    alternation body (``luvussa|luvusta|...|luku``, longest-first via
+    :func:`head_case_forms`) for embedding inside an ``(?:...)`` group; the caller
+    keeps its own anchoring (number run, word boundaries).
+    """
+    return "|".join(head_case_forms("luku", _CHAPTER_HEAD_CASE_NUMBERS))
+
+
 @lru_cache(maxsize=None)
 def head_case_forms(lemma: str, case_numbers: tuple[tuple[str, str], ...]) -> tuple[str, ...]:
     """The M1-generated surfaces of ``lemma`` for the given ``(case, number)`` set.
@@ -265,6 +301,7 @@ def head_case_forms(lemma: str, case_numbers: tuple[tuple[str, str], ...]) -> tu
 __all__ = [
     "Decision",
     "GateVerdict",
+    "chapter_head_alternation",
     "head_case_forms",
     "head_plural_external_local_forms",
     "head_surface_forms",

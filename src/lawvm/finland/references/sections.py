@@ -32,6 +32,7 @@ from lawvm.finland.johtolause.grammar.subref import (
     _reclassify_body_tokens,
 )
 from lawvm.finland.johtolause.lexer import tokenize
+from lawvm.finland.references.lemma_gate import chapter_head_alternation
 
 # Whitespace normalization applied by ``tokenize`` before it assigns char
 # offsets. ``parse_body_provision_tail_spanned`` re-applies it so the consumed
@@ -85,7 +86,12 @@ _TAI_NUMERIC_JOINER_RE = re.compile(
 # instead of dropping it. The chapter ``luku`` head carries any Finnish case
 # suffix (genitive ``luvun``, inessive ``luvussa``, nominative ``luku`` …),
 # matching the internal lane's ``_CHAPTER_HEAD``.
-_CHAPTER_TAIL_HEAD = r"(?:luvun|luvussa|luvusta|lukuun|luvut|luvuissa|luku)"
+#
+# The head surfaces are M1-GENERATED from the closed ``luku`` head (shared with
+# the internal-ref lane via ``lemma_gate.chapter_head_alternation``), not a
+# hand-typed paradigm table duplicated across lanes. Sound paradigm inversion,
+# strict-equal superset of the old table; see ``lemma_gate``.
+_CHAPTER_TAIL_HEAD = rf"(?:{chapter_head_alternation()})"
 # The chapter number run reuses a number-list shape (coordination + ranges),
 # kept local so this module needs no grammar import for the prefix scan. Bounded
 # quantifiers only (§1.11): a single suffix letter, joiners are bounded literals.

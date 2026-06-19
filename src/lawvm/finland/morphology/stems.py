@@ -177,6 +177,33 @@ def _e_contract(
     )
 
 
+def _i_to_e(
+    lemma: str,
+    *,
+    gradation: bool,
+    single_k: str | None,
+) -> Stems:
+    """``-i`` nouns with an ``-e-`` oblique stem (Kotus 26: kaari, pieni, tuli).
+
+    Nominative ``-i``; the inflected stem replaces the final ``-i`` with ``-e``
+    (``kaari`` -> ``kaare-``: ``kaaren``, ``kaaressa``, ``kaareen``).  Gradation
+    (when it occurs) is applied to the consonant cluster before that ``-e``.  The
+    singular partitive attaches ``-tA`` to the bare CONSONANT stem (``kaar`` ->
+    ``kaarta``), the type-26 ``-ta`` partitive --- modelled via the ``+ta``
+    sentinel so :func:`partitive_ending` does not pick the wrong quality from the
+    ``-e`` vowel stem.
+    """
+    consonant_part = lemma[:-1]  # drop the final -i -> "kaar"
+    weak = weaken_stem(consonant_part, gradation=gradation, single_k=single_k)
+    stem = weak + "e"  # kaare-
+    return Stems(
+        nominative=lemma,
+        vowel_stem=stem,
+        oblique_stem=stem,
+        partitive_stem=weak + "+ta",  # kaar + -ta -> kaarta (type-26 partitive)
+    )
+
+
 def _nen_se(
     lemma: str,
     *,
@@ -200,6 +227,7 @@ _CLASS_BUILDERS = {
     "-Os->-Okse-": _us_kse,
     "-Uus->-Ude-": _uus_ude,
     "e_contract": _e_contract,
+    "-i->-e-": _i_to_e,
     "-nen": _nen_se,
 }
 

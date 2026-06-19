@@ -18,6 +18,7 @@ from __future__ import annotations
 # Single-k realization: lemma -> "zero" | "v" | "j".
 SINGLE_K: dict[str, str] = {
     "laki": "zero",  # lain
+    "luku": "v",  # luvun (chapter head: single-k realizes as v)
     "Turku": "zero",  # Turun
     "Helsinki": "zero",  # Helsingin handled by nk->ng rule, not single-k
     # NOTE: Helsinki's k is part of the -nk- cluster -> assimilative rule, so it
