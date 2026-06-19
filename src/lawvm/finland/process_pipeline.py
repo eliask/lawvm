@@ -372,6 +372,7 @@ def process_muutoslaki_resolved(
                 extract_vts_repeals=extract_vts_repeals_fallback,
                 enrich_ops_from_amendment_tree=_enrich_ops_from_amendment_tree,
                 amendment_metadata=amendment_tree_metadata,
+                source_model=source_model,
             ).select(),
             process_findings=process_findings,
             parent_id=parent_id,

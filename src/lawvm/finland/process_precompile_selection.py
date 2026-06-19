@@ -13,6 +13,7 @@ from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree, _is_body_only_amendment_surface
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.process_findings import ProcessFindingRecorder
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.source_pathology import build_empty_operative_body_pathology
 from lawvm.finland.vts import VtsSkippedTarget, extract_vts_repeals_fallback
 
@@ -60,6 +61,7 @@ class ProcessPrecompileSelectionContext:
     finding_recorder: ProcessFindingRecorder
     replay_print: ReplayPrint
     amendment_metadata: object | None = None
+    source_model: AmendmentSourceModel | None = None
     extract_vts_repeals: VtsExtractor = extract_vts_repeals_fallback
     enrich_ops_from_amendment_tree: OpsEnricher = _enrich_ops_from_amendment_tree
 
@@ -136,11 +138,14 @@ class ProcessPrecompileSelectionContext:
         normalized_johto = " ".join(self.johto.split()).lower()
         is_enacting_formula = normalized_johto == "eduskunnan päätöksen mukaisesti"
         is_body_only_amendment = _is_body_only_amendment_surface(self.johto, self.source_title)
-        sections = self.muutos_tree.findall(".//{*}section[@eId]") or self.muutos_tree.findall(".//{*}section")
-        has_eid_free_body_sections = bool(sections) and not any(
-            section.get("eId") for section in self.muutos_tree.findall(".//{*}section")
+        source_model = self.source_model or AmendmentSourceModel.from_tree(
+            self.muutos_tree,
+            source_ref=self.amendment_id,
         )
-        return bool((is_enacting_formula or is_body_only_amendment) and has_eid_free_body_sections)
+        return bool(
+            (is_enacting_formula or is_body_only_amendment)
+            and source_model.has_eid_free_body_sections()
+        )
 
     def _record_empty_body_pathology_if_needed(self) -> None:
         if not self.lacks_operative_structure or self.acquisition.sec1_text.strip():

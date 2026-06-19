@@ -116,3 +116,10 @@ def test_temporal_authority_date_reads_use_source_model() -> None:
     assert "source_model.effective_date_with_step()" in source
     assert "source_model.expiry_date()" in source
     assert "source_model.issue_date()" in source
+
+
+def test_precompile_selection_eid_free_body_check_uses_source_model() -> None:
+    source = _source("src/lawvm/finland/process_precompile_selection.py")
+
+    assert 'findall(".//{*}section' not in source
+    assert "source_model.has_eid_free_body_sections()" in source

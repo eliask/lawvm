@@ -86,6 +86,26 @@ def test_source_model_caches_body_inventory_and_coverage() -> None:
     )
 
 
+def test_source_model_detects_eid_free_body_sections() -> None:
+    no_eid = AmendmentSourceModel.from_tree(
+        etree.fromstring(
+            b"<akomaNtoso><act><body><section><num>1 \xc2\xa7</num></section></body></act></akomaNtoso>"
+        )
+    )
+    with_eid = AmendmentSourceModel.from_tree(
+        etree.fromstring(
+            b'<akomaNtoso><act><body><section eId="sec_1"><num>1 \xc2\xa7</num></section></body></act></akomaNtoso>'
+        )
+    )
+    no_sections = AmendmentSourceModel.from_tree(
+        etree.fromstring(b"<akomaNtoso><act><body/></act></akomaNtoso>")
+    )
+
+    assert no_eid.has_eid_free_body_sections()
+    assert not with_eid.has_eid_free_body_sections()
+    assert not no_sections.has_eid_free_body_sections()
+
+
 def test_source_model_body_scope_queries_use_observed_inventory() -> None:
     tree = _tree()
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")

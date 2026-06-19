@@ -114,6 +114,11 @@ class AmendmentSourceModel:
     def has_body(self) -> bool:
         return self.muutos_tree.find(".//{*}body") is not None
 
+    def has_eid_free_body_sections(self) -> bool:
+        """Return True when the source body has sections and none carry eIds."""
+        sections = self.muutos_tree.findall(".//{*}section")
+        return bool(sections) and not any(section.get("eId") for section in sections)
+
     def observed_body_inventory(self) -> tuple[ObservedBodyUnit, ...]:
         """Return cached body-pairing inventory units."""
         if self._observed_body_inventory is None:
