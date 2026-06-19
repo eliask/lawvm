@@ -105,9 +105,11 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
 
     assert "class SourcePayloadLookupResult" in source
     assert "class SourcePayloadTextLookupResult" in source
+    assert "class SourceBodyInventoryIndex" in source
     assert "def lookup_payload_ir(" in source
     assert "def lookup_payload_ir_for_coverage_ref(" in source
     assert "def lookup_section_payload_text(" in source
+    assert "_body_inventory_index_cache" in source
     assert "body_lookup_status:" in source
     assert "body_candidates:" in source
     assert "payload_basis:" in source

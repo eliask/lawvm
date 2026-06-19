@@ -117,6 +117,20 @@ class SourcePayloadIrIndex:
     coverage_by_unit_id: dict[str, tuple[IRNode | None, IRNode | None]]
 
 
+@dataclass(frozen=True, slots=True)
+class SourceBodyInventoryIndex:
+    """Normalized indexes over observed source-body units."""
+
+    units_by_lookup_key: dict[
+        tuple[str, str, str | None, str | None],
+        tuple[ObservedBodyUnit, ...],
+    ]
+    section_scopes_by_label: dict[str, frozenset[tuple[str | None, str | None]]]
+    first_section_chapter_by_label: dict[str, str]
+    pseudo_chapter_labels: frozenset[str]
+    real_chapter_labels: frozenset[str]
+
+
 def _xml_localname(el: etree._Element) -> str:
     tag = el.tag
     if isinstance(tag, str):
@@ -131,6 +145,54 @@ def _xml_num_text(el: etree._Element) -> str | None:
     if num_el is None or not num_el.text:
         return None
     return num_el.text.strip()
+
+
+def _source_body_inventory_index(
+    inventory: tuple[ObservedBodyUnit, ...],
+) -> SourceBodyInventoryIndex:
+    """Build normalized lookup indexes without collapsing ambiguous units."""
+    by_key_lists: dict[
+        tuple[str, str, str | None, str | None],
+        list[ObservedBodyUnit],
+    ] = {}
+    scope_sets: dict[str, set[tuple[str | None, str | None]]] = {}
+    first_chapter: dict[str, str] = {}
+    pseudo_chapters: set[str] = set()
+    real_chapters: set[str] = set()
+
+    for unit in inventory:
+        kind = str(unit.kind or "")
+        label = _norm_num_token(unit.label)
+        chapter = _norm_num_token(unit.chapter_label) if unit.chapter_label else None
+        part = _norm_num_token(unit.part_label) if unit.part_label else None
+        keys = {
+            (kind, label, None, None),
+            (kind, label, chapter, None),
+            (kind, label, None, part),
+            (kind, label, chapter, part),
+        }
+        for key in keys:
+            by_key_lists.setdefault(key, []).append(unit)
+
+        if kind == "section":
+            scope_sets.setdefault(label, set()).add((part, chapter))
+            if chapter is not None and label not in first_chapter:
+                first_chapter[label] = unit.chapter_label
+        elif kind == "chapter":
+            if unit.source_tag == "section":
+                pseudo_chapters.add(label)
+            elif unit.source_tag == "chapter":
+                real_chapters.add(label)
+
+    return SourceBodyInventoryIndex(
+        units_by_lookup_key={key: tuple(units) for key, units in by_key_lists.items()},
+        section_scopes_by_label={
+            label: frozenset(scopes) for label, scopes in scope_sets.items()
+        },
+        first_section_chapter_by_label=first_chapter,
+        pseudo_chapter_labels=frozenset(pseudo_chapters),
+        real_chapter_labels=frozenset(real_chapters),
+    )
 
 
 def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
@@ -271,6 +333,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _body_inventory_index_cache: SourceBodyInventoryIndex | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _coverage_units: tuple[CoverageUnit, ...] | None = field(
         default=None,
         init=False,
@@ -343,6 +410,13 @@ class AmendmentSourceModel:
             )
         return self._observed_body_inventory
 
+    def _body_inventory_index(self) -> SourceBodyInventoryIndex:
+        if self._body_inventory_index_cache is None:
+            self._body_inventory_index_cache = _source_body_inventory_index(
+                self.observed_body_inventory()
+            )
+        return self._body_inventory_index_cache
+
     def body_coverage_units(
         self,
         *,
@@ -372,11 +446,10 @@ class AmendmentSourceModel:
     ) -> tuple[str | None, str | None] | None:
         """Return the unique observed body (part, chapter) scope for a section."""
         wanted = _norm_num_token(target_norm)
-        scopes = {
-            (unit.part_label or None, unit.chapter_label or None)
-            for unit in self.observed_body_inventory()
-            if unit.kind == "section" and _norm_num_token(unit.label) == wanted
-        }
+        scopes = self._body_inventory_index().section_scopes_by_label.get(
+            wanted,
+            frozenset(),
+        )
         if len(scopes) != 1:
             return None
         return next(iter(scopes))
@@ -392,36 +465,17 @@ class AmendmentSourceModel:
     def first_body_section_chapter(self, target_norm: str) -> str | None:
         """Return the first observed chapter containing a source body section."""
         wanted = _norm_num_token(target_norm)
-        return next(
-            (
-                unit.chapter_label
-                for unit in self.observed_body_inventory()
-                if unit.kind == "section"
-                and _norm_num_token(unit.label) == wanted
-                and unit.chapter_label
-            ),
-            None,
-        )
+        return self._body_inventory_index().first_section_chapter_by_label.get(wanted)
 
     def body_has_pseudo_chapter_marker(self, chapter_label: str) -> bool:
         """Return True if the observed body has a section-shaped chapter marker."""
         wanted = _norm_num_token(chapter_label)
-        return any(
-            unit.kind == "chapter"
-            and _norm_num_token(unit.label) == wanted
-            and unit.source_tag == "section"
-            for unit in self.observed_body_inventory()
-        )
+        return wanted in self._body_inventory_index().pseudo_chapter_labels
 
     def body_has_real_chapter_container(self, chapter_label: str) -> bool:
         """Return True if the observed body has a real chapter container."""
         wanted = _norm_num_token(chapter_label)
-        return any(
-            unit.kind == "chapter"
-            and _norm_num_token(unit.label) == wanted
-            and unit.source_tag == "chapter"
-            for unit in self.observed_body_inventory()
-        )
+        return wanted in self._body_inventory_index().real_chapter_labels
 
     def lookup_body_unit(
         self,
@@ -438,19 +492,9 @@ class AmendmentSourceModel:
             chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
             part=_norm_num_token(target_part or "") if target_part else None,
         )
-        candidates = tuple(
-            unit
-            for unit in self.observed_body_inventory()
-            if unit.kind == query.unit_kind
-            and _norm_num_token(unit.label) == query.label
-            and (
-                query.chapter is None
-                or _norm_num_token(unit.chapter_label) == query.chapter
-            )
-            and (
-                query.part is None
-                or _norm_num_token(unit.part_label) == query.part
-            )
+        candidates = self._body_inventory_index().units_by_lookup_key.get(
+            (query.unit_kind, query.label, query.chapter, query.part),
+            (),
         )
         if not candidates:
             status: Literal["unique", "missing", "ambiguous"] = "missing"
