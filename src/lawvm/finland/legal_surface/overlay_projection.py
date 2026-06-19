@@ -398,8 +398,7 @@ def graph_to_overlay_rows(
 
     One row per RENDERABLE surface node (kinds in :data:`OVERLAY_KINDS`). Entity
     handles, the ``reference_resolution`` (its outcome rides the reference row's
-    status + payload), ``surface_residual``, and ``procedure_frame`` (outside the
-    pinned vocab) produce no row.
+    status + payload), and ``surface_residual`` produce no row.
 
     The viewer places overlays via the SAME ``rendered_*`` / ``source_span_byte_*``
     columns interlinks use — built from the SAME :class:`RenderedTextSpan`
