@@ -51,6 +51,7 @@ char range exactly).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from lawvm.finland.references.defined_terms import (
@@ -58,10 +59,13 @@ from lawvm.finland.references.defined_terms import (
     _ENUM_ITEM,
     _SCOPE_CUE_UNITS,
     _TARKOITETAAN,
+    _PRONOUN_ADESSIVE_FORMS,
     _act_id_in_expansion,
     _adessive_phrase_from_run,
+    _is_clean_definiendum_phrase,
     _is_definitional_definiendum,
     _scope_cue_before,
+    _trim_to_definiendum_np,
 )
 
 # ---------------------------------------------------------------------------
@@ -275,17 +279,27 @@ def _parse_enumerated_block(text: str) -> DefinitionParse | None:
         owned.append((ie.definiens_start, ie.definiens_end))
 
     if not entries:
-        # header present but no entry parsed → decline (typed residue)
+        # A recognized ``Tässä <unit> tarkoitetaan:`` header with NO entries in
+        # THIS span is the canonical definitions-block OPENER whose enumerated
+        # items live in following segments (the SegmentationGraph splits the
+        # chapeau sentence from its items, so the L0 union census feeds the header
+        # alone). The header IS a genuine definition construction — own the CHAPEAU
+        # span (the M1-derived ``Tässä <unit> tarkoitetaan:`` match), surfacing the
+        # rest as explicit residue, rather than declining the whole span and
+        # leaving the ``tarkoitetaan`` cue silent-unowned. The projection emits ZERO
+        # entry keys (no definiendum was in scope), so the family census is
+        # unchanged (empty projection vs empty span-local oracle = match).
+        residuals = _fill_residuals(len(text), [chapeau_span], "benign_uninterpreted_prose")
         return DefinitionParse(
             seg_start=0,
             seg_end=len(text),
             text=text,
-            kind="declined",
+            kind="definition_header",
             chapeau_cue="tarkoitetaan",
             chapeau_span=chapeau_span,
             entries=(),
-            residuals=(Residual(0, len(text), "definition_block_no_entries"),),
-            parser_lane=DEFINITION_LANE_DECLINED,
+            residuals=tuple(residuals),
+            parser_lane=DEFINITION_LANE_CONSTRUCTION_OWNED,
         )
 
     residuals = _fill_residuals(len(text), owned, "benign_uninterpreted_prose")
@@ -357,22 +371,148 @@ def _inline_entries(text: str) -> list[DefinitionEntry]:
     return entries
 
 
+#: ``tarkoitetaan`` followed by a POST-VERB run of word-tokens (the candidate
+#: definiendum phrase + the start of the definiens). Mirrors the enumerated-block
+#: header idiom WITHOUT the colon: ``Tässä <unit> tarkoitetaan <X-adessive> Y``.
+#: The leading run is handed to ``_adessive_phrase_from_run`` (the SAME production
+#: helper the enumerated arm uses), so a post-verb definiens-first shape (a
+#: partitive object, ``muuta kuin …``, a cross-reference) yields no adessive head
+#: and is correctly declined — no fabrication.
+# The definiens run stops at a sentence ``.`` or item ``;`` boundary; ``:`` is
+# ADMITTED inside it (an EU act cite ``N:o 1069/2009`` carries a colon). An
+# enumerated header's own ``tarkoitetaan:`` never reaches this arm — the
+# ``_parse_enumerated_block`` dispatch consumes it first.
+_POSTVERB_TARKOITETAAN = re.compile(
+    r"tarkoitetaan\b\s+(?P<rest>[^.;]{0,400})",
+    re.IGNORECASE,
+)
+
+#: Relative / interrogative pronoun surfaces (nominative / oblique) that, anywhere
+#: in the pre-verb clause, mark a REFERENTIAL ``…, jo-/mi- … tarkoitetaan …`` ("which
+#: is referred to …") — never a post-verb DEFINITION. A post-verb arm only fires
+#: when the pre-verb clause carries NO such pronoun (the relative pronoun is the
+#: subject of the referential reading, so the post-verb material is the referent
+#: list, not a definiendum). Closed set, exact lowercase equality.
+_POSTVERB_REFERENTIAL_PRONOUNS: frozenset[str] = frozenset(
+    {
+        "joka", "jota", "jonka", "jossa", "joita", "joiden", "jotka",
+        "joilla", "joille", "joilta", "joina", "joiksi", "joissa", "joista",
+        "mikä", "mitä", "minkä", "millä", "miksi",
+    }
+)
+
+
+def _postverb_entries(text: str) -> list[DefinitionEntry]:
+    """Recognize POST-VERB inline definitions ``tarkoitetaan <X-adessive> Y``.
+
+    The definiendum FOLLOWS ``tarkoitetaan`` here (the enumerated-block idiom
+    without the list colon): ``Tässä laissa tarkoitetaan kemikaalilla Y``,
+    ``Tässä laissa tarkoitetaan terveydelle vaarallisella kemikaalilla Y``. The
+    production binder does NOT cover this (its inline arm requires a PRE-verb
+    definiendum and its enumerated arm requires ``tarkoitetaan:``), so owning it is
+    a recall gain (a census SUPERSET, never a miss).
+
+    The candidate post-verb run is split into a leading definiendum phrase + the
+    definiens by the SAME ``_adessive_phrase_from_run`` head detector the
+    enumerated arm uses; the FULL production discipline then applies — the leading
+    edge is trimmed (``_trim_to_definiendum_np``) and the phrase is validated as a
+    clean definiendum NP (``_is_clean_definiendum_phrase``). A ``None`` head, a
+    referential pre-verb pronoun (``joilla … tarkoitetaan``), or a swept clause
+    fragment (``… jotka kulkevat omalla``) → NO entry (fail-loud, no guessed
+    binding). Scope inherits from the nearest preceding definitions-header cue.
+    """
+    entries: list[DefinitionEntry] = []
+    for m in _POSTVERB_TARKOITETAAN.finditer(text):
+        # REFERENTIAL guard: any relative/interrogative pronoun ANYWHERE in the
+        # pre-verb clause (back to the last sentence boundary) marks the
+        # cross-reference idiom ``…, jo-/mi- … tarkoitetaan …`` ("which is referred
+        # to …") — the pronoun is the subject and the post-verb material is the
+        # referent, NOT a definiendum. Decline (no guessed binding). The window is
+        # the clause preceding the verb (after the last ``.``/``;``/``:``).
+        clause_start = max(
+            text.rfind(".", 0, m.start()),
+            text.rfind(";", 0, m.start()),
+            text.rfind(":", 0, m.start()),
+        )
+        pre = text[clause_start + 1 : m.start()].split()
+        if any(w.lower().strip(",") in _POSTVERB_REFERENTIAL_PRONOUNS for w in pre):
+            continue
+        if pre and pre[-1].lower() in _PRONOUN_ADESSIVE_FORMS:
+            continue
+        rest = m.group("rest")
+        rest_words = rest.split()
+        head_phrase = _adessive_phrase_from_run(rest_words)
+        if head_phrase is None:
+            continue  # definiens-first / cross-reference → not a post-verb definiendum
+        # The definiens boundary is fixed by the head index BEFORE any left-trim
+        # (so trimming the leading edge never moves the expansion boundary).
+        head_len = len(head_phrase)
+        phrase_words = _trim_to_definiendum_np(head_phrase)
+        if phrase_words is None:
+            continue
+        # DECLINE a swept clause fragment / cross-reference idiom (a run that began
+        # with a bare case-suffix fragment or spans a clause boundary): mint no
+        # garbled term (tag-don't-guess, mirroring the enumerated arm).
+        if not _is_clean_definiendum_phrase(phrase_words):
+            continue
+        term_surface = " ".join(phrase_words)
+        rest_start = m.start("rest")
+        # Span of the definiendum phrase: from the first trimmed word to the last
+        # head word, located precisely against the raw text (whitespace runs).
+        head_chars = len(rest) - len(rest.lstrip())
+        cursor = rest_start + head_chars
+        term_start = cursor
+        located_first = False
+        for w in rest_words[:head_len]:
+            idx = text.index(w, cursor)
+            if w == phrase_words[0] and not located_first:
+                term_start = idx
+                located_first = True
+            cursor = idx + len(w)
+        term_end = cursor
+        definiens_text = " ".join(rest_words[head_len:]).strip()
+        definiens_start = term_end
+        definiens_end = m.end("rest")
+        target_ref = _act_id_in_expansion(definiens_text)
+        scope = _scope_cue_before(text, m.start())
+        entries.append(
+            DefinitionEntry(
+                term=term_surface,
+                term_start=term_start,
+                term_end=term_end,
+                definiens=definiens_text,
+                definiens_start=definiens_start,
+                definiens_end=definiens_end,
+                binding_cue="tarkoitetaan",
+                entry_marker_role="",
+                scope=scope,
+                target_ref=target_ref,
+            )
+        )
+    return entries
+
+
 def _parse_single_sentence(text: str) -> DefinitionParse:
     """Parse a single-sentence inline definition (``X:llä tarkoitetaan Y``).
 
-    Declines (no entry, typed residue) when the cue is present but no definitional
-    definiendum precedes it.
+    Two inline shapes: the canonical PRE-verb definiendum (``X:llä tarkoitetaan
+    Y``) and the POST-verb definiendum (``tarkoitetaan <X-adessive> Y``, the
+    colon-less header idiom). Declines (no entry, typed residue) when the cue is
+    present but neither shape yields a definitional definiendum.
     """
     n = len(text)
     entries = _inline_entries(text)
+    if not entries:
+        # No PRE-verb definiendum — try the POST-verb shape before declining.
+        entries = _postverb_entries(text)
     owned: list[tuple[int, int]] = []
     chapeau_span: tuple[int, int] | None = None
     for e in entries:
         owned.append((e.term_start, e.term_end))
         owned.append((e.definiens_start, e.definiens_end))
         if chapeau_span is None:
-            # the binding cue verb between the term and the definiens
-            verb_idx = text.casefold().find("tarkoitetaan", e.term_end - 1)
+            # the binding cue verb (between or before the term, depending on shape)
+            verb_idx = text.casefold().find("tarkoitetaan")
             if verb_idx >= 0:
                 chapeau_span = (verb_idx, verb_idx + len("tarkoitetaan"))
 
