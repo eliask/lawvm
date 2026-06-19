@@ -31,7 +31,6 @@ from lawvm.finland.kumotaan_replay import (
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
     _rewrite_kumotaan_snapshot_replaces_to_repeal,
 )
-from lawvm.finland.metadata import get_operative_body_repeal_candidate
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import (
     _rewrite_compiled_op_activation_rule_effective,
@@ -380,7 +379,11 @@ class ProcessTemporalPostprocessContext:
 
         johto_for_subsection = self.johto
         if not _extract_kumotaan_subsection_refs(self.johto):
-            body_repeal = get_operative_body_repeal_candidate(self.xml_bytes)
+            source_model = self.source_model or AmendmentSourceModel.from_tree(
+                self.muutos_tree,
+                source_ref=self.amendment_id,
+            )
+            body_repeal = source_model.operative_body_repeal_candidate()
             if body_repeal:
                 johto_for_subsection = self.johto + " " + body_repeal
         subsection_map = _extract_kumotaan_subsection_refs(johto_for_subsection)

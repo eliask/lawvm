@@ -474,6 +474,13 @@ class AmendmentSourceModel:
             source_statute_id,
         )
 
+    def operative_body_repeal_candidate(self) -> str:
+        """Return body-prose repeal text when no structured operative body exists."""
+        from lawvm.finland.metadata import get_operative_body_repeal_candidate
+
+        xml_bytes = etree.tostring(self.muutos_tree, encoding="utf-8")
+        return get_operative_body_repeal_candidate(xml_bytes)
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(

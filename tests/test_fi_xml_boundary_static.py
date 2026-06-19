@@ -148,3 +148,10 @@ def test_temporal_postprocessing_commencement_overrides_use_source_model() -> No
     assert "_section_subsection_commencement_effective_override" not in source
     assert "source_model.section_commencement_effective_override(" in source
     assert "source_model.section_subsection_commencement_effective_override(" in source
+
+
+def test_temporal_postprocessing_body_repeal_candidate_uses_source_model() -> None:
+    source = _source("src/lawvm/finland/process_temporal_postprocessing.py")
+
+    assert "get_operative_body_repeal_candidate" not in source
+    assert "source_model.operative_body_repeal_candidate()" in source

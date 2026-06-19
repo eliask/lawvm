@@ -321,6 +321,27 @@ def test_source_model_exposes_subsection_commencement_overrides() -> None:
     assert effective == dt.date(2028, 1, 1)
 
 
+def test_source_model_exposes_operative_body_repeal_candidate() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <preamble><formula name="enactingClause"><p>saadetaar:</p></formula></preamble>
+            <body>
+              <hcontainer name="statuteTextWrapper">
+                <content><p>Taten kumotaan asetuksen 9 \xc2\xa7.</p></content>
+              </hcontainer>
+              <hcontainer name="conclusions"><content><p>allekirjoitukset</p></content></hcontainer>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert model.operative_body_repeal_candidate() == "Taten kumotaan asetuksen 9 §."
+
+
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     tree = _tree()
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/3")
