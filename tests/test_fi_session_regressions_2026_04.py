@@ -40,6 +40,8 @@ from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 import datetime as dt
 from typing import List, Literal, Optional, Set, Tuple
 
+import pytest
+
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
@@ -1556,6 +1558,7 @@ class TestPartLevelInsertionViaSeka:
         )
 
 
+@pytest.mark.slow
 def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_path() -> None:
     """The live 2019/371 renumber family must bind typed intent.
 

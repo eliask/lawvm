@@ -565,6 +565,7 @@ def test_diagnose_treats_bench_comparable_temporary_residue_stub_as_editorial() 
     assert "temporary-law editorial residue" in explanation
 
 
+@pytest.mark.slow
 def test_explain_sync_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
     _explain_sync(
         "1978/38",
@@ -581,6 +582,7 @@ def test_explain_sync_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -
     assert "INSERT 10 luku 16 § 2 mom → FAILED (master §16 not found)" not in out
 
 
+@pytest.mark.slow
 def test_explain_sync_classifies_future_effective_missing_section_as_oracle_stale_for_2019_213(
     capsys,
 ) -> None:
@@ -687,6 +689,7 @@ def test_explain_sync_classifies_repeal_banner_missing_section_as_oracle_stale_f
     assert "MISSING from replay" not in out
 
 
+@pytest.mark.slow
 def test_explain_sync_demotes_2012_916_section_1_unknown_to_source_pathology(
     capsys,
 ) -> None:

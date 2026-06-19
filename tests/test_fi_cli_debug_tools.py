@@ -112,6 +112,7 @@ def test_ops_formats_flat_finland_compiled_targets() -> None:
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus archive not available")
+@pytest.mark.slow
 def test_snapshot_debug_2017_320_2019_371_keeps_restructure_plan_truth() -> None:
     bundle = build_snapshot_debug_bundle(
         statute_id="2017/320",
@@ -1907,6 +1908,7 @@ def test_bisect_section_main_prints_first_bad_and_worst_drops(capsys, monkeypatc
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
+@pytest.mark.slow
 def test_classify_1987_1250_reports_item_target_structure_absent_pathologies() -> None:
     compiled_ops: list[LegalOperation] = []
     replay = pinned_replay(
@@ -1939,6 +1941,7 @@ def test_classify_1987_1250_reports_item_target_structure_absent_pathologies() -
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
+@pytest.mark.slow
 def test_replay_xml_1987_1250_resolves_1999_81_johd_without_failed_op() -> None:
     failed = []
 

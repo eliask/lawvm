@@ -5292,6 +5292,7 @@ def test_replay_xml_2004_301_section_142_item_three_has_no_duplicate_kohta_marke
     assert item3.text.startswith("kolmannen maan kansalaisen")
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_section_78_moment_three_nests_abc_under_item_four() -> None:
     """2018/121 §78 3 mom must keep a–c under 4) jos:, not flat siblings before 1–7."""
     replay = replay_xml_for_test("2004/301", quiet=True, stop_before="2018/720")
