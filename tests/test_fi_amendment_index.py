@@ -284,6 +284,29 @@ def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -
     assert header == "amendment_id,parent_id,edge_kind"
 
 
+def test_default_amendment_index_cache_uses_canonical_data_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LAWVM_FINLAND_AMENDMENT_INDEX_CACHE", raising=False)
+    monkeypatch.setenv("LAWVM_CANONICAL_DATA_ROOT", str(tmp_path))
+
+    assert amendment_index._default_cache_csv() == (
+        tmp_path / ".cache" / "finland" / "amendment_parents.csv"
+    )
+
+
+def test_default_amendment_index_cache_env_override_wins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override = tmp_path / "custom" / "parents.csv"
+    monkeypatch.setenv("LAWVM_CANONICAL_DATA_ROOT", str(tmp_path / "canonical"))
+    monkeypatch.setenv("LAWVM_FINLAND_AMENDMENT_INDEX_CACHE", str(override))
+
+    assert amendment_index._default_cache_csv() == override
+
+
 def test_amendment_index_cache_writes_use_per_writer_temp_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -18,6 +18,7 @@ import os
 import re
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Set, cast
 
@@ -36,10 +37,29 @@ from lawvm.finland.vts import extract_voimaantulo_repeals
 # or /akn/fi/act/statute/YEAR/NUMBER...
 REF_PATTERN = re.compile(r'/akn/fi/act/statute(?:-consolidated)?/(\d{4})/(\d+(?:-\d+)?)')
 
-# Canonical cache path — stored in .cache (gitignored)
+# Fallback cache path when no canonical data checkout is configured.
 _DEFAULT_CACHE_CSV = Path(".cache/finland/amendment_parents.csv")
 _DEFAULT_CACHE_META = _DEFAULT_CACHE_CSV.with_suffix(".meta.json")
 _CSV_HEADER = ["amendment_id", "parent_id", "edge_kind"]
+_DEFAULT_CACHE_ENV = "LAWVM_FINLAND_AMENDMENT_INDEX_CACHE"
+
+
+@dataclass(frozen=True, slots=True)
+class _AmendmentIndexSourceKey:
+    corpus_path: str
+    corpus_size: int
+    corpus_mtime_ns: int
+    cache_csv_path: str
+
+
+def _default_cache_csv() -> Path:
+    override = os.environ.get(_DEFAULT_CACHE_ENV)
+    if override:
+        return Path(override)
+    canonical_root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT")
+    if canonical_root:
+        return Path(canonical_root) / ".cache" / "finland" / "amendment_parents.csv"
+    return _DEFAULT_CACHE_CSV
 
 
 def _append_amendment_index_diagnostic(
@@ -634,7 +654,7 @@ def _amendment_index_rebuild_reason(
 
 def ensure_amendment_index(
     cs: CorpusStore | None = None,
-    csv_path: Path = _DEFAULT_CACHE_CSV,
+    csv_path: Path | None = None,
 ) -> None:
     """Ensure amendment_parents.csv exists and is fresh for the source farchive.
 
@@ -646,6 +666,9 @@ def ensure_amendment_index(
     get_corpus_store()).  For unknown backends the source staleness check is
     skipped and the CSV is used as long as it exists with the current schema.
     """
+    if csv_path is None:
+        csv_path = _default_cache_csv()
+
     should_close_cs = False
     if cs is None:
         cs = get_corpus_store()
@@ -669,31 +692,41 @@ def ensure_amendment_index(
             cs.close()
 
 
-def _default_source_cache_key() -> tuple[()] | tuple[str, int, int]:
+def _default_source_cache_key() -> _AmendmentIndexSourceKey | None:
     """Return an lru_cache key for the default corpus store source file."""
     try:
         cs = get_corpus_store()
     except (OSError, RuntimeError):
-        return ()
+        return None
     try:
         fingerprint = _corpus_source_fingerprint(cs)
         if fingerprint is None:
-            return ()
-        return (
-            str(fingerprint["path"]),
-            _fingerprint_int(fingerprint["size"]),
-            _fingerprint_int(fingerprint["mtime_ns"]),
+            return None
+        return _AmendmentIndexSourceKey(
+            corpus_path=str(fingerprint["path"]),
+            corpus_size=_fingerprint_int(fingerprint["size"]),
+            corpus_mtime_ns=_fingerprint_int(fingerprint["mtime_ns"]),
+            cache_csv_path=str(_default_cache_csv()),
         )
     finally:
         cs.close()
 
 
+def _cache_csv_for_source_key(source_key: _AmendmentIndexSourceKey | None) -> Path:
+    if source_key is not None:
+        return Path(source_key.cache_csv_path)
+    return _default_cache_csv()
+
+
 @lru_cache(maxsize=256)
-def _get_amendment_children_for_source_key(source_key: tuple[()] | tuple[str, int, int]) -> Dict[str, List[str]]:
+def _get_amendment_children_for_source_key(
+    source_key: _AmendmentIndexSourceKey | None,
+) -> Dict[str, List[str]]:
     """Inner impl keyed on farchive fingerprint so DB changes invalidate in-process."""
-    ensure_amendment_index(cs=None, csv_path=_DEFAULT_CACHE_CSV)
+    csv_path = _cache_csv_for_source_key(source_key)
+    ensure_amendment_index(cs=None, csv_path=csv_path)
     mapping: Dict[str, List[str]] = {}
-    with open(_DEFAULT_CACHE_CSV, "r", encoding="utf-8") as f:
+    with open(csv_path, "r", encoding="utf-8") as f:
         for row in csv.reader(f):
             if len(row) < 2 or row[0] == "amendment_id":
                 continue
@@ -703,12 +736,13 @@ def _get_amendment_children_for_source_key(source_key: tuple[()] | tuple[str, in
 
 @lru_cache(maxsize=256)
 def _get_amendment_child_edges_for_source_key(
-    source_key: tuple[()] | tuple[str, int, int],
+    source_key: _AmendmentIndexSourceKey | None,
 ) -> Dict[str, List[Tuple[str, str]]]:
     """Return cached {parent_statute_id: [(amendment_id, edge_kind), ...]} mapping."""
-    ensure_amendment_index(cs=None, csv_path=_DEFAULT_CACHE_CSV)
+    csv_path = _cache_csv_for_source_key(source_key)
+    ensure_amendment_index(cs=None, csv_path=csv_path)
     mapping: Dict[str, List[Tuple[str, str]]] = {}
-    with open(_DEFAULT_CACHE_CSV, "r", encoding="utf-8") as f:
+    with open(csv_path, "r", encoding="utf-8") as f:
         for row in csv.reader(f):
             if len(row) < 2 or row[0] == "amendment_id":
                 continue
