@@ -257,6 +257,17 @@ def _filtered_active_for_base_child(
     return filtered_active, filtered_prefixes
 
 
+def _build_active_child_overrides(
+    active: dict[LegalAddress, Optional[IRNode]],
+) -> dict[TreePath, dict[tuple[str, str], Optional[IRNode]]]:
+    by_parent: dict[TreePath, dict[tuple[str, str], Optional[IRNode]]] = {}
+    for address, content in active.items():
+        if not address.path:
+            continue
+        by_parent.setdefault(address.path[:-1], {})[address.path[-1]] = content
+    return by_parent
+
+
 def apply_overlays(
     content: IRNode,
     parent_address: LegalAddress,
@@ -267,6 +278,7 @@ def apply_overlays(
     emit_warnings: bool = True,
     *,
     record_issue: Callable[..., None],
+    active_child_overrides: dict[TreePath, dict[tuple[str, str], Optional[IRNode]]] | None = None,
 ) -> IRNode:
     """Apply child-level active version overrides to content (overlay semantics)."""
     parent_len = len(parent_address.path)
@@ -276,10 +288,13 @@ def apply_overlays(
         # not be rehydrated under the repealed parent during PIT projection.
         return content
 
-    child_overrides: dict[tuple[str, str], Optional[IRNode]] = {}
-    for addr, child_content in active.items():
-        if len(addr.path) == parent_len + 1 and addr.path[:parent_len] == parent_address.path:
-            child_overrides[addr.path[-1]] = child_content
+    if active_child_overrides is None:
+        child_overrides: dict[tuple[str, str], Optional[IRNode]] = {}
+        for addr, child_content in active.items():
+            if len(addr.path) == parent_len + 1 and addr.path[:parent_len] == parent_address.path:
+                child_overrides[addr.path[-1]] = child_content
+    else:
+        child_overrides = active_child_overrides.get(parent_address.path, {})
 
     if not child_overrides and active_prefixes is None:
         return content
@@ -351,6 +366,7 @@ def apply_overlays(
                         issue_sink=issue_sink,
                         emit_warnings=emit_warnings,
                         record_issue=record_issue,
+                        active_child_overrides=active_child_overrides,
                     )
                 )
                 continue
@@ -411,6 +427,7 @@ def apply_overlays(
                         issue_sink=issue_sink,
                         emit_warnings=emit_warnings,
                         record_issue=record_issue,
+                        active_child_overrides=active_child_overrides,
                     )
                 )
         elif active_prefixes is not None and child_addr.path in active_prefixes:
@@ -425,6 +442,7 @@ def apply_overlays(
                     issue_sink=issue_sink,
                     emit_warnings=emit_warnings,
                     record_issue=record_issue,
+                    active_child_overrides=active_child_overrides,
                 )
             )
         else:
@@ -455,6 +473,7 @@ def apply_overlays(
                 issue_sink=issue_sink,
                 emit_warnings=emit_warnings,
                 record_issue=record_issue,
+                active_child_overrides=active_child_overrides,
             )
             insert_key = _sort_label_key(key[1])
             insert_idx = len(new_children)
@@ -486,6 +505,7 @@ def overlay_on_container(
     emit_warnings: bool = True,
     *,
     record_issue: Callable[..., None],
+    active_child_overrides: dict[TreePath, dict[tuple[str, str], Optional[IRNode]]] | None = None,
 ) -> tuple[IRNode, ...]:
     """Walk base container children, replacing labeled nodes with timeline versions."""
     seen: set[TreePath] = seen_keys if seen_keys is not None else set()
@@ -591,6 +611,7 @@ def overlay_on_container(
                         issue_sink=issue_sink,
                         emit_warnings=emit_warnings,
                         record_issue=record_issue,
+                        active_child_overrides=active_child_overrides,
                     )
                 )
             elif active_prefixes is not None and addr.path in active_prefixes:
@@ -611,6 +632,7 @@ def overlay_on_container(
                             issue_sink=issue_sink,
                             emit_warnings=emit_warnings,
                             record_issue=record_issue,
+                            active_child_overrides=active_child_overrides,
                         ),
                     )
                 )
@@ -630,6 +652,7 @@ def overlay_on_container(
                     issue_sink=issue_sink,
                     emit_warnings=emit_warnings,
                     record_issue=record_issue,
+                    active_child_overrides=active_child_overrides,
                 )
                 children.extend(inner)
             else:
@@ -637,11 +660,22 @@ def overlay_on_container(
         else:
             children.append(normalize_base_node(c))
 
-    for addr in sorted(active.keys(), key=lambda a: _sort_label_key(a.path[-1][1])):
-        if len(addr.path) != len(parent_path) + 1:
-            continue
-        if not addr.has_path_prefix(parent_path):
-            continue
+    if active_child_overrides is None:
+        direct_child_items = [
+            (addr.path[-1], addr)
+            for addr in active
+            if len(addr.path) == len(parent_path) + 1
+            and addr.has_path_prefix(parent_path)
+        ]
+    else:
+        direct_child_items = [
+            (key, LegalAddress(path=parent_path + (key,)))
+            for key in active_child_overrides.get(parent_path, {})
+        ]
+    for _key, addr in sorted(
+        direct_child_items,
+        key=lambda item: _sort_label_key(item[0][1]),
+    ):
         if addr.path in seen:
             continue
         content = active.get(addr)
@@ -657,6 +691,7 @@ def overlay_on_container(
             issue_sink=issue_sink,
             emit_warnings=emit_warnings,
             record_issue=record_issue,
+            active_child_overrides=active_child_overrides,
         )
         insert_key = _sort_label_key(addr.path[-1][1])
         insert_idx = len(children)
@@ -723,6 +758,8 @@ def materialize_body(
             if depth == 1:
                 top_keys.add(parent)
 
+    active_child_overrides = _build_active_child_overrides(active)
+
     if base is None:
         top_level = sorted(top_keys, key=lambda a: _sort_label_key(a.path[0][1]))
         children: list[IRNode] = []
@@ -740,6 +777,7 @@ def materialize_body(
                     issue_sink=issue_sink,
                     emit_warnings=emit_warnings,
                     record_issue=record_issue,
+                    active_child_overrides=active_child_overrides,
                 )
             )
         return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(children))
@@ -759,6 +797,7 @@ def materialize_body(
         issue_sink=issue_sink,
         emit_warnings=emit_warnings,
         record_issue=record_issue,
+        active_child_overrides=active_child_overrides,
     )
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(children))
 
@@ -774,6 +813,7 @@ def materialize_root_nodes(
 ) -> tuple[IRNode, ...]:
     """Materialize a top-level IRNode list with timeline overlays applied."""
     top_keys: set[LegalAddress] = {addr for addr in active if len(addr.path) == 1}
+    active_child_overrides = _build_active_child_overrides(active)
     if not base_nodes:
         materialized: list[IRNode] = []
         for addr in sorted(top_keys, key=lambda a: _sort_label_key(a.path[0][1])):
@@ -790,6 +830,7 @@ def materialize_root_nodes(
                     issue_sink=issue_sink,
                     emit_warnings=emit_warnings,
                     record_issue=record_issue,
+                    active_child_overrides=active_child_overrides,
                 )
             )
         return tuple(materialized)
@@ -809,6 +850,7 @@ def materialize_root_nodes(
         issue_sink=issue_sink,
         emit_warnings=emit_warnings,
         record_issue=record_issue,
+        active_child_overrides=active_child_overrides,
     )
 
 
