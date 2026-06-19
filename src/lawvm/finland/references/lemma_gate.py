@@ -261,6 +261,82 @@ def chapter_head_alternation() -> str:
     return "|".join(head_case_forms("luku", _CHAPTER_HEAD_CASE_NUMBERS))
 
 
+#: The closed inessive-singular scope-unit set of a Finnish definitions-block
+#: header (``Tässä <unit> tarkoitetaan``): the head whose INE-SG surface opens the
+#: block (``laissa`` / ``luvussa`` / ``pykälässä`` / ``momentissa`` /
+#: ``asetuksessa`` / ``päätöksessä``) mapped to the reach the block declares.  This
+#: maps the HEAD LEMMA (not the surface) to a caller-defined scope token; the
+#: surfaces are derived from M1 below (paradigm inversion, never hand-typed), so a
+#: gradated unit (``päätös`` -> ``päätökse-``) can never be missed by a substring
+#: table.  ``laki``/``asetus``/``päätös`` all reach the WHOLE instrument, hence the
+#: same scope token; ``luku``/``pykälä``/``momentti`` are the narrower structural
+#: units.  Scope tokens are the caller's closed vocabulary (the recognizer maps
+#: them onto its own ``SCOPE_VALUES``).
+_DEFINITIONS_HEADER_UNIT_SCOPE: dict[str, str] = {
+    "laki": "statute",
+    "asetus": "statute",
+    "päätös": "statute",
+    "luku": "chapter",
+    "pykälä": "section",
+    "momentti": "subsection",
+}
+
+#: The ``(case, number)`` an enumerated definitions header inflects its scope unit
+#: to: the INE-SG (``Tässä laissa`` / ``Tässä luvussa`` …).  A single form per head.
+_DEFINITIONS_HEADER_CASE_NUMBERS: tuple[tuple[str, str], ...] = (("INE", "SG"),)
+
+
+@lru_cache(maxsize=None)
+def definitions_header_unit_scopes() -> tuple[tuple[str, str], ...]:
+    """M1-derived ``(surface, scope)`` pairs for a definitions-block header unit.
+
+    The SOUND replacement for the hand-written
+    ``laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä`` unit alternation
+    that was duplicated verbatim across this lane's enumerated-block header
+    (``_ENUM_HEADER``) and inline scope-cue (``_SCOPE_CUE_TASSA``).  Each scope
+    unit's surface is M1's generated INE-SG form of the head lemma
+    (:data:`_DEFINITIONS_HEADER_UNIT_SCOPE`) --- paradigm inversion (``päätös`` ->
+    ``päätökse-`` -> ``päätöksessä`` is GENERATED, never inferred from a ``päätös``
+    substring), so the gradation/``-Os->-Okse-`` bug class cannot drop a unit.  Each
+    head yields exactly one INE-SG surface; pairs are returned LONGEST-FIRST so a
+    caller's regex alternation prefers the most-specific surface.
+    """
+    pairs: list[tuple[str, str]] = []
+    for lemma, scope in _DEFINITIONS_HEADER_UNIT_SCOPE.items():
+        forms = head_case_forms(lemma, _DEFINITIONS_HEADER_CASE_NUMBERS)
+        if not forms:  # pragma: no cover - reference_v1 always emits INE-SG
+            raise AssertionError(
+                f"M1 did not generate an INE-SG surface for definitions-header "
+                f"unit lemma {lemma!r}"
+            )
+        for surface in forms:
+            pairs.append((surface, scope))
+    return tuple(sorted(pairs, key=lambda p: (-len(p[0]), p[0])))
+
+
+@lru_cache(maxsize=None)
+def definitions_header_unit_alternation() -> str:
+    """Regex ALTERNATION body of the definitions-block header scope units.
+
+    The M1-derived ``laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä``
+    body (longest-first), for embedding inside an ``(?:...)`` capture group; the
+    caller keeps its own anchoring (``Tässä`` … ``tarkoitetaan``).  Pairs with
+    :func:`definitions_header_unit_scope_map` for the surface -> scope lookup.
+    """
+    return "|".join(surface for surface, _scope in definitions_header_unit_scopes())
+
+
+@lru_cache(maxsize=None)
+def definitions_header_unit_scope_map() -> dict[str, str]:
+    """``surface -> scope`` map for a matched definitions-block header unit.
+
+    Keyed by the M1-generated INE-SG surface (lowercased) so a recognizer that
+    captured the unit surface from :func:`definitions_header_unit_alternation` can
+    resolve its scope without a hand-typed table.
+    """
+    return {surface.lower(): scope for surface, scope in definitions_header_unit_scopes()}
+
+
 @lru_cache(maxsize=None)
 def head_case_forms(lemma: str, case_numbers: tuple[tuple[str, str], ...]) -> tuple[str, ...]:
     """The M1-generated surfaces of ``lemma`` for the given ``(case, number)`` set.
@@ -302,6 +378,9 @@ __all__ = [
     "Decision",
     "GateVerdict",
     "chapter_head_alternation",
+    "definitions_header_unit_alternation",
+    "definitions_header_unit_scope_map",
+    "definitions_header_unit_scopes",
     "head_case_forms",
     "head_plural_external_local_forms",
     "head_surface_forms",

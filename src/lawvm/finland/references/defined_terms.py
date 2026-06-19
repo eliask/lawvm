@@ -76,6 +76,10 @@ from lawvm.finland.references.eu_reference import (
     DIALECT_DEFINED_TERMS,
     recognize_eu_act_ids,
 )
+from lawvm.finland.references.lemma_gate import (
+    definitions_header_unit_alternation,
+    definitions_header_unit_scope_map,
+)
 
 # ---------------------------------------------------------------------------
 # Typed output
@@ -318,19 +322,25 @@ _SCOPE_LEADERS: frozenset[str] = frozenset(
 _SCOPE_CUE_WINDOW = 400
 
 # Closed unit vocabulary mapped to the closed scope vocabulary.
-_SCOPE_CUE_UNITS: dict[str, str] = {
-    "laissa": _SCOPE_STATUTE,
-    "luvussa": _SCOPE_CHAPTER,
-    "pykälässä": _SCOPE_SECTION,
-    "momentissa": _SCOPE_SUBSECTION,
-    # A decree ("asetus") / government decision ("päätös") declares its
-    # definitions block exactly as a law does — "Tässä asetuksessa/päätöksessä
-    # tarkoitetaan …" — with the same instrument-wide reach. Both map to the
-    # statute-wide scope (the closed vocabulary has no decree/decision-specific
-    # bucket; the reach is identical: the whole instrument).
-    "asetuksessa": _SCOPE_STATUTE,
-    "päätöksessä": _SCOPE_STATUTE,
-}
+#
+# M1-DERIVED (paradigm inversion, not a hand-typed surface table): the
+# inessive-singular header units (``laissa`` / ``luvussa`` / ``pykälässä`` /
+# ``momentissa`` / ``asetuksessa`` / ``päätöksessä``) and their scope mapping are
+# generated from the closed head set + scope assignment in
+# ``lemma_gate.definitions_header_unit_scope_map`` — the same M1 template as
+# ``chapter_head_alternation``.  This kills the consonant-gradation substring bug
+# class (``päätös`` -> ``päätökse-`` is GENERATED, never inferred from a ``päätös``
+# substring) and removes the unit table duplicated across ``_SCOPE_CUE_TASSA`` and
+# ``_ENUM_HEADER``.  The scope tokens M1 returns are the very ``_SCOPE_*`` strings.
+# (A law / decree / government decision all reach the WHOLE instrument, hence the
+# same statute scope; chapter/section/subsection are the narrower structural
+# units.)
+_SCOPE_CUE_UNITS: dict[str, str] = dict(definitions_header_unit_scope_map())
+assert set(_SCOPE_CUE_UNITS.values()) <= SCOPE_VALUES, (
+    "definitions-header unit scopes escape the closed SCOPE_VALUES vocabulary"
+)
+# The M1-derived alternation body (longest-first) shared by both header regexes.
+_SCOPE_UNIT_ALTERNATION = definitions_header_unit_alternation()
 
 # "Tässä <unit> [up to a short definiendum run] tarkoitetaan" — the cue must lead
 # directly into the definition verb, with only a bounded run of
@@ -349,7 +359,7 @@ _SCOPE_CUE_UNITS: dict[str, str] = {
 # ("provided for / prescribed in this decree") can never fire (``säädetään`` /
 # ``määrätään`` is not ``tarkoitetaan`` and breaks the contiguity).
 _SCOPE_CUE_TASSA = re.compile(
-    r"\bTässä\s{1,3}(laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\b"
+    rf"\bTässä\s{{1,3}}(?P<unit>{_SCOPE_UNIT_ALTERNATION})\b"
     r"(?:[A-Za-zäöåÄÖÅ0-9:)\s,–-]{0,40})?"
     r"tarkoitetaan\b",
     re.IGNORECASE,
@@ -392,7 +402,7 @@ _GUARD_SOVELLETTAESSA = "sovellettaessa"
 # ``tarkoitetaan\s{0,3}:`` tail is the ambiguity guard — a referential
 # "Tässä asetuksessa säädetään …" lacks it and never opens a block.
 _ENUM_HEADER = re.compile(
-    r"\bTässä\s{1,3}(?P<unit>laissa|luvussa|pykälässä|momentissa|asetuksessa|päätöksessä)\s{1,3}"
+    rf"\bTässä\s{{1,3}}(?P<unit>{_SCOPE_UNIT_ALTERNATION})\s{{1,3}}"
     r"tarkoitetaan\s{0,3}:",
     re.IGNORECASE,
 )
@@ -467,7 +477,7 @@ def _scope_cue_before(text: str, pos: int) -> str:
             # Rank by where the cue's verb ENDS (closest-governing wins).
             if m.end() > best_offset:
                 best_offset = m.end()
-                best_scope = _SCOPE_CUE_UNITS[m.group(1).lower()]
+                best_scope = _SCOPE_CUE_UNITS[m.group("unit").lower()]
     if _GUARD_SOVELLETTAESSA in low:
         for m in _SCOPE_CUE_SOVELLETTAESSA.finditer(chunk):
             if m.end() > best_offset:
