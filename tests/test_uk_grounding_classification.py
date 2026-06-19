@@ -237,6 +237,7 @@ def test_report_transparent_wrapper_non_commensurable_subsection_unresolved() ->
     not _DB_PATH.exists(),
     reason="uk_legislation.farchive not present — skipping live pipeline test",
 )
+@pytest.mark.slow
 def test_grounding_totality_over_real_statute() -> None:
     """Every suppression event over a real statute is classified; no node is
     left unclassified and none is optimistically called source-faithful."""

@@ -1576,8 +1576,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: min(16, cpu_count); UK/EE use "
-            "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
+            "parallel workers (FI default: min(16, cpu_count); UK/EE default: "
+            "min(cpu_count, 8)); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),
     )
