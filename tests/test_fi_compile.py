@@ -2634,6 +2634,20 @@ def test_replay_xml_2004_485_applies_2025_314_item_intro_and_subparagraph_payloa
     assert "7 g §:ssä tarkoitetuille henkilöille" in irnode_to_text(subparagraph_a)
 
 
+def test_replay_xml_2012_999_prunes_stale_item_tail_when_2018_207_supplies_new_tail() -> None:
+    replay = replay_xml("2012/999", mode="official_consolidation", quiet=True, build_full_products=False)
+    section = replay.materialized_state.find_section("87", "12")
+    assert section is not None
+
+    section_text = irnode_to_text(section)
+    assert "jollei teosta muualla laissa säädetä ankarampaa rangaistusta" not in section_text
+    assert section_text.count("jollei siitä muualla laissa säädetä ankarampaa rangaistusta") == 1
+
+    subsection = next(c for c in section.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
+    item_4 = next(c for c in subsection.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "4")
+    assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in item_4.children)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()
