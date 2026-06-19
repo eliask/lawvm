@@ -94,7 +94,7 @@ def prepare_uncovered_body_recovery(
     amendment_id = request.amendment_id
     findings_out = request.findings_out
 
-    covered_labels = _build_peg_covered_sets(ops, request.failed_ops_out)
+    covered_labels = _build_peg_covered_sets(ops, request.failed_ops_out, source_model)
 
     ignored_units: list[CoverageIgnoredUnit] = []
     rejected_claims: list[CoverageRejectedClaim] = []
@@ -173,6 +173,7 @@ def prepare_uncovered_body_recovery(
 def _build_peg_covered_sets(
     ops: List[AmendmentOp],
     failed_ops_out: Optional[List[FailedOp]],
+    source_model: AmendmentSourceModel,
 ) -> set[UncoveredSectionKey]:
     """Section labels already covered by PEG ops."""
     failed_sections: set[str] = set()
@@ -192,6 +193,16 @@ def _build_peg_covered_sets(
                         section=label,
                     )
                 )
+                source_body_scope = source_model.source_body_scope_for_section_target(label)
+                if source_body_scope is not None:
+                    source_part, source_chapter = source_body_scope
+                    covered_labels.add(
+                        uncovered_section_key(
+                            part=source_part,
+                            chapter=source_chapter,
+                            section=label,
+                        )
+                    )
     return covered_labels
 
 

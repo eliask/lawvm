@@ -541,6 +541,8 @@ def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() ->
     assert ambiguous.status == "ambiguous"
     assert ambiguous.body_lookup_status == "ambiguous"
     assert tuple(unit.chapter_label for unit in ambiguous.body_candidates) == ("1", "2")
+    assert ambiguous.payload_ir is None
+    assert ambiguous.cross_heading_ir is None
 
     missing = model.lookup_payload_ir("section", "6")
     assert missing.status == "missing"

@@ -298,6 +298,7 @@ def _maybe_apply_body_chapter_insert_correction(
             not request.target_chapter
             or body_chapter_is_subchapter
             or (not explicit_chapter_scoped and body_chapter == request.target_chapter)
+            or body_chapter == request.target_chapter
         )
     ):
         sibling_consensus_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(

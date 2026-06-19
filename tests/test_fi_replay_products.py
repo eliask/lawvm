@@ -1565,7 +1565,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
     assert any(
         finding.kind == "ELAB.REJECTED_OPERATION"
         and finding.detail.get("reason_code") == "ELAB.FALLBACK_INSERT_SINGLE_PAYLOAD_ALREADY_OWNED"
-        and finding.detail.get("description") == "INSERT 4 § 6 mom"
+        and finding.detail.get("description") == "INSERT 2 luku 4 § 6 mom"
         for finding in phase2.finding_ledger
     )
 

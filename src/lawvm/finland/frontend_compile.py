@@ -1675,19 +1675,19 @@ def _infer_unique_live_section_chapter_scope(
         or bool(op.target_item)
         or bool(op.target_special)
     )
+    section_label = _norm_num_token(op.target_section)
     if op.op_type in {"REPLACE", "REPEAL"}:
         if op.target_chapter is not None or has_child_target:
             return None
     elif op.op_type == "INSERT" and has_child_target:
         if op.target_chapter is not None and master.find_section_path(
-            _norm_num_token(op.target_section),
+            section_label,
             op.target_chapter,
             op.target_part,
         ) is not None:
             return None
     else:
         return None
-    section_label = _norm_num_token(op.target_section)
     unique_chapter = _unique_section_chapter(
         master,
         section_label,
@@ -1699,6 +1699,8 @@ def _infer_unique_live_section_chapter_scope(
         op.target_part,
     ) is not None:
         return unique_chapter
+    if op.op_type == "INSERT" and has_child_target:
+        return None
     return infer_letter_suffix_section_chapter_from_stem_host(
         master,
         section_label,

@@ -396,6 +396,23 @@ class AmendmentSourceModel:
         if key not in self._payload_ir_cache:
             from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
 
+            body_lookup = self.lookup_body_unit(
+                key.unit_kind,
+                key.label,
+                target_chapter=key.chapter,
+                target_part=key.part,
+            )
+            if body_lookup.status == "ambiguous":
+                self._payload_ir_cache[key] = SourcePayloadLookupResult(
+                    status="ambiguous",
+                    query=body_lookup.query,
+                    body_lookup_status=body_lookup.status,
+                    body_candidates=body_lookup.candidates,
+                    payload_ir=None,
+                    cross_heading_ir=None,
+                )
+                return self._payload_ir_cache[key]
+
             source_node = self.find_xml_node(
                 key.unit_kind,
                 key.label,
@@ -411,15 +428,7 @@ class AmendmentSourceModel:
                 if source_node is not None
                 else (None, None)
             )
-            body_lookup = self.lookup_body_unit(
-                key.unit_kind,
-                key.label,
-                target_chapter=key.chapter,
-                target_part=key.part,
-            )
-            if body_lookup.status == "ambiguous":
-                status: Literal["unique", "missing", "ambiguous"] = "ambiguous"
-            elif payload_ir is not None:
+            if payload_ir is not None:
                 status = "unique"
             else:
                 status = "missing"
