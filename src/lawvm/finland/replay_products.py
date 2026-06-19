@@ -4,8 +4,10 @@ from __future__ import annotations
 from collections import Counter
 import re
 from dataclasses import dataclass, replace as dc_replace
+from functools import lru_cache
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
@@ -939,10 +941,45 @@ _FI_CITED_VERSION_ID_RE = re.compile(
     r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
     flags=re.I | re.S,
 )
-_FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE = (
-    r"(?<!\d){label}\s*§\s*:\s*n\s+[^,;]{{0,120}}\bkoht[a-zäöå]*\b"
-    r"\s*,\s*sellais[ei][a-zäöå]*\s+kuin\b"
+_FI_LOCAL_ITEM_TARGET_RE_TEMPLATE = r"(?<!\d){label}\s*§\s*:\s*n"
+_FI_LOCAL_ITEM_WORD_RE = compile_classifier_regex(
+    r"\bkoht[a-zäöå]*\b",
+    flags=re.I | re.S,
+    classifier_id="fi.local_item_cited_version.item_word",
 )
+_FI_CITED_VERSION_SELLAISENA_RE = compile_classifier_regex(
+    r"\bsellais[ei][a-zäöå]*\s+kuin\b",
+    flags=re.I | re.S,
+    classifier_id="fi.local_item_cited_version.cited_version_cue",
+)
+
+
+@lru_cache(maxsize=512)
+def _local_item_target_re(target_label: str):
+    return compile_classifier_regex(
+        _FI_LOCAL_ITEM_TARGET_RE_TEMPLATE.format(label=re.escape(target_label)),
+        flags=re.I | re.S,
+        classifier_id="fi.local_item_cited_version.target",
+    )
+
+
+def _raw_text_has_local_item_cited_version(raw_text: str, target_label: str) -> bool:
+    for match in _local_item_target_re(target_label).finditer(raw_text):
+        tail = raw_text[match.end() : match.end() + 220]
+        comma_index = tail.find(",")
+        semicolon_index = tail.find(";")
+        if comma_index < 0:
+            continue
+        if 0 <= semicolon_index < comma_index:
+            continue
+        item_window = tail[:comma_index]
+        if len(item_window) > 160:
+            continue
+        if _FI_LOCAL_ITEM_WORD_RE.search(item_window) is None:
+            continue
+        if _FI_CITED_VERSION_SELLAISENA_RE.search(tail[comma_index : comma_index + 100]) is not None:
+            return True
+    return False
 
 
 def _payload_shape_counts(payload: IRNode) -> Counter[tuple[IRNodeKind, str]]:
@@ -1011,11 +1048,7 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
         target_label = op.target.path[-1][1]
         if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
             target_label = op.target.path[-2][1]
-        local_item_cited_version_re = re.compile(
-            _FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE.format(label=re.escape(target_label)),
-            flags=re.I | re.S,
-        )
-        if local_item_cited_version_re.search(raw_text) is None:
+        if not _raw_text_has_local_item_cited_version(raw_text, target_label):
             filtered.append(op)
             continue
         cited_ids = {

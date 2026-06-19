@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from lxml import etree
 from types import SimpleNamespace
 import warnings
@@ -48,6 +48,16 @@ from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
 from tests.corpus_pin_helpers import pinned_replay
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplayCompileInputs:
+    parent_id: str
+    replay_result: ReplayResult
+    compiled_ops: tuple[dict[str, object], ...]
+    replay_meta: dict[str, object]
+    canonical_ops: tuple[LegalOperation, ...]
+    failed_ops: tuple[Any, ...]
 
 
 def compile_fi_facade(*args: Any, **kwargs: Any) -> Any:
@@ -231,6 +241,51 @@ def _compile_facade_with_replay(
         failed_ops=failed_ops,
     )
     return replay_result, facade
+
+
+@pytest.fixture(scope="module")
+def replay_compile_inputs_2002_1090_legal_pit() -> _ReplayCompileInputs:
+    compiled_ops: list[dict[str, object]] = []
+    replay_meta: dict[str, object] = {}
+    canonical_ops: list[LegalOperation] = []
+    failed_ops: list[Any] = []
+    replay_result = replay_xml(
+        "2002/1090",
+        mode="legal_pit",
+        compiled_ops_out=compiled_ops,
+        replay_meta_out=replay_meta,
+        lo_ops_out=canonical_ops,
+        failed_ops_out=failed_ops,
+        strict_profile=None,
+        build_full_products=False,
+    )
+    return _ReplayCompileInputs(
+        parent_id="2002/1090",
+        replay_result=replay_result,
+        compiled_ops=tuple(compiled_ops),
+        replay_meta=dict(replay_meta),
+        canonical_ops=tuple(canonical_ops),
+        failed_ops=tuple(failed_ops),
+    )
+
+
+def _compile_facade_from_inputs(
+    inputs: _ReplayCompileInputs,
+    *,
+    compile_mode: Literal["strict", "quirks"] = "strict",
+    strict_profile: StrictProfile | None = None,
+) -> Any:
+    return compile_fi_facade_from_replay(
+        parent_id=inputs.parent_id,
+        replay_result=inputs.replay_result,
+        replay_mode="legal_pit",
+        compile_mode=compile_mode,
+        strict_profile=strict_profile,
+        compiled_ops=list(inputs.compiled_ops),
+        replay_meta=dict(inputs.replay_meta),
+        canonical_ops=list(inputs.canonical_ops),
+        failed_ops=list(inputs.failed_ops),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -1531,8 +1586,13 @@ def test_compile_fi_facade_keeps_temporal_bundle_empty_when_replay_events_absent
     assert facade.bundle.temporal_events == ()
 
 
-def test_compile_fi_surfaces_known_recovery_paths_and_source_flags() -> None:
-    facade = compile_fi_facade("2002/1090", replay_mode="legal_pit", compile_mode="quirks")
+def test_compile_fi_surfaces_known_recovery_paths_and_source_flags(
+    replay_compile_inputs_2002_1090_legal_pit: _ReplayCompileInputs,
+) -> None:
+    facade = _compile_facade_from_inputs(
+        replay_compile_inputs_2002_1090_legal_pit,
+        compile_mode="quirks",
+    )
 
     # 2002/1090 is a well-exercised compile target. It should always produce
     # source_adjudication and derived oracle comparability regardless of recovery mix.
@@ -3208,10 +3268,11 @@ def test_replay_2009_1599_keeps_section_31_heading_despite_2023_280_sparse_paylo
     assert heading.text == "Päätös kaikkien osakkeenomistajien rahoittamasta uudistuksesta"
 
 
-def test_compile_fi_respects_more_permissive_strict_profile() -> None:
-    facade = compile_fi_facade(
-        "2002/1090",
-        replay_mode="legal_pit",
+def test_compile_fi_respects_more_permissive_strict_profile(
+    replay_compile_inputs_2002_1090_legal_pit: _ReplayCompileInputs,
+) -> None:
+    facade = _compile_facade_from_inputs(
+        replay_compile_inputs_2002_1090_legal_pit,
         compile_mode="quirks",
         strict_profile=StrictProfile(
             name="finland_relaxed_ingestion_v1",
