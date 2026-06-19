@@ -255,13 +255,15 @@ def _subtree_insertion_positions_by_key(
 def _replace_provision_index_subtree(
     *,
     tree: IRNode,
+    new_tree: IRNode,
     provision_index: LabelIndex,
     subtree_path: Path,
     old_subtree: IRNode,
     new_subtree: IRNode,
 ) -> LabelIndex | None:
     old_entries = _collect_provision_index_entries(old_subtree, subtree_path)
-    new_entries = _collect_provision_index_entries(new_subtree, subtree_path)
+    new_subtree_path = subtree_path[:-1] + ((new_subtree.kind.value, new_subtree.label or ""),)
+    new_entries = _collect_provision_index_entries(new_subtree, new_subtree_path)
     changed_keys = frozenset(old_entries.keys() | new_entries.keys())
     if not changed_keys:
         return provision_index
@@ -309,7 +311,32 @@ def _replace_provision_index_subtree(
             insert_at = insertion_positions.get(key, len(existing))
         next_index[key] = existing[:insert_at] + list(new_paths) + existing[insert_at:]
 
-    return {key: paths for key, paths in next_index.items() if paths}
+    updated_index = {key: paths for key, paths in next_index.items() if paths}
+    if not _changed_provision_index_paths_resolve(
+        new_tree,
+        updated_index,
+        changed_keys,
+    ):
+        return None
+    return updated_index
+
+
+def _changed_provision_index_paths_resolve(
+    tree: IRNode,
+    provision_index: LabelIndex,
+    changed_keys: FrozenSet[tuple[str, str]],
+) -> bool:
+    for key in changed_keys:
+        expected_kind, expected_norm_label = key
+        for path in provision_index.get(key, ()):
+            node = _tops.resolve(tree, path)
+            if node is None:
+                return False
+            if node.kind.value != expected_kind:
+                return False
+            if normalized_label_key(node.label) != expected_norm_label:
+                return False
+    return True
 
 @dataclass
 class ReplayState:
@@ -373,6 +400,7 @@ class ReplayState:
             return self.with_ir(new_ir)
         next_index = _replace_provision_index_subtree(
             tree=self.ir,
+            new_tree=new_ir,
             provision_index=self._provision_index,
             subtree_path=path,
             old_subtree=old_subtree,

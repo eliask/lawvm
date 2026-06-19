@@ -63,3 +63,44 @@ def test_replaced_provision_subtree_index_falls_back_when_index_is_not_primed() 
     )
 
     assert updated.provision_index == ReplayState(ir=new_ir).provision_index
+
+
+def test_replaced_provision_subtree_index_uses_replacement_root_label() -> None:
+    body = _body(_chap("1", _sec("1")))
+    state = ReplayState(ir=body)
+    assert state.provision_index
+
+    old_path = (("chapter", "1"),)
+    old_chapter = _tops.resolve_required(body, old_path)
+    new_chapter = _chap("2", _sec("1"))
+    new_ir = _tops.replace_at(body, old_path, new_chapter)
+
+    updated = state.with_replaced_provision_subtree_index(
+        new_ir,
+        path=old_path,
+        old_subtree=old_chapter,
+        new_subtree=new_chapter,
+    )
+
+    assert updated.provision_index == ReplayState(ir=new_ir).provision_index
+    assert updated.resolve((("chapter", "1"), ("section", "1"))) is None
+    assert updated.resolve((("chapter", "2"), ("section", "1"))) is not None
+
+
+def test_replaced_provision_subtree_index_falls_back_when_changed_path_is_not_live() -> None:
+    body = _body(_chap("1", _sec("1")))
+    state = ReplayState(ir=body)
+    assert state.provision_index
+
+    old_path = (("chapter", "1"),)
+    old_chapter = _tops.resolve_required(body, old_path)
+    new_ir = _body()
+
+    updated = state.with_replaced_provision_subtree_index(
+        new_ir,
+        path=old_path,
+        old_subtree=old_chapter,
+        new_subtree=old_chapter,
+    )
+
+    assert updated.provision_index == ReplayState(ir=new_ir).provision_index
