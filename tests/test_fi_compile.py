@@ -2337,6 +2337,27 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
+    replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
+    section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]
+    text = " ".join(irnode_to_text(section1).split())
+
+    assert text.index("Vuoden 1961 huumausaineyleissopimuksen luettelo I") < text.index(
+        "Psykotrooppisia aineita koskevan yleissopimuksen luettelo I"
+    )
+    assert text.index("Psykotrooppisia aineita koskevan yleissopimuksen luettelo I") < text.index(
+        "Dietyylitryptamiini (DET)"
+    )
+    assert "Dietyylitryptamiini (DET)" in text
+    assert "Tetrahydrokannabinoli" in text
+    subsection1 = next(
+        child
+        for child in section1.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    assert "ELAB.LEADING_OMISSION_ANCHOR_PREFIX_MERGE" in subsection1.attrs["lawvm_payload_normalization_rule"]
+
+
 def test_replay_xml_2021_1289_applies_explicit_heading_and_first_moment_replace() -> None:
     replay = pinned_replay("2021/1289", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.materialized_state.ir)
