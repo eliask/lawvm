@@ -23,6 +23,7 @@ from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.kumotaan_replay import _live_suffix_section_labels_for_numeric_kumotaan_ranges
@@ -1233,7 +1234,12 @@ def test_replay_xml_2006_386_cited_asetus_version_replaces_chapter_three_section
 
 def test_replay_xml_2010_290_cited_version_item_does_not_shadow_same_date_section_replace() -> None:
     """2017/1087 targets 3 § 4 kohta as in 2017/898; it must not hide 2017/898's §3."""
-    replay = replay_xml_for_test("2010/290", mode="official_consolidation", quiet=True)
+    replay = replay_xml_for_test(
+        "2010/290",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
     sections = extract_ir_sections(replay.materialized_state.ir)
     section_3 = sections["chapter:1/section:3"]
 
@@ -1242,6 +1248,40 @@ def test_replay_xml_2010_290_cited_version_item_does_not_shadow_same_date_sectio
     assert "jos edustaja toimii ainoastaan maksajan tai maksunsaajan puolesta" in text
     assert "samaan maksulaitoslain (297/2010) 5 §:n 8 kohdassa tarkoitettuun ryhmään" in text
     assert "kirjanpitolaissa (1336/1997) tarkoitettu emoyritys" not in text
+
+
+def test_replay_xml_2003_1086_cited_version_item_keeps_current_snapshot_payload() -> None:
+    """2025/1417 changes a cited-version item; its snapshot is current, not stale."""
+    replay = replay_xml_for_test(
+        "2003/1086",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_2 = sections["chapter:1/section:2"]
+
+    text = " ".join(irnode_to_text(section_2).split())
+
+    assert "ne työvoimaviranomaiset ja elinvoimakeskukset" in text
+    assert "joiden toimialueeseen 1 kohdassa mainitut kunnat kokonaan tai osittain kuuluvat" in text
+
+
+def test_replay_xml_2013_185_cited_version_group_keeps_new_inserted_items() -> None:
+    """2025/1360 cites earlier item versions and also inserts new items in those sections."""
+    replay = replay_xml_for_test(
+        "2013/185",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    section_2_text = " ".join(irnode_to_text(sections["section:2"]).split())
+    section_3_text = " ".join(irnode_to_text(sections["section:3"]).split())
+
+    assert "15) ilmoitetaan asianomaiselle toisen Euroopan unionin jäsenvaltion toimivaltaiselle viranomaiselle täydennysveron tietoilmoitusta koskevat tiedot" in section_2_text
+    assert "11) täydennysveron tietoilmoitusta koskevien tietojen ilmoittamisen automaattisella tietojenvaihdolla" in section_3_text
 
 
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:

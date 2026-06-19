@@ -1,6 +1,7 @@
 """Typed replay/materialization products for the Finnish frontend."""
 from __future__ import annotations
 
+from collections import Counter
 import re
 from dataclasses import dataclass, replace as dc_replace
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
@@ -944,16 +945,54 @@ _FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE = (
 )
 
 
+def _payload_shape_counts(payload: IRNode) -> Counter[tuple[IRNodeKind, str]]:
+    counts: Counter[tuple[IRNodeKind, str]] = Counter()
+    stack = [payload]
+    while stack:
+        node = stack.pop()
+        counts[(node.kind, node.label or "")] += 1
+        stack.extend(reversed(node.children))
+    return counts
+
+
+def _cited_snapshot_materially_covers_current(
+    *,
+    current_payload: IRNode | None,
+    cited_payload: IRNode | None,
+) -> bool:
+    """Return true when the cited snapshot is a broader same-target witness.
+
+    Cited-version item clauses sometimes emit a stale ancestor snapshot from the
+    later amending act.  Dropping that snapshot is only sound when the cited act's
+    same-effective snapshot structurally covers the later one and contains
+    materially more payload.  If the later snapshot adds content or has equivalent
+    coverage, it must stay: it is the actual current amendment payload.
+    """
+    if current_payload is None or cited_payload is None:
+        return False
+    current_counts = _payload_shape_counts(current_payload)
+    cited_counts = _payload_shape_counts(cited_payload)
+    if not all(cited_counts[key] >= count for key, count in current_counts.items()):
+        return False
+    if sum(cited_counts.values()) <= sum(current_counts.values()):
+        return False
+    current_text = irnode_to_text(current_payload)
+    cited_text = irnode_to_text(cited_payload)
+    return len(cited_text) >= len(current_text) + 80
+
+
 def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) -> list[LegalOperation]:
     """Drop ancestor snapshots from item-scoped cited-version clauses."""
-    cited_parent_snapshots: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+    cited_parent_snapshots: dict[
+        tuple[str, str, tuple[tuple[str, str], ...]], LegalOperation
+    ] = {}
     for op in lo_ops:
         source = op.source
         if source is None or op.action not in {StructuralAction.REPLACE, StructuralAction.INSERT}:
             continue
         if not op.target.path or op.target.path[-1][0] not in {"section", "subsection"}:
             continue
-        cited_parent_snapshots.add((source.statute_id, source.effective, tuple(op.target.path)))
+        cited_parent_snapshots[(source.statute_id, source.effective, tuple(op.target.path))] = op
 
     filtered: list[LegalOperation] = []
     for op in lo_ops:
@@ -983,9 +1022,17 @@ def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) ->
             f"{match.group(2)}/{int(match.group(1))}"
             for match in _FI_CITED_VERSION_ID_RE.finditer(raw_text)
         }
-        if not any(
-            (cited_id, source.effective, tuple(op.target.path)) in cited_parent_snapshots
+        cited_snapshots = tuple(
+            cited_parent_snapshots.get((cited_id, source.effective, tuple(op.target.path)))
             for cited_id in cited_ids
+        )
+        if not any(
+            cited_snapshot is not None
+            and _cited_snapshot_materially_covers_current(
+                current_payload=op.payload,
+                cited_payload=cited_snapshot.payload,
+            )
+            for cited_snapshot in cited_snapshots
         ):
             filtered.append(op)
     return filtered
