@@ -11,6 +11,7 @@ from lawvm.finland.metadata import (
     _statute_id_sort_key,
     get_operative_body_repeal_candidate,
     get_johtolause,
+    get_johtolause_from_tree,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,25 @@ def test_get_johtolause_returns_empty_when_no_match() -> None:
     xml = _xml("<body><section><num>1 §</num></section></body>")
     result = get_johtolause(xml)
     assert result == ""
+
+
+def test_get_johtolause_from_tree_restores_authorial_notes() -> None:
+    xml = _xml(
+        "<preamble>"
+        "  <formula name='enactingClause'>"
+        "    <span class='corrigendum'>muutetaan 3 §"
+        "      <authorialNote>alkuperäinen sanamuoto kuului: muutetaan 9 §</authorialNote>"
+        "    </span>"
+        "  </formula>"
+        "</preamble>"
+    )
+    tree = etree.fromstring(xml)
+
+    result = get_johtolause_from_tree(tree)
+
+    assert "muutetaan 3 §" in result
+    assert "9 §" not in result
+    assert len(tree.xpath(".//*[local-name()='authorialNote']")) == 1
 
 
 def test_get_johtolause_includes_insertions_originals_block() -> None:

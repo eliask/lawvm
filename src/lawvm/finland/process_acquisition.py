@@ -62,6 +62,7 @@ class ProcessAcquisitionContext:
         source_title = self.tree_title(muutos_tree)
         acquisition = self._build_acquisition(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=self.parent_id,
             source_title=source_title,
             lacks_operative_structure=lacks_operative_structure,
@@ -70,6 +71,7 @@ class ProcessAcquisitionContext:
         acquisition = self._compose_pending_target_if_available(
             acquisition=acquisition,
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             source_title=source_title,
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=operative_tags,
@@ -125,6 +127,7 @@ class ProcessAcquisitionContext:
         self,
         *,
         xml_bytes: bytes,
+        muutos_tree: etree._Element,
         parent_id: str,
         source_title: str,
         parent_issue_date: str | None = None,
@@ -133,6 +136,7 @@ class ProcessAcquisitionContext:
     ) -> AmendmentAcquisitionResult:
         return build_amendment_acquisition_result(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=parent_id,
             amendment_id=self.amendment_id,
             source_title=source_title,
@@ -148,6 +152,7 @@ class ProcessAcquisitionContext:
         *,
         acquisition: AmendmentAcquisitionResult,
         xml_bytes: bytes,
+        muutos_tree: etree._Element,
         source_title: str,
         lacks_operative_structure: bool,
         operative_tags: Sequence[str],
@@ -161,6 +166,7 @@ class ProcessAcquisitionContext:
 
         composed = self._build_acquisition(
             xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
             parent_id=pending_target_mid,
             source_title=source_title,
             parent_issue_date="",
