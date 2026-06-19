@@ -83,3 +83,11 @@ def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes(
 
     assert "source_model.find_xml_node" not in source
     assert "source_model.body_section_lookup(" in source
+
+
+def test_apply_executor_precreates_chapters_through_source_model() -> None:
+    source = _source("src/lawvm/finland/apply_ops_executor.py")
+
+    assert "_PrecreateApplyChaptersRequest" not in source
+    assert "precreate_apply_chapters as _precreate_apply_chapters" not in source
+    assert "source_model.precreate_apply_chapters(" in source

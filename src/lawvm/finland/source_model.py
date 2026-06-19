@@ -24,8 +24,11 @@ from lawvm.finland.constraints import _find_muutos_node_uncached
 from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
-    from lawvm.finland.amendment_chapter_precreate import PrecreatedChaptersResult
-    from lawvm.finland.ops import AmendmentOp
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersResult,
+        PrecreatedChaptersResult,
+    )
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.uncovered_recovery_context import UncoveredRecoveryContext
 
@@ -350,6 +353,32 @@ class AmendmentSourceModel:
             state,
             muutos_body,
             amendment_id,
+        )
+
+    def precreate_apply_chapters(
+        self,
+        *,
+        state: "ReplayState",
+        resolved: list["ResolvedOp"],
+        amendment_id: str,
+        vts_ops_enrich_done: bool,
+        johto: str,
+    ) -> "PrecreateApplyChaptersResult":
+        """Pre-create apply-time chapters through the source-model adapter."""
+        from lawvm.finland.amendment_chapter_precreate import (
+            PrecreateApplyChaptersRequest,
+            precreate_apply_chapters,
+        )
+
+        return precreate_apply_chapters(
+            PrecreateApplyChaptersRequest(
+                state=state,
+                resolved=resolved,
+                muutos_tree=self.muutos_tree,
+                amendment_id=amendment_id,
+                vts_ops_enrich_done=vts_ops_enrich_done,
+                johto=johto,
+            )
         )
 
     def preamble_text(self) -> str:

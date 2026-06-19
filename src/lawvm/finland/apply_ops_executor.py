@@ -14,8 +14,6 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_chapter_precreate import (
     FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID,
-    PrecreateApplyChaptersRequest as _PrecreateApplyChaptersRequest,
-    precreate_apply_chapters as _precreate_apply_chapters,
 )
 from lawvm.finland.apply_group_replay import (
     ApplyGroupSnapshotRequest as _ApplyGroupSnapshotRequest,
@@ -173,15 +171,12 @@ def _apply_ops_to_tree_typed(
     # pseudo-marker chapters in the same amendment, and both need their
     # chapter shell to exist before the section-level apply path runs.
     # Not run for VTS (cross-statute body) amendments.
-    _precreate_chapters = _precreate_apply_chapters(
-        _PrecreateApplyChaptersRequest(
-            state=state,
-            resolved=resolved,
-            muutos_tree=muutos_tree,
-            amendment_id=amendment_id,
-            vts_ops_enrich_done=_vts_ops_enrich_done,
-            johto=johto,
-        )
+    _precreate_chapters = source_model.precreate_apply_chapters(
+        state=state,
+        resolved=resolved,
+        amendment_id=amendment_id,
+        vts_ops_enrich_done=_vts_ops_enrich_done,
+        johto=johto,
     )
     state = _precreate_chapters.state
     _pre_real_chapter_refs = _precreate_chapters.real_chapter_refs
