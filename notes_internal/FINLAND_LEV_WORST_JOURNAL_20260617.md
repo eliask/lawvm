@@ -426,8 +426,29 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
 - Residual: `structural-review 2001/1047 --dump` now shows only the
   `24 §` heading hyphenation and `62 h §` future repeal/editorial-display
   mismatch around the 2025/479/2026 in-force surface.
+- 2026-06-19 refresh (`run_20260619T0310`): row is still high in the
+  full-text Levenshtein list (`0.825075`), but section diff is `97.99%`.
+  The visible residuals are dominated by `2026/11` future-effective editorial
+  stubs and future payload shown in the official-consolidation oracle
+  (`voimaan 1.7.2027`) at a 2026 surface. Do not pull those into legal-PIT
+  replay without a broader oracle/editorial-future display rule.
 - Status: bounded replay/payload ownership issue fixed; residual remains
   comparison/future-repeal/editorial display topology.
+
+### `2021/1289`, `2003/1129`, `2004/1287` — metric-surface rows
+
+- 2026-06-19 refresh: these statutes appear high in the full-text Levenshtein
+  list (`2021/1289` `0.794635`, `2003/1129` `0.815668`, `2004/1287`
+  `0.816122`), but targeted section diffs report every compared section
+  perfect:
+  - `lawvm diff 2021/1289 --text --compile-summary` → `23 compared`,
+    `23 perfect`, score `100.00%`.
+  - `lawvm diff 2003/1129 --text --compile-summary` → `30 compared`,
+    `30 perfect`, score `100.00%`.
+  - `lawvm diff 2004/1287 --text --compile-summary` → `40 compared`,
+    `40 perfect`, score `100.00%`.
+- Disposition: skip for replay. These are metric/comparison-surface artifacts,
+  not source-owned legal-state repairs.
 
 ### `1990/1271` — Osuuspankkilaki
 
