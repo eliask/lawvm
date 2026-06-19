@@ -147,6 +147,17 @@ def _xml_num_text(el: etree._Element) -> str | None:
     return num_el.text.strip()
 
 
+def _is_pseudo_chapter_marker(el: etree._Element) -> bool:
+    """Return true for section-shaped source markers such as ``16 b luku``."""
+    return _xml_localname(el) == "section" and bool(
+        _norm_num_token(_xml_num_text(el) or "").endswith("luku")
+    )
+
+
+def _chapter_contains_pseudo_markers(el: etree._Element) -> bool:
+    return any(_is_pseudo_chapter_marker(child) for child in el)
+
+
 def _source_body_inventory_index(
     inventory: tuple[ObservedBodyUnit, ...],
 ) -> SourceBodyInventoryIndex:
@@ -244,19 +255,20 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         include_observed: bool = True,
         include_coverage: bool = True,
     ) -> None:
-        payload = (
-            _find_muutos_ir(
+        if kind == "chapter" and (
+            _xml_localname(el) != "chapter" or _chapter_contains_pseudo_markers(el)
+        ):
+            payload = _find_muutos_ir(
                 muutos_tree,
                 target_unit_kind=kind,
                 target_norm=label,
             )
-            if kind == "chapter"
-            else _payload_ir_from_muutos_node(
+        else:
+            payload = _payload_ir_from_muutos_node(
                 el,
                 target_unit_kind=kind,
                 target_norm=label,
             )
-        )
         if include_observed:
             observed_payloads[next_observed_id(kind, label, chapter_label)] = payload
         if include_coverage:

@@ -562,6 +562,46 @@ def test_source_model_payload_lookup_keeps_chapter_scope_after_plain_cross_headi
     assert lookup.payload_ir is not None
 
 
+def test_source_model_real_chapter_payload_lookup_uses_current_source_unit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter>
+                <num>2 luku</num>
+                <heading>Otsikko</heading>
+                <section>
+                  <num>5 \xc2\xa7</num>
+                  <subsection><content><p>Chapter-owned payload.</p></content></subsection>
+                </section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/12")
+
+    import lawvm.finland.amendment_payload_lookup as payload_lookup
+
+    def fail_full_xml_lookup(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("real chapter source-model payload lookup must not rescan the XML root")
+
+    monkeypatch.setattr(payload_lookup, "_find_muutos_ir", fail_full_xml_lookup)
+
+    lookup = model.lookup_payload_ir("chapter", "2")
+
+    assert lookup.status == "unique"
+    assert lookup.payload_basis == "body_inventory"
+    assert lookup.payload_ir is not None
+    assert lookup.payload_ir.kind is IRNodeKind.CHAPTER
+    assert lookup.payload_ir.label == "2"
+    assert "Chapter-owned payload" in irnode_to_text(lookup.payload_ir)
+
+
 def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segments() -> None:
     xml = get_corpus_store().read_source("1997/611")
     assert xml is not None
