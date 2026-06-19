@@ -12,7 +12,7 @@ import datetime as dt
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Optional, cast
+from typing import TYPE_CHECKING, Literal, Optional
 
 import lxml.etree as etree
 
@@ -21,7 +21,6 @@ from lawvm.core.ir import IRNode
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
-from lawvm.finland.constraints import _find_muutos_node_uncached
 from lawvm.finland.helpers import (
     _normalize_source_part_num,
     _normalize_source_section_num,
@@ -88,7 +87,7 @@ class SourcePayloadLookupResult:
     query: SourceBodyUnitQuery
     body_lookup_status: Literal["unique", "missing", "ambiguous"]
     body_candidates: tuple[ObservedBodyUnit, ...]
-    payload_basis: Literal["body_inventory", "coverage_payload_ref", "legacy_xml_fallback", "none"]
+    payload_basis: Literal["body_inventory", "coverage_payload_ref", "none"]
     payload_ir: IRNode | None
     cross_heading_ir: IRNode | None
 
@@ -195,6 +194,88 @@ def _coverage_payload_ir_by_unit_id(
     return payloads
 
 
+def _observed_payload_ir_by_unit_id(
+    muutos_tree: etree._Element,
+) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+    """Return converted payload IR keyed by observed body-inventory unit id."""
+    from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
+
+    body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
+    if body is None:
+        body = muutos_tree.find(".//body")
+    if body is None:
+        return {}
+    payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
+    seen_ids: set[str] = set()
+
+    def append_payload(
+        kind: str,
+        label: str,
+        chapter_label: str,
+        el: etree._Element,
+    ) -> None:
+        base_id = f"{kind}:{chapter_label}/{label}" if chapter_label else f"{kind}:{label}"
+        unit_id = base_id
+        counter = 1
+        while unit_id in seen_ids:
+            unit_id = f"{base_id}#{counter}"
+            counter += 1
+        seen_ids.add(unit_id)
+        payloads[unit_id] = _payload_ir_from_muutos_node(
+            el,
+            target_unit_kind=kind,
+            target_norm=label,
+        )
+
+    def walk_children(parent: etree._Element, active_chapter: str = "") -> None:
+        current_chapter = active_chapter
+        for child in parent:
+            kind = _xml_localname(child)
+            if kind == "crossHeading":
+                raw_part = " ".join("".join(str(part) for part in child.itertext()).split())
+                if _normalize_source_part_num(raw_part):
+                    append_payload("part", _normalize_source_part_num(raw_part), "", child)
+                    current_chapter = ""
+                    continue
+            if kind == "part":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    part_label = _normalize_source_part_num(raw_num)
+                    if part_label:
+                        append_payload("part", part_label, "", child)
+                        walk_children(child, active_chapter="")
+                        current_chapter = active_chapter
+                        continue
+            if kind == "chapter":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    chapter_label = _norm_num_token(raw_num).removesuffix("luku")
+                    if chapter_label:
+                        append_payload("chapter", chapter_label, "", child)
+                        walk_children(child, chapter_label)
+                        current_chapter = active_chapter
+                        continue
+            if kind == "section":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    if _norm_num_token(raw_num).endswith("luku"):
+                        pseudo_chapter = _norm_num_token(raw_num).removesuffix("luku")
+                        if pseudo_chapter:
+                            append_payload("chapter", pseudo_chapter, "", child)
+                            walk_children(child, pseudo_chapter)
+                            current_chapter = pseudo_chapter
+                            continue
+                    section_label = _normalize_source_section_num(raw_num)
+                    if section_label:
+                        append_payload("section", section_label, current_chapter, child)
+                        walk_children(child, current_chapter)
+                        continue
+            walk_children(child, current_chapter)
+
+    walk_children(body)
+    return payloads
+
+
 @dataclass(slots=True)
 class AmendmentSourceModel:
     """Cached read-only projections over one Finland amendment source tree."""
@@ -217,12 +298,12 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
-    _node_cache: dict[SourceUnitLookup, etree._Element | None] = field(
-        default_factory=dict,
+    _coverage_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
+        default=None,
         init=False,
         repr=False,
     )
-    _coverage_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
+    _observed_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -461,34 +542,15 @@ class AmendmentSourceModel:
             and ignored_section_units[0].reason == "missing_num"
         )
 
-    def find_xml_node(
-        self,
-        target_unit_kind: TargetUnitKind | str,
-        target_norm: str,
-        target_chapter: Optional[str] = None,
-        target_part: Optional[str] = None,
-    ) -> etree._Element | None:
-        """Return the source XML node for a normalized source-body target."""
-        key = SourceUnitLookup(
-            unit_kind=str(target_unit_kind or ""),
-            label=target_norm,
-            chapter=target_chapter,
-            part=target_part,
-        )
-        if key not in self._node_cache:
-            self._node_cache[key] = _find_muutos_node_uncached(
-                self.muutos_tree,
-                cast(TargetUnitKind, key.unit_kind),
-                key.label,
-                key.chapter,
-                key.part,
-            )
-        return self._node_cache[key]
-
     def _coverage_payload_ir_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
         if self._coverage_payload_ir_cache is None:
             self._coverage_payload_ir_cache = _coverage_payload_ir_by_unit_id(self.muutos_tree)
         return self._coverage_payload_ir_cache
+
+    def _observed_payload_ir_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        if self._observed_payload_ir_cache is None:
+            self._observed_payload_ir_cache = _observed_payload_ir_by_unit_id(self.muutos_tree)
+        return self._observed_payload_ir_cache
 
     def has_source_node(
         self,
@@ -541,26 +603,15 @@ class AmendmentSourceModel:
                 )
                 return self._payload_ir_cache[key]
 
-            from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
-
-            source_node = self.find_xml_node(
-                key.unit_kind,
-                key.label,
-                key.chapter,
-                key.part,
-            )
+            observed_unit = body_lookup.unique_unit
             payload_ir, cross_heading_ir = (
-                _payload_ir_from_muutos_node(
-                    source_node,
-                    target_unit_kind=key.unit_kind,
-                    target_norm=key.label,
-                )
-                if source_node is not None
+                self._observed_payload_ir_by_unit_id().get(observed_unit.unit_id, (None, None))
+                if observed_unit is not None
                 else (None, None)
             )
             if payload_ir is not None:
                 status = "unique"
-                payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"] = "body_inventory"
+                payload_basis: Literal["body_inventory", "none"] = "body_inventory"
             else:
                 status = "missing"
                 payload_basis = "none"

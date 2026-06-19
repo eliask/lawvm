@@ -551,7 +551,7 @@ def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_v
     def fail_xml_lookup(*_args: object, **_kwargs: object) -> None:
         pytest.fail("typed non-unique payload lookup must not fall back to XML")
 
-    monkeypatch.setattr(AmendmentSourceModel, "find_xml_node", fail_xml_lookup)
+    monkeypatch.setattr(AmendmentSourceModel, "find_xml_node", fail_xml_lookup, raising=False)
 
     ambiguous = model.lookup_payload_ir("section", "5")
     assert ambiguous.status == "ambiguous"

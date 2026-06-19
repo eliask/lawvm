@@ -109,9 +109,14 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
     assert "body_lookup_status:" in source
     assert "body_candidates:" in source
     assert "payload_basis:" in source
+    assert "legacy_xml_fallback" not in source
+    assert "def find_xml_node(" not in source
+    assert "_node_cache" not in source
+    assert "_find_muutos_node_uncached" not in source
     assert "_coverage_node_cache" not in source
     assert "_coverage_payload_nodes_by_unit_id" not in source
     assert "_coverage_payload_ir_cache" in source
+    assert "_observed_payload_ir_cache" in source
 
 
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:
