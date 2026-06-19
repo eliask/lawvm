@@ -64,6 +64,7 @@ an executable plan. The firewall is asserted by a test.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -557,7 +558,119 @@ def _structural_status() -> str:
     return "parsed"
 
 
+# ---------------------------------------------------------------------------
+# Per-process forest cache (pure-perf reuse, output-identical).
+# ---------------------------------------------------------------------------
+#
+# ``assemble_source_syntax_graph`` is a PURE, DETERMINISTIC function of its inputs
+# — ``(subject, source_units, statute_id, body)`` plus the ``LAWVM_PARSE_TOTALITY``
+# env flag (which only flips residual node STATUS open↔unsupported, never spans).
+# The body is the sole text input (every parser/segmenter/census reads only
+# ``body`` + ``statute_id``), and the result is a frozen, immutable dataclass.
+#
+# Multiple consumers (the L6 ForestStructuralAttachmentPass, the four
+# ``*_projection`` lenses, census/differential harnesses) assemble the SAME unit's
+# forest independently and from scratch — each re-running segmentation, the token
+# tape, the six family parsers over every sentence, and the L0 census. That is the
+# dominant cost inside graph build (~minutes on broad shards). Since the forest is a
+# pure function of the inputs, we memoize on a deterministic key over ALL inputs
+# that affect the output, and return the SAME cached object (safe: it is frozen).
+# This is the architectural prerequisite for the production strangle-flip (all
+# lenses reading one cached forest).
+_FOREST_CACHE: dict[str, SourceSyntaxGraph] = {}
+
+
+def _stable_subject_key(subject: SurfaceGraphSubject) -> str:
+    """A deterministic key fragment for a (possibly dict-scoped) subject.
+
+    ``SurfaceGraphSubject.scope`` is a ``Mapping`` (not hashable), so the subject is
+    serialised via ``json.dumps(..., sort_keys=True)`` for an order-independent,
+    deterministic key. The subject is stored VERBATIM on the result, so it MUST be
+    part of the cache key (two calls with the same body but a different subject must
+    not share a cached forest).
+    """
+    return json.dumps(
+        {
+            "jurisdiction": subject.jurisdiction,
+            "work_id": subject.work_id,
+            "scope": subject.scope,
+            "surface_time": subject.surface_time,
+            "source_bundle_hash": subject.source_bundle_hash,
+            "language": subject.language,
+        },
+        sort_keys=True,
+        default=str,
+        ensure_ascii=False,
+    )
+
+
+def _forest_cache_key(
+    *,
+    subject: SurfaceGraphSubject,
+    source_units: tuple[SourceUnitRef, ...],
+    statute_id: str,
+    body: str,
+) -> str:
+    """A deterministic cache key over EVERY input that affects the forest output.
+
+    Folds in the subject (stored verbatim), the source_units (stored verbatim), the
+    statute_id, the exact body text hash, and the ``LAWVM_PARSE_TOTALITY`` flag (the
+    only env input, which flips residual status). Any input difference yields a
+    distinct key, so a cache hit is value-identical to a fresh assembly.
+    """
+    totality = "1" if os.environ.get("LAWVM_PARSE_TOTALITY") else "0"
+    parts = (
+        _GRAPH_SCHEMA_TAG,
+        _stable_subject_key(subject),
+        repr(source_units),
+        statute_id,
+        _sha256_text(body),
+        f"totality={totality}",
+    )
+    return _sha256(parts)
+
+
+def clear_forest_cache() -> None:
+    """Clear the per-process forest cache (tests that toggle env flags use this)."""
+    _FOREST_CACHE.clear()
+
+
 def assemble_source_syntax_graph(
+    *,
+    subject: SurfaceGraphSubject,
+    source_units: tuple[SourceUnitRef, ...],
+    statute_id: str,
+    body: str,
+) -> SourceSyntaxGraph:
+    """Assemble (or REUSE a cached) per-provision construction parse FOREST.
+
+    Memoizing wrapper over :func:`_assemble_source_syntax_graph` keyed on a
+    deterministic hash of ALL inputs that affect the output (subject, source_units,
+    statute_id, body, ``LAWVM_PARSE_TOTALITY``). The forest is a pure function of
+    these, so a cache hit returns the SAME frozen, immutable object — value-identical
+    to a fresh assembly (same nodes, edges, coverage, status). This makes the forest
+    assembled ONCE per unit per process; all consumers reuse it.
+    """
+    key = _forest_cache_key(
+        subject=subject,
+        source_units=source_units,
+        statute_id=statute_id,
+        body=body,
+    )
+    cached = _FOREST_CACHE.get(key)
+    if cached is not None:
+        return cached
+    forest = _assemble_source_syntax_graph(
+        subject=subject,
+        source_units=source_units,
+        statute_id=statute_id,
+        body=body,
+    )
+    _FOREST_CACHE[key] = forest
+    return forest
+
+
+def _assemble_source_syntax_graph(
     *,
     subject: SurfaceGraphSubject,
     source_units: tuple[SourceUnitRef, ...],

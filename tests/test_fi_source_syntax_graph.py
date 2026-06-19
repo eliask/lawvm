@@ -23,7 +23,9 @@ from lawvm.finland.legal_surface.source_syntax_graph import (
     SYNTAX_EDGE_KINDS,
     SYNTAX_NODE_KINDS,
     SourceSyntaxGraph,
+    _assemble_source_syntax_graph,
     assemble_source_syntax_graph,
+    clear_forest_cache,
     project_list_inheritance,
 )
 from lawvm.finland.legal_surface.union_ownership_census import classify_body
@@ -344,6 +346,64 @@ def test_graph_invariants_hold() -> None:
         assert e.dst in node_ids
     # The graph_id is stable across reruns of the same body.
     assert forest.graph_id == _assemble(body).graph_id
+
+
+def _forests_value_equal(a: SourceSyntaxGraph, b: SourceSyntaxGraph) -> None:
+    """Assert two forests are VALUE-identical (every observable field)."""
+    assert a.graph_id == b.graph_id
+    assert a.subject == b.subject
+    assert a.source_units == b.source_units
+    assert a.text_hash == b.text_hash
+    assert a.text_len == b.text_len
+    assert a.parse_status == b.parse_status
+    assert a.syntax_nodes == b.syntax_nodes
+    assert a.syntax_edges == b.syntax_edges
+    assert a.residuals == b.residuals
+    assert a.coverage == b.coverage
+    assert a.list_constructions == b.list_constructions
+
+
+def test_cache_hit_returns_same_object_value_identical_to_fresh() -> None:
+    # The memoized assembler must return the SAME cached object on a repeat call,
+    # and that object must be value-identical to a fresh (uncached) assembly.
+    clear_forest_cache()
+    body = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."
+
+    first = _assemble(body)
+    second = _assemble(body)
+    # Cache hit: same identity (frozen, immutable → safe to share).
+    assert first is second
+
+    # Value-identical to a fresh, uncached assembly (the cache alters no output).
+    fresh = _assemble_source_syntax_graph(
+        subject=_SUBJECT, source_units=(), statute_id="test/1", body=body
+    )
+    assert fresh is not first
+    _forests_value_equal(first, fresh)
+
+
+def test_cache_keyed_on_inputs_distinct_bodies_distinct_forests() -> None:
+    # Different inputs must NOT collide in the cache.
+    clear_forest_cache()
+    f1 = _assemble("Tämä laki tulee voimaan 1 päivänä tammikuuta 2020.")
+    f2 = _assemble("Asia mainittiin valmistelussa HE 5/2019 yhteydessä laajasti.")
+    assert f1 is not f2
+    assert f1.text_hash != f2.text_hash
+    assert f1.graph_id != f2.graph_id
+
+
+def test_idempotent_assemble_two_uncached_builds_equal() -> None:
+    # The assembler itself is deterministic: two independent uncached builds of the
+    # same unit are value-identical (the property the cache relies on for soundness).
+    body = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."
+    a = _assemble_source_syntax_graph(
+        subject=_SUBJECT, source_units=(), statute_id="test/1", body=body
+    )
+    b = _assemble_source_syntax_graph(
+        subject=_SUBJECT, source_units=(), statute_id="test/1", body=body
+    )
+    assert a is not b
+    _forests_value_equal(a, b)
 
 
 def test_firewall_no_apply_or_replay_import() -> None:
