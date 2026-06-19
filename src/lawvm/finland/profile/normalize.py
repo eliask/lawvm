@@ -1342,7 +1342,7 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
 
 
 def _apply_fi_merge_split_intro_item_subsections(children: List[IRNode]) -> List[IRNode]:
-    """Merge a content-only intro subsection with its following paragraph-bearing subsection."""
+    """Merge a content-only intro subsection with its following flattened item row."""
     rewritten: List[IRNode] = []
     i = 0
     while i < len(children):
@@ -1382,12 +1382,27 @@ def _apply_fi_merge_split_intro_item_subsections(children: List[IRNode]) -> List
             gc.kind == IRNodeKind.PARAGRAPH and any(ggc.kind == IRNodeKind.NUM for ggc in gc.children)
             for gc in next_child.children
         )
-        if not has_numbered_paragraph:
+        next_text = _subsection_leaf_text(next_child) or ""
+        next_is_lowercase_content_row = (
+            not has_numbered_paragraph
+            and not _subsection_has_structured_children(next_child)
+            and bool(next_text)
+            and next_text[:1].islower()
+        )
+        if not has_numbered_paragraph and not next_is_lowercase_content_row:
             rewritten.append(child)
             i += 1
             continue
         new_children: List[IRNode] = [IRNode(kind=IRNodeKind.INTRO, text=intro_text.strip())]
-        new_children.extend(next_child.children)
+        if next_is_lowercase_content_row:
+            new_children.append(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text=next_text.strip()),),
+                )
+            )
+        else:
+            new_children.extend(next_child.children)
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,

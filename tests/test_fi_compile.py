@@ -2414,6 +2414,23 @@ def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subse
     assert "10) metsänkäyttöilmoituksen laatijan nimi ja yhteystiedot." in text
 
 
+def test_replay_xml_1994_357_normalizes_colon_intro_content_pairs_before_insert() -> None:
+    replay = pinned_replay("1994/357", mode="official_consolidation", quiet=True)
+    section2 = extract_ir_sections(replay.materialized_state.ir)["section:2"]
+    text = " ".join(irnode_to_text(section2).split())
+
+    first_intro = "JHTT-tutkinto sisältää kirjanpitovelvollisia"
+    first_items = "tilintarkastus, tilinpäätösanalyysi, yleinen laskentatoimi"
+    second_intro = "JHTT-tutkinto sisältää lisäksi seuraavat oppiaineet:"
+    second_items = "julkisyhteisöjen suunnittelujärjestelmä ja budjetointi"
+    ec_sentence = "Lisäksi JHTT-tutkinnon vaatimuksiin kuuluu Euroopan yhteisöjen"
+
+    assert text.index(first_intro) < text.index(first_items)
+    assert text.index(first_items) < text.index(second_intro)
+    assert text.index(second_intro) < text.index(second_items)
+    assert text.index(second_items) < text.index(ec_sentence)
+
+
 def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
     replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
     section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]

@@ -336,6 +336,31 @@ def test_fi_renest_flat_digit_item_subsections_fires():
     assert paras[1].label == "2"
 
 
+def test_fi_merge_split_intro_item_subsections_absorbs_lowercase_content_row():
+    intro_sub = _subsection(children=(_content("Tutkinto sisältää seuraavat oppiaineet:"),))
+    row_sub = _subsection(children=(_content("tilintarkastus, kirjanpito ja sisäinen tarkastus."),))
+
+    result = _apply_fi_merge_split_intro_item_subsections([intro_sub, row_sub])
+
+    assert len(result) == 1
+    merged = result[0]
+    assert [child.kind for child in merged.children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert "Tutkinto sisältää seuraavat oppiaineet:" in merged.children[0].text
+    assert "tilintarkastus" in merged.children[1].children[0].text
+
+
+def test_fi_merge_split_intro_item_subsections_keeps_uppercase_following_moment():
+    intro_sub = _subsection(children=(_content("Tutkinto sisältää seuraavat oppiaineet:"),))
+    next_moment = _subsection(children=(_content("Tämä on itsenäinen seuraava momentti."),))
+
+    result = _apply_fi_merge_split_intro_item_subsections([intro_sub, next_moment])
+
+    assert result == [intro_sub, next_moment]
+
+
 def test_fi_renest_flat_digit_item_subsections_extends_existing_item_series():
     """Rule absorbs malformed sibling moments only when they continue existing items."""
     intro_sub = _subsection(
