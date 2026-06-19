@@ -427,6 +427,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _coverage_units_by_payload_ref_id_cache: dict[str, tuple[CoverageUnit, ...]] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _source_payload_ir_index_cache: SourcePayloadIrIndex | None = field(
         default=None,
         init=False,
@@ -528,6 +533,18 @@ class AmendmentSourceModel:
         if ignored_units_out is not None:
             ignored_units_out.extend(self._coverage_ignored_units)
         return self._coverage_units
+
+    def _coverage_units_by_payload_ref_id(self) -> dict[str, tuple[CoverageUnit, ...]]:
+        if self._coverage_units_by_payload_ref_id_cache is None:
+            grouped: dict[str, list[CoverageUnit]] = {}
+            for unit in self.body_coverage_units():
+                payload_ref = unit.payload_ref
+                if isinstance(payload_ref, BodyCoveragePayloadRef):
+                    grouped.setdefault(payload_ref.unit_id, []).append(unit)
+            self._coverage_units_by_payload_ref_id_cache = {
+                unit_id: tuple(units) for unit_id, units in grouped.items()
+            }
+        return self._coverage_units_by_payload_ref_id_cache
 
     def body_section_scope(
         self,
@@ -743,12 +760,7 @@ class AmendmentSourceModel:
             chapter=_norm_num_token(source_ref.chapter or "") if source_ref.chapter else None,
             part=_norm_num_token(source_ref.part or "") if source_ref.part else None,
         )
-        matching_units = tuple(
-            unit
-            for unit in self.body_coverage_units()
-            if isinstance(unit.payload_ref, BodyCoveragePayloadRef)
-            and unit.payload_ref.unit_id == source_ref.unit_id
-        )
+        matching_units = self._coverage_units_by_payload_ref_id().get(source_ref.unit_id, ())
         body_lookup = self.lookup_body_unit(
             source_ref.unit_kind,
             source_ref.label,
