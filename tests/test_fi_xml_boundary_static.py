@@ -139,3 +139,12 @@ def test_temporal_postprocessing_expiry_override_uses_source_model() -> None:
     assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
     assert "_commencement_expiry_override(" not in source
     assert "source_model.commencement_expiry_override(" in source
+
+
+def test_temporal_postprocessing_commencement_overrides_use_source_model() -> None:
+    source = _source("src/lawvm/finland/process_temporal_postprocessing.py")
+
+    assert "_section_commencement_effective_override" not in source
+    assert "_section_subsection_commencement_effective_override" not in source
+    assert "source_model.section_commencement_effective_override(" in source
+    assert "source_model.section_subsection_commencement_effective_override(" in source

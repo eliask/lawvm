@@ -281,6 +281,46 @@ def test_source_model_exposes_commencement_expiry_override() -> None:
     assert expiry == dt.date(2014, 12, 31)
 
 
+def test_source_model_exposes_section_commencement_overrides() -> None:
+    tree = etree.fromstring(
+        (
+            "<doc>Tämä laki tulee voimaan 1 päivänä syyskuuta 2023. "
+            "Lain 51 a ja 51 b § tulevat kuitenkin voimaan 1 päivänä marraskuuta 2024.</doc>"
+        ).encode()
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2023/116")
+
+    override = model.section_commencement_effective_override("2023/116")
+
+    assert override is not None
+    target_mid, chapter_section_map, effective = override
+    assert target_mid == "2023/116"
+    assert chapter_section_map == {None: {"51a", "51b"}}
+    assert effective == dt.date(2024, 11, 1)
+
+
+def test_source_model_exposes_subsection_commencement_overrides() -> None:
+    tree = etree.fromstring(
+        (
+            "<doc>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
+            "Lain 3 a §:n 1 momentti, 14 §:n 1 momentti sekä 14 a ja 15 b § "
+            "tulevat kuitenkin voimaan vasta 1 päivänä tammikuuta 2028.</doc>"
+        ).encode()
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2022/876")
+
+    override = model.section_subsection_commencement_effective_override("2022/876")
+
+    assert override is not None
+    target_mid, addresses, effective = override
+    assert target_mid == "2022/876"
+    assert {str(address) for address in addresses} == {
+        "section:3a/subsection:1",
+        "section:14/subsection:1",
+    }
+    assert effective == dt.date(2028, 1, 1)
+
+
 def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
     tree = _tree()
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/3")

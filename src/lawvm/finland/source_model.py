@@ -453,6 +453,27 @@ class AmendmentSourceModel:
             section_expiry_overrides=section_expiry_overrides,
         )
 
+    def section_commencement_effective_override(
+        self,
+        source_statute_id: str,
+    ) -> tuple[str, dict[str, set[str]], dt.date] | None:
+        """Return section-scoped commencement effective override metadata."""
+        from lawvm.finland.metadata import _section_commencement_effective_override
+
+        return _section_commencement_effective_override(self.muutos_tree, source_statute_id)
+
+    def section_subsection_commencement_effective_override(
+        self,
+        source_statute_id: str,
+    ) -> tuple[str, set[str], dt.date] | None:
+        """Return subsection-scoped commencement effective override metadata."""
+        from lawvm.finland.metadata import _section_subsection_commencement_effective_override
+
+        return _section_subsection_commencement_effective_override(
+            self.muutos_tree,
+            source_statute_id,
+        )
+
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
         if any(
