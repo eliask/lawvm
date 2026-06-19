@@ -460,6 +460,25 @@ def find_unique(
     return matches[0]
 
 
+def _resolve_from_path(
+    tree: IRNode,
+    path: Path,
+    depth: int,
+    path_len: int,
+) -> Optional[IRNode]:
+    kind, label = path[depth]
+    leaf_depth = path_len - 1
+    for child in tree.children:
+        if not _kind_matches(child.kind, kind) or not _match_label(child.label, label):
+            continue
+        if depth == leaf_depth:
+            return child
+        resolved = _resolve_from_path(child, path, depth + 1, path_len)
+        if resolved is not None:
+            return resolved
+    return None
+
+
 def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     """Find the node at path, or None if not found.
 
@@ -470,16 +489,7 @@ def resolve(tree: IRNode, path: Sequence[PathStep]) -> Optional[IRNode]:
     if not path:
         return tree
 
-    kind, label = path[0]
-    for child in tree.children:
-        if not _kind_matches(child.kind, kind) or not _match_label(child.label, label):
-            continue
-        if len(path) == 1:
-            return child
-        resolved = resolve(child, path[1:])
-        if resolved is not None:
-            return resolved
-    return None
+    return _resolve_from_path(tree, path, 0, len(path))
 
 
 def resolve_required(tree: IRNode, path: Sequence[PathStep]) -> IRNode:
