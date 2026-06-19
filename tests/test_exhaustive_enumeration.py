@@ -389,18 +389,21 @@ class TestIRNodeValidationExhaustive:
             "__dict__",
         )
 
-    def test_legal_operation_remains_extensible_until_scope_confidence_is_named(self) -> None:
-        """Finland currently attaches scope_confidence dynamically; keep that debt explicit."""
+    def test_legal_operation_frontend_riders_are_named_and_slotted(self) -> None:
+        """Frontend riders are named fields, not dynamic LegalOperation attrs."""
 
         op = LegalOperation(
             op_id="op-1",
             sequence=1,
             action=StructuralAction.REPLACE,
             target=LegalAddress(path=(("section", "1"),)),
+            scope_confidence="explicit_source",
+            move_clause_target_unit_kind="chapter",
         )
-        object.__setattr__(op, "scope_confidence", "explicit_source")
 
-        assert op.__dict__["scope_confidence"] == "explicit_source"
+        assert not hasattr(op, "__dict__")
+        assert op.scope_confidence == "explicit_source"
+        assert op.move_clause_target_unit_kind == "chapter"
 
 
 class TestLegalAddressExhaustive:

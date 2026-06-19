@@ -195,7 +195,6 @@ def coalesce_same_target_mixed_scope_section_groups(
                 scope_confidence=merged_scope_confidence,
                 lo=_lo_with_path_update(op.lo, chapter=scoped_chapter) if op.lo is not None else op.lo,
             )
-            object.__setattr__(tagged_op, "scope_confidence", merged_scope_confidence)
             if _op_merge_signature(tagged_op) not in scoped_signatures:
                 unique_tagged_unscoped_ops.append(tagged_op)
 

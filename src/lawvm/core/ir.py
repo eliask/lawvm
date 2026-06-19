@@ -112,7 +112,7 @@ class TextPatchSpec:
             raise ValueError("TextPatchSpec(kind='delete') must not set replacement")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LegalOperation:
     """A single compiled legal state change."""
 
@@ -129,6 +129,10 @@ class LegalOperation:
     text_patch: Optional[TextPatchSpec] = None
     group_id: Optional[str] = None
     witness_rule_id: Optional[str] = None
+    # Frontend-owned typed riders. Core stores these carriers but does not
+    # interpret jurisdiction-local values.
+    scope_confidence: Any = None
+    move_clause_target_unit_kind: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StructuralAction):
