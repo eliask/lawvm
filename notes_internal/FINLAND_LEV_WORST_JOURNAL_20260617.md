@@ -684,6 +684,25 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
 - Status: defer to a named catalog-payload elaboration family with strict-mode
   barriers for image-only witness gaps. The bounded `51 §:n 1 momentti` target
   subcase can be revisited separately, but it is not the dominant score driver.
+- 2026-06-19 refresh (`run_20260619T0310`): this became the current worst row
+  after unrelated source-faithful topology changes: structural `0.548387`,
+  Levenshtein `0.542737`; `oracle-check` reports `54.2%` over `35` diverging
+  sections (`EDITORIAL_CONVENTION=14`, `SOURCE_INCOMPLETE=9`,
+  `REPLAY_MISSING=5`, `MISSING=4`, `ORACLE_STALE=2`, `REPLAY_EXTRA=1`) with
+  `DESTRUCTIVE_SHAPE_LOSS_RISK` and `OMISSION_SURVIVES_MERGE`.
+- Bounded witness check:
+  - `1990/934` does compile a source-owned `REPLACE section:27`, but the source
+    XML contains only the `27 §` intro plus an image block
+    (`media/0263.gif`). The oracle text expands that image into three numbered
+    traffic-light meanings. Reconstructing those items would require an owned
+    image/OCR payload lane; replay must not inject oracle-only text.
+  - Missing `4 luku / 24 §`, `25 §`, `29 §`, and `30 §` have no compiled
+    amendment operations. The base `1982/182` XML itself jumps from chapter
+    3 to chapter 8; chapter 4 is absent from the machine source. These are base
+    acquisition/source-completeness gaps, not resolver misses.
+- Disposition remains **defer, do not patch replay text**. Any future work
+  should be an explicit image-backed/source-completeness acquisition lane with
+  named source-pathology evidence and strict-mode behavior.
 
 ### `1953/317` — Laki vaarallisten rikoksenuusijain eristämisestä
 
@@ -1144,7 +1163,7 @@ Current worst Levenshtein band and disposition:
 | 1 | `1991/1208` | `0.598139` | `0.920000` | Already journaled: named-row province table merge partly fixed; residual attachment/PDF payload lane (`2001/995`+) is manual/source frontier. |
 | 2 | `2017/320` | `0.642791` | `0.807504` | Already journaled: migration/relabel family; remaining same-wave omission shells and source pathologies need a dedicated migration pass, not random grammar/regex changes. |
 | 3 | `1868/31-000` | `0.666451` | `0.895652` | Already journaled/deferred after §85 overlay + §83 letter-list fixes; residuals are oracle/editorial/source-incomplete. |
-| 4 | `1982/182` | `0.687281` | `0.548387` | Re-triaged: mixed traffic-sign catalog/source-pathology/comparison frontier; no broad replay fix queued. |
+| 4 | `1982/182` | `0.542737` | `0.548387` | Re-triaged again on `run_20260619T0310`: source-incomplete base chapter 4 plus image-only traffic-sign payloads; no replay text injection. |
 | 5 | `1992/1535` | `0.728264` | `0.908213` | Already journaled: comparison/adjudication and large tax-law recodification family. |
 | 6 | `1999/329` | `0.829504` | `0.960000` | Already journaled; source-pathology/uncovered-body family, revisit only with bounded source witness. |
 | 7 | `1978/693` | `0.838658` | `1.000000` | Already journaled as comparison/oracle-stale band; no replay mutation queued. |
@@ -1195,6 +1214,19 @@ New 2026-06-18 skip note:
 - Action taken: fixed the diagnostic tool crash where `lawvm explain 1982/182
   --section '21 §'`/`'40 §'` could slice `source_title=None`. This is tooling
   robustness only; replay semantics unchanged.
+- 2026-06-19 refresh: latest full bench row is structural `0.548387`,
+  Levenshtein `0.542737`; `oracle-check` now reports `54.2%` over `35`
+  diverging sections. The new worst status is explained by the same source
+  frontier, not by a new resolver regression.
+- Additional witness:
+  - `lawvm ops 1982/182 --target section:27` shows the expected
+    `1990/934 REPLACE section:27`.
+  - The `1990/934` body has `27 §` with the intro paragraph and then only an
+    image block (`media/0263.gif`), while the oracle has three numbered
+    text items for the light meanings.
+  - `lawvm ops 1982/182 --target section:{24,25,29,30}` shows no operations,
+    and the original `1982/182` XML has chapters 1-3 and 8-9 but no chapter 4.
+    The four missing chapter 4 sections are inherited-base source gaps.
 - Disposition: **defer broad replay work** until there is a named
   traffic-sign/catalog payload elaboration family with source witnesses,
   strict-mode barriers for image-only gaps, synthetic tests, and negative tests
