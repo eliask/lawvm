@@ -98,7 +98,8 @@ from lawvm.finland.merge import (
 logger = logging.getLogger(__name__)
 
 _PART_HEADING_MARKER_RE = re.compile(
-    r"^(?P<label>[IVXLCDM]+|\d+[a-z]?)\s+(?P<unit>osa|osasto)\b(?:\s+(?P<title>.*))?$",
+    r"^(?P<label>(?:[IVXLCDM]{1,12}|\d{1,4}[a-z]?))\s{1,8}(?P<unit>osa|osasto)\b"
+    r"(?:$|\s{1,8}(?P<title>[^\n]{0,200})$)",
     flags=re.I,
 )
 

@@ -38,8 +38,9 @@ _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
     re.IGNORECASE,
 )
 _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"(?P<section>\d{1,4}(?:\s*[a-z])?)\s*§\s*,?\s*joka\s+(?:samalla\s+)?siirretään\s+"
-    r"(?P<chapter>\d{1,4}(?:\s*[a-z])?)\s+lukuun",
+    r"(?P<section>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{0,3}§\s{0,3},?\s{0,3}"
+    r"joka\s{1,8}(?:samalla\s{1,8}siirretään|siirretään)\s{1,8}"
+    r"(?P<chapter>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{1,8}lukuun",
     re.IGNORECASE,
 )
 
