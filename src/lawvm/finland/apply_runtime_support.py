@@ -3777,6 +3777,23 @@ def _with_preserved_provision_index(state: "ReplayState", new_ir: IRNode) -> "Re
     return state.with_ir(new_ir, preserve_provision_index=True)
 
 
+def _with_replaced_provision_subtree_index(
+    state: "ReplayState",
+    new_ir: IRNode,
+    *,
+    path: Path,
+    old_subtree: IRNode,
+    new_subtree: IRNode,
+) -> "ReplayState":
+    """Reuse the provision-path index after same-path subtree replacement."""
+    return state.with_replaced_provision_subtree_index(
+        new_ir,
+        path=path,
+        old_subtree=old_subtree,
+        new_subtree=new_subtree,
+    )
+
+
 def _same_norm_label(lhs: Optional[str], rhs: Optional[str]) -> bool:
     return bool(lhs) and bool(rhs) and normalized_label_key(lhs) == normalized_label_key(rhs)
 

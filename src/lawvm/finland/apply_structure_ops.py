@@ -76,6 +76,7 @@ from lawvm.finland.apply_runtime_support import (
     _parent_direct_child_path_with_same_label,
     _same_norm_label,
     _with_preserved_provision_index,
+    _with_replaced_provision_subtree_index,
 )
 from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 
@@ -2484,7 +2485,16 @@ def _apply_whole_section_op(
                             )
                         )
                 logger.debug("  %s → section insert via chapter merge (%s luku)", ctx_label, _target_chapter)
-                return state.with_ir(_tops.replace_at(absorbed_ir, ch_path, merged_for_replace))
+                new_ir = _tops.replace_at(absorbed_ir, ch_path, merged_for_replace)
+                if not absorbed_paths:
+                    return _with_replaced_provision_subtree_index(
+                        state,
+                        new_ir,
+                        path=_tops._as_path(ch_path),
+                        old_subtree=ch_node,
+                        new_subtree=merged_for_replace,
+                    )
+                return state.with_ir(new_ir)
 
         if not profile.replace_same_numbered_section_insert:
             replace_path = None
