@@ -2839,6 +2839,19 @@ def test_replay_xml_matches_current_oracle_order_for_1987_990_section_3_first_mo
     assert "14" in paragraph_labels
 
 
+def test_replay_xml_binds_1987_990_section_17_intro_to_second_moment(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    """1994/1420 replaces 17 § 1 mom and 2 mom johdantokappale separately."""
+    section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:5/section:17"]
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    subsection_texts = [" ".join(irnode_to_text(child).split()) for child in subsections]
+
+    assert subsection_texts[0].startswith("Lupa ydinenergian käyttöön voidaan myöntää vain Euroopan unionin")
+    assert subsection_texts[1].startswith("Muulle kuin 1 momentissa tarkoitetulle yhteisölle")
+    assert subsection_texts[1].count("Lupa ydinenergian käyttöön voidaan myöntää vain Euroopan unionin") == 0
+
+
 def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73(
     replay_1987_990_finlex_oracle: ReplayResult,
 ) -> None:

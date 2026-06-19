@@ -3536,6 +3536,50 @@ def test_build_subsection_slot_assignment_binds_mixed_intro_and_plain_by_source_
     assert got.unassigned_payload_slots == ()
 
 
+def test_build_subsection_slot_assignment_prefers_exact_intro_label_when_moments_match() -> None:
+    """Regression: 1987/990 §17 / 1994/1420.
+
+    The amendment body has real legal moment labels 1 and 2. The scoped
+    ``2 momentin johdantokappale`` must bind to slot 2, not consume slot 1
+    merely because it appears before exact plain-slot assignment.
+    """
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi 1 momentti."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.INTRO, text="Uusi 2 momentin johdanto:"),),
+            ),
+        ),
+    )
+    op1_plain = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_paragraph=1,
+    )
+    op2_intro = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_paragraph=2,
+        target_special="johd",
+    )
+
+    got = _build_subsection_slot_assignment(muutos_ir, [op1_plain, op2_intro])
+
+    assert got.subsec_map[id(op1_plain)].label == "1"
+    assert got.subsec_map[id(op2_intro)].label == "2"
+    assert got.unassigned_payload_slots == ()
+
+
 def test_build_subsection_slot_assignment_shares_plain_and_item_ops_on_same_moment() -> None:
     """Plain subsection ops and item ops for the same moment must share one slot.
 

@@ -1419,11 +1419,10 @@ def _assign_intro_slot_ops(
     if not intro_ops:
         return
 
-    # When intro ops are mixed with other sparse subsection ops, bind them in
-    # source order to the earliest remaining slots. This keeps repeated
-    # johdanto fragments stable and prevents later plain fallback from stealing
-    # the leading slot. A lone intro op keeps the historical exact-label
-    # behavior for compatibility.
+    # Prefer exact labels before positional fallback. Dense-local numbering
+    # cases have already been assigned by _assign_dense_local_target_groups; if
+    # target labels and payload labels really match, source order is not
+    # authority to move a johdantokappale to another moment.
     mixed_intro_group = len(intro_ops) > 1 or bool(slot_inputs.payload_subsec_ops)
 
     for op in intro_ops:
@@ -1440,6 +1439,18 @@ def _assign_intro_slot_ops(
         if shared is not None:
             state.subsec_map.assign(op, shared)
             continue
+        exact_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(slot_inputs.amend_subs)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+            ),
+            None,
+        )
+        if exact_idx is not None:
+            state.subsec_map.assign(op, slot_inputs.amend_subs[exact_idx])
+            state.used_subs.add(exact_idx)
+            continue
         if mixed_intro_group:
             for idx, sub in enumerate(slot_inputs.amend_subs):
                 if idx in state.used_subs:
@@ -1448,13 +1459,6 @@ def _assign_intro_slot_ops(
                 state.used_subs.add(idx)
                 break
             continue
-        for idx, sub in enumerate(slot_inputs.amend_subs):
-            if idx in state.used_subs:
-                continue
-            if _norm_num_token(sub.label or "") == str(op.target_paragraph):
-                state.subsec_map.assign(op, sub)
-                state.used_subs.add(idx)
-                break
 
 
 def _assign_remaining_insert_slot_ops(
