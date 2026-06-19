@@ -92,6 +92,60 @@ def test_momentissa_stays_word_subref_lost() -> None:
     assert _sub_ref_after_pykala("muutetaan 6 §:n 1 momentissa") is None
 
 
+# ── alakohta (sub-item) level — the descendant chain's deepest level ────────
+
+
+def test_single_letter_alakohta_after_kohta() -> None:
+    # ``6 §:n 1 momentin 4 kohdan a alakohta`` — the full descendant chain down
+    # to the sub-item. Previously the ``a alakohta`` tail was silently dropped
+    # (parse stopped at the kohta); now it is captured in ``SubRef.subitem``.
+    subs = _sub_ref_after_pykala("muutetaan 6 §:n 1 momentin 4 kohdan a alakohta")
+    assert subs == [S.SubRef(momentti=1, item="4", subitem="a")]
+
+
+def test_full_chain_subitem_consumes_all_tokens() -> None:
+    # Prerequisite case: ``2 momentin 1 kohdan a alakohta`` (no §) consumes the
+    # whole run rather than stopping at token 4/6.
+    toks = tokenize("2 momentin 1 kohdan a alakohta")
+    scan = S._Scan(Cursor(toks, 0))
+    subs = S._sub_ref(scan)
+    assert subs == [S.SubRef(momentti=2, item="1", subitem="a")]
+    assert scan.pos == len(toks)
+
+
+def test_coordinated_letter_alakohta() -> None:
+    # ``1 momentin 4 kohdan a ja b alakohta`` — coordinated sub-items expand
+    # over the kohta, mirroring kohta coordination one level deeper.
+    subs = _sub_ref_after_pykala("muutetaan 6 §:n 1 momentin 4 kohdan a ja b alakohta")
+    assert subs == [
+        S.SubRef(momentti=1, item="4", subitem="a"),
+        S.SubRef(momentti=1, item="4", subitem="b"),
+    ]
+
+
+def test_numeric_alakohta() -> None:
+    # Numeric sub-items occur too (``1 kohdan 15 alakohdassa``); the numeric arm
+    # of the alakohta consumer covers them.
+    subs = _sub_ref_after_pykala("säädetään 6 §:n 1 kohdan 15 alakohdassa")
+    assert subs == [S.SubRef(momentti=0, item="1", subitem="15")]
+
+
+def test_inessive_alakohta_after_full_chain() -> None:
+    # Inessive ``alakohdassa`` (body citation) on the full chain.
+    subs = _sub_ref_after_pykala("säädetään 6 §:n 1 momentin 3 kohdan c alakohdassa")
+    assert subs == [S.SubRef(momentti=1, item="3", subitem="c")]
+
+
+def test_kohta_without_alakohta_unchanged() -> None:
+    # Strict-superset guard at the unit level: a kohta with NO trailing alakohta
+    # parses exactly as before (no subitem field set, no extra consumption).
+    toks = tokenize("muutetaan 6 §:n 1 momentin 4 kohdan otsikko")
+    pyk = next(i for i, t in enumerate(toks) if t.cat == "PYKALA")
+    scan = S._Scan(Cursor(toks, pyk + 1))
+    subs = S._sub_ref(scan)
+    assert subs == [S.SubRef(momentti=1, item="4")]
+
+
 # ── genitive amendment control — unchanged by the lexicon completion ────────
 
 
