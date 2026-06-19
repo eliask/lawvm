@@ -534,6 +534,7 @@ class PayloadElaborationContext:
     target_unit_kind: TargetUnitKind
     target_norm: str
     target_chapter: Optional[str]
+    target_part: Optional[str]
 
     # Bounded local snapshot — traversal allowed to any depth
     live_node: Optional[IRNode]
@@ -626,6 +627,7 @@ def build_payload_elaboration_context(
         target_unit_kind=target_ctx.target_unit_kind,
         target_norm=target_ctx.target_norm,
         target_chapter=target_ctx.target_chapter,
+        target_part=target_ctx.target_part,
         live_node=live_node,
         parent_node=target_ctx.parent_node,
         subsection_slots=target_ctx.subsection_slots,

@@ -269,6 +269,7 @@ class TestElaborationSnapshotVocabulary:
                 target_unit_kind=target_kind,
                 target_norm=target_norm,
                 target_chapter=None,
+                target_part=None,
                 live_node=None,
                 parent_node=None,
                 subsection_slots=(),

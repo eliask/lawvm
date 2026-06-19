@@ -2648,6 +2648,18 @@ def test_replay_xml_2012_999_prunes_stale_item_tail_when_2018_207_supplies_new_t
     assert not any(child.kind == IRNodeKind.SUBPARAGRAPH for child in item_4.children)
 
 
+def test_replay_xml_2011_872_keeps_new_5a_sections_shadowed_by_chapter_5_replaces() -> None:
+    replay = replay_xml("2011/872", mode="official_consolidation", quiet=True, build_full_products=False)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    chapter_5_section_44 = sections["chapter:5/section:44"]
+    chapter_5a_section_44 = sections["chapter:5a/section:44"]
+
+    assert "Valvotusta läpilaskusta päättäminen" in irnode_to_text(chapter_5_section_44)
+    assert "Rikosepäilystä ilmoittaminen" in irnode_to_text(chapter_5a_section_44)
+    assert "Rikosepäilystä ilmoittaminen" not in irnode_to_text(chapter_5_section_44)
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

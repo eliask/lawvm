@@ -123,6 +123,7 @@ from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
     group_shadow_pruning_foreign_scoped_replace_section_targets as _group_shadow_pruning_foreign_scoped_replace_section_targets,
+    group_shadow_pruning_foreign_scoped_replace_section_target_scopes as _group_shadow_pruning_foreign_scoped_replace_section_target_scopes,
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
 )
@@ -391,6 +392,7 @@ def _compile_group(
             target_part=target_part,
             group_ops=group_ops,
             standalone_section_targets=standalone_section_targets,
+            same_container_section_targets=set(),
             inserted_chapter_labels=inserted_chapter_labels,
             source_model=AmendmentSourceModel.from_tree(muutos_tree),
             johto=johto,
@@ -3925,6 +3927,7 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
             group_surface=group_surface,
             group_ops=[op],
             standalone_section_targets=set(),
+            same_container_section_targets=set(),
             foreign_scoped_standalone_section_targets=set(),
             foreign_scoped_replace_section_targets=set(),
             effective_target_part=None,
@@ -4388,6 +4391,39 @@ def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_forei
     )
 
     assert got == {"51", "61"}
+
+
+def test_group_shadow_pruning_foreign_scoped_replace_section_target_scopes_preserves_scope() -> None:
+    chapter_replace = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="chapter",
+        target_section="7",
+    )
+    foreign_replace_51 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="51",
+        target_chapter="8",
+        target_paragraph=1,
+    )
+    local_replace_52 = AmendmentOp(
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="52",
+        target_chapter="7",
+    )
+
+    got = _group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
+        [chapter_replace, foreign_replace_51, local_replace_52],
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_part=None,
+        duplicate_section_labels=frozenset(),
+    )
+
+    assert got == frozenset(
+        {StandaloneSectionTarget(part=None, chapter="8", label="51")}
+    )
 
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inserts() -> None:

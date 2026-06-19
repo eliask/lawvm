@@ -24,6 +24,7 @@ from lawvm.finland.group_ops import (
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
 from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.compile_group_surface import (
     collect_recodification_omission_only_section_shell_pathologies,
 )
@@ -31,6 +32,22 @@ from lawvm.finland.payload_normalize import elaborate_payload_against_live, prep
 from lawvm.finland.replay_findings import _strict_rejected_source_pathology_finding
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
+
+
+def _has_recodification_transfer_context(
+    *,
+    johto: str,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+) -> bool:
+    if target_unit_kind not in {"chapter", "part"}:
+        return False
+    lowered = johto.lower()
+    if "siirret" not in lowered:
+        return False
+    compact_johto = "".join(lowered.split())
+    compact_target = target_norm.lower().replace(" ", "")
+    return bool(compact_target) and compact_target in compact_johto
 
 
 def _internal_replay_scope_row(
@@ -204,6 +221,7 @@ class ElaborateGroupRequest:
     johto: str
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
+    foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
 
 
 def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGroup]:
@@ -217,6 +235,9 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         request.foreign_scoped_standalone_section_targets
     )
     foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
+    foreign_scoped_replace_section_target_scopes = (
+        request.foreign_scoped_replace_section_target_scopes
+    )
     target_part = request.effective_target_part
     source_model = request.source_model
     johto = request.johto
@@ -301,6 +322,12 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
         foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
+        foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
+        recodification_transfer_context=_has_recodification_transfer_context(
+            johto=johto,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+        ),
         surface=surface,
     )
     muutos_ir = payload_norm.muutos_ir

@@ -9,6 +9,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetUnitKind
 from lawvm.finland.ops import AmendmentOp, ReplayProfile
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
 
 
@@ -30,6 +31,7 @@ class CompileGroupRequest:
     strict_profile: Optional[StrictProfile]
     foreign_scoped_standalone_section_targets: Set[str]
     foreign_scoped_replace_section_targets: Set[str]
+    foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
     lookups: Optional[ReplayLookups] = None
 
 
