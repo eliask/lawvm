@@ -1220,6 +1220,8 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
         for node in nodes:
             text = irnode_to_text(node).strip()
             text_lower = text.lower()
+            if text_lower.startswith("mitä 1 momentissa ") and " ei koske " in f" {text_lower} ":
+                return True
             if (
                 "momentissa" in text_lower
                 and "oikeus" in text_lower

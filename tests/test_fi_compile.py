@@ -2431,6 +2431,19 @@ def test_replay_xml_1994_357_normalizes_colon_intro_content_pairs_before_insert(
     assert text.index(second_items) < text.index(ec_sentence)
 
 
+def test_replay_xml_1982_1112_splits_first_moment_exception_tail_before_replacement() -> None:
+    replay = pinned_replay("1982/1112", mode="official_consolidation", quiet=True)
+    section2 = extract_ir_sections(replay.materialized_state.ir)["section:2"]
+    text = " ".join(irnode_to_text(section2).split())
+
+    old_tail = "Mitä 1 momentissa on sanottu, ei koske maa- ja metsätalousministeriön luvalla"
+    new_tail = "Mitä 1 momentissa säädetään, ei koske Suomen ympäristökeskuksen luvalla"
+
+    assert old_tail not in text
+    assert new_tail in text
+    assert text.count("Mitä 1 momentissa") == 1
+
+
 def test_replay_xml_1993_1709_preserves_list_prefix_when_replacing_later_list() -> None:
     replay = pinned_replay("1993/1709", mode="official_consolidation", quiet=True)
     section1 = extract_ir_sections(replay.materialized_state.ir)["section:1"]

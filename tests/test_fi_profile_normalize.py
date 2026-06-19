@@ -678,6 +678,39 @@ def test_split_trailing_content_only_paragraphs_splits_first_moment_anaphora_tai
     assert "1 momentissa tarkoitettu oikeus" in result[1].children[0].text
 
 
+def test_split_trailing_content_only_paragraphs_splits_mita_first_moment_exception_tail() -> None:
+    """A "Mitä 1 momentissa ... ei koske" tail is a later moment."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Seuraavien tuotteiden maahantuonti on kielletty:"),
+            _para(label="1", children=(_num("1)"), _content("valaanliha;"))),
+            _para(label="2", children=(_num("2)"), _content("valaan elimet."))),
+            _para(
+                children=(
+                    _content(
+                        "Mitä 1 momentissa on sanottu, ei koske luvalla "
+                        "tapahtuvaa tuontia."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 2
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert result[1].attrs["lawvm_source_normalization_rule"] == (
+        "fi_split_trailing_first_moment_anaphora_subsection_v1"
+    )
+    assert "Mitä 1 momentissa on sanottu" in result[1].children[0].text
+
+
 def test_split_trailing_content_only_paragraphs_keeps_non_right_first_moment_tail_inside_subsection() -> None:
     """Generic first-moment references are not enough to split an intro-list tail."""
     sub = _subsection(
