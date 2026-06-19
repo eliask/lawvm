@@ -16,7 +16,8 @@ def test_uncovered_recovery_runner_stays_source_model_primary() -> None:
     assert "import lxml.etree as etree" not in source
     assert "fi_xml_to_ir_node" not in source
     assert "_xml_part_label" not in source
-    assert "find_payload_ir(" in source
+    assert "lookup_payload_ir(" in source
+    assert "find_payload_ir(" not in source
 
 
 def test_uncovered_candidate_iteration_does_not_dispatch_xml_nodes() -> None:
@@ -78,6 +79,24 @@ def test_payload_lookup_does_not_query_source_model_xml_nodes() -> None:
     assert "source_model:" not in source
 
 
+def test_compile_group_surface_uses_typed_source_payload_lookup() -> None:
+    source = _source("src/lawvm/finland/compile_group_surface.py")
+
+    assert "lookup_payload_ir(" in source
+    assert "find_payload_ir(" not in source
+    assert ".payload_ir" in source
+    assert ".cross_heading_ir" in source
+
+
+def test_source_model_exposes_typed_payload_lookup_result() -> None:
+    source = _source("src/lawvm/finland/source_model.py")
+
+    assert "class SourcePayloadLookupResult" in source
+    assert "def lookup_payload_ir(" in source
+    assert "body_lookup_status:" in source
+    assert "body_candidates:" in source
+
+
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:
     source = _source("src/lawvm/finland/lowering_scope_recovery.py")
 
@@ -88,7 +107,7 @@ def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes(
 def test_source_model_has_source_node_uses_inventory_not_xml_nodes() -> None:
     source = _source("src/lawvm/finland/source_model.py")
     method_body = source.split("    def has_source_node(", 1)[1].split(
-        "    def find_payload_ir(",
+        "    def lookup_payload_ir(",
         1,
     )[0]
 

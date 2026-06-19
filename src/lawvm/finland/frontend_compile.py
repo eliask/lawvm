@@ -2031,6 +2031,18 @@ def _retarget_stale_body_scope_for_section_op(
 
     body_part, body_chapter = body_scope
     if (
+        scope_witness is not None
+        and scope_witness.source == "explicit_chunk"
+        and op.op_type == "INSERT"
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+    ):
+        # Explicit chunk scope is source-owned. Do not rehome a whole-section
+        # insert merely because the body wrapper resembles an existing live
+        # section's chapter.
+        return None
+    if (
         op.op_type == "INSERT"
         and op.target_paragraph is None
         and not op.target_item

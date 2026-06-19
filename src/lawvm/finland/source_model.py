@@ -74,6 +74,18 @@ class SourceBodyLookupResult:
         return self.candidates[0]
 
 
+@dataclass(frozen=True, slots=True)
+class SourcePayloadLookupResult:
+    """Typed payload lookup verdict for a source-body target."""
+
+    status: Literal["unique", "missing", "ambiguous"]
+    query: SourceBodyUnitQuery
+    body_lookup_status: Literal["unique", "missing", "ambiguous"]
+    body_candidates: tuple[ObservedBodyUnit, ...]
+    payload_ir: IRNode | None
+    cross_heading_ir: IRNode | None
+
+
 @dataclass(slots=True)
 class AmendmentSourceModel:
     """Cached read-only projections over one Finland amendment source tree."""
@@ -101,7 +113,7 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
-    _payload_ir_cache: dict[SourceUnitLookup, tuple[IRNode | None, IRNode | None]] = field(
+    _payload_ir_cache: dict[SourceUnitLookup, SourcePayloadLookupResult] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -367,14 +379,14 @@ class AmendmentSourceModel:
             return True
         return str(target_unit_kind or "") == "section" and self.has_single_unlabeled_section_payload()
 
-    def find_payload_ir(
+    def lookup_payload_ir(
         self,
         target_unit_kind: TargetUnitKind | str,
         target_norm: str,
         target_chapter: Optional[str] = None,
         target_part: Optional[str] = None,
-    ) -> tuple[IRNode | None, IRNode | None]:
-        """Return cached payload and cross-heading IR for a source-body target."""
+    ) -> SourcePayloadLookupResult:
+        """Return cached typed payload lookup for a source-body target."""
         key = SourceUnitLookup(
             unit_kind=str(target_unit_kind or ""),
             label=target_norm,
@@ -390,7 +402,7 @@ class AmendmentSourceModel:
                 key.chapter,
                 key.part,
             )
-            self._payload_ir_cache[key] = (
+            payload_ir, cross_heading_ir = (
                 _payload_ir_from_muutos_node(
                     source_node,
                     target_unit_kind=key.unit_kind,
@@ -399,7 +411,43 @@ class AmendmentSourceModel:
                 if source_node is not None
                 else (None, None)
             )
+            body_lookup = self.lookup_body_unit(
+                key.unit_kind,
+                key.label,
+                target_chapter=key.chapter,
+                target_part=key.part,
+            )
+            if body_lookup.status == "ambiguous":
+                status: Literal["unique", "missing", "ambiguous"] = "ambiguous"
+            elif payload_ir is not None:
+                status = "unique"
+            else:
+                status = "missing"
+            self._payload_ir_cache[key] = SourcePayloadLookupResult(
+                status=status,
+                query=body_lookup.query,
+                body_lookup_status=body_lookup.status,
+                body_candidates=body_lookup.candidates,
+                payload_ir=payload_ir,
+                cross_heading_ir=cross_heading_ir,
+            )
         return self._payload_ir_cache[key]
+
+    def find_payload_ir(
+        self,
+        target_unit_kind: TargetUnitKind | str,
+        target_norm: str,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> tuple[IRNode | None, IRNode | None]:
+        """Return payload and cross-heading IR for legacy adapter callers."""
+        result = self.lookup_payload_ir(
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            target_part,
+        )
+        return result.payload_ir, result.cross_heading_ir
 
     def pre_create_amendment_chapters(
         self,

@@ -507,16 +507,46 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
         "2",
         "5",
     )
-    model_ir, model_cross_ir = model.find_payload_ir("section", "5", "2", "5")
+    payload_lookup = model.lookup_payload_ir("section", "5", "2", "5")
 
-    assert model.find_payload_ir("section", "5", "2", "5") is model.find_payload_ir(
+    assert model.lookup_payload_ir("section", "5", "2", "5") is model.lookup_payload_ir(
         "section",
         "5",
         "2",
         "5",
     )
-    assert model_ir == direct_ir
-    assert model_cross_ir == direct_cross_ir
+    assert payload_lookup.status == "unique"
+    assert payload_lookup.body_lookup_status == "missing"
+    assert payload_lookup.payload_ir == direct_ir
+    assert payload_lookup.cross_heading_ir == direct_cross_ir
+    assert model.find_payload_ir("section", "5", "2", "5") == (direct_ir, direct_cross_ir)
+
+
+def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter><num>1 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+              <chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/10")
+
+    ambiguous = model.lookup_payload_ir("section", "5")
+    assert ambiguous.status == "ambiguous"
+    assert ambiguous.body_lookup_status == "ambiguous"
+    assert tuple(unit.chapter_label for unit in ambiguous.body_candidates) == ("1", "2")
+
+    missing = model.lookup_payload_ir("section", "6")
+    assert missing.status == "missing"
+    assert missing.body_lookup_status == "missing"
+    assert missing.payload_ir is None
+    assert missing.cross_heading_ir is None
 
 
 def test_source_model_precreates_source_body_chapters() -> None:

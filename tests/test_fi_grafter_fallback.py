@@ -10226,6 +10226,64 @@ def test_retarget_stale_body_chapter_scope_respects_stored_scope_confidence_carr
     assert got is None
 
 
+def test_retarget_stale_body_chapter_scope_keeps_explicit_chunk_whole_section_insert() -> None:
+    from lawvm.finland.frontend_compile import _retarget_stale_body_scope_for_section_op
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="5",
+                            children=(IRNode(kind=IRNodeKind.NUM, text="5 §"),),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>1 luku</num>
+              <section><num>5 §</num></section>
+            </chapter>
+          </body>
+        </akn>
+        """
+    )
+    op = AmendmentOp(
+        op_id="insert_5_explicit_chunk",
+        op_type="INSERT",
+        target_section="5",
+        target_kind=TargetKind.SECTION,
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="2",
+        ),
+    )
+
+    got = _retarget_stale_body_scope_for_section_op(op=op, muutos_tree=muutos_tree, master=master)
+
+    assert got is None
+
+
 def test_retarget_stale_body_chapter_scope_allows_explicit_scope_rewrite_carrier() -> None:
     from lawvm.finland.frontend_compile import _retarget_stale_body_scope_for_section_op
 

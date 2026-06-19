@@ -139,13 +139,13 @@ class UncoveredRecoveryRun:
 
     def section_payload_ir(self, candidate: UncoveredSectionCandidate) -> IRNode | None:
         """Resolve one candidate's section payload through the source model."""
-        payload_ir, _cross_ir = self.source_model.find_payload_ir(
+        payload_lookup = self.source_model.lookup_payload_ir(
             "section",
             candidate.label,
             candidate.amend_chapter_label,
             candidate.amend_part_label,
         )
-        return payload_ir
+        return payload_lookup.payload_ir
 
     def process_section_candidate(self, candidate: UncoveredSectionCandidate) -> None:
         """Process one uncovered section candidate and commit a typed disposition."""
