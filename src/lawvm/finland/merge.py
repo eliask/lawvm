@@ -2292,6 +2292,8 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     amend_subsections = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
     if live_heading is None or amend_heading is None or live_heading.text == amend_heading.text:
         return group_ops, [], []
+    if _has_explicit_heading_and_plain_subsection_replace_source(group_ops):
+        return group_ops, [], []
     if len(amend_subsections) != 1:
         return group_ops, [], []
 
@@ -2347,6 +2349,35 @@ def _drop_suspicious_partial_subsection_shell_replaces(
             )
         )
     return filtered, pathologies, rejected_ops
+
+
+def _has_explicit_heading_and_plain_subsection_replace_source(group_ops: List["AmendmentOp"]) -> bool:
+    has_heading_op = any(str(op.target_special or "").strip() == "otsikko" for op in group_ops)
+    if not has_heading_op:
+        return False
+    for op in group_ops:
+        if (
+            op.op_type != "REPLACE"
+            or op.target_paragraph is None
+            or op.target_item is not None
+            or op.target_special
+        ):
+            continue
+        source = getattr(getattr(op, "lo", None), "source", None)
+        raw_text = str(getattr(source, "raw_text", "") or "")
+        if _source_targets_plain_subsection(raw_text, op.target_paragraph):
+            return True
+    return False
+
+
+def _source_targets_plain_subsection(raw_text: str, target_paragraph: int) -> bool:
+    text = " ".join(raw_text.casefold().split())
+    if not text:
+        return False
+    target = re.escape(str(target_paragraph))
+    if re.search(rf"\b{target}\s+momentin\s+johdanto\w*", text):
+        return False
+    return re.search(rf"\b{target}\s+momentti\b", text) is not None
 
 
 def _is_compact_first_subsection_replace_shell_ir(

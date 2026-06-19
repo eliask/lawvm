@@ -5275,6 +5275,148 @@ def test_normalize_group_payload_drops_stale_whole_section_shell_for_subsection_
     assert pathologies[0].detail["diagnostic_reason"] == "stale_whole_section_shell_heading_mismatch"
 
 
+def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_shell() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="8",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="8 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old second moment."),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "8", target_chapter="3", live_node=live_sec)
+    heading_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="8",
+        target_chapter="3",
+        target_special="otsikko",
+        source_statute="2023/1132",
+    )
+    subsection_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="8",
+        target_chapter="3",
+        target_paragraph=1,
+        source_statute="2023/1132",
+        lo=LegalOperation(
+            op_id="subsec1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "8"), ("subsection", "1"))),
+            source=OperationSource(
+                statute_id="2023/1132",
+                raw_text="muutetaan 8 §:n otsikko ja 1 momentti seuraavasti:",
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="8",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="8 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="New first moment."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [heading_op, subsection_op], muutos_ir, set())
+
+    assert [op.description() for op in got.group_ops] == [
+        "REPLACE 3 luku 8 § otsikko",
+        "REPLACE 3 luku 8 § 1 mom",
+    ]
+    assert got.rejected_ops == ()
+    assert _pathologies(got) == ()
+    assert got.subsec_map is not None
+    mapped = got.subsec_map.get(subsection_op)
+    assert mapped is not None
+    assert mapped.label == "1"
+    assert "New first moment" in " ".join(irnode_to_text(mapped).split())
+
+
+def test_normalize_group_payload_drops_intro_only_heading_and_subsection_shell() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="2 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old second moment."),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "2", target_chapter="2", live_node=live_sec)
+    heading_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="2",
+        target_chapter="2",
+        target_special="otsikko",
+        source_statute="2015/1328",
+    )
+    subsection_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="2",
+        target_chapter="2",
+        target_paragraph=1,
+        source_statute="2015/1328",
+        lo=LegalOperation(
+            op_id="subsec1-intro",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "2"), ("subsection", "1"))),
+            source=OperationSource(
+                statute_id="2015/1328",
+                raw_text="muutetaan 2 §:n otsikko ja 1 momentin johdanto seuraavasti:",
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="2",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="2 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="New intro only."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [heading_op, subsection_op], muutos_ir, set())
+
+    assert [op.description() for op in got.group_ops] == ["REPLACE 2 luku 2 § otsikko"]
+    assert [failed.reason_code for failed in got.rejected_ops] == ["STALE_WHOLE_SECTION_SHELL_REJECTED"]
+    assert _pathologies(got)[0].detail["diagnostic_reason"] == "stale_whole_section_shell_heading_mismatch"
+
+
 def test_prepare_payload_surface_keeps_section_omission_subsection_replace_and_preserves_live_heading() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
@@ -6234,7 +6376,7 @@ def test_payload_completeness_unsupported_shape_pathology_emits_rejected_op() ->
     ]
 
 
-from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction
+from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.ir_helpers import irnode_to_text
 
 

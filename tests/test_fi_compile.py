@@ -2309,6 +2309,18 @@ def test_replay_xml_1966_611_applies_heading_tagged_subsection_payload() -> None
     assert "henkikirjoittajan" not in text
 
 
+def test_replay_xml_2021_1289_applies_explicit_heading_and_first_moment_replace() -> None:
+    replay = pinned_replay("2021/1289", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section8 = sections["chapter:3/section:8"]
+    text = " ".join(irnode_to_text(section8).split())
+
+    assert "Sähkö- ja vetykäyttöisen pakettiauton hankintatuen määrä" in text
+    assert "sähköä, vetyä tai niiden yhdistelmää käyttövoimana" in text
+    assert "akseliväli on enintään 3,5 metriä" in text
+    assert "pienikokoinen pakettiauto" not in text
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
