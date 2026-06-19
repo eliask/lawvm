@@ -10,6 +10,7 @@ import dataclasses
 import json
 import re
 from collections.abc import Callable
+from typing import Dict
 
 from lawvm.core.interlinks import INTERLINK_ROW_COLUMNS
 from lawvm.core.ir import IRNode
@@ -168,6 +169,7 @@ class InterlinkTargetPreviewContext:
 
     source_statute_id: str
     corpus: object | None
+    preview_cache: dict[str, object] = dataclasses.field(default_factory=dict)
 
 
 InterlinkTargetResolverWithContext = Callable[
@@ -322,6 +324,7 @@ _PLACEABLE_SURFACE_KINDS = frozenset({
     "effect_feed_ref",
     "manual_claim_ref",
 })
+_SURFACE_PREFILTER_TOKEN_RE = re.compile(r"[0-9A-Za-zÄÖÅäöå]{3,}")
 
 
 def _child_text(node: IRNode, kind: str) -> str:
@@ -432,15 +435,229 @@ def _has_placeable_surface(row: LawvmInterlinkRow) -> bool:
 def _segment_matches_locator(segment_addr: str, locator: str) -> bool:
     if not locator:
         return True
-    segment_parts = segment_addr.split("/")
-    locator_parts = locator.split("/")
-    if len(locator_parts) > len(segment_parts):
-        return False
-    width = len(locator_parts)
-    for index in range(0, len(segment_parts) - width + 1):
-        if segment_parts[index:index + width] == locator_parts:
-            return True
-    return False
+    if segment_addr == locator:
+        return True
+    return (
+        segment_addr.startswith(locator + "/")
+        or segment_addr.endswith("/" + locator)
+        or f"/{locator}/" in segment_addr
+    )
+
+
+def _place_surface_text_spans_in_segment_groups(
+    surface_text: str,
+    segment_groups: list[tuple[str, list[RenderedTextSegment]]],
+) -> list[tuple[str, RenderedTextSegment, int]]:
+    surface = surface_text
+    if not surface.strip():
+        return []
+    by_date: list[tuple[str, RenderedTextSegment, int]] = []
+    for date, segments in segment_groups:
+        matches: list[tuple[RenderedTextSegment, int]] = []
+        for segment in segments:
+            start = segment.text.find(surface)
+            if start >= 0:
+                matches.append((segment, start))
+        if len(matches) == 1:
+            segment, start = matches[0]
+            by_date.append((date, segment, start))
+    return by_date
+
+
+def _required_surface_token(surface_text: str) -> str:
+    tokens = _SURFACE_PREFILTER_TOKEN_RE.findall(surface_text.lower())
+    if not tokens:
+        return ""
+    return max(tokens, key=len)
+
+
+def place_surface_text_spans_many(
+    surface_texts: list[str],
+    source_locator: str | None,
+    segments_by_date: dict[str, list[RenderedTextSegment]],
+) -> dict[str, list[tuple[str, RenderedTextSegment, int]]]:
+    """Bulk variant of :func:`place_surface_text_spans` for shared locators.
+
+    For each surface, preserves the same contract as the scalar helper: one
+    placement per date only when the exact surface occurs in exactly one rendered
+    segment for that date. The empty-locator path groups surfaces by a required
+    token so each segment is inspected once for the relevant candidate surfaces,
+    instead of scanning every segment once per overlay row.
+    """
+    surfaces = [surface for surface in dict.fromkeys(surface_texts) if surface.strip()]
+    if not surfaces:
+        return {}
+    locator = _normalize_interlink_locator(source_locator)
+    if locator:
+        placer = SurfaceTextSpanPlacer(segments_by_date)
+        return {
+            surface: placer.place(surface, locator)
+            for surface in surfaces
+        }
+
+    token_to_surfaces: dict[str, list[str]] = {}
+    fallback_surfaces: list[str] = []
+    for surface in surfaces:
+        token = _required_surface_token(surface)
+        if token:
+            token_to_surfaces.setdefault(token, []).append(surface)
+        else:
+            fallback_surfaces.append(surface)
+
+    placements: dict[str, list[tuple[str, RenderedTextSegment, int]]] = {
+        surface: [] for surface in surfaces
+    }
+    for date, segments in segments_by_date.items():
+        matches_by_surface: dict[str, list[tuple[RenderedTextSegment, int]]] = {}
+        for segment in segments:
+            segment_tokens = set(_SURFACE_PREFILTER_TOKEN_RE.findall(segment.text.lower()))
+            for token in segment_tokens:
+                for surface in token_to_surfaces.get(token, ()):
+                    start = segment.text.find(surface)
+                    if start >= 0:
+                        matches_by_surface.setdefault(surface, []).append((segment, start))
+            for surface in fallback_surfaces:
+                start = segment.text.find(surface)
+                if start >= 0:
+                    matches_by_surface.setdefault(surface, []).append((segment, start))
+        for surface, matches in matches_by_surface.items():
+            if len(matches) == 1:
+                segment, start = matches[0]
+                placements[surface].append((date, segment, start))
+    return placements
+
+
+@dataclasses.dataclass(slots=True)
+class SurfaceTextSpanPlacer:
+    """Per-export cache for rendered surface-text placement.
+
+    Transition graph export places neutral viewer surfaces after replay. Overlay
+    projection often emits many rows with the same ``label`` surface (for
+    example repeated semantic roles), and whole-body overlays have no locator.
+    Without a per-export cache, each duplicate row rescans every rendered
+    segment at every change-date. The cache is keyed by the exact surface text
+    and normalized locator and returns the same immutable placement tuples the
+    uncached primitive would return.
+    """
+
+    segments_by_date: dict[str, list[RenderedTextSegment]]
+    _cache: Dict[tuple[str, str], list[tuple[str, RenderedTextSegment, int]]] = (
+        dataclasses.field(default_factory=dict)
+    )
+    _segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
+        dataclasses.field(default_factory=dict)
+    )
+    _locator_segment_index: dict[str, list[tuple[str, list[RenderedTextSegment]]]] | None = None
+    _token_segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
+        dataclasses.field(default_factory=dict)
+    )
+    _lower_segment_groups: list[
+        tuple[str, list[tuple[RenderedTextSegment, str]]]
+    ] | None = None
+
+    def _build_lower_segment_groups(
+        self,
+    ) -> list[tuple[str, list[tuple[RenderedTextSegment, str]]]]:
+        return [
+            (date, [(segment, segment.text.lower()) for segment in segments])
+            for date, segments in self.segments_by_date.items()
+        ]
+
+    def _segment_groups_for_token(
+        self,
+        token: str,
+    ) -> list[tuple[str, list[RenderedTextSegment]]]:
+        cached = self._token_segment_groups_cache.get(token)
+        if cached is not None:
+            return cached
+        if self._lower_segment_groups is None:
+            self._lower_segment_groups = self._build_lower_segment_groups()
+        groups = [
+            (
+                date,
+                [
+                    segment
+                    for segment, lower_text in segments
+                    if token in lower_text
+                ],
+            )
+            for date, segments in self._lower_segment_groups
+        ]
+        self._token_segment_groups_cache[token] = groups
+        return groups
+
+    def _build_locator_segment_index(
+        self,
+    ) -> dict[str, list[tuple[str, list[RenderedTextSegment]]]]:
+        by_locator_date: dict[str, dict[str, list[RenderedTextSegment]]] = {}
+        for date, segments in self.segments_by_date.items():
+            for segment in segments:
+                parts = segment.address.split("/")
+                for start in range(len(parts)):
+                    for end in range(start + 1, len(parts) + 1):
+                        locator = "/".join(parts[start:end])
+                        by_locator_date.setdefault(locator, {}).setdefault(date, []).append(
+                            segment
+                        )
+        return {
+            locator: list(by_date.items())
+            for locator, by_date in by_locator_date.items()
+        }
+
+    def _segment_groups_for_locator(
+        self,
+        locator: str,
+    ) -> list[tuple[str, list[RenderedTextSegment]]]:
+        cached = self._segment_groups_cache.get(locator)
+        if cached is not None:
+            return cached
+        if not locator:
+            groups = list(self.segments_by_date.items())
+        else:
+            if self._locator_segment_index is None:
+                self._locator_segment_index = self._build_locator_segment_index()
+            groups = self._locator_segment_index.get(locator, [])
+        self._segment_groups_cache[locator] = groups
+        return groups
+
+    def _segment_groups_for_surface(
+        self,
+        surface_text: str,
+        locator: str,
+    ) -> list[tuple[str, list[RenderedTextSegment]]]:
+        token = _required_surface_token(surface_text)
+        if not token:
+            return self._segment_groups_for_locator(locator)
+        if not locator:
+            return self._segment_groups_for_token(token)
+        return [
+            (
+                date,
+                [
+                    segment
+                    for segment in segments
+                    if token in segment.text.lower()
+                ],
+            )
+            for date, segments in self._segment_groups_for_locator(locator)
+        ]
+
+    def place(
+        self,
+        surface_text: str,
+        source_locator: str | None,
+    ) -> list[tuple[str, RenderedTextSegment, int]]:
+        locator = _normalize_interlink_locator(source_locator)
+        key = (surface_text, locator)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        candidates = _place_surface_text_spans_in_segment_groups(
+            surface_text,
+            self._segment_groups_for_surface(surface_text, locator),
+        )
+        self._cache[key] = candidates
+        return candidates
 
 
 def place_surface_text_spans(
@@ -458,32 +675,20 @@ def place_surface_text_spans(
     dates (zero or multiple occurrences) yield no placement — the caller keeps the
     row unplaced rather than guessing a span.
     """
-    surface = surface_text
-    if not surface.strip():
-        return []
     locator = _normalize_interlink_locator(source_locator)
-    by_date: list[tuple[str, RenderedTextSegment, int]] = []
-    for date, segments in segments_by_date.items():
-        matches: list[tuple[RenderedTextSegment, int]] = []
-        for segment in segments:
-            if not _segment_matches_locator(segment.address, locator):
-                continue
-            start = segment.text.find(surface)
-            if start >= 0:
-                matches.append((segment, start))
-        if len(matches) == 1:
-            segment, start = matches[0]
-            by_date.append((date, segment, start))
-    return by_date
+    return _place_surface_text_spans_in_segment_groups(
+        surface_text,
+        SurfaceTextSpanPlacer(segments_by_date)._segment_groups_for_locator(locator),
+    )
 
 
 def _placement_candidates(
     row: LawvmInterlinkRow,
-    segments_by_date: dict[str, list[RenderedTextSegment]],
+    placer: SurfaceTextSpanPlacer,
 ) -> list[tuple[str, RenderedTextSegment, int]]:
     if not _has_placeable_surface(row):
         return []
-    return place_surface_text_spans(row.surface_text, row.source_locator, segments_by_date)
+    return placer.place(row.surface_text, row.source_locator)
 
 
 def place_lawvm_interlinks(
@@ -493,11 +698,12 @@ def place_lawvm_interlinks(
     segments_by_date: dict[str, list[RenderedTextSegment]],
 ) -> list[LawvmInterlinkRow]:
     placed: list[LawvmInterlinkRow] = []
+    placer = SurfaceTextSpanPlacer(segments_by_date)
     for row in rows:
         if row.rendered_address:
             placed.append(row)
             continue
-        candidates = _placement_candidates(row, segments_by_date)
+        candidates = _placement_candidates(row, placer)
         if not candidates:
             placed.append(row)
             continue

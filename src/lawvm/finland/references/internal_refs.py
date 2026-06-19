@@ -42,6 +42,7 @@ quantifiers, substring guards before the scan.
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 from typing import List, Optional
 
@@ -279,7 +280,7 @@ _KAARI_OBLIQUE_SG: tuple[tuple[str, str], ...] = (
 _NAME_SUFFIX_SUPPLEMENT: tuple[str, ...] = ("kaarena", "kaarin")
 
 
-def _build_name_suffix() -> str:
+def _build_name_suffix_forms() -> tuple[str, ...]:
     """Build the M1-backed name-head exclusion alternation (longest-first)."""
     from lawvm.finland.references.lemma_gate import head_case_forms
 
@@ -289,15 +290,63 @@ def _build_name_suffix() -> str:
     forms.update(head_case_forms("järjestys", _GRAMMATICAL_OBLIQUE_SG))
     forms.update(head_case_forms("muoto", _GRAMMATICAL_OBLIQUE_SG))
     forms.update(head_case_forms("kaari", _KAARI_OBLIQUE_SG))
-    return "(?:{})".format("|".join(sorted(forms, key=lambda s: (-len(s), s))))
+    return tuple(sorted(forms, key=lambda s: (-len(s), s)))
 
 
-_NAME_SUFFIX = _build_name_suffix()
+_NAME_SUFFIX_FORMS = _build_name_suffix_forms()
+_NAME_SUFFIX = "(?:{})".format("|".join(_NAME_SUFFIX_FORMS))
 _PRECEDING_NAME_HEAD_RE = re.compile(
     rf"(?P<prev>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)?\s*"
     rf"(?P<head>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]*{_NAME_SUFFIX})\s*$",
     re.IGNORECASE,
 )
+
+_NAME_HEAD_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "\xe4\xf6\xe5\xc4\xd6\xc5-"
+)
+_NAME_PREV_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "\xe4\xf6\xe5\xc4\xd6\xc5"
+)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _PrecedingNameHead:
+    prev: str
+    head: str
+
+
+def _preceding_name_head(before: str) -> _PrecedingNameHead | None:
+    """Return the final statute-name head in ``before`` if one abuts the end.
+
+    This is the non-regex equivalent of ``_PRECEDING_NAME_HEAD_RE.search`` for
+    the hot exclusion path. It only recognizes a final head token whose suffix is
+    in the same M1-generated closed suffix set, plus an optional immediately
+    preceding demonstrative/name token.
+    """
+    stripped = before.rstrip()
+    if not stripped:
+        return None
+    end = len(stripped)
+    head_start = end
+    while head_start > 0 and stripped[head_start - 1] in _NAME_HEAD_CHARS:
+        head_start -= 1
+    if head_start == end:
+        return None
+    head = stripped[head_start:end]
+    head_lower = head.lower()
+    if not any(head_lower.endswith(suffix) for suffix in _NAME_SUFFIX_FORMS):
+        return None
+    prefix = stripped[:head_start].rstrip()
+    prev_end = len(prefix)
+    prev_start = prev_end
+    while prev_start > 0 and prefix[prev_start - 1] in _NAME_PREV_CHARS:
+        prev_start -= 1
+    return _PrecedingNameHead(
+        prev=prefix[prev_start:prev_end],
+        head=head,
+    )
 
 # A self-referential demonstrative makes ``… lain / … laissa`` mean "THIS act" →
 # INTERNAL → ours (overrides the name-head exclusion). ``tämän lain``,
@@ -539,9 +588,9 @@ def _is_excluded(text: str, start: int) -> bool:
         head_ctx, _ch = _strip_chapter_prefix(head_ctx)
         if _PRECEDING_STATUTE_ID_RE.search(head_ctx):
             return True
-        hm = _PRECEDING_NAME_HEAD_RE.search(head_ctx)
+        hm = _preceding_name_head(head_ctx)
         if hm is not None and not _demonstrative_binds_name(
-            (hm.group("prev") or "").lower(), hm.group("head")
+            hm.prev.lower(), hm.head
         ):
             return True
 
@@ -551,7 +600,7 @@ def _is_excluded(text: str, start: int) -> bool:
     before, _chapter = _strip_chapter_prefix(before)
     if _PRECEDING_STATUTE_ID_RE.search(before):
         return True
-    m = _PRECEDING_NAME_HEAD_RE.search(before)
+    m = _preceding_name_head(before)
     if m is not None:
         # A name head (``…lain`` / ``…laissa`` / ``…asetuksen`` …) immediately
         # before the citation is a cross-statute by-name case — EXCLUDED —
@@ -559,8 +608,7 @@ def _is_excluded(text: str, start: int) -> bool:
         # makes it "THIS act" (``tämän lain`` / ``tässä laissa``), an internal
         # self-ref. A case-mismatched demonstrative (``tähän …lain``) binds a
         # downstream noun, not the name → stays cross-statute → EXCLUDED.
-        prev = (m.group("prev") or "").lower()
-        if _demonstrative_binds_name(prev, m.group("head")):
+        if _demonstrative_binds_name(m.prev.lower(), m.head):
             return False
         return True
     return False

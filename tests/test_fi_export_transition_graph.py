@@ -980,6 +980,50 @@ def test_export_places_surface_overlays_in_rendered_text(
         conn.close()
 
 
+def test_export_places_duplicate_surface_overlay_labels_independently(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """Rows that share a label may reuse placement work, but remain distinct
+    semantic overlays with distinct overlay_ids."""
+    overlays = [
+        _overlay_row(
+            overlay_id="fi.overlay:alpha:def",
+            kind="defined_term",
+            node_id="def_alpha",
+            label="alpha",
+        ),
+        _overlay_row(
+            overlay_id="fi.overlay:alpha:temporal",
+            kind="temporal",
+            node_id="temporal_alpha",
+            label="alpha",
+        ),
+    ]
+    out = tmp_path / "synth_overlay_duplicate_labels.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        overlay_provider=_overlay_provider_for_rows(overlays),
+    )
+
+    assert stats.n_lawvm_surface_overlays == 2 * len(_CHANGE_DATES)
+
+    conn = sqlite3.connect(str(out))
+    try:
+        rows = conn.execute(
+            "SELECT overlay_id, kind, rendered_effective_date, rendered_address, "
+            "rendered_char_start, rendered_char_end "
+            "FROM lawvm_surface_overlays ORDER BY overlay_id, rendered_effective_date"
+        ).fetchall()
+        assert len(rows) == 2 * len(_CHANGE_DATES)
+        assert len({row[0] for row in rows}) == len(rows)
+        assert {row[1] for row in rows} == {"defined_term", "temporal"}
+        assert {row[3:] for row in rows} == {("section:1", 0, 5)}
+    finally:
+        conn.close()
+
+
 def test_export_keeps_unplaceable_surface_overlay_unplaced(
     patched_engine: None, tmp_path: Path
 ) -> None:
