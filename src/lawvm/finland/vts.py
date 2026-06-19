@@ -15,7 +15,8 @@ from typing import List, Literal, Optional, Set, TYPE_CHECKING
 import lxml.etree as etree
 
 from lawvm.finland.ops import AmendmentOp
-from lawvm.finland.address_parse import ParsedLegalAddress, parse_legal_addresses
+from lawvm.finland.address_parse import ParsedLegalAddress
+from lawvm.finland.references.freetext_addresses import scan_legal_addresses
 from lawvm.finland.citation_routing import _head_genitive_title
 
 if TYPE_CHECKING:
@@ -809,7 +810,7 @@ def extract_voimaantulo_repeals(
     def _chapter_scoped_address_blocks(text: str) -> List[tuple[str | None, List[ParsedLegalAddress]]]:
         markers = list(_CHAPTER_MARKER_RE.finditer(text))
         if not markers:
-            return [(None, parse_legal_addresses(text))]
+            return [(None, scan_legal_addresses(text))]
 
         blocks: List[tuple[str | None, str]] = []
         if markers[0].start() > 0:
@@ -824,7 +825,7 @@ def extract_voimaantulo_repeals(
         out: List[tuple[str | None, List[ParsedLegalAddress]]] = []
         for chapter_label, block_text in blocks:
             parsed: List[ParsedLegalAddress] = []
-            for addr in parse_legal_addresses(block_text):
+            for addr in scan_legal_addresses(block_text):
                 if chapter_label is not None and addr.chapter is None and addr.section:
                     parsed.append(dc_replace(addr, chapter=chapter_label))
                 else:
@@ -833,10 +834,10 @@ def extract_voimaantulo_repeals(
         return out
 
     # --- Chapter repeals (N luku) ---
-    # Use the shared address_parse library for chapter references too.
+    # Use the shared free-text grammar driver for chapter references too.
     # Only addresses with a chapter label (no section context) are turned
     # into REPEAL ops.
-    for addr in parse_legal_addresses(fragment):
+    for addr in scan_legal_addresses(fragment):
         if addr.chapter is None:
             continue  # not a chapter reference — handled below
         norm = addr.chapter
@@ -864,7 +865,7 @@ def extract_voimaantulo_repeals(
     )
 
     # --- Section/subsection/item repeals ---
-    # Use the shared address_parse library to extract all legal addresses from
+    # Use the shared free-text grammar driver to extract all legal addresses from
     # the fragment. Whole-section addresses become plain section REPEAL ops.
     # Subsection and plain item targets are carried through as paragraph/item
     # fields on the section-level AmendmentOp. Alakohta depth is still skipped

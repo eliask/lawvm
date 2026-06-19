@@ -689,20 +689,25 @@ def test_extract_voimaantulo_repeals_records_skipped_alakohta_target() -> None:
     assert record.as_detail()["quirks_disposition"] == "record"
 
 
-def test_extract_voimaantulo_repeals_records_skipped_kohta_only_bare_section_target() -> None:
+def test_extract_voimaantulo_repeals_parses_kohta_without_momentin() -> None:
+    # ``6 §:n 3 kohta`` (a kohta named directly under the §, with no ``momentin``)
+    # is now parsed by the free-text grammar driver as section 6, kohta 3 — not
+    # collapsed to an unsafe bare whole-section repeal the way the legacy
+    # parallel-regex parser had to (it could not reach the kohta without a
+    # ``momentin`` prefix and self-suppressed the bare section). The precise
+    # kohta target is emitted, no skip record is needed.
     xml = _vts_xml("6 §:n 3 kohta.")
     skipped: list[VtsSkippedTarget] = []
     ops = extract_voimaantulo_repeals(xml, "1979/925", skipped_targets_out=skipped)
 
-    assert ops == []
-    assert len(skipped) == 1
-    record = skipped[0]
-    assert record.rule_id == VTS_SKIPPED_TARGET_RULE_ID
-    assert record.reason_code == "unsafe_kohta_only_bare_section_parse"
-    assert record.target_section == "6"
-    assert record.target_paragraph is None
-    assert record.target_item is None
-    assert "whole-section repeal suppressed" in record.source_reason
+    assert skipped == []
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.target_kind == "P"
+    assert op.target_section == "6"
+    assert op.target_paragraph is None
+    assert op.target_item == "3"
+    assert op.voimaantulo_repeal is True
 
 
 def test_extract_voimaantulo_repeals_keeps_chapter_scope_across_grouped_refs() -> None:
