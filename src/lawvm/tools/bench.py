@@ -74,6 +74,7 @@ _REPEALED_THRESHOLD = 0.5  # fraction of <section> elements that are kumottu →
 _EMPTY_MAX_SECTIONS = 3  # ≤N sections AND 0 kumottu AND small body → EMPTY
 _EMPTY_MAX_BYTES = 2000  # body text (tag-stripped) shorter than this → EMPTY
 _ORACLE_STALE_DIAGNOSIS = "ORACLE_STALE"
+_FI_BENCH_DEFAULT_MAX_WORKERS = 16
 # Non-scored statuses that are NOT crashes: the statute simply has no oracle to
 # compare against (fully-superseded decree, missing source, oracle redirected to a
 # different successor statute). These are excluded from scoring but must NOT be
@@ -2366,7 +2367,7 @@ def _fi_bench_worker_count(args: Any) -> int:
     """Return the Finland bench worker count requested by CLI args."""
     explicit = getattr(args, "parallel", None)
     if explicit is None:
-        return 1
+        return max(1, min(_FI_BENCH_DEFAULT_MAX_WORKERS, os.cpu_count() or 1))
     if explicit < 1:
         print("ERROR: --parallel must be a positive integer", file=sys.stderr)
         raise SystemExit(2)
@@ -2727,7 +2728,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         default=None,
         metavar="N",
         help=(
-            "parallel workers (FI default: 1=sequential; UK/EE use "
+            "parallel workers (FI default: min(16, cpu_count); UK/EE use "
             "jurisdiction-specific defaults); per-worker peak RSS ~860 MB after source-root "
             "eviction — heavy lanes still serialize via memory guard)"
         ),

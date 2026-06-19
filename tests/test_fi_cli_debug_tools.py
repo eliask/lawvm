@@ -58,7 +58,7 @@ def test_bench_cli_help_matches_fi_tooling_defaults(
     assert raised.value.code == 0
     out = capsys.readouterr().out
     assert "data/finland/bench_corpus.csv" in out
-    assert "FI default: 1=sequential" in out
+    assert "FI default: min(16, cpu_count)" in out
     assert "UK/EE use jurisdiction-specific defaults" in out
 
 

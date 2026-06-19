@@ -33,7 +33,14 @@ def test_bench_levenshtein_ratio_helper_matches_python_levenshtein() -> None:
         )
 
 
-def test_fi_bench_worker_count_defaults_to_sequential() -> None:
+def test_fi_bench_worker_count_defaults_to_bounded_cpu_count(monkeypatch) -> None:
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: 32)
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 16
+
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: 8)
+    assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 8
+
+    monkeypatch.setattr(bench.os, "cpu_count", lambda: None)
     assert bench._fi_bench_worker_count(argparse.Namespace(parallel=None)) == 1
 
 
