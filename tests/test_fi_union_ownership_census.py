@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from lawvm.finland.legal_surface.union_ownership_census import (
     FAMILY_PARSERS,
+    REFERENCE_RECOGNIZERS,
     UnownedSignalSpan,
     classify_body,
+    reference_owned_spans,
     union_over_sentence,
 )
 
@@ -144,3 +146,63 @@ def test_union_over_sentence_records_owning_families() -> None:
     su = union_over_sentence("Tämä laki tulee voimaan 1.1.2020.")
     families_seen = {f for fams in su.owners.values() for f in fams}
     assert "temporal" in families_seen
+
+
+def test_reference_recognizer_roster_is_the_four_body_text_lanes() -> None:
+    # The SECOND ownership source is exactly the four body-text reference
+    # recognizers (NOT the <ref>-annotation / footer / preamble editorial lanes,
+    # which are deliberately excluded — grammar7 annotation-is-witness).
+    names = {fid for fid, _fn in REFERENCE_RECOGNIZERS}
+    assert names == {"ref_internal", "ref_by_name", "ref_treaty", "ref_eu"}
+
+
+def test_bare_section_ref_is_owned_not_silent() -> None:
+    # A bare same-statute § cross-reference (``5 §:ssä``) — the largest L0
+    # silent-unowned bucket (section_mark) — is now OWNED by the internal-ref
+    # recognizer, so the cheap ``section_mark`` signal is NOT silent-unowned.
+    text = "Edellä 5 §:ssä tarkoitettu lupa myönnetään hakemuksesta."
+    assert _shapes(text).get("section_mark", 0) == 0, _shapes(text)
+    assert _buckets(text).get("silent", 0) == 0, _buckets(text)
+    su = union_over_sentence(text)
+    seen = {f for fams in su.owners.values() for f in fams}
+    assert "ref_internal" in seen, seen
+    # The owned span recovers the verbatim § surface.
+    spans = reference_owned_spans(text)["ref_internal"]
+    assert any(text[s:e] == "5 §:ssä" for s, e in spans), spans
+
+
+def test_by_name_cross_ref_is_owned_not_silent() -> None:
+    # A by-name cross-statute § reference (``jätelain 5 §:ssä``) is owned by the
+    # by-name recognizer (multi-family with the modal surface where they overlap);
+    # its section_mark signal is no longer silent-unowned.
+    text = "Tarkemmat säännökset annetaan jätelain 5 §:ssä."
+    assert _shapes(text).get("section_mark", 0) == 0, _shapes(text)
+    su = union_over_sentence(text)
+    seen = {f for fams in su.owners.values() for f in fams}
+    assert "ref_by_name" in seen, seen
+
+
+def test_treaty_ref_is_owned_not_silent() -> None:
+    # A treaty-series cite (``SopS 11/2020``) is owned by the treaty recognizer;
+    # its sops_ref signal is no longer silent-unowned.
+    text = "Yleissopimuksen (SopS 11/2020) mukaan asia ratkaistaan."
+    assert _shapes(text).get("sops_ref", 0) == 0, _shapes(text)
+    su = union_over_sentence(text)
+    seen = {f for fams in su.owners.values() for f in fams}
+    assert "ref_treaty" in seen, seen
+
+
+def test_ref_recognizer_buckets_still_partition() -> None:
+    # Adding the reference ownership source must not break the partition invariant.
+    from lawvm.finland.legal_surface.tokenize import build_token_tape
+
+    for text in (
+        "Edellä 5 §:ssä tarkoitettu lupa myönnetään hakemuksesta.",
+        "Tarkemmat säännökset annetaan jätelain 5 §:ssä.",
+        "Yleissopimuksen (SopS 11/2020) mukaan asia ratkaistaan.",
+    ):
+        buckets = _buckets(text)
+        partition = sum(buckets.values())
+        tape = build_token_tape("t", text)
+        nonws = sum(1 for tok in tape.tokens if tok.category != "whitespace")
+        assert partition == nonws, (text, buckets, nonws)

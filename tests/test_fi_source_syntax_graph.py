@@ -243,6 +243,87 @@ def test_list_inheritance_preserves_coverage_consistency_vs_l0() -> None:
             assert e.src in node_ids and e.dst in node_ids, body
 
 
+def test_bare_section_ref_is_a_forest_reference_np_leaf() -> None:
+    # A bare same-statute § cross-reference (``5 §:ssä``) — the top L0
+    # section_mark bucket — is now carried by the forest as a reference_np leaf
+    # owned by the internal-ref recognizer, and is no longer silent-unowned.
+    body = "Edellä 5 §:ssä tarkoitettu lupa myönnetään hakemuksesta."
+    forest = _assemble(body)
+    refs = forest.nodes_of_kind("reference_np")
+    assert refs, [n.kind for n in forest.syntax_nodes.values()]
+    internal = [n for n in refs if "ref_internal" in n.families]
+    assert internal, [n.families for n in refs]
+    # The leaf recovers the verbatim § surface.
+    assert any(body[n.char_start : n.char_end] == "5 §:ssä" for n in internal)
+    # No section_mark left silent-unowned.
+    assert forest.coverage.unowned_shape_counts.get("section_mark", 0) == 0
+    assert forest.coverage.silent_tokens == 0, forest.coverage
+
+
+def test_by_name_cross_ref_is_a_forest_reference_np_leaf() -> None:
+    # A by-name cross-statute § reference (``jätelain 5 §:ssä``) is forest-owned:
+    # the by-name recognizer's span is a reference_np leaf (multi-family where it
+    # overlaps the modal surface — no span dropped), and the section_mark signal
+    # is no longer silent-unowned.
+    body = "Tarkemmat säännökset annetaan jätelain 5 §:ssä."
+    forest = _assemble(body)
+    by_name_owned = [
+        n
+        for n in forest.syntax_nodes.values()
+        if "ref_by_name" in n.families
+    ]
+    assert by_name_owned, [
+        (n.kind, n.families) for n in forest.syntax_nodes.values()
+    ]
+    assert forest.coverage.unowned_shape_counts.get("section_mark", 0) == 0
+
+
+def test_ref_element_boundary_case_stays_deferred_not_forest_owned() -> None:
+    # SCOPE BOUNDARY (grammar7 annotation-is-witness): an editorial-annotation
+    # cheap signal that NO body-text construction recognizer owns — here an ``HE``
+    # preparatory-work reference (the <ref>/footer-annotation lane's territory,
+    # DELIBERATELY EXCLUDED from the body-text reference roster) — is NOT promoted
+    # to a forest-owned reference_np leaf. It stays a self-evidencing residual
+    # (surfaced, never silently dropped; the deferred-by-design boundary).
+    body = "Asia mainittiin valmistelussa HE 5/2019 yhteydessä laajasti."
+    forest = _assemble(body)
+    # No reference_np leaf claims the HE reference.
+    he_owned = [
+        n
+        for n in forest.nodes_of_kind("reference_np")
+        if "HE 5/2019" in body[n.char_start : n.char_end]
+    ]
+    assert not he_owned, he_owned
+    # It remains a surfaced residual (the deferred boundary, self-evidencing).
+    he_residual = [r for r in forest.residuals if r.shape == "he_ref"]
+    assert he_residual, forest.residuals
+    assert "HE 5/2019" in he_residual[0].text
+
+
+def test_reference_recognizers_preserve_coverage_consistency_vs_l0() -> None:
+    # The reference ownership source must keep the forest coverage EQUAL to the L0
+    # ruler on the same body (both consume the one union), for reference-bearing
+    # provisions too.
+    for body in (
+        "Edellä 5 §:ssä tarkoitettu lupa myönnetään hakemuksesta.",
+        "Tarkemmat säännökset annetaan jätelain 5 §:ssä.",
+        "Yleissopimuksen (SopS 11/2020) mukaan asia ratkaistaan.",
+        "Asia mainittiin valmistelussa HE 5/2019 yhteydessä laajasti.",
+    ):
+        forest = _assemble(body)
+        bc, fc, usc, _ex, _sc = classify_body("test/1", body)
+        cov = forest.coverage
+        assert cov.total_tokens == sum(bc.values()), body
+        assert cov.owned_tokens == bc.get("owned", 0), body
+        assert cov.silent_tokens == bc.get("silent", 0), body
+        assert cov.is_partition(), body
+        assert cov.family_token_counts == dict(fc), body
+        assert cov.unowned_shape_counts == dict(usc), body
+        # All node/edge kinds stay in the closed taxonomy.
+        assert {n.kind for n in forest.syntax_nodes.values()} <= SYNTAX_NODE_KINDS
+        assert {e.kind for e in forest.syntax_edges} <= SYNTAX_EDGE_KINDS
+
+
 def test_totality_promotes_silent_unowned_to_unsupported(monkeypatch) -> None:
     body = "Asia mainittiin valmistelussa HE 5/2019 yhteydessä laajasti."
     monkeypatch.setenv("LAWVM_PARSE_TOTALITY", "1")

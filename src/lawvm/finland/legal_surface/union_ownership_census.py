@@ -88,6 +88,152 @@ FAMILY_PARSERS: tuple[tuple[str, FamilyParseFn], ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# BODY-TEXT reference recognizers — the second ownership source.
+# ---------------------------------------------------------------------------
+#
+# The six FAMILY_PARSERS above own the deontic/temporal/definitional surface;
+# the citation family (sentence_parse) owns ONLY the (NNN/YYYY)-anchored and
+# <ref>-element-shaped citations. The vast majority of BODY-TEXT references —
+# bare ``§`` cross-refs (``5 §:ssä``), chapter-qualified internal refs
+# (``3 luvun 5 §``), bare ``kohta`` / ``momentti`` self-references, by-name
+# cross-statute references (``jätelain 5 §``), treaty (``SopS NNN/YYYY``) and
+# EU-instrument-by-nickname (``<nickname> N artikla``) references — are owned by
+# the dedicated reference recognizers in :mod:`lawvm.finland.references`, NOT by
+# any of the six families. Those references were therefore counted as
+# SILENT-UNOWNED here (the ``section_mark`` / ``kohta`` / ``momentti`` worklist),
+# even though the reference layer already extracts them.
+#
+# This roster folds those recognizers in as a SECOND ownership source. Each entry
+# is ``(family_id, recognize_fn)`` where ``recognize_fn`` returns char spans of the
+# body-text reference surfaces it owns (see :func:`reference_owned_spans`). The
+# union (:func:`union_over_sentence`) marks those chars OWNED, so a body-text
+# reference the reference layer extracts is no longer silent-unowned, and the L1
+# forest carries the same spans as ``reference_np`` leaves (coverage stays
+# consistent BY CONSTRUCTION because both consume this one union).
+#
+# SCOPE BOUNDARY (grammar7: annotation is WITNESS, not construction): ONLY
+# body-text CONSTRUCTION recognizers are included. The ``<ref>``-annotation lane
+# (``ref_element`` explicit_id markup), the ``preparatory`` footer lane, and the
+# ``affected_document`` preamble lane are EDITORIAL ANNOTATION, not body-text
+# grammar, and are deliberately EXCLUDED — they are never forest construction
+# leaves. (The census operates on ``decode_body_text`` output — the ``<p>`` body
+# text with all ``<ref>``/footer markup already stripped — so the explicit_id
+# inside ``<ref>`` markup never appears here at all; that boundary is deferred by
+# design.)
+#: A body-text reference family id → the char spans it owns in a sentence.
+ReferenceSpanFn = Callable[[str], list[tuple[int, int]]]
+
+
+def _internal_ref_spans(text: str) -> list[tuple[int, int]]:
+    """Char spans owned by the internal (same-statute) bare-§ recognizer.
+
+    Runs :func:`recognize_internal_refs` and locates each mention's verbatim
+    ``surface_text`` (the captured ``§`` / ``kohta`` / ``momentti`` surface, which
+    carries ``source_span=None`` and is re-anchored downstream). Coordinated runs
+    share one surface; :func:`_locate_surfaces` walks document order so each
+    occurrence maps to a distinct span.
+    """
+    from lawvm.finland.references.internal_refs import recognize_internal_refs
+
+    mentions = recognize_internal_refs(text, "")
+    return _locate_surfaces(text, [m.surface_text or "" for m in mentions])
+
+
+def _by_name_ref_spans(text: str) -> list[tuple[int, int]]:
+    """Char spans owned by the by-name cross-statute recognizer.
+
+    Runs :func:`recognize_by_name_refs` and locates each mention's verbatim
+    ``surface_text`` (name head + optional ``§`` tail).
+    """
+    from lawvm.finland.references.by_name import recognize_by_name_refs
+
+    mentions = recognize_by_name_refs(text)
+    return _locate_surfaces(text, [m.surface_text or "" for m in mentions])
+
+
+def _treaty_ref_spans(text: str) -> list[tuple[int, int]]:
+    """Char spans owned by the treaty-series (``SopS NNN/YYYY``) recognizer.
+
+    :func:`recognize_treaty_refs` carries a reliable char ``source_span``
+    (``byte_offset`` is a char offset into ``text``); we use it directly.
+    """
+    from lawvm.finland.references.treaty import recognize_treaty_refs
+
+    spans: list[tuple[int, int]] = []
+    for m in recognize_treaty_refs(text):
+        sp = m.source_span
+        if sp is not None and sp.byte_len > 0:
+            spans.append((sp.byte_offset, sp.byte_offset + sp.byte_len))
+    return spans
+
+
+def _eu_directive_ref_spans(text: str) -> list[tuple[int, int]]:
+    """Char spans owned by the EU-instrument-by-nickname (``N artikla``) recognizer.
+
+    :func:`recognize_eu_directive_refs` returns ``EuDirectiveRef`` wrappers whose
+    ``mention.surface_text`` is a verbatim slice of ``text``; locate those.
+    """
+    from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
+
+    drefs = recognize_eu_directive_refs(text)
+    return _locate_surfaces(text, [d.mention.surface_text or "" for d in drefs])
+
+
+#: The body-text reference recognizer roster. Order is report order. Each owns a
+#: DISJOINT slice of the reference catalogue (internal / by-name / treaty / EU);
+#: overlaps with the citation family are recorded as multi-family ownership, never
+#: dropped. The ``ref_`` family-id prefix keeps them distinct from the six
+#: construction families in the per-family ownership report.
+REFERENCE_RECOGNIZERS: tuple[tuple[str, ReferenceSpanFn], ...] = (
+    ("ref_internal", _internal_ref_spans),
+    ("ref_by_name", _by_name_ref_spans),
+    ("ref_treaty", _treaty_ref_spans),
+    ("ref_eu", _eu_directive_ref_spans),
+)
+
+
+def _locate_surfaces(text: str, surfaces: list[str]) -> list[tuple[int, int]]:
+    """Locate each verbatim surface in ``text`` as a char span, in document order.
+
+    Mirrors the production re-anchoring convention
+    (:func:`…ref_mention_extractor.extract_surface_grammar_mentions._relocate`):
+    a per-surface cursor advances one occurrence per call, so several mentions
+    that share the SAME surface (a coordinated run enumerated per member) map to
+    distinct successive occurrences rather than all collapsing onto the first.
+    A surface that does not occur verbatim (rare — only the by-name reassembled
+    ``name + " " + tail`` form) is skipped (fail-loud by absence; never a
+    fabricated span).
+    """
+    cursor: dict[str, int] = {}
+    spans: list[tuple[int, int]] = []
+    for surface in surfaces:
+        if not surface:
+            continue
+        pos = text.find(surface, cursor.get(surface, 0))
+        if pos < 0:
+            continue
+        cursor[surface] = pos + 1
+        spans.append((pos, pos + len(surface)))
+    return spans
+
+
+def reference_owned_spans(sentence_text: str) -> dict[str, list[tuple[int, int]]]:
+    """Run the body-text reference recognizers over one sentence; owned char spans.
+
+    Returns ``{family_id: [(start, end), …]}`` for each
+    :data:`REFERENCE_RECOGNIZERS` entry that owns >=1 span. This is the SECOND
+    ownership source the union folds in (the first is :data:`FAMILY_PARSERS`).
+    Faithful ASSEMBLY: it runs the existing recognizers and reports the char spans
+    of the surfaces they own — it re-implements no recognizer grammar.
+    """
+    out: dict[str, list[tuple[int, int]]] = {}
+    for family_id, span_fn in REFERENCE_RECOGNIZERS:
+        spans = span_fn(sentence_text)
+        if spans:
+            out[family_id] = spans
+    return out
+
+# ---------------------------------------------------------------------------
 # Cheap legal signals — the spans whose presence almost-certainly marks a legal
 # construction. A cheap-signal span owned by NO family is the grammar-growth
 # frontier. Each pattern is a CHEAP independent regex (NOT the parser's own cue
@@ -253,12 +399,18 @@ class _SentenceUnion:
 
 
 def union_over_sentence(sentence_text: str) -> _SentenceUnion:
-    """Run all six family parsers over one sentence and union their owned spans.
+    """Union the six family parsers AND the body-text reference recognizers.
 
     Returns the per-char owning-family map and the explicit typed-residual ranges.
-    Pure: depends only on the six parse functions; no corpus, no I/O. This is the
-    reusable core the corpus harness calls per sentence and the focused test
-    exercises on synthetic provisions.
+    TWO ownership sources are unioned: the six :data:`FAMILY_PARSERS`
+    (deontic/temporal/definitional surface + (NNN/YYYY)-anchored citations) AND
+    the :data:`REFERENCE_RECOGNIZERS` (the body-text bare-§ / kohta / momentti /
+    by-name / treaty / EU references the citation family does not own). Where the
+    two overlap on a char, BOTH owning families are recorded (multi-family
+    ownership — no family dropped). Pure: depends only on those recognizers; no
+    corpus, no I/O. This is the reusable core the corpus harness calls per
+    sentence, the L1 forest assembler reuses, and the focused test exercises on
+    synthetic provisions.
     """
     owners: dict[int, set[str]] = {}
     typed_residual: list[tuple[int, int]] = []
@@ -268,6 +420,14 @@ def union_over_sentence(sentence_text: str) -> _SentenceUnion:
             for i in range(s, e):
                 owners.setdefault(i, set()).add(family_id)
         typed_residual.extend(_typed_residual_spans(parse_obj))
+    # Second ownership source: the body-text reference recognizers. Their owned
+    # surfaces become owner chars under a ``ref_*`` family id, so a bare ``§`` /
+    # kohta / momentti / by-name / treaty / EU reference is no longer
+    # silent-unowned (and the L1 forest carries the same spans as reference_np).
+    for family_id, spans in reference_owned_spans(sentence_text).items():
+        for s, e in spans:
+            for i in range(s, e):
+                owners.setdefault(i, set()).add(family_id)
     return _SentenceUnion(
         owners={i: frozenset(fams) for i, fams in owners.items()},
         typed_residual=typed_residual,

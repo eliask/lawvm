@@ -32,9 +32,11 @@ A FAITHFUL ASSEMBLY of existing outputs, not a re-implementation of any grammar:
     structural segment (heading / chapeau / list_item / quoted_amendment_block /
     continuation / prose / residual), with ``contains`` / ``inherits_chapeau`` /
     ``continues_clause`` edges from the segment ``parent_index`` links;
-  * the **construction leaves** come from running the SIX family parsers over each
-    sentence (citation / definition / temporal / modal / condition_exception /
-    delegation) via the SAME cross-family union the L0 census computes
+  * the **construction leaves** come from running the six family parsers
+    (citation / definition / temporal / modal / condition_exception / delegation)
+    AND the four BODY-TEXT reference recognizers (internal bare-§ / by-name /
+    treaty / EU-by-nickname) over each sentence via the SAME cross-family union
+    the L0 census computes
     (:func:`…union_ownership_census.union_over_sentence`) — one ``SyntaxNode`` per
     contiguous family-owned span, ``contains``-edged under the structural segment
     it sits in. Where families OVERLAP on a span the node records MULTI-FAMILY
@@ -99,7 +101,8 @@ SYNTAX_NODE_KINDS: frozenset[str] = frozenset(
         "continuation",
         "prose",
         # construction leaves (one per family; grammar6 §"The real target object")
-        "reference_np",  # citation family  (kind="citation_bearing")
+        "reference_np",  # citation family + body-text reference recognizers
+        #                  (ref_internal / ref_by_name / ref_treaty / ref_eu)
         "definition_entry",  # definition family
         "temporal_phrase",  # temporal family
         "modal_predicate",  # modal family
@@ -111,9 +114,14 @@ SYNTAX_NODE_KINDS: frozenset[str] = frozenset(
     }
 )
 
-#: The six family ids → the construction node kind each projects to. A family that
-#: produces both a condition and an exception is split by the parse's own ``kind``
-#: tag (handled in the assembler); the default here is the condition kind.
+#: The family ids → the construction node kind each projects to. The six
+#: FAMILY_PARSERS families plus the four BODY-TEXT reference recognizer families
+#: (``ref_internal`` / ``ref_by_name`` / ``ref_treaty`` / ``ref_eu``), which all
+#: project to ``reference_np`` exactly like the citation family — they own the
+#: bare-§ / kohta / momentti / by-name / treaty / EU body-text references the
+#: citation family does not. A family that produces both a condition and an
+#: exception is split by the parse's own ``kind`` tag (handled in the assembler);
+#: the default here is the condition kind.
 _FAMILY_TO_NODE_KIND: dict[str, str] = {
     "citation": "reference_np",
     "definition": "definition_entry",
@@ -121,6 +129,11 @@ _FAMILY_TO_NODE_KIND: dict[str, str] = {
     "modal": "modal_predicate",
     "condition_exception": "condition_clause",
     "delegation": "delegation_frame",
+    # body-text reference recognizers (union_ownership_census.REFERENCE_RECOGNIZERS)
+    "ref_internal": "reference_np",  # bare-§ / kohta / momentti self-references
+    "ref_by_name": "reference_np",  # cross-statute by inflected name head
+    "ref_treaty": "reference_np",  # SopS NNN/YYYY treaty-series cites
+    "ref_eu": "reference_np",  # EU instrument-by-nickname + N artikla
 }
 
 #: Closed set of syntax-edge kinds (grammar6 §"Minimal shape" → Edges). Only the
