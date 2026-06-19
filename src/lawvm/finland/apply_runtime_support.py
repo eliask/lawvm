@@ -93,6 +93,13 @@ _SECTION_SOURCE_DESCENDANT_SCOPE_RE = compile_classifier_regex(
 _PROVISION_INDEXED_KINDS = frozenset({"part", "chapter", "section"})
 
 
+@lru_cache(maxsize=512)
+def _paragraph_label_prefix_re(label: str) -> re.Pattern[str]:
+    """Compile a paragraph label prefix stripper for one source label."""
+
+    return re.compile(rf"^\s*{re.escape(label)}\s*[\).]\s*")
+
+
 def _normalize_snapshot_item_label(label: str | None) -> str:
     """Normalize FI item labels without Roman-to-Arabic conversion.
 
@@ -2010,12 +2017,7 @@ def _emit_section_snapshot(
             text = _norm_text(node)
             if node.kind is not IRNodeKind.PARAGRAPH or not node.label:
                 return text
-            return re.sub(
-                rf"^\s*{re.escape(str(node.label))}\s*[\).]\s*",
-                "",
-                text,
-                count=1,
-            )
+            return _paragraph_label_prefix_re(str(node.label)).sub("", text, count=1)
 
         if not op_source.effective:
             return None

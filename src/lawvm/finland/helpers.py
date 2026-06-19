@@ -22,6 +22,11 @@ from lawvm.roman import roman_to_arabic as _roman_to_arabic_shared
 
 _NUM_TOKEN_STRIP_RE = re.compile(r"[)\s§.]")
 _RANGAISTUS_HEADING_NAME_RE = re.compile(r"\b(rangaistus|rikos)\b")
+_SECTION_SORT_RE = re.compile(r"^(\d+)([a-z]*)$")
+_SECTION_SORT_NON_DIGIT_RE = re.compile(r"[^0-9]")
+_PREVIOUS_ITEM_NUM_SUFFIX_RE = re.compile(r"^(\d+)([a-z]?)$", flags=re.I)
+_PREVIOUS_ITEM_ALPHA_RE = re.compile(r"[a-z]", flags=re.I)
+_SECTION_RANGE_SUFFIX_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
 
 @functools.lru_cache(maxsize=4096)
@@ -120,10 +125,10 @@ def _section_sort_key(text: str) -> Tuple[int, str]:
     Labels that cannot be parsed return ``(-1, token)``.
     """
     token = _norm_num_token(text).replace("luku", "").replace("osa", "")
-    m = re.match(r'^(\d+)([a-z]*)$', token)
+    m = _SECTION_SORT_RE.match(token)
     if m:
         return (int(m.group(1)), m.group(2))
-    digits = re.sub(r'[^0-9]', '', token)
+    digits = _SECTION_SORT_NON_DIGIT_RE.sub("", token)
     return (int(digits), '') if digits else (-1, token)
 
 
@@ -222,7 +227,7 @@ def _previous_item_token(item_norm: str) -> Optional[str]:
     Examples: ``"3"`` → ``"2"``, ``"3a"`` → ``"3"``, ``"3b"`` → ``"3a"``, ``"c"`` → ``"b"``.
     Returns ``None`` when there is no predecessor (base=1, no suffix, or ``"a"``).
     """
-    m = re.match(r'^(\d+)([a-z]?)$', item_norm, flags=re.I)
+    m = _PREVIOUS_ITEM_NUM_SUFFIX_RE.match(item_norm)
     if m:
         base = int(m.group(1))
         suffix = m.group(2).lower()
@@ -233,7 +238,7 @@ def _previous_item_token(item_norm: str) -> Optional[str]:
         if base <= 1:
             return None
         return str(base - 1)
-    if re.fullmatch(r'[a-z]', item_norm, flags=re.I):
+    if _PREVIOUS_ITEM_ALPHA_RE.fullmatch(item_norm):
         letter = item_norm.lower()
         if letter == 'a':
             return None
@@ -345,8 +350,8 @@ def _expand_section_range_tuple(section: str) -> tuple[str, ...]:
             start, end = parts[0].strip(), parts[1].strip()
             if start.isdigit() and end.isdigit():
                 return tuple(str(i) for i in range(int(start), int(end) + 1))
-            m_start = re.fullmatch(r"(\d+)([a-z])", start, re.IGNORECASE)
-            m_end = re.fullmatch(r"(\d+)([a-z])", end, re.IGNORECASE)
+            m_start = _SECTION_RANGE_SUFFIX_RE.fullmatch(start)
+            m_end = _SECTION_RANGE_SUFFIX_RE.fullmatch(end)
             if m_start and m_end and m_start.group(1) == m_end.group(1):
                 base = m_start.group(1)
                 s_c = m_start.group(2).lower()

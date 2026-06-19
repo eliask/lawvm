@@ -30,6 +30,10 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional
 import lxml.etree as etree
 
 _SECTION_LABEL_ORDER_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+_DIGITS_RE = re.compile(r"\d+")
+_LETTER_SUFFIX_SECTION_RE = re.compile(r"\d+[a-z]", flags=re.I)
+_LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
+_LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
@@ -1196,7 +1200,7 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     if not _is_whole_section_insert(op) or op.target_chapter is not None:
         return None
     section_norm = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+", section_norm) is None:
+    if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
@@ -1220,7 +1224,7 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
             next_chapter = _norm_num_token(str(label or ""))
         elif kind is IRNodeKind.SECTION and label and next_chapter:
             sibling_norm = _norm_num_token(str(label))
-            if re.fullmatch(r"\d+", sibling_norm) is not None and (
+            if _DIGITS_RE.fullmatch(sibling_norm) is not None and (
                 op.target_part is None or next_part == op.target_part
             ):
                 sibling_num = int(sibling_norm)
@@ -1349,7 +1353,7 @@ def _flat_source_body_section_nums(
         if num_el is None or not num_el.text:
             continue
         sec_label = _normalize_source_section_num(num_el.text)
-        if re.fullmatch(r"\d+", sec_label) is None:
+        if _DIGITS_RE.fullmatch(sec_label) is None:
             continue
         labels.add(int(sec_label))
     return labels
@@ -1385,7 +1389,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
     ):
         return None
     section_norm = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+", section_norm) is None:
+    if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
@@ -1414,7 +1418,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
                 if child.kind is not IRNodeKind.SECTION or not child.label:
                     continue
                 child_norm = _norm_num_token(str(child.label))
-                if re.fullmatch(r"\d+", child_norm) is not None:
+                if _DIGITS_RE.fullmatch(child_norm) is not None:
                     nums.append(int(child_norm))
             if nums and (op.target_part is None or next_part == op.target_part):
                 chapters.append((next_part, chapter, tuple(sorted(set(nums)))))
@@ -1652,8 +1656,8 @@ def _infer_flat_reinstated_section_scope_from_base(
 def _is_letter_suffix_section_family_continuation(previous_label: str | None, current_label: str) -> bool:
     if not previous_label:
         return False
-    previous_match = re.fullmatch(r"(\d+)([a-z]?)", _norm_num_token(previous_label), flags=re.I)
-    current_match = re.fullmatch(r"(\d+)([a-z])", _norm_num_token(current_label), flags=re.I)
+    previous_match = _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE.fullmatch(_norm_num_token(previous_label))
+    current_match = _LETTER_SUFFIX_CONTINUATION_CURRENT_RE.fullmatch(_norm_num_token(current_label))
     if previous_match is None or current_match is None:
         return False
     previous_stem, previous_suffix = previous_match.groups()
@@ -1730,7 +1734,7 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     if not _is_whole_section_insert(op):
         return None
     section_label = _norm_num_token(op.target_section)
-    if re.fullmatch(r"\d+[a-z]", section_label, flags=re.I) is None:
+    if _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label) is None:
         return None
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
