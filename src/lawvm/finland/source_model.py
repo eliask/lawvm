@@ -477,6 +477,16 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _source_xml_bytes_cache: bytes | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _operative_body_repeal_candidate_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _has_body_cache: bool | None = field(
         default=None,
         init=False,
@@ -953,7 +963,9 @@ class AmendmentSourceModel:
         """Return corrected source XML bytes for byte-oriented ingest adapters."""
         if self.source_bytes is not None:
             return self.source_bytes
-        return etree.tostring(self.muutos_tree, encoding="utf-8")
+        if self._source_xml_bytes_cache is None:
+            self._source_xml_bytes_cache = etree.tostring(self.muutos_tree, encoding="utf-8")
+        return self._source_xml_bytes_cache
 
     def title(self) -> str:
         """Return the source title through the source-model adapter."""
@@ -1073,7 +1085,11 @@ class AmendmentSourceModel:
         """Return body-prose repeal text when no structured operative body exists."""
         from lawvm.finland.metadata import get_operative_body_repeal_candidate
 
-        return get_operative_body_repeal_candidate(self.source_xml_bytes())
+        if self._operative_body_repeal_candidate_cache is None:
+            self._operative_body_repeal_candidate_cache = get_operative_body_repeal_candidate(
+                self.source_xml_bytes()
+            )
+        return self._operative_body_repeal_candidate_cache
 
     def extract_vts_cross_statute_repeals(
         self,
