@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from lawvm.finland.ops import AmendmentOp, ResolvedOp
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.uncovered_recovery_context import UncoveredRecoveryContext
+    from lawvm.finland.vts import VtsSkippedTarget
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,7 @@ class AmendmentSourceModel:
 
     muutos_tree: etree._Element
     source_ref: str = ""
+    source_bytes: bytes | None = None
     _observed_body_inventory: tuple[ObservedBodyUnit, ...] | None = field(
         default=None,
         init=False,
@@ -121,8 +123,13 @@ class AmendmentSourceModel:
         muutos_tree: etree._Element,
         *,
         source_ref: str = "",
+        source_bytes: bytes | None = None,
     ) -> "AmendmentSourceModel":
-        return cls(muutos_tree=muutos_tree, source_ref=source_ref)
+        return cls(
+            muutos_tree=muutos_tree,
+            source_ref=source_ref,
+            source_bytes=source_bytes,
+        )
 
     @property
     def has_body(self) -> bool:
@@ -438,6 +445,12 @@ class AmendmentSourceModel:
             return False
         return fragment.lower() in self.source_text().lower()
 
+    def source_xml_bytes(self) -> bytes:
+        """Return corrected source XML bytes for byte-oriented ingest adapters."""
+        if self.source_bytes is not None:
+            return self.source_bytes
+        return etree.tostring(self.muutos_tree, encoding="utf-8")
+
     def title(self) -> str:
         """Return the source title through the source-model adapter."""
         from lawvm.finland.frontend_compile import _tree_title
@@ -522,8 +535,46 @@ class AmendmentSourceModel:
         """Return body-prose repeal text when no structured operative body exists."""
         from lawvm.finland.metadata import get_operative_body_repeal_candidate
 
-        xml_bytes = etree.tostring(self.muutos_tree, encoding="utf-8")
-        return get_operative_body_repeal_candidate(xml_bytes)
+        return get_operative_body_repeal_candidate(self.source_xml_bytes())
+
+    def extract_vts_cross_statute_repeals(
+        self,
+        *,
+        parent_id: str,
+        parent_title: str,
+        strict_profile: "StrictProfile | None",
+        skipped_targets_out: list["VtsSkippedTarget"] | None = None,
+    ) -> list["AmendmentOp"] | None:
+        """Extract cross-statute VTS repeals through the source-model byte adapter."""
+        from lawvm.finland.vts import extract_vts_cross_statute_repeals
+
+        return extract_vts_cross_statute_repeals(
+            self.source_xml_bytes(),
+            parent_id,
+            parent_title,
+            strict_profile,
+            skipped_targets_out=skipped_targets_out,
+        )
+
+    def extract_vts_repeals(
+        self,
+        *,
+        extract_vts_repeals: Callable[..., list["AmendmentOp"] | None],
+        johto: str,
+        parent_id: str,
+        parent_title: str,
+        strict_profile: "StrictProfile | None",
+        skipped_targets_out: list["VtsSkippedTarget"] | None = None,
+    ) -> list["AmendmentOp"] | None:
+        """Extract VTS repeals through the source-model byte adapter."""
+        return extract_vts_repeals(
+            johto,
+            self.source_xml_bytes(),
+            parent_id,
+            parent_title,
+            strict_profile,
+            skipped_targets_out=skipped_targets_out,
+        )
 
     def normalize_and_compile_ops(
         self,

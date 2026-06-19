@@ -329,8 +329,7 @@ def test_source_model_exposes_subsection_commencement_overrides() -> None:
 
 
 def test_source_model_exposes_operative_body_repeal_candidate() -> None:
-    tree = etree.fromstring(
-        b"""
+    source_bytes = b"""
         <akomaNtoso>
           <act>
             <preamble><formula name="enactingClause"><p>saadetaar:</p></formula></preamble>
@@ -343,9 +342,16 @@ def test_source_model_exposes_operative_body_repeal_candidate() -> None:
           </act>
         </akomaNtoso>
         """
+    tree = etree.fromstring(
+        source_bytes
     )
-    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+    model = AmendmentSourceModel.from_tree(
+        tree,
+        source_ref="2000/1",
+        source_bytes=source_bytes,
+    )
 
+    assert model.source_xml_bytes() is source_bytes
     assert model.operative_body_repeal_candidate() == "Taten kumotaan asetuksen 9 §."
 
 

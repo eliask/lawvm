@@ -41,7 +41,6 @@ def _route_context(
         parent_title=parent_title,
         source_title=source_title,
         johto=johto,
-        xml_bytes=b"<Laki/>",
         source_model=AmendmentSourceModel.from_tree(etree.Element("Laki")),
         route_reason=route_reason,
         route_target_amendment_id=target_amendment_id,

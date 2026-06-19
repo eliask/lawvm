@@ -138,8 +138,11 @@ def test_precompile_selection_eid_free_body_check_uses_source_model() -> None:
     assert "import lxml.etree as etree" not in source
     assert "etree._Element" not in source
     assert "muutos_tree" not in source
+    assert "\n    xml_bytes: bytes" not in source
+    assert "self.xml_bytes" not in source
     assert 'findall(".//{*}section' not in source
     assert "source_model.has_eid_free_body_sections()" in source
+    assert "source_model.extract_vts_repeals(" in source
     assert "source_model.enrich_ops_from_amendment_tree(" in source
 
 
@@ -149,11 +152,25 @@ def test_route_rejection_expiry_override_uses_source_model() -> None:
     assert "import lxml.etree as etree" not in source
     assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
     assert "from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree" not in source
+    assert "from lawvm.finland.vts import VtsSkippedTarget\n" in source
+    assert "from lawvm.finland.vts import VtsSkippedTarget, extract_vts_cross_statute_repeals" not in source
     assert "etree._Element" not in source
     assert "muutos_tree" not in source
+    assert "xml_bytes: bytes" not in source
+    assert "self.xml_bytes" not in source
     assert "_commencement_expiry_override(" not in source
     assert "source_model.commencement_expiry_override(" in source
+    assert "source_model.extract_vts_cross_statute_repeals(" in source
     assert "source_model.enrich_amendment_ops(" in source
+
+
+def test_process_pipeline_routes_vts_through_source_model() -> None:
+    source = _source("src/lawvm/finland/process_pipeline.py")
+
+    assert "from lawvm.finland.vts import extract_vts_cross_statute_repeals" not in source
+    assert "source_model.extract_vts_cross_statute_repeals(" in source
+    assert "xml_bytes = acquired.xml_bytes" not in source
+    assert "xml_bytes=xml_bytes,\n                    source_model=source_model" not in source
 
 
 def test_temporal_postprocessing_expiry_override_uses_source_model() -> None:

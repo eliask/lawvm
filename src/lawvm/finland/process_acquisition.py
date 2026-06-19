@@ -25,7 +25,6 @@ OperativeStructureCheck = Callable[[etree._Element], tuple[bool, list[str]]]
 
 @dataclass(frozen=True, slots=True)
 class ProcessAcquisitionResult:
-    xml_bytes: bytes
     source_model: AmendmentSourceModel
     lacks_operative_structure: bool
     operative_tags: tuple[str, ...]
@@ -57,6 +56,7 @@ class ProcessAcquisitionContext:
         source_model = AmendmentSourceModel.from_tree(
             muutos_tree,
             source_ref=self.amendment_id,
+            source_bytes=xml_bytes,
         )
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)
         source_title = self.tree_title(muutos_tree)
@@ -85,7 +85,6 @@ class ProcessAcquisitionContext:
             )
 
         return ProcessAcquisitionResult(
-            xml_bytes=xml_bytes,
             source_model=source_model,
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=tuple(operative_tags),
