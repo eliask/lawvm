@@ -95,6 +95,7 @@ def test_source_model_body_scope_queries_use_observed_inventory() -> None:
     assert model.body_has_section("5")
     assert model.body_has_section("5", target_part="5")
     assert not model.body_has_section("5", target_chapter="2")
+    assert model.first_body_section_chapter("5") is None
     assert model.body_has_real_chapter_container("2")
     assert not model.body_has_pseudo_chapter_marker("2")
 
@@ -118,6 +119,7 @@ def test_source_model_body_lookup_returns_typed_verdicts() -> None:
     assert ambiguous.status == "ambiguous"
     assert ambiguous.unique_unit is None
     assert tuple(unit.chapter_label for unit in ambiguous.candidates) == ("1", "2")
+    assert model.first_body_section_chapter("5") == "1"
 
     unique = model.body_section_lookup("5", target_chapter="2")
     assert unique.status == "unique"

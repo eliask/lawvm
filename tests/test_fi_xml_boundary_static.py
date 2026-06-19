@@ -99,9 +99,11 @@ def test_compile_amendment_metadata_reads_use_source_model() -> None:
     assert "from lawvm.finland.frontend_compile import _tree_title" not in source
     assert "from lawvm.finland.metadata import _amendment_effective_date" not in source
     assert "from lawvm.finland.metadata import _statute_issue_date" not in source
+    assert "from lawvm.finland.scope import find_body_section_chapter" not in source
     assert "source_model.title()" in source
     assert "source_model.issue_date()" in source
     assert "source_model.effective_date()" in source
+    assert "source_model.first_body_section_chapter" in source
 
 
 def test_temporal_authority_date_reads_use_source_model() -> None:

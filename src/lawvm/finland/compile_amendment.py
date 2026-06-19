@@ -20,7 +20,6 @@ from lawvm.finland.group_plan import (
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
-from lawvm.finland.scope import find_body_section_chapter
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_replace_section_targets,
@@ -125,17 +124,10 @@ def compile_amendment_ops(
     amendment_issue_date = source_model.issue_date()
     amendment_effective_date = source_model.effective_date()
 
-    def _body_inventory():
-        return source_model.observed_body_inventory()
-
     section_groups = coalesce_same_target_mixed_scope_section_groups(
         group_ops_by_target(ops),
         master=master,
-        find_body_section_chapter=lambda target_norm: find_body_section_chapter(
-            muutos_tree,
-            target_norm,
-            inventory=_body_inventory(),
-        ),
+        find_body_section_chapter=source_model.first_body_section_chapter,
     )
     inserted_chapter_labels = {
         _norm_num_token(op.target_section or "")

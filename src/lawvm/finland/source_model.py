@@ -168,6 +168,20 @@ class AmendmentSourceModel:
         _part, chapter = scope
         return chapter
 
+    def first_body_section_chapter(self, target_norm: str) -> str | None:
+        """Return the first observed chapter containing a source body section."""
+        wanted = _norm_num_token(target_norm)
+        return next(
+            (
+                unit.chapter_label
+                for unit in self.observed_body_inventory()
+                if unit.kind == "section"
+                and _norm_num_token(unit.label) == wanted
+                and unit.chapter_label
+            ),
+            None,
+        )
+
     def body_has_pseudo_chapter_marker(self, chapter_label: str) -> bool:
         """Return True if the observed body has a section-shaped chapter marker."""
         wanted = _norm_num_token(chapter_label)
