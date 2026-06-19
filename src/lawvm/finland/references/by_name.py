@@ -921,6 +921,188 @@ def _recognize_kaari_refs(text: str) -> list[ReferenceMention]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Name-head NP recognizer for the id-anchored construction (worklist #2).
+# ---------------------------------------------------------------------------
+#
+# The inline-(id) citation construction
+# (``legal_surface.sentence_parse.parse_citation_sentence``) keys on the
+# ``(NUMBER/YEAR)`` paren and recovers the cited statute id off that anchor. But
+# the statute NAME-HEAD to the LEFT of the paren was, until this lane, captured for
+# the production mention's surface by a naive single-token left-scan
+# (``ref_mention_extractor._NAME_HEAD_BEFORE_PAREN_RE``) — a contiguous letter run
+# immediately before the paren. That run STOPS at the first space, so it captures
+# only the head word and DROPS any intervening modifier between the name head and
+# the paren:
+#
+#   * ``annettu opetusministeriön asetus (253/2001)`` — the participle frame's head
+#     ``asetus`` is NOMINATIVE and is preceded by an intervening genitive
+#     (``opetusministeriön``); the single-token scan returns only ``asetus``;
+#   * ``valvotusta koevapaudesta annetun lain (629/2013)`` — the descriptive title
+#     complement (``valvotusta koevapaudesta``) is dropped, leaving only ``lain``.
+#
+# This recognizer parses the name-head as a proper (bounded, inflected) NP whose
+# RIGHT edge sits immediately before the ``(id)`` paren, REUSING the proven by-name
+# recognizers (``_NAME_HEAD_RE`` compound head, ``_KAARI_HEAD_RE`` code head, the
+# ``annettu``-participle frame + ``_descriptive_complement`` title NP). It does NOT
+# resolve an id (the construction already has it off the anchor) — it returns ONLY
+# the NP's START offset so the construction emits a name-head-inclusive surface.
+# Tag-don't-guess: when no clean NP is found the lane returns ``None`` and the
+# caller keeps its previous single-token surface (a fail-loud non-extension, never
+# a fabricated boundary).
+
+# The name→id gap the production by-id anchor tolerates (``\s{0,5}`` in
+# ``_PLAIN_TEXT_FI_STATUTE_RE``). Used to confirm the NP's right edge actually abuts
+# the paren rather than sitting an arbitrary distance to its left.
+_NAME_ID_GAP_MAX = 5
+
+# ``annettu`` participle (the issued-frame anchor) and the bare NOMINATIVE document
+# head (``laki`` / ``asetus`` / ``päätös``) it governs. Mirrors the ``annettu`` arm
+# of ``_PLAIN_TEXT_FI_STATUTE_RE`` but is split into TWO flat (non-nested) regexes —
+# the participle anchor and the trailing head — so the OPTIONAL intervening
+# genitive-modifier words between them (``annettu opetusministeriön asetus``) can be
+# validated by a bounded Python token walk instead of a nested-quantifier regex
+# (the production regex's adjacent ``annet(tu|tua|un)\s+(laki|asetus)`` cannot admit
+# an intervening modifier at all). Each pattern is a single flat match — no adjacent
+# variable repeats, no nesting (§1.11).
+_ANNETTU_PARTICIPLE_RE = re.compile(r"\bannet(?:tu|tua|un)\b", re.IGNORECASE)
+_NOMINATIVE_HEAD_TAIL_RE = re.compile(r"(?:laki|asetus|päätös)$", re.IGNORECASE)
+# A single intervening genitive-modifier word between the participle and the head: a
+# bounded name token ending in genitive ``-n`` (a ministry / agency genitive:
+# ``opetusministeriön``, ``valtioneuvoston``). One flat match per word; the bounded
+# token walk applies it word-by-word (no repeat nesting).
+_GENITIVE_MODIFIER_WORD_RE = re.compile(
+    r"^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö-]{1,40}n$", re.IGNORECASE
+)
+# Max intervening genitive-modifier words admitted between ``annettu`` and the head.
+# Statute issuing-frame modifiers are a short ministry/agency genitive stack in
+# practice; bound it so the walk never reaches across an unrelated clause.
+_ANNETTU_MODIFIER_CAP = 3
+
+
+def _annettu_nominative_head_start(left: str) -> int | None:
+    """Start offset of an ``annettu [genitive-modifier] (laki|asetus|päätös)`` frame.
+
+    ``left`` is the (rstripped) text whose RIGHT edge is the NP's right edge. Returns
+    the offset of the ``annettu`` participle when ``left`` ENDS in the issued-frame
+    ``annettu [≤3 genitive-modifier words] <nominative head>`` (``annettu
+    opetusministeriön asetus``), else ``None``. Implemented as a bounded token walk
+    over two flat regexes so there is no nested-quantifier regex smell (§1.11).
+    """
+    if _NOMINATIVE_HEAD_TAIL_RE.search(left) is None:
+        return None
+    toks = [(mm.group(0), mm.start()) for mm in re.finditer(r"\S+", left)]
+    if len(toks) < 2:
+        return None
+    # The last token must be the bare nominative head.
+    head_word, _ = toks[-1]
+    if _NOMINATIVE_HEAD_TAIL_RE.fullmatch(head_word) is None:
+        return None
+    # Walk left over up to _ANNETTU_MODIFIER_CAP genitive-modifier words to a
+    # directly-preceding ``annettu`` participle.
+    i = len(toks) - 2
+    modifiers = 0
+    while i >= 0:
+        word, off = toks[i]
+        if _ANNETTU_PARTICIPLE_RE.fullmatch(word) is not None:
+            return off
+        if modifiers >= _ANNETTU_MODIFIER_CAP:
+            return None
+        if _GENITIVE_MODIFIER_WORD_RE.fullmatch(word) is None:
+            return None
+        modifiers += 1
+        i -= 1
+    return None
+
+
+def name_head_np_start_before_paren(text: str, paren_start: int) -> int | None:
+    """Start offset of the statute-name-head NP ending just before ``paren_start``.
+
+    ``text`` is the segment text; ``paren_start`` is the char offset of the ``(`` of
+    a recognized ``(NUMBER/YEAR)`` statute-id anchor. Returns the char offset where
+    the name-head NP begins, so the construction's surface can be extended LEFT from
+    the paren over the FULL inflected name (head + any intervening modifier), or
+    ``None`` when no clean NP abuts the paren (the caller then keeps its prior
+    single-token surface — tag-don't-guess, never a fabricated boundary).
+
+    The NP is parsed by REUSING the proven by-name recognizers, tried in order of
+    specificity:
+
+      1. the ``annettu [genitive-modifier] (laki|asetus|päätös)`` participle frame
+         with a NOMINATIVE head (``annettu opetusministeriön asetus``);
+      2. the ``[X:stä] annetun lain`` descriptive-participle title NP (the official
+         descriptive title rendered as a participle phrase);
+      3. the compound inflected name head (``arvonlisäverolain``) with a real glued
+         modifier;
+      4. the ``-kaari`` (code) head (``perintökaaren`` / ``Maakaaren``).
+
+    Only an NP whose RIGHT edge abuts the paren (within the ``\\s{0,5}`` name→id gap
+    the production by-id anchor tolerates) is accepted.
+    """
+    if paren_start <= 0 or paren_start > len(text):
+        return None
+    raw_left = text[:paren_start]
+    left = raw_left.rstrip()
+    if not left:
+        return None
+    # The NP's right edge must abut the paren within the tolerated name→id gap.
+    if paren_start - len(left) > _NAME_ID_GAP_MAX:
+        return None
+    left_len = len(left)
+
+    # 1. ``annettu [genitive-modifier] (laki|asetus|päätös)`` nominative frame.
+    ann_start = _annettu_nominative_head_start(left)
+    if ann_start is not None:
+        return ann_start
+
+    # 2. Descriptive-participle title NP: ``[X:stä] annetun lain``. The head must be
+    #    an oblique ``lain`` form ending at the NP's right edge; the descriptive
+    #    complement to the left of ``annetun`` is parsed by the shared NP walk.
+    am = None
+    for cand in _ANNETTU_LAKI_RE.finditer(left):
+        if cand.end() == left_len:
+            am = cand
+            break
+    if am is not None:
+        comp = _descriptive_complement(left[: am.start()])
+        if comp is not None:
+            _, comp_start = comp
+            return comp_start
+        # ``annetun lain`` with no recoverable descriptive complement: anchor at the
+        # participle so at least the participle frame is captured (not a bare head).
+        return am.start()
+
+    # 3. Compound inflected name head with a real glued modifier (``arvonlisäverolain``).
+    #    A coordinated elided-head left modifier (``maankäyttö- ja rakennuslain``) is
+    #    reattached so the full coordinated name is the NP.
+    for cand in _NAME_HEAD_RE.finditer(left):
+        if cand.end() != left_len:
+            continue
+        if not cand.group("modifier"):
+            continue
+        whole_token = cand.group("modifier") + cand.group("oblique")
+        if (
+            lemma_gate(whole_token, peeled_modifier=cand.group("modifier")).verdict
+            is GateVerdict.REJECT_KNOWN_OTHER
+        ):
+            continue
+        mod_start = cand.start("modifier")
+        extended = _extend_coordinated_modifier(left, mod_start, cand.group("modifier"))
+        if extended != cand.group("modifier"):
+            return mod_start - (len(extended) - len(cand.group("modifier")))
+        return mod_start
+
+    # 4. ``-kaari`` (code) head (``perintökaaren`` / ``Maakaaren``).
+    for cand in _KAARI_HEAD_RE.finditer(left):
+        if cand.end() != left_len:
+            continue
+        if not cand.group("modifier"):
+            continue
+        return cand.start("modifier")
+
+    return None
+
+
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     """Recognise inflected-statute-name cross-references in ``text``.
 
@@ -1103,4 +1285,4 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
     return out
 
 
-__all__ = ["recognize_by_name_refs"]
+__all__ = ["recognize_by_name_refs", "name_head_np_start_before_paren"]

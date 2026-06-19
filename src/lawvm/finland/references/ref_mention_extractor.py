@@ -83,7 +83,10 @@ from lawvm.finland.references.treaty import recognize_treaty_refs
 from lawvm.finland.references.treaty_article import recognize_treaty_article_refs
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
-from lawvm.finland.references.by_name import recognize_by_name_refs
+from lawvm.finland.references.by_name import (
+    name_head_np_start_before_paren,
+    recognize_by_name_refs,
+)
 from lawvm.core.preparatory_reference import (
     PreparatoryReference,
     PreparatoryReferenceKind,
@@ -1816,10 +1819,23 @@ def _extend_surface_to_name_head(text: str, paren_start: int, anchor_end: int) -
     however, must carry the SAME name-head-inclusive surface the demoted regex lane
     carried (``arvonlisäverolain (1767/95) 128 §``), so downstream span-overlap
     consumers (the surface graph, the census by-name dedup) anchor it identically to
-    the old lane. Extend the surface leftward over the contiguous name-token run
-    immediately preceding the paren; if none is present (a bare paren) the surface
-    is unchanged (starts at the paren).
+    the old lane.
+
+    The name head is parsed as a proper inflected NP via the shared by-name
+    recognizer (``by_name.name_head_np_start_before_paren``), so an intervening
+    modifier between the head and the paren is INCLUDED in the surface
+    (``annettu opetusministeriön asetus (253/2001)`` — the genitive
+    ``opetusministeriön``; ``valvotusta koevapaudesta annetun lain (629/2013)`` —
+    the descriptive complement). When the NP recognizer finds no clean name head
+    abutting the paren, it falls back to the contiguous single-token left-scan (the
+    prior behaviour: ``arvonlisäverolain``, ``perintökaaren``); when even that finds
+    nothing (a bare paren) the surface is unchanged (starts at the paren).
+    Tag-don't-guess: the NP path never fabricates a boundary — it returns ``None``
+    and the single-token fallback (itself bounded) applies.
     """
+    np_start = name_head_np_start_before_paren(text, paren_start)
+    if np_start is not None:
+        return text[np_start:anchor_end]
     left = text[max(0, paren_start - 61) : paren_start]
     m = _NAME_HEAD_BEFORE_PAREN_RE.search(left)
     if m is None:
