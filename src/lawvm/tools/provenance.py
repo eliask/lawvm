@@ -58,7 +58,7 @@ from typing import Any
 from lawvm.core.preparatory_reference import PreparatoryReferenceKind
 from lawvm.core.selector import to_locator_string
 from lawvm.corpus_store import get_corpus_store
-from lawvm.finland.preparatory_reference_extractor import extract_preparatory_refs
+from lawvm.finland.references.preparatory_reference_extractor import extract_preparatory_refs
 from lawvm.provision_state import resolve_provision_state
 from lawvm.tools.hyperlinks import (
     committee_url_from_raw,

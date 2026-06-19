@@ -13,7 +13,7 @@ Per AGENTS.md §15 test categories:
 
 Module coverage:
   - lawvm.core.preparatory_reference (PreparatoryReference, enums, observations)
-  - lawvm.finland.preparatory_reference_extractor (extraction entry point)
+  - lawvm.finland.references.preparatory_reference_extractor (extraction entry point)
   - lawvm.finland.conformance_corpus.preparatory.fixtures (conformance fixtures)
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from lawvm.core.preparatory_reference import (
     RejectedPreparatoryCandidate,
     preparatory_reference_to_row,
 )
-from lawvm.finland.preparatory_reference_extractor import (
+from lawvm.finland.references.preparatory_reference_extractor import (
     PrepRefExtractionResult,
     PreparatoryRefRecognizer,
     extract_preparatory_refs,
