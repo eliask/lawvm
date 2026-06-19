@@ -77,7 +77,7 @@ def _characterize_one(sid: str) -> CharRow | None:
     from lawvm.finland.johtolause.api import parse_clause
     from lawvm.finland.johtolause.coverage_audit import classify_uncovered_spans
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = store.read_source(sid) or store.read_amendment(sid)
     if not xb:
         return None
@@ -121,7 +121,7 @@ def _all_rows(limit: int, workers: int) -> list[CharRow]:
     from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     if limit:
         ids = ids[:limit]

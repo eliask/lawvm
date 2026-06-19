@@ -99,7 +99,7 @@ def _total_statutes(limit: int) -> int:
 
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     ids = store.list_statute_ids()
     return len(ids[:limit]) if limit else len(ids)
 

@@ -44,7 +44,7 @@ def _load_johtolause(sid: str) -> str | None:
     from lawvm.finland.transparent_store import TransparentCorpusStore
     from lawvm.tools.parse_bench import _archive_path
 
-    store = TransparentCorpusStore(Farchive(_archive_path()))
+    store = TransparentCorpusStore(Farchive(_archive_path(), readonly=True))
     xb = store.read_source(sid) or store.read_amendment(sid)
     if not xb:
         return None

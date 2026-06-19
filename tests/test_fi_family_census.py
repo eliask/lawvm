@@ -66,7 +66,9 @@ def _engine_on(units_by_statute, projections, oracles, *, check_totality=False):
     )
     cast(Any, ts_mod).TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
     cast(Any, bundle_mod).decode_body_text = lambda xb: xb.decode()
-    cast(Any, pb_mod)._archive_path = lambda: "unused"
+    cast(Any, pb_mod)._archive_path = (
+        lambda: "/nonexistent/lawvm-test-family-census.farchive"
+    )
     try:
         return fc.run_family_census(
             family="synthetic",
@@ -172,7 +174,9 @@ def test_engine_threads_oracle_prepare_context_per_statute() -> None:
     )
     cast(Any, ts_mod).TransparentCorpusStore = lambda *_a, **_k: _FakeStore()
     cast(Any, bundle_mod).decode_body_text = lambda xb: xb.decode()
-    cast(Any, pb_mod)._archive_path = lambda: "unused"
+    cast(Any, pb_mod)._archive_path = (
+        lambda: "/nonexistent/lawvm-test-family-census.farchive"
+    )
 
     def _oracle_from_context(_unit: CensusUnit, ctx: object) -> set[str]:
         return set(cast(Iterable[str], ctx)) if ctx else set()
