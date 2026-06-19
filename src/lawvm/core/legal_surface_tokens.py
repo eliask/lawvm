@@ -532,6 +532,228 @@ class SegmentationCoverage:
 
 
 @dataclass(frozen=True, slots=True)
+class ProvisionSpan:
+    """The enclosing provision a contiguous char range of the body text sits in.
+
+    Jurisdiction-NEUTRAL carrier. A :class:`ProvisionIndex` answers "which
+    provision (§ / momentti / kohta) owns this span?" — the structural identity
+    the flattened body text alone cannot recover, because the AKN ``<num>`` and
+    container nesting are dropped by the body decode. This carrier re-attaches
+    that identity, sourced from the AKN structure (eId + ``<num>``), NEVER guessed
+    from the flattened text.
+
+    The provision PATH is carried two ways, both source-derived:
+
+      * the canonical ``eid`` of the deepest enclosing provision container
+        (``chp_1__sec_3__subsec_1__para_2`` etc.) — the same AKN eId form the
+        reference resolver parses, so a consumer can join straight to it;
+      * the decomposed labels (``chapter_label`` / ``section_label`` /
+        ``subsection_num`` / ``item_label``) for the levels present, so a
+        consumer can build a ``§/momentti/kohta`` path without re-parsing the
+        eId. Each is the version-stripped label (``5``, ``115a``, ``1``); a level
+        not present in the ancestry is ``None``/``""``.
+
+    A span whose enclosing provision could NOT be mapped from the structure (no
+    eId AND no ``<num>`` on any ancestor) carries ``mapped=False`` with an empty
+    path and a non-empty ``unmapped_reason`` — the fail-loud witness (never a
+    fabricated path). ``residual`` ranges (the join whitespace between body
+    paragraphs) are NOT provision spans; they are simply absent from the index,
+    and a query that lands on one returns :data:`AMBIGUOUS`.
+
+    Attributes:
+        char_start:     0-based inclusive offset into the unit body text.
+        char_end:       0-based exclusive offset into the unit body text.
+        eid:            Canonical AKN eId of the deepest enclosing provision
+                        container, or ``""`` when unmapped.
+        chapter_label:  Bare chapter (``luku``) label, or ``""``.
+        section_label:  Bare section (``§``) label, or ``""``.
+        subsection_num: Momentti number (1-based), or ``None``.
+        item_label:     Bare kohta/item label (``1``, ``a``), or ``""``.
+        mapped:         True iff the path was recovered from the AKN structure.
+        unmapped_reason: Non-empty self-evidencing reason iff ``mapped`` is False;
+                        ``""`` when mapped (the no-silent-drop witness).
+    """
+
+    char_start: int
+    char_end: int
+    eid: str = ""
+    chapter_label: str = ""
+    section_label: str = ""
+    subsection_num: "int | None" = None
+    item_label: str = ""
+    mapped: bool = True
+    unmapped_reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.char_start < 0:
+            raise ValueError("ProvisionSpan.char_start must be >= 0")
+        if self.char_end < self.char_start:
+            raise ValueError("ProvisionSpan.char_end must be >= char_start")
+        if self.subsection_num is not None and self.subsection_num < 1:
+            raise ValueError("ProvisionSpan.subsection_num must be >= 1 or None")
+        if self.mapped:
+            if self.unmapped_reason:
+                raise ValueError(
+                    "a mapped ProvisionSpan must leave unmapped_reason empty"
+                )
+        else:
+            if not self.unmapped_reason:
+                raise ValueError(
+                    "an unmapped ProvisionSpan MUST carry a non-empty "
+                    "unmapped_reason (fail-loud: no fabricated provision path)"
+                )
+            if self.eid or self.section_label or self.subsection_num is not None:
+                raise ValueError(
+                    "an unmapped ProvisionSpan must carry no provision path"
+                )
+
+    def provision_path(self) -> str:
+        """A compact ``§/momentti/kohta`` path of the present levels, or ``""``.
+
+        ``6/1`` is "§6 momentti 1"; ``3/1/2`` adds kohta 2; ``5`` is the bare
+        section. Returns ``""`` when unmapped or when no §-level label is present
+        (the span sits above the section level, e.g. a chapter heading). This is
+        the human-facing adjudication key; consumers needing the canonical
+        identity use ``eid``.
+        """
+        if not self.mapped or not self.section_label:
+            return ""
+        parts = [self.section_label]
+        if self.subsection_num is not None:
+            parts.append(str(self.subsection_num))
+            if self.item_label:
+                parts.append(self.item_label)
+        return "/".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisionIndex:
+    """Maps body-text char ranges to their enclosing AKN provision.
+
+    Jurisdiction-NEUTRAL carrier + query harness, a SIBLING of
+    :class:`SegmentationGraph` (one indexes structural line-shapes; this indexes
+    provision identity). It re-attaches the §/momentti/kohta structure the body
+    decode drops, so a consumer can ask "which provision owns this span?" —
+    enabling enclosing-section anaphora (``Tätä pykälää ei sovelleta…``) and
+    span-scoped composition that the flattened text alone cannot support.
+
+    The :class:`ProvisionSpan` entries are the body paragraphs (one per decoded
+    ``<p>``), in document order and non-overlapping. Unlike
+    :class:`SegmentationGraph` this is NOT a total partition: the join
+    whitespace BETWEEN paragraphs is not a provision and is simply absent (a
+    query there returns :data:`AMBIGUOUS`). Totality of the *provision-bearing*
+    content is instead reported by :meth:`coverage` (mapped vs unmapped chars).
+
+    Attributes:
+        source_unit_id: The ``SourceSurfaceUnit.source_unit_id`` this indexes.
+        text_hash:      Hash of the exact body text the index was built over
+                        (drift anchor; same convention as :class:`TokenTape`).
+        spans:          Document-order, non-overlapping provision spans.
+    """
+
+    source_unit_id: str
+    text_hash: str
+    spans: Tuple[ProvisionSpan, ...]
+
+    def __post_init__(self) -> None:
+        prev_end = 0
+        for sp in self.spans:
+            if sp.char_start < prev_end:
+                raise ValueError(
+                    "ProvisionIndex.spans must be non-overlapping and in "
+                    f"document order: span at {sp.char_start} starts before "
+                    f"{prev_end}"
+                )
+            prev_end = sp.char_end
+
+    def provision_at(
+        self, char_start: int, char_end: int
+    ) -> "ProvisionSpan | _Ambiguous":
+        """Return the enclosing :class:`ProvisionSpan` for a char span.
+
+        Mirrors :meth:`ClauseIndex.clause_at`: a span fully inside one provision
+        span returns it; a span that crosses a provision boundary (or lands on a
+        between-paragraph gap that is not a provision) returns :data:`AMBIGUOUS`
+        — never silently bucketed. An empty span is located by point position.
+        """
+        if char_end < char_start:
+            raise ValueError("query char_end must be >= char_start")
+        hi = char_end if char_end > char_start else char_start + 1
+        enclosing: ProvisionSpan | None = None
+        for sp in self.spans:
+            if sp.char_start < hi and char_start < sp.char_end:
+                if enclosing is not None:
+                    return AMBIGUOUS
+                if char_start < sp.char_start or char_end > sp.char_end:
+                    return AMBIGUOUS
+                enclosing = sp
+        if enclosing is None:
+            return AMBIGUOUS
+        return enclosing
+
+    def coverage(self) -> "ProvisionCoverage":
+        """Census over the provision spans (the recovery / fail-loud report).
+
+        Reports how many provision spans (and how many chars) were mapped to a
+        provision from the AKN structure vs left unmapped (fail-loud). A high
+        mapped fraction means the §/momentti/kohta identity was recovered for
+        most of the body's provision-bearing text.
+        """
+        mapped_spans = 0
+        mapped_chars = 0
+        unmapped_spans = 0
+        unmapped_chars = 0
+        unmapped_reasons: dict[str, int] = {}
+        for sp in self.spans:
+            width = sp.char_end - sp.char_start
+            if sp.mapped:
+                mapped_spans += 1
+                mapped_chars += width
+            else:
+                unmapped_spans += 1
+                unmapped_chars += width
+                unmapped_reasons[sp.unmapped_reason] = (
+                    unmapped_reasons.get(sp.unmapped_reason, 0) + 1
+                )
+        return ProvisionCoverage(
+            total_spans=len(self.spans),
+            mapped_spans=mapped_spans,
+            mapped_chars=mapped_chars,
+            unmapped_spans=unmapped_spans,
+            unmapped_chars=unmapped_chars,
+            unmapped_reasons=tuple(sorted(unmapped_reasons.items())),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisionCoverage:
+    """The mapped-vs-unmapped census of a :class:`ProvisionIndex`.
+
+    Attributes:
+        total_spans:      Number of provision spans (body paragraphs).
+        mapped_spans:     Spans whose provision path was recovered.
+        mapped_chars:     Chars owned by mapped spans.
+        unmapped_spans:   Spans left fail-loud (no structure to map).
+        unmapped_chars:   Chars owned by unmapped spans.
+        unmapped_reasons: Sorted ``(reason, count)`` of unmapped spans.
+    """
+
+    total_spans: int
+    mapped_spans: int
+    mapped_chars: int
+    unmapped_spans: int
+    unmapped_chars: int
+    unmapped_reasons: Tuple[Tuple[str, int], ...]
+
+    @property
+    def mapped_fraction(self) -> float:
+        """Fraction of provision spans that were mapped (0.0 if empty)."""
+        if self.total_spans == 0:
+            return 0.0
+        return self.mapped_spans / self.total_spans
+
+
+@dataclass(frozen=True, slots=True)
 class MorphAnnotation:
     """A reverse-morphology annotation on a single :class:`Token` of a tape.
 
