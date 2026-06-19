@@ -750,10 +750,11 @@ class TestRouteAmendmentReturnType:
 # ---------------------------------------------------------------------------
 
 _DB_PATH = ".cache/pipeline_gold.db"
+_COLLECT_SLOW_GOLD = os.environ.get("LAWVM_PYTEST_COLLECT_SLOW_GOLD") == "1"
 _GOLD_AVAILABLE = False
 _GOLD_CAPTURES: list = []
 
-if os.path.exists(_DB_PATH):
+if _COLLECT_SLOW_GOLD and os.path.exists(_DB_PATH):
     try:
         from lawvm.core.pipeline_capture import AmendmentCapture, CaptureStore
         _store = CaptureStore(_DB_PATH)
