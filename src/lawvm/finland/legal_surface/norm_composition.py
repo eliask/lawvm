@@ -86,6 +86,7 @@ from lawvm.core.legal_surface_lens import (
 )
 from lawvm.core.legal_surface_tokens import (
     AMBIGUOUS,
+    ClauseIndex,
     ProvisionIndex,
     ProvisionSpan,
     TokenTape,
@@ -373,8 +374,10 @@ class ConditionAttachmentPass:
             # ``object | None`` on the unit, so narrow it before passing.
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = unit.clause_index or build_clause_index(
-                    unit_id, unit.raw_text, token_tape=tape
+                index = (
+                    unit.clause_index
+                    if isinstance(unit.clause_index, ClauseIndex)
+                    else build_clause_index(unit_id, unit.raw_text, token_tape=tape)
                 )
             except Exception:
                 # raw_text unparseable for this unit → no sentences, no edges.
@@ -834,8 +837,10 @@ class DeonticFrameAttachmentPass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = unit.clause_index or build_clause_index(
-                    unit_id, unit.raw_text, token_tape=tape
+                index = (
+                    unit.clause_index
+                    if isinstance(unit.clause_index, ClauseIndex)
+                    else build_clause_index(unit_id, unit.raw_text, token_tape=tape)
                 )
             except Exception:
                 continue
@@ -1354,8 +1359,10 @@ class SanctionReferencePass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = unit.clause_index or build_clause_index(
-                    unit_id, unit.raw_text, token_tape=tape
+                index = (
+                    unit.clause_index
+                    if isinstance(unit.clause_index, ClauseIndex)
+                    else build_clause_index(unit_id, unit.raw_text, token_tape=tape)
                 )
             except Exception:
                 continue
@@ -1778,8 +1785,10 @@ class ProcedureGovernancePass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = unit.clause_index or build_clause_index(
-                    unit_id, unit.raw_text, token_tape=tape
+                index = (
+                    unit.clause_index
+                    if isinstance(unit.clause_index, ClauseIndex)
+                    else build_clause_index(unit_id, unit.raw_text, token_tape=tape)
                 )
             except Exception:
                 continue
@@ -2375,8 +2384,10 @@ class ForestStructuralAttachmentPass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = unit.clause_index or build_clause_index(
-                    unit_id, unit.raw_text, token_tape=tape
+                index = (
+                    unit.clause_index
+                    if isinstance(unit.clause_index, ClauseIndex)
+                    else build_clause_index(unit_id, unit.raw_text, token_tape=tape)
                 )
             except Exception:
                 continue

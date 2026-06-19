@@ -64,7 +64,7 @@ from lawvm.core.legal_surface_lens import (
     SourceSurfaceBundle,
     SurfaceNodeSeed,
 )
-from lawvm.core.legal_surface_tokens import TokenTape
+from lawvm.core.legal_surface_tokens import ClauseIndex, TokenTape
 from lawvm.finland.legal_surface.clause_segment import build_clause_index
 from lawvm.finland.legal_surface.modal_parse import (
     ModalCore,
@@ -310,8 +310,10 @@ def project_forest_deontic_core_seeds(
         )
         modal_intervals = _forest_modal_owned_intervals(forest)
         tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
-        index = unit.clause_index or build_clause_index(
-            unit.source_unit_id, unit.raw_text, token_tape=tape
+        index = (
+            unit.clause_index
+            if isinstance(unit.clause_index, ClauseIndex)
+            else build_clause_index(unit.source_unit_id, unit.raw_text, token_tape=tape)
         )
         for sent in index.sentences:
             if not _span_overlaps_any(
