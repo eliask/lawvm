@@ -157,6 +157,28 @@ class ExecuteRestructurePlanResult:
     executed: bool
 
 
+def _restructure_lineage_date(
+    *,
+    amendment_issue_date: Optional[dt.date],
+    amendment_effective_date: Optional[dt.date],
+) -> str:
+    """Date used to anchor restructure migration lineage.
+
+    Some historical Finland amendment streams carry an owned issue date but no
+    parsed commencement for the restructure-plan lane. Leaving relabel
+    migration events undated makes them timeless and can project a later native
+    rebirth through an older occupant's renumber. The issue date is the
+    conservative lineage lower bound when no explicit effective date is
+    available; temporal uncertainty remains visible through the existing
+    temporal findings.
+    """
+    if amendment_effective_date is not None:
+        return amendment_effective_date.isoformat()
+    if amendment_issue_date is not None:
+        return amendment_issue_date.isoformat()
+    return ""
+
+
 def emit_restructure_plan_renumber_legal_operations(
     *,
     lo_ops_out: Optional[list[LegalOperation]],
@@ -176,17 +198,22 @@ def emit_restructure_plan_renumber_legal_operations(
     if lo_ops_out is None or not migration_events:
         return 0
 
-    source = OperationSource(
-        statute_id=amendment_id,
-        title=source_title,
-        enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-        effective=amendment_effective_date.isoformat() if amendment_effective_date else "",
-        raw_text="",
+    source_enacted = amendment_issue_date.isoformat() if amendment_issue_date else ""
+    source_effective = _restructure_lineage_date(
+        amendment_issue_date=amendment_issue_date,
+        amendment_effective_date=amendment_effective_date,
     )
     emitted = 0
     for index, event in enumerate(migration_events, start=1):
         if event.kind != "renumber":
             continue
+        source = OperationSource(
+            statute_id=amendment_id,
+            title=source_title,
+            enacted=source_enacted,
+            effective=event.effective or source_effective,
+            raw_text="",
+        )
         lo_ops_out.append(
             LegalOperation(
                 op_id=f"restructure_renumber_{amendment_id}_{index}",
@@ -223,11 +250,15 @@ def emit_restructure_plan_section_snapshot_legal_operations(
     if lo_ops_out is None:
         return 0
 
+    source_effective = _restructure_lineage_date(
+        amendment_issue_date=amendment_issue_date,
+        amendment_effective_date=amendment_effective_date,
+    )
     source = OperationSource(
         statute_id=amendment_id,
         title=source_title,
         enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-        effective=amendment_effective_date.isoformat() if amendment_effective_date else "",
+        effective=source_effective,
         raw_text="",
     )
     existing_op_ids = {op.op_id for op in lo_ops_out}
@@ -314,10 +345,9 @@ def execute_restructure_plan_with_evidence(
         request.plan,
         request.state.ir,
         migration_ledger=request.migration_ledger,
-        effective_date=(
-            request.amendment_effective_date.isoformat()
-            if request.amendment_effective_date
-            else ""
+        effective_date=_restructure_lineage_date(
+            amendment_issue_date=request.amendment_issue_date,
+            amendment_effective_date=request.amendment_effective_date,
         ),
     )
     if not exec_ops:

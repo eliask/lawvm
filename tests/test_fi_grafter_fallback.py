@@ -15223,6 +15223,25 @@ def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_
     assert "Työkanava Oy" in sub2_text
 
 
+def test_replay_xml_1995_509_same_wave_section_relabel_insert_keeps_vacated_label() -> None:
+    replay = pinned_replay("1995/509", mode="official_consolidation", quiet=True)
+
+    sec24e = replay.find_section("24e", "6")
+    sec24f = replay.find_section("24f", "6")
+
+    assert sec24e is not None
+    assert sec24f is not None
+    assert "Schengenin tietojärjestelmän keskustietokannasta" in irnode_to_text(sec24e)
+    assert "Tietojen poistaminen muista pysyvistä henkilörekistereistä" in irnode_to_text(sec24f)
+    assert any(
+        event.kind == "renumber"
+        and str(event.from_address) == "chapter:6/section:24e"
+        and str(event.to_address) == "chapter:6/section:24f"
+        and event.effective == "1998-08-21"
+        for event in replay.migration_events
+    )
+
+
 def test_replay_xml_2007_1024_section_3_restored_after_2020_818(
     replay_2007_1024_finlex_oracle: Any,
 ) -> None:

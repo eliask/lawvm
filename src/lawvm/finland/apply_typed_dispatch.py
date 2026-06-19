@@ -32,6 +32,7 @@ from lawvm.finland.apply_policy import (
     _check_occupancy_policy,
     _resolve_section_path_with_fallbacks,
     section_resolver_binding,
+    same_wave_migration_follow_is_allowed,
 )
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
@@ -631,7 +632,11 @@ def _apply_intent_section_level(
     )
     migration_rebased_target_path: TreePath | None = None
     migration_rebase_source_path: TreePath | None = None
-    if rop.resolved_action_type in {"INSERT", "REPLACE"} and migration_ledger is not None:
+    if (
+        rop.resolved_action_type in {"INSERT", "REPLACE"}
+        and migration_ledger is not None
+        and same_wave_migration_follow_is_allowed(rop)
+    ):
         rop_lo = getattr(rop, "lo", None)
         source_address = rop.resolved_target_address or (rop_lo.target if rop_lo is not None else None)
         if source_address is not None:

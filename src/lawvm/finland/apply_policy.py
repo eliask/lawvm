@@ -253,16 +253,11 @@ def _resolve_section_path_with_fallbacks(
     # resolvable only through the migration ledger. Use that exact lineage
     # evidence rather than widening lookup globally.
     target_address = rop.resolved_target_address
-    allows_insert_descendant_follow = (
-        rop.resolved_action_type == "INSERT"
-        and target_address is not None
-        and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
-    )
     if (
         sec_path is None
         and migration_ledger is not None
         and target_address is not None
-        and (rop.resolved_action_type != "INSERT" or allows_insert_descendant_follow)
+        and same_wave_migration_follow_is_allowed(rop)
     ):
         op_effective = migration_lower_bound_for_op(rop)
         migrated = migration_ledger.current_address_with_prefix_migrations(
@@ -421,6 +416,25 @@ def _resolve_section_path_with_fallbacks(
 
 
 SECTION_LADDER_POLICY_ID = "fi.section_ladder.v0"
+
+
+def same_wave_migration_follow_is_allowed(rop: ResolvedOp) -> bool:
+    """Whether a later op may follow a same-wave relabel migration.
+
+    Whole-section INSERTs are the counterexample: in phrases like
+    ``lisätään uusi 24 e §, jolloin nykyinen 24 e § siirtyy 24 f §:ksi``,
+    the relabel explicitly vacates ``24e`` so the inserted section can occupy
+    that old label. Following the migration would insert the new payload at the
+    destination and overwrite/mislabel the moved old section. Descendant INSERTs
+    may still follow the moved section because they amend the continuing
+    provision rather than claim the vacated whole-section slot.
+    """
+    if rop.resolved_action_type != "INSERT":
+        return True
+    target_address = rop.resolved_target_address
+    return target_address is not None and any(
+        kind in {"subsection", "item"} for kind, _label in target_address.path
+    )
 
 
 def section_resolver_binding(

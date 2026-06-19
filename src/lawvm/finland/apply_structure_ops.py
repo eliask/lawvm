@@ -33,7 +33,11 @@ from lawvm.finland.ops import (
     runtime_scope_confidence_for_op,
     temporary_signal_for_op,
 )
-from lawvm.finland.apply_policy import CONTAINER_TARGET_POLICY_ID, container_resolver_binding
+from lawvm.finland.apply_policy import (
+    CONTAINER_TARGET_POLICY_ID,
+    container_resolver_binding,
+    same_wave_migration_follow_is_allowed,
+)
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
     section_paths_for_label,
@@ -1619,6 +1623,7 @@ def _apply_whole_section_op(
         _op_type in {"INSERT", "REPLACE"}
         and sec_path is None
         and migration_ledger is not None
+        and (_op_type != "INSERT" or (rop is not None and same_wave_migration_follow_is_allowed(rop)))
     ):
         source_address = (
             (
