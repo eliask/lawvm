@@ -1168,6 +1168,39 @@ replay mutation fixes:
   missing-source or address migration, not a full-text serialization bug.
   Queue for dedicated pass if it re-enters the top band after refresh.
 
+#### 2026-06-19 refresh
+
+- Current row (`run_20260619T0815`): structural `0.666667`,
+  Levenshtein `0.605544`, amendments `6`.
+- Commands:
+  - `uv run lawvm diff 1993/1709 --text --threshold 1.0 --compile-summary`
+    reports `3 compared`, `2 perfect`, and `1 §` at `58.6%`.
+  - `uv run lawvm oracle-check 1993/1709` reports `64.3%` over `1`
+    diverging section, `REPLAY_MISSING=1`, source pathology
+    `EMPTY_OPERATIVE_BODY`.
+  - `uv run lawvm inspect-amendment 1993/1709 --source 1996/704 --stage all`
+    shows one compiled op: `REPLACE 1 §`.
+  - `uv run lawvm source-dump 1996/704 --address section:1` shows a direct
+    leading omission, then a single subsection whose intro is
+    `Psykotrooppisia aineita koskevan yleissopimuksen luettelo I`.
+- Source witness: the `1996/704` preamble says it changes the lists I-IV of
+  the psychotropic-substances convention contained in `1 §`
+  (`1 §:ään sisältyvän ... luetteloita I, II, III ja IV seuraavasti`), not the
+  whole section.
+- Root cause: current base/source IR has no typed boundary for convention-list
+  blocks inside the single giant `1 §` subsection. The base `1993/1709` §1
+  stores the 1961 narcotics convention lists and the psychotropic convention
+  lists as one subsection. The amendment body carries only the psychotropic
+  tail after an omission. Compiling this as whole-section `REPLACE 1 §` deletes
+  the earlier 1961-list prefix, causing the huge Levenshtein gap.
+- Disposition: **defer as typed list-block segmentation frontier**. A correct
+  fix should introduce an owned legal-list block representation or an explicit
+  source-normalization rule for in-subsection list headings, then lower the
+  `sisältyvän ... luetteloita` amendment to replacement of those list blocks.
+  Do not patch this with a one-off substring splice or random johtolause regex;
+  the grammar already found the statute/section and the missing concept is
+  structure below subsection level.
+
 ## Remaining Work Queue
 
 Ordered by lowest current Levenshtein among statutes not marked fixed/deferred
