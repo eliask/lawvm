@@ -197,7 +197,10 @@ def _source_body_inventory_index(
 
 def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrIndex:
     """Return converted payload IR keyed by observed and coverage unit ids."""
-    from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
+    from lawvm.finland.amendment_payload_lookup import (
+        _find_muutos_ir,
+        _payload_ir_from_muutos_node,
+    )
 
     body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
@@ -241,10 +244,18 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
         include_observed: bool = True,
         include_coverage: bool = True,
     ) -> None:
-        payload = _payload_ir_from_muutos_node(
-            el,
-            target_unit_kind=kind,
-            target_norm=label,
+        payload = (
+            _find_muutos_ir(
+                muutos_tree,
+                target_unit_kind=kind,
+                target_norm=label,
+            )
+            if kind == "chapter"
+            else _payload_ir_from_muutos_node(
+                el,
+                target_unit_kind=kind,
+                target_norm=label,
+            )
         )
         if include_observed:
             observed_payloads[next_observed_id(kind, label, chapter_label)] = payload

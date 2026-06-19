@@ -396,6 +396,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter != request.target_chapter
         and not explicit_chapter_scoped
         and not carry_forward_scoped
+        and not group_has_scope_source(request.group_ops, "live_stem_host")
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and not body_wrapper_overridden_by_scope

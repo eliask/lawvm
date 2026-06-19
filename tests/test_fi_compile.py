@@ -2583,6 +2583,69 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
     )
 
 
+def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() -> None:
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    before = replay_xml(
+        "2004/1287",
+        stop_before="2018/1359",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2018/1359")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    source_model = AmendmentSourceModel.from_tree(muutos_tree, source_ref="2018/1359")
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2018/1359",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2004/1287",
+        strict_profile=None,
+        source_model=source_model,
+    )
+    target_labels = {"14a", "14b", "14c", "15a", "15b", "15c", "15d", "15e"}
+    normalized_inserts = {
+        op.target_section: op
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in target_labels
+    }
+    assert set(normalized_inserts) == target_labels
+    assert {op.target_chapter for op in normalized_inserts.values()} == {"2"}
+
+    compiled_rows: list[dict[str, object]] = []
+    compile_result = compile_amendment_ops(
+        before.state,
+        phase.output,
+        source_model,
+        johto,
+        "official_consolidation",
+        compiled_ops_out=compiled_rows,
+        source_ref="2018/1359",
+        target_statute="2004/1287",
+    )
+
+    compiled_scope_by_label = {
+        str(row["target_norm"]): str(row["target_chapter"])
+        for row in compiled_rows
+        if row.get("action") == "insert" and row.get("target_norm") in target_labels
+    }
+    assert compiled_scope_by_label == {label: "2" for label in target_labels}
+    assert {
+        rop.resolved_target_label: rop.resolved_target_scope_chapter_label
+        for rop in compile_result.output
+        if rop.resolved_action_type == "INSERT" and rop.resolved_target_label in target_labels
+    } == {label: "2" for label in target_labels}
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]

@@ -12,6 +12,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.body_coverage import extract_body_coverage
 from lawvm.finland.body_pairing import build_observed_body_inventory
+from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
@@ -559,6 +560,39 @@ def test_source_model_payload_lookup_keeps_chapter_scope_after_plain_cross_headi
     assert lookup.status == "unique"
     assert lookup.payload_basis == "body_inventory"
     assert lookup.payload_ir is not None
+
+
+def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segments() -> None:
+    xml = get_corpus_store().read_source("1997/611")
+    assert xml is not None
+    model = AmendmentSourceModel.from_tree(etree.fromstring(xml), source_ref="1997/611")
+
+    chapter_16a = model.lookup_payload_ir("chapter", "16a")
+    chapter_16b = model.lookup_payload_ir("chapter", "16b")
+
+    assert chapter_16a.status == "unique"
+    assert chapter_16a.payload_ir is not None
+    assert chapter_16a.payload_ir.kind is IRNodeKind.CHAPTER
+    assert chapter_16a.payload_ir.label == "16a"
+    chapter_16a_text = irnode_to_text(chapter_16a.payload_ir)
+    assert "Vakuutuskannan luovuttaminen" in chapter_16a_text
+    assert "Jakautuminen" not in chapter_16a_text
+    assert all(
+        child.label != "16bluku"
+        for child in chapter_16a.payload_ir.children
+        if child.kind is IRNodeKind.SECTION
+    )
+
+    assert chapter_16b.status == "unique"
+    assert chapter_16b.payload_ir is not None
+    assert chapter_16b.payload_ir.kind is IRNodeKind.CHAPTER
+    assert chapter_16b.payload_ir.label == "16b"
+    assert "Jakautuminen" in irnode_to_text(chapter_16b.payload_ir)
+    assert [
+        child.label
+        for child in chapter_16b.payload_ir.children
+        if child.kind is IRNodeKind.SECTION
+    ] == ["1", "2", "3", "4", "5", "6", "7", "8"]
 
 
 def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
