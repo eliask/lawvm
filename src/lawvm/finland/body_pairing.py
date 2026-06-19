@@ -843,6 +843,7 @@ def assign_body_units_subtree_aware(
     """
     # Step 1: run the normal individual-claim assignment pass
     assignments = assign_body_units(inventory, claims, target_statute_id)
+    unit_by_id = {unit.unit_id: unit for unit in inventory}
 
     # Step 2: build chapter/part INSERT claim indices for subtree adoption.
     chapter_insert_claims: dict[tuple[str, str], ClauseClaim] = {}
@@ -884,16 +885,15 @@ def assign_body_units_subtree_aware(
     chapters_with_claimed_sections: dict[tuple[str, str], ClauseClaim] = {}
     chapters_with_noncurrent_sections: set[tuple[str, str]] = set()
     for assignment in assignments:
-        # Find the corresponding body unit to get its chapter_label
-        for unit in inventory:
-            if unit.unit_id == assignment.body_unit_id and unit.kind == "section" and unit.chapter_label:
-                chapter_key = (unit.part_label, unit.chapter_label)
-                if assignment.status == "claimed_current" and assignment.claim is not None:
-                    if chapter_key not in chapters_with_claimed_sections:
-                        chapters_with_claimed_sections[chapter_key] = assignment.claim
-                else:
-                    chapters_with_noncurrent_sections.add(chapter_key)
-                break
+        unit = unit_by_id.get(assignment.body_unit_id)
+        if unit is None or unit.kind != "section" or not unit.chapter_label:
+            continue
+        chapter_key = (unit.part_label, unit.chapter_label)
+        if assignment.status == "claimed_current" and assignment.claim is not None:
+            if chapter_key not in chapters_with_claimed_sections:
+                chapters_with_claimed_sections[chapter_key] = assignment.claim
+        else:
+            chapters_with_noncurrent_sections.add(chapter_key)
 
     for chapter_key in tuple(chapters_with_claimed_sections):
         if chapter_key in chapters_with_noncurrent_sections:
@@ -913,12 +913,7 @@ def assign_body_units_subtree_aware(
             result.append(assignment)
             continue
 
-        # Find the corresponding body unit from inventory (by unit_id)
-        matching_unit: Optional[ObservedBodyUnit] = None
-        for unit in inventory:
-            if unit.unit_id == assignment.body_unit_id:
-                matching_unit = unit
-                break
+        matching_unit = unit_by_id.get(assignment.body_unit_id)
 
         if (
             matching_unit is not None
