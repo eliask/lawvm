@@ -410,18 +410,16 @@ class AmendmentSourceModel:
         target_chapter: str,
         target_part: str | None,
     ) -> str | None:
-        """Return source-body chapter for a scoped section target."""
-        from lawvm.finland.lowering_scope_recovery import (
-            source_body_chapter_for_scoped_section_target,
-        )
-
-        return source_body_chapter_for_scoped_section_target(
-            muutos_tree=self.muutos_tree,
-            source_model=self,
-            target_norm=target_norm,
+        """Return source-body chapter for a uniquely scoped section target."""
+        lookup = self.body_section_lookup(
+            target_norm,
             target_chapter=target_chapter,
             target_part=target_part,
         )
+        unit = lookup.unique_unit
+        if unit is None:
+            return None
+        return unit.chapter_label or None
 
     def retarget_duplicate_body_section_scope_from_close_live_siblings(
         self,

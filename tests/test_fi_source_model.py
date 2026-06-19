@@ -127,6 +127,39 @@ def test_source_model_body_lookup_returns_typed_verdicts() -> None:
     assert missing.candidates == ()
 
 
+def test_source_model_scoped_body_chapter_requires_unique_inventory_match() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <part><num>1 osa</num><chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter></part>
+              <part><num>2 osa</num><chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter></part>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    assert (
+        model.source_body_chapter_for_scoped_section_target(
+            target_norm="5",
+            target_chapter="2",
+            target_part="1",
+        )
+        == "2"
+    )
+    assert (
+        model.source_body_chapter_for_scoped_section_target(
+            target_norm="5",
+            target_chapter="2",
+            target_part=None,
+        )
+        is None
+    )
+
+
 def test_source_model_detects_pseudo_chapter_markers() -> None:
     tree = etree.fromstring(
         b"""

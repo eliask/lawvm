@@ -76,3 +76,10 @@ def test_payload_lookup_does_not_query_source_model_xml_nodes() -> None:
 
     assert "source_model.find_xml_node" not in source
     assert "source_model:" not in source
+
+
+def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:
+    source = _source("src/lawvm/finland/lowering_scope_recovery.py")
+
+    assert "source_model.find_xml_node" not in source
+    assert "source_model.body_section_lookup(" in source

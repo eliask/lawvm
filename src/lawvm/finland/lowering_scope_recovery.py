@@ -63,21 +63,23 @@ def source_body_chapter_for_scoped_section_target(
     body.  Compile-time scope preservation must distinguish that fallback from a
     true payload that already lives under the scoped target chapter.
     """
-    node = (
-        source_model.find_xml_node(
-            "section",
+    if source_model is not None:
+        lookup = source_model.body_section_lookup(
             target_norm,
-            target_chapter,
-            target_part,
+            target_chapter=target_chapter,
+            target_part=target_part,
         )
-        if source_model is not None
-        else _find_muutos_node(
-            muutos_tree,
-            "section",
-            target_norm,
-            target_chapter,
-            target_part,
-        )
+        unit = lookup.unique_unit
+        if unit is None:
+            return None
+        return unit.chapter_label or None
+
+    node = _find_muutos_node(
+        muutos_tree,
+        "section",
+        target_norm,
+        target_chapter,
+        target_part,
     )
     if node is None:
         return None
