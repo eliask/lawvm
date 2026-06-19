@@ -129,3 +129,52 @@ def test_rekey_timelines_uses_precomputed_prefix_migration_signatures() -> None:
 
     assert signature_calls == 1
     assert tuple(str(address) for address in rekeyed) == ("section:2",)
+
+
+def test_rekey_timelines_uses_frontend_renumber_source_prefilter_for_native_split() -> None:
+    address = _address("9")
+    event = MigrationEvent(
+        event_id="mig:test:unrelated",
+        kind="renumber",
+        from_address=_address("1"),
+        to_address=_address("2"),
+        effective="2020-01-01",
+    )
+    timeline = ProvisionTimeline(
+        address=address,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                content=IRNode(kind=IRNodeKind.SECTION, label="9", text="nine"),
+            )
+        ],
+    )
+    prefilter_calls = 0
+
+    def identity_resolver(
+        original: LegalAddress,
+        _events: tuple[MigrationEvent, ...],
+        _as_of_date: str,
+    ) -> LegalAddress:
+        return original
+
+    def prefix_match_should_not_run(_address: LegalAddress, _prefix: LegalAddress) -> bool:
+        raise AssertionError("native split should trust the frontend prefilter miss")
+
+    def renumber_source_prefix_may_match(_address: LegalAddress) -> bool:
+        nonlocal prefilter_calls
+        prefilter_calls += 1
+        return False
+
+    rekeyed = rekey_timelines_with_migration_events(
+        {address: timeline},
+        (event,),
+        as_of_date="2021-01-01",
+        current_address_with_prefix_migrations_fn=identity_resolver,
+        address_prefix_matches=prefix_match_should_not_run,
+        renumber_source_prefix_may_match_fn=renumber_source_prefix_may_match,
+    )
+
+    assert prefilter_calls == 1
+    assert tuple(rekeyed) == (address,)
