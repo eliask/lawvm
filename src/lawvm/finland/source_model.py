@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Literal, Optional, cast
 
 import lxml.etree as etree
 
@@ -38,6 +38,31 @@ class SourceUnitLookup:
     label: str
     chapter: Optional[str] = None
     part: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyUnitQuery:
+    """A typed source-body unit query over the observed source inventory."""
+
+    unit_kind: str
+    label: str
+    chapter: str | None = None
+    part: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBodyLookupResult:
+    """Typed verdict for a source-body inventory lookup."""
+
+    status: Literal["unique", "missing", "ambiguous"]
+    query: SourceBodyUnitQuery
+    candidates: tuple[ObservedBodyUnit, ...]
+
+    @property
+    def unique_unit(self) -> ObservedBodyUnit | None:
+        if self.status != "unique":
+            return None
+        return self.candidates[0]
 
 
 @dataclass(slots=True)
@@ -159,6 +184,47 @@ class AmendmentSourceModel:
             for unit in self.observed_body_inventory()
         )
 
+    def lookup_body_unit(
+        self,
+        target_unit_kind: str,
+        target_norm: str,
+        *,
+        target_chapter: str | None = None,
+        target_part: str | None = None,
+    ) -> SourceBodyLookupResult:
+        """Return a typed source-body inventory lookup verdict."""
+        query = SourceBodyUnitQuery(
+            unit_kind=str(target_unit_kind or ""),
+            label=_norm_num_token(target_norm),
+            chapter=_norm_num_token(target_chapter or "") if target_chapter else None,
+            part=_norm_num_token(target_part or "") if target_part else None,
+        )
+        candidates = tuple(
+            unit
+            for unit in self.observed_body_inventory()
+            if unit.kind == query.unit_kind
+            and _norm_num_token(unit.label) == query.label
+            and (
+                query.chapter is None
+                or _norm_num_token(unit.chapter_label) == query.chapter
+            )
+            and (
+                query.part is None
+                or _norm_num_token(unit.part_label) == query.part
+            )
+        )
+        if not candidates:
+            status: Literal["unique", "missing", "ambiguous"] = "missing"
+        elif len(candidates) == 1:
+            status = "unique"
+        else:
+            status = "ambiguous"
+        return SourceBodyLookupResult(
+            status=status,
+            query=query,
+            candidates=candidates,
+        )
+
     def body_has_section(
         self,
         target_norm: str,
@@ -167,15 +233,29 @@ class AmendmentSourceModel:
         target_part: str | None = None,
     ) -> bool:
         """Return True if the observed body has a section in the requested scope."""
-        wanted = _norm_num_token(target_norm)
-        chapter = _norm_num_token(target_chapter or "") if target_chapter else None
-        part = _norm_num_token(target_part or "") if target_part else None
-        return any(
-            unit.kind == "section"
-            and _norm_num_token(unit.label) == wanted
-            and (chapter is None or _norm_num_token(unit.chapter_label) == chapter)
-            and (part is None or _norm_num_token(unit.part_label) == part)
-            for unit in self.observed_body_inventory()
+        return (
+            self.lookup_body_unit(
+                "section",
+                target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+            ).status
+            != "missing"
+        )
+
+    def body_section_lookup(
+        self,
+        target_norm: str,
+        *,
+        target_chapter: str | None = None,
+        target_part: str | None = None,
+    ) -> SourceBodyLookupResult:
+        """Return a typed source-body lookup for a section label."""
+        return self.lookup_body_unit(
+            "section",
+            target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
         )
 
     def find_xml_node(

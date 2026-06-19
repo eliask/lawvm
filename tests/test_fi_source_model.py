@@ -97,6 +97,36 @@ def test_source_model_body_scope_queries_use_observed_inventory() -> None:
     assert not model.body_has_pseudo_chapter_marker("2")
 
 
+def test_source_model_body_lookup_returns_typed_verdicts() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter><num>1 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+              <chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
+
+    ambiguous = model.body_section_lookup("5")
+    assert ambiguous.status == "ambiguous"
+    assert ambiguous.unique_unit is None
+    assert tuple(unit.chapter_label for unit in ambiguous.candidates) == ("1", "2")
+
+    unique = model.body_section_lookup("5", target_chapter="2")
+    assert unique.status == "unique"
+    assert unique.unique_unit is not None
+    assert unique.unique_unit.chapter_label == "2"
+
+    missing = model.body_section_lookup("6")
+    assert missing.status == "missing"
+    assert missing.candidates == ()
+
+
 def test_source_model_detects_pseudo_chapter_markers() -> None:
     tree = etree.fromstring(
         b"""
