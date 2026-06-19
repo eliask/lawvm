@@ -254,3 +254,62 @@ def test_census_classification_against_oracle_on_witness_block() -> None:
     assert oracle - proj == set()
     bucket = classify(proj, oracle, dp.parser_lane == DEFINITION_LANE_DECLINED)
     assert bucket in ("match", "superset")
+
+
+# --------------------------------------------------------------------------
+# Unification: the forest calls the SHARED parser (D2 precision)
+# --------------------------------------------------------------------------
+#
+# The forest's enumerated + inline arms now delegate the definiendum decision to
+# the shared canonical pipeline (the SAME the production binder calls), so the
+# forest inherits the left-edge trim + clean-NP decline it previously dropped. The
+# regression these guard against: the forest USED to over-capture a leading
+# prior-entry coordinator (``sekä vakuutusvuodella``) / a clause fragment.
+
+
+def test_forest_inline_trims_leading_prior_entry_coordinator() -> None:
+    # Previously the forest over-captured ``sekä vakuutusvuodella``; now it trims
+    # the leading coordinator to the clean definiendum ``vakuutusvuodella``,
+    # matching the production binder.
+    text = "sekä vakuutusvuodella tarkoitetaan kalenterivuotta."
+    dp = parse_definition_block(text)
+    assert [e.term for e in dp.entries] == ["vakuutusvuodella"], [
+        e.term for e in dp.entries
+    ]
+
+
+def test_forest_enumerated_trims_leading_coordinator() -> None:
+    text = (
+        "Tässä laissa tarkoitetaan: öljypitoisella seoksella seosta; "
+        "ja jäteöljyllä käytettyä öljyä."
+    )
+    dp = parse_definition_block(text)
+    terms = [e.term for e in dp.entries]
+    assert "jäteöljyllä" in terms, terms
+    assert "ja jäteöljyllä" not in terms, terms
+
+
+def test_forest_declines_swept_clause_fragment() -> None:
+    # A cross-reference clause swept into a run (a clause-boundary token present) is
+    # declined by the shared clean-NP gate — no garbled multi-word term minted.
+    text = "Tässä laissa tarkoitetaan: n säännösten nojalla annettua määräystä;"
+    dp = parse_definition_block(text)
+    # The swept fragment ``n säännösten nojalla …`` is declined (clause-boundary
+    # token ``nojalla``); no entry whose term carries the connective is minted.
+    assert not any("nojalla" in e.term for e in dp.entries), [e.term for e in dp.entries]
+
+
+def test_forest_inline_byte_parity_with_binder_on_clean_block() -> None:
+    # The forest's inline/enumerated definiendum SURFACES now equal the production
+    # binder's ``tarkoitetaan`` keys on a clean block (the unification invariant).
+    from lawvm.finland.legal_surface.definition_census import (
+        _definition_oracle_keys_for_span,
+    )
+
+    text = (
+        "Tässä laissa tarkoitetaan: sivutuotteella eläimen ruhoa; "
+        "ja rehulla taikka ainetta."
+    )
+    proj = projection_definition_keys(parse_definition_block(text))
+    oracle = _definition_oracle_keys_for_span(text)
+    assert proj == oracle, f"proj={sorted(proj)} oracle={sorted(oracle)}"

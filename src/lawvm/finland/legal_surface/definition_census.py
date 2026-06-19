@@ -101,11 +101,57 @@ def _definition_segment_selector(sid: str, body: str) -> Iterator[CensusUnit]:
     parsed) is still in scope and carries ``declined=True`` (typed residue).
     """
     from lawvm.finland.legal_surface.clause_segment import build_segmentation_graph
+    from lawvm.finland.legal_surface.definitions.shared_definition_parser import (
+        heading_split_prefix,
+        opens_definiens_first,
+    )
 
     g = build_segmentation_graph(sid, body)
     segs = g.segments
     chapeau_indices = [i for i, s in enumerate(segs) if s.role == "definition_list"]
     chapeau_set = set(chapeau_indices)
+
+    def _preceding_heading_start(i: int) -> int | None:
+        """Start of the consecutive heading-segment chain directly above segment ``i``.
+
+        Skips only whitespace ``residual`` segments. A definiendum may be split
+        across SEVERAL stacked heading lines (``Kiinteällä`` / ``toimipaikalla`` /
+        ``tarkoitetaan …``), so we walk back over consecutive valid-prefix heading
+        segments and return the EARLIEST start. ``None`` when the segment directly
+        above is not such a heading.
+        """
+        j = i - 1
+        earliest: int | None = None
+        while True:
+            while j >= 0 and segs[j].kind == "residual":
+                j -= 1
+            if j < 0 or segs[j].kind != "heading" or j in chapeau_set:
+                break
+            if heading_split_prefix(body[segs[j].char_start : segs[j].char_end]) is None:
+                break
+            earliest = segs[j].char_start
+            j -= 1
+        return earliest
+
+    def _heading_split_window(i: int, seg_text: str) -> tuple[int, str]:
+        """Widen a definiens-first segment to include a stranded heading definiendum.
+
+        Returns ``(window_start, window_text)``: when segment ``i`` opens
+        definiens-first (``tarkoitetaan …``) and the line(s) directly above are
+        short heading(s) (a candidate stranded definiendum, possibly split across
+        several stacked heading lines), the window is widened backwards to the
+        earliest such heading so the per-segment reparse sees the SAME contiguous
+        ``<heading-definiendum> tarkoitetaan …`` window the whole-body binder sees
+        (D3 recall). Otherwise the segment span is returned unchanged. Identity-safe:
+        only the reparsed TEXT widens; no forest node is touched.
+        """
+        s = segs[i]
+        if not opens_definiens_first(seg_text):
+            return s.char_start, seg_text
+        h_start = _preceding_heading_start(i)
+        if h_start is None:
+            return s.char_start, seg_text
+        return h_start, body[h_start : s.char_end]
 
     # The char ranges already covered by an enumerated block (so a single-sentence
     # unit inside a block is not double-counted).
@@ -149,9 +195,16 @@ def _definition_segment_selector(sid: str, body: str) -> Iterator[CensusUnit]:
         seg_text = body[s.char_start : s.char_end]
         low = seg_text.casefold()
         if not any(c in low for c in _CUES):
+            # A cue-LESS segment (incl. a stranded-definiendum heading) is not a
+            # unit on its own; when it is a stranded definiendum it is folded into
+            # the following definiens-first segment's widened window (D3).
             continue
         if _in_a_block(s.char_start, s.char_end):
             continue
+        # D3 heading-split recall: widen a definiens-first segment backwards to the
+        # stranded heading definiendum so the per-segment reparse sees the contiguous
+        # window the whole-body binder sees.
+        _win_start, seg_text = _heading_split_window(i, seg_text)
         dp = parse_definition_block(seg_text)
         # Out-of-family (no definitional definiendum AND the cue was referential):
         # a declined single-sentence with NO entries and an empty oracle is not a

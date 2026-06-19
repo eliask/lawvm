@@ -264,3 +264,47 @@ def test_definition_header_opener_is_a_benign_no_op_gate() -> None:
     )
     # … and gates a projected segment that carries ZERO entries (the no-op gate).
     assert forest_definition_keys(forest, body) == set()
+
+
+# ── D3: heading-split recall (definiendum stranded in a preceding heading) ────
+
+
+def test_heading_split_single_sentence_recall() -> None:
+    """A definiendum stranded on a heading line above the verb is recovered.
+
+    ``Taaja-asutuksella`` / ``\\n tarkoitetaan tässä laissa …`` — the definiens-first
+    body line declines alone (no pre-verb definiendum) and the stranded heading is
+    not definition-gated, so the per-segment forest used to DROP it. The whole-body
+    lens catches it across the newline; the heading-split recovery pass widens the
+    body line's reparse window to the preceding heading so the forest recovers it
+    too — 0-delta vs the lens on this shape, no node identity touched.
+    """
+    body = (
+        "Soveltamisala on laaja.\n\n"
+        "Taaja-asutuksella\n"
+        " tarkoitetaan tässä laissa yhtenäistä asutusta."
+    )
+    forest = _forest_for(body, "2026/810")
+    forest_keys = forest_definition_keys(forest, body)
+    lens_keys = _lens_keys(body)
+    assert "taaja-asutuksella|statute" in forest_keys, sorted(forest_keys)
+    diff = diff_forest_vs_definition_lens_subset(forest_keys, lens_keys)
+    assert diff.is_zero_delta, (
+        f"missing={sorted(diff.forest_missing)} extra={sorted(diff.forest_extra)}"
+    )
+
+
+def test_heading_split_does_not_fabricate_from_sentence_heading() -> None:
+    """A long (non-definiendum) heading line is NOT folded into a definiens-first body.
+
+    The window-widening is conservative (short heading only) and the downstream
+    clean-NP / adessive-head discipline still applies, so a prose subheading that is
+    not a genuine adessive definiendum yields no fabricated entry.
+    """
+    body = (
+        "Yleinen johdantokappale joka kuvaa lain tarkoitusta laajasti.\n\n"
+        " tarkoitetaan tässä laissa jotakin epämääräistä."
+    )
+    forest = _forest_for(body, "2026/811")
+    # No genuine adessive definiendum was stranded — nothing fabricated.
+    assert forest_definition_keys(forest, body) == set()

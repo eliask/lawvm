@@ -71,6 +71,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.legal_surface.definitions.shared_definition_parser import (
+    enumerated_entry_from_item,
+    inline_entry_from_match,
+)
 from lawvm.finland.references.cross_refs import _make_statute_id
 from lawvm.finland.references.eu_reference import (
     DIALECT_DEFINED_TERMS,
@@ -966,48 +970,7 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         raw_term = m.group("term").strip()
         if not raw_term:
             continue
-        # The captured run is the (multi-word) definiendum directly before
-        # "tarkoitetaan".  Only the DEFINITIONAL idiom (``X:llä tarkoitetaan``)
-        # introduces a term; its HEAD (last word) must be an adessive definiendum.
-        # The REFERENTIAL idiom (``…, jota / N momentissa / N §:ssä tarkoitetaan``
-        # = "referred to in …") binds nothing — its last word is a pronoun /
-        # inessive cross-reference, rejected by ``_is_definitional_definiendum``.
-        words = raw_term.split()
-        last_word = words[-1]
-        if not _is_definitional_definiendum(last_word):
-            continue
-        # Drop any leading scope locative ("Tässä laissa X:llä tarkoitetaan") or
-        # leading demonstrative/relative pronoun-adessive ("Näillä X:llä …");
-        # those are never part of the term surface.  The definiendum phrase is the
-        # trailing run of remaining words ending at the adessive head — preserved
-        # as a FULL multi-word surface (no stem mangling).
-        start_idx = 0
-        for i, w in enumerate(words[:-1]):
-            low = w.lower()
-            if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
-                start_idx = i + 1
-        phrase_words = words[start_idx:]
-        # Strip a leading prior-entry connector or adverbial clause swept into the
-        # run ("sekä tavaralla" → ``tavaralla``; "rajausmahdollisuus huomioon ottaen
-        # kasvulohkolla" → ``kasvulohkolla``), preserving medial coordination.
-        trimmed = _trim_to_definiendum_np(phrase_words)
-        if trimmed is None:
-            continue
-        phrase_words = trimmed
-        # DECLINE a swept clause fragment / cross-reference idiom: a definiendum
-        # that begins with a bare case-suffix fragment (split ``§:ssä`` / ``EU:n``)
-        # or spans a clause boundary (cross-reference postposition / relative
-        # pronoun / verb) is NOT a defined term. Tag-don't-guess: mint no garbled
-        # multi-word term rather than fabricate one.
-        if not _is_clean_definiendum_phrase(phrase_words):
-            continue
-        term_surface = " ".join(phrase_words)
         expansion_text = m.group("expansion").strip()
-        act_id = _act_id_in_expansion(expansion_text)
-        # The definiendum surface is an INFLECTED (adessive) form; M1 is
-        # generation-only and cannot reverse it to a nominative, so the term is
-        # matched by its exact written surface, not generated inflections.
-        status = STATUS_UNSUPPORTED_MORPHOLOGY
         # Scope inherits from the nearest preceding definitions-header cue
         # ("Tässä laissa/luvussa/pykälässä/momentissa … tarkoitetaan" / "Tätä
         # lakia sovellettaessa …"); conservative ``statute`` default when no such
@@ -1017,12 +980,24 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
         # viranomaisella tarkoitetaan …" — is matched contiguously, while a block
         # header above an enumerated definiendum is still seen within the window.
         scope = _scope_cue_before(text, m.start("expansion"))
+        # The CANONICAL inline pipeline (shared with the forest): the HEAD must be
+        # a definitional adessive definiendum (the referential idiom is declined),
+        # leading scope-locatives are stripped, the left edge is trimmed, and a
+        # swept clause fragment is declined.  ``None`` = no binding (no fabrication).
+        entry = inline_entry_from_match(text, raw_term, expansion_text, scope)
+        if entry is None:
+            continue
+        act_id = entry.target_ref
+        # The definiendum surface is an INFLECTED (adessive) form; M1 is
+        # generation-only and cannot reverse it to a nominative, so the term is
+        # matched by its exact written surface, not generated inflections.
+        status = STATUS_UNSUPPORTED_MORPHOLOGY
         out.append(
             DefinedTermBinding(
-                term=term_surface,
+                term=entry.term,
                 target_ref=act_id,
-                expansion=None if act_id is not None else (expansion_text or None),
-                scope=scope,
+                expansion=None if act_id is not None else (entry.definiens or None),
+                scope=entry.scope,
                 source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
                 binding_kind=BINDING_TARKOITETAAN,
                 status=status,
@@ -1060,37 +1035,16 @@ def _recognize_enumerated_definitions(
             rest = it.group("rest").strip()
             if not run:
                 continue
-            run_words = run.split()
-            # The enumerated definiendum is the LEADING adessive-headed phrase
-            # ("X:llä" / "<modifier> <head>:llä"); reject the referential /
-            # non-definiendum shape exactly as shape 3 does (no fabrication).
-            head_phrase = _adessive_phrase_from_run(run_words)
-            if head_phrase is None:
+            # The CANONICAL enumerated pipeline (shared with the forest): the
+            # leading adessive-headed phrase is detected, the left edge is trimmed
+            # (prior-entry connector / adverbial clause), and a swept clause
+            # fragment is declined.  An item that is not a genuine adessive
+            # definiendum binds nothing (no fabrication).  Each item inherits the
+            # block header's scope.
+            entry = enumerated_entry_from_item(run, rest, scope=scope)
+            if entry is None:
                 continue
-            # The definiendum head is the LAST word of ``head_phrase``; words AFTER
-            # it belong to the expansion (computed from the head index, BEFORE any
-            # left-trim, so the expansion boundary is unaffected by the trim).
-            head_len = len(head_phrase)
-            # Strip a leading prior-entry connector ("…komissiota; sekä tavaralla …"
-            # → ``tavaralla``) or adverbial clause, preserving medial coordination.
-            phrase_words = _trim_to_definiendum_np(head_phrase)
-            if phrase_words is None:
-                continue
-            # DECLINE a swept clause fragment / cross-reference idiom. The item
-            # regex anchors on ANY ``:`` / ``;`` (incl. ``EU:`` and a split
-            # ``§:ssä``), so a stray sentence-internal colon can sweep a clause
-            # ("n mukaan katsota kilpailluilla markkinoilla", "ssä tarkoitetulla").
-            # Only a clean definiendum NP (content-word start, no clause-boundary
-            # token) binds; otherwise mint nothing (no fabrication).
-            if not _is_clean_definiendum_phrase(phrase_words):
-                continue
-            # Full multi-word definiendum SURFACE preserved (no stem mangling).
-            term_surface = " ".join(phrase_words)
-            # Any word-run tokens AFTER the definiendum head belong to the
-            # expansion (prepended to the regex's tail).
-            trailing = run_words[head_len:]
-            expansion_text = (" ".join(trailing) + (" " if trailing else "") + rest).strip()
-            act_id = _act_id_in_expansion(expansion_text)
+            act_id = entry.target_ref
             # The definiendum surface is an INFLECTED (adessive) form; M1 is
             # generation-only and cannot reverse it to a nominative, so the term
             # is matched by its exact written surface, not generated inflections.
@@ -1099,10 +1053,10 @@ def _recognize_enumerated_definitions(
             abs_end = block_start + it.end()
             out.append(
                 DefinedTermBinding(
-                    term=term_surface,
+                    term=entry.term,
                     target_ref=act_id,
-                    expansion=None if act_id is not None else (expansion_text or None),
-                    scope=scope,
+                    expansion=None if act_id is not None else (entry.definiens or None),
+                    scope=entry.scope,
                     source_span=SourceSpan(
                         source_file, abs_start, abs_end - abs_start
                     ),

@@ -54,18 +54,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from lawvm.finland.legal_surface.definitions.shared_definition_parser import (
+    enumerated_entry_from_item,
+    inline_entry_from_match,
+)
 from lawvm.finland.references.defined_terms import (
     _ENUM_HEADER,
     _ENUM_ITEM,
+    _PRONOUN_ADESSIVE_FORMS,
     _SCOPE_CUE_UNITS,
     _TARKOITETAAN,
-    _PRONOUN_ADESSIVE_FORMS,
-    _act_id_in_expansion,
-    _adessive_phrase_from_run,
-    _is_clean_definiendum_phrase,
-    _is_definitional_definiendum,
     _scope_cue_before,
-    _trim_to_definiendum_np,
 )
 
 # ---------------------------------------------------------------------------
@@ -227,24 +226,31 @@ def _parse_enumerated_block(text: str) -> DefinitionParse | None:
         rest = it.group("rest")
         if not run:
             continue
+        # UNIFIED with the production binder: the SHARED canonical pipeline
+        # (:func:`…shared_definition_parser.enumerated_entry_from_item`) — the SAME
+        # function the binder's ``_recognize_enumerated_definitions`` calls — detects
+        # the adessive head, TRIMS the left edge (prior-entry connector / adverbial
+        # clause) and DECLINES a swept clause fragment. This inherits the precision
+        # the forest previously dropped, so the forest no longer over-captures
+        # ``sekä vakuutusvuodella`` / ``ja jäteöljyllä``. ``None`` = not a
+        # definiendum (no fabrication).
+        entry = enumerated_entry_from_item(run, rest.strip(), scope=scope)
+        if entry is None:
+            continue
+        term_surface = entry.term
+        # The definiens char boundary is fixed by the (pre-trim) head WORD index the
+        # pipeline returned, so the left-trim of the surface never moves the span.
         run_words = run.split()
-        phrase_words = _adessive_phrase_from_run(run_words)
-        if phrase_words is None:
-            continue  # not a definiendum (no fabrication)
-        term_surface = " ".join(phrase_words)
-        # Locate the definiendum surface inside the matched run for a precise span.
+        head_len = entry.head_word_count
         run_abs_start = it.start("run")
         term_start = run_abs_start
         term_end = run_abs_start + len(run)  # whole run; conservative ownership
-        # Definiens = any trailing run words after the head + the regex rest.
-        trailing = run_words[len(phrase_words):]
-        definiens_text = (
-            " ".join(trailing) + (" " if trailing else "") + rest.strip()
-        ).strip()
+        trailing = run_words[head_len:]
+        definiens_text = entry.definiens
         rest_start = it.start("rest")
         definiens_start = run_abs_start if trailing else rest_start
         definiens_end = it.end("rest")
-        target_ref = _act_id_in_expansion(definiens_text)
+        target_ref = entry.target_ref
         entries.append(
             DefinitionEntry(
                 term=term_surface,
@@ -319,53 +325,43 @@ def _parse_enumerated_block(text: str) -> DefinitionParse | None:
 def _inline_entries(text: str) -> list[DefinitionEntry]:
     """Recognize INLINE ``X:llä tarkoitetaan Y`` definition entries in ``text``.
 
-    MIRRORS the production binder's inline ``tarkoitetaan`` recognizer
-    (``_recognize_tarkoitetaan``): the definiendum is the adessive-headed run
-    directly before ``tarkoitetaan`` (rejecting the referential idiom via
-    ``_is_definitional_definiendum``), leading scope locatives / pronoun-adessives
-    trimmed; scope inherits from the nearest preceding definitions-header cue.
+    UNIFIED with the production binder's inline ``tarkoitetaan`` recognizer: the
+    definiendum, scope, and target are derived by the SHARED canonical pipeline
+    (:func:`…shared_definition_parser.inline_entry_from_match`) — the SAME function
+    the binder calls — so the forest cannot drift from the production lens. The
+    pipeline rejects the referential idiom (``_is_definitional_definiendum`` on the
+    head), strips leading scope-locatives / pronoun-adessives, TRIMS the left edge
+    (prior-entry connector / adverbial clause) and DECLINES a swept clause fragment
+    — the precision the forest previously dropped (which over-captured ``sekä
+    vakuutusvuodella`` / ``ja jäteöljyllä``). Scope inherits from the nearest
+    preceding definitions-header cue (the offset-bearing look-back stays here).
     Returns the entries in source order (possibly empty). No DefinitionParse
     framing — that is the caller's job.
     """
-    from lawvm.finland.references.defined_terms import (
-        _PRONOUN_ADESSIVE_FORMS,
-        _SCOPE_LEADERS,
-    )
-
     entries: list[DefinitionEntry] = []
     for m in _TARKOITETAAN.finditer(text):
         raw_term = m.group("term").strip()
         if not raw_term:
             continue
-        words = raw_term.split()
-        if not _is_definitional_definiendum(words[-1]):
-            continue
-        start_idx = 0
-        for i, w in enumerate(words[:-1]):
-            low = w.lower()
-            if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
-                start_idx = i + 1
-        phrase_words = words[start_idx:]
-        if not phrase_words:
-            continue
-        term_surface = " ".join(phrase_words)
         expansion_text = m.group("expansion").strip()
-        target_ref = _act_id_in_expansion(expansion_text)
         scope = _scope_cue_before(text, m.start("expansion"))
+        entry = inline_entry_from_match(text, raw_term, expansion_text, scope)
+        if entry is None:
+            continue
         # term span: the trailing phrase inside the matched group; approximate to
         # the whole captured-term group (conservative ownership; precise enough).
         entries.append(
             DefinitionEntry(
-                term=term_surface,
+                term=entry.term,
                 term_start=m.start("term"),
                 term_end=m.end("term"),
-                definiens=expansion_text,
+                definiens=entry.definiens,
                 definiens_start=m.start("expansion"),
                 definiens_end=m.end("expansion"),
                 binding_cue="tarkoitetaan",
                 entry_marker_role="",
-                scope=scope,
-                target_ref=target_ref,
+                scope=entry.scope,
+                target_ref=entry.target_ref,
             )
         )
     return entries
@@ -441,21 +437,21 @@ def _postverb_entries(text: str) -> list[DefinitionEntry]:
             continue
         rest = m.group("rest")
         rest_words = rest.split()
-        head_phrase = _adessive_phrase_from_run(rest_words)
-        if head_phrase is None:
-            continue  # definiens-first / cross-reference → not a post-verb definiendum
-        # The definiens boundary is fixed by the head index BEFORE any left-trim
-        # (so trimming the leading edge never moves the expansion boundary).
-        head_len = len(head_phrase)
-        phrase_words = _trim_to_definiendum_np(head_phrase)
-        if phrase_words is None:
+        scope = _scope_cue_before(text, m.start())
+        # Route the post-verb run through the SHARED canonical pipeline (the SAME
+        # head-detect → trim → clean the enumerated arm uses), so the post-verb
+        # recall arm cannot drift from the unified definiendum recognition. The
+        # definiens boundary is fixed by the (pre-trim) head WORD index the pipeline
+        # returns. ``None`` = no adessive head / empty after trim / swept clause
+        # fragment → no entry (fail-loud, no guessed binding).
+        entry = enumerated_entry_from_item(
+            " ".join(rest_words), "", scope=scope
+        )
+        if entry is None:
             continue
-        # DECLINE a swept clause fragment / cross-reference idiom (a run that began
-        # with a bare case-suffix fragment or spans a clause boundary): mint no
-        # garbled term (tag-don't-guess, mirroring the enumerated arm).
-        if not _is_clean_definiendum_phrase(phrase_words):
-            continue
-        term_surface = " ".join(phrase_words)
+        head_len = entry.head_word_count
+        phrase_words = entry.term.split()
+        term_surface = entry.term
         rest_start = m.start("rest")
         # Span of the definiendum phrase: from the first trimmed word to the last
         # head word, located precisely against the raw text (whitespace runs).
@@ -473,8 +469,7 @@ def _postverb_entries(text: str) -> list[DefinitionEntry]:
         definiens_text = " ".join(rest_words[head_len:]).strip()
         definiens_start = term_end
         definiens_end = m.end("rest")
-        target_ref = _act_id_in_expansion(definiens_text)
-        scope = _scope_cue_before(text, m.start())
+        target_ref = entry.target_ref
         entries.append(
             DefinitionEntry(
                 term=term_surface,

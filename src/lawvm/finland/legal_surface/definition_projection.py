@@ -77,6 +77,10 @@ from lawvm.finland.legal_surface.definition_parse import (
     definition_key,
     parse_definition_block,
 )
+from lawvm.finland.legal_surface.definitions.shared_definition_parser import (
+    heading_split_prefix,
+    opens_definiens_first,
+)
 from lawvm.finland.legal_surface.source_syntax_graph import SourceSyntaxGraph
 from lawvm.finland.references.defined_terms import (
     BINDING_TARKOITETAAN,
@@ -100,6 +104,12 @@ FOREST_OWNED_BINDING_KIND = BINDING_TARKOITETAAN
 
 #: The phrase identifying the lens the forest projects onto (the differential ORACLE).
 FOREST_OWNED_LENS = "fi.definitions.v0"
+
+#: Forward window (chars) an enumerated definition block may extend past its
+#: chapeau when no next chapeau bounds it — mirrors the production binder's
+#: ``_ENUM_BLOCK_WINDOW`` and the census block branch, so the span the projection
+#: reparses for a header opener is the span the whole-body binder scans.
+_ENUM_BLOCK_WINDOW = 12000
 
 #: The family id the definition construction leaf carries. The SET GATE keys on
 #: FAMILY MEMBERSHIP (``"definition" in leaf.families``), NOT on the leaf KIND: a
@@ -195,6 +205,84 @@ def _definition_gated_leaf_ids(forest: SourceSyntaxGraph) -> list[str]:
     ]
 
 
+def _preceding_heading_start(
+    forest: SourceSyntaxGraph, body: str, char_start: int
+) -> int | None:
+    """Start offset of the consecutive heading chain directly above ``char_start``.
+
+    Mirrors the census selector: the heading(s) directly governing a following
+    definiens-first line, with only whitespace between them. A definiendum may be
+    split across SEVERAL stacked heading lines (``Kiinteällä`` / ``toimipaikalla`` /
+    ``tarkoitetaan …``), so we walk back over consecutive short-heading nodes
+    (each separated only by ≤80 whitespace chars, each a valid heading prefix) and
+    return the EARLIEST such heading's start. ``None`` when the line directly above
+    is not a heading.
+    """
+    headings_by_end = {
+        n.char_end: n for n in forest.syntax_nodes.values() if n.kind == "heading"
+    }
+    cur = char_start
+    earliest: int | None = None
+    while True:
+        cand = None
+        for end, node in headings_by_end.items():
+            if end <= cur and cur - end <= 80:
+                if cand is None or end > cand.char_end:
+                    cand = node
+        if cand is None:
+            break
+        if heading_split_prefix(body[cand.char_start : cand.char_end]) is None:
+            break
+        earliest = cand.char_start
+        cur = cand.char_start
+    return earliest
+
+
+def _heading_split_window(
+    forest: SourceSyntaxGraph, body: str, char_start: int, char_end: int
+) -> tuple[int, str]:
+    """Widen a definiens-first span to include a stranded heading definiendum.
+
+    Returns ``(window_start, window_text)``: when ``[char_start, char_end)`` opens
+    definiens-first (``tarkoitetaan …``) and a short heading directly precedes it,
+    the window starts at that heading; otherwise the span is returned unchanged.
+    Identity-safe: only the reparsed TEXT widens (D3).
+    """
+    seg_text = body[char_start:char_end]
+    if not opens_definiens_first(seg_text):
+        return char_start, seg_text
+    h_start = _preceding_heading_start(forest, body, char_start)
+    if h_start is None:
+        return char_start, seg_text
+    return h_start, body[h_start:char_end]
+
+
+def _heading_split_recovery_nodes(forest: SourceSyntaxGraph, body: str):
+    """Structural body nodes opening definiens-first that carry NO definition leaf.
+
+    The SINGLE-SENTENCE heading-split bodies whose definiendum was stranded in a
+    heading above (``Taaja-asutuksella`` / ``\\n tarkoitetaan …``): they decline
+    when parsed alone, so the assembler minted no ``definition`` leaf, so the gated
+    pass never reaches them. CONSERVATIVE — only ``prose`` bodies qualify (a
+    ``list_item`` opens an enumerated BLOCK, a different shape this pass must not
+    touch, lest it mis-split a block definiendum). Yielded in span order.
+    """
+    gated_spans = {
+        (n.char_start, n.char_end)
+        for n in forest.syntax_nodes.values()
+        if DEFINITION_FAMILY_ID in n.families
+    }
+    nodes = [
+        n
+        for n in forest.syntax_nodes.values()
+        if n.kind == "prose"
+        and opens_definiens_first(body[n.char_start : n.char_end])
+        and (n.char_start, n.char_end) not in gated_spans
+    ]
+    nodes.sort(key=lambda n: (n.char_start, n.char_end))
+    return nodes
+
+
 def project_forest_definitions(
     forest: SourceSyntaxGraph,
     body: str,
@@ -217,6 +305,18 @@ def project_forest_definitions(
     the forest groups by STRUCTURAL segment; ``parse_definition_block`` recovers
     every entry in the span it is handed, so the entry SET is identical even when
     the unit-of-iteration differs.
+
+    HEADING-SPLIT RECALL (D3): a common drafting shape strands the definiendum on
+    its own heading line ABOVE the line carrying the verb (``Taaja-asutuksella`` /
+    ``\n tarkoitetaan tässä laissa …``). The per-segment reparse of the
+    definiens-first body line alone declines (no pre-verb definiendum), and the
+    stranded heading carries no cue so it is not definition-gated — so the entry is
+    dropped, even though the WHOLE-BODY lens catches it across the newline. This
+    pass recovers it by widening such a definiens-first segment's reparse window
+    backwards to the preceding heading (the SAME contiguous window the whole-body
+    binder sees), via the shared heading-split window. It is purely ADDITIVE to the
+    projection output — it touches NO forest node, mints no new leaf, changes no
+    node identity.
     """
     gated_segment_ids: list[str] = []
     seen: set[str] = set()
@@ -227,16 +327,69 @@ def project_forest_definitions(
         seen.add(seg_id)
         gated_segment_ids.append(seg_id)
 
+    # Definition-list chapeau starts (a ``Tässä <unit> tarkoitetaan:`` opener), in
+    # span order — used to bound an enumerated block at the NEXT chapeau, exactly
+    # like the census selector.
+    chapeau_starts = sorted(
+        n.char_start
+        for n in forest.syntax_nodes.values()
+        if n.kind == "definition_header"
+    )
+
     out: list[ProjectedDefinition] = []
     for seg_id in gated_segment_ids:
         seg = forest.syntax_nodes[seg_id]
         seg_text = body[seg.char_start : seg.char_end]
         dp = parse_definition_block(seg_text)
+        char_end = seg.char_end
+        if dp.kind == "definition_header":
+            # ENUMERATED-BLOCK RECALL (D3): the gated CHAPEAU opener carries no
+            # in-span entry — the enumerated items live in FOLLOWING structural
+            # segments (the SegmentationGraph splits the chapeau line from its
+            # items). Widen the reparse window forward to span the block (to the next
+            # definition chapeau, else a bounded window), the SAME span the census
+            # block branch and the whole-body binder scan, so the items are
+            # recovered. Identity-safe: only the reparse TEXT widens.
+            nxt = [c for c in chapeau_starts if c > seg.char_start]
+            block_end = min(
+                seg.char_start + _ENUM_BLOCK_WINDOW,
+                nxt[0] if nxt else len(body),
+            )
+            if block_end > seg.char_end:
+                char_end = block_end
+                dp = parse_definition_block(body[seg.char_start : char_end])
         out.append(
             ProjectedDefinition(
                 segment_node_id=seg_id,
                 char_start=seg.char_start,
-                char_end=seg.char_end,
+                char_end=char_end,
+                entries=dp.entries,
+            )
+        )
+
+    # HEADING-SPLIT RECALL pass: recover definienda stranded above an UN-gated
+    # definiens-first body segment (no definition leaf because the body line alone
+    # declines). Scan structural prose/list_item nodes opening with the cue, widen
+    # to the preceding heading, reparse; project recovered entries not already
+    # owned by a gated segment above. Additive — no node touched.
+    covered = {(p.char_start, p.char_end) for p in out}
+    for node in _heading_split_recovery_nodes(forest, body):
+        win_start, seg_text = _heading_split_window(
+            forest, body, node.char_start, node.char_end
+        )
+        if win_start == node.char_start:
+            continue  # no heading to fold in
+        if (win_start, node.char_end) in covered:
+            continue
+        dp = parse_definition_block(seg_text)
+        if not dp.entries:
+            continue
+        covered.add((win_start, node.char_end))
+        out.append(
+            ProjectedDefinition(
+                segment_node_id=node.node_id,
+                char_start=win_start,
+                char_end=node.char_end,
                 entries=dp.entries,
             )
         )
