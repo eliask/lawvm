@@ -2321,6 +2321,144 @@ def test_replay_xml_2021_1289_applies_explicit_heading_and_first_moment_replace(
     assert "pienikokoinen pakettiauto" not in text
 
 
+def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior_addresses() -> None:
+    before = replay_xml("2021/1289", stop_before="2024/420", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2024/420")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2024/420",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2021/1289",
+        strict_profile=None,
+    )
+
+    reinstated = {
+        op.target_section: op
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_section in {"6", "7", "16", "17"}
+    }
+
+    assert {label: op.description() for label, op in reinstated.items()} == {
+        "6": "INSERT 2 luku 6 §",
+        "7": "INSERT 3 luku 7 §",
+        "16": "INSERT 4 luku 16 §",
+        "17": "INSERT 4 luku 17 §",
+    }
+    assert {
+        op.lo.witness_rule_id
+        for op in reinstated.values()
+        if op.lo is not None
+    } == {"fi_reinstated_section_scope_from_prior_repeal_address"}
+
+
+def test_normalize_and_compile_ops_1734_4_keeps_chapter_scoped_reinstatement_in_source_chapter() -> None:
+    before = replay_xml("1734/4-000", stop_before="2025/142", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2025/142")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2025/142",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="1734/4-000",
+        strict_profile=None,
+    )
+
+    section_17 = next(
+        op
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_section == "17" and op.target_unit_kind == "section"
+    )
+
+    assert section_17.description() == "INSERT 21 luku 17 §"
+    assert section_17.lo is None or section_17.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
+
+
+def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reinstatement_in_source_chapter() -> None:
+    before = replay_xml("1993/1054", stop_before="2021/200", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2021/200")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2021/200",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="1993/1054",
+        strict_profile=None,
+    )
+
+    section_3 = next(
+        op
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_section == "3" and op.target_unit_kind == "section"
+    )
+
+    assert section_3.description() == "INSERT 7 luku 3 §"
+    assert section_3.lo is None or section_3.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
+
+
+def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
+    before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1997/611")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="1997/611",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="1979/1062",
+        strict_profile=None,
+    )
+
+    inserted_sections = {
+        op.description()
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in {"12", "13", "14"}
+    }
+
+    assert {
+        "INSERT 2 luku 13 §",
+        "INSERT 10 luku 12 §",
+        "INSERT 10 luku 13 §",
+        "INSERT 10 luku 14 §",
+    }.issubset(inserted_sections)
+    assert all(
+        op.lo is None or op.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
+        for op in phase.output
+        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in {"12", "13", "14"}
+    )
+
+
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
     replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]

@@ -673,12 +673,61 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
 
 _cited_scope_cache: dict[tuple[str, str], dict[str, tuple[str | None, str | None]]] = {}
 _cited_effective_date_cache: dict[str, str | None] = {}
-_CITED_REPEALED_SECTION_REPLACEMENT_RE = re.compile(
-    r"mainitulla\s+\w+\s+(?P<num>\d{1,4})/(?P<year>\d{4})\s+kumot\w*\s+"
-    r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+tilalle\s+uusi\s+"
-    r"(?P=section)\s*§",
+_REINSTATEMENT_SECTION_LIST_FRAGMENT = (
+    r"\d{1,4}(?:\s*[a-zäöå])?"
+    r"(?:\s*(?:,|ja|sekä)\s*\d{1,4}(?:\s*[a-zäöå])?){0,60}"
+)
+_REINSTATEMENT_SECTION_LABEL_RE = re.compile(
+    r"\A\d{1,4}(?:\s*[a-zäöå])?\Z",
     flags=re.I,
 )
+_REINSTATEMENT_SECTION_LIST_SEPARATOR_RE = re.compile(
+    r"\s*(?:,|\bja\b|\bsekä\b)\s*",
+    flags=re.I,
+)
+_REPEALED_SECTION_REPLACEMENT_LIST_RE = re.compile(
+    rf"kumot[a-zäöå]{{0,20}}\s+(?P<old>{_REINSTATEMENT_SECTION_LIST_FRAGMENT})"
+    rf"\s*§\s*:\s*n\s+tilalle\s+uusi\s+(?P<new>{_REINSTATEMENT_SECTION_LIST_FRAGMENT})\s*§",
+    flags=re.I,
+)
+_LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE = re.compile(
+    r"(?:\A|[,;]|\bsekä\b|\bja\b)\s*"
+    r"(?:lisätään\s+)?"
+    r"(?:\d{1,4}(?:\s*[a-zäöå])?\s+)?lukuun\b[^,;]{0,160}\Z",
+    flags=re.I,
+)
+_CITED_REPEALED_SECTION_REPLACEMENT_RE = re.compile(
+    rf"(?:mainitulla\s+\w+\s+|(?:siitä\s+)?lailla\s+)"
+    rf"(?P<num>\d{{1,5}})/(?P<year>\d{{4}})\s+"
+    rf"kumot[a-zäöå]{{0,20}}\s+(?P<old>{_REINSTATEMENT_SECTION_LIST_FRAGMENT})"
+    rf"\s*§\s*:\s*n\s+tilalle\s+uusi\s+(?P<new>{_REINSTATEMENT_SECTION_LIST_FRAGMENT})\s*§",
+    flags=re.I,
+)
+
+
+def _normalized_reinstatement_section_list(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for part in _REINSTATEMENT_SECTION_LIST_SEPARATOR_RE.split(text or ""):
+        if not part or _REINSTATEMENT_SECTION_LABEL_RE.fullmatch(part) is None:
+            return ()
+        labels.append(_norm_num_token(part))
+    return tuple(labels)
+
+
+def _matching_reinstatement_lists(old_text: str, new_text: str) -> tuple[str, ...]:
+    old_labels = _normalized_reinstatement_section_list(old_text)
+    new_labels = _normalized_reinstatement_section_list(new_text)
+    if not old_labels or old_labels != new_labels:
+        return ()
+    return old_labels
+
+
+def _reinstatement_match_has_local_chapter_insert_scope(
+    normalized_johto: str,
+    match_start: int,
+) -> bool:
+    prefix = normalized_johto[max(0, match_start - 180) : match_start]
+    return _LOCAL_CHAPTER_INSERT_SCOPE_BEFORE_REINSTATEMENT_RE.search(prefix) is not None
 
 
 def _compiled_cited_section_scopes(
@@ -740,10 +789,13 @@ def _cited_repealed_section_scope_for_replacement(
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
         return None
     for match in _CITED_REPEALED_SECTION_REPLACEMENT_RE.finditer(normalized):
-        if "lukuun" in normalized[max(0, match.start() - 24) : match.start()]:
+        if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
             continue
-        cited_section = _norm_num_token(match.group("section"))
-        if cited_section != section_norm:
+        reinstated_sections = _matching_reinstatement_lists(
+            match.group("old"),
+            match.group("new"),
+        )
+        if section_norm not in reinstated_sections:
             continue
         cited_id = f"{match.group('year')}/{int(match.group('num'))}"
         scoped_target = _compiled_cited_section_scopes(
@@ -1314,14 +1366,29 @@ def _johto_says_repealed_section_replaced_by_new_section(johto: str, section_nor
     normalized = _normalize_fi_parse_text(johto)
     if not normalized or "kumot" not in normalized or "tilalle" not in normalized or "uusi" not in normalized:
         return False
-    section_pattern = re.escape(section_norm)
-    return (
-        re.search(
-            rf"kumot\w*\s+{section_pattern}\s*§\s*:\s*n\s+tilalle\s+uusi\s+{section_pattern}\s*§",
-            normalized,
+    return any(
+        section_norm
+        in _matching_reinstatement_lists(
+            match.group("old"),
+            match.group("new"),
         )
-        is not None
+        for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized)
     )
+
+
+def _johto_says_statute_level_repealed_section_replaced_by_new_section(
+    johto: str,
+    section_norm: str,
+) -> bool:
+    normalized = _normalize_fi_parse_text(johto)
+    if not normalized or "kumot" not in normalized or "tilalle" not in normalized:
+        return False
+    for match in _REPEALED_SECTION_REPLACEMENT_LIST_RE.finditer(normalized):
+        if _reinstatement_match_has_local_chapter_insert_scope(normalized, match.start()):
+            continue
+        if section_norm in _matching_reinstatement_lists(match.group("old"), match.group("new")):
+            return True
+    return False
 
 
 def _base_section_scope_for_unique_section(
@@ -1391,26 +1458,47 @@ def _infer_flat_reinstated_section_scope_from_base(
     amendment_id: str,
     parent_id: str,
 ) -> tuple[str | None, str] | None:
-    """Infer scope for flat source-body insertion of a new section replacing a repealed one.
+    """Infer scope for source-body insertion of a new section replacing a repealed one.
 
     Finnish amendment XML sometimes serializes ``lisätään ... kumotun 114 §:n
     tilalle uusi 114 §`` as a flat body-level section even though the repealed
-    section had an owned original chapter address.  The source phrase supplies
+    section had an owned original chapter address, and sometimes leaves a later
+    reinstatement list under a stale chapter wrapper.  The source phrase supplies
     the rebirth semantics; the base tree supplies the prior address.  This rule
     only fires when that prior address is unique and its container still exists.
     """
     if not _is_whole_section_insert(op):
         return None
+    section_norm = _norm_num_token(op.target_section)
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
         resolved_chapter=op.target_chapter,
     )
+    unwitnessed_absent_statute_level_reinstatement = (
+        op.target_chapter is not None
+        and scope_witness is None
+        and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
+        and _johto_says_statute_level_repealed_section_replaced_by_new_section(
+            johto,
+            section_norm,
+        )
+    )
+    explicit_absent_statute_level_reinstatement = (
+        op.target_chapter is not None
+        and scope_witness is not None
+        and scope_witness.source == "explicit_chunk"
+        and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
+        and _johto_says_statute_level_repealed_section_replaced_by_new_section(
+            johto,
+            section_norm,
+        )
+    )
     if op.target_chapter is not None and (
         scope_witness is None or scope_witness.source not in {"carry_forward", "explicit_chunk"}
     ):
-        return None
-    section_norm = _norm_num_token(op.target_section)
+        if not unwitnessed_absent_statute_level_reinstatement:
+            return None
     if op.target_chapter is not None and master.find_section_path(
         section_norm,
         op.target_chapter,
@@ -1442,12 +1530,6 @@ def _infer_flat_reinstated_section_scope_from_base(
             chapter=cited_chapter,
         ):
             return (cited_part, cited_chapter)
-    if not _source_body_has_flat_whole_section(
-        muutos_tree=muutos_tree,
-        section_norm=section_norm,
-        target_part=op.target_part,
-    ):
-        return None
     if base_ir is None:
         return None
     base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
@@ -1461,6 +1543,19 @@ def _infer_flat_reinstated_section_scope_from_base(
     if op.target_part is not None and base_part != op.target_part:
         return None
     if not _container_path_exists_in_master(master=master, part=base_part, chapter=base_chapter):
+        return None
+    if (
+        unwitnessed_absent_statute_level_reinstatement
+        or explicit_absent_statute_level_reinstatement
+        or op.target_chapter is None
+        or (scope_witness is not None and scope_witness.source == "carry_forward")
+    ):
+        return (base_part, base_chapter)
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
         return None
     return (base_part, base_chapter)
 
@@ -2026,25 +2121,26 @@ def _enrich_ops_from_amendment_tree(
                 and scope_witness is not None
                 and scope_witness.source in {"carry_forward", "explicit_chunk"}
             ):
-                inferred_chapter = _body_chapter_scope_for_section_op(
+                reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
                     op=scoped_op,
                     muutos_tree=muutos_tree,
                     master=master,
+                    base_ir=base_ir,
                     johto=johto,
+                    amendment_id=amendment_id,
+                    parent_id=parent_id,
                 )
+                if reinstated_scope is not None:
+                    inferred_part, inferred_chapter = reinstated_scope
+                    inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
                 if inferred_chapter is None:
-                    reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
+                    inferred_chapter = _body_chapter_scope_for_section_op(
                         op=scoped_op,
                         muutos_tree=muutos_tree,
                         master=master,
-                        base_ir=base_ir,
                         johto=johto,
-                        amendment_id=amendment_id,
-                        parent_id=parent_id,
                     )
-                    if reinstated_scope is not None:
-                        inferred_part, inferred_chapter = reinstated_scope
-                        inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
+                    inferred_rule_id = "fi_body_chapter_scope_from_source_body"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
                         op=scoped_op,
