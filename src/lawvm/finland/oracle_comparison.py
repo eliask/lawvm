@@ -79,6 +79,18 @@ _KUMOTTU_STUBS_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+_EMBEDDED_FIVE_AS_I_OCR_RE = re.compile(
+    r"(?<=[A-Za-zÄÖÅäöå]{2})5(?=[A-Za-zÄÖÅäöå]{2})"
+)
+
+
+def _normalize_embedded_five_as_i_ocr(text: str) -> str:
+    """Normalize Finlex oracle OCR/type-in residue like ``sosiaal5sen``."""
+    if "5" not in text:
+        return text
+    return _EMBEDDED_FIVE_AS_I_OCR_RE.sub("i", text)
+
+
 _FINLEX_ORACLE_COMPARISON_RULES = (
     ComparisonNormalizationRule(
         name="fi_oracle_kumottu_stub_sentence",
@@ -108,6 +120,17 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
         description="Remove Finlex previous-wording marker from oracle comparison text.",
         old_text='Aiempi sanamuoto kuuluu:',
         new_text='',
+    ),
+    ComparisonNormalizationRule(
+        name="fi_oracle_embedded_five_as_i_ocr",
+        rule_class="oracle_source_pathology",
+        kind="callable",
+        description=(
+            "Normalize Finlex oracle OCR/type-in residue where digit 5 appears "
+            "inside an alphabetic Finnish word, e.g. sosiaal5sen."
+        ),
+        transform=_normalize_embedded_five_as_i_ocr,
+        required_substring="5",
     ),
     # Additional FI oracle presentation normalizations for list/schedule formatting
     # common in older decisions, fee tables, chemical lists, etc. These are pure
@@ -298,6 +321,7 @@ def _normalize_for_pres_text(t: str) -> str:
     t = _AMEND_PAREN_RE.sub('', t)
     t = _LIITE_MARKER_RE.sub('', t)
     t = _DASH_NORM_RE.sub('-', t)
+    t = _normalize_embedded_five_as_i_ocr(t)
     t = re.sub(r'\.{2,}', '', t)
     # Quote / apostrophe typography variants (universal but hits many FI oracle vs replay diffs, e.g. vaa\'alla vs vaa"alla).
     # Map all to ' so internal apostrophes in words equalize.

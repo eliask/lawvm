@@ -831,6 +831,28 @@ def test_normalize_finlex_oracle_comparison_text_removes_shared_presentation_res
     assert "Tätä lakia sovelletaan." in normalized
 
 
+def test_normalize_finlex_oracle_comparison_text_normalizes_embedded_five_ocr() -> None:
+    text = "kuluttaja-arvostelujen tai sosiaal5sen median suosittelujen vääristeleminen"
+
+    normalized = normalize_finlex_oracle_comparison_text(text)
+
+    assert normalized == (
+        "kuluttaja-arvostelujen tai sosiaalisen median suosittelujen vääristeleminen"
+    )
+
+
+def test_presentation_structural_diff_treats_embedded_five_ocr_as_oracle_pathology() -> None:
+    events = [
+        {
+            "kind": "wording_text_changed",
+            "left_text": "sosiaalisen median suosittelujen vääristeleminen",
+            "right_text": "sosiaal5sen median suosittelujen vääristeleminen",
+        }
+    ]
+
+    assert is_presentation_structural_diff({"label": 0}, events)
+
+
 def test_normalize_finlex_oracle_comparison_text_can_opt_into_full_editorial_cleanup() -> None:
     text = "A:lla 123/2020 muutettu 1 momentti tuli voimaan 1.1.2021. Pysyvä teksti."
 
