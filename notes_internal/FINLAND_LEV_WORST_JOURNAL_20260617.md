@@ -33,6 +33,9 @@ Current top Levenshtein gaps from the refresh run:
 - `1995/509`: lev `0.859610`, structural `0.928571` in
   `run_20260619T0815`; inserted chapter child-scope fix landed; residual is
   editorial/oracle-stale plus missing XML topology for `14 §`; journaled below.
+- `1991/826`: lev `0.859895`, structural `1.000000` in `run_20260619T0815`;
+  current replay text is perfect on compared sections; residual is Finlex
+  editorial/topology surface; journaled below.
 
 Purpose: track high-Levenshtein-gap Finnish statutes, root-cause classification,
 and whether the case is actionable or deferred. Entries here are working notes:
@@ -674,6 +677,20 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
   order; `14 §` is reported as `missing_from_xml` in the oracle-check topology.
   Do not synthesize additional replay state for this statute without a source
   witness beyond the current editorial/oracle surface.
+
+### `1991/826` — Laki arvo-osuusjärjestelmästä
+
+- Run row (`run_20260619T0815`): Levenshtein `0.859895`, structural
+  `1.000000`.
+- Focused check: `uv run lawvm diff 1991/826 --text --threshold 0.999
+  --compile-summary` reports **51 compared, 51 perfect, 0 replay-missing,
+  0 replay-extra**, with compared-section score `100.00%`.
+- `uv run lawvm oracle-check 1991/826` reports `EDITORIAL_CONVENTION=7`;
+  source-pathology `DESTRUCTIVE_SHAPE_LOSS_RISK`; HTML topology notes
+  `missing_from_xml=5 §,8 §,23 §,24 §`.
+- Current status: not a replay mutation fix. The low full-text Levenshtein row
+  is caused by editorial/projection surface outside the compared legal text
+  sections.
 
 ### `1987/322`
 
