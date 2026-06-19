@@ -118,6 +118,17 @@ class SourcePayloadIrIndex:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMetadataSurface:
+    """Model-owned source metadata facts derived during the XML adapter phase."""
+
+    source_issue_date: dt.date | None
+    source_title: str
+    effective_date: dt.date | None
+    effective_date_step: str
+    expiry_date: dt.date | None
+
+
+@dataclass(frozen=True, slots=True)
 class SourceBodyInventoryIndex:
     """Normalized indexes over observed source-body units."""
 
@@ -396,7 +407,17 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _metadata_surface_cache: SourceMetadataSurface | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _text_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _text_lower_cache: str | None = field(
         default=None,
         init=False,
         repr=False,
@@ -838,11 +859,17 @@ class AmendmentSourceModel:
             )
         return self._text_cache
 
+    def source_text_lower(self) -> str:
+        """Return cached lowercased plain source text for classifier prefilters."""
+        if self._text_lower_cache is None:
+            self._text_lower_cache = self.source_text().lower()
+        return self._text_lower_cache
+
     def source_text_contains(self, fragment: str) -> bool:
         """Return whether the plain source text contains ``fragment`` case-insensitively."""
         if not fragment:
             return False
-        return fragment.lower() in self.source_text().lower()
+        return fragment.lower() in self.source_text_lower()
 
     def source_xml_bytes(self) -> bytes:
         """Return corrected source XML bytes for byte-oriented ingest adapters."""
@@ -852,33 +879,49 @@ class AmendmentSourceModel:
 
     def title(self) -> str:
         """Return the source title through the source-model adapter."""
-        from lawvm.finland.frontend_compile import _tree_title
-
-        return _tree_title(self.muutos_tree)
+        return self.metadata_surface().source_title
 
     def issue_date(self) -> dt.date | None:
         """Return the source issue date through the source-model adapter."""
-        from lawvm.finland.metadata import _statute_issue_date
-
-        return _statute_issue_date(self.muutos_tree)
+        return self.metadata_surface().source_issue_date
 
     def effective_date(self) -> dt.date | None:
         """Return the source amendment effective date through the source-model adapter."""
-        from lawvm.finland.metadata import _amendment_effective_date
-
-        return _amendment_effective_date(self.muutos_tree)
+        return self.metadata_surface().effective_date
 
     def effective_date_with_step(self) -> tuple[dt.date | None, str]:
         """Return source amendment effective date and derivation step."""
-        from lawvm.finland.metadata import _amendment_effective_date_with_step
-
-        return _amendment_effective_date_with_step(self.muutos_tree)
+        surface = self.metadata_surface()
+        return surface.effective_date, surface.effective_date_step
 
     def expiry_date(self) -> dt.date | None:
         """Return the source amendment expiry date through the source-model adapter."""
-        from lawvm.finland.metadata import _amendment_expiry_date
+        return self.metadata_surface().expiry_date
 
-        return _amendment_expiry_date(self.muutos_tree)
+    def metadata_surface(self) -> SourceMetadataSurface:
+        """Return cached source metadata facts used by compile and temporal phases."""
+        if self._metadata_surface_cache is None:
+            from lawvm.finland.frontend_compile import _tree_title
+            from lawvm.finland.metadata import (
+                _amendment_effective_date_with_step,
+                _amendment_expiry_date,
+                _statute_issue_date,
+            )
+
+            effective_date, effective_step = _amendment_effective_date_with_step(
+                self.muutos_tree
+            )
+            self._metadata_surface_cache = SourceMetadataSurface(
+                source_issue_date=_statute_issue_date(self.muutos_tree),
+                source_title=_tree_title(self.muutos_tree),
+                effective_date=effective_date,
+                effective_date_step=effective_step,
+                expiry_date=_amendment_expiry_date(
+                    self.muutos_tree,
+                    raw_text=self.source_text(),
+                ),
+            )
+        return self._metadata_surface_cache
 
     def amendment_tree_metadata(
         self,
@@ -886,11 +929,29 @@ class AmendmentSourceModel:
     ) -> "_AmendmentTreeMetadata":
         """Return cached frontend metadata derived from this amendment source."""
         if amendment_id not in self._amendment_metadata_cache:
-            from lawvm.finland.frontend_compile import _amendment_tree_metadata
+            from lawvm.finland.frontend_compile import _AmendmentTreeMetadata
+            from lawvm.finland.metadata import (
+                _temporary_provision_expiry_overrides,
+                _temporary_section_expiry_overrides,
+            )
 
-            self._amendment_metadata_cache[amendment_id] = _amendment_tree_metadata(
-                amendment_id=amendment_id,
-                muutos_tree=self.muutos_tree,
+            surface = self.metadata_surface()
+            raw_text = self.source_text()
+            self._amendment_metadata_cache[amendment_id] = _AmendmentTreeMetadata(
+                source_issue_date=surface.source_issue_date,
+                source_title=surface.source_title,
+                effective_date=surface.effective_date,
+                expiry_date=surface.expiry_date,
+                provision_expiry_overrides=_temporary_provision_expiry_overrides(
+                    self.muutos_tree,
+                    amendment_id,
+                    raw_text=raw_text,
+                ),
+                section_expiry_overrides=_temporary_section_expiry_overrides(
+                    self.muutos_tree,
+                    amendment_id,
+                    raw_text=raw_text,
+                ),
             )
         return self._amendment_metadata_cache[amendment_id]
 
