@@ -21,6 +21,7 @@ from lawvm.tools.transition_graph_interlinks import (
     LawvmInterlinkTargetRow,
     default_interlink_target_row,
 )
+from lawvm.tools.transition_graph_overlays import LawvmSurfaceOverlayExportProvider
 
 
 class _PreviewCorpus(Protocol):
@@ -84,6 +85,29 @@ def project_fi_interlinks_for_transition_graph(
         statute_id, cast(_PreviewCorpus, corpus)
     )
     return [LawvmInterlinkRow.from_mapping(row) for row in rows]
+
+
+def project_fi_surface_overlays_for_transition_graph(
+    statute_id: str,
+    corpus: object,
+) -> list[dict[str, object]]:
+    """Project Finnish Legal Surface Graph overlay rows for transition-graph export.
+
+    Reuses the SAME projector the standalone ``export-fi-interlinks`` tool runs
+    (``_project_overlays_for_statute``), so the row shape stays identical; the
+    transition-graph exporter then places these whole-body rows onto its per-date
+    rendered segments.
+    """
+    from lawvm.tools.export_fi_interlinks import _project_overlays_for_statute
+
+    rows, _diagnostics = _project_overlays_for_statute(statute_id, corpus)
+    return rows
+
+
+def fi_transition_graph_overlay_provider() -> LawvmSurfaceOverlayExportProvider:
+    return LawvmSurfaceOverlayExportProvider(
+        project_overlays=project_fi_surface_overlays_for_transition_graph,
+    )
 
 
 def resolve_fi_interlink_target_row(

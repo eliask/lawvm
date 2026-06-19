@@ -173,6 +173,17 @@ let sourceById = {};        // source_id -> source_artifacts row
 let interlinks = [];        // optional precomputed semantic interlink rows
 let interlinksByRenderedAddress = new Map();
 let interlinkTargetsByKey = new Map();
+let surfaceOverlays = [];   // optional precomputed semantic surface-overlay rows
+let overlaysByRenderedAddress = new Map();
+let overlaysById = new Map();
+// Which overlay layers are visible. `reference` (the existing inline-citation
+// layer) is on by default; the richer semantic layers are opt-in to avoid
+// clutter. Held in-memory for the session (no persistence on purpose).
+const OVERLAY_LAYER_KINDS = [
+  'reference', 'defined_term', 'term_use', 'temporal',
+  'delegation', 'sanction', 'exception_condition', 'actor_modal',
+];
+let enabledOverlayKinds = new Set(['reference']);
 let displayNodeByDateAddress = new Map();
 let evidenceEvents = [];    // optional precomputed LawVM uncertainty rows
 let evidenceBySource = new Map();
@@ -180,6 +191,9 @@ let evidenceByDate = new Map();
 let evidenceWithAddress = [];
 let metaInfo = {};          // decoded meta table
 let selectedAddress = null; // address with an open inline history panel
+// Internal-reference jump trail: return to the provision where the link was clicked.
+let internalJumpStack = [];
+let _hcSourceAddr = null; // #doc host of the anchor that opened the hovercard
 let mode = 'law';    // 'law' | 'amendments' | 'search' | 'compare'
 let selectedSourceId = null;
 let currentStatuteId = null;
@@ -264,16 +278,492 @@ const REF_KINDS = {
     nav(p) { goToAddrAtDate(p.addr || null, p.date, p.phrase || undefined); },
     hover: null,
   },
+  // Structured inline statute citation. Rendering + navigation + hover all
+  // branch on the resolution STATUS derived from the graph-authoritative
+  // interlink row (resolution_status + confidence + presence of an in-act
+  // locator / external url / candidate set). The status is the single source
+  // of truth for the surface affordance:
+  //   resolved      → deep-link to the target provision (in-act or cross-act)
+  //   statute_only  → act-level link (no in-act anchor known)
+  //   external      → external (EU/treaty) link, opens in a new tab
+  //   ambiguous     → non-navigating, hovercard lists the candidate works
+  //   open          → tagged, non-clickable span (vague / unparsed locator)
+  //   broken        → struck-through, "repealed/renumbered since" affordance
   semantic: {
     display(p) {
+      const status = semanticRefStatus(p);
       const text = p.text || p.surface_text || p.target_work_id || p.interlink_id || '';
-      const title = [p.role, p.target_work_id, p.target_locator].filter(Boolean).join(' · ');
-      return { text, title, cls: 'ref-semantic' };
+      const statusLabel = tr('semanticStatus_' + status) || status;
+      const title = [statusLabel, p.role, p.target_work_id, p.target_locator]
+        .filter(Boolean).join(' · ');
+      // Internal refs (target = the loaded act) are live in-page anchors: tag
+      // them so they style as a deeplink, not a precomputed-preview span. Only
+      // the navigating statuses (resolved / statute_only) get the live class.
+      // When the target is a ghost tombstone at the selected date, add an
+      // inactive affordance (wavy underline) distinct from resolution_status
+      // broken (which names a stale cross-act locator).
+      let internalCls = '';
+      let titleExtra = '';
+      let suffix = '';
+      if ((status === 'resolved' || status === 'statute_only') && semanticIsInternalRef(p)) {
+        internalCls = ' ref-sem-internal';
+        const tgt = internalRefTargetState(p);
+        if (tgt.state === 'inactive') {
+          internalCls += tgt.reason === 'expiry'
+            ? ' ref-sem-internal-inactive ref-sem-internal-expired'
+            : ' ref-sem-internal-inactive ref-sem-internal-repealed';
+          titleExtra = tr(tgt.reason === 'expiry' ? 'interlinkInternalExpired' : 'interlinkInternalRepealed');
+          suffix = internalRefStateSuffix(tgt);
+        } else if (tgt.state === 'absent') {
+          internalCls += ' ref-sem-internal-inactive ref-sem-internal-absent';
+          titleExtra = tr('interlinkInternalNotPresent');
+          suffix = internalRefStateSuffix(tgt);
+        }
+      }
+      const fullTitle = titleExtra ? `${title} · ${titleExtra}` : title;
+      return { text, title: fullTitle, cls: 'ref-semantic ref-sem-' + status + internalCls, suffix };
     },
-    nav: null,
+    // nav is keyed by status: navigating statuses get an action, the rest
+    // fall through to a no-op (refLink still renders them as inert anchors,
+    // styled by their status class; the click handler ignores a missing nav).
+    nav(p, clickEl) {
+      const status = semanticRefStatus(p);
+      if (status === 'resolved' || status === 'statute_only') {
+        semanticNavToTarget(p, status, clickEl ? captureJumpSource(clickEl) : null);
+      } else if (status === 'external') {
+        const url = (p.target_url || '').trim();
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      // ambiguous / open / broken → non-navigating by design.
+    },
     hover(p) { return semanticInterlinkHovercardHtml(p); },
   },
+  // Rich semantic surface overlay (defined terms, term uses, temporal markers,
+  // delegation/sanction/exception/actor-modal frames). Display class + hover
+  // card branch on the overlay KIND (carried on the payload). All copy is
+  // surface-fact framing — never a legal conclusion. Term-use overlays may
+  // navigate back to their defining term (via links_json); the rest are
+  // hoverable-but-inert tagged spans.
+  overlay: {
+    display(p) {
+      const def = OVERLAY_KINDS[p.kind] || OVERLAY_KINDS._default;
+      const text = p.text || p.label || '';
+      const title = [tr('overlayLayer_' + p.kind) || p.kind, p.label].filter(Boolean).join(' · ');
+      return { text, title, cls: 'ref-overlay ov-' + (p.kind || 'unknown') + (def.statusCls ? def.statusCls(p) : '') };
+    },
+    nav(p) {
+      const def = OVERLAY_KINDS[p.kind];
+      if (def && typeof def.nav === 'function') def.nav(p);
+    },
+    hover(p) { return overlayHovercardHtml(p); },
+  },
 };
+
+// Per-kind overlay descriptors. Each MAY declare statusCls(payload) → extra
+// class suffix (for resolution-styled layers) and nav(payload) → click action.
+// Everything degrades: a missing/unknown kind falls back to a tagged span.
+const OVERLAY_KINDS = {
+  _default: {},
+  reference: {},
+  defined_term: {},
+  term_use: {
+    statusCls(p) { const s = String(p.status || '').toLowerCase(); return s ? ' ov-status-' + s : ''; },
+    // Navigate back to the defining-term overlay this use points at.
+    nav(p) {
+      const defLink = overlayLinks(p).find(l => l.rel === 'defines' || l.rel === 'definition' || l.rel === 'defined_by');
+      const targetId = defLink && defLink.target_overlay_id;
+      const target = targetId && overlaysById.get(targetId);
+      if (target) navToOverlay(target);
+    },
+  },
+  temporal: {},
+  delegation: {},
+  sanction: {},
+  exception_condition: {},
+  actor_modal: {},
+};
+
+// Scroll the document to the rendered span of an overlay row (best effort).
+function navToOverlay(row) {
+  const addr = String(row.rendered_address || '').trim();
+  if (addr) goToAddrAtDate(addr, null);
+}
+
+// Classify a semantic interlink row into a display/nav status. Maps the
+// graph-authoritative resolution_status (+ locator/url/candidate signals) onto
+// the five surface affordances the viewer renders. Pure + total: never throws,
+// always returns one of resolved|statute_only|external|ambiguous|open|broken.
+function semanticRefStatus(row) {
+  if (!row) return 'open';
+  const rs = String(row.resolution_status || '').toLowerCase();
+  if (rs === 'broken') return 'broken';
+  if (rs === 'ambiguous') return 'ambiguous';
+  const hasUrl = !!String(row.target_url || '').trim();
+  if (rs === 'external_only') return hasUrl ? 'external' : 'open';
+  if (rs === 'unresolved') return 'open';
+  if (rs === 'resolved') {
+    const hasTarget = !!String(row.target_work_id || row.target_local_id || '').trim();
+    if (!hasTarget) return hasUrl ? 'external' : 'open';
+    const hasLocator = !!String(row.target_locator || '').trim();
+    return hasLocator ? 'resolved' : 'statute_only';
+  }
+  // Anything else (missing / legacy) with a usable url is external; else vague.
+  if (hasUrl) return 'external';
+  return 'open';
+}
+
+// Resolve a semantic interlink to the manifest statute it points at. The
+// neutral row carries target_local_id (e.g. "301/2004"), which is the same key
+// the manifest uses for Finnish statutes. Returns null if the target act is not
+// in the current manifest (then we cannot deep-link in-viewer).
+function semanticTargetStatuteId(row) {
+  const localId = String((row && row.target_local_id) || '').trim();
+  if (localId && manifest.some(s => s.statute_id === localId)) return localId;
+  return null;
+}
+
+// Navigate to a semantic citation target. resolved → in-act provision anchor;
+// statute_only → act top (no anchor). Same-statute jumps reuse goToAddrAtDate;
+// cross-statute jumps load the target act (carrying an address permalink when a
+// provision anchor is known). Falls back to a hovercard-only no-op + an
+// external link when the act is outside the current manifest.
+function semanticNavToTarget(row, status, source) {
+  const statuteId = semanticTargetStatuteId(row);
+  const target = semanticTargetForRow(row);
+  // Internal refs navigate IN-PAGE to the target provision in the loaded act —
+  // the viewer already has the document, so we resolve the in-act address (incl.
+  // a bare `section:N` from the locator) and jump without reloading.
+  if (semanticIsInternalRef(row)) {
+    const addr = (status === 'resolved') ? semanticInternalAddr(row, target) : null;
+    if (addr) {
+      if (source) pushInternalJumpBack(source, addr, row.surface_text || '');
+      ensureLawView();
+      const landed = jumpToAddr(addr, { internal: true });
+      selectedAddress = landed ? landed.addr : addr;
+      removeInlinePanel();
+      if (!suppressHashUpdate) updateHash();
+    }
+    return;
+  }
+  const addr = (status === 'resolved') ? semanticTargetAddress(row, target) : null;
+  if (statuteId && statuteId !== currentStatuteId) {
+    statuteSel.value = statuteId;
+    loadStatute(statuteId, { statute: statuteId, mode: 'law', address: addr || null });
+    return;
+  }
+  if (statuteId === currentStatuteId || (!statuteId && addr)) {
+    goToAddrAtDate(addr || null, null);
+    return;
+  }
+  // Target act not in manifest and no in-viewer anchor: offer the external
+  // link if the interlink carries one; otherwise the hovercard is the payload.
+  const links = semanticTargetLinks(row, target);
+  if (links.length && links[0].url) window.open(links[0].url, '_blank', 'noopener,noreferrer');
+}
+
+// Best-effort rendered-tree address for a resolved target provision. Prefers an
+// explicit rendered_address on the resolved target row (set when the target was
+// materialised in the viewer's tree); otherwise null (act-top fallback).
+function semanticTargetAddress(row, target) {
+  const fromTarget = target && String(target.rendered_address || target.address || '').trim();
+  if (fromTarget) return fromTarget;
+  const detail = jsonObj(row && row.detail_json);
+  const fromDetail = String(detail.target_address || detail.rendered_address || '').trim();
+  return fromDetail || null;
+}
+
+// ---- internal references: live in-page transclusion (no precomputed preview) ----
+// An INTERNAL reference's target IS the loaded act, so its preview should be
+// pulled LIVE from the document the viewer already has in the DOM — never from a
+// precomputed target_*/preview field (which is wasteful for internal links and
+// can go stale). Detection: the target statute equals the loaded act, OR the row
+// names no statute but carries an in-act locator/address (a bare "108 §:n …").
+function semanticIsInternalRef(row) {
+  if (!row) return false;
+  const statuteId = semanticTargetStatuteId(row);
+  if (statuteId) return statuteId === currentStatuteId;
+  // No resolvable target statute: treat as internal only when it carries an
+  // in-act anchor and is not flagged as a cross/external citation kind.
+  const workId = String(row.target_work_id || '').toLowerCase();
+  if (workId) return false;                 // names some other work → not internal
+  if (String(row.role || '') === 'internal') return true;
+  return !!semanticInternalAddr(row);
+}
+
+// Derive the in-act address of an internal target. Prefers an explicit rendered
+// address; else builds a coarse `section:N` (or chapter/subsection) address from
+// the row's target_locator (e.g. "section:108", "108", "section:108/subsection:1").
+function semanticInternalAddr(row, target) {
+  const explicit = semanticTargetAddress(row, target || semanticTargetForRow(row));
+  if (explicit) return normalizeLocatorAddr(explicit);
+  const loc = String((row && row.target_locator) || '').trim();
+  if (!loc) return null;
+  // Already an address-shaped locator (has a "kind:value" piece) → use as-is.
+  if (/[a-z_]+:/i.test(loc)) return normalizeLocatorAddr(loc);
+  // Bare numeric/alpha locator → assume a section key.
+  const raw = loc.toLowerCase().replace(/[§.\s]/g, '');
+  return raw ? `section:${raw}` : null;
+}
+
+// Interlink locators use engine ontology kinds; the rendered tree may name the
+// same slot differently (Finland: item/kohta → paragraph). Normalize one segment.
+function normalizeLocatorSegment(seg) {
+  const m = String(seg).match(/^([a-z_]+):(.+)$/i);
+  if (!m) return seg;
+  const kind = m[1].toLowerCase();
+  const val = m[2];
+  if (kind === 'item') return `paragraph:${val}`;
+  if (kind === 'subpara') return `subparagraph:${val}`;
+  return `${kind}:${val}`;
+}
+
+function normalizeLocatorAddr(addr) {
+  if (!addr) return '';
+  return addr.split('/').map(normalizeLocatorSegment).join('/');
+}
+
+function locatorAddrVariants(addr) {
+  const raw = String(addr || '').trim();
+  if (!raw) return [];
+  const norm = normalizeLocatorAddr(raw);
+  const out = [];
+  const seen = new Set();
+  for (const c of [raw, norm]) {
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+  }
+  return out;
+}
+
+// Suffix → full rendered address index (built once per #doc render).
+let renderedAddrBySuffix = null;
+
+function invalidateRenderedAddrIndex() {
+  renderedAddrBySuffix = null;
+}
+
+function renderedAddrIndex() {
+  if (renderedAddrBySuffix) return renderedAddrBySuffix;
+  const index = new Map();
+  const doc = document.getElementById('doc');
+  if (!doc) { renderedAddrBySuffix = index; return index; }
+  const seen = new Set();
+  for (const el of doc.querySelectorAll('[data-addr]')) {
+    const da = el.dataset.addr || '';
+    if (!da || seen.has(da)) continue;
+    seen.add(da);
+    for (const path of locatorAddrVariants(da)) {
+      const parts = path.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const suffix = parts.slice(i).join('/');
+        const prev = index.get(suffix);
+        if (!prev || path.length > prev.length) index.set(suffix, path);
+      }
+    }
+  }
+  renderedAddrBySuffix = index;
+  return index;
+}
+
+// Map an interlink/engine address onto the live rendered #doc tree.
+function resolveRenderedAddr(addr) {
+  if (!addr) return { addr: '', el: null };
+  const doc = document.getElementById('doc');
+  if (!doc) return { addr: '', el: null };
+  const index = renderedAddrIndex();
+  for (const cand of locatorAddrVariants(addr)) {
+    const full = index.get(cand);
+    if (full) {
+      const el = doc.querySelector(`[data-addr="${cssEsc(full)}"]`);
+      return { addr: full, el: el || null };
+    }
+  }
+  return { addr: '', el: null };
+}
+
+function tombstoneReasonFromEl(el) {
+  if (!el) return 'repeal';
+  const host = el.closest('.tombstone, .ghost-line');
+  if (!host) return 'repeal';
+  if (host.querySelector('em.expiry, .expiry')) return 'expiry';
+  return 'repeal';
+}
+
+function matchingLiveAddr(addr) {
+  if (!addr) return '';
+  let best = '';
+  for (const cand of locatorAddrVariants(addr)) {
+    if (curLive.has(cand) && cand.length > best.length) best = cand;
+    for (const liveAddr of curLive.keys()) {
+      if (liveAddr === cand || liveAddr.endsWith('/' + cand)) {
+        if (liveAddr.length > best.length) best = liveAddr;
+      }
+    }
+  }
+  return best;
+}
+
+function matchingTombstoneAddr(addr) {
+  if (!addr) return '';
+  let best = '';
+  for (const cand of locatorAddrVariants(addr)) {
+    if (curTombstoned.has(cand) && cand.length > best.length) best = cand;
+    for (const taddr of curTombstoned.keys()) {
+      if (taddr === cand || taddr.endsWith('/' + cand)) {
+        if (taddr.length > best.length) best = taddr;
+      }
+    }
+  }
+  return best;
+}
+
+function tombstoneFoldInfoForAddr(addr) {
+  if (!addr) return null;
+  const direct = matchingTombstoneAddr(addr);
+  return direct ? curTombstoned.get(direct) : null;
+}
+
+function isLiveAtDate(addr) {
+  return !!matchingLiveAddr(addr);
+}
+
+// Whether a provision (or an ancestor) was removed by the scrubbed date.
+function wasRemovedAtDate(addr) {
+  if (!addr) return false;
+  if (tombstoneFoldInfoForAddr(addr) || absentUnitAtDate(addr)) return true;
+  const segs = addr.split('/');
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const anc = segs.slice(0, i).join('/');
+    if (tombstoneFoldInfoForAddr(anc) || absentUnitAtDate(anc)) return true;
+  }
+  return false;
+}
+
+function removalReasonAtDate(addr) {
+  const tomb = tombstoneFoldInfoForAddr(addr);
+  if (tomb) return tomb.reason || 'repeal';
+  if (absentUnitAtDate(addr)) return removalReason(addr, curDateIdx);
+  const segs = addr.split('/');
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const anc = segs.slice(0, i).join('/');
+    const ancTomb = tombstoneFoldInfoForAddr(anc);
+    if (ancTomb) return ancTomb.reason || 'repeal';
+    if (absentUnitAtDate(anc)) return removalReason(anc, curDateIdx);
+  }
+  return 'repeal';
+}
+
+// Whether an internal ref's in-act target is live, tombstoned, or absent at the
+// scrubbed date. Fold matching is authoritative (refs are rendered while #doc HTML
+// is still being assembled, so DOM queries during that pass are stale). DOM is a
+// fallback for harnesses / post-render refresh. absent = locator cannot be mapped
+// at all; inactive = mapped/evidenced but not live (repealed / expired).
+function internalRefTargetState(row, target) {
+  const addr = semanticInternalAddr(row, target || semanticTargetForRow(row));
+  if (!addr) return { state: 'unresolved' };
+  const liveAddr = matchingLiveAddr(addr);
+  const tombAddr = matchingTombstoneAddr(addr);
+  const resolved = resolveRenderedAddr(addr);
+  const el = resolved.el;
+  const domTomb = el && el.closest('.tombstone, .ghost-line');
+  const foldLoaded = curLive.size > 0 || curTombstoned.size > 0;
+
+  if (liveAddr) {
+    return { state: 'active', addr: liveAddr, el };
+  }
+
+  const tomb = tombstoneFoldInfoForAddr(addr);
+  if (tomb || domTomb || tombAddr || wasRemovedAtDate(addr)) {
+    const reason = tomb ? (tomb.reason || 'repeal')
+      : domTomb ? tombstoneReasonFromEl(el) : removalReasonAtDate(addr);
+    return {
+      state: 'inactive',
+      addr: tombAddr || resolved.addr || addr,
+      reason,
+      el,
+      tomb,
+    };
+  }
+
+  if (el && !domTomb) {
+    return { state: 'active', addr: resolved.addr || addr, el };
+  }
+
+  if (foldLoaded) {
+    return { state: 'absent', addr };
+  }
+
+  if (domTomb) {
+    return { state: 'inactive', addr: resolved.addr || addr, reason: tombstoneReasonFromEl(el), el };
+  }
+  if (el) return { state: 'active', addr: resolved.addr || addr, el };
+  return { state: 'absent', addr };
+}
+
+function internalRefStateSuffix(tgt) {
+  if (!tgt || tgt.state === 'active' || tgt.state === 'unresolved') return '';
+  if (tgt.state === 'inactive') {
+    return tgt.reason === 'expiry' ? tr('expiredTombstone') : tr('tombstone');
+  }
+  if (tgt.state === 'absent') return tr('interlinkInternalAbsentBadge');
+  return '';
+}
+
+function scrollTargetForAddr(addr, resolved) {
+  const r = resolved || resolveRenderedAddr(addr);
+  const targetAddr = r.addr || addr;
+  if (!targetAddr) return null;
+  const row = document.querySelector(`#doc .node-row[data-addr="${cssEsc(targetAddr)}"]`);
+  if (row) return row;
+  const pblock = document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`);
+  if (pblock) return pblock;
+  const node = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`);
+  if (node) return node.querySelector(':scope > .node-row') || node;
+  return r.el;
+}
+
+function ensureLawView() {
+  if (mode !== 'law') setMode('law');
+}
+
+// Locate the provision element for an in-act address in the live #doc tree.
+function findLiveProvisionEl(addr) {
+  return resolveRenderedAddr(addr).el;
+}
+
+// Pull a short opening snippet of a provision's text straight from the rendered
+// DOM. Skips structural chrome (labels, history/evidence buttons, child nodes,
+// any open inline-history panel) so the snippet is the provision's own prose.
+function liveTransclusionSnippet(addr, maxLen) {
+  const el = findLiveProvisionEl(addr);
+  if (!el) return null;
+  // Prefer the leaf paragraph text body; fall back to the node body, and at
+  // worst the element itself. We then strip non-prose descendants.
+  const host = el.querySelector(':scope .pblock-body')
+    || el.querySelector(':scope > .node-body')
+    || el;
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      for (let p = n.parentElement; p && p !== host.parentElement; p = p.parentElement) {
+        if (!p.classList) continue;
+        if (p.classList.contains('inline-history') || p.classList.contains('pblock-children')
+          || p.classList.contains('node-children') || p.classList.contains('hist-btn')
+          || p.classList.contains('evidence-badge') || p.classList.contains('pblock-num')
+          || p.classList.contains('node-toggle')) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let text = '';
+  const cap = maxLen || 220;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    text += n.nodeValue;
+    if (text.length > cap + 40) break;
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > cap ? text.slice(0, cap).replace(/\s+\S*$/, '') + '…' : text;
+}
 
 // Emit a reference as an <a>. The payload rides in a data-* attr (JSON) so the
 // DELEGATED click/hover handlers rehydrate it without per-element closures (the
@@ -286,10 +776,43 @@ function refLink(kind, payload, displayText) {
   const text = displayText != null ? displayText : (info ? info.text : '');
   const title = info && info.title ? info.title : '';
   const cls = info && info.cls ? info.cls : '';
+  const suffix = info && info.suffix ? String(info.suffix) : '';
   const hoverable = typeof def.hover === 'function' ? ' data-ref-hover="1"' : '';
+  const suffixHtml = suffix
+    ? ` <span class="ref-internal-state">${escHtml(suffix)}</span>` : '';
   return `<a href="#" class="ref-link ${cls}" data-ref-kind="${escAttr(kind)}"`
     + ` data-ref-payload="${escAttr(JSON.stringify(payload))}"${hoverable}`
-    + (title ? ` title="${escAttr(title)}"` : '') + `>${escHtml(text)}</a>`;
+    + (title ? ` title="${escAttr(title)}"` : '') + `>${escHtml(text)}${suffixHtml}</a>`;
+}
+
+// Ref links are emitted while #doc innerHTML is still being built, so the first
+// display() pass can mis-classify targets. Reconcile classes/suffixes once the
+// live tree and fold indexes are both available.
+function refreshInternalRefLinkAffordances(root) {
+  const host = root || document.getElementById('doc');
+  if (!host) return;
+  const def = REF_KINDS.semantic;
+  if (!def || typeof def.display !== 'function') return;
+  for (const a of host.querySelectorAll('a.ref-link[data-ref-kind="semantic"]')) {
+    const p = refPayloadFrom(a);
+    if (!p || !semanticIsInternalRef(p)) continue;
+    let info = null;
+    try { info = def.display(p); } catch (e) { continue; }
+    if (!info) continue;
+    a.className = `ref-link ${info.cls || ''}`.replace(/\s+/g, ' ').trim();
+    if (info.title) a.title = info.title;
+    const surface = String(p.text || p.surface_text || '').trim();
+    const suffix = info.suffix ? String(info.suffix) : '';
+    while (a.firstChild) a.removeChild(a.firstChild);
+    if (surface) a.appendChild(document.createTextNode(surface));
+    if (suffix) {
+      if (surface) a.appendChild(document.createTextNode(' '));
+      const sp = document.createElement('span');
+      sp.className = 'ref-internal-state';
+      sp.textContent = suffix;
+      a.appendChild(sp);
+    }
+  }
 }
 
 function refPayloadFrom(el) {
@@ -298,6 +821,23 @@ function refPayloadFrom(el) {
 
 // Click delegation (installed once). Works for any present or future ref kind.
 document.addEventListener('click', (e) => {
+  const jump = e.target.closest('a.hc-internal-jump');
+  if (jump) {
+    e.preventDefault();
+    e.stopPropagation();
+    hideHovercard();
+    const addr = jump.dataset.internalAddr;
+    if (addr) {
+      const source = _hcSourceAddr ? { fromAddr: _hcSourceAddr, fromScrollY: window.scrollY } : null;
+      if (source) pushInternalJumpBack(source, addr, (jump.textContent || '').trim());
+      ensureLawView();
+      const landed = jumpToAddr(addr, { internal: true });
+      selectedAddress = landed ? landed.addr : addr;
+      removeInlinePanel();
+      if (!suppressHashUpdate) updateHash();
+    }
+    return;
+  }
   const a = e.target.closest('a.ref-link');
   if (!a) return;
   e.preventDefault();
@@ -305,7 +845,7 @@ document.addEventListener('click', (e) => {
   const def = REF_KINDS[a.dataset.refKind];
   if (!def || !def.nav) return;
   const p = refPayloadFrom(a);
-  if (p) { try { def.nav(p); } catch (err) { console.warn('ref nav failed', err); } }
+  if (p) { try { def.nav(p, a); } catch (err) { console.warn('ref nav failed', err); } }
 });
 
 // ---- hovercard: a single shared popover, reused for every hover ----
@@ -340,6 +880,8 @@ function positionHovercard(anchor) {
 async function showHovercardFor(anchor) {
   const def = REF_KINDS[anchor.dataset.refKind];
   if (!def || typeof def.hover !== 'function') return;
+  const host = anchor.closest('#doc [data-addr]');
+  _hcSourceAddr = host ? host.dataset.addr : null;
   const p = refPayloadFrom(anchor);
   if (!p) return;
   const token = ++_hcToken; // guards async + re-render races: last hover wins
@@ -442,6 +984,126 @@ function indexInterlinkTargets(rows) {
   }
 }
 
+// =====================================================================
+// Surface overlays: rich semantic layers (defined terms, term uses, temporal
+// markers, frame badges). Each row carries the SAME rendered_* span columns as
+// interlinks; we place markers identically. Code defensively — tolerate
+// missing/extra columns; never throw.
+// =====================================================================
+function indexSurfaceOverlays() {
+  overlaysByRenderedAddress = new Map();
+  overlaysById = new Map();
+  for (const row of surfaceOverlays) {
+    if (row && row.overlay_id != null) overlaysById.set(String(row.overlay_id), row);
+    const addr = row && String(row.rendered_address || '').trim();
+    if (!addr) continue;
+    let rows = overlaysByRenderedAddress.get(addr);
+    if (!rows) { rows = []; overlaysByRenderedAddress.set(addr, rows); }
+    rows.push(row);
+  }
+}
+
+// End column for a span row: tolerate either an explicit end (rendered_char_end)
+// or a length (rendered_char_len / rendered_length). Mirrors what interlink
+// rows carry while degrading gracefully on the alternate shape.
+function spanEnd(row, start) {
+  const explicit = Number(row.rendered_char_end);
+  if (Number.isInteger(explicit)) return explicit;
+  const len = Number(row.rendered_char_len != null ? row.rendered_char_len : row.rendered_length);
+  if (Number.isInteger(len) && Number.isInteger(start)) return start + len;
+  return NaN;
+}
+
+function overlayActiveAt(row, date) {
+  if (date && row.rendered_effective_date && row.rendered_effective_date !== date) return false;
+  if (date && row.valid_at_start && row.valid_at_start > date) return false;
+  if (date && row.valid_at_end && row.valid_at_end < date) return false;
+  return true;
+}
+
+// Overlays of a given segment that are (a) of an ENABLED kind, (b) active on
+// the selected date, (c) place onto a valid char range within the text.
+function renderedOverlaysForSegment(addr, segmentIndex, text) {
+  const rows = overlaysByRenderedAddress.get(addr) || [];
+  return rows
+    .filter(row => enabledOverlayKinds.has(String(row.kind || '')))
+    .filter(row => Number(row.rendered_segment_index) === segmentIndex
+      && overlayActiveAt(row, changeDates[curDateIdx]))
+    .map(row => {
+      const start = Number(row.rendered_char_start);
+      return { row, start, end: spanEnd(row, start) };
+    })
+    .filter(item => Number.isInteger(item.start) && Number.isInteger(item.end)
+      && item.start >= 0 && item.end > item.start && item.end <= text.length)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+function overlayLinks(row) {
+  return jsonArray(row && row.links_json).filter(l => l && typeof l === 'object');
+}
+
+function overlayPayload(row) {
+  return jsonObj(row && row.payload_json);
+}
+
+// Human label for a payload key; falls back to the raw key (snake → spaced).
+function overlayFieldLabel(key) {
+  return tr('overlayField_' + key) || String(key).replace(/_/g, ' ');
+}
+
+// Resolve a link target (overlay or node) to a short display string.
+function overlayLinkLabel(link) {
+  if (link.target_overlay_id != null) {
+    const t = overlaysById.get(String(link.target_overlay_id));
+    if (t) return t.label || t.overlay_id;
+    return String(link.target_overlay_id);
+  }
+  if (link.target_node_id != null) return String(link.target_node_id);
+  return '';
+}
+
+// Surface-fact hovercard for an overlay row: kind heading + the typed payload
+// facts + any co-located links. Never states a legal conclusion.
+function overlayHovercardHtml(row) {
+  if (!row) return null;
+  const kind = String(row.kind || '');
+  const payload = overlayPayload(row);
+  const links = overlayLinks(row);
+  const title = row.label || tr('overlayLayer_' + kind) || kind;
+  let h = `<div class="hc-title">${escHtml(title)}</div>`;
+  h += `<div class="hc-status-row">`
+    + `<span class="hc-status hc-overlay-${escAttr(kind)}">${escHtml(tr('overlayLayer_' + kind) || kind)}</span>`;
+  if (kind === 'term_use' && row.status) {
+    h += `<span class="hc-citekind">${escHtml(row.status)}</span>`;
+  }
+  h += `</div>`;
+  // defined_term: surface usage count when the lane supplied it.
+  if (kind === 'defined_term' && payload.use_count != null) {
+    h += `<div class="hc-overlay-note">${escHtml(tr('overlayUsedNTimes', Number(payload.use_count)))}</div>`;
+  }
+  // The typed payload facts (surface description only).
+  const keys = Object.keys(payload).filter(k => payload[k] != null && payload[k] !== '' && typeof payload[k] !== 'object');
+  if (keys.length) {
+    h += `<dl class="hc-meta">`;
+    for (const k of keys) {
+      h += `<div><dt>${escHtml(overlayFieldLabel(k))}</dt><dd>${escHtml(String(payload[k]))}</dd></div>`;
+    }
+    h += `</dl>`;
+  }
+  // Co-located links (e.g. a sanction frame's references; a term use's
+  // definition). Listed as surface relations, not navigations of legal weight.
+  if (links.length) {
+    h += `<div class="hc-overlay-links"><div class="hc-overlay-links-lbl">${escHtml(tr('overlayLinks'))}</div><ul>`;
+    for (const link of links) {
+      const label = overlayLinkLabel(link);
+      const rel = link.rel ? `${escHtml(link.rel)}: ` : '';
+      h += `<li>${rel}${escHtml(label)}</li>`;
+    }
+    h += `</ul></div>`;
+  }
+  return h;
+}
+
 function jsonObj(value) {
   if (!value) return {};
   if (typeof value === 'object') return value;
@@ -498,13 +1160,52 @@ function semanticTargetLinks(row, target) {
   return out;
 }
 
+// Surface kind (xml_ref / prose_ref / metadata_ref …) → a coarse citation
+// class for the hovercard: cross-statute / internal / EU / treaty. Internal vs
+// cross is decided by whether the target act equals the source act.
+function semanticCiteKindLabel(row) {
+  const workId = String((row && row.target_work_id) || '').toLowerCase();
+  if (workId.startsWith('eu:') || workId.startsWith('eu/')) return tr('citeKindEU');
+  if (/treaty|sops|sopimussarja/.test(workId)) return tr('citeKindTreaty');
+  if (semanticIsInternalRef(row)) return tr('citeKindInternal');
+  return tr('citeKindCross');
+}
+
+// Candidate target works for an AMBIGUOUS interlink (pipe-joined in the row).
+function semanticCandidateWorks(row) {
+  const raw = String((row && row.candidate_work_ids) || '').trim();
+  if (!raw) return [];
+  return raw.split('|').map(s => s.trim()).filter(Boolean);
+}
+
 function semanticInterlinkHovercardHtml(row) {
   if (!row) return null;
+  const status = semanticRefStatus(row);
   const target = semanticTargetForRow(row);
   const targetDetail = jsonObj(target && target.detail_json);
   const links = semanticTargetLinks(row, target);
+  const isInternal = semanticIsInternalRef(row);
   const title = (target && target.title) || row.target_work_id || row.surface_text || row.interlink_id || '';
   let h = `<div class="hc-title">${escHtml(title)}</div>`;
+  // Status badge + citation-kind chip headline the card so the affordance the
+  // user just hovered is named explicitly.
+  h += `<div class="hc-status-row">`
+    + `<span class="hc-status hc-status-${status}">${escHtml(tr('semanticStatus_' + status) || status)}</span>`
+    + `<span class="hc-citekind">${escHtml(semanticCiteKindLabel(row))}</span>`
+    + `</div>`;
+  // AMBIGUOUS: list the candidate works the resolver could not disambiguate.
+  if (status === 'ambiguous') {
+    const cands = semanticCandidateWorks(row);
+    if (cands.length) {
+      h += `<div class="hc-candidates"><div class="hc-candidates-lbl">${escHtml(tr('semanticCandidates'))}</div><ul>`;
+      for (const c of cands) h += `<li>${escHtml(c)}</li>`;
+      h += `</ul></div>`;
+    }
+  }
+  // BROKEN: name the affordance — the target was repealed/renumbered since.
+  if (status === 'broken') {
+    h += `<div class="hc-broken-note">${escHtml(tr('semanticBrokenNote'))}</div>`;
+  }
   const hierarchy = semanticTargetHierarchy(target);
   if (hierarchy.length) {
     h += `<div class="hc-path">${hierarchy.map(part => {
@@ -514,7 +1215,30 @@ function semanticInterlinkHovercardHtml(row) {
   } else if (target && target.locator_label) {
     h += `<div class="hc-path">${escHtml(target.locator_label)}</div>`;
   }
-  if (target && target.preview_text) {
+  // Internal references transclude LIVE from the loaded act (the viewer already
+  // has the whole document), never from a precomputed preview field. External /
+  // cross-statute links keep their precomputed preview (their target isn't loaded).
+  if (isInternal) {
+    const addr = semanticInternalAddr(row, target);
+    const tgt = internalRefTargetState(row, target);
+    if (tgt.state === 'active') {
+      const snippet = liveTransclusionSnippet(addr);
+      h += `<div class="hc-internal-source">${escHtml(tr('interlinkInternalLive'))}</div>`;
+      if (snippet) {
+        h += `<a href="#" class="hc-preview hc-preview-live hc-internal-jump" data-internal-addr="${escAttr(addr)}">${escHtml(snippet)}</a>`;
+      } else {
+        h += `<div class="hc-internal-absent">${escHtml(tr('interlinkInternalNotPresent'))}</div>`;
+      }
+    } else if (tgt.state === 'inactive') {
+      const noteKey = tgt.reason === 'expiry' ? 'interlinkInternalExpired' : 'interlinkInternalRepealed';
+      h += `<div class="hc-internal-inactive">${escHtml(tr(noteKey))}</div>`;
+      const jumpLabel = tr('interlinkInternalInactiveJump', prettyAddr(tgt.addr));
+      h += `<a href="#" class="hc-preview hc-preview-tombstone hc-internal-jump" data-internal-addr="${escAttr(addr)}">${escHtml(jumpLabel)}</a>`;
+    } else {
+      // Target not in the rendered tree at all on this date — never a fabricated preview.
+      h += `<div class="hc-internal-absent">${escHtml(tr('interlinkInternalNotPresent'))}</div>`;
+    }
+  } else if (target && target.preview_text) {
     h += `<div class="hc-preview">${escHtml(target.preview_text)}</div>`;
   }
   if (links.length) {
@@ -529,11 +1253,13 @@ function semanticInterlinkHovercardHtml(row) {
   if (row.role) h += `<div><dt>${escHtml(tr('interlinkRole'))}</dt><dd>${escHtml(row.role)}</dd></div>`;
   if (row.target_work_id) h += `<div><dt>${escHtml(tr('interlinkTarget'))}</dt><dd>${escHtml(row.target_work_id)}</dd></div>`;
   if (row.target_locator) h += `<div><dt>${escHtml(tr('interlinkLocator'))}</dt><dd>${escHtml(row.target_locator)}</dd></div>`;
-  if (target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
-  if (targetDetail.preview_date_consolidated) {
+  // Precomputed-preview metadata is meaningless for internal refs (their text is
+  // pulled live), so suppress it for them; keep it for cross/external targets.
+  if (!isInternal && target && target.preview_status) h += `<div><dt>${escHtml(tr('interlinkPreviewStatus'))}</dt><dd>${escHtml(target.preview_status)}</dd></div>`;
+  if (!isInternal && targetDetail.preview_date_consolidated) {
     h += `<div><dt>${escHtml(tr('interlinkPreviewDate'))}</dt><dd>${escHtml(targetDetail.preview_date_consolidated)}</dd></div>`;
   }
-  if (targetDetail.preview_version_tag) {
+  if (!isInternal && targetDetail.preview_version_tag) {
     h += `<div><dt>${escHtml(tr('interlinkPreviewVersion'))}</dt><dd>${escHtml(targetDetail.preview_version_tag)}</dd></div>`;
   }
   if (row.resolution_status) h += `<div><dt>${escHtml(tr('interlinkStatus'))}</dt><dd>${escHtml(row.resolution_status)}</dd></div>`;
@@ -561,14 +1287,32 @@ function renderedInterlinksForSegment(addr, segmentIndex, text) {
 }
 
 function renderTextWithInterlinks(addr, segmentIndex, text) {
-  const spans = renderedInterlinksForSegment(addr, segmentIndex, text);
+  // The existing inline-citation layer renders only when its toggle (the
+  // `reference` overlay kind) is on (default). Overlay layers render per the
+  // enabled-kinds set. Both are placed by the SAME rendered-span machinery,
+  // then merged into one left-to-right, non-overlapping marker stream.
+  const refsOn = enabledOverlayKinds.has('reference');
+  const interlinkSpans = refsOn
+    ? renderedInterlinksForSegment(addr, segmentIndex, text).map(s => ({ ...s, _layer: 'semantic' }))
+    : [];
+  const overlaySpans = renderedOverlaysForSegment(addr, segmentIndex, text)
+    // The `reference` overlay kind is the same conceptual layer as interlinks;
+    // when interlinks already render it, don't double-mark.
+    .filter(s => !(refsOn && String(s.row.kind || '') === 'reference'))
+    .map(s => ({ ...s, _layer: 'overlay' }));
+  const spans = [...interlinkSpans, ...overlaySpans]
+    .sort((a, b) => a.start - b.start || a.end - b.end);
   if (!spans.length) return escHtml(text);
   let html = '', pos = 0;
   for (const span of spans) {
-    if (span.start < pos) continue;
+    if (span.start < pos) continue;   // skip overlaps; first (leftmost) wins
     html += escHtml(text.slice(pos, span.start));
     const surface = text.slice(span.start, span.end);
-    html += refLink('semantic', { ...span.row, text: surface }, surface);
+    if (span._layer === 'semantic') {
+      html += refLink('semantic', { ...span.row, text: surface }, surface);
+    } else {
+      html += refLink('overlay', { ...span.row, text: surface }, surface);
+    }
     pos = span.end;
   }
   html += escHtml(text.slice(pos));
@@ -1021,8 +1765,10 @@ async function loadStatute(statuteId, permalink) {
     db = new SQL.Database(new Uint8Array(buf));
     setLoadProgress(88, tr('indexingDb'), '', false);
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
+    clearInternalJumpStack();
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
     interlinks = []; interlinksByRenderedAddress = new Map(); interlinkTargetsByKey = new Map();
+    surfaceOverlays = []; overlaysByRenderedAddress = new Map(); overlaysById = new Map();
     displayNodeByDateAddress = new Map();
     evidenceEvents = []; evidenceBySource = new Map(); evidenceByDate = new Map(); evidenceWithAddress = [];
     compareSel = { d1: null, d2: null };
@@ -1050,6 +1796,12 @@ async function loadStatute(statuteId, permalink) {
       indexInterlinkTargets(q('SELECT * FROM lawvm_interlink_targets ORDER BY target_key'));
     } else {
       indexInterlinkTargets([]);
+    }
+    // Optional rich semantic overlay layers. Absent table → no extra overlays
+    // (graceful degradation; no error).
+    if (tableExists('lawvm_surface_overlays')) {
+      surfaceOverlays = q('SELECT * FROM lawvm_surface_overlays ORDER BY overlay_id');
+      indexSurfaceOverlays();
     }
     evidenceEvents = q('SELECT * FROM evidence_events ORDER BY event_id');
     indexEvidenceEvents();
@@ -1112,8 +1864,17 @@ function renderShell() {
         </div>
         <div class="timeaxis" id="timeaxis" title="">${timeAxisInnerHtml()}</div>
       </div>
+      ${overlayLayerBarHtml()}
     </div>
     <p class="mode-hint" id="mode-hint"></p>
+    <div class="internal-backbar" id="internal-backbar" hidden>
+      <button type="button" class="internal-back-btn" id="internal-back-btn">
+        <span class="internal-back-arrow" aria-hidden="true">←</span>
+        <span id="internal-back-lbl"></span>
+      </button>
+      <span class="internal-back-meta" id="internal-back-meta"></span>
+      <button type="button" class="internal-back-dismiss" id="internal-back-dismiss" title="${escAttr(tr('internalBackDismiss'))}">×</button>
+    </div>
     <div class="view" id="view"></div>`;
 
   for (const b of app.querySelectorAll('.mode-btn')) {
@@ -1123,10 +1884,61 @@ function renderShell() {
   document.getElementById('next-date').addEventListener('click', () => selectDate(Math.min(changeDates.length - 1, curDateIdx + 1)));
   document.getElementById('date-jump').addEventListener('change', (e) => selectDate(parseInt(e.target.value, 10)));
   document.getElementById('focus-changes-toggle').addEventListener('click', toggleFocusChangesOnly);
+  wireOverlayLayerBar();
   wireTimeAxis();
   wireSecJump();
+  wireInternalBackBar();
 
   setMode('law', /*skipRender*/ true);
+}
+
+// ---- overlay layer toggle bar (pills) ----
+// Which layers are offered: `reference` always (the existing inline-citation
+// layer), plus any richer kind that actually has rows in the loaded data.
+function availableOverlayKinds() {
+  const present = new Set(surfaceOverlays.map(r => String(r.kind || '')));
+  return OVERLAY_LAYER_KINDS.filter(k => k === 'reference' || present.has(k));
+}
+
+function overlayLayerBarHtml() {
+  const kinds = availableOverlayKinds();
+  // Nothing beyond the always-present reference layer? Still show it so the
+  // affordance is discoverable, but skip the bar entirely if there are no
+  // interlinks AND no overlays at all (keeps clean corpora uncluttered).
+  if (!interlinks.length && !surfaceOverlays.length) return '';
+  let html = `<div class="overlay-bar" id="overlay-bar" role="group" aria-label="${escAttr(tr('overlayLayers'))}">`;
+  html += `<span class="overlay-bar-lbl">${escHtml(tr('overlayLayers'))}</span>`;
+  for (const k of kinds) {
+    const on = enabledOverlayKinds.has(k);
+    html += `<button type="button" class="overlay-pill ov-pill-${escAttr(k)}${on ? ' active' : ''}"`
+      + ` data-overlay-kind="${escAttr(k)}" aria-pressed="${on ? 'true' : 'false'}"`
+      + ` title="${escAttr(tr('overlayLayerTip_' + k) || tr('overlayLayer_' + k) || k)}">`
+      + `${escHtml(tr('overlayLayer_' + k) || k)}</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function wireOverlayLayerBar() {
+  const bar = document.getElementById('overlay-bar');
+  if (!bar) return;
+  for (const btn of bar.querySelectorAll('.overlay-pill')) {
+    btn.addEventListener('click', () => toggleOverlayKind(btn.dataset.overlayKind));
+  }
+}
+
+function toggleOverlayKind(kind) {
+  if (!kind) return;
+  if (enabledOverlayKinds.has(kind)) enabledOverlayKinds.delete(kind);
+  else enabledOverlayKinds.add(kind);
+  const btn = document.querySelector(`.overlay-pill[data-overlay-kind="${cssEsc(kind)}"]`);
+  if (btn) {
+    const on = enabledOverlayKinds.has(kind);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  // Overlays render inside the law-view document text; re-render it.
+  if (mode === 'law') renderLaw({ preserveScroll: true });
 }
 
 // ---- real time axis: ticks at change dates, proportional positions ----
@@ -1246,6 +2058,7 @@ function setMode(m, skipRender) {
     else if (m === 'search') renderSearch();
     else renderCompare();
   }
+  updateInternalBackBar();
   if (!suppressHashUpdate) updateHash();
 }
 
@@ -1259,6 +2072,7 @@ function validityInterval(idx) {
 }
 
 async function selectDate(idx, opts) {
+  clearInternalJumpStack();
   curDateIdx = idx;
   const date = changeDates[idx];
   const selDateEl = document.getElementById('sel-date');
@@ -1576,7 +2390,9 @@ function renderDoc() {
   let html = '';
   for (const entry of sortedEntries(tree)) html += renderTreeEntry(entry, 0, focusAddrs);
   docEl.innerHTML = html || `<p class="muted-empty">${escHtml(focusChangesOnly ? tr('noChangedProvisions') : tr('noProvisions'))}</p>`;
+  invalidateRenderedAddrIndex();
   wireDoc(docEl);
+  refreshInternalRefLinkAffordances(docEl);
 }
 
 function renderTreeEntry(entry, depth, focusAddrs) {
@@ -1598,7 +2414,7 @@ function renderTreeEntry(entry, depth, focusAddrs) {
   const heading = display && display.heading ? display.heading : '';
   const changeKind = changeKindAtSelectedDate(entry.addr);
   const changed = !!changeKind || [...entry.children.values()].some(c => changedAddrs.has(c.addr));
-  const collapsed = collapsedAddrs.has(entry.addr);
+  const collapsed = isNodeCollapsed(entry.addr);
   const derivedTomb = derivedScaffoldTombstoneInfo(entry);
   const disposition = derivedTomb ? tombstoneDisposition(entry.addr, derivedTomb) : null;
   let html = `<div class="node scaffold kind-${escAttr(displayKind)}${derivedTomb ? ' tombstone derived-tombstone' : ''}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${disposition ? disposition.activeClass : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
@@ -1719,7 +2535,7 @@ function renderNode(node, addr, depth, prevMap, focusAddrs) {
   if (ROW_KINDS.has(kind)) {
     // Outline row: chapter/section — collapsible, default expanded (reading
     // mode); collapse state is remembered across date scrubs and re-renders.
-    const collapsed = collapsedAddrs.has(addr);
+    const collapsed = isNodeCollapsed(addr);
     const changeKind = changeKindAtSelectedDate(addr);
     if (changeKind) changed = true;
     let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${changeKind ? ` change-${escAttr(changeKind)}` : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
@@ -1894,14 +2710,128 @@ function wireDoc(docEl) {
 }
 
 // Collapse state survives re-renders (date scrubs, language switches).
+// Entirely repealed/expired outline subtrees default collapsed; explicit
+// expand/collapse overrides are remembered per address.
 const collapsedAddrs = new Set();
+const expandedAddrs = new Set();
 
-function toggleCollapse(nodeEl, force) {
-  if (!nodeEl) return;
-  const collapsing = force !== undefined ? force : !nodeEl.classList.contains('collapsed');
+let entirelyAbsentCache = null;
+let entirelyAbsentDateIdx = -1;
+
+function absentUnitAtDate(addr) {
+  if (curLive.has(addr)) return false;
+  if (!changeDates.length || curDateIdx < 0) return false;
+  const events = changeIndex().get(addr) || [];
+  let last = null;
+  for (const e of events) {
+    if (e.idx <= curDateIdx) last = e;
+    else break;
+  }
+  return !!(last && last.kind === 'removed');
+}
+
+function liveNodeInlineText(node) {
+  return inlineContent(node).map(s => s.text).join('').trim();
+}
+
+function rowChildrenEntirelyAbsent(addr, node) {
+  const children = structChildren(node, addr);
+  const ghosts = ghostMap().get(addr) || [];
+  if (!children.length && !ghosts.length) return null;
+  for (const c of children) {
+    if (!unitEntirelyAbsent(c.childAddr, c.child)) return false;
+  }
+  for (const g of ghosts) {
+    if (!unitEntirelyAbsent(g.addr, null)) return false;
+  }
+  return true;
+}
+
+function unitEntirelyAbsent(addr, node) {
+  if (node && ROW_KINDS.has(node.kind)) {
+    if (liveNodeInlineText(node)) return false;
+    const kids = rowChildrenEntirelyAbsent(addr, node);
+    if (kids === null) return false;
+    return kids;
+  }
+  if (node) {
+    if (liveNodeInlineText(node)) return false;
+    const children = structChildren(node, addr);
+    const ghosts = ghostMap().get(addr) || [];
+    if (!children.length && !ghosts.length) return false;
+    return children.every(c => unitEntirelyAbsent(c.childAddr, c.child))
+      && ghosts.every(g => unitEntirelyAbsent(g.addr, null));
+  }
+  return absentUnitAtDate(addr);
+}
+
+function entrySubtreeEntirelyAbsent(entry) {
+  if (entry.tomb && !entry.hash) return true;
+  if (entry.hash) {
+    const node = getBlob(entry.hash);
+    return node ? unitEntirelyAbsent(entry.addr, node) : false;
+  }
+  const children = [...entry.children.values()];
+  if (!children.length) return false;
+  return children.every(c => {
+    if (c.tomb && !c.hash) return true;
+    if (c.hash) {
+      const n = getBlob(c.hash);
+      return n ? unitEntirelyAbsent(c.addr, n) : false;
+    }
+    return entrySubtreeEntirelyAbsent(c);
+  });
+}
+
+function collapsibleEntirelyAbsent(addr, entry, node) {
+  if (!ROW_KINDS.has(addrKind(addr))) return false;
+  if (node) return unitEntirelyAbsent(addr, node);
+  if (entry) {
+    if (!entry.children.size && !entry.hash) return false;
+    if (entry.hash) {
+      const n = getBlob(entry.hash);
+      return n ? unitEntirelyAbsent(addr, n) : false;
+    }
+    return entrySubtreeEntirelyAbsent(entry);
+  }
+  return false;
+}
+
+function entirelyAbsentAddrs() {
+  if (entirelyAbsentCache && entirelyAbsentDateIdx === curDateIdx) return entirelyAbsentCache;
+  const absent = new Set();
+  const tree = buildRenderTree(curLive, curTombstoned);
+
+  const visitNode = (node, addr) => {
+    if (collapsibleEntirelyAbsent(addr, null, node)) absent.add(addr);
+    for (const { child, childAddr } of structChildren(node, addr)) visitNode(child, childAddr);
+  };
+
+  const visitEntry = (entry) => {
+    if (!entry.hash && entry.children.size) {
+      if (collapsibleEntirelyAbsent(entry.addr, entry, null)) absent.add(entry.addr);
+    }
+    for (const child of entry.children.values()) visitEntry(child);
+    if (entry.hash) {
+      const node = getBlob(entry.hash);
+      if (node) visitNode(node, entry.addr);
+    }
+  };
+
+  for (const entry of tree.values()) visitEntry(entry);
+  entirelyAbsentCache = absent;
+  entirelyAbsentDateIdx = curDateIdx;
+  return absent;
+}
+
+function isNodeCollapsed(addr) {
+  if (expandedAddrs.has(addr)) return false;
+  if (collapsedAddrs.has(addr)) return true;
+  return entirelyAbsentAddrs().has(addr);
+}
+
+function applyCollapseDom(nodeEl, collapsing) {
   nodeEl.classList.toggle('collapsed', collapsing);
-  const addr = nodeEl.dataset.addr;
-  if (addr) { if (collapsing) collapsedAddrs.add(addr); else collapsedAddrs.delete(addr); }
   const tog = nodeEl.querySelector(':scope > .node-row > .node-toggle');
   if (tog && !tog.classList.contains('leaf')) tog.textContent = collapsing ? '▸' : '▾';
   const body = nodeEl.querySelector(':scope > .node-body');
@@ -1912,9 +2842,36 @@ function toggleCollapse(nodeEl, force) {
   }
 }
 
+function toggleCollapse(nodeEl, force) {
+  if (!nodeEl) return;
+  const collapsing = force !== undefined ? force : !nodeEl.classList.contains('collapsed');
+  applyCollapseDom(nodeEl, collapsing);
+  const addr = nodeEl.dataset.addr;
+  if (!addr) return;
+  if (collapsing) {
+    collapsedAddrs.add(addr);
+    expandedAddrs.delete(addr);
+  } else {
+    collapsedAddrs.delete(addr);
+    if (entirelyAbsentAddrs().has(addr)) expandedAddrs.add(addr);
+  }
+}
+
 function setAllCollapsed(collapsed) {
   document.querySelectorAll('#doc .node').forEach(n => {
-    if (n.querySelector(':scope > .node-body')) toggleCollapse(n, collapsed);
+    if (!n.querySelector(':scope > .node-body')) return;
+    const addr = n.dataset.addr || '';
+    if (collapsed) {
+      toggleCollapse(n, true);
+      return;
+    }
+    if (entirelyAbsentAddrs().has(addr)) {
+      expandedAddrs.delete(addr);
+      collapsedAddrs.delete(addr);
+      applyCollapseDom(n, true);
+      return;
+    }
+    toggleCollapse(n, false);
   });
 }
 
@@ -1978,10 +2935,21 @@ function focusChangedContext() {
     renderLaw({ preserveScroll: true });
   }
   const changed = addressesChangedAtSelectedDate();
+  const absent = entirelyAbsentAddrs();
   document.querySelectorAll('#doc .node').forEach(n => {
     if (!n.querySelector(':scope > .node-body')) return;
     const addr = n.dataset.addr || '';
-    toggleCollapse(n, !addressVisibleInFocus(addr, changed));
+    if (!addressVisibleInFocus(addr, changed)) {
+      toggleCollapse(n, true);
+      return;
+    }
+    if (absent.has(addr)) {
+      expandedAddrs.delete(addr);
+      collapsedAddrs.delete(addr);
+      applyCollapseDom(n, true);
+      return;
+    }
+    toggleCollapse(n, false);
   });
 }
 
@@ -2158,24 +3126,139 @@ function restoreScrollAnchor(anchor) {
   spy.suppressUntil = Date.now() + 600;
 }
 
-function jumpToAddr(addr) {
-  const segs = addr.split('/');
+// Extra breathing room below the sticky topbar when jumping to a provision.
+const JUMP_SCROLL_OFFSET_PX = 100;
+let jumpHighlightTimer = null;
+
+function captureJumpSource(clickEl) {
+  const host = clickEl && clickEl.closest('#doc [data-addr]');
+  if (!host || !host.dataset.addr) return null;
+  return { fromAddr: host.dataset.addr, fromScrollY: window.scrollY };
+}
+
+function pushInternalJumpBack(source, toAddr, surfaceText) {
+  if (!source || !source.fromAddr || !toAddr) return;
+  const resolvedTo = resolveRenderedAddr(toAddr);
+  const to = resolvedTo.addr || toAddr;
+  if (source.fromAddr === to) return;
+  const top = internalJumpStack[internalJumpStack.length - 1];
+  if (top && top.fromAddr === source.fromAddr && top.toAddr === to) return;
+  internalJumpStack.push({
+    fromAddr: source.fromAddr,
+    fromScrollY: source.fromScrollY,
+    surfaceText: String(surfaceText || '').trim(),
+    toAddr: to,
+  });
+  if (internalJumpStack.length > 12) internalJumpStack.shift();
+  updateInternalBackBar();
+}
+
+function clearInternalJumpStack() {
+  internalJumpStack = [];
+  updateInternalBackBar();
+}
+
+function updateInternalBackBar() {
+  const bar = document.getElementById('internal-backbar');
+  if (!bar) return;
+  const frame = internalJumpStack[internalJumpStack.length - 1];
+  const show = !!(frame && mode === 'law');
+  bar.hidden = !show;
+  if (!show) return;
+  const lbl = document.getElementById('internal-back-lbl');
+  const meta = document.getElementById('internal-back-meta');
+  const btn = document.getElementById('internal-back-btn');
+  const backTxt = tr('internalBackTo', prettyAddr(frame.fromAddr));
+  if (lbl) lbl.textContent = backTxt;
+  if (btn) btn.title = backTxt;
+  if (meta) {
+    const via = frame.surfaceText;
+    meta.textContent = via
+      ? tr('internalBackVia', via.length > 72 ? via.slice(0, 69) + '…' : via)
+      : tr('internalBackAt', prettyAddr(frame.toAddr));
+  }
+}
+
+function wireInternalBackBar() {
+  const btn = document.getElementById('internal-back-btn');
+  const dismiss = document.getElementById('internal-back-dismiss');
+  if (btn) btn.addEventListener('click', followInternalJumpBack);
+  if (dismiss) dismiss.addEventListener('click', clearInternalJumpStack);
+}
+
+function followInternalJumpBack() {
+  const frame = internalJumpStack.pop();
+  updateInternalBackBar();
+  if (!frame) return;
+  ensureLawView();
+  selectedAddress = frame.fromAddr;
+  removeInlinePanel();
+  spy.suppressUntil = Date.now() + 1500;
+  if (typeof frame.fromScrollY === 'number') {
+    window.scrollTo({ top: Math.max(0, frame.fromScrollY), behavior: 'auto' });
+  } else {
+    jumpToAddr(frame.fromAddr, { internal: true });
+  }
+  const resolved = resolveRenderedAddr(frame.fromAddr);
+  highlightJumpTargets(resolved.addr || frame.fromAddr, resolved);
+  if (!suppressHashUpdate) updateHash();
+}
+
+function clearJumpHighlight() {
+  if (jumpHighlightTimer) { clearTimeout(jumpHighlightTimer); jumpHighlightTimer = null; }
+  document.querySelectorAll('#doc .jump-highlight').forEach(el => el.classList.remove('jump-highlight'));
+}
+
+function highlightJumpTargets(targetAddr, resolved) {
+  clearJumpHighlight();
+  if (!targetAddr) return;
+  const nodes = document.querySelectorAll(
+    `#doc .pblock[data-addr="${cssEsc(targetAddr)}"], #doc .node[data-addr="${cssEsc(targetAddr)}"]`,
+  );
+  if (nodes.length) {
+    for (const el of nodes) el.classList.add('jump-highlight');
+  } else if (resolved && resolved.el) {
+    const host = resolved.el.closest('.pblock[data-addr], .node[data-addr]') || resolved.el;
+    host.classList.add('jump-highlight');
+  }
+  jumpHighlightTimer = setTimeout(clearJumpHighlight, 2600);
+}
+
+function scrollToJumpTarget(el, opts) {
+  if (!el) return;
+  const topbar = document.getElementById('topbar');
+  const topbarBottom = topbar ? topbar.getBoundingClientRect().bottom : 0;
+  const offset = topbarBottom + JUMP_SCROLL_OFFSET_PX;
+  const rect = el.getBoundingClientRect();
+  const targetY = window.scrollY + rect.top - offset;
+  const instant = !!(opts && opts.instant);
+  const dist = Math.abs(rect.top - offset);
+  const behavior = instant ? 'auto' : (dist > 2500 ? 'auto' : 'smooth');
+  window.scrollTo({ top: Math.max(0, targetY), behavior });
+}
+
+function jumpToAddr(addr, opts) {
+  const internal = !!(opts && opts.internal);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  if (!targetAddr) return null;
+  const segs = targetAddr.split('/');
   for (let i = 1; i <= segs.length; i++) {
     const a = segs.slice(0, i).join('/');
     const n = document.querySelector(`#doc .node[data-addr="${cssEsc(a)}"]`);
     if (n && n.classList.contains('collapsed')) toggleCollapse(n, false);
   }
-  const row = document.querySelector(`#doc .node-row[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc [data-addr="${cssEsc(addr)}"]`);
-  if (row) {
+  const scrollEl = scrollTargetForAddr(targetAddr, resolved);
+  if (scrollEl) {
     spy.suppressUntil = Date.now() + 1500;
-    // Smooth-scroll reads nicely nearby; over long distances (this statute is
-    // huge) it is slow and disorienting — jump instantly instead.
-    const dist = Math.abs(row.getBoundingClientRect().top);
-    row.scrollIntoView({ behavior: dist > 2500 ? 'auto' : 'smooth', block: 'start' });
-    row.classList.add('flash');
-    setTimeout(() => row.classList.remove('flash'), 1200);
+    scrollToJumpTarget(scrollEl, { instant: internal });
+    if (internal) highlightJumpTargets(targetAddr, resolved);
+    else {
+      scrollEl.classList.add('flash');
+      setTimeout(() => scrollEl.classList.remove('flash'), 1200);
+    }
   }
+  return { addr: targetAddr, el: scrollEl };
 }
 
 function filterToc(qstr) {
@@ -2235,7 +3318,9 @@ function versionTrail(addr) {
 function changeIndex() {
   if (changeIdxCache) return changeIdxCache;
   changeIdxCache = new Map();
+  if (!changeDates.length || !changeDates[0]) return changeIdxCache;
   const folds = allFolds();
+  if (!folds[changeDates[0]]) return changeIdxCache;
   const push = (addr, idx, kind) => {
     let l = changeIdxCache.get(addr);
     if (!l) { l = []; changeIdxCache.set(addr, l); }
@@ -2640,8 +3725,11 @@ function removeInlinePanel() {
 
 function openInlineHistory(addr, scroll) {
   removeInlinePanel();
-  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(addr)}"]`);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`)
+    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`)
+    || resolved.el;
   if (!anchor) return;
   // Make sure the anchor is visible (expand collapsed ancestors).
   let el = anchor.parentElement;
@@ -2651,21 +3739,21 @@ function openInlineHistory(addr, scroll) {
   }
   const panel = document.createElement('div');
   panel.className = 'inline-history';
-  panel.innerHTML = `<div class="ih-title">${escHtml(tr('historyTitle'))}</div>` + historyHtml(addr);
+  panel.innerHTML = `<div class="ih-title">${escHtml(tr('historyTitle'))}</div>` + historyHtml(targetAddr);
   // For outline nodes insert right under the heading row; for prose blocks
   // insert after the block itself.
   const row = anchor.querySelector(':scope > .node-row');
   if (row) row.insertAdjacentElement('afterend', panel);
   else anchor.insertAdjacentElement('afterend', panel);
-  wireHistory(panel, addr);
+  wireHistory(panel, targetAddr);
   anchor.classList.add('hist-anchor');
-  const btn = document.querySelector(`.hist-btn[data-addr="${cssEsc(addr)}"]`);
+  const btn = document.querySelector(`.hist-btn[data-addr="${cssEsc(targetAddr)}"]`);
   if (btn) btn.classList.add('active');
-  const evBtn = document.querySelector(`.evidence-badge[data-addr="${cssEsc(addr)}"]`);
+  const evBtn = document.querySelector(`.evidence-badge[data-addr="${cssEsc(targetAddr)}"]`);
   if (evBtn) evBtn.classList.add('active');
   if (scroll) {
     spy.suppressUntil = Date.now() + 1500;
-    (row || anchor).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollToJumpTarget(scrollTargetForAddr(targetAddr) || row || anchor);
   }
 }
 
@@ -3088,12 +4176,16 @@ function goToAddrAtDate(addr, date, phrase) {
   setMode('law', /*skipRender*/ true);
   const idx = date ? changeDates.indexOf(date) : -1;
   const targetIdx = idx >= 0 ? idx : curDateIdx >= 0 ? curDateIdx : defaultChangeDateIndex();
-  selectedAddress = addr;
+  const resolved = addr ? resolveRenderedAddr(addr) : { addr: '' };
+  selectedAddress = resolved.addr || addr;
   // A bare nav (amendments/compare link, no phrase) drops any prior search mark.
   searchHighlight = phrase ? { addr, phrase } : null;
   selectDate(targetIdx, { skipRender: true }).then(() => {
     setMode('law');
-    setTimeout(() => { openInlineHistory(addr, true); reapplySearchHighlight(); }, 50);
+    setTimeout(() => {
+      openInlineHistory(resolved.addr || addr, true);
+      reapplySearchHighlight();
+    }, 50);
   });
 }
 
@@ -3116,8 +4208,11 @@ function reapplySearchHighlight() {
 
 function applySearchHighlight(addr, phrase) {
   if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined' || !phrase) return;
-  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(addr)}"]`);
+  const resolved = resolveRenderedAddr(addr);
+  const targetAddr = resolved.addr || addr;
+  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(targetAddr)}"]`)
+    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(targetAddr)}"]`)
+    || resolved.el;
   if (!anchor) return;
 
   // Concatenate the anchor's text nodes (skipping any open inline-history

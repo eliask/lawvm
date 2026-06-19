@@ -33,6 +33,7 @@ from lawvm.finland.johtolause.census_accounting import (
     CENSUS_ACCOUNTING_BUCKETS,
     FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0,
+    FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0,
     FI_JOHTOLAUSE_GENUINE_DELTA_UNCLASSIFIED_BASELINE,
     FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0,
     FI_JOHTOLAUSE_GRAMMAR_OWNED_0DELTA_FLOOR,
@@ -72,12 +73,25 @@ def test_adjudication_ledger_holds_the_33_corrections() -> None:
     # The both-parser drop-recovery round added 12 NEW-better recoveries (6 nimike
     # + 4 labelled-subheading + 2 nojalla-authority), a class of its own.
     assert len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0) == 12
-    # The three adjudication sets are mutually disjoint (no sid double-counted).
+    # The insertion-recovery round added 5 NEW-better recoveries where the legacy
+    # parser flattened/dropped a ``lisätään ... uusi X`` insertion to a bare ref
+    # (or dropped the LISATA group); NEW emits the correct SurfaceInsertion.
+    assert len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0) == 5
+    # The four adjudication sets are mutually disjoint (no sid double-counted).
     assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
     )
     assert FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0.isdisjoint(
         FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+    )
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0.isdisjoint(
+        FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0
+    )
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0.isdisjoint(
+        FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0
+    )
+    assert FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0.isdisjoint(
+        FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0
     )
 
 
@@ -159,18 +173,20 @@ def test_genuine_delta_unclassified_within_baseline(_result) -> None:
 )
 def test_genuine_delta_adjudicated_fix_count(_result) -> None:
     """The adjudicated bucket holds the corrections + witness-span + drop-recovery
-    sets that still diverge. Live = 45: 32 of the 33 parser corrections (2002/375
-    converged to byte-identical via the appendix recovery's OLD-side fix, so it no
-    longer diverges) + 1 witness-span (2002/723) + 12 both-parser drop recoveries.
+    + insertion-recovery sets that still diverge. Live = 50: 32 of the 33 parser
+    corrections (2002/375 converged to byte-identical via the appendix recovery's
+    OLD-side fix, so it no longer diverges) + 1 witness-span (2002/723) + 12
+    both-parser drop recoveries + 5 insertion recoveries.
     """
     set_total = (
         len(FI_JOHTOLAUSE_GENUINE_DELTA_ADJUDICATED_FIXES_V0)
         + len(FI_JOHTOLAUSE_GENUINE_DELTA_WITNESS_SPAN_NORMALIZED_V0)
         + len(FI_JOHTOLAUSE_GENUINE_DELTA_DROP_RECOVERY_V0)
+        + len(FI_JOHTOLAUSE_GENUINE_DELTA_INSERTION_RECOVERY_V0)
     )
-    assert set_total == 46  # 33 + 1 + 12
-    assert _result.buckets["genuine_delta_adjudicated_fix"] == 45, (
-        "genuine_delta_adjudicated_fix should be 45 (set total 46 minus 2002/375, "
+    assert set_total == 51  # 33 + 1 + 12 + 5
+    assert _result.buckets["genuine_delta_adjudicated_fix"] == 50, (
+        "genuine_delta_adjudicated_fix should be 50 (set total 51 minus 2002/375, "
         "which converged to byte-identical). Got "
         f"{_result.buckets['genuine_delta_adjudicated_fix']}."
     )

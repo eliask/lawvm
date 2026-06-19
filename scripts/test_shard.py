@@ -209,6 +209,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_tail_prose_absorb.py",
         "test_fi_unnumbered_peer_reparent.py",
         "test_fi_cross_refs.py",
+        "test_fi_xstatute_coordination.py",
         "test_fi_delegation.py",
         "test_fi_ontology.py",
         "test_fi_profile.py",

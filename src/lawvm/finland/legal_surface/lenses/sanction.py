@@ -16,10 +16,17 @@ Status is the structural ``NODE_STATUSES`` value ``"asserted"`` (the same choice
 ActorModalLens made; the recognizer's own "surface_fact_only" is not a graph
 resolution status).
 
-Span alignment (Pro r5 §"span alignment"): the recognizer reports CHARACTER
-offsets relative to the text it was given. We feed it ``unit.raw_text`` verbatim
-and build each ``SourceSpanRef`` DIRECTLY from those offsets. The whole-frame
-span anchors the node; the target-actor/trigger spans travel in the payload.
+PHASE 7 SUBSTRATE MIGRATION (Pro r5 §D4): this lens consumes the
+source-preserving ``unit.token_tape`` view rather than handing the recognizer
+``raw_text`` to regex-scan. The recognizer is a TOKEN-GRAMMAR recognizer over
+the tape (``required_views=("token_tape",)``); the adapter is thin — it passes
+the prebuilt tape straight through and builds one on demand only if the
+substrate left it unpopulated.
+
+Span alignment: the recognizer reports token-aligned CHARACTER offsets into
+``unit.raw_text`` (a ``word`` token's ``.char_start``/``.char_end``). We build
+each ``SourceSpanRef`` DIRECTLY from those offsets. The whole-frame span anchors
+the node; the target-actor/trigger spans travel in the payload.
 """
 from __future__ import annotations
 
@@ -34,7 +41,9 @@ from lawvm.core.legal_surface_lens import (
     SurfaceNodeSeed,
     SurfaceResidualSeed,
 )
+from lawvm.core.legal_surface_tokens import TokenTape
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.legal_surface.tokenize import build_token_tape
 from lawvm.finland.references.sanction import (
     SanctionFrame,
     SanctionResidual,
@@ -76,7 +85,7 @@ class SanctionLens:
     schema_version: str = "v0"
     produces_node_kinds: tuple[str, ...] = ("sanction_frame",)
     produces_edge_kinds: tuple[str, ...] = ()
-    required_views: tuple[str, ...] = ("raw_text",)
+    required_views: tuple[str, ...] = ("token_tape",)
 
     def analyze(
         self,
@@ -89,7 +98,12 @@ class SanctionLens:
         units_scanned = 0
         for unit in bundle.units:
             units_scanned += 1
-            scan = recognize_sanction_frames(unit.raw_text)
+            tape = unit.token_tape
+            # The substrate populates token_tape; tolerate an un-tokenized unit
+            # by building the tape on demand (fail-loud only if raw_text absent).
+            if not isinstance(tape, TokenTape):
+                tape = build_token_tape(unit.source_unit_id, unit.raw_text)
+            scan = recognize_sanction_frames(unit.raw_text, tape=tape)
             for frame in scan.frames:
                 # A monotonic index keeps the discriminator unique when two
                 # frames share kind+marker+offset but differ in payload

@@ -60,6 +60,7 @@ from lawvm.core.reference_mention import (
     CiteKind,
     ProvisionRef,
     ReferenceMention,
+    SourceSpan,
 )
 from lawvm.finland.morphology import (
     MorphCase,
@@ -67,10 +68,12 @@ from lawvm.finland.morphology import (
     generate_forms,
     head_entry,
 )
+from lawvm.finland.references.lemma_gate import GateVerdict, lemma_gate
 from lawvm.finland.references.registries.statute_name import _HEADS_BY_LEN
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
-    parse_body_provision_tail,
+    chapter_akn_path,
+    parse_body_provision_tail_spanned,
 )
 
 
@@ -162,6 +165,74 @@ _COORD_LEFT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# ``-kaari`` (code) heads: oikeudenkäymiskaari, maakaari, kauppakaari, …
+# ---------------------------------------------------------------------------
+#
+# The historical Finnish CODES (``kaari``) — Oikeudenkäymiskaari (procedural
+# code, 1734/4), Maakaari (land code), Kauppakaari (commercial code),
+# Perintökaari (inheritance code) — ARE statutes, named by their inflected title
+# exactly like ``-laki`` acts: ``oikeudenkäymiskaaren 12 luvun 32 §:ää``,
+# ``maakaaressa säädetään``. But ``kaari`` is NOT a closed statute head in the
+# M1 morphology engine (it is not a productive document-type head like ``laki`` /
+# ``asetus``), so the bare-head by-name lane above never fires on a ``-kaari``
+# title. The consequence is a CORRECTNESS bug: with no by-name match the trailing
+# ``32 §`` is captured by the INTERNAL lane as a self-reference to the CITING
+# statute (wrong statute, ``exact`` confidence) instead of a cross-statute ref to
+# the code.
+#
+# ``kaari`` declines as a regular Kotus type-26 ``-i`` noun: the oblique stem is
+# ``kaare-`` (genitive ``kaaren``, inessive ``kaaressa``, elative ``kaaresta``,
+# illative ``kaareen``, adessive ``kaarella``, ablative ``kaarelta``, allative
+# ``kaarelle``, translative ``kaareksi``, essive ``kaarena``) plus the partitive
+# ``kaarta`` and the comitative/instructive that do not occur in citations. The
+# NOMINATIVE ``kaari`` is deliberately NOT a trigger (a bare uninflected head is
+# not a by-name citation — same discipline as the ``-laki`` lane).
+#
+# A ``-kaari`` head requires a non-empty GLUED modifier (a real compound code
+# title, ``oikeudenkäymis``-, ``maa``-, …) — a bare inflected ``kaaren`` with no
+# modifier is not a resolvable title and is not emitted. Resolution to a concrete
+# ``NNN/YYYY`` id is deferred to the registry (``fi-name:<nominative>``); the code
+# titles resolve via the SAME statute-name registry the ``-laki`` lane uses
+# (single → resolved, multiple → ambiguous, unregistered → STATUTE_ONLY). Never
+# an internal leak.
+# The closed set of CODE titles whose head is ``kaari`` (nominative key, lower
+# case). A bare ``-kaari`` token ending in a code-noun oblique can also be an
+# ordinary common noun (``sateenkaari`` rainbow, ``hammaskaari`` dental arch,
+# ``jalkakaari`` foot arch) — those are NOT statutes. When the citation carries a
+# ``§`` provision tail it is unambiguously a code citation (a rainbow has no
+# sections), so the tail is sufficient positive evidence and any modifier is
+# accepted. But a BARE ``-kaari`` head with no tail is only emitted when its
+# normalized name is one of the KNOWN codes — otherwise the common-noun reading
+# wins and nothing is emitted (same positive-evidence discipline as the weak
+# ``-laki`` heads). The Finnish codes are a closed historical set; new codes are
+# not minted, so this list is stable.
+_KNOWN_KAARI_CODES: frozenset[str] = frozenset(
+    {
+        "oikeudenkäymiskaari",  # 1734/4 procedural code
+        "maakaari",  # 1995/540 (and 1734/1) land code
+        "kauppakaari",  # 1734/3 commercial code
+        "perintökaari",  # 1965/40 inheritance code
+        "ulosottokaari",  # 2007/705 enforcement code
+        "tietoyhteiskuntakaari",  # 2014/917 information society code
+        "naimiskaari",  # archaic marriage code (1734)
+        "rakennuskaari",  # archaic building code (1734)
+        "rikoskaari",  # archaic penal code (1734)
+    }
+)
+_KAARI_OBLIQUE_ALT = (
+    r"kaar(?:en|essa|esta|een|ella|elta|elle|eksi|ena|tta|in)"
+    r"|kaarta"
+)
+_KAARI_HEAD_RE = re.compile(
+    rf"(?<![A-Za-zÅÄÖåäö0-9-])"  # word start (no preceding name char)
+    rf"(?P<modifier>[A-Za-zÅÄÖåäö0-9-]{{1,80}}?)"  # non-empty glued modifier
+    rf"(?P<oblique>{_KAARI_OBLIQUE_ALT})"
+    rf"(?![A-Za-zÅÄÖåäö0-9])",  # word end
+    re.IGNORECASE,
+)
+
+
 # The window after the name head in which to look for a ``§`` / momentti tail.
 # A citation tail is short; a bounded slice keeps the shared tail parser from
 # scanning the rest of the paragraph.
@@ -193,32 +264,47 @@ _WEAK_HEADS: frozenset[str] = frozenset(
 
 # The single ``laki`` oblique surface (elative ``laista``) that is orthographically
 # identical to the partitive of the highly productive ``-lainen``/``-nainen``
-# adjective family: ``sellaista`` ("such"), ``samanlaista`` ("similar"),
-# ``veronalaista`` ("subject to tax"), ``alaista`` ("subordinate"). Every OTHER
-# adjective form (``-laisessa``, ``-laisen``, ``-laisesta`` …) differs from every
-# ``laki`` oblique and never fires; only ``laista`` collides. We therefore gate
-# ``laista`` with the same positive-evidence requirement as the weak heads, AND
-# reject outright any token that is an unambiguous ``-alainen``/``-nainen``
-# adjective inflection (which is NEVER a ``laki``).
+# adjective family (``sellaista``, ``veronalaista`` …). It is gated with the same
+# positive-evidence requirement as the weak heads (the morphology gate hard-
+# rejects the unambiguous adjective inflections; this only adds caution to the
+# residual bare ``laista`` collisions that the gate returns UNKNOWN).
 _LAKI_ADJ_COLLISION_OBLIQUE = "laista"
 
-# Unambiguous ``-alainen``/``-nainen`` adjective inflections that the ``laista``
-# trigger mis-segments as a ``laki`` elative. These are pure garbage: an
-# ``-alainen`` adjective in the partitive (``veronalaista``, ``työnalaista``,
-# ``valvonnanalaista``) is not a statute. The ``-lai`` digraph stem before the
-# case ending (``…alaista``, ``…llaista``, ``…nlaista``) marks the derivational
-# adjective suffix rather than the ``laki`` head. Matched against the WHOLE token
-# (modifier + oblique), case-folded.
-_ADJ_NOT_LAKI_RE = re.compile(
-    r"(?:"
-    r"[aeiouyäö]llaista"  # demonstrative -llainen: sellaista, tällaista, tuollaista
-    r"|alaista"           # -alainen partitive: veronalaista, valvonnanalaista, alaista
-    r"|nlaista"           # -nlainen partitive: samanlaista, vastaavanlaista
-    r"|rilaista"          # erilaista, monenkirjavan- … (eri-/-ri stems)
-    r"|kalaista"          # paikallaista etc. (rare; -kkalainen)
-    r")$",
-    re.IGNORECASE,
+# Statute-NAME homonyms: a (normalized-name, oblique-surface) pair where the FULL
+# name surface is orthographically identical to an ordinary common noun's
+# inflection, so the bare trigger alone cannot tell the act from the common noun.
+# Unlike the ``-lainen`` / ``-las`` collisions (handled by the morphology gate via
+# a non-statute paradigm that is STRICTLY LONGER than the bare laki oblique), here
+# the surface is exactly ``modifier`` + bare laki oblique — the negative-paradigm
+# strictly-longer rule cannot fire, and a blanket negative entry would also drop
+# the genuine act reference. So we resolve it the same way weak heads are resolved:
+# require POSITIVE EVIDENCE (a ``§`` / momentti tail, or a proper-name-ish
+# capitalized modifier mid-sentence) that it is a real act citation. Without that
+# evidence the common-noun reading wins and nothing is emitted.
+#
+#   * ``kauppalaki`` (Sale of Goods Act, 355/1987) vs ``kauppala`` (market town,
+#     a municipality type) archaic plural genitive ``kauppalain``. Statute
+#     1964/639 coordinates ``maalaiskuntien, kauppalain tai kaupunkien`` — the
+#     market-town reading. Every genuine corpus ``kauppalaki`` reference carries a
+#     ``§`` tail (``kauppalain 41 §``) or an ``(355/1987)`` id (id-anchored case
+#     excluded earlier as the plain-text lane's). Only the genitive ``lain`` form
+#     collides (the plural inessive/elative of ``kauppala`` are ``kauppaloissa`` /
+#     ``kauppaloista``, never ``kauppalaissa`` / ``kauppalaista``), so the homonym
+#     is keyed on the exact ``(name, oblique)`` pair, not the whole head.
+_NAME_HOMONYM_OBLIQUES: frozenset[tuple[str, str]] = frozenset(
+    {("kauppalaki", "lain")}
 )
+
+# False-positive families (``-lainen``/``-nainen`` adjectives, the ``jokin``
+# pronoun ``joll-`` obliques, the ``-las``/``-läs`` agent-noun plurals, and the
+# determiner+``laki`` orthographic collapse) are no longer matched by hand-written
+# suffix regexes here. They are rejected by the SHARED, M1-derived morphology gate
+# (:func:`lawvm.finland.references.lemma_gate.lemma_gate`), which inverts the M1
+# paradigm engine over the closed statute heads PLUS the closed non-statute
+# collision paradigms. Paradigm inversion is sound where suffix-substring matching
+# had a consonant-gradation bug class (``'asetus' not in 'asetuksen'``); the gate
+# also backs the same engine used to generate the positive head triggers, so the
+# accept and reject sides can never disagree about what a real head surface is.
 
 # A capitalized-modifier signal: the modifier's first character is an uppercase
 # letter. Combined with a mid-sentence check (the match does not begin the text
@@ -252,11 +338,14 @@ def _modifier_is_capitalized_midsentence(
 def _normalize_name(modifier: str, head_form: _HeadForm) -> str:
     """Build the normalized name key by reattaching the nominative head.
 
-    ``modifier`` is the invariant prefix as matched (original casing); the
-    nominative head surface is reattached and the whole folded to lower case
-    (``luonnonsuojelu`` + ``laki`` -> ``luonnonsuojelulaki``). When the modifier
-    is empty (a bare inflected head, e.g. ``lain``), the nominative head alone is
-    returned (key ``laki``).
+    ``modifier`` is the invariant prefix as matched (original casing), possibly
+    already left-extended over a coordinated elided-head conjunct chain
+    (``perintö- ja lahjavero``); the nominative head surface is reattached and
+    the whole folded to lower case (``luonnonsuojelu`` + ``laki`` ->
+    ``luonnonsuojelulaki``; ``perintö- ja lahjavero`` + ``laki`` ->
+    ``perintö- ja lahjaverolaki``, the key the registry generates for the
+    coordinated compound). When the modifier is empty (a bare inflected head,
+    e.g. ``lain``), the nominative head alone is returned (key ``laki``).
     """
     mod = " ".join(modifier.split())
     return (mod + head_form.nominative).lower()
@@ -269,16 +358,567 @@ def _extend_coordinated_modifier(text: str, match_start: int, modifier: str) -> 
     conjunct: ``maankäyttö- ja rakennuslaki`` = ``maankäyttölaki`` +
     ``rakennuslaki``. The name-head regex only captures from the last conjunct
     (``rakennus`` + ``lain``); this scans the text immediately to the LEFT of the
-    match for a ``<word>- ja `` chain and prepends it so the reported surface is
-    the full coordinated name. The normalized key still reattaches the head to
-    the LAST conjunct only (the head the inflection actually rides), per
-    tag-don't-guess — we do not synthesize per-conjunct ids.
+    match for a ``<word>- ja `` chain and prepends it so the FULL coordinated
+    name is reported AND keyed: the registry generates the coordinated-compound
+    surface under the whole name (``perintö- ja lahjaverolaki`` -> 1940/378), so
+    the ``fi-name:`` key reattaches the head to the extended modifier, not the
+    last conjunct alone. We still synthesize a single key (one mention), not
+    per-conjunct ids.
     """
     left = text[:match_start]
     m = _COORD_LEFT_RE.search(left)
     if m is None:
         return modifier
     return m.group(0) + modifier
+
+
+# ---------------------------------------------------------------------------
+# Descriptive-participle citation form: ``[X:stä] annetun lain N §`` (G2)
+# ---------------------------------------------------------------------------
+#
+# A pervasive Finnish citation form names an act NOT by its compound nickname
+# (``työsopimuslain``) but by its OFFICIAL DESCRIPTIVE TITLE rendered as a
+# participle phrase: ``Laki valvotusta koevapaudesta`` (act 629/2013) is cited
+# ``valvotusta koevapaudesta annetun lain 23 §`` (= "§23 of the law GIVEN
+# concerning supervised liberty"). The anchor is the past participle ``annettu``
+# ("given/issued") agreeing in case with ``laki``; the descriptive complement
+# (in the elative / partitive — ``…sta/…stä``) is the act's subject matter, the
+# same phrase that follows ``Laki`` in the official title. The bare-head by-name
+# lane above never fires here (the head ``lain`` carries no GLUED modifier — the
+# modifier is the separate participle word), so the citation produced ZERO nodes.
+#
+# This recognizer types the shape and emits a cross-statute mention whose name
+# key is reconstructed head-first as ``laki <complement>`` — the SAME surface the
+# statute-name registry indexes for the official title (``_add(title)`` over
+# ``Laki valvotusta koevapaudesta``), so resolve.py resolves it via the registry
+# (or via the in-statute name→id anaphora) with NO change to resolve.py. When the
+# title is not in the registry the mention stays STATUTE_ONLY (tag-don't-guess) —
+# never a fabricated id.
+#
+# Scope guard (no lane theft):
+#   * An inline ``(NNN/YYYY)`` right after ``lain`` is the plain-text by-id lane's
+#     case (its bare-``lain`` arm matches ``lain (629/2013)``) — excluded here.
+#   * The ``… annetun lain [N §:n] nojalla`` AUTHORITY-BASIS preamble is owned by
+#     the ISSUED_UNDER (delegation/authority) path; a ``nojalla`` (or another
+#     genitive-governing postposition) following the citation excludes it here, so
+#     the two lanes never double-emit.
+#   * The complement must be a genuine ``…sta/…stä`` (elative/partitive) descriptive
+#     phrase: a bare ``annetun lain`` with no descriptive complement, or a
+#     non-citation ``annetun`` fragment, emits nothing.
+
+# The participle ``annettu`` agreeing in case with ``laki``, and the ``laki`` head
+# in the matching case. Both inflect together; we accept the common oblique cases.
+_ANNETTU_LAKI_RE = re.compile(
+    r"\bannet(?:un|ussa|ulla|usta|uksi|ulle|ulta|tua)\s+"
+    r"(?P<head>la(?:in|issa|illa|ista|iksi|ille|ilta|kia))\b",
+    re.IGNORECASE,
+)
+
+# The descriptive complement preceding ``annetun`` is the NP the past participle
+# ``annettu`` (of ``antaa``, "give/issue") governs, in the ELATIVE
+# (``…sta/…stä`` = "concerning X"): ``Laki valvotusta koevapaudesta`` → cited
+# ``valvotusta koevapaudesta annetun lain``. The complement is extracted by an
+# ANCHORED token walk (``_descriptive_complement``), NOT a greedy left-run, so it
+# stops at the NP boundary instead of swallowing a preceding clause
+# (``… sitä luottolaitostoiminnasta annetun`` → ``luottolaitostoiminnasta``, not
+# ``sitä luottolaitostoiminnasta``).
+#
+# A title word is a lower-case name token (the official title's subject matter is
+# common-noun lower case), possibly hyphen/colon-joined.
+_DESC_WORD_RE = re.compile(r"^[a-zäöå]{2,40}(?:-[a-zäöå]{2,40})?(?::[a-zäöå]{1,20})?$")
+# The complement NP's words agree in the case the participle governs OR are its
+# inner modifiers: elative (``…sta/…stä``), partitive (``…ta/…tä/…a/…ä``), or the
+# coordinative ``ja``/``sekä``/``tai`` joiner BETWEEN two complement words. The
+# elative is the head case the participle requires; the partitive covers the
+# pre-modifier participle (``valvotusta``) and trailing modifiers. A word that is
+# none of these (a determiner ``sitä``/``sen``, a verb, a nominative noun) breaks
+# the NP — the walk stops there.
+_COMPLEMENT_CASE_SUFFIXES: tuple[str, ...] = (
+    "sta",
+    "stä",
+    "ssa",
+    "ssä",
+    "ta",
+    "tä",
+)
+_COMPLEMENT_JOINERS: frozenset[str] = frozenset({"ja", "sekä", "tai"})
+# Determiner / pronoun surfaces that frequently abut ``X:stä annetun`` but are NOT
+# part of the title (``sitä luottolaitostoiminnasta annetun`` — ``sitä`` = "it").
+# Listed so the walk never starts the complement on one even if its surface happens
+# to end in a complement-case suffix (``sitä`` ends in ``tä``).
+_COMPLEMENT_STOPWORDS: frozenset[str] = frozenset(
+    {"sitä", "sen", "tätä", "tämän", "tuota", "tuon", "niitä", "niiden", "joita"}
+)
+
+# Genitive-governing postpositions that, when they FOLLOW the citation tail, mark
+# the ``annetun lain … nojalla`` authority-basis / postposition reading owned by
+# the ISSUED_UNDER (delegation) path — excluded here to avoid double-emission.
+# Matched anywhere in the SHORT window between the ``annetun lain`` head and the
+# §-tail's end (``lain nojalla``, ``lain 6 §:n nojalla``): the postposition sits
+# right after the head OR right after the § tail, both inside the bounded window,
+# so a single window scan catches both without fragile consumed-length arithmetic.
+_TRAILING_POSTPOSITION_RE = re.compile(
+    r"\b(?:nojalla|mukaisesti|mukaan|perusteella|estämättä)\b",
+    re.IGNORECASE,
+)
+# The window (chars after the ``annetun lain`` head) within which a trailing
+# postposition still binds the citation as an authority basis. Long enough to span
+# a short § tail (``6 §:n nojalla``) but not the rest of the paragraph.
+_POSTPOSITION_WINDOW = 40
+
+# A date phrase (``14 päivänä heinäkuuta 1898``) can sit BETWEEN the descriptive
+# complement and ``annetun`` (``… kielitaidosta 1 päivänä kesäkuuta 1922 annetun
+# lain``). It is part of the enactment reference, not the title complement, so it
+# is stripped off the left of ``annetun`` before the complement scan.
+_DATE_PHRASE_RE = re.compile(
+    r"(?:\d{1,2}\.?\s*)?(?:p(?:äivänä|\.|:nä)?\s+)?"
+    r"(?:tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu"
+    r"(?:ta|n|ssa)?\s+\d{4}\s+$",
+    re.IGNORECASE,
+)
+
+
+def _complement_word_ok(word: str) -> bool:
+    """True when ``word`` can be an inner word of the ``annettu`` complement NP.
+
+    A title word (lower-case name token, not a determiner stopword) ending in a
+    case the participle's NP carries (elative / inessive / partitive), or a
+    coordinating joiner BETWEEN complement words. Used for the trailing modifiers
+    AFTER the elative anchor (``työsuojeluasioissa``) and, in the leftward walk,
+    only within an open participle-complement span — NOT as a general left-boundary
+    test (that would re-admit prior-clause pollution).
+    """
+    if word in _COMPLEMENT_JOINERS:
+        return True
+    if word in _COMPLEMENT_STOPWORDS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(_COMPLEMENT_CASE_SUFFIXES)
+
+
+def _is_elative(word: str) -> bool:
+    """True when ``word`` is a clean title word in the elative (``-sta/-stä``).
+
+    The elative is the case the participle governs; an elative pre-modifier (incl.
+    plural ``-ista``, adjective ``-isesta`` and the elative attributive participle
+    forms ``koskevasta``/``säädetyistä``) always agrees with the head, so it is an
+    unconditionally safe member of the title NP.
+    """
+    if word in _COMPLEMENT_STOPWORDS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(("sta", "stä"))
+
+
+# Elative attributive participle suffixes: present passive (``koskevasta``,
+# ``vaadittavasta``) and past passive (``säädetyistä``, ``noudatettavista``). When
+# the elative HEAD is pre-modified by such a participle, the participle's own
+# complement to its LEFT is a genuine title member EVEN IF that complement is not
+# itself elative (``hakukoneita koskevasta …``, ``henkilöstöltä vaadittavasta …``).
+# This licenses the ``[complement] [elative participle] [elative head]`` shape
+# without re-admitting the prior-clause pollution a bare case-suffix test let in.
+_ELATIVE_ATTR_PARTICIPLE_SUFFIXES: tuple[str, ...] = (
+    # present passive (``koskevasta``/``koskevista``, ``vaadittavasta``)
+    "vasta",
+    "västä",
+    "vista",
+    "vistä",
+    # past passive, singular (``säädetystä``, ``noudatetusta``)
+    "tusta",
+    "tystä",
+    "dusta",
+    "dystä",
+    # past passive, plural (``säädetyistä``, ``noudatetuista``)
+    "tuista",
+    "tyistä",
+    "duista",
+    "dyistä",
+)
+
+
+def _is_elative_attr_participle(word: str) -> bool:
+    """True when ``word`` is an elative attributive participle (``koskevasta``)."""
+    if not _DESC_WORD_RE.match(word):
+        return False
+    return word.endswith(_ELATIVE_ATTR_PARTICIPLE_SUFFIXES)
+
+
+# Genitive premodifier suffixes. A Finnish statute-title NP stacks genitive
+# premodifiers on the (elative) head — ``[sähköisen]gen [viestinnän]gen
+# [palveluista]ela`` (``Laki sähköisen viestinnän palveluista``), ``[viranomaisten]gen
+# [toiminnan]gen [julkisuudesta]ela``, ``[terveydenhuollon]gen [asiakasmaksuista]ela``,
+# ``[yksityishenkilön]gen [velkajärjestelystä]ela``. The elative-only left walk drops
+# them, truncating the title to its head and degrading the key to an over-broad
+# ``laki <head>``. We re-admit a genitive premodifier that is contiguously
+# left-adjacent to an already-admitted title member. Singular genitive is plain
+# ``-n``; the plural genitive surfaces are ``-jen/-ien/-den/-ten``. All end in
+# ``-n``, so an ``-n`` test — gated by the chain cap, the stopword/shape guards,
+# and the verb/clitic ``-n`` exclusion below — is the admission rule.
+_GENITIVE_PREMODIFIER_MIN_LEN = 3
+
+# ``-n``-final suffixes that are NOT a genitive: they mark a VERB or a clitic, and
+# are the dominant prior-clause polluters seen when a bare ``-n`` test walks left
+# past the title (``säädetään``/``käytetään`` = passive present; ``pitämään`` = 3rd
+# infinitive illative; ``kuitenkin`` = ``-kin`` clitic). Finnish has no genitive
+# that produces these endings, so excluding them removes the verb/adverb
+# pollution while keeping every genuine genitive premodifier (singular ``-n`` on a
+# vowel stem; plural ``-jen/-ien/-den/-ten``). Ordered longest-first only matters
+# for readability; ``str.endswith`` takes the tuple as an OR.
+_NON_GENITIVE_N_SUFFIXES: tuple[str, ...] = (
+    # passive present (``säädetään``, ``käytetään``, ``noudatetaan``)
+    "taan",
+    "tään",
+    "daan",
+    "dään",
+    # 3rd-infinitive illative (``pitämään``, ``tekemään``)
+    "maan",
+    "mään",
+    # focus/question clitics (``kuitenkin``, ``eikään``, ``onkin``)
+    "kin",
+    "kään",
+)
+
+# Function words (adverbs / conjunctions) that end in ``-n`` but are NOT genitive
+# nouns: they slip the suffix test (no verb/clitic ending) yet are prior-clause
+# connective tissue, not title premodifiers (``… siten kuin X:stä annetun lain``,
+# ``… sovelletaan vain X:stä annetun``). Listed explicitly because they are a
+# closed set and short enough to pass the min-length gate.
+_GENITIVE_FUNCTION_WORD_STOPS: frozenset[str] = frozenset(
+    {"kuin", "siten", "vain", "näin", "miten", "kuten", "joten"}
+)
+
+
+def _is_genitive_premodifier(word: str) -> bool:
+    """True when ``word`` is a clean genitive (``-n``) title premodifier.
+
+    Genitive ``-n`` is ALSO the singular total-object/accusative marker, so a
+    preceding clause's verb object (``antaa luvan …`` -> ``luvan``) likewise ends
+    ``-n``; that residual ambiguity is bounded by the caller's chain cap. This
+    predicate screens SHAPE: a lower-case common-noun token ending in genitive
+    ``-n`` (not a determiner stopword, not a verb/clitic ``-n`` form). The
+    verb/clitic exclusion is the load-bearing guard — empirically the dominant
+    ``-n`` polluters are the passive present (``säädetään``) and 3rd-infinitive
+    illative (``pitämään``), not nominal total objects.
+    """
+    if word in _COMPLEMENT_STOPWORDS or word in _GENITIVE_FUNCTION_WORD_STOPS:
+        return False
+    if not _DESC_WORD_RE.match(word):
+        return False
+    # A 2-letter ``-n`` token (``en``, ``on``) is far more likely a clause word
+    # than a title premodifier; require a real noun-length stem.
+    if len(word) < _GENITIVE_PREMODIFIER_MIN_LEN:
+        return False
+    if not word.endswith("n"):
+        return False
+    # Reject verb / clitic ``-n`` forms — no genitive produces these endings.
+    return not word.endswith(_NON_GENITIVE_N_SUFFIXES)
+
+
+# Max consecutive genitive premodifiers admitted into a title NP
+# (``[sähköisen] [viestinnän] palveluista`` = a 2-genitive chain). Capped to bound
+# the prior-clause-object risk: genitive ``-n`` is also the singular total-object
+# marker, so an unbounded ``-n`` run could walk left into a preceding clause's
+# object NP (``antaa luvan …`` -> ``luvan``). A statute title's genitive
+# premodifier stack is short in practice — the corpus's observed witness shapes
+# top out at a 2-genitive chain — so a cap of 2 recovers every observed title
+# while refusing to chain a third ``-n`` token, which is far more likely a
+# stranded prior-clause object than a genuine title premodifier.
+_GENITIVE_CHAIN_CAP = 2
+
+
+def _descriptive_complement(left: str) -> tuple[str, int] | None:
+    """Extract the ``annettu`` complement NP at the END of ``left``.
+
+    ``left`` is the text immediately before ``annetun`` (date phrase already
+    peeled). Returns ``(complement_surface, start_offset_in_left)`` or ``None``.
+
+    The walk anchors on the LAST elative (``…sta/…stä``) word — the head case the
+    participle governs — then extends LEFT over genuine title members only,
+    stopping at the clause boundary. A left word is admitted iff it is (a) an
+    elative title word, (b) the complement (or modifier chain) of an immediately
+    following elative attributive participle (``hakukoneita koskevasta …``,
+    ``henkilöstöltä vaadittavasta …``), or (c) a coordinator joining two elative
+    title members. A determiner/pronoun (``mitä``), a verb (``sovelleta``), a
+    prior-clause locative + clause coordinator (``momentissa tai …``) or a phrase
+    like ``tässä laissa ja …`` is NOT a title member — the walk stops before it,
+    so ``… sitä luottolaitostoiminnasta annetun`` yields just
+    ``luottolaitostoiminnasta`` and never swallows the preceding clause.
+    """
+    # Tokenize the tail of ``left`` into (word, start_offset) pairs.
+    toks = [(mm.group(0).lower(), mm.start()) for mm in re.finditer(r"\S+", left)]
+    if not toks:
+        return None
+    words = [w for w, _ in toks]
+    # Find the LAST token that is an elative complement head (``…sta/…stä``) and
+    # is itself a clean title word. Search from the right within a bounded tail.
+    anchor: int | None = None
+    for i in range(len(words) - 1, max(-1, len(words) - 9), -1):
+        w = words[i]
+        if w in _COMPLEMENT_STOPWORDS:
+            continue
+        if _DESC_WORD_RE.match(w) and w.endswith(("sta", "stä")):
+            anchor = i
+            break
+    if anchor is None:
+        return None
+    # Every token from the elative anchor up to the end of ``left`` must be a
+    # complement-NP word (the trailing modifiers ``työsuojeluasioissa``); if a
+    # non-complement word intervenes between the anchor and ``annetun`` it is not a
+    # contiguous title NP — bail (FP guard).
+    for j in range(anchor + 1, len(words)):
+        if not _complement_word_ok(words[j]):
+            return None
+    # Extend LEFT over the title NP's pre-modifiers, stopping at the clause boundary.
+    # A bare case-suffix test over-captures the preceding clause (a negative verb
+    # ``sovelleta``, a locative ``momentissa``, a determiner ``mitä``). Instead a
+    # left word is admitted only when it is a genuine title member:
+    #   * an elative (``-sta/-stä``) word — agrees with the head, always safe; or
+    #   * the complement of an immediately-following elative attributive participle
+    #     (``hakukoneita`` before ``koskevasta``; ``henkilöstöltä`` before
+    #     ``vaadittavasta``) — the ``[complement] [elative participle] [head]``
+    #     title shape, where the complement need not itself be elative; or
+    #   * a coordinator (``ja``/``tai``/``sekä``) ONLY when it joins two elative
+    #     title members (``julkisista hankinnoista ja käyttöoikeussopimuksista``) —
+    #     a coordinator whose left neighbour is NOT an elative title member
+    #     coordinates two CLAUSES (``momentissa tai luottolaitostoiminnasta``,
+    #     ``tässä laissa ja finanssivalvonnasta``), so the walk stops there.
+    start = anchor
+    # ``open_complement`` is set once the walk crosses an elative attributive
+    # participle: its complement to the LEFT is a (possibly multi-word) NP whose
+    # members carry locative/partitive cases rather than the elative
+    # (``neuvoa-antavissa kunnallisissa kansanäänestyksissä noudatettavasta …``),
+    # so within that span the permissive complement-case test applies.
+    open_complement = False
+    # Consecutive genitive premodifiers admitted so far (``[sähköisen] [viestinnän]
+    # palveluista`` = a 2-chain). Bounded by ``_GENITIVE_CHAIN_CAP`` so a stranded
+    # prior-clause total-object ``-n`` is not chained into the title. The run resets
+    # when a non-genitive title member (an elative head / participle complement) is
+    # crossed, so a long elative-coordinated title is not penalised.
+    genitive_run = 0
+    while start - 1 >= 0:
+        prev = words[start - 1]
+        if prev in _COMPLEMENT_JOINERS:
+            # Internal title coordination iff the word to the coordinator's LEFT is
+            # itself an elative title member; otherwise it is a clause coordinator.
+            if start - 2 >= 0 and _is_elative(words[start - 2]):
+                start -= 1
+                genitive_run = 0
+                continue
+            break
+        if prev in _COMPLEMENT_STOPWORDS:
+            break
+        if _is_elative_attr_participle(words[start]):
+            # Crossing a participle opens its complement span to the left.
+            open_complement = True
+        if _is_elative(prev):
+            start -= 1
+            genitive_run = 0
+            continue
+        # A non-elative word is a title member only inside an open participle
+        # complement span (its modifiers / the participle's own complement).
+        if open_complement and _complement_word_ok(prev):
+            start -= 1
+            genitive_run = 0
+            continue
+        # A genitive (``-n``) premodifier contiguously left-adjacent to an admitted
+        # title member is part of the title NP (``[sähköisen viestinnän]
+        # palveluista``). Bounded by the chain cap so a prior-clause total-object
+        # ``-n`` is not chained into the title. The premodifier terminates the NP on
+        # its left at the first non-genitive, non-elative, non-open-complement token.
+        if genitive_run < _GENITIVE_CHAIN_CAP and _is_genitive_premodifier(prev):
+            start -= 1
+            genitive_run += 1
+            continue
+        break
+    # Trim a leading joiner left dangling at the NP start (defensive; the joiner
+    # guard above already stops before a clause coordinator).
+    while start < anchor and words[start] in _COMPLEMENT_JOINERS:
+        start += 1
+    start_off = toks[start][1]
+    surface = " ".join(words[start:])
+    return surface, start_off
+
+
+def _recognize_descriptive_participle_refs(text: str) -> list[ReferenceMention]:
+    """Recognise ``[X:stä] annetun lain N §`` descriptive-participle citations (G2).
+
+    See the module-section comment for the shape and the scope guards. Emits one
+    :class:`ReferenceMention` per provision in the optional ``§`` tail, carrying
+    the name key ``fi-name:laki <complement>`` (head-first, matching the registry's
+    official-title surface). Resolution to a concrete id is deferred to resolve.py
+    (registry / anaphora / STATUTE_ONLY) — no id is fabricated here.
+    """
+    out: list[ReferenceMention] = []
+    source_ref = ProvisionRef(statute_id="")
+
+    for m in _ANNETTU_LAKI_RE.finditer(text):
+        # Exclude the id-anchored ``annetun lain (NNN/YYYY)`` form: the plain-text
+        # by-id lane (its bare-``lain`` arm) owns it — no double-emission.
+        if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # The descriptive complement sits to the LEFT of ``annetun``. Peel any
+        # intervening enactment date phrase first, then require a genuine
+        # elative/partitive ``…sta/…stä`` complement. An empty / non-``…sta``
+        # left context (a bare ``annetun lain`` or a non-citation fragment) is not
+        # a descriptive title — emit nothing (tag-don't-guess, FP guard).
+        left = text[: m.start()]
+        date_m = _DATE_PHRASE_RE.search(left)
+        if date_m is not None:
+            left = left[: date_m.start()] + " "
+        comp = _descriptive_complement(left)
+        if comp is None:
+            continue
+        complement, comp_start = comp
+
+        # Parse the optional structural ``§`` tail (shared body parser).
+        tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        consumed_tail = tail_parse.consumed_text
+
+        # Authority-basis exclusion: ``… annetun lain [N §:n] nojalla`` (and the
+        # other genitive-governing postpositions) are the ISSUED_UNDER path's. The
+        # postposition sits right after ``lain`` (no § tail) or right after the §
+        # tail — both inside a short window after the head. Scan that window; if a
+        # postposition appears, this is the authority-basis reading — skip (no
+        # double-emission). The window is bounded so a postposition far downstream
+        # in the prose (unrelated to this citation) is not mistaken for its basis.
+        post_window = text[m.end() : m.end() + _POSTPOSITION_WINDOW]
+        if _TRAILING_POSTPOSITION_RE.search(post_window):
+            continue
+
+        if not targets:
+            targets = [BodyProvisionTarget(section_label="")]
+
+        # Reconstruct the official-title surface head-first: ``laki <complement>``.
+        normalized = f"laki {complement}".lower()
+
+        # Anchor at the descriptive complement's start (the citation surface
+        # begins at the title, not at ``annetun``). The complement offset indexes
+        # into ``left`` which, when a date phrase was peeled, is a PREFIX of the
+        # original ``text[:m.start()]`` truncated only on the RIGHT, so the start
+        # offset is identical in ``text``.
+        name_start = comp_start
+        name_surface = text[name_start : m.end()].strip()
+        name_span = SourceSpan("", name_start, m.end() - name_start)
+
+        for tgt in targets:
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
+            target_ref = ProvisionRef(
+                statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
+                section_label=tgt.section_label,
+                subsection_num=tgt.subsection_num,
+                item_label=tgt.item_label,
+            )
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
+            else:
+                surface = name_surface
+            out.append(
+                ReferenceMention(
+                    source_provision_ref=source_ref,
+                    target_provision_ref=target_ref,
+                    cite_kind=CiteKind.CROSS_STATUTE,
+                    cite_confidence=CiteConfidence.STATUTE_ONLY,
+                    phrase_lemma="statute_name_descriptive_participle",
+                    source_span=name_span,
+                    valid_at_interval=(None, None),
+                    edge_subtype=None,
+                    surface_text=surface,
+                )
+            )
+    return out
+
+
+def _recognize_kaari_refs(text: str) -> list[ReferenceMention]:
+    """Recognise ``-kaari`` (code) head cross-statute references (gap [2]).
+
+    See the module-section comment for the shape and the rationale (codes ARE
+    statutes; ``kaari`` is not an M1 head so the bare-head lane misses it; the
+    trailing ``§`` would otherwise leak as a WRONG internal self-reference). Emits
+    one :class:`ReferenceMention` per provision in the optional ``§`` tail, carrying
+    the chapter (``N luvun M §`` → ``chp_N__sec_M``) via the SAME chapter-carry
+    path the ``-laki`` lane uses, and the name key ``fi-name:<modifier>kaari``
+    (nominative reattached). Resolution to a concrete id is deferred to the
+    registry — never an internal leak, never a fabricated id.
+    """
+    out: list[ReferenceMention] = []
+    source_ref = ProvisionRef(statute_id="")
+
+    for m in _KAARI_HEAD_RE.finditer(text):
+        # An id-anchored ``(NNN/YYYY)`` right after the head is the plain-text
+        # by-id lane's case — exclude (no double-emission).
+        if _ID_PAREN_RE.match(text, m.end()):
+            continue
+
+        # Parse the optional structural tail (chapter + section + sub-refs) via the
+        # shared body parser, bounded to a short window.
+        tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        consumed_tail = tail_parse.consumed_text
+
+        # The normalized name key reattaches the nominative head ``kaari`` to the
+        # modifier (``oikeudenkäymis`` + ``kaari`` → ``oikeudenkäymiskaari``),
+        # folded to lower case — the SAME surface the statute-name registry indexes
+        # for the code title, so resolve.py resolves it with no change.
+        normalized = (m.group("modifier") + "kaari").lower()
+
+        # Positive-evidence gate (mirrors the weak-``laki``-head discipline): a
+        # ``§`` provision tail makes the code citation unambiguous (a common-noun
+        # ``-kaari`` — rainbow / arch — has no sections), so any modifier is
+        # accepted. A BARE ``-kaari`` head with no tail is only emitted for a KNOWN
+        # code title; otherwise the common-noun reading wins and nothing is emitted
+        # (no garbage ``fi-name:sateenkaari``).
+        if not targets and normalized not in _KNOWN_KAARI_CODES:
+            continue
+
+        name_start = m.start("modifier")
+        name_surface = text[name_start : m.end("oblique")]
+        name_span = SourceSpan("", name_start, m.end("oblique") - name_start)
+
+        if not targets:
+            targets = [BodyProvisionTarget(section_label="")]
+
+        for tgt in targets:
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
+            target_ref = ProvisionRef(
+                statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
+                section_label=tgt.section_label,
+                subsection_num=tgt.subsection_num,
+                item_label=tgt.item_label,
+            )
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
+            else:
+                surface = name_surface
+            out.append(
+                ReferenceMention(
+                    source_provision_ref=source_ref,
+                    target_provision_ref=target_ref,
+                    cite_kind=CiteKind.CROSS_STATUTE,
+                    cite_confidence=CiteConfidence.STATUTE_ONLY,
+                    phrase_lemma="statute_name_kaari_head",
+                    source_span=name_span,
+                    valid_at_interval=(None, None),
+                    edge_subtype=None,
+                    surface_text=surface,
+                )
+            )
+    return out
 
 
 def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
@@ -333,42 +973,64 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         if _ID_PAREN_RE.match(text, m.end()):
             continue
 
-        # Hard reject the ``-alainen``/``-nainen`` adjective family. The partitive
-        # ``-laista`` is orthographically identical to the ``laki`` elative
-        # ``laista`` and the trigger mis-segments it, but an adjective in the
-        # partitive (``sellaista``, ``veronalaista``) is NEVER a ``laki``. This is
-        # not a fail-loud residue; it is a non-reference and must not be emitted.
+        # Morphology gate (SHARED, M1-derived): reject the non-statute collision
+        # families by paradigm inversion, not suffix-substring matching. The gate
+        # rejects a token only when a closed NON-statute paradigm explains it at
+        # least as completely as the ``laki`` oblique that fired the trigger:
+        # the ``-lainen``/``-nainen`` adjective partitive (``veronalaista``), the
+        # ``jokin`` pronoun ``joll-`` obliques (``jollain``), the ``-las`` agent-
+        # noun plurals (``oppilaille``), and the determiner+``laki`` collapse
+        # (``tämänlain``, detected from the peeled modifier). These are non-
+        # references, not fail-loud residue — they must not be emitted. A genuine
+        # compound (``luonnonsuojelulaissa``) or a real ``-lai-`` law
+        # (``työeläkelailla``) returns UNKNOWN and proceeds as before.
         whole_token = m.group("modifier") + m.group("oblique")
-        if _ADJ_NOT_LAKI_RE.search(whole_token):
+        if (
+            lemma_gate(whole_token, peeled_modifier=m.group("modifier")).verdict
+            is GateVerdict.REJECT_KNOWN_OTHER
+        ):
             continue
 
         # Parse the optional structural tail (everything after the head) through
         # the shared body-mode section/sub-ref recognizers, bounded to a short
         # window so it does not scan the rest of the paragraph.
         tail_text = text[m.end() : m.end() + _TAIL_WINDOW]
-        targets = parse_body_provision_tail(tail_text)
+        tail_parse = parse_body_provision_tail_spanned(tail_text)
+        targets = tail_parse.targets
+        # Only the bytes the grammar actually consumed (``5 a §:ssä``), not the
+        # whole fixed window — otherwise the reported surface runs on into the
+        # following prose.
+        consumed_tail = tail_parse.consumed_text
         has_provision_tail = bool(targets)
 
-        # Precision gate for WEAK (common-noun) heads and the ``laki`` elative
-        # that collides with the adjective partitive. These trigger on ordinary
-        # compound nouns (``vuokrasopimuksen``, ``lupapäätöksen``), so require
-        # POSITIVE EVIDENCE that the token is a real act reference: either a
-        # following provision tail (a citation shape) or a capitalized modifier
-        # mid-sentence (a proper-name-ish title). Strong heads (``laki`` in its
-        # other forms, ``asetus``, ``direktiivi``) keep the looser behavior — the
-        # false positives concentrate in the weak heads.
+        modifier = _extend_coordinated_modifier(text, m.start("modifier"), m.group("modifier"))
+        # The normalized key uses the FULL (possibly coordinated) modifier, not
+        # just the last conjunct: the registry generates coordinated-compound
+        # surfaces (``perintö- ja lahjaverolain`` -> 1940/378) under the full
+        # name, so keying on the truncated last conjunct (``lahjaverolaki``)
+        # would miss the registered act.
+        normalized = _normalize_name(modifier, head_form)
+
+        # Precision gate for WEAK (common-noun) heads, the ``laki`` elative that
+        # collides with the adjective partitive, and statute-NAME homonyms whose
+        # full surface equals an ordinary common noun's inflection
+        # (``kauppalain`` = ``kauppalaki`` gen.sg vs ``kauppala`` archaic pl.gen).
+        # These trigger on ordinary common nouns, so require POSITIVE EVIDENCE
+        # that the token is a real act reference: either a following provision
+        # tail (a citation shape) or a capitalized modifier mid-sentence (a
+        # proper-name-ish title). Strong heads (``laki`` in its other forms,
+        # ``asetus``, ``direktiivi``) keep the looser behavior — the false
+        # positives concentrate in the weak heads and these named homonyms.
         needs_evidence = (
             head_form.head_lemma in _WEAK_HEADS
             or oblique == _LAKI_ADJ_COLLISION_OBLIQUE
+            or (normalized, oblique) in _NAME_HOMONYM_OBLIQUES
         )
         if needs_evidence and not has_provision_tail:
             if not _modifier_is_capitalized_midsentence(
                 text, m.start("modifier"), m.group("modifier")
             ):
                 continue
-
-        modifier = _extend_coordinated_modifier(text, m.start("modifier"), m.group("modifier"))
-        normalized = _normalize_name(m.group("modifier"), head_form)
 
         if not targets:
             # No parsable § tail — a statute-level by-name reference.
@@ -377,17 +1039,41 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
         # The reported surface spans the name head and (when present) its tail.
         name_surface = modifier + m.group("oblique")
 
+        # Anchor the mention to where the name reference occurs in ``text``. The
+        # offset is the regex match start (a character offset into ``text``) — the
+        # same convention the defined-term binder uses for its own
+        # ``SourceSpan.byte_offset`` (see references/defined_terms.py), so a use
+        # site and a binding site recognized over the SAME text are directly
+        # comparable for the binder's "binding precedes use" ordering check. Was
+        # previously dropped to None, which left local-alias resolution inert.
+        name_start = m.start("modifier")
+        name_span = SourceSpan("", name_start, m.end("oblique") - name_start)
+
         for tgt in targets:
+            # A chapter-qualified by-name tail (``rikoslain 47 luvun 4 §``,
+            # ``osakeyhtiölain 20 luvun 4 §``) carries the chapter onto the AKN
+            # ``provision_path`` via the SAME ``chp_N__sec_M`` helper the
+            # parenthetical / plain-text lane uses (sections.chapter_akn_path) and
+            # the internal lane mirrors — never dropped. Without it, ``rikoslain
+            # 47 luvun 4 §`` and ``rikoslain 4 §`` collapse onto the same target
+            # (§4 exists in EVERY rikoslaki chapter), pointing the chapter-47 cite
+            # at chapter 1. A chapter-only tail (``5 luvussa``) yields ``chp_5``.
+            provision_path = (
+                chapter_akn_path(tgt.chapter, tgt.section_label)
+                if tgt.chapter is not None
+                else ""
+            )
             target_ref = ProvisionRef(
                 statute_id=f"fi-name:{normalized}",
+                provision_path=provision_path,
                 section_label=tgt.section_label,
                 subsection_num=tgt.subsection_num,
                 item_label=tgt.item_label,
             )
-            # Surface = name + the consumed tail slice (best-effort, for overlay
-            # display). For the statute-level fallback it is just the name.
-            if tgt.section_label:
-                surface = (name_surface + " " + tail_text.strip()).strip()
+            # Surface = name + the consumed tail slice (for overlay display).
+            # For the statute-level fallback it is just the name.
+            if tgt.section_label and consumed_tail:
+                surface = (name_surface + " " + consumed_tail).strip()
             else:
                 surface = name_surface
             out.append(
@@ -397,12 +1083,23 @@ def recognize_by_name_refs(text: str) -> list[ReferenceMention]:
                     cite_kind=CiteKind.CROSS_STATUTE,
                     cite_confidence=CiteConfidence.STATUTE_ONLY,
                     phrase_lemma="statute_name_head",
-                    source_span=None,
+                    source_span=name_span,
                     valid_at_interval=(None, None),
                     edge_subtype=None,
                     surface_text=surface,
                 )
             )
+
+    # Descriptive-participle citations (``[X:stä] annetun lain N §``) name the act
+    # by its official descriptive title, not a glued compound nickname, so the
+    # name-head lane above never fires on them (the ``lain`` head carries no glued
+    # modifier). Recognize them separately and merge their mentions in.
+    out.extend(_recognize_descriptive_participle_refs(text))
+    # ``-kaari`` (code) heads (``oikeudenkäymiskaaren 12 luvun 32 §``) are not M1
+    # statute heads, so the name-head lane above never fires on them; recognize
+    # them separately (codes ARE statutes) and merge their cross-statute mentions
+    # in — never an internal leak.
+    out.extend(_recognize_kaari_refs(text))
     return out
 
 

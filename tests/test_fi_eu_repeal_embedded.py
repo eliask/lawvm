@@ -22,6 +22,7 @@ from lawvm.finland.references.cross_refs import extract_eu_refs
 from lawvm.finland.references.eu_reference import (
     DIALECT_CROSS_REF,
     recognize_eu_acts,
+    recognize_oj_refs,
 )
 
 # The canonical R6 specimen clause (sivutuoteasetus). Outer act 1069/2009 is the
@@ -93,11 +94,13 @@ def test_cross_refs_emits_two_typed_edges() -> None:
     edges = extract_eu_refs(_xml(_REPEAL_CLAUSE), "2010/1")
     by_target = {e.target_statute_id: e for e in edges}
 
-    assert "eu/act/2002/1774" in by_target
-    assert "eu/act/2009/1069" in by_target
+    # Both acts are governed by an inflected ``asetus`` stem ("asetuksen" /
+    # "asetuksessa"), so the type classifier resolves them to ``reg``.
+    assert "eu/reg/2002/1774" in by_target
+    assert "eu/reg/2009/1069" in by_target
 
-    inner_edge = by_target["eu/act/2002/1774"]
-    outer_edge = by_target["eu/act/2009/1069"]
+    inner_edge = by_target["eu/reg/2002/1774"]
+    outer_edge = by_target["eu/reg/2009/1069"]
     assert inner_edge.edge_subtype == "REPEALS_EMBEDDED"
     assert outer_edge.edge_subtype == ""
     # Both are textual CITES edges from the source statute.
@@ -107,5 +110,150 @@ def test_cross_refs_emits_two_typed_edges() -> None:
 
 def test_cross_refs_single_id_unchanged() -> None:
     edges = extract_eu_refs(_xml(_SINGLE_CLAUSE), "2010/1")
-    assert [e.target_statute_id for e in edges] == ["eu/act/2009/1069"]
+    # "asetuksessa (EY) N:o 1069/2009" → inflected ``asetus`` stem → ``reg``.
+    assert [e.target_statute_id for e in edges] == ["eu/reg/2009/1069"]
     assert edges[0].edge_subtype == ""
+
+
+def test_eu_year_first_slash_directive_recognized() -> None:
+    """Year-first slash form ``YEAR/NUMBER/EY`` must be recognised.
+
+    ``Neuvoston direktiivi 2001/23/EY`` is year-first (year 2001, act 23). The
+    shared NUMBER/YEAR/FORM recognizer requires a 4-digit MIDDLE group, so the
+    small act number after the year was left unrecognised — the citation yielded
+    zero EU edges.
+    """
+    body = "Neuvoston direktiivi 2001/23/EY; EYVL N:o L 82, 22.3.2001."
+    edges = extract_eu_refs(_xml(body), "2002/943")
+    by_target = {e.target_statute_id: e for e in edges}
+    assert "eu/dir/2001/23" in by_target
+    edge = by_target["eu/dir/2001/23"]
+    assert edge.edge_type == "CITES"
+    assert edge.surface_text == "2001/23/EY"
+
+
+def test_eu_number_first_slash_still_number_first() -> None:
+    """The number-first form ``NUMBER/YEAR/EY`` must keep number-first reading.
+
+    The new year-first pattern must not steal the established number-first
+    interpretation of e.g. ``999/2001/EY`` (act 999, year 2001).
+    """
+    edges = extract_eu_refs(_xml("asetus 999/2001/EY"), "2010/1")
+    assert [e.target_statute_id for e in edges] == ["eu/reg/2001/999"]
+
+
+def test_eu_edge_surface_and_byte_span_with_non_ascii_prefix() -> None:
+    """EU edges carry a surface and a byte span that slices to that surface.
+
+    Locks in correct surface propagation and char→byte offset conversion even
+    when non-ASCII characters precede the citation in the same paragraph.
+    """
+    body = "Tämä äöä viittaa asetukseen (EU) 2016/679 yleinen tietosuoja."
+    xml = _xml(body)
+    edges = extract_eu_refs(xml, "2020/1")
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.surface_text == "(EU) 2016/679"
+    assert edge.source_byte_offset is not None
+    sliced = xml[edge.source_byte_offset : edge.source_byte_offset + edge.source_byte_len]
+    assert sliced.decode("utf-8") == edge.surface_text
+
+
+# ---------------------------------------------------------------------------
+# Two-digit-year N:o form (legacy EU act ids) — recognition + century pivot
+# ---------------------------------------------------------------------------
+
+
+def test_two_digit_year_no_form_recognized() -> None:
+    # "(ETY) N:o 2092/91" / "(EY) N:o 207/93" were lost entirely: the year group
+    # only accepted 4 digits. The 2-digit year is expanded by the century pivot
+    # (yy <= current 2-digit year → 20xx, else 19xx): 91 → 1991, 93 → 1993.
+    edges = extract_eu_refs(
+        _xml("neuvoston asetus (ETY) N:o 2092/91 ja asetus (EY) N:o 207/93"),
+        "2010/1",
+    )
+    targets = {e.target_statute_id for e in edges}
+    assert "eu/reg/1991/2092" in targets
+    assert "eu/reg/1993/207" in targets
+
+
+def test_four_digit_year_no_form_unchanged() -> None:
+    # The 4-digit form must still read the whole year (no "/2001" → "/20" split).
+    edges = extract_eu_refs(_xml("asetus (EY) N:o 999/2001"), "2010/1")
+    assert [e.target_statute_id for e in edges] == ["eu/reg/2001/999"]
+
+
+# ---------------------------------------------------------------------------
+# Inflected act-type classification (consonant gradation)
+# ---------------------------------------------------------------------------
+
+
+def test_inflected_asetus_classified_as_reg() -> None:
+    # "asetuksen" / "asetuksessa" must classify as reg, not the generic act.
+    edges = extract_eu_refs(
+        _xml("neuvoston asetuksen (EU) 2016/679 mukaisesti"), "2020/1"
+    )
+    assert [e.target_statute_id for e in edges] == ["eu/reg/2016/679"]
+
+
+def test_inflected_paatos_classified_as_dec() -> None:
+    # "päätöksen" must classify as dec, not the generic act.
+    edges = extract_eu_refs(
+        _xml("komission päätöksen (EU) 2019/417 nojalla"), "2020/1"
+    )
+    assert [e.target_statute_id for e in edges] == ["eu/dec/2019/417"]
+
+
+def test_inflected_direktiivi_still_dir() -> None:
+    edges = extract_eu_refs(
+        _xml("Euroopan parlamentin direktiivin (EU) 2015/849 mukaan"), "2020/1"
+    )
+    assert [e.target_statute_id for e in edges] == ["eu/dir/2015/849"]
+
+
+# ---------------------------------------------------------------------------
+# Reverse-order embedded repeal (object-follows the cue)
+# ---------------------------------------------------------------------------
+
+
+def test_reverse_order_repeal_roles_not_inverted() -> None:
+    # "Y, jolla kumotaan X": the FOLLOWING act (X) is the repealed object, not
+    # the cited act (Y). The roles must not invert.
+    clause = (
+        "asetuksessa (EY) N:o 1069/2009, jolla kumotaan asetus (EY) N:o 1774/2002"
+    )
+    acts = recognize_eu_acts(clause, dialect=DIALECT_CROSS_REF)
+    by_id = {(a.year, a.number): a for a in acts}
+    assert by_id[("2009", "1069")].role == "primary"
+    assert by_id[("2002", "1774")].role == "repealed_embedded"
+
+
+def test_reverse_order_kumoaa_variant() -> None:
+    clause = "asetuksessa (EU) 2018/848, joka kumoaa asetuksen (EY) N:o 834/2007"
+    acts = recognize_eu_acts(clause, dialect=DIALECT_CROSS_REF)
+    by_id = {(a.year, a.number): a for a in acts}
+    assert by_id[("2018", "848")].role == "primary"
+    assert by_id[("2007", "834")].role == "repealed_embedded"
+
+
+# ---------------------------------------------------------------------------
+# OJ reference separator variants
+# ---------------------------------------------------------------------------
+
+
+def test_oj_semicolon_separator() -> None:
+    refs = recognize_oj_refs("EUVL N:o L 374; 22.12.2004, s. 1")
+    assert len(refs) == 1
+    assert (refs[0].series, refs[0].number, refs[0].page) == ("L", "374", "1")
+
+
+def test_oj_no_separator() -> None:
+    refs = recognize_oj_refs("EYVL N:o L 235 17.9.1996, s. 1")
+    assert len(refs) == 1
+    assert (refs[0].series, refs[0].number, refs[0].date) == ("L", "235", "17.9.1996")
+
+
+def test_oj_comma_separator_unchanged() -> None:
+    refs = recognize_oj_refs("EUVL L 327, 9.12.2017, s. 20")
+    assert len(refs) == 1
+    assert (refs[0].series, refs[0].number, refs[0].page) == ("L", "327", "20")

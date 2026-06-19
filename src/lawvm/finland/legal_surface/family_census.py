@@ -1,10 +1,39 @@
 """Family-agnostic differential census engine for SourceSyntaxGraph islands.
 
-Pure measure-only scaffolding: iterates corpus units, diffs projection vs
-oracle key sets into four buckets (match / superset / miss / decline). Off the
-replay/apply path.
-"""
+This is the reusable scaffolding extracted from the Pilot-A citation-sentence
+census (:mod:`lawvm.finland.legal_surface.sentence_census`). The 4-bucket
+differential machinery — match / superset / miss / decline, ``LAWVM_PARSE_TOTALITY``
+totality counting, ranked miss-shape breakdown, ``parser_lane`` provenance, and
+segment iteration over the :class:`SegmentationGraph` substrate — is identical for
+EVERY construction-grammar island. The only things that differ between families
+are FOUR plug-points:
 
+    1. ``segment_selector``  — yield the in-scope census UNITS of a statute (each
+       a :class:`CensusUnit`: a text span + provenance). For the citation family a
+       unit is one sentence segment carrying an ``(id)`` anchor; for the definition
+       family a unit is a definitions block (chapeau + entries) or a single-
+       sentence definition.
+    2. ``projection_fn``     — the construction parse's projected KEY SET for a
+       unit (what the new grammar found, as a set of comparable keys).
+    3. ``oracle_fn``         — the PRODUCTION extractor's KEY SET for the same span
+       (the differential oracle; what production finds today).
+    4. ``key_fn`` (implicit) — both projection and oracle return already-keyed
+       ``set[str]`` so the comparison is a pure set differential. (The family owns
+       how it derives its keys; the engine only diffs.)
+
+Plus two optional plug-points carried on the :class:`CensusUnit` the selector
+yields: a ``declined`` flag (the construction parser refused this unit → the
+``decline`` bucket, typed residue not a guessed parse) and a ``totality_ok``
+predicate result (whether the unit's construction parse satisfied total token
+ownership — the raw-tape no-silent-drop guard, checked only under
+``LAWVM_PARSE_TOTALITY``).
+
+The engine is PURE measure-only: it iterates the corpus, decodes bodies, builds
+the :class:`SegmentationGraph`, hands each statute to the family's selector, and
+classifies every yielded unit. It changes NO production behaviour and is off the
+replay/apply path. Each family wires its four plug-points and gets the same
+self-documenting scoreboard for free.
+"""
 from __future__ import annotations
 
 import os
@@ -12,19 +41,39 @@ from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
+#: The four census buckets, in report order. Every in-scope unit of any family
+#: lands in exactly one.
 CENSUS_BUCKETS: tuple[str, ...] = ("match", "superset", "miss", "decline")
 
 
 @dataclass(frozen=True)
 class CensusUnit:
-    """One in-scope census unit a family's segment_selector yields."""
+    """One in-scope census unit a family's ``segment_selector`` yields.
+
+    A unit is the comparison granule: a contiguous text span of a statute body
+    (the span the projection and the oracle both see, so the differential is
+    honest — no byte/char remapping) plus the construction-parse provenance the
+    engine needs to bucket it.
+
+    Attributes:
+        text:        The EXACT span text the projection and oracle both run over.
+        parser_lane: Which lane produced the construction parse (the family's
+                     closed provenance set), recorded on the row.
+        declared_marker: A short surface tag describing the unit (e.g. the
+                     declaration cue / definition cue), for the report only.
+        declined:    True iff the construction parser DECLINED this unit (typed
+                     residue, not a guessed parse) → the ``decline`` bucket.
+        totality_ok: Whether the construction parse satisfied total-token-
+                     ownership for this unit. Only meaningful under
+                     ``LAWVM_PARSE_TOTALITY``; the family computes it (or leaves it
+                     True when the check is skipped).
+    """
 
     text: str
     parser_lane: str
     declared_marker: str = ""
     declined: bool = False
     totality_ok: bool = True
-    parser_facade_lane: str = ""
 
 
 @dataclass(frozen=True)
@@ -35,11 +84,12 @@ class CensusRow:
     bucket: str
     projection_keys: tuple[str, ...]
     oracle_keys: tuple[str, ...]
+    #: Oracle keys the projection lacks (the miss frontier for this unit).
     missing_keys: tuple[str, ...]
+    #: Projection keys beyond the oracle (the superset surplus).
     extra_keys: tuple[str, ...]
     declared_marker: str
     parser_lane: str
-    parser_facade_lane: str
     totality_ok: bool
     text: str
 
@@ -51,8 +101,13 @@ class FamilyCensusResult:
     family: str
     statutes_scanned: int
     in_scope_units: int
+    #: bucket id -> count. Keys are exactly :data:`CENSUS_BUCKETS`.
     buckets: dict[str, int]
+    #: Number of in-scope units whose construction parse violated total-token-
+    #: ownership (a SILENT DROP). Only populated under ``LAWVM_PARSE_TOTALITY``.
     totality_violations: int
+    #: missing-key shape -> count (refines the ``miss`` bucket: the structures
+    #: blocking miss=0, generalized to a coarse shape).
     miss_shape_counts: dict[str, int]
     miss_examples: tuple[CensusRow, ...] = field(default_factory=tuple)
     superset_examples: tuple[CensusRow, ...] = field(default_factory=tuple)
@@ -63,11 +118,17 @@ class FamilyCensusResult:
         return sum(self.buckets.values())
 
     def is_partition(self) -> bool:
+        """The four buckets sum to the in-scope unit total (no leak)."""
         return self.partition_total == self.in_scope_units
 
 
 def classify(projection: set[str], oracle: set[str], declined: bool) -> str:
-    """Bucket a unit from projection/oracle key sets and the decline flag."""
+    """Bucket a unit from its projection / oracle key sets + the decline flag.
+
+    A unit that is BOTH a superset and a miss (each set has a key the other lacks)
+    is classified ``miss`` (the conservative bucket; any oracle key the projection
+    lacks is a frontier item).
+    """
     if declined:
         return "decline"
     missing = oracle - projection
@@ -78,9 +139,20 @@ def classify(projection: set[str], oracle: set[str], declined: bool) -> str:
     return "match"
 
 
+# Type aliases for the family plug-points.
 SegmentSelector = Callable[[str, str], Iterator[CensusUnit]]
 ProjectionFn = Callable[[CensusUnit, str], set[str]]
+#: The oracle plug-point. Receives the unit AND a per-statute oracle context
+#: (whatever ``oracle_prepare_fn`` returned for this statute, or ``None`` when no
+#: prepare hook is wired). The context lets a family run a WHOLE-STATUTE oracle
+#: once per statute and bucket its results to units, instead of re-running the
+#: oracle per unit on the unit text alone (e.g. the citation family runs the full
+#: production reference extractor over the statute XML, which the unit text cannot
+#: reproduce, then buckets the mentions to segments by source-span overlap).
 OracleFn = Callable[[CensusUnit, object], set[str]]
+#: Optional per-statute oracle preparation. Called once per statute with
+#: ``(statute_id, body)`` BEFORE its units are classified; its return value is
+#: threaded to every ``oracle_fn`` call for that statute as the oracle context.
 OraclePrepareFn = Callable[[str, str], object]
 MissShapeFn = Callable[[set[str], str], str]
 
@@ -98,7 +170,29 @@ def run_family_census(
     check_totality: bool | None = None,
     max_examples: int = 6,
 ) -> FamilyCensusResult:
-    """Run a 4-bucket differential census for one construction-grammar family."""
+    """Run a 4-bucket differential census for ONE construction-grammar family.
+
+    Iterates the canonical Finlex corpus (or a sampled slice), decodes each
+    statute body, and hands ``(statute_id, body)`` to the family's
+    ``segment_selector`` to obtain the in-scope census units. For each unit it
+    computes the projection key set (``projection_fn``) and the production oracle
+    key set (``oracle_fn``) and classifies the unit into exactly one of the four
+    buckets via :func:`classify`.
+
+    The plug-points (the FOUR family-specific functions) are the only difference
+    between families; everything else — sampling, decoding, segmentation, totality
+    counting, miss-shape ranking, examples — is shared.
+
+    Sampling: ``min_year`` restricts to statutes enacted in/after that year (a
+    no-op family discriminator left to the selector); ``limit`` caps the count
+    taken from that slice. With both 0 the whole corpus is scanned.
+
+    ``check_totality`` defaults to whether ``LAWVM_PARSE_TOTALITY`` is set; when
+    True, a unit's ``totality_ok`` being False counts a violation.
+
+    Requires the canonical corpus (``LAWVM_CANONICAL_DATA_ROOT`` /
+    ``LAWVM_FARCHIVE_DB``). Imports the corpus lazily.
+    """
     from farchive import Farchive
 
     from lawvm.finland.legal_surface.bundle import decode_body_text
@@ -141,6 +235,8 @@ def run_family_census(
         except Exception:
             continue
 
+        # Per-statute oracle context: families whose oracle needs the WHOLE
+        # statute (not just the unit text) build it once here. None when no hook.
         oracle_ctx: object = None
         if oracle_prepare_fn is not None and units:
             try:
@@ -169,7 +265,6 @@ def run_family_census(
                 extra_keys=tuple(sorted(extra)),
                 declared_marker=unit.declared_marker,
                 parser_lane=unit.parser_lane,
-                parser_facade_lane=unit.parser_facade_lane,
                 totality_ok=unit.totality_ok,
                 text=unit.text,
             )
@@ -210,9 +305,9 @@ def format_family_census_report(result: FamilyCensusResult, *, title: str) -> st
     lines.append(f"  statutes scanned                : {result.statutes_scanned}")
     lines.append(f"  in-scope units                  : {result.in_scope_units}")
     lines.append("-" * 72)
-    for bucket in CENSUS_BUCKETS:
-        count = result.buckets[bucket]
-        lines.append(f"  {bucket:<28}: {count:6d}  ({pct(count)})")
+    for b in CENSUS_BUCKETS:
+        n = result.buckets[b]
+        lines.append(f"  {b:<28}: {n:6d}  ({pct(n)})")
     lines.append("-" * 72)
     lines.append(
         f"  partition sum                   : {result.partition_total:6d}  "
@@ -226,8 +321,8 @@ def format_family_census_report(result: FamilyCensusResult, *, title: str) -> st
         lines.append("-" * 72)
         lines.append("miss shapes (ranked — what blocks miss=0)")
         lines.append("-" * 72)
-        for shape, count in sorted(result.miss_shape_counts.items(), key=lambda kv: -kv[1]):
-            lines.append(f"  {count:6d}  {shape}")
+        for shape, n in sorted(result.miss_shape_counts.items(), key=lambda kv: -kv[1]):
+            lines.append(f"  {n:6d}  {shape}")
         lines.append("")
 
     def _examples(heading: str, rows: tuple[CensusRow, ...]) -> None:
@@ -236,31 +331,22 @@ def format_family_census_report(result: FamilyCensusResult, *, title: str) -> st
         lines.append("-" * 72)
         lines.append(heading)
         lines.append("-" * 72)
-        for row in rows:
-            snippet = row.text if len(row.text) <= 160 else row.text[:157] + "..."
-            lines.append(f"  [{row.statute_id}] marker={row.declared_marker or '-'}")
-            lines.append(f"    proj  : {list(row.projection_keys)}")
-            lines.append(f"    oracle: {list(row.oracle_keys)}")
-            if row.missing_keys:
-                lines.append(f"    MISS  : {list(row.missing_keys)}")
-            if row.extra_keys:
-                lines.append(f"    EXTRA : {list(row.extra_keys)}")
+        for r in rows:
+            snippet = r.text if len(r.text) <= 160 else r.text[:157] + "..."
+            lines.append(f"  [{r.statute_id}] marker={r.declared_marker or '-'}")
+            lines.append(f"    proj  : {list(r.projection_keys)}")
+            lines.append(f"    oracle: {list(r.oracle_keys)}")
+            if r.missing_keys:
+                lines.append(f"    MISS  : {list(r.missing_keys)}")
+            if r.extra_keys:
+                lines.append(f"    EXTRA : {list(r.extra_keys)}")
             lines.append(f"    text  : {snippet!r}")
         lines.append("")
 
     _examples("miss examples (oracle found, projection did not)", result.miss_examples)
-    _examples("superset examples (projection found strictly more)", result.superset_examples)
+    _examples(
+        "superset examples (projection found strictly more)", result.superset_examples
+    )
     _examples("decline examples (construction parser refused)", result.decline_examples)
 
     return "\n".join(lines)
-
-
-__all__ = [
-    "CENSUS_BUCKETS",
-    "CensusRow",
-    "CensusUnit",
-    "FamilyCensusResult",
-    "classify",
-    "format_family_census_report",
-    "run_family_census",
-]

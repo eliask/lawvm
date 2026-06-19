@@ -770,6 +770,66 @@ def test_cross_verb_anaphora_without_prior_section_declines() -> None:
         parse_text_with(text, new_parser.parse)
 
 
+# Citation-stripped bare-``uusi`` whole-target inserts (old Pattern D). These are
+# the single_verb_bare_number_insert subset the grammar now owns natively: a LISATA
+# group whose document / authority lead-in is stripped to a sentinel span, opening
+# directly on ``uusi <numlist> [§]``. Each must be byte-identical to the old parser.
+BARE_UUSI_WHOLE_TARGET_EXAMPLES = [
+    # Verbatim corpus johtolauses (the real shapes the recovery owns), each proven
+    # byte-identical to the old parser by the differential harness.
+    # END-terminated bare section, NO structural ``§`` (1970/675 ``uusi 19 b``).
+    "lisätään 30 päivänä huhtikuuta 1964 annettuun kunnallisten viranhaltijain ja "
+    "työntekijäin eläkelain (202/64) uusi 19 b seuraavasti:",
+    # Chained ``uusi … ja uusi … §`` whole-section inserts (2009/595).
+    "lisätään 10 päivänä huhtikuuta 1987 annettuun lääkelakiin (395/1987) uusi 76 a "
+    "ja uusi 84 b § seuraavasti:",
+    # Trailing reinstatement span AFTER the closing ``§`` (the old parser leaves it
+    # for the outer loop, so the arm stops at the target) — 2004/729.
+    "lisätään 12 päivänä heinäkuuta 1940 annettuun perintö- ja lahjaverolakiin "
+    "(378/1940) uusi 21 a § siitä lailla 540/1996 kumotun 21 a §:n tilalle "
+    "seuraavasti:",
+    # Bare pure-number section (no letter, no ``§``) after a ``kumotun … tilalle``
+    # reinstatement lead-in — 2024/132 ``uusi 127``.
+    "lisätään ajoneuvolain (82/2021) siitä lailla 493/2023 kumotun 127 §:n tilalle "
+    "uusi 127 seuraavasti:",
+]
+
+
+@pytest.mark.parametrize("text", BARE_UUSI_WHOLE_TARGET_EXAMPLES)
+def test_bare_uusi_whole_target_examples_are_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_bare_uusi_end_terminated_section_emits_section_insertion() -> None:
+    # ``uusi 19 b`` with no ``§`` before END is a whole-section insert labelled
+    # ``19b``, witnessed ``fi.insertion_section`` (not a section reference).
+    model = parse_text_with(
+        "lisätään 30 päivänä huhtikuuta 1964 annettuun kunnallisten viranhaltijain "
+        "ja työntekijäin eläkelain (202/64) uusi 19 b seuraavasti:",
+        new_parser.parse,
+    )
+    node = _as_insertion(model.verb_groups[0].nodes[0])
+    assert node.kind == TargetKind.SECTION
+    assert node.label == "19b"
+    assert node.sub_target is None
+    assert node.witness is not None
+    assert node.witness.rule_id == "fi.insertion_section"
+
+
+def test_bare_uusi_recovery_declines_on_downstream_heading_fold() -> None:
+    # Self-guard control: a leading ``uusi N §`` followed by a ``… edelle uusi
+    # väliotsikko`` heading-placement fold in the SAME batch must NOT be owned as a
+    # bare-section insert (that would silently DROP the heading arm the old parser
+    # folds into the batch). The clause stays declined (2017/290 shape).
+    text = (
+        "muutetaan asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
+        "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
+    )
+    with pytest.raises(OutOfScope):
+        parse_text_with(text, new_parser.parse)
+
+
 # Scope-anchor-before-``uusi`` insertion collapse (task #41 parity bugs): a
 # CHAPTER or CITATION authority/reinstatement preamble between the scope anchor
 # and ``uusi`` made the new parser collapse the whole insert group to a bare

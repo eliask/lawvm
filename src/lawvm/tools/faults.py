@@ -360,14 +360,21 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict[str, Any]:
 
     finlex_year = statute_id.split("/")[0] if "/" in statute_id else "?????"
     finlex_num = statute_id.split("/")[1] if "/" in statute_id else "?????"
+    finlex_num_bare = str(int(finlex_num)) if finlex_num.isdigit() else finlex_num
     finlex_num_padded = finlex_num.zfill(4) if finlex_num.isdigit() else finlex_num
+    # Human-clickable consolidated link on the current Finlex scheme. The new
+    # SPA's per-section anchor is the AKN eId; we cannot reconstruct it from a
+    # bare section number, so the legacy #P{section} fragment is kept as a hint.
     finlex_url = (
-        f"https://www.finlex.fi/fi/laki/ajantasa/{finlex_year}/{finlex_year}{finlex_num_padded}#P{section}"
+        f"https://www.finlex.fi/fi/lainsaadanto/{finlex_year}/{finlex_num_bare}#P{section}"
     )
 
     fetched_ts = datetime.now(timezone.utc).isoformat()
 
     verification_commands = [
+        # Keep the legacy laki/ajantasa form here: it serves grep-able server-
+        # rendered HTML, whereas the new lainsaadanto SPA pages are JS-rendered
+        # and won't curl|grep cleanly.
         f"curl -s 'https://www.finlex.fi/fi/laki/ajantasa/{finlex_year}/{finlex_year}{finlex_num_padded}' | grep -A5 '{section} §'",
         f"uv run lawvm explain {statute_id} --section '{section} §'",
         f"uv run lawvm diff {statute_id}",
@@ -377,8 +384,17 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict[str, Any]:
             f"uv run lawvm ops {statute_id} --source {blame_source}"
         )
 
+    # Amendment statute display link on the current Finlex saadoskokoelma scheme
+    # (bare statute number). Built defensively so a malformed blame id never
+    # crashes diagnostics generation.
+    blame_url = ""
+    if blame_source and "/" in blame_source:
+        b_year, b_num = blame_source.split("/", 1)
+        b_num_bare = str(int(b_num)) if b_num.isdigit() else b_num
+        blame_url = f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{b_year}/{b_num_bare}"
+
     human_steps = [
-        f"1. Open the amendment statute at https://finlex.fi/fi/laki/alkup/{_get_amendment_date(blame_source).split('-')[0]}/{blame_source.replace('/', '')} (or source corpus: akn/fi/act/statute/{blame_source}/fin@/main.xml)."
+        f"1. Open the amendment statute at {blame_url} (or source corpus: akn/fi/act/statute/{blame_source}/fin@/main.xml)."
         if blame_source else "1. No blame amendment identified — check `lawvm explain` for full history.",
         f"2. Read the johtolause (preamble) and find the provision for § {section}.",
         f"3. Open Finlex: {finlex_url}",

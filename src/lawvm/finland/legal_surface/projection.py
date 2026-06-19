@@ -64,6 +64,9 @@ from lawvm.core.reference_mention import (
     SourceSpan,
     reference_mention_to_row,
 )
+from lawvm.finland.legal_surface.lenses.references import (
+    LENS_ID as _REFERENCES_LENS_ID,
+)
 
 # ── Parity field sets (the contract the parity gate asserts against) ──────────
 
@@ -147,6 +150,62 @@ def _resolution_index(graph: LegalSurfaceGraph) -> dict[str, SurfaceNode]:
     return by_expr
 
 
+def _ref_from_serialized_tail(statute_id: str, tail: str) -> ProvisionRef:
+    """Rebuild a :class:`ProvisionRef` from a TYPED serialized tail.
+
+    ``tail`` is the ``/``-joined remainder after the statute id in
+    :meth:`ProvisionRef.serialized` — the self-describing form
+    ``[chN/]section[/momentti][/kLABEL]``. Each non-section segment is typed:
+
+      * ``ch{N}`` — chapter (reconstructed into ``provision_path`` as the AKN
+        ``chp_N`` head so ``_chapter_from_provision_path`` yields it back);
+      * bare integer — momentti (subsection); the only bare non-section segment;
+      * ``k{LABEL}`` — kohta (item).
+
+    The reconstruction is round-trip-faithful: the returned ref's
+    :meth:`~ProvisionRef.serialized` reproduces ``statute_id`` + ``/`` + ``tail``
+    byte-identically (the parity contract). The chapter ``provision_path`` head
+    is the only synthetic field — the section/momentti/kohta are not duplicated
+    into ``provision_path`` because ``serialized`` reads only the chapter from it.
+    """
+    chapter: Optional[str] = None
+    section_label = ""
+    subsection_num: Optional[int] = None
+    item_label: Optional[str] = None
+
+    if tail:
+        segments = tail.split("/")
+        idx = 0
+        if segments[idx].startswith("ch"):
+            chapter = segments[idx][len("ch") :]
+            idx += 1
+        if idx < len(segments):
+            section_label = segments[idx]
+            idx += 1
+        # After the section, a bare-integer segment is momentti; a ``k``-prefixed
+        # segment is kohta. Either, both, or neither may be present.
+        if idx < len(segments) and not segments[idx].startswith("k"):
+            subsection_num = int(segments[idx])
+            idx += 1
+        if idx < len(segments) and segments[idx].startswith("k"):
+            item_label = segments[idx][len("k") :]
+            idx += 1
+        if idx != len(segments):
+            raise ValueError(
+                "graph_to_reference_mentions: unparseable serialized provision "
+                f"tail {tail!r} for statute {statute_id!r}"
+            )
+
+    provision_path = f"chp_{chapter}" if chapter is not None else ""
+    return ProvisionRef(
+        statute_id=statute_id,
+        provision_path=provision_path,
+        section_label=section_label,
+        subsection_num=subsection_num,
+        item_label=item_label,
+    )
+
+
 def _target_ref_from_payload(
     target_id: object,
     serialized: object,
@@ -156,15 +215,14 @@ def _target_ref_from_payload(
     The lens stored two fields per expr node:
       * ``target_id``             — the canonical statute id (e.g. ``1982/633``);
       * ``target_provision_ref``  — ``ProvisionRef.serialized()``
-                                    (``statute_id[/section[/subsection[/item]]]``).
+                                    (``statute_id[/chN]/section[/momentti][/kLABEL]``).
 
     The statute id ITSELF contains a ``/`` (``YEAR/NUMBER``), so the serialized
-    string cannot be split on ``/`` blindly — and the segment after the section
-    may be a section letter-suffix (``2a``), not a momentti integer. We therefore
-    use ``target_id`` as the authoritative statute-id boundary, strip exactly
-    that prefix off the serialized string, and thread the remaining ``/``-joined
-    tail (section / subsection / item) so that ``serialized()`` reproduces the
-    stored ``target_provision_ref`` string byte-identically — which is the
+    string cannot be split on ``/`` blindly. We use ``target_id`` as the
+    authoritative statute-id boundary, strip exactly that prefix off the
+    serialized string, and parse the TYPED remaining tail (see
+    :func:`_ref_from_serialized_tail`) so that ``serialized()`` reproduces the
+    stored ``target_provision_ref`` string byte-identically — the
     ``target_provision_ref_str`` row field.
 
     Returns None when the payload names no target (``target_id`` is None) —
@@ -193,35 +251,18 @@ def _target_ref_from_payload(
             f"{serialized!r} does not start with target_id {target_id!r}"
         )
 
-    section_label = ""
-    subsection_num: Optional[int] = None
-    item_label: Optional[str] = None
-    if tail:
-        tail_parts = tail.split("/")
-        section_label = tail_parts[0]
-        if len(tail_parts) > 1:
-            subsection_num = int(tail_parts[1])
-        if len(tail_parts) > 2:
-            item_label = tail_parts[2]
-
-    return ProvisionRef(
-        statute_id=target_id,
-        provision_path="",
-        section_label=section_label,
-        subsection_num=subsection_num,
-        item_label=item_label,
-    )
+    return _ref_from_serialized_tail(target_id, tail)
 
 
 def _source_ref_from_payload(serialized: object) -> ProvisionRef:
     """Rebuild the SOURCE :class:`ProvisionRef` from its serialized payload field.
 
     The lens stashes ``source_provision_ref`` = ``ProvisionRef.serialized()`` of
-    the citing provision (statute id + optional section/subsection/item). We
-    rebuild it so ``serialized()`` reproduces ``source_provision_ref_str`` byte-
-    identically. The statute id itself contains a ``/`` (``YEAR/NUMBER`` or
-    ``NUMBER/YEAR``), so the first TWO ``/``-segments form the statute id and any
-    further segments are section / subsection / item.
+    the citing provision. We rebuild it so ``serialized()`` reproduces
+    ``source_provision_ref_str`` byte-identically. The statute id itself contains
+    a ``/`` (``YEAR/NUMBER`` or ``NUMBER/YEAR``), so the first TWO ``/``-segments
+    form the statute id and the typed remainder is parsed by
+    :func:`_ref_from_serialized_tail`.
     """
     if not isinstance(serialized, str) or not serialized:
         raise ValueError(
@@ -230,19 +271,10 @@ def _source_ref_from_payload(serialized: object) -> ProvisionRef:
         )
     parts = serialized.split("/")
     # statute_id is the leading "A/B" pair (e.g. "123/2020"); the rest is the
-    # in-act tail. A bare statute id (no tail) is the common case.
+    # typed in-act tail.
     statute_id = "/".join(parts[:2])
-    tail = parts[2:]
-    section_label = tail[0] if len(tail) > 0 else ""
-    subsection_num = int(tail[1]) if len(tail) > 1 else None
-    item_label = tail[2] if len(tail) > 2 else None
-    return ProvisionRef(
-        statute_id=statute_id,
-        provision_path="",
-        section_label=section_label,
-        subsection_num=subsection_num,
-        item_label=item_label,
-    )
+    tail = "/".join(parts[2:])
+    return _ref_from_serialized_tail(statute_id, tail)
 
 
 def _source_span_from_payload(payload: Mapping[str, object]) -> Optional[SourceSpan]:
@@ -309,8 +341,20 @@ def graph_to_reference_mentions(
     being present is part of the parity contract.
     """
     by_expr = _resolution_index(graph)
+    # Only the H1 ReferenceLens (``fi.references.v0``) mints the fi_refs-bearing
+    # ``reference_expr`` nodes this projection inverts. Other lenses (notably the
+    # discourse AnaphoraLens, ``fi.anaphora.v0``) REUSE the ``reference_expr`` node
+    # kind for a uniform census, but their payload carries a discourse
+    # ``resolution_status`` rather than the fi_refs ``cite_confidence`` — they are
+    # NOT fi_refs rows. Scope the projection to the references lens so those census
+    # nodes are not mis-read as fi_refs mentions (which would fail-loud on the
+    # absent ``cite_confidence``). The fail-loud check on the references-lens nodes
+    # is unchanged: a ``fi.references.v0`` expr without a valid cite_confidence
+    # still raises.
     expr_nodes = [
-        node for node in graph.nodes.values() if node.node_kind == "reference_expr"
+        node
+        for node in graph.nodes.values()
+        if node.node_kind == "reference_expr" and node.lens_id == _REFERENCES_LENS_ID
     ]
 
     mentions: list[ReferenceMention] = []

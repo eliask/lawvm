@@ -116,7 +116,11 @@ def test_select_active_version_rejects_empty_as_of() -> None:
         ],
     )
 
-    with pytest.raises(Exception, match="as_of must be non-empty"):
+    # Empty as_of is rejected either by the icontract precondition
+    # ("as_of must be non-empty") when contracts are enabled, or by the
+    # exact-date validator ("as_of must be an exact YYYY-MM-DD date") when
+    # they are not — match the wording common to both.
+    with pytest.raises(Exception, match="as_of must be"):
         select_active_version_ex(timeline, "")
 
 

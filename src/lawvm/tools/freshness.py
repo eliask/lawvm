@@ -251,6 +251,10 @@ _html_section_count_mod = _load_html_section_count()
 
 
 def _finlex_html_url(sid: str) -> str:
+    # Deliberately the legacy laki/ajantasa form: it serves grep-able server-
+    # rendered HTML for the freshness fetch path, whereas the current
+    # lainsaadanto SPA pages are JS-rendered. Fetch URL, not a display link —
+    # NOT migrated.
     year, num = sid.split("/")
     base_num = num.split("-", 1)[0]
     return f"https://www.finlex.fi/fi/laki/ajantasa/{year}/{year}{int(base_num):04d}"

@@ -44,6 +44,12 @@ from lawvm.tools.transition_graph_interlinks import (
     place_lawvm_interlinks,
     rendered_text_segments,
 )
+from lawvm.tools.transition_graph_overlays import (
+    SURFACE_OVERLAY_ROW_COLUMNS,
+    LawvmSurfaceOverlayExportProvider,
+    overlay_row_sql_values,
+    place_lawvm_surface_overlays,
+)
 from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 
 SCHEMA_VERSION = "transition-graph.v1"
@@ -1154,6 +1160,24 @@ CREATE TABLE lawvm_interlink_targets (
     preview_text        TEXT,
     detail_json         TEXT
 );
+CREATE TABLE lawvm_surface_overlays (
+    overlay_id              TEXT PRIMARY KEY,
+    statute_id              TEXT,
+    kind                    TEXT,  -- closed overlay vocabulary (defined_term, ...)
+    node_id                 TEXT,  -- stable Legal Surface Graph node identity
+    label                   TEXT,  -- short display surface
+    payload_json            TEXT,  -- typed surface facts
+    links_json              TEXT,  -- co-located overlay/node affordances
+    status                  TEXT,  -- resolution status (reference/term_use only)
+    source_span_byte_offset INTEGER,
+    source_span_byte_len     INTEGER,
+    rendered_statute_id     TEXT,
+    rendered_effective_date TEXT,
+    rendered_address        TEXT,
+    rendered_segment_index  INTEGER,
+    rendered_char_start     INTEGER,
+    rendered_char_end       INTEGER
+);
 """
 
 
@@ -1180,6 +1204,7 @@ class ExportStats:
     n_evidence_events: int
     n_lawvm_interlinks: int
     n_lawvm_interlink_targets: int
+    n_lawvm_surface_overlays: int
     db_path: str
     db_size_bytes: int
     replay_seconds: float
@@ -1197,6 +1222,49 @@ def _matches_slice(address: str, slice_prefix: str) -> bool:
     return address == slice_prefix or address.startswith(slice_prefix + "/")
 
 
+class _OracleReadMemoizingCorpus:
+    """Delegating corpus proxy that memoizes per-statute consolidated reads.
+
+    Target-preview enrichment resolves one row per unique ``target_key``, and a
+    target key embeds the *locator* (``section:5`` vs ``section:12``). Many keys
+    therefore point at the SAME target statute, and each formerly triggered a
+    fresh ``read_oracle`` of that statute's full consolidated XML — an N+1 read
+    over the corpus (measured: 291 reads, only 76 distinct statutes; ~75% pure
+    re-reads dominating export wall-clock).
+
+    ``read_oracle``/``read_source`` return the cached PIT consolidated artifact,
+    which the store treats as immutable for the duration of a run (see
+    ``TransparentStore.read_oracle``); memoizing them by ``sid`` returns the
+    byte-identical payload, so the exported DB is unchanged. The cache is
+    process-local, lives only for one export, and is bounded by the number of
+    distinct cited target statutes (the corpus already holds these bytes), so it
+    adds no unbounded memory pressure. Every other corpus method is delegated
+    untouched.
+    """
+
+    __slots__ = ("_corpus", "_oracle_cache", "_source_cache")
+
+    def __init__(self, corpus: Any) -> None:
+        self._corpus = corpus
+        self._oracle_cache: Dict[str, Any] = {}
+        self._source_cache: Dict[str, Any] = {}
+
+    def read_oracle(self, sid: str) -> Any:
+        cache = self._oracle_cache
+        if sid not in cache:
+            cache[sid] = self._corpus.read_oracle(sid)
+        return cache[sid]
+
+    def read_source(self, sid: str) -> Any:
+        cache = self._source_cache
+        if sid not in cache:
+            cache[sid] = self._corpus.read_source(sid)
+        return cache[sid]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._corpus, name)
+
+
 def export_transition_graph(
     statute_id: str,
     out_path: str | Path,
@@ -1206,6 +1274,7 @@ def export_transition_graph(
     quiet: bool = False,
     profile: TransitionGraphExportProfile | None = None,
     interlink_provider: LawvmInterlinkExportProvider | None = None,
+    overlay_provider: LawvmSurfaceOverlayExportProvider | None = None,
     replay_runner: Any | None = None,
     tree_materializer: Any | None = None,
 ) -> ExportStats:
@@ -1427,9 +1496,17 @@ def export_transition_graph(
             interlink_provider is not None
             and interlink_provider.resolve_target is not None
         ):
+            # Target-preview resolution reads one target statute per unique
+            # locator key; many keys share a statute, so memoize the consolidated
+            # reads for this export to collapse the N+1 (byte-identical output;
+            # see _OracleReadMemoizingCorpus).
             preview_context = InterlinkTargetPreviewContext(
                 source_statute_id=canonical_id,
-                corpus=corpus,
+                corpus=(
+                    _OracleReadMemoizingCorpus(corpus)
+                    if corpus is not None
+                    else None
+                ),
             )
             resolve_target = interlink_provider.resolve_target
             assert resolve_target is not None
@@ -1444,6 +1521,23 @@ def export_transition_graph(
         )
         interlink_rows = place_lawvm_interlinks(
             interlink_rows,
+            statute_id=canonical_id,
+            segments_by_date=segments_by_date,
+        )
+
+        # --- lawvm_surface_overlays: the FULL Legal Surface Graph projection ---
+        # The jurisdiction adapter projects whole-body overlay rows (defined
+        # terms, frames, temporal markers, references) with null rendered_*; the
+        # exporter then places them onto the SAME per-date rendered segments it
+        # placed interlinks onto, so the viewer paints overlays and interlinks
+        # with identical rendered_address/segment/char coordinates.
+        projected_overlays = (
+            overlay_provider.project_overlays(canonical_id, corpus)
+            if overlay_provider is not None
+            else []
+        )
+        overlay_rows = place_lawvm_surface_overlays(
+            projected_overlays,
             statute_id=canonical_id,
             segments_by_date=segments_by_date,
         )
@@ -1608,6 +1702,14 @@ def export_transition_graph(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [row.sql_values() for row in interlink_target_rows],
         )
+        conn.executemany(
+            "INSERT OR REPLACE INTO lawvm_surface_overlays("
+            + ", ".join(SURFACE_OVERLAY_ROW_COLUMNS)
+            + ") VALUES ("
+            + ", ".join("?" for _ in SURFACE_OVERLAY_ROW_COLUMNS)
+            + ")",
+            [overlay_row_sql_values(row) for row in overlay_rows],
+        )
 
         # --- meta ---
         meta_rows = {
@@ -1672,6 +1774,7 @@ def export_transition_graph(
         n_evidence_events=len(evidence_rows),
         n_lawvm_interlinks=len(interlink_rows),
         n_lawvm_interlink_targets=len(interlink_target_rows),
+        n_lawvm_surface_overlays=len(overlay_rows),
         db_path=str(out_path),
         db_size_bytes=db_size,
         replay_seconds=replay_seconds,
@@ -1710,6 +1813,7 @@ def main(args: Any) -> None:
         quiet=False,
         profile=adapter.profile,
         interlink_provider=adapter.interlink_provider,
+        overlay_provider=adapter.overlay_provider,
         replay_runner=adapter.replay_runner,
         tree_materializer=adapter.tree_materializer,
     )
@@ -1735,4 +1839,5 @@ def main(args: Any) -> None:
     print(f"  evidence_events:  {stats.n_evidence_events}", flush=True)
     print(f"  lawvm_interlinks: {stats.n_lawvm_interlinks}", flush=True)
     print(f"  interlink_targets: {stats.n_lawvm_interlink_targets}", flush=True)
+    print(f"  surface_overlays: {stats.n_lawvm_surface_overlays}", flush=True)
     print(f"  replay seconds:   {stats.replay_seconds:.1f}", flush=True)

@@ -75,6 +75,13 @@ class TemporalKind(Enum):
     end). No end bound exists, so ``status`` is ``open`` and ``bound`` is
     None."""
 
+    FIXED_TERM_EXPIRY = "fixed_term_expiry"
+    """A determinate validity end stated inline: ``on voimassa <date> saakka/asti``
+    ("is in force until <date>"). Unlike VALIDITY_OPEN this carries a determinate
+    end bound, so ``status`` is ``resolved`` and ``bound`` is the parsed end date.
+    The ``siihen saakka, kunnes …`` shape (no date, terminated by an event) stays
+    a VALIDITY_OPEN / EVENT_BOUND residual — it is genuinely open."""
+
 
 class TemporalStatus(Enum):
     """How determinately the temporal cue was typed to a bound.
@@ -203,9 +210,34 @@ _COMMENCEMENT_RE = re.compile(
 
 # Duration-from-commencement anchors: "... alkaen", "voimaantulosta lukien",
 # "voimaantulosta alkaen". The bound is a structural anchor, not a date.
+#
+# The "<noun>sta alkaen" arm is restricted to a CLOSED set of temporal-noun
+# stems. The old open "[a-zäö0-9]+sta alkaen" arm over-fired on any elative noun
+# ("sopimuksesta alkaen", "josta alkaen", "saamisesta alkaen") that is not a
+# temporal anchor. The closed stem set covers the genuine reckoning-point nouns
+# seen in commencement prose: commencement (voimaantulo…), day/date markers
+# (päivä-, ajankohta-), and period starts (vuosi-, jakso-, vaihe-, alku-).
+_TEMPORAL_ANCHOR_STEMS: tuple[str, ...] = (
+    "voimaantulo",  # voimaantulosta / voimaantulopäivästä / voimaantuloajankohdasta
+    "päivä",  # päivästä / maksupäivästä / voimaantulopäivästä
+    "ajankohda",  # ajankohdasta / voimaantuloajankohdasta
+    "ajankohta",
+    "vuode",  # verovuodesta / kalenterivuodesta (vuosi -> vuode-)
+    "vuosi",
+    "jakso",  # maksujaksosta
+    "vaihe",  # vaiheesta
+    "alusta",  # alusta (period start)
+    "hetke",  # toteamishetkestä / hetkestä
+)
+
+_ANCHOR_ALT = "|".join(
+    sorted(_TEMPORAL_ANCHOR_STEMS, key=len, reverse=True)
+)
+
 _DURATION_RE = re.compile(
     r"voimaantulosta\s+lukien|voimaantulosta\s+alkaen|"
-    r"voimaantulosta|[a-zäö0-9]+sta\s+alkaen|[a-zäö0-9]+stä\s+alkaen",
+    r"voimaantulosta|"
+    r"[a-zäö0-9]*(?:" + _ANCHOR_ALT + r")[a-zäö0-9]*st[aä]\s+alkaen",
     re.IGNORECASE,
 )
 
@@ -213,6 +245,29 @@ _DURATION_RE = re.compile(
 # end ("toistaiseksi" = until further notice keeps it open; an explicit end date
 # is recognised separately as its own FIXED_DATE expr).
 _VALIDITY_OPEN_RE = re.compile(r"on\s+voimassa(?:\s+toistaiseksi)?", re.IGNORECASE)
+
+# Closed end-bound cue set: a determinate validity end is "on voimassa <date>
+# saakka/asti" ("in force until <date>"). The date may be the numeric form
+# (1.1.2027) or the long form (1 päivään joulukuuta 2027 / 31 päivänä …). The
+# day-of-month case in this construction is illative ("päivään"), distinct from
+# the partitive ("päivänä") of a plain FIXED_DATE, so a dedicated pattern handles
+# both. ``saakka``/``asti`` are the closed terminal cues. A date-less "siihen
+# saakka, kunnes …" does NOT match (no date group) and stays genuinely open.
+_END_CUES: tuple[str, ...] = ("saakka", "asti")
+
+_FIXED_TERM_NUMERIC_END_RE = re.compile(
+    r"on\s+voimassa\b[^.;\n]{0,40}?"
+    r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{4})"
+    r"\s+(?:saakka|asti)\b",
+    re.IGNORECASE,
+)
+
+_FIXED_TERM_LONG_END_RE = re.compile(
+    r"on\s+voimassa\b[^.;\n]{0,40}?"
+    r"(?P<day>\d{1,2})\s+päivä(?:än|nä)\s+(?P<month>" + _MONTH_ALT + r")"
+    r"\s+(?P<year>\d{4})\s+(?:saakka|asti)\b",
+    re.IGNORECASE,
+)
 
 # Event bound: "kunnes ..." (until <event>). The terminating event is captured
 # only as surface text up to clause-ending punctuation; it is NOT resolved.
@@ -340,8 +395,52 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
             )
         )
 
+    # --- FIXED_TERM_EXPIRY / VALIDITY_OPEN ---
+    # "on voimassa <date> saakka/asti" is a DETERMINATE end (fixed-term expiry),
+    # not an open-ended validity. Detect the determinate-end shape first and span
+    # it from the "on voimassa" cue through the terminal cue; only emit
+    # VALIDITY_OPEN for an "on voimassa" with NO such determinate end (the
+    # genuinely-open "toistaiseksi" / "siihen saakka, kunnes …" shapes).
+    fixed_term_spans: list[tuple[int, int]] = []
+    for end_re, rule in (
+        (_FIXED_TERM_LONG_END_RE, "fixed_term_expiry.long_form"),
+        (_FIXED_TERM_NUMERIC_END_RE, "fixed_term_expiry.numeric"),
+    ):
+        for m in end_re.finditer(text):
+            # a numeric date inside a long-form span is already owned
+            if any(s <= m.start() < e for (s, e) in fixed_term_spans):
+                continue
+            day = int(m.group("day"))
+            month_grp = m.group("month")
+            month = (
+                int(month_grp)
+                if month_grp.isdigit()
+                else _MONTHS_PARTITIVE[month_grp.lower()]
+            )
+            year = int(m.group("year"))
+            d = _try_date(year, month, day)
+            fixed_term_spans.append((m.start(), m.end()))
+            out.append(
+                TemporalExpr(
+                    kind=TemporalKind.FIXED_TERM_EXPIRY,
+                    surface_text=m.group(0),
+                    source_span=_span(text, m.start(), m.end()),
+                    bound=d,
+                    status=(
+                        TemporalStatus.RESOLVED
+                        if d is not None
+                        else TemporalStatus.UNSUPPORTED
+                    ),
+                    rule_id=rule,
+                )
+            )
+
     # --- VALIDITY_OPEN (residual: open-ended, no determinate end) ---
     for m in _VALIDITY_OPEN_RE.finditer(text):
+        # Suppress the false-open: an "on voimassa" that opens a determinate
+        # fixed-term-expiry span (handled above) is NOT open.
+        if any(s <= m.start() < e for (s, e) in fixed_term_spans):
+            continue
         out.append(
             TemporalExpr(
                 kind=TemporalKind.VALIDITY_OPEN,

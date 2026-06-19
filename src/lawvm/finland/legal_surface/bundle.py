@@ -21,7 +21,14 @@ import xml.etree.ElementTree as ET
 
 from lawvm.core.legal_surface_graph import SourceSpanRef, SurfaceGraphSubject
 from lawvm.core.legal_surface_lens import SourceSurfaceBundle, SourceSurfaceUnit
-from lawvm.finland.legal_surface.tokenize import build_token_tape
+from lawvm.finland.legal_surface.clause_segment import (
+    build_clause_index,
+    build_segmentation_graph,
+)
+from lawvm.finland.legal_surface.tokenize import (
+    build_morph_overlay,
+    build_token_tape,
+)
 
 _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
@@ -67,6 +74,7 @@ def build_surface_bundle(
     source_hash = _sha256_bytes(xml_bytes)
     text_hash = _sha256_text(raw_text)
     source_unit_id = f"{statute_id}#body"
+    token_tape = build_token_tape(source_unit_id, raw_text)
     unit = SourceSurfaceUnit(
         source_unit_id=source_unit_id,
         work_id=statute_id,
@@ -85,11 +93,40 @@ def build_surface_bundle(
         # Stage-1 bridge: adapter lenses run the existing recognizers, which need
         # the XML tree (the <ref> lane especially). Removed once lenses migrate
         # to token_tape views (Phase 7).
-        metadata={"xml_bytes": xml_bytes},
+        #
+        # SegmentationGraph (additive structural substrate, one level above the
+        # clause index in the SourceSyntaxGraph stack): classifies the body into
+        # heading / chapeau / list_item (with chapeau inheritance) /
+        # quoted_amendment_block / prose + explicit residual spans, partitioning
+        # the text exactly (no silent drop). Attached via ``metadata`` rather than
+        # a new unit field so the substrate stays additive without touching the
+        # universal unit schema — like ``xml_bytes`` it is a view a later pass
+        # consumes, NOT a graph input (the assembler's graph_id is computed over
+        # node/edge payloads + subject only, never over unit metadata, so this
+        # cannot perturb the assembled surface graph).
+        metadata={
+            "xml_bytes": xml_bytes,
+            "segmentation_graph": build_segmentation_graph(
+                source_unit_id, raw_text
+            ),
+        },
         # Phase 7 (§D4): populate the source-preserving token view additively.
         # Lenses that ignore it are unaffected; token-consuming lenses set
         # required_views=("token_tape",).
-        token_tape=build_token_tape(source_unit_id, raw_text),
+        token_tape=token_tape,
+        # Phase 7 (§D4): sparse reverse-morphology overlay over the tape. Covers
+        # ONLY the closed known-head vocabulary (lemma index inverts M1); an
+        # absent annotation means "unknown", never "no lemma exists". Cheap: the
+        # default lemma index is memoized.
+        morph_overlay=build_morph_overlay(token_tape),
+        # Clause-segmentation substrate: deterministic sentence/clause index over
+        # the same coordinate space. Additive — unconsumed by v0 lenses, and the
+        # graph_id is computed over node/edge payloads only (never unit views), so
+        # this cannot perturb the assembled graph. Later attachment passes query
+        # it instead of the magic colocation window.
+        clause_index=build_clause_index(
+            source_unit_id, raw_text, token_tape=token_tape
+        ),
     )
     subject = SurfaceGraphSubject(
         jurisdiction="fi",
@@ -130,3 +167,34 @@ def locate_span(
         text_hash=_sha256_text(surface_text),
     )
     return ref, end
+
+
+def span_ref_at(
+    unit: SourceSurfaceUnit,
+    char_start: int,
+    char_end: int,
+) -> SourceSpanRef | None:
+    """Build a SourceSpanRef for an explicit char range in ``unit.raw_text``.
+
+    Unlike :func:`locate_span`, which searches for a surface string, this anchors
+    on a range a recognizer already matched in the SAME coordinate space the
+    bundle's ``raw_text`` defines (the §D4 unit). It is the truthful anchor for a
+    fact whose surface string does not round-trip through ``str.find`` — e.g. a
+    recognizer that normalised whitespace in its captured surface but reported the
+    exact offsets of the construct it matched. The text_hash addresses the ACTUAL
+    sliced text at those offsets, so the ref stays content-addressed and never
+    fabricates an offset: an out-of-range request yields ``None`` (fail-loud).
+    """
+    n = len(unit.raw_text)
+    if char_start < 0 or char_end > n or char_start >= char_end:
+        return None
+    sliced = unit.raw_text[char_start:char_end]
+    return SourceSpanRef(
+        source_unit_id=unit.source_unit_id,
+        source_hash=unit.source_hash,
+        work_id=unit.work_id,
+        address=unit.address,
+        char_start=char_start,
+        char_end=char_end,
+        text_hash=_sha256_text(sliced),
+    )

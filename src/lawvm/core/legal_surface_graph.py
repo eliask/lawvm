@@ -68,6 +68,11 @@ NODE_KINDS: frozenset[str] = frozenset(
         "term_use",
         "temporal_expr",
         "actor_modal_frame",
+        # Construction-grammar deontic core (the DENSE Layer-2 substrate). Minted
+        # by the deontic_core lens from parse_modal_sentence — one node per modal
+        # core (cue alone), so it is dense where the actor_modal_frame oracle (a
+        # registered actor within 60 chars) is sparse. Surface-only; no legal force.
+        "deontic_core",
         # H5/H6 frame families (Pro r5 Phase 8 — nodes only; edge/lint passes
         # deferred). condition + exception share one cue kind from the recognizer.
         "delegation_frame",
@@ -105,6 +110,56 @@ EDGE_KINDS: frozenset[str] = frozenset(
         # actor_modal_frame -> temporal_expr co-located within a small span
         # window in the same source unit (a nearby deadline/commencement).
         "actor_modal_temporal_colocated",  # EXPERIMENTAL
+        # frame node (delegation/procedure/sanction/exception/actor_modal) ->
+        # reference_expr whose source span sits INSIDE (or within a small window
+        # of) the frame's span in the same source unit. A CANDIDATE serendipity
+        # affordance ("a citation sits inside this frame's text"), NOT a claim
+        # that the frame legally governs that reference.
+        "frame_contains_reference",  # EXPERIMENTAL
+        # frame node -> temporal_expr whose source span sits INSIDE (or within a
+        # small window of) the frame's span in the same source unit. A CANDIDATE
+        # affordance ("a date/deadline sits inside this frame's text"), NOT a
+        # claim that the date legally qualifies the frame.
+        "frame_qualified_by_temporal",  # EXPERIMENTAL
+        # exception_condition_cue -> frame node (delegation/procedure/sanction/
+        # actor_modal) whose span the cue PRECEDES or overlaps within a small
+        # window in the same source unit. A CANDIDATE affordance ("this
+        # exception/condition cue sits at or before that frame's text"), NOT a
+        # claim that the exception legally governs/qualifies the frame.
+        "exception_scopes_frame",  # EXPERIMENTAL
+        # frame node -> actor_modal_frame co-located within a small span window in
+        # the same source unit. A CANDIDATE affordance ("an actor/modal shape sits
+        # in/near this frame's text" — who acts in/near this frame), NOT a claim
+        # that the actor is the legal subject of the frame.
+        "frame_has_colocated_actor",  # EXPERIMENTAL
+        # ── Layer-2 construction-derived deontic NORM edges ───────────────────
+        # The FIRST real Layer-2 composition: a condition/exception qualifier
+        # (exception_condition_cue node) -> the deontic core (actor_modal_frame
+        # node) the CONSTRUCTION parse attaches it to (not a proximity window).
+        # condition_attaches_norm: a CONDITION qualifier scopes that core ("the
+        # norm applies WHEN/IF X"); exception_excepts_norm: an EXCEPTION qualifier
+        # scopes that core ("the norm does NOT apply in case X"). status carries
+        # the construction's attachment confidence: "resolved" (one core) or
+        # "ambiguous" (one edge per candidate core, full set in payload). Still a
+        # SURFACE candidate, never a legal conclusion (§D7) — the legal reading
+        # that the norm is conditioned/excepted must leave the graph through a
+        # named authorization object.
+        "condition_attaches_norm",
+        "exception_excepts_norm",
+        # A power-register deontic core (deontic_core node, kind="power" — the
+        # delegating verb register: säädetään/annetaan/valtuus…) -> the
+        # delegation_frame in the SAME sentence whose instrument it grants ("this
+        # power delegates rulemaking via that asetus"). A prohibition/obligation
+        # deontic core (deontic_core node, kind in {prohibition,obligation}) ->
+        # the sanction_frame in the SAME sentence that backs it ("this duty/ban is
+        # sanctioned by that consequence"). Sentence-local, candidate-not-asserted:
+        # one target -> status "candidate"; several -> one edge per candidate with
+        # the full candidate set in payload, status "ambiguous"; never a silent
+        # pick. Still a SURFACE candidate, never a legal conclusion (§D7) — the
+        # reading that the power validly delegates / the norm is enforceably
+        # sanctioned must leave the graph through a named authorization object.
+        "delegates_to",
+        "sanctioned_by",
     }
 )
 

@@ -35,8 +35,10 @@ from lawvm.core.legal_surface_lints import (
 )
 from lawvm.finland.legal_surface.bundle import build_surface_bundle
 from lawvm.finland.legal_surface.lenses.actor_modal import ActorModalLens
+from lawvm.finland.legal_surface.lenses.anaphora import AnaphoraLens
 from lawvm.finland.legal_surface.lenses.definitions import DefinitionLens
 from lawvm.finland.legal_surface.lenses.delegation import DelegationLens
+from lawvm.finland.legal_surface.lenses.deontic_core import DeonticCoreLens
 from lawvm.finland.legal_surface.lenses.exception_condition import (
     ExceptionConditionLens,
 )
@@ -55,6 +57,19 @@ from lawvm.finland.legal_surface.frame_lints import (
     DelegationWithoutInstrumentLintPass,
 )
 from lawvm.finland.legal_surface.frame_passes import ActorTemporalColocationPass
+from lawvm.finland.legal_surface.frame_relations import (
+    ExceptionScopesFramePass,
+    FrameActorColocationPass,
+    SanctionConditionLintPass,
+)
+from lawvm.finland.legal_surface.cross_lens_passes import (
+    FrameReferenceColocationPass,
+    FrameTemporalColocationPass,
+)
+from lawvm.finland.legal_surface.norm_composition import (
+    condition_attachment_passes,
+    deontic_frame_attachment_passes,
+)
 from lawvm.finland.legal_surface.passes import DefinitionClosurePass
 from lawvm.finland.legal_surface.ref_lints import (
     AmbiguousReferenceLintPass,
@@ -71,10 +86,17 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
     DefinitionLens(),
     TemporalLens(),
     ActorModalLens(),
+    # ADDITIVE strangle: the DENSE construction deontic-core node lens runs
+    # ALONGSIDE the sparse production ActorModalLens (never replacing it). It mints
+    # one deontic_core node per construction modal core — the substrate Layer-2
+    # deontic edges attach to (the actor_modal_frame oracle is too sparse to back
+    # most attachments).
+    DeonticCoreLens(),
     DelegationLens(),
     ProcedureLens(),
     SanctionLens(),
     ExceptionConditionLens(),
+    AnaphoraLens(),
 )
 
 # Cross-lens edge passes, run in declared order after assembly (Pro r5 §D5).
@@ -84,6 +106,14 @@ DEFAULT_LENSES: tuple[SurfaceLens, ...] = (
 DEFAULT_EDGE_PASSES: tuple[SurfaceEdgePass, ...] = (
     DefinitionClosurePass(),
     ActorTemporalColocationPass(),
+    # Cross-lens interlinks — the fabric that ties the 8 lenses' node sets
+    # together. All candidate-status, surface-colocation affordances (never
+    # asserted facts); each edge carries char_distance so a strict consumer can
+    # filter to containment-only.
+    FrameReferenceColocationPass(),
+    FrameTemporalColocationPass(),
+    ExceptionScopesFramePass(),
+    FrameActorColocationPass(),
 )
 
 # Lint passes (graph queries; Pro r5 §D6). Not run by build_legal_surface_graph
@@ -100,8 +130,9 @@ DEFAULT_LINT_PASSES: tuple[SurfaceLintPass, ...] = (
     OpenReferenceLintPass(),
     StatuteOnlyMissLintPass(),
     AmbiguousReferenceLintPass(),
-    # EXPERIMENTAL H5/H6 frame affordance lint (candidate, never a legal claim).
+    # EXPERIMENTAL H5/H6 frame affordance lints (candidate, never a legal claim).
     DelegationWithoutInstrumentLintPass(),
+    SanctionConditionLintPass(),
 )
 
 
@@ -161,12 +192,28 @@ def build_legal_surface_graph(
         results.append(result)
         lens_runs.append(_lens_run(lens, result))
 
+    # ADDITIVE Layer-2 strangle: the construction-derived deontic NORM edge pass
+    # runs ALONGSIDE the proximity ExceptionScopesFramePass (which stays in
+    # ``edge_passes``), never replacing it. It is built per-statute from the
+    # bundle because the construction parse needs the source text. The proximity
+    # pass remains the incumbent until the construction edge is proven superior.
+    #
+    # The deontic-frame attachment pass (delegates_to / sanctioned_by) is spliced
+    # in ADDITIVELY too: it joins power cores to co-sentence delegation_frames and
+    # prohibition/obligation cores to co-sentence sanction_frames, alongside (never
+    # replacing) the proximity FrameActorColocationPass / ExceptionScopesFramePass.
+    all_edge_passes = (
+        edge_passes
+        + condition_attachment_passes(bundle)
+        + deontic_frame_attachment_passes(bundle)
+    )
+
     return assemble_surface_graph(
         subject=bundle.subject,
         source_units=_source_unit_refs(bundle),
         lens_results=tuple(results),
         lens_runs=tuple(lens_runs),
-        edge_passes=edge_passes,
+        edge_passes=all_edge_passes,
     )
 
 

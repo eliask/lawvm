@@ -21,6 +21,8 @@ from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_section
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.tools.evidence import (
     _compiler_observation_summary,
+    _finlex_original_url,
+    _finlex_section_url,
     _section_bisect_support,
     _build_section_claims,
     _build_proof_claims,
@@ -36,6 +38,33 @@ from lawvm.tools.evidence import (
 )
 from lawvm.tools.evidence_claims import build_section_claims_typed
 from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
+
+
+def test_finlex_original_url_uses_current_saadoskokoelma_scheme() -> None:
+    # As-enacted (alkup) display link -> saadoskokoelma, bare statute number.
+    assert (
+        _finlex_original_url("2007/360")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/360"
+    )
+    # Leading zeros stripped to the bare integer.
+    assert (
+        _finlex_original_url("2007/05")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/5"
+    )
+    assert _finlex_original_url("not-an-id") == ""
+
+
+def test_finlex_section_url_uses_current_consolidated_scheme() -> None:
+    # Consolidated ("ajantasa") display link -> lainsaadanto, bare number, with
+    # the legacy #P{section} fragment preserved as a best-effort anchor hint.
+    assert (
+        _finlex_section_url("1999/132", "section:4")
+        == "https://www.finlex.fi/fi/lainsaadanto/1999/132#P4"
+    )
+    assert (
+        _finlex_section_url("1999/132")
+        == "https://www.finlex.fi/fi/lainsaadanto/1999/132"
+    )
 
 
 def _fixture_compile_metadata():

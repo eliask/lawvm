@@ -322,29 +322,32 @@ BODY_SECTION_RANGE = CorpusFixture(
         )
     ),
     expected_mentions=[
+        # The visible surface stays "(711/2022)" (NUMBER/YEAR) but the TARGET
+        # link id canonicalizes to the corpus-key orientation YEAR/NUMBER
+        # ("2022/711"), matching the <ref>-element lane (cf. EXACT_CROSS_STATUTE).
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "711/2022",
-            "target_provision_ref_str": "711/2022/108",
+            "target_statute_id": "2022/711",
+            "target_provision_ref_str": "2022/711/108",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "711/2022",
-            "target_provision_ref_str": "711/2022/109",
+            "target_statute_id": "2022/711",
+            "target_provision_ref_str": "2022/711/109",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "711/2022",
-            "target_provision_ref_str": "711/2022/110",
+            "target_statute_id": "2022/711",
+            "target_provision_ref_str": "2022/711/110",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
     ],
     expected_rejected=[],
@@ -372,21 +375,22 @@ BODY_SECTION_COORDINATION = CorpusFixture(
         )
     ),
     expected_mentions=[
+        # Visible surface "(711/2022)"; TARGET link id canonical YEAR/NUMBER.
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "711/2022",
-            "target_provision_ref_str": "711/2022/6",
+            "target_statute_id": "2022/711",
+            "target_provision_ref_str": "2022/711/6",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "711/2022",
-            "target_provision_ref_str": "711/2022/8",
+            "target_statute_id": "2022/711",
+            "target_provision_ref_str": "2022/711/8",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         },
     ],
     expected_rejected=[],
@@ -417,13 +421,14 @@ BODY_BYID_MOMENTTI = CorpusFixture(
         )
     ),
     expected_mentions=[
+        # Visible surface "(424/2003)"; TARGET link id canonical YEAR/NUMBER.
         {
             "source_statute_id": "2003/314",
-            "target_statute_id": "424/2003",
-            "target_provision_ref_str": "424/2003/6/1",
+            "target_statute_id": "2003/424",
+            "target_provision_ref_str": "2003/424/6/1",
             "cite_kind": "cross_statute",
             "cite_confidence": "exact",
-            "phrase_lemma": "plain_text",
+            "phrase_lemma": "citation_construction",
         }
     ],
     expected_rejected=[],
@@ -463,7 +468,9 @@ EU_EMBEDDED_REPEAL = CorpusFixture(
     expected_mentions=[
         {
             "source_statute_id": "2011/542",
-            "target_statute_id": "eu/act/2009/1069",
+            # Both acts are governed by an inflected ``asetus`` stem
+            # ("asetuksen"/"asetuksessa") → classified as ``reg``.
+            "target_statute_id": "eu/reg/2009/1069",
             "cite_kind": "eu",
             "cite_confidence": "exact",
             "edge_subtype": "CITES",
@@ -471,7 +478,7 @@ EU_EMBEDDED_REPEAL = CorpusFixture(
         },
         {
             "source_statute_id": "2011/542",
-            "target_statute_id": "eu/act/2002/1774",
+            "target_statute_id": "eu/reg/2002/1774",
             "cite_kind": "eu",
             "cite_confidence": "exact",
             "edge_subtype": "REPEALS_EMBEDDED",

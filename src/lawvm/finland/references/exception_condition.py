@@ -63,6 +63,12 @@ from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
 
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.legal_surface.clause_segment import (
+    bound_scope_hint as _shared_bound_scope_hint,
+)
+from lawvm.finland.legal_surface.clause_segment import (
+    is_clause_initial_ish as _shared_is_clause_initial_ish,
+)
 
 CueKind = Literal["EXCEPTION", "CONDITION"]
 
@@ -131,9 +137,12 @@ _CLAUSE_INITIAL_CUES: frozenset[str] = frozenset({"jos", "kun"})
 #: Finnish word-char negative-lookaround class (ASCII word chars + äöå/ÄÖÅ).
 _WC = r"[\wäöåÄÖÅ]"
 
-#: Characters that count as a clause boundary for scope bounding and for the
-#: clause-initial-ish guard.
-_CLAUSE_BOUNDARY_CHARS = ",;.\n"
+# The clause-boundary logic (boundary char set + clause-initial / scope-bounding
+# rules) is the SHARED authority in
+# ``lawvm.finland.legal_surface.clause_segment``, consumed via the delegating
+# ``_is_clause_initial_ish`` / ``_bound_scope_hint`` helpers below. This
+# recognizer no longer keeps its own copy (rule-of-three: it had become the 2nd
+# in-tree clause splitter).
 
 #: Maximum scope-hint span length (characters). The scope hint is a SURFACE
 #: pointer only; it is not parsed and is bounded to avoid runaway spans.
@@ -210,41 +219,28 @@ def _span(source_file: str, start: int, end: int) -> SourceSpan:
 def _is_clause_initial_ish(text: str, start: int) -> bool:
     """Is the cue at ``start`` clause-initial-ish?
 
-    True iff everything before ``start`` back to the most recent non-whitespace
-    char is a clause boundary, an opening paren, or start-of-text. SURFACE check
-    only — used to suppress mid-clause ``jos``/``kun`` noise.
+    Delegates to the SHARED clause-boundary authority
+    (``lawvm.finland.legal_surface.clause_segment.is_clause_initial_ish``):
+    everything before ``start`` back to the most recent non-whitespace char is a
+    clause boundary, an opening paren, or start-of-text. SURFACE check only —
+    used to suppress mid-clause ``jos``/``kun`` noise. Byte-identical to the
+    previous private copy.
     """
-    i = start - 1
-    # skip immediately-preceding whitespace
-    while i >= 0 and text[i].isspace():
-        i -= 1
-    if i < 0:
-        return True  # start of text (modulo leading whitespace)
-    return text[i] in _CLAUSE_BOUNDARY_CHARS or text[i] in ":(["
+    return _shared_is_clause_initial_ish(text, start)
 
 
 def _bound_scope_hint(text: str, after: int) -> Optional[Tuple[int, int]]:
     """Bound a coarse scope-hint span starting after offset ``after``.
 
-    SURFACE ONLY: the scope hint is the run of text from the first non-whitespace
-    char after the cue up to (not including) the next clause boundary
-    (``,`` / ``;`` / ``.`` / newline), bounded by :data:`_MAX_SCOPE_HINT`.
-    Returns (start, end) or None when nothing but whitespace/boundary follows.
+    Delegates to the SHARED clause-boundary authority
+    (``lawvm.finland.legal_surface.clause_segment.bound_scope_hint``), passing
+    this recognizer's :data:`_MAX_SCOPE_HINT`. SURFACE ONLY: the run of text from
+    the first non-whitespace char after the cue up to (not including) the next
+    clause boundary, bounded by ``_MAX_SCOPE_HINT``. Returns (start, end) or None
+    when nothing but whitespace/boundary follows. Byte-identical to the previous
+    private copy.
     """
-    start = after
-    while start < len(text) and text[start].isspace():
-        start += 1
-    if start >= len(text):
-        return None
-    limit = min(len(text), start + _MAX_SCOPE_HINT)
-    end = start
-    while end < limit and text[end] not in _CLAUSE_BOUNDARY_CHARS:
-        end += 1
-    while end > start and text[end - 1].isspace():
-        end -= 1
-    if end <= start:
-        return None
-    return (start, end)
+    return _shared_bound_scope_hint(text, after, max_len=_MAX_SCOPE_HINT)
 
 
 def _scan(

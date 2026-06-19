@@ -71,6 +71,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from lawvm.core.reference_mention import SourceSpan
+from lawvm.finland.references.cross_refs import _make_statute_id
 
 # ---------------------------------------------------------------------------
 # Typed output
@@ -114,8 +115,11 @@ class DefinedTermBinding:
         term:         The local term being defined (surface form, nominative as
                       written at the binding site), e.g. ``sivutuoteasetus``.
         target_ref:   Canonical act id the term denotes when the binding ties the
-                      term to an act cite (Finnish ``NUMBER/YEAR`` or EU surface
-                      form), else ``None``.
+                      term to an act cite, else ``None``. Finnish ids are the
+                      CANONICAL ``YEAR/NUMBER`` orientation (same authority as the
+                      ``<ref>`` / cross-ref lane and the corpus store keys), NOT
+                      the Finnish visible ``(NUMBER/YEAR)`` convention; EU ids keep
+                      their source surface orientation.
         expansion:    The definitional expansion text for a ``tarkoitetaan``
                       binding whose right-hand side is NOT an act cite, else
                       ``None``.
@@ -219,11 +223,17 @@ _PAREN_ALIAS = re.compile(
 # Anchored on the cue word "jäljempänä".  Captures the term up to a closing
 # paren / comma / quote / end-of-window.  Bounded term body.
 
+# A sentence-ending '.' BOUNDS an unquoted alias: the alias is a single naming
+# token, never a clause, so it can never span a period into the next sentence.
+# (Observed: "…laissa (1137/2016), jäljempänä markkinavalvontalaki. Markkinavalvonnan
+# …" must yield ``markkinavalvontalaki``, not ``markkinavalvontalaki. Markkinavalvonnan``.)
+# The period is excluded from the term body AND admitted as a terminator so the
+# lazy capture stops at it.  A quoted alias is bounded by its closing quote.
 _JALJEMPANA = re.compile(
     r"jäljempänä\s{1,3}"
     r"(?P<q>[\"“”])?"
-    r"(?P<term>[^\")(,;]{1,80}?)"
-    r"(?(q)[\"“”]|(?=[),;]|\s*$))",
+    r"(?P<term>[^\")(,;.]{1,80}?)"
+    r"(?(q)[\"“”]|(?=[).,;]|\s*$))",
 )
 
 # ---------------------------------------------------------------------------
@@ -238,8 +248,17 @@ _JALJEMPANA = re.compile(
 # before the verb, and the expansion Y is the clause after it up to a sentence
 # boundary.  Bounded windows throughout.
 
+# A term-run token that also admits a DANGLING-HYPHEN compound prefix
+# ("Lammas-" in "Lammas- ja vuohirekisterillä", an elliptical coordination of
+# ``lammasrekisteri`` + ``vuohirekisteri``).  A bare ``_TERM_WORD`` requires a
+# letter after every hyphen, so it silently dropped the clipped head; the trailing
+# ``-?`` lets the head be captured as part of the coordinated definiendum.  The
+# left-boundary trim (`_trim_to_definiendum_np`) still removes any leading
+# non-definiendum material, so widening the capture never over-binds.
+_TERM_RUN_WORD = r"[a-zA-ZäöåÄÖÅ]+(?:-[a-zA-ZäöåÄÖÅ]+)*-?"
+
 _TARKOITETAAN = re.compile(
-    rf"(?P<term>(?:{_TERM_WORD}\s+){{0,3}}{_TERM_WORD})\s+tarkoitetaan\b"
+    rf"(?P<term>(?:{_TERM_RUN_WORD}\s+){{0,3}}{_TERM_RUN_WORD})\s+tarkoitetaan\b"
     r"(?P<expansion>[^.;]{0,200})",
     re.IGNORECASE,
 )
@@ -527,8 +546,12 @@ def _act_id_ending_before(text: str, pos: int, window: int = 90) -> Optional[str
 
     Canonical id surface returned:
       * EU acts → "NUMBER/YEAR" / "YEAR/NUMBER" (form prefix dropped; the digits
-        identify the act).
-      * FI acts → "NUMBER/YEAR".
+        identify the act, oriented as written in the source).
+      * FI acts → CANONICAL "YEAR/NUMBER" (via :func:`cross_refs._make_statute_id`,
+        the single orientation authority shared with the ``<ref>`` / cross-ref
+        lane and the corpus store keys). The Finnish VISIBLE convention is
+        ``(NUMBER/YEAR)``; the id this returns is the canonical target id, not the
+        visible surface.
     Returns ``None`` if no act cite terminates at ``pos``.
     """
     start = max(0, pos - window)
@@ -546,13 +569,14 @@ def _act_id_ending_before(text: str, pos: int, window: int = 90) -> Optional[str
         eu_y = m
     if eu_y is not None and eu_y.end() == n:
         return f"{eu_y.group(1)}/{eu_y.group(2)}"
-    # Finnish "(NUMBER/YEAR)" whose closing ')' ends at pos.
+    # Finnish "(NUMBER/YEAR)" whose closing ')' ends at pos. The id is
+    # CANONICALIZED to "YEAR/NUMBER" — group(1) is NUMBER, group(2) is YEAR.
     fi = None
     for m in _FI_ID.finditer(chunk):
         if m.end() == n:
             fi = m
     if fi is not None:
-        return f"{fi.group(1)}/{fi.group(2)}"
+        return _make_statute_id(fi.group(2), fi.group(1))
     return None
 
 
@@ -560,7 +584,11 @@ def _first_act_id_in(text: str) -> Optional[str]:
     """Return the FIRST act id appearing in ``text`` (EU preferred by position).
 
     Used to resolve the act a binding construct refers to when the act cite
-    precedes the cue inside a bounded window.
+    precedes the cue inside a bounded window. EU ids keep their source
+    orientation; FI ids are CANONICALIZED to "YEAR/NUMBER" via
+    :func:`cross_refs._make_statute_id` (the one orientation authority shared with
+    the ``<ref>`` / cross-ref lane), so the same act never splits into an inverted
+    "NUMBER/YEAR" entity.
     """
     candidates: list[tuple[int, str]] = []
     m = _EU_NNUM.search(text)
@@ -570,7 +598,8 @@ def _first_act_id_in(text: str) -> Optional[str]:
     if m:
         candidates.append((m.start(), f"{m.group(1)}/{m.group(2)}"))
     for fm in _FI_ID_LOOSE.finditer(text):
-        candidates.append((fm.start(), f"{fm.group(1)}/{fm.group(2)}"))
+        # group(1) is NUMBER, group(2) is YEAR → canonical "YEAR/NUMBER".
+        candidates.append((fm.start(), _make_statute_id(fm.group(2), fm.group(1))))
     if not candidates:
         return None
     candidates.sort(key=lambda c: c[0])
@@ -663,7 +692,170 @@ def _is_definitional_definiendum(last_word: str) -> bool:
     # (e.g. a mangled token) is not a definiendum.
     if len(low) < 5:
         return False
+    # The CROSS-REFERENCE idiom ``N §:ssä/laissa tarkoitetulla tavalla`` ("in the
+    # manner referred to in § N") puts the adessive PARTICIPLE ``tarkoitetulla``
+    # (and its paradigm ``tarkoitetuilla`` / ``tarkoitetussa``) right before a head
+    # noun.  That participle is itself the reference verb, never a definiendum — it
+    # points at an existing provision.
+    if low.startswith("tarkoitet"):
+        return False
     return True
+
+
+# Postpositions / cross-reference connectives that, appearing ANYWHERE in a
+# captured run, mark it as a referential clause that spilled across a boundary
+# ("… N §:n MUKAAN katsota …", "… ja niiden NOJALLA annettujen säännösten …", "…
+# olevien alusten OSALTA …"). These never occur inside a genuine defined-term NP.
+# NOTE: plain coordinators (``ja`` / ``tai``) are DELIBERATELY excluded — Finnish
+# definitions routinely coordinate two definienda ("Korkomenolla ja korkotulolla
+# tarkoitetaan …", "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan …"), so a
+# coordinator is NOT evidence of a swept clause.  Likewise adessive nouns such as
+# ``avulla`` ("Henkilökohtaisella avulla") / ``perusteella`` are genuine heads in
+# context and are NOT rejected as heads — only their use as a CONNECTIVE inside a
+# longer swept run (after a genitive) is caught below by ``_BARE_CASE_SUFFIX`` /
+# the verb list.  Matched by exact lowercase token equality (closed set).
+_CLAUSE_BOUNDARY_TOKENS: frozenset[str] = frozenset(
+    {
+        # Cross-reference postpositions governing a genitive ("§:n mukaan",
+        # "niiden nojalla", "säännösten perusteella", "alusten osalta").
+        "mukaan", "nojalla", "perusteella", "osalta", "mukaisesti",
+        # Relative / interrogative pronouns (the referential ", jota … tarkoitetaan"
+        # spill): nominative / partitive / genitive / inessive surfaces.
+        "joka", "jota", "jonka", "jossa", "joita", "joiden", "mikä",
+        # Bare infinitive / finite verbs observed in swept referential clauses.
+        "katsota", "säädetään",
+    }
+)
+
+# A token that is ONLY a Finnish case suffix (no content stem before it) — the
+# tell-tale debris of a split ``§:ssä`` / ``EU:n`` / ``X:llä`` where the colon and
+# the stem were lost to tokenization, leaving a bare suffix fragment as the first
+# "word" of a swept run ("ssä tarkoitetulla …", "n geenivara-asetuksen …"). A
+# genuine definiendum's first token is a content word, never a bare suffix.
+_BARE_CASE_SUFFIX: frozenset[str] = frozenset(
+    {
+        "n", "ssa", "ssä", "sta", "stä", "lla", "llä", "lta", "ltä", "lle",
+        "ksi", "na", "nä", "ta", "tä", "a", "ä", "en", "in", "tta", "ttä",
+        "han", "hän", "kin", "kaan", "kään",
+    }
+)
+
+
+def _is_clean_definiendum_phrase(words: list[str]) -> bool:
+    """True iff the captured ``words`` run is a clean defined-term NP, not a swept
+    clause fragment.
+
+    A genuine multi-word definiendum is a short noun phrase (optional agreeing
+    modifiers + an adessive head): ``palkansaajaan rinnastettavalla yrittäjällä``,
+    ``Palkkatuella katettavilla palkkakustannuksilla``. It
+
+      * begins with a CONTENT word (never a bare case-suffix fragment left by a
+        split ``§:ssä`` / ``EU:n``), and
+      * contains NO clause-boundary token (cross-reference postposition /
+        relative pronoun / finite-or-infinitive verb) — i.e. does not span a
+        clause boundary.  Plain coordinators (``ja`` / ``tai``) are allowed: a
+        coordinated definiendum (``Korkomenolla ja korkotulolla``) is genuine.
+
+    A run failing either test is the cross-reference idiom or a clause fragment
+    swept by a stray ``:`` / ``;`` delimiter (``ssä tarkoitetulla``, ``n mukaan
+    katsota kilpailluilla markkinoilla``, ``n geenivara-asetuksen sekä niiden
+    nojalla``); the recognizer DECLINES it (no garbled term minted, no
+    fabrication), per the tag-don't-guess discipline.
+    """
+    if not words:
+        return False
+    # (a) A bare case-suffix fragment as the leading token = split-token debris.
+    if words[0].lower() in _BARE_CASE_SUFFIX:
+        return False
+    # (b) Any clause-boundary token anywhere in the run = the run spilled across a
+    #     clause boundary (cross-reference postposition / relative pronoun / verb).
+    for w in words:
+        if w.lower() in _CLAUSE_BOUNDARY_TOKENS:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Definiendum LEFT-boundary trim (adverbial / connector strip)
+# ---------------------------------------------------------------------------
+#
+# A captured run may carry NON-definiendum material on its LEFT edge that the
+# regex window swept in:
+#
+#   * a PRIOR-ENTRY trailing connector — a leading ``ja`` / ``tai`` / ``sekä`` that
+#     terminated the PREVIOUS list item, not part of this definiendum
+#     ("…komissiota; sekä [\n] tavaralla …" → term is ``tavaralla``, not
+#     ``sekä tavaralla``); and
+#   * a leading ADVERBIAL CLAUSE — an adverb / pro-form / gerund / temporal
+#     infinitive that modifies the definition sentence, not the definiendum NP
+#     ("… rajausmahdollisuus huomioon ottaen kasvulohkolla …" → ``kasvulohkolla``;
+#     "Tällöin maatilan yritystoiminnan tulolla …" → ``maatilan yritystoiminnan
+#     tulolla``).
+#
+# CRITICAL — this MUST NOT eat a legitimate COORDINATED head.  A coordinator that
+# sits BETWEEN two definienda ("Pienellä ja keskisuurella yrityksellä",
+# "Lammas- ja vuohirekisterillä") is INSIDE the term and is kept; only a coordinator
+# that LEADS the whole run (a prior-entry connector) is stripped.  The adverbial cut
+# is anchored on a CLOSED set of clause markers (exact lowercase equality) plus the
+# unambiguous temporal-infinitive suffix ``-ttaessa`` / ``-ttäessä`` (a finite
+# subordinate clause, never a noun case), so a genitive modifier ending in ``-en``
+# ("Rakennuksen", "Maataloustuotteiden") is NEVER misread as a gerund.
+
+#: Plain coordinators.  A LEADING one is a prior-entry connector and is stripped;
+#: a MEDIAL one (between two definienda) is genuine coordination and is kept.
+_LEADING_COORDINATORS: frozenset[str] = frozenset({"ja", "tai", "sekä", "taikka"})
+
+#: Closed adverb / pro-form / gerund markers that open an adverbial clause and are
+#: never part of a definiendum noun phrase.  Matched by exact lowercase equality
+#: (no suffix guessing) — the only morphological rule admitted is the temporal
+#: second-infinitive inessive (``-ttaessa`` / ``-ttäessä``) handled separately.
+_ADVERBIAL_CLAUSE_MARKERS: frozenset[str] = frozenset(
+    {
+        # leading adverbs / pro-forms
+        "tällöin", "jolloin", "muuten", "muutoin", "kuitenkin", "kuitenkaan",
+        "siten", "näin", "lisäksi", "mitä",
+        # "huomioon ottaen" idiom (illative + gerund) and bare -en gerunds
+        "huomioon", "ottaen", "lukien", "noudattaen", "ottamatta", "lukematta",
+    }
+)
+
+#: Temporal second-infinitive inessive suffix ("sovellettaessa", "laskettaessa"):
+#: a subordinate-clause verb, never a noun case.  Distinct from any genitive (a
+#: genitive never ends ``-ttaessa`` / ``-ttäessä``), so this is safe to strip.
+_TEMPORAL_INFINITIVE = re.compile(r"(ttaessa|ttäessä)$", re.IGNORECASE)
+
+
+def _trim_to_definiendum_np(words: list[str]) -> Optional[list[str]]:
+    """Strip leading non-definiendum material (prior-entry connector / adverbial
+    clause) from a captured definiendum run, preserving genuine coordination.
+
+    Returns the trimmed definiendum word list, or ``None`` if nothing survives.
+    The HEAD (last word) is never touched; only the LEFT edge is trimmed:
+
+      1. drop leading plain coordinators (``ja`` / ``tai`` / ``sekä``) — a
+         prior-entry connector;
+      2. cut everything up to and including the LAST adverbial-clause marker
+         (closed set / temporal infinitive), so a leading adverbial clause is
+         removed but a medial coordinator between two definienda is kept;
+      3. drop any coordinator the cut newly exposed at the left edge.
+    """
+    ws = list(words)
+    while ws and ws[0].lower() in _LEADING_COORDINATORS:
+        ws = ws[1:]
+    if not ws:
+        return None
+    # Find the LAST adverbial-clause marker in the prefix (never the head itself);
+    # everything up to and including it is the adverbial clause, not the term.
+    cut = -1
+    for i, w in enumerate(ws[:-1]):
+        low = w.lower()
+        if low in _ADVERBIAL_CLAUSE_MARKERS or _TEMPORAL_INFINITIVE.search(low):
+            cut = i
+    if cut >= 0:
+        ws = ws[cut + 1 :]
+    while ws and ws[0].lower() in _LEADING_COORDINATORS:
+        ws = ws[1:]
+    return ws or None
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +980,19 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
             if low in _SCOPE_LEADERS or low in _PRONOUN_ADESSIVE_FORMS:
                 start_idx = i + 1
         phrase_words = words[start_idx:]
-        if not phrase_words:
+        # Strip a leading prior-entry connector or adverbial clause swept into the
+        # run ("sekä tavaralla" → ``tavaralla``; "rajausmahdollisuus huomioon ottaen
+        # kasvulohkolla" → ``kasvulohkolla``), preserving medial coordination.
+        trimmed = _trim_to_definiendum_np(phrase_words)
+        if trimmed is None:
+            continue
+        phrase_words = trimmed
+        # DECLINE a swept clause fragment / cross-reference idiom: a definiendum
+        # that begins with a bare case-suffix fragment (split ``§:ssä`` / ``EU:n``)
+        # or spans a clause boundary (cross-reference postposition / relative
+        # pronoun / verb) is NOT a defined term. Tag-don't-guess: mint no garbled
+        # multi-word term rather than fabricate one.
+        if not _is_clean_definiendum_phrase(phrase_words):
             continue
         term_surface = " ".join(phrase_words)
         expansion_text = m.group("expansion").strip()
@@ -853,14 +1057,31 @@ def _recognize_enumerated_definitions(
             # The enumerated definiendum is the LEADING adessive-headed phrase
             # ("X:llä" / "<modifier> <head>:llä"); reject the referential /
             # non-definiendum shape exactly as shape 3 does (no fabrication).
-            phrase_words = _adessive_phrase_from_run(run_words)
+            head_phrase = _adessive_phrase_from_run(run_words)
+            if head_phrase is None:
+                continue
+            # The definiendum head is the LAST word of ``head_phrase``; words AFTER
+            # it belong to the expansion (computed from the head index, BEFORE any
+            # left-trim, so the expansion boundary is unaffected by the trim).
+            head_len = len(head_phrase)
+            # Strip a leading prior-entry connector ("…komissiota; sekä tavaralla …"
+            # → ``tavaralla``) or adverbial clause, preserving medial coordination.
+            phrase_words = _trim_to_definiendum_np(head_phrase)
             if phrase_words is None:
+                continue
+            # DECLINE a swept clause fragment / cross-reference idiom. The item
+            # regex anchors on ANY ``:`` / ``;`` (incl. ``EU:`` and a split
+            # ``§:ssä``), so a stray sentence-internal colon can sweep a clause
+            # ("n mukaan katsota kilpailluilla markkinoilla", "ssä tarkoitetulla").
+            # Only a clean definiendum NP (content-word start, no clause-boundary
+            # token) binds; otherwise mint nothing (no fabrication).
+            if not _is_clean_definiendum_phrase(phrase_words):
                 continue
             # Full multi-word definiendum SURFACE preserved (no stem mangling).
             term_surface = " ".join(phrase_words)
             # Any word-run tokens AFTER the definiendum head belong to the
             # expansion (prepended to the regex's tail).
-            trailing = run_words[len(phrase_words):]
+            trailing = run_words[head_len:]
             expansion_text = (" ".join(trailing) + (" " if trailing else "") + rest).strip()
             act_id = _act_id_in_expansion(expansion_text)
             # The definiendum surface is an INFLECTED (adessive) form; M1 is

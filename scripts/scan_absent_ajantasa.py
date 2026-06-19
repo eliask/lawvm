@@ -184,9 +184,9 @@ def _finlex_lainsaadanto_url(year: str, num: str) -> str:
 def _finlex_alkup_url(year: str, num: str) -> str:
     base_num = num.split("-")[0]
     try:
-        return f"https://finlex.fi/fi/laki/alkup/{year}/{year}{int(base_num):04d}"
+        return f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{int(base_num)}"
     except ValueError:
-        return f"https://finlex.fi/fi/laki/alkup/{year}/{year}{base_num}"
+        return f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{base_num}"
 
 
 def scan(zip_path: Path, min_year: int = 0,

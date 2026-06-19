@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from lawvm.finland.references.registries import eu_nickname
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
     build_registry,
@@ -165,3 +166,102 @@ def test_temporal_nickname_collision_is_ambiguous_not_silent() -> None:
     dated = reg.lookup("ajoneuvoverolaki", as_of=dt.date(2010, 1, 1))
     assert dated.status == "single"
     assert dated.candidates[0].statute_id == "2003/1281"
+
+
+# ---------------------------------------------------------------------------
+# EU-instrument nickname -> CELEX registry (eu_nickname seed coverage).
+#
+# Each entry's CELEX is verified against the EU act it actually names (EUR-Lex /
+# CELLAR). Fail-loud: a nickname that genuinely maps to >1 EU act over time (or
+# across sectors) is seeded MULTIPLE — the registry never silently picks one.
+# ---------------------------------------------------------------------------
+
+
+def test_eu_single_regulation_resolves_inflected() -> None:
+    """Newly-seeded unambiguous regulations resolve from any inflected head.
+
+    vakavaraisuusasetus = CRR (EU) 575/2013; biosidiasetus = Biocidal Products
+    (EU) 528/2012; kasvinsuojeluaineasetus = PPP (EC) 1107/2009;
+    terveysväiteasetus = Reg (EC) 1924/2006; elintarviketietoasetus = FIC (EU)
+    1169/2011. The ``asetus`` head is a known morphology head, so the genitive
+    surface (``...asetuksen``) resolves to the same single CELEX.
+    """
+    cases = {
+        "vakavaraisuusasetuksen": "32013R0575",
+        "biosidiasetuksen": "32012R0528",
+        "kasvinsuojeluaineasetuksen": "32009R1107",
+        "terveysväiteasetuksen": "32006R1924",
+        "elintarviketietoasetuksen": "32011R1169",
+    }
+    for surface, celex in cases.items():
+        res = eu_nickname.lookup(surface)
+        assert res.status is eu_nickname.RegistryStatus.SINGLE, surface
+        assert res.candidates == (celex,), surface
+
+
+def test_eu_temporally_ambiguous_directives_are_multiple() -> None:
+    """Successor-reuses-predecessor nicknames are MULTIPLE, never a silent pick.
+
+    maksupalveludirektiivi (PSD1 2007/64 / PSD2 (EU) 2015/2366),
+    rahoitusvälinedirektiivi (MiFID I 2004/39 / MiFID II 2014/65),
+    energiatehokkuusdirektiivi (2012/27 / recast (EU) 2023/1791): each genuinely
+    floats between two acts over time, so the registry lists both and refuses.
+    """
+    cases = {
+        "maksupalveludirektiivin": {"32007L0064", "32015L2366"},
+        "rahoitusvälinedirektiivin": {"32004L0039", "32014L0065"},
+        "energiatehokkuusdirektiivin": {"32012L0027", "32023L1791"},
+    }
+    for surface, celexes in cases.items():
+        res = eu_nickname.lookup(surface)
+        assert res.status is eu_nickname.RegistryStatus.MULTIPLE, surface
+        assert set(res.candidates) == celexes, surface
+
+
+def test_eu_tietosuojadirektiivi_is_not_gdpr() -> None:
+    """``tietosuojadirektiivi`` (the *directive*) is ambiguous and NOT the GDPR.
+
+    GDPR (32016R0679) is consistently an *asetus* in Finnish prose; the bare
+    *direktiivi* word splits between the old Data Protection Directive 95/46/EY
+    and the Law Enforcement Directive (EU) 2016/680. Fail-loud: the GDPR CELEX
+    must not appear among the candidates.
+    """
+    res = eu_nickname.lookup("tietosuojadirektiivin")
+    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert set(res.candidates) == {"31995L0046", "32016L0680"}
+    assert "32016R0679" not in res.candidates
+    # The GDPR *asetus* forms remain single and distinct.
+    assert eu_nickname.lookup("yleisen tietosuoja-asetuksen").candidates == (
+        "32016R0679",
+    )
+
+
+def test_eu_cross_domain_directive_is_multiple() -> None:
+    """``vakavaraisuusdirektiivi`` splits cross-sector (banking vs insurance).
+
+    CRD IV 2013/36/EU vs Solvency II 2009/138/EY — resolvable only by sector
+    context the registry does not see, so it lists both. Contrast with the
+    unambiguous *asetus* form (CRR), which stays single.
+    """
+    res = eu_nickname.lookup("vakavaraisuusdirektiivin")
+    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert set(res.candidates) == {"32013L0036", "32009L0138"}
+    assert eu_nickname.lookup("vakavaraisuusasetuksen").status is (
+        eu_nickname.RegistryStatus.SINGLE
+    )
+
+
+def test_eu_bare_vesidirektiivi_is_ambiguous_not_single() -> None:
+    """``vesidirektiivi`` is not a stable term-of-art — seeded MULTIPLE.
+
+    The bare word floats between Drinking Water 98/83/EY, its recast (EU)
+    2020/2184, and the Water Framework Directive 2000/60/EY. Fail-loud: it must
+    not silently resolve to a single act. The *qualified* compound
+    ``vesipuitedirektiivi`` stays unambiguously single.
+    """
+    res = eu_nickname.lookup("vesidirektiivin")
+    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert set(res.candidates) == {"31998L0083", "32020L2184", "32000L0060"}
+    qualified = eu_nickname.lookup("vesipuitedirektiivin")
+    assert qualified.status is eu_nickname.RegistryStatus.SINGLE
+    assert qualified.candidates == ("32000L0060",)

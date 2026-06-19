@@ -116,18 +116,15 @@ def _load_registries() -> tuple[object | None, object | None]:
 def _read_body(store, sid: str) -> bytes | None:
     """Best available body text for surface-graph building.
 
-    The graph (definitions, references, temporal, ...) lives in the consolidated
-    body, so prefer the oracle; fall back to the enacted source or the amendment
-    act XML so non-consolidated statutes still contribute. All archive-only
-    reads — no replay.
+    Delegates to :func:`read_reference_body`: the graph (definitions, references,
+    temporal, ...) lives in the consolidated body, so prefer the oracle; fall
+    back to enacted source / amendment when the oracle is absent OR a
+    ``contentAbsent`` stub (repealed/expired statutes), so those statutes still
+    contribute their full surface. All archive-only reads — no replay.
     """
-    try:
-        xb = store.read_oracle(sid)
-    except Exception:
-        xb = None
-    if xb:
-        return xb
-    return store.read_source(sid) or store.read_amendment(sid)
+    from lawvm.finland.legal_surface.body_source import read_reference_body
+
+    return read_reference_body(store, sid)
 
 
 @dataclass(frozen=True)

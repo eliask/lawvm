@@ -250,3 +250,45 @@ def test_subject_is_finnish() -> None:
     graph, _ = _run_pipeline(xml)
     assert isinstance(graph.subject, SurfaceGraphSubject)
     assert graph.subject.jurisdiction == "fi"
+
+
+# ── Whitespace-spanning definiendum must not crash the build ─────────────────
+
+
+def test_oblique_definiendum_spanning_whitespace_anchors_without_crash() -> None:
+    """A multi-word oblique-case definiendum the recognizer matched across runs
+    of whitespace (the indentation real Finlex bodies carry between the words of
+    an enumerated definiendum) must still produce a properly anchored
+    ``definition_binding`` source fact — never a contract-violating seed that
+    aborts the whole statute's graph.
+
+    The ``tarkoitetaan`` recognizer normalises the captured definiendum surface
+    to single spaces, so it does not round-trip through ``str.find`` of the body
+    text. The lens must fall back to the recognizer's own (exact) construct span,
+    so the binding still carries a ``source_ref``. This is the ``rikoslaki``
+    1889/39-001 ``moottorikäyttöisellä ajoneuvolla tarkoitetaan …`` crash shape.
+    """
+    # Multiple spaces between the definiendum words mimic Finlex indentation; the
+    # recognizer collapses them, so the normalised term is NOT a substring of the
+    # body — the locate-by-surface path misses and the construct-span anchor must
+    # take over.
+    xml = _xml(
+        "Tässä laissa moottorikäyttöisellä   ajoneuvolla tarkoitetaan "
+        "konevoimalla kulkevaa ajoneuvoa."
+    )
+    # Must not raise SurfaceAssemblyError.
+    graph, _ = _run_pipeline(xml)
+
+    bindings = [
+        n for n in graph.nodes.values() if n.node_kind == "definition_binding"
+    ]
+    assert bindings, "expected the oblique-case definition to bind"
+    target = next(
+        (n for n in bindings if "moottorikäyttöisellä" in (n.payload.get("term") or "")),
+        None,
+    )
+    assert target is not None, "the oblique definiendum binding should be present"
+    # The fix's invariant: the source-fact binding carries a real source_ref
+    # (never None — that would be the contract violation that crashed the build).
+    assert target.source_ref is not None
+    assert target.payload.get("binder_status") == "unsupported_morphology"

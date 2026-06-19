@@ -96,6 +96,8 @@ class TokenTape:
                     f"order: token at {tok.char_start} starts before {prev_end}"
                 )
             prev_end = tok.char_end
+
+
 @dataclass(frozen=True, slots=True)
 class ClauseSpan:
     """One clause span over a source unit's text, with its enclosing sentence.

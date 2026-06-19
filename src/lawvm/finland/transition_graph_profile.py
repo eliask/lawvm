@@ -18,14 +18,14 @@ def fi_current_statute_url(_canonical_id: str, engine_id: str) -> str:
     year, sep, num = engine_id.partition("/")
     if not sep or not year or not num:
         return ""
-    return f"https://www.finlex.fi/fi/laki/ajantasa/{year}/{num}"
+    return f"https://www.finlex.fi/fi/lainsaadanto/{year}/{num}"
 
 
 def fi_amendment_url(_canonical_id: str, engine_id: str) -> str:
-    year, sep, _num = engine_id.partition("/")
-    if not sep or not year:
+    year, sep, num = engine_id.partition("/")
+    if not sep or not year or not num:
         return ""
-    return f"https://www.finlex.fi/fi/laki/alkup/{year}/{engine_id.replace('/', '')}"
+    return f"https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{num}"
 
 
 def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:

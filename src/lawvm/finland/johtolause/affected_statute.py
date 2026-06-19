@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 import re
+
+from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 
 _TARGET_ZONE_CUT_RE = re.compile(
     r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
@@ -183,16 +186,98 @@ def normalize_source_citation_id(raw: str, source_year: int) -> str | None:
     return f"{full_year}/{num}"
 
 
-def instrument_from_text(text: str) -> str:
-    """Return coarse Finnish instrument kind from inflected statute prose."""
+# Closed map: instrument-head LEMMA -> coarse instrument kind this module emits.
+# Only the three coarse kinds the routing layer compares against are produced;
+# every other known head (sopimus/säädös/määräys/...) and every unknown head
+# yields the honest "" (unknown), never a silently-guessed kind.
+_INSTRUMENT_HEAD_KIND: dict[str, str] = {
+    "laki": "laki",
+    "asetus": "asetus",
+    "päätös": "päätös",
+}
 
-    norm = re.sub(r"\s+", " ", (text or "").lower())
-    if re.search(r"(?:^|\s|[-])\w*(?:asetus|asetuk(?:sen|sesta|seen|sessa))\b", norm):
-        return "asetus"
-    if re.search(r"(?:^|\s|[-])\w*(?:päätös|päätök(?:sen|sestä|seen|sessä))\b", norm):
-        return "päätös"
-    if re.search(r"(?:^|\s|[-])\w*(?:laki|lain)\b", norm):
-        return "laki"
+# Token that is the last whitespace/hyphen/dash-delimited word of a title phrase.
+# Hyphen and Finnish en-dash are treated as compound separators so that a head
+# like ``alkoholi–lain`` exposes its real head token ``lain``.
+_HEAD_TOKEN_SEP_RE = re.compile(r"[\s\-–—]+")
+# Strip trailing/leading non-word punctuation clinging to a head token.
+_TOKEN_TRIM_RE = re.compile(r"^[^\wäöå]+|[^\wäöå]+$", re.IGNORECASE)
+
+
+@lru_cache(maxsize=1)
+def _instrument_suffix_table() -> tuple[tuple[str, str], ...]:
+    """Build ``(inflected_surface, instrument_kind)`` pairs, longest surface first.
+
+    Every reference_v1 case form (sg + pl) of each closed instrument-head lemma
+    is enumerated by M1 generation and paired with the coarse kind in
+    :data:`_INSTRUMENT_HEAD_KIND`.  Sorting longest-surface-first lets the
+    matcher prefer the most specific inflected form when one form is a suffix of
+    another, and makes a compound tail (``rakennus`` + ``lain``) resolve to the
+    head's kind without substring false positives.
+    """
+    surfaces: dict[str, str] = {}
+    for lemma, kind in _INSTRUMENT_HEAD_KIND.items():
+        entry = head_entry(lemma)
+        for form in generate_forms(entry, numbers=(MorphNumber.SG, MorphNumber.PL)):
+            if form.certainty != "deterministic" or not form.surface:
+                continue
+            surface = form.surface.casefold()
+            # A surface shared by two kinds would be ambiguous; the closed
+            # instrument set has none, but guard so a future addition fails loud
+            # rather than picking arbitrarily.
+            if surfaces.get(surface, kind) != kind:
+                surfaces[surface] = ""  # mark ambiguous -> not a confident kind
+            else:
+                surfaces[surface] = kind
+    pairs = [(s, k) for s, k in surfaces.items() if k]
+    pairs.sort(key=lambda sk: len(sk[0]), reverse=True)
+    return tuple(pairs)
+
+
+def _classify_token(token: str) -> str:
+    """Return the instrument kind for a single normalized head token, else ""."""
+
+    if not token:
+        return ""
+    for surface, kind in _instrument_suffix_table():
+        if token == surface:
+            return kind
+        # Compound tail: the inflected head form is a suffix of a compound word
+        # (``rakennus`` + ``lain``).  Require a real letter before the boundary
+        # so a coincidental ending never masquerades as an instrument.
+        if token.endswith(surface) and len(token) > len(surface):
+            return kind
+    return ""
+
+
+def instrument_from_text(text: str) -> str:
+    """Return coarse Finnish instrument kind from inflected statute prose.
+
+    Morphology-driven (not suffix-substring matching): each word of the phrase is
+    matched against the FULL reference_v1 paradigm of the closed instrument-head
+    lemmas via M1 generation, so any inflected form (genitive ``-lain``, illative
+    ``lakiin``, inessive ``laissa``, plural ``lakeja`` ...) maps to the same
+    coarse kind.  This avoids the consonant-gradation bug class of substring
+    matching (where ``'asetus' not in 'asetuksen'`` forced a fragile hand-list of
+    inflected variants).
+
+    The instrument-bearing head is the LAST instrument word in the phrase,
+    scanned right-to-left: in ``... annetun liikenneministeriön päätöksen`` the
+    affected statute is the trailing ``päätöksen`` (the one bearing the citation),
+    not an earlier ``asetuksen`` that is merely a referent of ``soveltamisesta``.
+    Trailing non-instrument postmodifiers (``lain 5 §:n``) are skipped so the
+    grammatical head is still recovered.  An unanalyzable / out-of-vocabulary head
+    returns the honest ``""`` (unknown), never a silently-guessed kind.
+    """
+
+    norm = re.sub(r"\s+", " ", (text or "")).strip()
+    if not norm:
+        return ""
+    tokens = _HEAD_TOKEN_SEP_RE.split(norm)
+    for raw in reversed(tokens):
+        kind = _classify_token(_TOKEN_TRIM_RE.sub("", raw).casefold())
+        if kind:
+            return kind
     return ""
 
 

@@ -8,7 +8,52 @@ from __future__ import annotations
 
 from lawvm.core.reference_mention import CiteConfidence, CiteKind
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
-from lawvm.finland.references.treaty_article import recognize_treaty_article_refs
+from lawvm.finland.references.treaty_article import (
+    _SOPIMUS_HEAD_FORMS,
+    recognize_treaty_article_refs,
+)
+
+
+# ---------------------------------------------------------------------------
+# Morphology-driven treaty-head detection (the retired suffix enumeration)
+# ---------------------------------------------------------------------------
+
+
+def test_sopimus_head_forms_are_morphology_generated_gradated() -> None:
+    # The treaty head forms are the M1-generated gradated surfaces of the
+    # curated case set, not a hand suffix table; the gradated stem (sopimukse-)
+    # is generated, never an ``sopimu`` substring.
+    forms = set(_SOPIMUS_HEAD_FORMS)
+    assert {"sopimuksen", "sopimukseen", "sopimuksessa", "sopimuksesta"} <= forms
+    assert "sopimu" not in forms
+
+
+def test_sopimus_curated_case_set_excludes_adverbial_cases() -> None:
+    # The case set is deliberately curated: the adessive/allative/ablative
+    # ("by/onto/from this agreement") do NOT govern an article cite and are
+    # excluded, so they cannot introduce false-positive treaty references.
+    forms = set(_SOPIMUS_HEAD_FORMS)
+    assert "sopimuksella" not in forms  # adessive
+    assert "sopimukselle" not in forms  # allative
+    assert "sopimukselta" not in forms  # ablative
+
+
+def test_adessive_sopimus_does_not_emit_treaty_reference() -> None:
+    # A near-article adessive ``sopimus`` form (an adverbial "by this agreement")
+    # must NOT be read as a governing treaty — that would double-count against
+    # the real (often EU-asetus) governor of the article number.
+    text = "tällä sopimuksella pantu täytäntöön asetuksen 3 artiklassa"
+    assert recognize_treaty_article_refs(text) == []
+
+
+def test_treaty_head_detected_in_inessive() -> None:
+    # The inessive head form is morphology-detected and governs the article.
+    text = "tässä yleissopimuksessa 7 artiklassa tarkoitettu"
+    mentions = recognize_treaty_article_refs(text)
+    assert len(mentions) == 1
+    assert mentions[0].cite_confidence is CiteConfidence.STATUTE_ONLY
+    assert mentions[0].target_provision_ref is not None
+    assert mentions[0].target_provision_ref.statute_id == "fi-treaty-name:sopimus"
 
 
 def test_explicit_sops_governor_two_articles_exact() -> None:
@@ -125,3 +170,17 @@ def test_surface_text_is_artikla_window() -> None:
     assert mentions
     for m in mentions:
         assert "artikla" in m.surface_text
+
+
+def test_treaty_article_does_not_leak_preceding_number() -> None:
+    """The shared ``_ARTIKLA_RE`` leak fix propagates to the treaty lane: a
+    preceding standalone number (here the SopS year ``2020``) is not absorbed
+    into the article list."""
+    text = "sopimuksen (SopS 19/2020) 8 artiklassa tarkoitettu"
+    mentions = recognize_treaty_article_refs(text)
+    labels = [
+        m.target_provision_ref.section_label
+        for m in mentions
+        if m.target_provision_ref
+    ]
+    assert labels == ["8"]

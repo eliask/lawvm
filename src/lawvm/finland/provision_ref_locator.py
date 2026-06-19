@@ -1,18 +1,27 @@
 """Finnish ProvisionRef.serialized() → HierarchicalLocator adapter.
 
-ProvisionRef.serialized() produces forms like:
+ProvisionRef.serialized() produces a self-describing, TYPED form
+``statute_id[/chN]/section[/momentti][/kLABEL]`` (see
+``core.reference_mention.ProvisionRef.serialized``):
   '1734/3-000'          → statute-level only (no section)
   '1734/3-000/12'       → statute '1734/3-000', section '12'
   '1734/3-000/2 a'      → statute '1734/3-000', section '2 a'
-  '1734/3-000/12/3'     → statute '1734/3-000', section '12', subsection 3
-  '1734/3-000/12/3/a'   → statute '1734/3-000', section '12', subsection 3, item 'a'
+  '1734/3-000/12/3'     → statute '1734/3-000', section '12', subsection (momentti) 3
+  '1734/3-000/12/3/ka'  → statute '1734/3-000', section '12', subsection 3, item (kohta) 'a'
+  '1734/3-000/ch47/4'   → statute '1734/3-000', chapter (luku) '47', section '4'
+  '1734/3-000/ch3'      → statute '1734/3-000', chapter '3' (no section)
+  '1734/3-000/12/k3'    → statute '1734/3-000', section '12', item (kohta) '3', no momentti
 
 The statute_id itself may contain a slash: '1734/3-000' (year/number-suffix).
 Modern statutes: '2003/434' (year=2003, number=434).
 
 Separation rule: the statute_id occupies the first two slash-separated tokens
 when the FIRST token is a 4-digit year (≥1600 and ≤2100).  Everything after
-the statute_id are provision path segments: section, subsection, item.
+the statute_id are TYPED provision path segments:
+  * ``ch{N}``      — chapter (luku);
+  * bare integer   — momentti (subsection) — the only bare non-section segment;
+  * ``k{LABEL}``   — kohta (item);
+  * anything else  — the section label.
 
 This module is Finland-specific and must NOT be imported from core/.
 
@@ -72,19 +81,32 @@ def parse_provision_ref_serialized(serialized: str) -> tuple[str, Optional[Hiera
     if not provision_parts:
         return (statute_id, None)
 
-    # provision_parts[0] = section_label (e.g. '12', '2 a', '198b')
-    # provision_parts[1] = subsection_num (e.g. '3')
-    # provision_parts[2] = item_label (e.g. 'a')
-    section_label = provision_parts[0]
+    # Parse the TYPED provision tail. Chapter (``chN``) leads when present;
+    # momentti is the only bare-integer segment after the section; kohta is
+    # ``k``-prefixed. (Mirrors ProvisionRef.serialized's emission order.)
+    segments: list[LocatorSegment] = []
+    idx = 0
+    if provision_parts[idx].startswith("ch"):
+        segments.append(
+            LocatorSegment(kind="chapter", label=provision_parts[idx][len("ch") :])
+        )
+        idx += 1
+    if idx < len(provision_parts):
+        # section_label (e.g. '12', '2 a', '198b')
+        segments.append(LocatorSegment(kind="section", label=provision_parts[idx]))
+        idx += 1
+    # Subsection (momentti) — bare integer, NOT a ``k``-prefixed kohta.
+    if idx < len(provision_parts) and not provision_parts[idx].startswith("k"):
+        segments.append(LocatorSegment(kind="subsection", label=provision_parts[idx]))
+        idx += 1
+    # Item (kohta) — ``k``-prefixed; maps to AKN "paragraph" kind.
+    if idx < len(provision_parts) and provision_parts[idx].startswith("k"):
+        segments.append(
+            LocatorSegment(kind="paragraph", label=provision_parts[idx][len("k") :])
+        )
+        idx += 1
 
-    segments: list[LocatorSegment] = [LocatorSegment(kind="section", label=section_label)]
-
-    # Subsections map to "subsection" kind; items map to "paragraph" kind.
-    # These are not used by FinnishAKNResolver's current eId translation but
-    # are included for completeness and future use.
-    if len(provision_parts) >= 2:
-        segments.append(LocatorSegment(kind="subsection", label=provision_parts[1]))
-    if len(provision_parts) >= 3:
-        segments.append(LocatorSegment(kind="paragraph", label=provision_parts[2]))
+    if not segments:
+        return (statute_id, None)
 
     return (statute_id, HierarchicalLocator(segments=tuple(segments)))

@@ -47,7 +47,11 @@ from lawvm.core.legal_surface_lens import (
     SurfaceNodeSeed,
     SurfaceResidualSeed,
 )
-from lawvm.finland.legal_surface.bundle import decode_body_text, locate_span
+from lawvm.finland.legal_surface.bundle import (
+    decode_body_text,
+    locate_span,
+    span_ref_at,
+)
 from lawvm.finland.references.defined_terms import (
     STATUS_UNSUPPORTED_MORPHOLOGY,
     DefinedTermBinding,
@@ -230,9 +234,53 @@ class DefinitionLens:
             binding_seeds.append(_BindingSeed(binding, local_id, term_id))
             binding_local_by_id[id(binding)] = local_id
 
+            # Anchor the binding on the definiendum surface when it round-trips
+            # verbatim (narrowest, points at the term itself). It does NOT always:
+            # a recognizer may normalise whitespace in the captured term surface
+            # (collapsing the newlines/indentation a multi-word definiendum spans
+            # in the body) so ``str.find`` of that surface misses. The binding,
+            # however, always carries the EXACT char range of the construct it
+            # matched, in this same coordinate space (the lens runs the recognizer
+            # over ``unit.raw_text``). Fall back to that real span so a binding is
+            # always a properly anchored source fact — never a contract-violating
+            # seed with no source_ref, which would abort the whole graph build.
             ref, _ = locate_span(unit, binding.term, cursor=binding.source_span.byte_offset)
             if ref is None:
                 ref, _ = locate_span(unit, binding.term)
+            if ref is None:
+                span = binding.source_span
+                ref = span_ref_at(
+                    unit, span.byte_offset, span.byte_offset + span.byte_len
+                )
+
+            # No span recoverable AT ALL (the recognizer's own construct offsets do
+            # not fall inside the bundle's coordinate space) — a source-fact
+            # ``definition_binding`` node has no truthful anchor. Per the
+            # no-silent-drop contract, emit a typed residual instead of a
+            # contract-violating seed (which would abort the whole graph build) and
+            # skip the node/entity/edge for this binding — never a fabricated
+            # offset, never a crash.
+            if ref is None:  # pragma: no cover — defensive; the construct span is in-range in practice
+                residual_count = len(residuals)
+                residuals.append(
+                    SurfaceResidualSeed(
+                        residual_kind="definition_unanchorable",
+                        source_ref=None,
+                        local_discriminator=f"residual:{residual_count}:{local_id}",
+                        rule_id=RULE_BINDING,
+                        reason_code="unanchorable_binding_span",
+                        payload={
+                            "term": binding.term,
+                            "term_id": term_id,
+                            "binding_kind": binding.binding_kind,
+                            "binder_status": binding.status,
+                            "construct_offset": binding.source_span.byte_offset,
+                            "construct_len": binding.source_span.byte_len,
+                        },
+                    )
+                )
+                continue
+
             node_seeds.append(
                 SurfaceNodeSeed(
                     node_kind="definition_binding",

@@ -30,6 +30,7 @@ from lawvm.finland.citation_routing import (
     johtolause_cited_target_ids,
 )
 from lawvm.finland.johtolause.affected_statute import (
+    instrument_from_text,
     parse_affected_statute_head,
     parse_delegated_authority_lead_in,
     parse_routing_surface,
@@ -104,6 +105,71 @@ class TestJohtolauseCitedTargetIds:
 
     def test_no_citation_returns_empty(self) -> None:
         assert johtolause_cited_target_ids("muutetaan 5 § seuraavasti:", 1965) == []
+
+
+class TestInstrumentFromText:
+    """Morphology-driven coarse instrument-kind classification.
+
+    Replaces the old suffix-substring regex that hand-listed a few inflected
+    forms (``asetuk(?:sen|sesta|seen|sessa)`` ...) and so inherited the
+    consonant-gradation bug class: any inflection outside the hand-list (and any
+    laki form beyond ``laki``/``lain``) was silently misclassified as unknown.
+    """
+
+    def test_genitive_compound_heads_classify(self) -> None:
+        # Genitives the OLD regex already handled — must not regress.
+        assert instrument_from_text("rakennuslain") == "laki"
+        assert instrument_from_text("valtion eläkelain") == "laki"
+        assert instrument_from_text("eläkeasetuksen") == "asetus"
+        assert instrument_from_text("sisäasiainministeriön päätöksen") == "päätös"
+
+    def test_nominative_parent_titles_classify(self) -> None:
+        # ``instrument_from_text`` is also called on clean nominative parent
+        # titles in the typo-rewrite gate.
+        assert instrument_from_text("Rakennuslaki") == "laki"
+        assert instrument_from_text("Eroraha-asetus") == "asetus"
+        assert instrument_from_text("Tapaturmavakuutuslaki") == "laki"
+
+    def test_inflections_beyond_old_handlist_now_classify(self) -> None:
+        # REGRESSION GUARD: every form here was silently "" under the old
+        # suffix-substring regex (`'asetus' not in 'asetuksella'`, and laki had
+        # only `laki|lain`).  The morphology paradigm covers the full case set.
+        assert instrument_from_text("asetuksella") == "asetus"  # adessive
+        assert instrument_from_text("asetukseen") == "asetus"  # illative
+        assert instrument_from_text("asetuksia") == "asetus"  # plural partitive
+        assert instrument_from_text("tuloverolakiin") == "laki"  # illative compound
+        assert instrument_from_text("lakiin") == "laki"  # illative
+        assert instrument_from_text("tapaturmavakuutuslaissa") == "laki"  # inessive
+        assert instrument_from_text("lakeja") == "laki"  # plural partitive
+        assert instrument_from_text("lakien") == "laki"  # plural genitive
+
+    def test_trailing_postmodifier_does_not_hide_head(self) -> None:
+        # The affected-head capture can leak a trailing section reference; the
+        # right-to-left scan still finds the real instrument head.
+        assert instrument_from_text("lain 5 §:n") == "laki"
+        assert instrument_from_text("tieliikennelain 66 §:n 5 momentin") == "laki"
+
+    def test_trailing_head_wins_over_embedded_referent(self) -> None:
+        # In an "X-sta annetun Y" implementation-law phrase, the affected statute
+        # is the TRAILING instrument that bears the citation, not an earlier
+        # instrument that is merely the referent of ``soveltamisesta``.  The old
+        # left-priority regex picked the wrong (embedded) kind here.
+        assert (
+            instrument_from_text("asetuksen soveltamisesta annetun liikenneministeriön päätöksen")
+            == "päätös"
+        )
+        assert (
+            instrument_from_text("neuvoston asetuksen soveltamisesta annetun lain") == "laki"
+        )
+
+    def test_out_of_scope_and_unknown_heads_fail_loud(self) -> None:
+        # Instrument families outside the laki/asetus/päätös coarse set, and
+        # genuinely unanalyzable heads, return the honest "" — never a guess.
+        assert instrument_from_text("työjärjestyksen") == ""
+        assert instrument_from_text("ohjesäännön") == ""
+        assert instrument_from_text("perintökaaren") == ""
+        assert instrument_from_text("") == ""
+        assert instrument_from_text("muutetaan 5 § seuraavasti") == ""
 
 
 class TestRouteAmendmentNoGuard:

@@ -44,11 +44,12 @@ Promotion from: ``lawvm.finland.cross_refs`` (CrossRefEdge, CrossRefDiagnostic).
 """
 from __future__ import annotations
 
+import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from lawvm.core.reference_mention import (
     AmbiguousReferenceFinding,
@@ -64,6 +65,8 @@ from lawvm.core.reference_mention import (
 from lawvm.finland.references.cross_refs import (
     CrossRefDiagnostic,
     CrossRefEdge,
+    _make_statute_id,
+    extract_affected_document_refs,
     extract_cross_refs,
     extract_eu_refs,
 )
@@ -73,11 +76,22 @@ from lawvm.finland.references.sections import (
     parse_body_provision_tail,
 )
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
+from lawvm.finland.references.eu_nickname_binding import (
+    build_statute_local_nicknames,
+)
 from lawvm.finland.references.treaty import recognize_treaty_refs
 from lawvm.finland.references.treaty_article import recognize_treaty_article_refs
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
 from lawvm.finland.references.by_name import recognize_by_name_refs
+from lawvm.core.preparatory_reference import (
+    PreparatoryReference,
+    PreparatoryReferenceKind,
+)
+from lawvm.finland.references.preparatory_reference_extractor import (
+    extract_preparatory_refs,
+)
+from lawvm.finland.legal_surface.sentence_parse import parse_citation_sentence
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -98,10 +112,30 @@ _AKN_SUBSECTION_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bare section label as carried directly on a CrossRefEdge.target_section by the
+# delegation/authority preamble parser (``"37"``, ``"8"``, ``"115a"``) — NOT an
+# AKN ``sec_N`` path. The authority (``nojalla``) lane populates target_section
+# with the section number as it appears in the surface, so this is the leading
+# numeric run plus an optional letter suffix. Used as the fallback when
+# _AKN_SECTION_PATH_RE (which requires the ``sec_`` prefix) does not match, so
+# the cited §37/§36/§8 is retained on the mention instead of silently dropped.
+_BARE_SECTION_LABEL_RE = re.compile(
+    r"^([0-9]{1,6}[a-z]?)$",
+    re.IGNORECASE,
+)
+
 # EU statute id extractor: "eu/TYPE/YEAR/NUMBER"
 _EU_ID_RE = re.compile(
     r"^eu/([a-z]{2,10})/(\d{4})/(\d{1,6})$",
     re.IGNORECASE,
+)
+
+# Section label from a <section><num>…</num> surface (``10 §.`` -> ``10``,
+# ``115 a §`` -> ``115a``, ``5 §`` -> ``5``). The label is the leading number run
+# plus an optional letter suffix, normalized to the glued AKN form (no spaces),
+# matching the body sub-ref grammar's section-label shape (``\d{1,6}[a-z]?``).
+_SECTION_NUM_LABEL_RE = re.compile(
+    r"(\d{1,6})\s*([a-zA-Z\xe4\xf6\xc4\xd6])?",
 )
 
 # ---------------------------------------------------------------------------
@@ -126,6 +160,12 @@ _EU_ID_RE = re.compile(
 #     -lain          (also short: "lain (711/2022)")
 #     -asetuksen     (also short: "asetuksen (964/2023)")
 #   ...
+#   NOMINATIVE head ``laki`` / ``asetus`` — ONLY inside the ``annettu``-participle
+#   repeal/description frame ``[…sta/stä] annettu asetus/laki (NNN/YYYY)``
+#   ("kumotaan … annettu asetus (875/1983)"). The bare nominative is too common
+#   to anchor alone, so the discriminating ``annettu`` participle + trailing
+#   ``(NNN/YYYY)`` id are both required; ``tämä laki`` / ``asetus annetaan``
+#   (no participle, no id) never match.
 #   Followed by: (NUMBER/YEAR) or (YEAR/NUMBER) in parentheses
 #   Optionally followed by: SECTION § and SUBSECTION momentti/momentin
 #
@@ -168,22 +208,61 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
         (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
       | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
         (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
+      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{0,60}
+        (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
       | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
       | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
+      # NOMINATIVE head ``laki`` / ``asetus`` — the repeal/description johtolause
+      # form ``[…sta/stä] annettu asetus/laki (NNN/YYYY)`` (``kumotaan … annettu
+      # asetus (875/1983)``). The nominative heads are extremely common bare
+      # words, so this arm fires ONLY inside the discriminating ``annettu``-
+      # participle frame: the participle (``annettu``/``annettua``/``annetun``,
+      # agreeing with / governing the head) IMMEDIATELY precedes the nominative
+      # head, and the trailing ``(NNN/YYYY)`` id is required by the shared id tail
+      # below. ``tämä laki`` / ``asetus annetaan`` (no participle, no id) never
+      # matches. The participle prefix is non-capturing so groups 1/2 stay the
+      # statute number/year. ``\b`` before the participle anchors it on a word
+      # boundary (not a glued ``-annettu`` compound).
+      | \bannet(?:tu|tua|un)\s+(?:laki|asetus)
     )
     \s{0,5}
     \(
     \s{0,3}
-    (\d{1,6})/(\d{4})   # group 1 = number, group 2 = year
+    (\d{1,6})/(\d{2}|\d{4})   # group 1 = number, group 2 = year (2- or 4-digit)
     \s{0,3}
     \)
     """,
     re.VERBOSE | re.IGNORECASE,
 )
 
-# Substring guard for the plain-text extractor: "(" (parenthetical statute ID).
-# The "§" is NOT required — a citation to a whole act names no section.
+# Substring guard for the plain-text extractor:
+#   - "(" (the parenthetical statute ID, mandatory in every citation)
+# The "§" mark is NOT a guard: section-less citations to a whole act
+# ("…annetussa laissa (205/2000)") carry no §, and gating on it dropped them.
 _PLAIN_TEXT_GUARD_PAREN = "("
+
+# Whitespace-run collapse used ONLY when folding ``<ref>`` inner text into the
+# plain-text scan (annotation-independence measurement). Finlex pretty-prints the
+# AKN body, so the ``<ref>`` boundary that SPLITS a statute name from its
+# ``(NNN/YYYY)`` id leaves a newline + deep indentation between them; collapsing
+# the run to one space restores the name→id adjacency the recogniser needs. It
+# only ever shrinks whitespace, so two tokens separated by real words stay apart.
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+# Entry-into-force editorial date-ref guard. Finlex wraps a consolidation's
+# commencement footnotes as ``<ref href="#entryIntoForce_...">13.6.1929/228</ref>``
+# — a DATE (``d.m.YYYY``) glued to the amendment's running number, NOT a
+# cross-statute citation. The ``YYYY/NNN`` tail looks like a statute id, so once
+# the ``<ref>`` inner text is folded into the plain-text scan a name head that
+# happens to precede it could otherwise bind the date as a bogus CROSS_STATUTE
+# cite. This recognises the ``d.m.YYYY/NNN`` editorial date-ref so the by-id lane
+# can decline it (it is an editorial/temporal marker, owned by the temporal lane,
+# never a statute reference). Anchored at the ``(`` paren the by-id anchor needs:
+# a genuine cite is ``name (NNN/YYYY)`` with parens; the date-ref has none, so the
+# guard is a belt-and-braces decline for any future relaxation of the anchor.
+_ENTRY_INTO_FORCE_DATEREF_RE = re.compile(
+    r"\d{1,2}\.\d{1,2}\.\d{4}\s*/\s*\d{1,6}"
+)
 
 
 @dataclass(frozen=True)
@@ -199,14 +278,17 @@ class PlainTextStatuteHit:
         subsection_num: Momentti number (int) or None when the citation stops
                         at the §.
         item_label:     Kohta label (e.g. "3", "3a") or None.
-        chapter:        Chapter label when the citation is chapter-qualified, or
-                        None.
     """
 
     statute_id: str
     section_label: str = ""
     subsection_num: Optional[int] = None
     item_label: Optional[str] = None
+    # Chapter label (``"9"``, ``"9a"``) when the citation is chapter-qualified
+    # (``poliisilain (872/2011) 9 luvun 9 b §``), or None. Carried so the caller
+    # builds a chapter-qualified target path (``chp_9__sec_9b``) — mirroring the
+    # internal lane — instead of dropping the chapter. A chapter-only citation
+    # (``… (NNN/YYYY) 5 luvussa``) sets ``chapter`` with an empty section_label.
     chapter: Optional[str] = None
     # Literal matched anchor surface (e.g. "lannoitelain (711/2022)"), used by
     # the caller to locate the citation's byte span in the source xml_bytes.
@@ -237,8 +319,10 @@ class PlainTextStatuteCitationRecognizer:
         - Bounded quantifiers; no adjacent unbounded repeats.
     """
 
-    def _collect_non_ref_text(self, p_el: ET.Element[str]) -> str:
-        """Collect text of <p> element excluding text inside <ref> children.
+    def _collect_non_ref_text(
+        self, p_el: ET.Element[str], *, include_ref_text: bool = False
+    ) -> str:
+        """Collect text of <p> element, by default excluding <ref> inner text.
 
         Returns the concatenated text content of:
           - p_el.text (direct text before first child)
@@ -246,8 +330,14 @@ class PlainTextStatuteCitationRecognizer:
           - For each <ref> child: ONLY child.tail (the text AFTER the ref,
             not inside it — since it's already captured by the <ref> extractor)
 
-        This ensures we do NOT double-count text that was already covered by
-        an AKN <ref> element.
+        This default ensures we do NOT double-count text that was already
+        covered by an AKN <ref> element.
+
+        ``include_ref_text`` is the annotation-independence MEASUREMENT path
+        (grammar7 §13-C/E): when True the ``<ref>`` inner text is treated as
+        ordinary plain text so the text lane gets a real shot at the cite the
+        production pipeline hid inside the editorial markup. It is OFF by default,
+        so production behaviour is unchanged.
         """
         ref_local = "ref"  # AKN local name
 
@@ -258,8 +348,19 @@ class PlainTextStatuteCitationRecognizer:
         for child in p_el:
             local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if local == ref_local:
-                # Skip the ref's own text content (already in structured extraction).
-                # BUT include the tail (text immediately after the </ref> tag).
+                if include_ref_text:
+                    # MEASUREMENT mode: treat the <ref> inner text as plain text
+                    # so the text lane can recover the cite the markup carried.
+                    if child.text:
+                        parts.append(child.text)
+                    for gc in child.iter():
+                        if gc is child:
+                            continue
+                        if gc.text:
+                            parts.append(gc.text)
+                        if gc.tail:
+                            parts.append(gc.tail)
+                # Always include the tail (text immediately after the </ref> tag).
                 if child.tail:
                     parts.append(child.tail)
             else:
@@ -299,6 +400,8 @@ class PlainTextStatuteCitationRecognizer:
     def scan_precise(
         self,
         p_el: ET.Element[str],
+        *,
+        include_ref_text: bool = False,
     ) -> List[PlainTextStatuteHit]:
         """Scan a <p> element returning provision-precise statute citation hits.
 
@@ -307,13 +410,37 @@ class PlainTextStatuteCitationRecognizer:
         provision rather than only the §. Citations that stop at the § yield a
         hit with ``subsection_num=None`` (section-level fallback).
 
+        ``include_ref_text`` (annotation-independence measurement) folds the
+        ``<ref>`` inner text into the scanned text; OFF by default. When folding,
+        Finlex's habit of SPLITTING the statute-name prose from the ``(NNN/YYYY)``
+        id across the ``<ref>`` boundary leaves a long whitespace run (the XML
+        indentation around the element) between the name head and the id — far
+        more than the recogniser's ``\\s{0,5}`` name→id gap allows. So in folding
+        mode the inter-token whitespace runs are first collapsed to a single space
+        (``annetun lain \\n<indent>(688/1988)`` → ``annetun lain (688/1988)``),
+        letting the SAME by-name+id anchor bind the cite from text alone. This is
+        bounded: it only removes markup whitespace, so a name and id separated by
+        intervening WORDS stay non-adjacent and never bind. It applies ONLY in the
+        fold path; the default (production) text is unchanged byte-for-byte.
+
         Per AGENTS.md §1.11: substring guards applied before regex scan.
         """
-        text = self._collect_non_ref_text(p_el)
+        text = self._collect_non_ref_text(p_el, include_ref_text=include_ref_text)
         if not text:
             return []
 
+        if include_ref_text:
+            # Collapse markup whitespace runs so a name head split from its
+            # ``(id)`` by the ``<ref>`` boundary becomes adjacent again. Bounded
+            # (whitespace only — never merges across intervening words).
+            text = _WHITESPACE_RUN_RE.sub(" ", text)
+
         # Substring guard (fast path — eliminates ~99% of non-matching calls).
+        # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,
+        # so "(" is the mandatory marker. The "§" is NOT required: a citation to
+        # a whole act ("…annetussa laissa (205/2000)") names no section. Gating
+        # on "§" alone silently dropped every section-less id-cite; the regex's
+        # mandatory by-name anchor already bounds precision, so "(" suffices.
         if _PLAIN_TEXT_GUARD_PAREN not in text:
             return []
 
@@ -324,13 +451,28 @@ class PlainTextStatuteCitationRecognizer:
             num_raw = m.group(1)
             year = m.group(2)
 
+            # Entry-into-force editorial date-ref decline. Finlex commencement
+            # footnotes read ``…tulee voimaan 13.6.1929/228`` — a date glued to a
+            # running number, which the by-id anchor must NOT promote to a
+            # CROSS_STATUTE cite. If the matched ``(NNN/YYYY)``/``NNN/YYYY`` id is
+            # immediately preceded (modulo whitespace) by a ``d.m.YYYY`` date, the
+            # whole token is an editorial date-ref owned by the temporal lane;
+            # skip it. Bounded back-scan over a short window before the match.
+            preceding = text[max(0, m.start() - 16) : m.start()]
+            if _ENTRY_INTO_FORCE_DATEREF_RE.search(preceding + m.group(0)):
+                continue
+
+            # Two-digit year ids ("(307/86)") are common in pre-2000 statutes.
+            # Expand to a full century: a 2-digit year <= the current 2-digit
+            # year maps to 20xx, otherwise 19xx (Finnish statute ids run from
+            # the 1800s to present, so this window is unambiguous in practice).
             if len(year) == 2:
                 yy = int(year)
                 current_yy = date.today().year % 100
                 century = 2000 if yy <= current_yy else 1900
                 year = str(century + yy)
 
-            # Sanity: year must be plausible
+            # Sanity: year must be plausible (applied to the EXPANDED year).
             year_int = int(year)
             if year_int < 1700 or year_int > 2100:
                 continue
@@ -340,7 +482,16 @@ class PlainTextStatuteCitationRecognizer:
             if num_int <= 0 or num_int > 999999:
                 continue
 
-            statute_id = f"{num_int}/{year}"
+            # The TARGET link id is the canonical corpus-key orientation
+            # YEAR/NUMBER (e.g. "2001/55"), the SAME form the <ref>-element lane
+            # mints via cross_refs._make_statute_id and the form the corpus store
+            # keys statutes under. Use that helper as the single source of truth
+            # so a plain-text cross-statute cite dedups/merges onto the SAME
+            # canonical entity node as its <ref>-element citation, instead of
+            # minting a non-canonical NUMBER/YEAR node that never merges.
+            # NOTE: the human-visible surface_text stays the visible NUMBER/YEAR
+            # form ("(55/2001)") — only the link target canonicalizes.
+            statute_id = _make_statute_id(year, str(num_int))
 
             # Parse the structural tail (everything after the ``(id)`` paren)
             # through the shared section / sub-ref recognizers in BODY mode, so
@@ -361,8 +512,9 @@ class PlainTextStatuteCitationRecognizer:
 
             for tgt in targets:
                 # Deduplicate same provision within this <p>. The key includes
-                # the sub-section precision so distinct momentit/kohdat of one
-                # statute are not collapsed into one hit.
+                # the chapter and the sub-section precision so distinct
+                # momentit/kohdat — and distinct chapters of one statute — are not
+                # collapsed into one hit.
                 key = "/".join(
                     part for part in (
                         statute_id,
@@ -440,6 +592,29 @@ class ExtractionResult:
 # span stays None — fail-loud-by-absence rather than a fabricated zero offset.
 
 
+def _find_with_left_boundary(haystack: bytes, needle: bytes, start: int) -> int:
+    """Locate ``needle`` in ``haystack`` from ``start``, skipping matches lodged
+    inside a longer number run.
+
+    A reference surface that begins with a digit is a section/momentti/article
+    number (``"56 \xc2\xa7:ssa"``); it must not be re-anchored at the tail of a
+    longer number (``"156 \xc2\xa7:ssa"``), where a plain :meth:`bytes.find` would
+    place it. Reject a candidate whose immediately preceding byte is also an ASCII
+    digit and keep scanning. Surfaces that do not begin with a digit are
+    unaffected (the common case), so this is a targeted guard, not a slowdown.
+    """
+    leading_digit = needle[:1].isdigit()
+    pos = start
+    while True:
+        i = haystack.find(needle, pos)
+        if i < 0:
+            return -1
+        if leading_digit and i > 0 and haystack[i - 1 : i].isdigit():
+            pos = i + 1
+            continue
+        return i
+
+
 def _span_from_edge(
     edge: CrossRefEdge,
     source_statute_id: str,
@@ -480,6 +655,19 @@ def _parse_provision_ref_from_path(
         m_sec = _AKN_SECTION_PATH_RE.search(provision_path)
         if m_sec:
             section_label = m_sec.group(1)
+        else:
+            # No AKN ``sec_N`` path matched. The authority (``nojalla``) lane
+            # carries the cited section as a BARE label (``"37"``, ``"8"``,
+            # ``"115a"``) on the edge's target_section, not a glued AKN path —
+            # accept it directly so the §37/§36/§8 is retained instead of being
+            # silently dropped. A comma-joined list (``"8,36"``, emitted when one
+            # parent law is cited with several sections) keeps its first member
+            # as the primary section label; the full path string is preserved on
+            # provision_path for any consumer that needs the rest.
+            first = provision_path.split(",", 1)[0].strip()
+            m_bare = _BARE_SECTION_LABEL_RE.match(first)
+            if m_bare:
+                section_label = m_bare.group(1)
 
         m_sub = _AKN_SUBSECTION_PATH_RE.search(provision_path)
         if m_sub:
@@ -493,6 +681,15 @@ def _parse_provision_ref_from_path(
     )
 
 
+# Authority-basis target-kind values that mean "the cited basis is a laki /
+# statute, NOT a delegated instrument". Carried on an ISSUED_UNDER edge as
+# ``target_kind`` (set by the graph layer from the ``nojalla`` surface inflection
+# or the target's statute_type). An act-basis is a CROSS_STATUTE reference; a
+# decree/decision basis (a decree CAN be issued under another decree) stays a
+# NON_STATUTORY_INSTRUMENT. ``"act"`` is the only statute-typed value.
+_AUTHORITY_STATUTE_KINDS = frozenset({"act"})
+
+
 def _edge_to_cite_kind(
     edge: CrossRefEdge,
     source_statute_id: str,
@@ -501,10 +698,21 @@ def _edge_to_cite_kind(
 
     AGENTS.md §1.1: mapping is deterministic. No fallback.
 
-    CITES:        CROSS_STATUTE (or INTERNAL if target == source).
+    CITES:        CROSS_STATUTE (or INTERNAL if target == source; EU if the
+                  target is an EU id; NON_STATUTORY_INSTRUMENT if the target is
+                  an HE government-proposal backlink ``he/...`` — HE is
+                  preparatory material, not an enacted statute).
     REPEALS:      CROSS_STATUTE (metadata-level fact).
-    ISSUED_UNDER: NON_STATUTORY_INSTRUMENT (source issued under target authority).
-    ISSUES:       NON_STATUTORY_INSTRUMENT (source issued a decree as target).
+    ISSUED_UNDER: CROSS_STATUTE when the cited authority basis is a laki/statute
+                  (``target_kind == "act"``); otherwise NON_STATUTORY_INSTRUMENT.
+                  The ``nojalla`` authority basis names the ACT that delegated the
+                  rulemaking power and is a statute cross-reference, NOT a
+                  non-statutory instrument. A decree CAN be issued under another
+                  decree's authority, so the act-vs-instrument split is taken from
+                  the edge's ``target_kind`` (the surface inflection / target
+                  statute_type), never assumed.
+    ISSUES:       NON_STATUTORY_INSTRUMENT (source issued a decree as target —
+                  the target IS the delegated instrument).
     """
     edge_type = edge.edge_type
     if edge_type == "CITES":
@@ -513,10 +721,36 @@ def _edge_to_cite_kind(
         # EU ids are "eu/TYPE/YEAR/NUMBER"
         if edge.target_statute_id.startswith("eu/"):
             return CiteKind.EU
+        # HE government-proposal backlinks (he/YEAR/NUMBER) are PREPARATORY
+        # material, NOT an enacted statute. Finlex marks the HE→act lineage with
+        # an AKN <ref href=".../government-proposal/..."> in the preliminaryWork
+        # ("Esityöt") footer, so cross_refs._parse_ref_href emits it as a CITES
+        # edge to a "he/..." target. Type it the same way the preparatory text
+        # lane types every other preparation-chain instrument
+        # (NON_STATUTORY_INSTRUMENT) so consumers treat the whole HE/HaVM/EV/EU
+        # chain uniformly instead of mistaking the HE for an act cross-reference.
+        if edge.target_statute_id.startswith("he/"):
+            return CiteKind.NON_STATUTORY_INSTRUMENT
         return CiteKind.CROSS_STATUTE
-    if edge_type in ("ISSUED_UNDER", "ISSUES"):
+    if edge_type == "ISSUED_UNDER":
+        # The authority basis is the cited ACT under which the source decree was
+        # issued. When the graph layer has tagged the basis as a laki/statute,
+        # this is a statute cross-reference — NOT an instrument. The tag rides on
+        # the edge as ``target_kind`` (absent on un-tagged edges → legacy
+        # instrument typing, so no over-correction of a genuine decree basis).
+        target_kind = str(getattr(edge, "target_kind", "") or "").lower()
+        if target_kind in _AUTHORITY_STATUTE_KINDS:
+            return CiteKind.CROSS_STATUTE
+        return CiteKind.NON_STATUTORY_INSTRUMENT
+    if edge_type == "ISSUES":
         return CiteKind.NON_STATUTORY_INSTRUMENT
     if edge_type == "REPEALS":
+        return CiteKind.CROSS_STATUTE
+    if edge_type == "AMENDS":
+        # The johtolause <affectedDocument> names the enacted act THIS statute
+        # amends — always another Finnish statute/decree (CROSS_STATUTE). The
+        # amendment ROLE is carried by edge_subtype="AMENDS", not by widening the
+        # cite_kind.
         return CiteKind.CROSS_STATUTE
     # Unknown edge_type: default CROSS_STATUTE, emitter will flag
     return CiteKind.CROSS_STATUTE
@@ -570,11 +804,25 @@ def _edge_to_mention(
     tgt_ref = _target_provision_ref(edge)
 
     # For CITES edges, phrase_lemma is "ref_element" (AKN <ref> element).
-    # For metadata edges, it is the edge_type name.
+    # AMENDS edges come from the johtolause <affectedDocument> element, so carry
+    # its own syntactic class. For metadata edges, it is the edge_type name.
     if edge.edge_type == "CITES":
         phrase_lemma = "ref_element"
+    elif edge.edge_type == "AMENDS":
+        phrase_lemma = "affected_document"
     else:
         phrase_lemma = edge.edge_type  # REPEALS / ISSUED_UNDER / ISSUES
+
+    # Subtype defaults to the edge_type (CITES / REPEALS / ISSUED_UNDER / ISSUES).
+    # HE government-proposal <ref> backlinks are preparatory material, so carry
+    # the preparatory HE kind ("he") as the subtype — identical to the subtype
+    # the preparatory text lane emits for non-HE chain instruments — so the whole
+    # HE/HaVM/EV/EU preparation chain presents uniformly to consumers that split
+    # on edge_subtype.
+    if edge.edge_type == "CITES" and edge.target_statute_id.startswith("he/"):
+        edge_subtype = PreparatoryReferenceKind.HE.value
+    else:
+        edge_subtype = edge.edge_type
 
     return ReferenceMention(
         source_provision_ref=src_ref,
@@ -586,7 +834,7 @@ def _edge_to_mention(
         # metadata edges that have no body surface). UNIT: bytes.
         source_span=_span_from_edge(edge, source_statute_id),
         valid_at_interval=valid_at_interval,
-        edge_subtype=edge.edge_type,
+        edge_subtype=edge_subtype,
         target_stat_hash=edge.target_stat_hash if edge.target_stat_hash else None,
         surface_text=edge.surface_text,
     )
@@ -626,6 +874,11 @@ def _eu_edge_to_mention(
         source_span=_span_from_edge(edge, source_statute_id),
         valid_at_interval=valid_at_interval,
         edge_subtype=edge_subtype,
+        # The matched EU citation surface (e.g. "(EY) N:o 999/2001") — a verbatim
+        # substring of the source text. Carried so the hub's byte re-anchoring,
+        # the viewer overlay, and provenance behave like the <ref>/plain-text
+        # lanes; previously this lane left surface_text empty.
+        surface_text=edge.surface_text,
     )
 
 
@@ -664,6 +917,44 @@ def _diagnostic_to_rejected(
         blocking=diag.blocking,
         strict_disposition=diag.strict_disposition,
     )
+
+
+# ---------------------------------------------------------------------------
+# Annotation-independence measurement toggle (grammar7 §13-C/E)
+# ---------------------------------------------------------------------------
+#
+# The principle (grammar7): LawVM should delete annotation DEPENDENCE, not
+# annotation USE — parse deterministically from text, treat ``<ref>`` as a
+# fallible witness. This toggle is the cheapest decisive experiment for the
+# annotation-independence question: when ON, ``extract_all_reference_mentions``
+# SKIPS the AKN ``<ref>``-element semantic-annotation lane
+# (``extract_reference_mentions`` → ``extract_cross_refs``, which lifts inline
+# ``<ref>`` elements AND finlex: metadata edges) and runs ONLY the text-derived
+# lanes (EU text scan, plain-text statute citations, surface-grammar, and the
+# preparatory chain — all of which parse from source text, not editorial
+# markup). It ALSO drops the ``<ref>``-derived ``ref_covered_statute_ids`` dedup
+# guard so the plain-text lane is not suppressed by annotations that are now
+# being ignored (else the measurement is contaminated: a cite the text lane
+# WOULD recover stays hidden behind a now-ignored ``<ref>``).
+#
+# This is a MEASUREMENT mode, NOT a new default. Fail-closed to OFF (current
+# behaviour) on any unset / empty / falsy value, so the production replay /
+# parquet projection are byte-identical to today unless explicitly opted in.
+
+_IGNORE_ANNOTATIONS_ENV = "LAWVM_IGNORE_SEMANTIC_ANNOTATIONS"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def ignore_semantic_annotations() -> bool:
+    """Whether the ``<ref>``-element semantic-annotation lane is suppressed.
+
+    Reads ``LAWVM_IGNORE_SEMANTIC_ANNOTATIONS`` from the environment each call
+    (so a test / census can flip it per-invocation). Fail-closed: any unset,
+    empty, or non-truthy value means OFF = current production behaviour. Only an
+    explicit truthy value (``1`` / ``true`` / ``yes`` / ``on``, case-insensitive)
+    turns the measurement mode ON.
+    """
+    return os.environ.get(_IGNORE_ANNOTATIONS_ENV, "").strip().lower() in _TRUTHY
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +1039,44 @@ def extract_reference_mentions(
     return result
 
 
+def extract_affected_document_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+) -> ExtractionResult:
+    """Extract johtolause amendment-target ReferenceMention records.
+
+    Wraps :func:`extract_affected_document_refs` and lifts each AMENDS
+    ``CrossRefEdge`` (one per distinct ``<affectedDocument>`` target) to a
+    ReferenceMention. Each mention is ``cite_kind=CROSS_STATUTE`` /
+    ``edge_subtype="AMENDS"`` / ``phrase_lemma="affected_document"`` — the surface
+    link to the act this statute amends, which lives in the preamble enacting
+    clause OUTSIDE ``<body>`` and so is invisible to the inline-``<ref>`` lane.
+
+    Args:
+        xml_bytes:         Raw XML bytes of the statute.
+        statute_id:        Canonical statute ID of the source.
+        valid_at_interval: Date range for which these references hold.
+
+    Returns:
+        ExtractionResult with the amendment-target mentions (+ self-reference
+        skip diagnostics).
+    """
+    result = ExtractionResult()
+
+    diag_list: List[CrossRefDiagnostic] = []
+    edges: List[CrossRefEdge] = extract_affected_document_refs(
+        xml_bytes, statute_id, diagnostics_out=diag_list
+    )
+    result.diagnostics.extend(diag_list)
+    for edge in edges:
+        result.mentions.append(
+            _edge_to_mention(edge, statute_id, valid_at_interval)
+        )
+    return result
+
+
 def extract_eu_reference_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -783,6 +1112,7 @@ def extract_plain_text_statute_mentions(
     *,
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
     ref_covered_statute_ids: Optional[set[str]] = None,
+    include_ref_text: bool = False,
 ) -> ExtractionResult:
     """Extract plain-text Finnish statute citations NOT covered by <ref> markup.
 
@@ -808,6 +1138,12 @@ def extract_plain_text_statute_mentions(
                                  at the statute level.
                                  Note: provision-level deduplication is more precise
                                  but requires span tracking; this is the statute-level guard.
+        include_ref_text:        Annotation-independence MEASUREMENT mode
+                                 (grammar7 §13-C/E). When True the ``<ref>`` inner
+                                 text is folded into the scanned plain text so the
+                                 text lane can recover a cite the production
+                                 pipeline hid inside the editorial markup. OFF by
+                                 default — production behaviour is unchanged.
 
     Returns:
         ExtractionResult with plain-text ReferenceMention records.
@@ -851,7 +1187,9 @@ def extract_plain_text_statute_mentions(
         if surface in local_cache:
             return local_cache[surface]
         needle = surface.encode("utf-8")
-        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
         if start < 0:
             # Surface re-encoded/normalized vs raw bytes — fail loud by absence.
             local_cache[surface] = None
@@ -877,7 +1215,9 @@ def extract_plain_text_statute_mentions(
             p_elements.append(el)
 
     for p_el in p_elements:
-        hits = _PLAIN_TEXT_RECOGNIZER.scan_precise(p_el)
+        hits = _PLAIN_TEXT_RECOGNIZER.scan_precise(
+            p_el, include_ref_text=include_ref_text
+        )
         # Per-<p> span cache so multiple targets from one anchor share a span.
         p_span_cache: dict[str, Optional[SourceSpan]] = {}
         for hit in hits:
@@ -895,6 +1235,11 @@ def extract_plain_text_statute_mentions(
                 provision_path="",
                 section_label="",
             )
+            # Chapter-qualified target path (``chp_9__sec_9b`` / chapter-only
+            # ``chp_5``), built with the SAME AKN form the internal lane uses, so
+            # a ``N luvun M §`` cross-statute citation keeps its chapter instead of
+            # dropping it. Section-only citations keep an empty provision_path
+            # (unchanged behavior).
             target_provision_path = (
                 chapter_akn_path(hit.chapter, hit.section_label)
                 if hit.chapter is not None
@@ -911,9 +1256,10 @@ def extract_plain_text_statute_mentions(
             # explicit in this lane (the ``(NUMBER/YEAR)`` anchor). When the
             # structural tail parsed to a concrete provision (a section — possibly
             # chapter-qualified), the citation resolves EXACT. When the anchor
-            # matched an explicit id but only a chapter or no provision parsed,
-            # the act/chapter is fixed but the in-act section is deferred →
-            # STATUTE_ONLY, never silently widened to "whole statute" as if EXACT.
+            # matched an explicit id but only a chapter (``5 luvussa``) or no
+            # provision parsed (a bare statute-level reference), the act/chapter is
+            # fixed but the in-act section is deferred → STATUTE_ONLY, never
+            # silently widened to "whole statute" as if EXACT.
             cite_confidence = (
                 CiteConfidence.EXACT
                 if hit.section_label
@@ -940,6 +1286,168 @@ def extract_plain_text_statute_mentions(
             result.mentions.append(mention)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Enclosing-section provenance for internal (same-statute) mentions
+# ---------------------------------------------------------------------------
+#
+# An INTERNAL bare reference (``Edellä 2 momentissa``, ``1 kohdassa``) names a
+# provision of the SECTION the citing text sits in; the surface omits that
+# section. The downstream elliptical resolver needs the TRUE enclosing section to
+# fill the omitted part. We thread it onto each internal mention's
+# ``source_provision_ref.section_label`` here, derived from real AKN ancestry —
+# the nearest ``<section>`` ancestor of the ``<p>`` the citation sits in — rather
+# than re-deriving it from a byte-offset remap downstream (which fails for old
+# statutes whose ``<section>`` elements carry no ``eId``).
+
+
+def _akn_section_label(section_el: ET.Element[str]) -> str:
+    """Bare section label of a ``<section>`` from its eId, else its ``<num>``.
+
+    Prefers the eId-derived label (``sec_115a`` -> ``115a``) so it matches the
+    body sub-ref grammar's glued AKN form. Falls back to the section's own
+    ``<num>`` surface (``10 §.`` -> ``10``, ``115 a §`` -> ``115a``) for statutes
+    whose sections carry no eId (pre-eId Finlex consolidations). Returns ``""``
+    when neither yields a label (the mention then stays section-less and the
+    elliptical resolver tags it OPEN — fail-loud, never guessed).
+    """
+    eid = section_el.get("eId") or ""
+    if eid:
+        m = _AKN_SECTION_PATH_RE.search(eid)
+        if m is not None:
+            return m.group(1)
+    for child in section_el:
+        local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if local == "num":
+            num_text = (child.text or "").strip()
+            nm = _SECTION_NUM_LABEL_RE.match(num_text)
+            if nm is not None:
+                letter = (nm.group(2) or "").lower()
+                return nm.group(1) + letter
+            break
+    return ""
+
+
+def _trusted_section_labels(
+    root: ET.Element[str],
+) -> Optional[frozenset[str]]:
+    """The statute's own section labels, IFF the tree is trusted for ABSENCE.
+
+    Returns the set of ``<section>`` labels only when EVERY section carries an
+    eId (a consolidated, fully-addressed body) and there are at least three of
+    them. On such a body, a section absent from the set is genuinely not part of
+    the statute — the signal the internal-ref recogniser uses as a secondary net
+    to decline a foreign section number that leaked in as a bogus internal
+    target. Returns ``None`` for a partial / un-eId'd / non-consolidated body
+    (enacted source, amendment act, pre-eId Finlex consolidation): absence there
+    is untrustworthy, so the recogniser must NOT guard (recall over a speculative
+    decline). Fail-loud by abstention.
+    """
+    labels: list[str] = []
+    all_eid = True
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "section":
+            continue
+        if not el.get("eId"):
+            all_eid = False
+            break
+        lbl = _akn_section_label(el)
+        if lbl:
+            labels.append(lbl)
+    if not all_eid or len(labels) < 3:
+        return None
+    return frozenset(labels)
+
+
+def _fill_bare_momentti_target(
+    mention: ReferenceMention,
+    enclosing_section_label: str,
+) -> ReferenceMention:
+    """Fill a bare same-section momentti/kohta TARGET from the enclosing section.
+
+    A purely-bare anaphora (``1 momentissa`` with no explicit ``§``) names a
+    momentti/kohta of the SECTION the citing text sits in (drafting convention).
+    The recogniser leaves the target's ``section_label`` empty (the surface omits
+    it). Without filling, the target collapses to the whole-statute root and the
+    citation surfaces as ``open`` despite the section being known. This fills the
+    TARGET's section from the enclosing section the extractor already threaded
+    onto the source provenance, so ``1 momentissa`` inside section ``34 a``
+    resolves to target ``sec=34a mom=1``.
+
+    Fail-loud: only an INTERNAL mention whose target carries a momentti/kohta but
+    NO section and NO chapter-qualified ``__`` path is filled, and only when the
+    enclosing section is genuinely known. An explicit-section momentti
+    (``34 a §:n 1 momentissa``, target already ``sec=34a``) is untouched. An
+    unknown enclosing section leaves the target bare (stays ``open`` downstream —
+    never a guessed section). The elliptical resolver remains the authority for
+    the bare-kohta structural-uniqueness case; this only handles the
+    section-from-convention fill that the parquet projection (which does not run
+    the elliptical resolver) would otherwise drop.
+    """
+    if not enclosing_section_label:
+        return mention
+    if mention.cite_kind is not CiteKind.INTERNAL:
+        return mention
+    tgt = mention.target_provision_ref
+    if tgt is None:
+        return mention
+    if tgt.section_label:
+        return mention
+    if "__" in (tgt.provision_path or ""):
+        return mention
+    # Only fill the bare-MOMENTTI convention case (a momentti is named). A bare
+    # KOHTA (item only, no momentti) needs the enclosing section's materialized
+    # child STRUCTURE to pick the momentti-with-kohta — that is the elliptical
+    # resolver's job (it consults the tree); pre-filling its section here would
+    # make the resolver treat it as already-anchored and skip the structural
+    # disambiguation. Leave bare-kohta to the resolver (fail-loud there).
+    if tgt.subsection_num is None:
+        return mention
+    return replace(
+        mention,
+        target_provision_ref=replace(tgt, section_label=enclosing_section_label),
+    )
+
+
+def _enclosing_section_labels(
+    root: ET.Element[str],
+) -> dict[ET.Element[str], str]:
+    """Map each ``<p>`` element to its nearest enclosing ``<section>``'s label.
+
+    Builds a child->parent map once (ElementTree has no parent pointers), then
+    walks up from each ``<p>`` to the first ``<section>`` ancestor and records its
+    label (eId- or ``<num>``-derived). A ``<p>`` outside any section is absent
+    from the map. This is the authoritative "which section am I in" signal the
+    elliptical resolver consumes — real ancestry, not a byte-offset remap.
+    """
+    parent: dict[ET.Element[str], ET.Element[str]] = {}
+    for el in root.iter():
+        for child in el:
+            parent[child] = el
+
+    # Cache a section element's derived label so a section with many <p> is
+    # labeled once.
+    sec_label_cache: dict[ET.Element[str], str] = {}
+    out: dict[ET.Element[str], str] = {}
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "p":
+            continue
+        cur = parent.get(el)
+        while cur is not None:
+            cur_local = cur.tag.split("}")[-1] if "}" in cur.tag else cur.tag
+            if cur_local == "section":
+                label = sec_label_cache.get(cur)
+                if label is None:
+                    label = _akn_section_label(cur)
+                    sec_label_cache[cur] = label
+                if label:
+                    out[el] = label
+                break
+            cur = parent.get(cur)
+    return out
 
 
 def extract_surface_grammar_mentions(
@@ -980,7 +1488,9 @@ def extract_surface_grammar_mentions(
         if not surface:
             return None
         needle = surface.encode("utf-8")
-        start = xml_bytes.find(needle, surface_byte_cursor.get(needle, 0))
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
         if start < 0:
             return None
         surface_byte_cursor[needle] = start + 1
@@ -996,6 +1506,33 @@ def extract_surface_grammar_mentions(
         section_label="",
     )
 
+    # Map each <p> to its enclosing <section> label (real AKN ancestry), so an
+    # INTERNAL bare reference carries the section it sits in on its source
+    # provenance. The elliptical resolver consumes this authoritative context
+    # instead of re-deriving the enclosing section by a byte-offset remap.
+    enclosing_labels = _enclosing_section_labels(root)
+
+    # The statute's own section set when the tree is trusted for ABSENCE (fully
+    # eId'd consolidated body), else None. The internal-ref recogniser uses it as
+    # a secondary net to decline a foreign section number that leaked in as a
+    # bogus internal target (external-law phrase that did not anchor).
+    trusted_sections = _trusted_section_labels(root)
+
+    # Statute-local EU-nickname pre-pass (built ONCE over the whole document):
+    # an act that coins an ad-hoc ``(jäljempänä <nickname>)`` for an EU instrument
+    # binds that nickname → CELEX here, so a later ``<nickname> N artikla`` use in
+    # any <p> resolves to the right EU-regulation article instead of being dropped.
+    local_eu_aliases = build_statute_local_nicknames("".join(root.itertext()))
+
+    def _src_ref_for(section_label: str) -> ProvisionRef:
+        if not section_label:
+            return src_ref
+        return ProvisionRef(
+            statute_id=statute_id,
+            provision_path="",
+            section_label=section_label,
+        )
+
     def _reanchor(mention: ReferenceMention) -> ReferenceMention:
         return replace(
             mention,
@@ -1003,6 +1540,47 @@ def extract_surface_grammar_mentions(
             source_span=_relocate(mention.surface_text or ""),
             valid_at_interval=valid_at_interval,
         )
+
+    def _reanchor_grouped(
+        mentions: List[ReferenceMention],
+        source_provision_ref: ProvisionRef,
+    ) -> List[ReferenceMention]:
+        """Re-anchor a lane's mentions, sharing ONE span per coordinated run.
+
+        A coordinated reference (``47 ja 49 §:ssä``, ``1 ja 2 momentissa``) is
+        enumerated into one mention PER member, all carrying the SAME whole-
+        coordination ``surface_text`` and emitted consecutively for a single
+        recognizer match. The per-surface byte cursor in :func:`_relocate`
+        advances one document occurrence per call, so calling it once per member
+        would (a) walk each member onto a DIFFERENT later occurrence of the same
+        surface and (b) starve later occurrences of a span. Group consecutive
+        mentions that share a surface and relocate ONCE per group: every member
+        of one coordinated occurrence shares that occurrence's whole-coordination
+        span. Distinct later occurrences of the same surface still advance the
+        cursor (one group = one occurrence), preserving document-order anchoring.
+        """
+        out: List[ReferenceMention] = []
+        i = 0
+        n = len(mentions)
+        while i < n:
+            surface = mentions[i].surface_text or ""
+            j = i + 1
+            while j < n and (mentions[j].surface_text or "") == surface:
+                j += 1
+            span = _relocate(surface)
+            for k in range(i, j):
+                out.append(
+                    replace(
+                        _fill_bare_momentti_target(
+                            mentions[k], source_provision_ref.section_label
+                        ),
+                        source_provision_ref=source_provision_ref,
+                        source_span=span,
+                        valid_at_interval=valid_at_interval,
+                    )
+                )
+            i = j
+        return out
 
     for p_el in root.iter():
         local = p_el.tag.split("}")[-1] if "}" in p_el.tag else p_el.tag
@@ -1017,17 +1595,402 @@ def extract_surface_grammar_mentions(
             result.mentions.append(_reanchor(mention))
         for mention in recognize_vague_refs(text):
             result.mentions.append(_reanchor(mention))
-        for dref in recognize_eu_directive_refs(text, source_statute_id=statute_id):
+        for dref in recognize_eu_directive_refs(
+            text, source_statute_id=statute_id, local_aliases=local_eu_aliases
+        ):
             result.mentions.append(_reanchor(dref.mention))
         # Internal (same-statute) and by-name cross-statute refs partition by the
         # context preceding the §: bare/self -> internal; name head -> by-name;
         # id-anchored is owned by the plain-text lane (both decline it).
-        for mention in recognize_internal_refs(text, statute_id):
-            result.mentions.append(_reanchor(mention))
-        for mention in recognize_by_name_refs(text):
-            result.mentions.append(_reanchor(mention))
+        # Coordinated internal refs (``47 ja 49 §:ssä``) enumerate into one
+        # mention per member, all sharing the whole-coordination surface; group
+        # them so each coordinated occurrence shares one span (see below).
+        # The internal mentions carry their enclosing-section label on the source
+        # provenance (real AKN ancestry of THIS <p>), so the elliptical resolver
+        # can fill a bare momentti/kohta against the right section without a
+        # byte-offset remap.
+        enclosing_src_ref = _src_ref_for(enclosing_labels.get(p_el, ""))
+        result.mentions.extend(
+            _reanchor_grouped(
+                recognize_internal_refs(
+                    text, statute_id, known_sections=trusted_sections
+                ),
+                enclosing_src_ref,
+            )
+        )
+        # By-name cross-statute refs coordinate the SAME way internal refs do
+        # (``tukilain 10 c §:n 1–3 momentissa ja 10 d §:n 1–3 momentissa``
+        # enumerates one mention per member, all carrying the whole-coordination
+        # surface). Re-anchoring per-member would advance the per-surface byte
+        # cursor past the single document occurrence on member 1, starving
+        # members 2+ of a span; without a span their use-offset is None and the
+        # offset-gated defined-term / alias resolution in resolve.py cannot fire,
+        # so they stay statute_only while member 1 resolves. Group them so every
+        # coordinated member shares the one occurrence's span (see the INTERNAL
+        # lane above). By-name refs carry no enclosing-section provenance (they
+        # are not INTERNAL), so the group source ref is the plain whole-statute
+        # ``src_ref`` and the grouped helper's bare-momentti fill is a no-op.
+        result.mentions.extend(
+            _reanchor_grouped(recognize_by_name_refs(text), src_ref)
+        )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Preparatory-reference lane (committee reports/opinions, parliament response,
+# EU prep acts, OJ refs) — the rest of the legislative-preparation chain that
+# sits alongside the HE proposal in the preliminaryWork ("Esityöt") footer.
+# ---------------------------------------------------------------------------
+#
+# The HE government-proposal is ALREADY emitted by the <ref>-element lane
+# (extract_reference_mentions → extract_cross_refs) as a ``he/YEAR/NUMBER``
+# target, because Finlex marks HE backlinks with AKN <ref href=".../
+# government-proposal/...">. The preparatory recognizer also recognises HE, but
+# its docstring states HE is handled by the caller — so this lane EXCLUDES
+# kind=HE to avoid double-counting. Every other preparatory kind (committee
+# mietintö/lausunto, EV/EVK response, LA initiative, EU prep act, OJ ref) has
+# no <ref> markup and is owned by no other lane.
+
+
+def _prep_ref_to_mention(
+    prep: PreparatoryReference,
+    statute_id: str,
+    valid_at_interval: Tuple[Optional[date], Optional[date]],
+    locate_span: Callable[[str], Optional[SourceSpan]],
+) -> ReferenceMention:
+    """Lift one (non-HE) PreparatoryReference to a ReferenceMention.
+
+    Preparatory instruments are NOT statutes — they are committee reports,
+    parliament responses, EU prep acts, etc. They are typed as
+    ``NON_STATUTORY_INSTRUMENT`` with the preparatory ``canonical_id`` carried
+    as the target's ``statute_id`` (an explicit, non-statute identity such as
+    ``fi.committee.livm.28.2010`` / ``fi.ev.351.2010``). This keeps them out of
+    the cross-statute dedup space (their ids never collide with
+    ``NUMBER/YEAR`` statute ids) while still surfacing them as first-class
+    reference mentions.
+
+    The preparatory extractor leaves byte spans None (it normalises text before
+    matching); this lane re-anchors each mention to a byte span in the raw
+    ``xml_bytes`` by locating its ``raw_text`` surface, exactly like the
+    plain-text / surface-grammar lanes (fail-loud by absence when not found).
+    """
+    # canonical_id is None only for UNRESOLVED kind; those are not emitted here.
+    target_id = prep.canonical_id or ""
+    tgt_ref = ProvisionRef(
+        statute_id=target_id,
+        provision_path="",
+        section_label="",
+    )
+    src_ref = ProvisionRef(
+        statute_id=statute_id,
+        provision_path="",
+        section_label="",
+    )
+    surface = prep.raw_text or ""
+    return ReferenceMention(
+        source_provision_ref=src_ref,
+        target_provision_ref=tgt_ref,
+        cite_kind=CiteKind.NON_STATUTORY_INSTRUMENT,
+        cite_confidence=CiteConfidence.EXACT,
+        phrase_lemma="preparatory",
+        source_span=locate_span(surface),
+        valid_at_interval=valid_at_interval,
+        # edge_subtype carries the preparatory kind so consumers can split the
+        # chain (committee_report / committee_opinion / parliament_response /
+        # eu_regulation / oj_reference / ...). Disjoint from the CITES/REPEALS
+        # edge_subtype vocabulary used by the statute lanes.
+        edge_subtype=prep.kind.value,
+        surface_text=surface,
+    )
+
+
+def extract_preparatory_reference_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+) -> ExtractionResult:
+    """Extract preparatory-chain ReferenceMention records (committee, EV, …).
+
+    Wraps :func:`extract_preparatory_refs` and lifts every NON-HE
+    PreparatoryReference to a ReferenceMention. HE is excluded because the
+    <ref>-element lane already emits it as a ``he/YEAR/NUMBER`` target; emitting
+    it here too would double-count it.
+
+    Mentions carry phrase_lemma="preparatory" and cite_kind=NON_STATUTORY_INSTRUMENT.
+    """
+    result = ExtractionResult()
+    if not xml_bytes:
+        return result
+    try:
+        prep_result = extract_preparatory_refs(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+        )
+    except ET.ParseError:
+        # XML parse errors are already reported by extract_reference_mentions;
+        # do not double-report.
+        return result
+
+    # Per-surface byte cursor over xml_bytes; surfaces appear in document order.
+    surface_byte_cursor: dict[bytes, int] = {}
+
+    def _locate(surface: str) -> Optional[SourceSpan]:
+        if not surface:
+            return None
+        needle = surface.encode("utf-8")
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
+        if start < 0:
+            # The recognizer normalises whitespace before matching, so a raw_text
+            # surface may not be a verbatim byte substring — fail loud by absence
+            # (None span) rather than fabricate an offset.
+            return None
+        surface_byte_cursor[needle] = start + 1
+        return SourceSpan(
+            source_file=statute_id,
+            byte_offset=start,
+            byte_len=len(needle),
+        )
+
+    for prep in prep_result.refs:
+        if prep.kind == PreparatoryReferenceKind.HE:
+            # Owned by the <ref>-element lane (he/YEAR/NUMBER). Skip — no dupes.
+            continue
+        if prep.kind == PreparatoryReferenceKind.UNRESOLVED:
+            # No canonical target; surfaced as a rejected candidate by the prep
+            # extractor, not a typed mention.
+            continue
+        result.mentions.append(
+            _prep_ref_to_mention(prep, statute_id, valid_at_interval, _locate)
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Inline-(id) citation-construction lane (PRIMARY for the plain-text inline-(id)
+# family) — strangle payoff over _PLAIN_TEXT_FI_STATUTE_RE.
+# ---------------------------------------------------------------------------
+#
+# The construction parse (``legal_surface.sentence_parse.parse_citation_sentence``)
+# keys purely on the ``(NUMBER/YEAR)`` anchor, so it recovers the "Finding-B" class
+# the production regex MISSES — every inline-(id) cite whose statute-name head is
+# separated from the paren by an intervening genitive/provision modifier
+# (``annettu opetusministeriön asetus (253/2001)``, ``patenttilain 70 a §:n
+# (593/94)``), and ``-kaari`` / ``Maakaaren`` heads (``perintökaaren (40/65)``,
+# ``Maakaaren (540/1995)``). It provably SUBSUMES the regex over the inline-(id)
+# family (0 lost on a large mixed-era corpus sweep), while its only over-emission
+# class (parenthetical FRACTIONS, ``kymmenesosalla (1/10)``) is declined inside the
+# construction parse itself (closed audited surface guard, never a magnitude rule).
+#
+# This lane is the PRIMARY producer for the inline-(id) family; the regex lane
+# (``extract_plain_text_statute_mentions``) is demoted to a typed-residue FALLBACK
+# that fires only for inline-(id) targets the construction did NOT cover — and any
+# such residue mention is marked ``phrase_lemma="plain_text_fallback"`` so it is
+# auditable (fail-loud, no silent merge). Orientation: the cited statute is keyed
+# YEAR/NUMBER via ``cross_refs._make_statute_id`` — the SAME canonical corpus key
+# the ``<ref>`` lane and the demoted regex lane mint — so a construction-derived
+# cite dedups onto the SAME entity node, never a re-inverted NUMBER/YEAR node.
+
+
+# A statute-name head token run immediately before the ``(id)`` paren: a run of
+# letters / hyphens (the inflected statute name ``arvonlisäverolain`` /
+# ``-kaaressa`` / the descriptive ``päätös``), optionally one space off the paren.
+# Bounded (§1.11): a single trailing run, length-capped.
+_NAME_HEAD_BEFORE_PAREN_RE = re.compile(
+    r"([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})\s?$"
+)
+
+
+def _extend_surface_to_name_head(text: str, paren_start: int, anchor_end: int) -> str:
+    """Surface for a construction cite, extended LEFT to the statute-name head.
+
+    The construction parse's anchor begins at the ``(id)`` paren (the name head is
+    owned as benign prose for total-ownership accounting). The PRODUCTION mention,
+    however, must carry the SAME name-head-inclusive surface the demoted regex lane
+    carried (``arvonlisäverolain (1767/95) 128 §``), so downstream span-overlap
+    consumers (the surface graph, the census by-name dedup) anchor it identically to
+    the old lane. Extend the surface leftward over the contiguous name-token run
+    immediately preceding the paren; if none is present (a bare paren) the surface
+    is unchanged (starts at the paren).
+    """
+    left = text[max(0, paren_start - 61) : paren_start]
+    m = _NAME_HEAD_BEFORE_PAREN_RE.search(left)
+    if m is None:
+        return text[paren_start:anchor_end]
+    head_start = paren_start - (len(left) - m.start(1))
+    return text[head_start:anchor_end]
+
+
+def _inline_id_provision_key(ref: Optional[ProvisionRef]) -> Optional[str]:
+    """Statute+provision dedup key for one inline-(id) citation TARGET.
+
+    Built from the final ``ProvisionRef`` fields (statute id + AKN provision path +
+    section/momentti/kohta labels), so the construction-primary lane and the demoted
+    regex-fallback lane — which build IDENTICAL ``ProvisionRef``s for the same
+    citation — agree on what "the same citation" is regardless of how each lane
+    derived the chapter. Returns None for a target with no statute id (nothing to
+    dedup on; the caller keeps such a mention).
+    """
+    if ref is None or not ref.statute_id:
+        return None
+    return "/".join(
+        part
+        for part in (
+            ref.statute_id,
+            ref.provision_path or "",
+            ref.section_label or "",
+            str(ref.subsection_num) if ref.subsection_num is not None else "",
+            ref.item_label or "",
+        )
+    )
+
+
+def extract_inline_id_construction_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+    ref_covered_statute_ids: Optional[set[str]] = None,
+) -> Tuple[ExtractionResult, set[str]]:
+    """Extract inline-(id) plain-text citations via the construction parse (PRIMARY).
+
+    Walks the AKN body ``<p>`` elements, collecting text NOT inside ``<ref>``
+    children (the same non-ref text the demoted regex lane scans), runs the
+    citation-sentence construction parse over each, and lifts every recognized
+    inline-(id) citation construction to a CROSS_STATUTE ``ReferenceMention``
+    keyed YEAR/NUMBER (``_make_statute_id``) — identical orientation/typing to the
+    demoted plain-text lane, plus the Finding-B class.
+
+    Returns ``(result, covered_keys)`` where ``covered_keys`` is the set of
+    statute+provision keys (see :func:`_construction_provision_key`) this lane
+    emitted, so the caller can filter the regex fallback to genuine residue only.
+    Mentions carry ``phrase_lemma="citation_construction"``.
+
+    Per AGENTS.md §1.13: the construction parse is the named single-pass recognizer
+    for this grammar family. Per §1.8: nothing disappears silently — the regex lane
+    still runs as an audited fallback in the caller.
+    """
+    result = ExtractionResult()
+    covered_keys: set[str] = set()
+    if not xml_bytes:
+        return result, covered_keys
+
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return result, covered_keys
+
+    covered: set[str] = ref_covered_statute_ids or set()
+    valid_start, valid_end = valid_at_interval
+
+    surface_byte_cursor: dict[bytes, int] = {}
+
+    def _locate_surface_span(
+        surface: str,
+        local_cache: dict[str, Optional[SourceSpan]],
+    ) -> Optional[SourceSpan]:
+        if not surface:
+            return None
+        if surface in local_cache:
+            return local_cache[surface]
+        needle = surface.encode("utf-8")
+        start = _find_with_left_boundary(
+            xml_bytes, needle, surface_byte_cursor.get(needle, 0)
+        )
+        if start < 0:
+            local_cache[surface] = None
+            return None
+        surface_byte_cursor[needle] = start + 1
+        span = SourceSpan(
+            source_file=statute_id,
+            byte_offset=start,
+            byte_len=len(needle),
+        )
+        local_cache[surface] = span
+        return span
+
+    for p_el in root.iter():
+        local = p_el.tag.split("}")[-1] if "}" in p_el.tag else p_el.tag
+        if local != "p":
+            continue
+        text = _PLAIN_TEXT_RECOGNIZER._collect_non_ref_text(p_el)
+        if not text or _PLAIN_TEXT_GUARD_PAREN not in text:
+            continue
+        sp = parse_citation_sentence(text)
+        if not sp.citations:
+            continue
+        # Per-<p> span cache so multiple targets from one anchor share a span.
+        p_span_cache: dict[str, Optional[SourceSpan]] = {}
+        seen_keys: set[str] = set()
+        for c in sp.citations:
+            # The construction keys the cited act NUMBER/YEAR (canonical Finnish
+            # surface). Re-orient to the canonical corpus key YEAR/NUMBER via the
+            # SAME helper the <ref> and regex lanes use, so this lane dedups onto
+            # the SAME entity node (no re-inverted id).
+            num_str, year_str = c.statute_id.split("/", 1)
+            target_statute_id = _make_statute_id(year_str, num_str)
+            if target_statute_id in covered:
+                continue
+            if target_statute_id == statute_id:
+                continue
+            # Extend the surface LEFT to the statute-name head so the production
+            # mention carries the SAME name-inclusive surface the demoted regex lane
+            # did (``arvonlisäverolain (1767/95) 128 §``) — downstream span-overlap
+            # consumers anchor it identically. ``c.anchor_start`` is the paren start.
+            surface_text = _extend_surface_to_name_head(
+                text, c.anchor_start, c.anchor_end
+            )
+            targets = list(c.targets) or [BodyProvisionTarget(section_label="")]
+            for tgt in targets:
+                src_ref = ProvisionRef(
+                    statute_id=statute_id,
+                    provision_path="",
+                    section_label="",
+                )
+                target_provision_path = (
+                    chapter_akn_path(tgt.chapter, tgt.section_label)
+                    if tgt.chapter is not None
+                    else ""
+                )
+                tgt_ref = ProvisionRef(
+                    statute_id=target_statute_id,
+                    provision_path=target_provision_path,
+                    section_label=tgt.section_label,
+                    subsection_num=tgt.subsection_num,
+                    item_label=tgt.item_label,
+                )
+                key = _inline_id_provision_key(tgt_ref)
+                if key is not None:
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    covered_keys.add(key)
+
+                cite_confidence = (
+                    CiteConfidence.EXACT
+                    if tgt.section_label
+                    else CiteConfidence.STATUTE_ONLY
+                )
+                result.mentions.append(
+                    ReferenceMention(
+                        source_provision_ref=src_ref,
+                        target_provision_ref=tgt_ref,
+                        cite_kind=CiteKind.CROSS_STATUTE,
+                        cite_confidence=cite_confidence,
+                        phrase_lemma="citation_construction",
+                        source_span=_locate_surface_span(surface_text, p_span_cache),
+                        valid_at_interval=(valid_start, valid_end),
+                        edge_subtype="CITES",
+                        surface_text=surface_text,
+                    )
+                )
+
+    return result, covered_keys
 
 
 def extract_all_reference_mentions(
@@ -1036,6 +1999,7 @@ def extract_all_reference_mentions(
     *,
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
     strict: bool = False,
+    ignore_annotations: Optional[bool] = None,
 ) -> ExtractionResult:
     """Extract all ReferenceMention records (domestic + EU + plain-text) from a statute.
 
@@ -1048,33 +2012,134 @@ def extract_all_reference_mentions(
     EU and plain-text mentions are appended after domestic mentions.
 
     This is the primary entry point for the ``fi_refs.parquet`` projection.
+
+    Annotation-independence measurement (grammar7 §13-C/E):
+        When ``ignore_annotations`` is True (or, when left None, when
+        ``LAWVM_IGNORE_SEMANTIC_ANNOTATIONS`` is set truthy), the AKN
+        ``<ref>``-element semantic-annotation lane (``extract_reference_mentions``)
+        is SKIPPED and the ``<ref>``-derived ``ref_covered_statute_ids`` dedup
+        guard is dropped, so ONLY the text-derived lanes run and the plain-text
+        lane is no longer suppressed by now-ignored annotations. Default
+        (None → env, fail-closed OFF) is byte-identical to current behaviour.
+        This is a MEASUREMENT mode, not a new default.
     """
-    domestic = extract_reference_mentions(
-        xml_bytes,
-        statute_id,
-        valid_at_interval=valid_at_interval,
-        strict=strict,
-    )
+    if ignore_annotations is None:
+        ignore_annotations = ignore_semantic_annotations()
+
+    if ignore_annotations:
+        # Suppress the <ref>-element semantic-annotation lane entirely: no
+        # domestic <ref>/metadata mentions, and — crucially — an EMPTY
+        # ref_covered set so the plain-text lane's would-be-<ref>-covered hits
+        # are NOT suppressed (else the measurement is contaminated by the very
+        # annotations we are ignoring).
+        domestic = ExtractionResult()
+        ref_covered: set[str] = set()
+    else:
+        domestic = extract_reference_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            strict=strict,
+        )
+        # Build the set of statute IDs already covered by <ref>-element
+        # extraction to pass as the dedup guard to the plain-text pass.
+        ref_covered = {
+            m.target_provision_ref.statute_id
+            for m in domestic.mentions
+            if m.target_provision_ref is not None and m.edge_subtype == "CITES"
+        }
+
+    # Johtolause amendment-target lane: the act this statute amends, named by an
+    # AKN <affectedDocument> in the preamble enacting clause — OUTSIDE <body>, so
+    # invisible to the inline-<ref> body lane above. This is the single most
+    # important cross-statute link in an amending statute; pure-amendment statutes
+    # (whose whole substance is the johtolause) otherwise surface zero references.
+    # Deduplicated against the body <ref> CITES targets (``ref_covered``) so a
+    # target named both by an <affectedDocument> AND a body <ref> element yields
+    # ONE amendment-target surface — the body <ref> CITES already owns that
+    # occurrence, so the johtolause surface is suppressed there. The plain-text /
+    # by-name body lanes are intentionally NOT touched: a body prose cite to the
+    # amended act is a genuine, distinct surface occurrence and stays a separate
+    # reference_expr (the surface graph collapses both to one legal_work_entity by
+    # work_id, so this is one entity, two surface nodes — no double-emission of the
+    # same occurrence). Skipped entirely in annotation-independence measurement
+    # mode (ref_covered empty), like the rest of the <ref>-annotation lane.
+    affected = ExtractionResult()
+    if not ignore_annotations:
+        affected_raw = extract_affected_document_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+        )
+        affected.diagnostics = affected_raw.diagnostics
+        for m in affected_raw.mentions:
+            tgt = m.target_provision_ref
+            if tgt is not None and tgt.statute_id in ref_covered:
+                # Already an inline-<ref> CITES occurrence for this act — keep the
+                # single body <ref> surface, drop the duplicate johtolause one.
+                continue
+            affected.mentions.append(m)
+
     eu = extract_eu_reference_mentions(
         xml_bytes,
         statute_id,
         valid_at_interval=valid_at_interval,
     )
 
-    # Build the set of statute IDs already covered by <ref>-element extraction
-    # to pass as the dedup guard to the plain-text pass.
-    ref_covered: set[str] = {
-        m.target_provision_ref.statute_id
-        for m in domestic.mentions
-        if m.target_provision_ref is not None and m.edge_subtype == "CITES"
-    }
+    # Inline-(id) plain-text citation family.
+    #
+    # PRIMARY: the citation-construction parse (keys on the ``(NUMBER/YEAR)``
+    # anchor) — it subsumes the brittle ``_PLAIN_TEXT_FI_STATUTE_RE`` and recovers
+    # the Finding-B class (statute-name head separated from its paren by an
+    # intervening modifier; ``-kaari`` heads). FALLBACK: the regex lane, kept as a
+    # typed-residue safety net (``phrase_lemma="plain_text_fallback"``) that fires
+    # ONLY for inline-(id) targets the construction did not cover, so nothing the
+    # old lane found can silently disappear (§1.8) and any residue is auditable.
+    #
+    # Measurement mode (``ignore_annotations``) is exempt: it folds ``<ref>`` INNER
+    # text into the regex lane (``include_ref_text``) to measure annotation
+    # independence — the construction lane here scans only non-ref text — so that
+    # path keeps the regex lane as primary, byte-identical to before the flip.
+    plain = ExtractionResult()
+    if ignore_annotations:
+        plain = extract_plain_text_statute_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            ref_covered_statute_ids=ref_covered,
+            # Measurement mode also reads <ref> INNER text (production hides it in
+            # the markup), so the text lane gets a real shot at the hidden cite.
+            include_ref_text=True,
+        )
+    else:
+        construction, construction_keys = extract_inline_id_construction_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            ref_covered_statute_ids=ref_covered,
+        )
+        plain.mentions.extend(construction.mentions)
+        plain.diagnostics.extend(construction.diagnostics)
 
-    plain = extract_plain_text_statute_mentions(
-        xml_bytes,
-        statute_id,
-        valid_at_interval=valid_at_interval,
-        ref_covered_statute_ids=ref_covered,
-    )
+        # Regex fallback for residue ONLY: a regex hit whose statute+provision key
+        # the construction already covered is the SAME citation (drop the dup); a
+        # regex hit the construction did NOT cover is genuine residue — emit it,
+        # marked as a typed fallback so the residual class is auditable.
+        regex_residue = extract_plain_text_statute_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            ref_covered_statute_ids=ref_covered,
+            include_ref_text=False,
+        )
+        for m in regex_residue.mentions:
+            key = _inline_id_provision_key(m.target_provision_ref)
+            if key is not None and key in construction_keys:
+                # Same citation the construction lane already emitted — drop the dup.
+                continue
+            plain.mentions.append(replace(m, phrase_lemma="plain_text_fallback"))
+        plain.rejected.extend(regex_residue.rejected)
+        plain.diagnostics.extend(regex_residue.diagnostics)
 
     # Surface-grammar lane: treaty (SopS), vague-OPEN, EU-by-nickname directive
     # articles. Families disjoint from the lanes above (no statute-id dedup
@@ -1085,17 +2150,38 @@ def extract_all_reference_mentions(
         valid_at_interval=valid_at_interval,
     )
 
+    # Preparatory-chain lane: the rest of the legislative-preparation footer
+    # (committee mietintö/lausunto, EV/EVK response, LA, EU prep act, OJ) that
+    # accompanies the HE proposal. HE itself is excluded inside this lane (it is
+    # already emitted by the <ref> lane as he/YEAR/NUMBER), so no double-count.
+    preparatory = extract_preparatory_reference_mentions(
+        xml_bytes,
+        statute_id,
+        valid_at_interval=valid_at_interval,
+    )
+
     combined = ExtractionResult()
-    combined.mentions = domestic.mentions + eu.mentions + plain.mentions + surface.mentions
-    combined.rejected = domestic.rejected + eu.rejected + plain.rejected + surface.rejected
+    combined.mentions = (
+        domestic.mentions + affected.mentions + eu.mentions + plain.mentions
+        + surface.mentions + preparatory.mentions
+    )
+    combined.rejected = (
+        domestic.rejected + eu.rejected + plain.rejected + surface.rejected + preparatory.rejected
+    )
     combined.broken_findings = (
-        domestic.broken_findings + eu.broken_findings + plain.broken_findings + surface.broken_findings
+        domestic.broken_findings + eu.broken_findings + plain.broken_findings
+        + surface.broken_findings + preparatory.broken_findings
     )
     combined.ambiguous_findings = (
-        domestic.ambiguous_findings + eu.ambiguous_findings + plain.ambiguous_findings + surface.ambiguous_findings
+        domestic.ambiguous_findings + eu.ambiguous_findings + plain.ambiguous_findings
+        + surface.ambiguous_findings + preparatory.ambiguous_findings
     )
     combined.approximate_findings = (
-        domestic.approximate_findings + eu.approximate_findings + plain.approximate_findings + surface.approximate_findings
+        domestic.approximate_findings + eu.approximate_findings + plain.approximate_findings
+        + surface.approximate_findings + preparatory.approximate_findings
     )
-    combined.diagnostics = domestic.diagnostics + eu.diagnostics + plain.diagnostics + surface.diagnostics
+    combined.diagnostics = (
+        domestic.diagnostics + affected.diagnostics + eu.diagnostics + plain.diagnostics
+        + surface.diagnostics + preparatory.diagnostics
+    )
     return combined

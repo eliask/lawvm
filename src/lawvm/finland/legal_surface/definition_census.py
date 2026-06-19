@@ -230,14 +230,23 @@ def run_definition_census(
     )
 
 
-def format_definition_census_report(result: FamilyCensusResult) -> str:
-    return format_family_census_report(
-        result, title="Finland definition-entry grammar census"
+def main() -> None:
+    import sys
+
+    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+    min_year = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    result = run_definition_census(limit=limit, min_year=min_year)
+    print(
+        format_family_census_report(
+            result, title="FI DEFINITION-ENTRY DIFFERENTIAL CENSUS (Pilot B)"
+        )
     )
+    if not result.is_partition():
+        raise SystemExit(
+            f"PARTITION VIOLATION: buckets sum to {result.partition_total} "
+            f"but in-scope units = {result.in_scope_units}"
+        )
 
 
-__all__ = [
-    "DEFINITION_FAMILY",
-    "format_definition_census_report",
-    "run_definition_census",
-]
+if __name__ == "__main__":
+    main()

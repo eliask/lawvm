@@ -27,6 +27,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.interlink_targets import (
     fi_transition_graph_interlink_provider,
+    fi_transition_graph_overlay_provider,
     resolve_fi_interlink_target_row,
 )
 from lawvm.finland.ops import FailedOp
@@ -291,6 +292,45 @@ def _interlink_provider_for_rows(rows: list[etg.LawvmInterlinkRow]) -> etg.Lawvm
     return etg.LawvmInterlinkExportProvider(
         project_interlinks=lambda _sid, _corpus: rows,
         resolve_target=resolve_fi_interlink_target_row,
+    )
+
+
+def _overlay_row(
+    *,
+    overlay_id: str,
+    kind: str,
+    node_id: str,
+    label: str,
+    status: str | None = None,
+    payload_json: str = "{}",
+    links_json: str = "[]",
+) -> dict[str, object]:
+    """A whole-body overlay projection row (rendered_* null, as projected)."""
+    return {
+        "overlay_id": overlay_id,
+        "statute_id": "100/2010",
+        "kind": kind,
+        "node_id": node_id,
+        "label": label,
+        "payload_json": payload_json,
+        "links_json": links_json,
+        "status": status,
+        "source_span_byte_offset": None,
+        "source_span_byte_len": None,
+        "rendered_statute_id": None,
+        "rendered_effective_date": None,
+        "rendered_address": None,
+        "rendered_segment_index": None,
+        "rendered_char_start": None,
+        "rendered_char_end": None,
+    }
+
+
+def _overlay_provider_for_rows(
+    rows: list[dict[str, object]],
+) -> etg.LawvmSurfaceOverlayExportProvider:
+    return etg.LawvmSurfaceOverlayExportProvider(
+        project_overlays=lambda _sid, _corpus: [dict(r) for r in rows],
     )
 
 
@@ -856,6 +896,120 @@ def test_export_does_not_place_metadata_interlinks_in_rendered_text(
         conn.close()
 
 
+def test_export_emits_surface_overlay_table_schema(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """The overlay table is always created with the exact viewer-coded columns,
+    even when no overlay provider is supplied."""
+    out = tmp_path / "synth_overlay_schema.db"
+    stats = etg.export_transition_graph("100/2010", out, quiet=True)
+    assert stats.n_lawvm_surface_overlays == 0
+
+    conn = sqlite3.connect(str(out))
+    try:
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name='lawvm_surface_overlays'"
+        ).fetchone()
+        assert table == ("lawvm_surface_overlays",)
+        cols = [
+            r[1]
+            for r in conn.execute("PRAGMA table_info(lawvm_surface_overlays)").fetchall()
+        ]
+        # The viewer reads `SELECT * ... ORDER BY overlay_id`; the columns must be
+        # exactly the shared overlay row schema (same as the standalone export).
+        assert tuple(cols) == etg.SURFACE_OVERLAY_ROW_COLUMNS
+        assert conn.execute("SELECT COUNT(*) FROM lawvm_surface_overlays").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_export_places_surface_overlays_in_rendered_text(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """A whole-body overlay row (null rendered_*) is placed onto the per-date
+    rendered segments, exactly like an interlink, so the viewer can paint it.
+
+    section:1 carries the text 'alpha' at every change-date; a defined_term
+    overlay labelled 'alpha' must therefore be placed at section:1 char [0,5)
+    once per change-date with populated rendered_* columns."""
+    overlay = _overlay_row(
+        overlay_id="fi.overlay:abc",
+        kind="defined_term",
+        node_id="def_alpha",
+        label="alpha",
+        payload_json=json.dumps({"term": "alpha", "definition": "the first letter"}),
+    )
+    out = tmp_path / "synth_overlay_placed.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        overlay_provider=_overlay_provider_for_rows([overlay]),
+    )
+
+    # One placed copy per change-date.
+    assert stats.n_lawvm_surface_overlays == len(_CHANGE_DATES)
+
+    conn = sqlite3.connect(str(out))
+    try:
+        placed = conn.execute(
+            "SELECT rendered_effective_date, kind, label, rendered_address, "
+            "rendered_segment_index, rendered_char_start, rendered_char_end, "
+            "payload_json "
+            "FROM lawvm_surface_overlays AS o "
+            "JOIN checkpoints AS c ON o.rendered_effective_date = c.date "
+            "ORDER BY c.date"
+        ).fetchall()
+        assert [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in placed] == [
+            ("2010-01-01", "defined_term", "alpha", "section:1", 0, 0, 5),
+            ("2015-01-01", "defined_term", "alpha", "section:1", 0, 0, 5),
+            ("2020-01-01", "defined_term", "alpha", "section:1", 0, 0, 5),
+        ]
+        # The typed payload survives the projection->placement->persist round-trip.
+        assert json.loads(placed[0][7])["definition"] == "the first letter"
+        # overlay_id stays unique per placed copy (date-keyed).
+        ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT overlay_id FROM lawvm_surface_overlays"
+            ).fetchall()
+        ]
+        assert len(ids) == len(set(ids)) == len(_CHANGE_DATES)
+    finally:
+        conn.close()
+
+
+def test_export_keeps_unplaceable_surface_overlay_unplaced(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """An overlay whose surface does not occur in the rendered text stays a valid
+    semantic row with null rendered_* (never a fabricated span)."""
+    overlay = _overlay_row(
+        overlay_id="fi.overlay:nomatch",
+        kind="temporal",
+        node_id="t1",
+        label="this surface appears nowhere in the body",
+    )
+    out = tmp_path / "synth_overlay_unplaced.db"
+    stats = etg.export_transition_graph(
+        "100/2010",
+        out,
+        quiet=True,
+        overlay_provider=_overlay_provider_for_rows([overlay]),
+    )
+    assert stats.n_lawvm_surface_overlays == 1
+    conn = sqlite3.connect(str(out))
+    try:
+        row = conn.execute(
+            "SELECT overlay_id, rendered_address, rendered_effective_date, "
+            "rendered_char_start FROM lawvm_surface_overlays"
+        ).fetchone()
+        assert row == ("fi.overlay:nomatch", None, None, None)
+    finally:
+        conn.close()
+
+
 def test_export_captures_insert_and_expiry_transitions(
     patched_engine: None, tmp_path: Path
 ) -> None:
@@ -1077,11 +1231,14 @@ def test_corpus_backed_export_small_statute(tmp_path: Path) -> None:
         out,
         quiet=True,
         interlink_provider=fi_transition_graph_interlink_provider(),
+        overlay_provider=fi_transition_graph_overlay_provider(),
     )
     assert out.exists()
     assert stats.n_checkpoints >= 1
     assert stats.n_change_dates >= 1
     assert stats.n_content_blobs >= 1
+    # The real Legal Surface Graph yields overlays for this statute.
+    assert stats.n_lawvm_surface_overlays >= 1
 
     conn = sqlite3.connect(str(out))
     try:
@@ -1103,3 +1260,24 @@ def test_corpus_backed_export_small_statute(tmp_path: Path) -> None:
         assert bad == 0
     finally:
         conn.close()
+
+
+def test_fi_profile_urls_use_current_finlex_scheme() -> None:
+    from lawvm.finland.transition_graph_profile import (
+        fi_amendment_url,
+        fi_current_statute_url,
+    )
+
+    # Consolidated ("ajantasa") -> lainsaadanto, bare statute number.
+    assert (
+        fi_current_statute_url("fi:normative_act:2007/360", "2007/360")
+        == "https://www.finlex.fi/fi/lainsaadanto/2007/360"
+    )
+    # As-enacted (alkup) -> saadoskokoelma, bare statute number.
+    assert (
+        fi_amendment_url("fi:normative_act:2007/360", "2007/360")
+        == "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2007/360"
+    )
+    # Malformed ids degrade to empty (no link is fine; a wrong link is not).
+    assert fi_current_statute_url("", "2007") == ""
+    assert fi_amendment_url("", "2007") == ""

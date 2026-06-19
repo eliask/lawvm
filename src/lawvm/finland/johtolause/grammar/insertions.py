@@ -921,6 +921,168 @@ def _recognize_whole_target_list(
     return [InsNode(kind=kind, label=n + sf, chapter=chapter, part=part) for n, sf in nums]
 
 
+def _at_phrase_end(scan: _Scan) -> bool:
+    """True when the cursor sits at the end of the operative phrase.
+
+    The end is either past the last token, or on an ``END`` / ``END_SENTINEL_SPAN``
+    marker (faithful to the old Pattern D ``pt.cat in {END, END_SENTINEL_SPAN}``
+    test at surface_parse 3111-3114 — including the case where the END_SENTINEL
+    was the immediately-preceding token and ``s.peek()`` is now ``None``).
+    """
+    t = scan.peek()
+    if t is None:
+        return True
+    return t.cat in ("END", "END_SENTINEL_SPAN")
+
+
+def recognize_bare_uusi_whole_target(
+    scan: _Scan, chapter: str, part: str
+) -> Optional[list[InsNode]]:
+    """Recognize the citation-stripped bare-``uusi`` whole-target insert (old Pattern D).
+
+    The cursor sits ON the ``uusi`` opening a LISATA/SIIRTAA whole-target insertion
+    whose document anchor (``lakiin`` / ``asetukseen``) or authority / title lead-in
+    has already been stripped to a sentinel span the driver consumed — so the
+    operative phrase opens directly on ``uusi <numlist> …``. A pure narrowing of
+    the old Pattern D (surface_parse 3038-3115), restricted to the clean whole-target
+    outcomes that ``_recognize_whole_target_list`` does NOT already own at a bare
+    cursor:
+
+      * ``uusi <numlist> [ja/sekä uusi <numlist>]… (§ | luku)`` — chained
+        whole-section / whole-chapter inserts (``uusi 76 a ja uusi 84 b §``).
+      * ``uusi <numlist> osa``                                 — whole-part inserts.
+      * ``uusi <numlist>`` END-terminated (NO structural noun) — the historical
+        bare-section insert (``uusi 19 b`` / ``uusi 8 a, 14 a ja 24 a``), where the
+        ``§`` token is absent before the END marker.
+      * ``uusi <numlist> §:n M momentti/kohta``                — single-section
+        sub-target insert (delegated to the shared whole-target recognizer).
+
+    Emits with the INHERITED ``chapter`` / ``part`` (matching the old Pattern D's
+    ``_insertion`` args). A trailing reinstatement / citation / provenance span
+    AFTER the closing structural noun is NOT consumed — the old parser leaves it
+    for the outer separator loop, so this recognizer stops at the target and the
+    span stays for the driver. Returns None (cursor restored) for any other shape
+    (headings, appendices, prefix/postfix-chapter folds, GEN-only authority forms),
+    leaving them to decline through the broad guard.
+
+    Dispatched BEFORE the broad provenance guard (like the DOC:ILL / LUKU:ILL arms)
+    precisely so a trailing provenance span past the target does not wrongly trip
+    the guard — the same faithfulness reason those arms are dispatched early.
+    """
+    saved = scan.pos
+
+    # A downstream structural fold (``… ja sen edelle uusi väliotsikko`` heading
+    # placement, an appendix / backref arm) the old parser folds into the SAME
+    # batch span is out of scope: emitting just the leading section insert here
+    # would silently DROP the fold. This recognizer is dispatched before the broad
+    # structural-OOS guard (so a trailing PROVENANCE span past the target does not
+    # wrongly decline), so it must reproduce that guard's structural scan itself,
+    # to the next VERB / END. (Provenance spans are deliberately NOT scanned — they
+    # legitimately trail the target and are left for the outer separator loop.)
+    hard = _next_verb_or_end(scan)
+    if _phrase_has_oos_token(scan, hard, _OOS_STRUCTURAL_CATS):
+        return None
+
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    _skip_nain_kuuluva(scan)
+
+    # A heading / appendix / prefix-chapter fold right after ``uusi`` is out of
+    # scope here — bail so the broad guard / dedicated arms handle it.
+    if _at(scan, "OTSIKKO", "VALIOTSIKKO", "LIITE"):
+        scan.goto(saved)
+        return None
+
+    nums = _number_list(scan)
+    if not nums:
+        scan.goto(saved)
+        return None
+
+    # Chained ``sep uusi <numlist>`` groups before the final structural noun
+    # (``uusi 76 a ja uusi 84 b §``), faithful to old Pattern D lines 3050-3059.
+    all_nums = list(nums)
+    while True:
+        saved_chain = scan.pos
+        if _sep(scan) is not None and _consume_uusi(scan):
+            more = _number_list(scan)
+            if more:
+                all_nums.extend(more)
+                continue
+        scan.goto(saved_chain)
+        break
+
+    t = scan.peek()
+
+    # ``uusi <numlist> osa`` — whole-part inserts.
+    if t is not None and t.cat == "OSA":
+        scan.advance()
+        return [
+            InsNode(kind=TargetKind.PART, label=n + sf, chapter=chapter, part=part)
+            for n, sf in all_nums
+        ]
+
+    if t is not None and t.cat in ("PYKALA", "LUKU"):
+        # ``uusi N §:n M momentti/kohta`` — single-section sub-target insert. Only
+        # the GEN §:n form carries this; delegate to the shared recognizer (which
+        # also handles the plain genitive whole-section stylistic variant).
+        if t.cat == "PYKALA" and t.case == "GEN":
+            saved_gen = scan.pos
+            scan.advance()  # consume §:GEN
+            sub_nums = _number_list(scan)
+            st = scan.peek()
+            if sub_nums and st is not None and st.cat in ("MOMENTTI", "KOHTA"):
+                is_kohta = st.cat == "KOHTA"
+                scan.advance()
+                sec_num = nums[0][0] + nums[0][1]
+                out: list[InsNode] = []
+                for n, sf in sub_nums:
+                    for rn in _expand_range_single(n):
+                        if is_kohta:
+                            st_sub = InsSubTarget(momentti=1, item=rn + sf)
+                        else:
+                            st_sub = InsSubTarget(momentti=int(rn) if rn.isdigit() else 0)
+                        out.append(
+                            InsNode(
+                                kind=TargetKind.SECTION,
+                                label=sec_num,
+                                chapter=chapter,
+                                part=part,
+                                sub_target=st_sub,
+                            )
+                        )
+                return out
+            # No momentti/kohta — GEN §:n is the whole-section stylistic variant.
+            scan.goto(saved_gen)
+
+        # Malformed ``§ luku`` (PYKALA immediately followed by a NOM LUKU) is an
+        # old-parser chapter-repair path — out of scope here.
+        if t.cat == "PYKALA":
+            t1 = scan.peek(1)
+            if t1 is not None and t1.cat == "LUKU" and t1.case == "NOM":
+                scan.goto(saved)
+                return None
+        kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
+        scan.advance()
+        return [
+            InsNode(kind=kind, label=n + sf, chapter=chapter, part=part)
+            for n, sf in all_nums
+        ]
+
+    # ``uusi <numlist>`` END-terminated (NO structural noun) — historical bare
+    # section insert (old Pattern D lines 3111-3114). Only fires at the phrase end
+    # so a mid-list bare run (a number list that continues into another arm) is
+    # left for the normal dispatch / decline path rather than mis-claimed here.
+    if _at_phrase_end(scan):
+        return [
+            InsNode(kind=TargetKind.SECTION, label=n + sf, chapter=chapter, part=part)
+            for n, sf in all_nums
+        ]
+
+    scan.goto(saved)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Top-level insertion recognizer.
 # ---------------------------------------------------------------------------
@@ -1287,6 +1449,22 @@ def _dispatch(
         liite = _try_doc_ill_liite(scan)
         if liite is not None:
             return liite
+
+    # ── Citation-stripped bare ``uusi <numlist> …`` whole-target (old Pattern D) ──
+    #
+    # Dispatched BEFORE the broad provenance guard (like the DOC:ILL / LUKU:ILL
+    # arms) for the same faithfulness reason: the old Pattern D consumes only up to
+    # the inserted target and leaves any TRAILING reinstatement / citation /
+    # provenance span for the outer separator loop (``uusi 21 a § [REINST]``). The
+    # arm self-validates — it returns None for any non-clean whole-target shape
+    # (heading / appendix / prefix-chapter folds), so those still fall through to
+    # the broad guard + section-ref path and decline loudly. Threads the INHERITED
+    # ``chapter`` / ``part`` (matching the old ``_insertion`` args), NOT the current
+    # arm's ``N luvun`` pre-parse.
+    if _at(scan, "UUSI"):
+        bare = recognize_bare_uusi_whole_target(scan, inherited_chapter, inherited_part)
+        if bare is not None:
+            return bare
 
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #

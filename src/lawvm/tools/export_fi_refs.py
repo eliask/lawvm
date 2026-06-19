@@ -151,6 +151,9 @@ def _project_refs_for_statute_via_extractor(
     Returns (mention_rows, diagnostic_rows) with profile columns attached.
     """
     from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.elliptical_resolve import (
+        resolve_elliptical_mentions,
+    )
 
     xml_bytes = _get_statute_xml(statute_id, store)
     if xml_bytes is None:
@@ -158,9 +161,19 @@ def _project_refs_for_statute_via_extractor(
 
     result = extract_all_reference_mentions(xml_bytes, statute_id)
 
+    # Match the graph path (ReferenceLens): resolve elliptical INTERNAL refs
+    # (bare momentti / bare kohta) against the statute tree before projecting.
+    # The pass is cardinality-preserving (one resolution per input mention) and
+    # downgrades an un-anchorable bare ref to OPEN rather than leaving the
+    # recognizer's raw EXACT on a target that resolves only to the statute root.
+    mentions = [
+        res.mention
+        for res in resolve_elliptical_mentions(list(result.mentions), xml_bytes)
+    ]
+
     mention_rows = [
         _augment_row(reference_mention_to_row(m), profile)
-        for m in result.mentions
+        for m in mentions
     ]
 
     diag_rows: List[Dict[str, Any]] = []

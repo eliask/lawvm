@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from datetime import date
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -29,6 +30,9 @@ from lawvm.finland.references.eu_reference import (
     DIALECT_CROSS_REF,
     recognize_celex,
     recognize_eu_acts,
+)
+from lawvm.finland.references.sections import (
+    coordinated_member_paths_from_ref_surface,
 )
 
 _AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0'
@@ -92,6 +96,12 @@ class CrossRefEdge:
     # any CITES edge whose surface could not be located in the raw bytes.
     source_byte_offset: Optional[int] = None
     source_byte_len: int = 0
+    target_kind: str = ""     # drafting KIND of an ISSUED_UNDER target authority basis,
+                              # carried from the AuthorityEdge that produced the edge:
+                              # "act" (laki), "decree" (asetus), "decision" (päätös), or
+                              # "" (unknown / legacy). Read by the reference-mention lift
+                              # so a laki basis types as a statute cross-reference instead
+                              # of a non-statutory instrument. Empty = legacy/instrument.
 
 
 @dataclass(frozen=True)
@@ -166,11 +176,56 @@ def _parse_ref_href(href: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def _body_byte_range(xml_bytes: bytes) -> tuple[int, int]:
+    """Byte range ``[lo, hi)`` of the AKN ``<body>`` element in the raw bytes.
+
+    The Finlex envelope places a ``<references>`` block and a
+    ``<proprietary>``/``<finlex:ref>`` metadata block BEFORE the body, and the
+    same citation ``href`` often appears in that metadata first. Scoping the
+    href search to the body range stops the locator from latching onto a
+    metadata occurrence (the multi-KB-span catastrophe). Falls back to the whole
+    document if no ``<body`` open tag is found (defensive — body-less inputs
+    have no inline ``<ref>`` to locate anyway).
+    """
+    lo = xml_bytes.find(b"<body")
+    if lo < 0:
+        return (0, len(xml_bytes))
+    close = xml_bytes.rfind(b"</body>")
+    hi = close + len(b"</body>") if close >= 0 else len(xml_bytes)
+    return (lo, hi)
+
+
+def _find_ref_start_tag_end(xml_bytes: bytes, attr_pos: int) -> Optional[int]:
+    """Byte just after the ``>`` of the ``<ref …>`` start tag enclosing ``attr_pos``.
+
+    Matches ``<ref`` only when immediately followed by a space or ``>`` so it can
+    never latch onto ``<references`` (of which ``<ref`` is a prefix). Returns
+    ``None`` if no genuine ``<ref`` start tag precedes ``attr_pos`` or the tag's
+    closing ``>`` cannot be found.
+    """
+    cursor = attr_pos
+    while True:
+        cand = xml_bytes.rfind(b"<ref", 0, cursor)
+        if cand < 0:
+            return None
+        nxt = xml_bytes[cand + 4:cand + 5]
+        if nxt in (b" ", b">"):
+            gt = xml_bytes.find(b">", cand)
+            if gt < 0:
+                return None
+            return gt + 1
+        # ``<ref`` was a prefix of a longer tag (e.g. ``<references``); keep
+        # walking left for a real ``<ref`` start tag.
+        cursor = cand
+
+
 def _locate_ref_byte_span(
     xml_bytes: bytes,
     href: str,
     *,
     search_from: int = 0,
+    body_lo: int = 0,
+    body_hi: Optional[int] = None,
 ) -> Optional[tuple[int, int]]:
     """Locate the byte span of an inline ``<ref href="HREF">…</ref>`` element.
 
@@ -178,32 +233,42 @@ def _locate_ref_byte_span(
     the element's ``href`` attribute in the raw bytes and expanding to the
     enclosing ``<ref`` start tag and matching ``</ref>`` close tag.
 
-    UNIT: bytes into ``xml_bytes``. Returns ``(byte_offset, byte_len)`` covering
-    the whole ``<ref …>surface</ref>`` element, or ``None`` if it cannot be
-    located (e.g. the href contained characters that were re-encoded by the XML
-    parser). The search starts at ``search_from`` so repeated identical hrefs
+    The returned span covers ONLY the inner citation phrase — the bytes between
+    the start tag's ``>`` and the ``</ref>`` close — so ``xml_bytes[off:off+len]``
+    slices exactly the surface text, not the ``<ref href="…">…</ref>`` markup
+    envelope.
+
+    UNIT: bytes into ``xml_bytes``. Returns ``(byte_offset, byte_len)``, or
+    ``None`` if it cannot be located (e.g. the href contained characters that
+    were re-encoded by the XML parser). The href search is scoped to
+    ``[body_lo, body_hi)`` so a duplicate href inside the leading
+    ``<references>``/``<proprietary>`` metadata block cannot be matched. The
+    search starts at ``max(search_from, body_lo)`` so repeated identical hrefs
     can be walked left-to-right by advancing the cursor.
     """
     if not href:
         return None
+    if body_hi is None:
+        body_hi = len(xml_bytes)
+    start_from = max(search_from, body_lo)
     # The href appears verbatim as an attribute value: href="HREF" or href='HREF'.
     needle_dq = b'href="' + href.encode("utf-8") + b'"'
     needle_sq = b"href='" + href.encode("utf-8") + b"'"
-    attr_pos = xml_bytes.find(needle_dq, search_from)
+    attr_pos = xml_bytes.find(needle_dq, start_from, body_hi)
     if attr_pos < 0:
-        attr_pos = xml_bytes.find(needle_sq, search_from)
+        attr_pos = xml_bytes.find(needle_sq, start_from, body_hi)
     if attr_pos < 0:
         return None
-    # Expand left to the enclosing "<ref" start.
-    start = xml_bytes.rfind(b"<ref", 0, attr_pos)
-    if start < 0:
+    # Expand left to the enclosing genuine "<ref " / "<ref>" start tag and take
+    # the byte just after its closing ">" — the start of the inner phrase.
+    inner_start = _find_ref_start_tag_end(xml_bytes, attr_pos)
+    if inner_start is None:
         return None
-    # Expand right to the matching "</ref>" close.
-    close = xml_bytes.find(b"</ref>", attr_pos)
+    # Expand right to the matching "</ref>" close — the inner phrase ends there.
+    close = xml_bytes.find(b"</ref>", inner_start)
     if close < 0:
         return None
-    end = close + len(b"</ref>")
-    return (start, end - start)
+    return (inner_start, close - inner_start)
 
 
 def _find_section_ancestor(
@@ -289,6 +354,7 @@ def extract_cross_refs(
     statute_id: str,
     *,
     diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+    authority_xml_bytes: Optional[bytes] = None,
 ) -> List[CrossRefEdge]:
     """Extract all cross-reference edges from a Finnish statute XML.
 
@@ -301,7 +367,17 @@ def extract_cross_refs(
 
     Args:
         xml_bytes:  Raw XML bytes of the statute (Akoma Ntoso / Finlex format).
+            Inline body citations, repeals, and issued_under METADATA edges are
+            read from these bytes (typically the consolidated/oracle XML).
         statute_id: Canonical statute ID of the SOURCE, e.g. "2009/953".
+        authority_xml_bytes: Raw XML bytes to parse for the preamble "N §:n
+            nojalla" authority-basis clause that supplies the ISSUED_UNDER
+            section + drafting kind. Defaults to ``xml_bytes``. Callers that hold
+            the BASE (unconsolidated) statute XML should pass it here: Finlex
+            drops the preamble from the consolidated form of older statutes, so
+            the nojalla clause survives only in the base XML. Passing the base
+            keeps the section/kind merge working where the consolidated XML alone
+            would yield nothing.
 
     Returns:
         List of CrossRefEdge instances. Multiple CITES edges to the same target
@@ -344,6 +420,10 @@ def extract_cross_refs(
     href_search_cursor: dict[str, int] = {}
     cite_counts: dict[tuple[str, str, str], tuple[int, str]] = {}
     if body is not None:
+        # Scope inline-ref byte-span recovery to the <body> range so a duplicate
+        # href inside the leading <references>/<proprietary> metadata block can
+        # never be matched (that mismatch produced multi-KB spans).
+        body_lo, body_hi = _body_byte_range(xml_bytes)
         parent_map = {child: parent for parent in root.iter() for child in parent}
         for ref_elem in body.iter(f'{{{_AKN_NS}}}ref'):
             href = ref_elem.get('href', '')
@@ -357,7 +437,9 @@ def extract_cross_refs(
                     # Locate this occurrence's byte span, advancing the cursor so
                     # a later identical href maps to the next element in the bytes.
                     located = _locate_ref_byte_span(
-                        xml_bytes, href, search_from=href_search_cursor.get(href, 0)
+                        xml_bytes, href,
+                        search_from=href_search_cursor.get(href, 0),
+                        body_lo=body_lo, body_hi=body_hi,
                     )
                     if located is not None:
                         b_off, b_len = located
@@ -379,6 +461,10 @@ def extract_cross_refs(
                         target_section=prov_path,
                     )
 
+    # The set of CITES (src_sec, target_id, prov_path) triples actually emitted,
+    # so a coordinated-member addition below never duplicates an edge that some
+    # other <ref> already produced for that same member.
+    emitted_cite_keys: set[tuple[str, str, str]] = set(cite_counts.keys())
     for (src_sec, target_id, prov_path), (count, surface_text) in cite_counts.items():
         span = cite_spans.get((src_sec, target_id, prov_path))
         b_off = span[0] if span is not None else None
@@ -394,6 +480,33 @@ def extract_cross_refs(
             source_byte_offset=b_off,
             source_byte_len=b_len,
         ))
+        # A Finlex inline <ref>'s href anchors only the FIRST member of a
+        # coordinated section list ("(360/1968) 18 a ja 18 b §:ssä" → sec_18a),
+        # but the LawVM convention enumerates EVERY coordinated member. Re-parse
+        # the ref's own surface text through the shared body recognizer and emit a
+        # section-level CITES edge for each coordinated sibling the href dropped.
+        # Skipped when the aggregated surface is ambiguous (empty) — without a
+        # single trusted spelling there is no coordination text to expand.
+        if not surface_text:
+            continue
+        for extra_path in coordinated_member_paths_from_ref_surface(
+            surface_text, prov_path
+        ):
+            extra_key = (src_sec, target_id, extra_path)
+            if extra_key in emitted_cite_keys:
+                continue
+            emitted_cite_keys.add(extra_key)
+            edges.append(CrossRefEdge(
+                source_statute_id=statute_id,
+                target_statute_id=target_id,
+                edge_type='CITES',
+                source_section=src_sec,
+                target_section=extra_path,
+                count=count,
+                surface_text=surface_text,
+                source_byte_offset=b_off,
+                source_byte_len=b_len,
+            ))
 
     # ── REPEALS: this statute repeals target ─────────────────────────────────
     for target_id in _refs_from(
@@ -437,6 +550,232 @@ def extract_cross_refs(
             edge_type='ISSUES',
         ))
 
+    # ── ISSUED_UNDER enrichment: section + drafting-kind from the preamble ────
+    # The finlex:issuedUnderActs metadata names the authority basis but carries
+    # neither the cited section nor whether the basis is a laki / asetus / päätös.
+    # Both live in the preamble "N §:n nojalla" clause. Merge the AuthorityEdge
+    # facts here so EVERY projection that calls extract_cross_refs (lawvm cite,
+    # the surface-graph reference lens via ref_mention_extractor, the StatuteGraph
+    # builders) sees the same section + target_kind — the single source of truth
+    # for the nojalla authority-basis typing. (Previously this merge lived only in
+    # build_statute_graph_fi_lightweight, leaving cite + the lens on the old
+    # untyped, sectionless edges.)
+    _merge_authority_basis(
+        edges,
+        authority_xml_bytes if authority_xml_bytes is not None else xml_bytes,
+        statute_id,
+    )
+
+    return edges
+
+
+def _merge_authority_basis(
+    edges: List[CrossRefEdge],
+    xml_bytes: bytes,
+    statute_id: str,
+) -> None:
+    """Enrich ISSUED_UNDER edges with the preamble "nojalla" section + kind.
+
+    Parses the statute preamble for the Finnish "N §:n nojalla" authority-basis
+    construction (via ``extract_asetus_authority``) and, in place:
+
+    * populates ``target_section`` (the cited section(s), e.g. "60a") on each
+      existing ISSUED_UNDER edge whose target appears as a nojalla basis;
+    * sets ``target_kind`` ("act" / "decree" / "decision") from the per-basis
+      drafting inflection — so a laki basis types as a statute cross-reference
+      while a genuine decree/decision basis stays a non-statutory instrument;
+    * appends ISSUED_UNDER edges for nojalla bases that are absent from the
+      finlex:issuedUnderActs metadata (which is sometimes incomplete).
+
+    The kind is recorded for every basis (even sectionless ones); it is NOT
+    blanket-set to "act" — ~6% of bases are genuinely decree/decision.
+    """
+    from collections import defaultdict
+
+    from lawvm.finland.delegation import extract_asetus_authority
+
+    if not xml_bytes:
+        return
+    auth_edges = extract_asetus_authority(xml_bytes, statute_id)
+    if not auth_edges:
+        return
+
+    # parent_statute_id → ordered cited sections; and → first recognizable kind.
+    auth_map: dict[str, list[str]] = defaultdict(list)
+    parent_kind: dict[str, str] = {}
+    for ae in auth_edges:
+        if ae.parent_section:
+            auth_map[ae.parent_statute_id].append(ae.parent_section)
+        # First recognizable kind for a basis wins; register the basis even when
+        # its kind is empty, but don't clobber a known kind with a later empty one.
+        parent_kind.setdefault(ae.parent_statute_id, "")
+        if ae.parent_kind and not parent_kind[ae.parent_statute_id]:
+            parent_kind[ae.parent_statute_id] = ae.parent_kind
+
+    # Update existing ISSUED_UNDER edges with section info + authority kind.
+    existing_targets: set[str] = set()
+    for edge in edges:
+        if edge.edge_type == "ISSUED_UNDER":
+            existing_targets.add(edge.target_statute_id)
+            if edge.target_statute_id in auth_map:
+                secs = auth_map[edge.target_statute_id]
+                edge.target_section = ",".join(dict.fromkeys(secs))  # dedup, keep order
+            kind = parent_kind.get(edge.target_statute_id, "")
+            if kind:
+                edge.target_kind = kind
+
+    # Add ISSUED_UNDER edges found in the preamble but absent from metadata.
+    for parent_id, secs in auth_map.items():
+        if parent_id not in existing_targets:
+            edges.append(CrossRefEdge(
+                source_statute_id=statute_id,
+                target_statute_id=parent_id,
+                edge_type="ISSUED_UNDER",
+                target_section=",".join(dict.fromkeys(secs)),
+                target_kind=parent_kind.get(parent_id, ""),
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Johtolause amendment-target (<affectedDocument>) references
+# ---------------------------------------------------------------------------
+#
+# Every amending statute names the act it amends in the preamble enacting clause
+# (``<formula name="enactingClause">``) via one or more AKN ``<affectedDocument
+# href="/akn/fi/act/statute/YEAR/NUMBER">`` elements — the johtolause
+# "muutetaan … annetun … asetuksen (NNN/YYYY) …" / "kumotaan … lain (NNN/YYYY)"
+# construction. This is the single most important cross-statute link in an
+# amending statute, yet it lives OUTSIDE ``<body>`` and so is never seen by the
+# inline-``<ref>`` body scan in ``extract_cross_refs`` (which scopes to the body
+# range). Pure-amendment statutes — whose entire substance is the johtolause plus
+# quoted replacement text — therefore surface ZERO cross-statute references.
+#
+# This extractor scans the ``<affectedDocument>`` elements and emits one
+# AMENDS-typed edge per distinct amendment target. AMENDS is the surface
+# reference/entity for the amendment relation; the replay/apply engine already
+# knows the amendment target independently from the same johtolause, so this is
+# purely the surface link, not a replay input.
+
+# Match the inner ``<affectedDocument …>`` start tag (followed by a space or
+# ``>``) so it cannot latch onto a longer tag that merely shares the prefix.
+_AFFECTED_DOC_START = re.compile(rb"<(?:[A-Za-z0-9_]+:)?affectedDocument(?=[\s>])")
+_AFFECTED_DOC_CLOSE = re.compile(rb"</(?:[A-Za-z0-9_]+:)?affectedDocument>")
+
+
+def _locate_affected_document_span(
+    xml_bytes: bytes,
+    href: str,
+    *,
+    search_from: int = 0,
+) -> Optional[tuple[int, int]]:
+    """Locate the inner-phrase byte span of an ``<affectedDocument href=HREF>``.
+
+    Mirrors :func:`_locate_ref_byte_span` but for ``<affectedDocument>``: returns
+    the span of the bytes BETWEEN the start tag's ``>`` and the matching
+    ``</affectedDocument>`` close — the displayed citation phrase ("1129/2014"),
+    not the markup envelope. ``None`` if it cannot be located. The search starts
+    at ``search_from`` so repeated identical hrefs are walked left-to-right.
+    """
+    if not href:
+        return None
+    needle_dq = b'href="' + href.encode("utf-8") + b'"'
+    needle_sq = b"href='" + href.encode("utf-8") + b"'"
+    attr_pos = xml_bytes.find(needle_dq, search_from)
+    if attr_pos < 0:
+        attr_pos = xml_bytes.find(needle_sq, search_from)
+    if attr_pos < 0:
+        return None
+    start_match = None
+    for m in _AFFECTED_DOC_START.finditer(xml_bytes, 0, attr_pos + 1):
+        start_match = m
+    if start_match is None:
+        return None
+    gt = xml_bytes.find(b">", attr_pos)
+    if gt < 0:
+        return None
+    inner_start = gt + 1
+    close = _AFFECTED_DOC_CLOSE.search(xml_bytes, inner_start)
+    if close is None:
+        return None
+    return (inner_start, close.start() - inner_start)
+
+
+def extract_affected_document_refs(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+) -> List[CrossRefEdge]:
+    """Extract johtolause amendment-target edges from ``<affectedDocument>``.
+
+    Scans the preamble ``<formula name="enactingClause">`` for AKN
+    ``<affectedDocument href="/akn/fi/act/statute/YEAR/NUMBER">`` elements and
+    emits one ``AMENDS`` edge per distinct amendment target. The edge carries the
+    canonical target id (via :func:`_parse_ref_href`), the displayed citation
+    surface, and the inner-phrase byte span into ``xml_bytes``.
+
+    Self-references are skipped (an amending statute never lists itself as its own
+    amendment target; a recorded self-reference would be a source pathology) and,
+    when ``diagnostics_out`` is provided, recorded as
+    ``fi_cross_ref_self_reference_skipped``.
+
+    Targets are deduplicated: a statute may repeat the same ``<affectedDocument>``
+    across several enacting-clause blocks (kumotaan / muutetaan / lisätään), but
+    that is one amendment relation → one edge. ``count`` records the number of
+    ``<affectedDocument>`` occurrences; the byte span anchors the first.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        # Parse failure is already reported by extract_cross_refs; stay silent
+        # here rather than double-reporting the same pathology.
+        return []
+
+    # The element lives under <preamble><formula name="enactingClause">; scan the
+    # whole document for robustness (it appears nowhere else in the envelope).
+    target_count: dict[str, int] = {}
+    target_surface: dict[str, str] = {}
+    target_span: dict[str, tuple[int, int]] = {}
+    href_search_cursor: dict[str, int] = {}
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local != "affectedDocument":
+            continue
+        href = el.get("href", "")
+        parsed = _parse_ref_href(href)
+        if not parsed:
+            continue
+        target_id, _prov_path = parsed
+        if target_id == statute_id:
+            _record_self_reference_skip(
+                diagnostics_out,
+                statute_id=statute_id,
+                edge_type="AMENDS",
+                href=href,
+            )
+            continue
+        surface = " ".join("".join(el.itertext()).split())
+        located = _locate_affected_document_span(
+            xml_bytes, href, search_from=href_search_cursor.get(href, 0)
+        )
+        if located is not None:
+            href_search_cursor[href] = located[0] + 1
+            target_span.setdefault(target_id, located)
+        target_count[target_id] = target_count.get(target_id, 0) + 1
+        target_surface.setdefault(target_id, surface)
+
+    edges: List[CrossRefEdge] = []
+    for target_id, count in target_count.items():
+        span = target_span.get(target_id)
+        edges.append(CrossRefEdge(
+            source_statute_id=statute_id,
+            target_statute_id=target_id,
+            edge_type="AMENDS",
+            count=count,
+            surface_text=target_surface.get(target_id, ""),
+            source_byte_offset=span[0] if span is not None else None,
+            source_byte_len=span[1] if span is not None else 0,
+        ))
     return edges
 
 
@@ -454,27 +793,75 @@ def extract_cross_refs(
 # patterns: EU|EY|ETY|EURATOM|ETA, re.I, plus the NUMBER/YEAR/FORM order).
 # Lowering into CrossRefEdge (type classification + sanity filter + dedup)
 # stays here.
-_EU_TYPE_MAP = {
-    'asetus':    'reg',    # regulation
-    'direktiivi': 'dir',   # directive
-    'päätös':    'dec',    # decision
-    'asiakirja': 'act',    # generic
-}
+# Finnish consonant gradation inflects the act-type heads (asetus → asetuksen,
+# päätös → päätöksen), so a bare-nominative substring test misses every inflected
+# regulation/decision and silently falls through to the generic 'act'. Match the
+# inflected STEMS instead. Ordered most-specific first so the longest stem wins
+# when several could co-occur in the look-behind window.
+_EU_TYPE_STEMS: tuple[tuple[str, str], ...] = (
+    ('direktiiv', 'dir'),   # direktiivi(n/ssä/…) — vowel-stemmed (no gradation)
+    ('asetuks', 'reg'),     # asetuksen/asetuksessa/… (gradated genitive stem)
+    ('asetus', 'reg'),      # asetus (nominative)
+    ('päätöks', 'dec'),     # päätöksen/päätöksessä/… (gradated genitive stem)
+    ('päätös', 'dec'),      # päätös (nominative)
+    ('asiakirja', 'act'),   # generic instrument
+)
 _EU_JURISDICTION = re.compile(r'\b(EU|EY|ETY|EURATOM|ETA)\b')
 
 _CELEX_TYPE = {'R': 'reg', 'L': 'dir', 'D': 'dec'}
+
+# "YEAR/NUMBER/FORM" — year-first slash form, e.g. "2001/23/EY" in
+# "Neuvoston direktiivi 2001/23/EY". The shared recognizer's NUMBER/YEAR/FORM
+# pattern (_CR_EU_P2) requires a 4-digit MIDDLE group, so it only matches the
+# number-first order ("999/2001/EY"); a small (1–3 digit) act number after a
+# 4-digit year is left unrecognised. The 4-digit-then-≤3-digit shape is
+# unambiguously year-first (number-first would need a 4-digit year in the
+# middle), so it cannot collide with the number-first form. Year bounds are
+# enforced by the _add sanity filter.
+_EU_YEAR_FIRST_SLASH = re.compile(
+    r'\b(\d{4})/(\d{1,3})/(?:EU|EY|ETY|EURATOM|ETA)\b',
+    re.I,
+)
 
 # Look-behind: 40 chars before a match to detect the act type keyword
 _TYPE_LOOKBEHIND = 40
 
 
 def _classify_eu_type(text: str, match_start: int) -> str:
-    """Guess regulation/directive/decision from text before the match."""
+    """Guess regulation/directive/decision from text before the match.
+
+    Tests inflected stems (``asetuks``/``asetus``, ``päätöks``/``päätös``,
+    ``direktiiv``) so gradated forms ("asetuksen", "päätöksen") classify
+    correctly instead of falling through to the generic ``act``. The closest
+    (latest-occurring) stem in the look-behind window wins; on a tie the
+    most-specific (earliest-listed) stem is preferred.
+    """
     window = text[max(0, match_start - _TYPE_LOOKBEHIND):match_start].lower()
-    for fi_word, eu_type in _EU_TYPE_MAP.items():
-        if fi_word in window:
-            return eu_type
-    return 'act'
+    best_pos = -1
+    best_type = 'act'
+    for stem, eu_type in _EU_TYPE_STEMS:
+        pos = window.rfind(stem)
+        if pos > best_pos:
+            best_pos = pos
+            best_type = eu_type
+    return best_type
+
+
+def _normalize_eu_year(year: str) -> str:
+    """Expand a (possibly 2-digit) EU-act year fragment to a 4-digit year.
+
+    A 4-digit fragment is returned verbatim. A 2-digit fragment ``yy`` is
+    expanded by the codebase century pivot (same rule as the plain-text Finnish
+    statute-id lane): ``yy <= current 2-digit year`` → ``20yy``, otherwise
+    ``19yy``. EU-act numbering runs from the 1950s to present, so the window is
+    unambiguous in practice (e.g. ``91`` → ``1991``, ``02`` → ``2002``).
+    """
+    if len(year) != 2:
+        return year
+    yy = int(year)
+    current_yy = date.today().year % 100
+    century = 2000 if yy <= current_yy else 1900
+    return str(century + yy)
 
 
 def _eu_statute_id(eu_type: str, year: str, number: str) -> str:
@@ -520,6 +907,12 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
     # First-occurrence byte span per key (UNIT: bytes into xml_bytes, computed by
     # encoding the decoded-text char prefix up to the recognizer's char start).
     eu_spans: dict[tuple[str, str, str], tuple[int, int]] = {}
+    # First-occurrence matched surface per key — the EU citation phrase exactly as
+    # it appears in the decoded text (the recognizer's ``raw``, e.g.
+    # "(EY) N:o 999/2001"). Verbatim substring of the source text, so it byte-matches
+    # for downstream re-anchoring / viewer overlay / provenance. Empty when the
+    # surface for the first occurrence was not recorded.
+    eu_surfaces: dict[tuple[str, str, str], str] = {}
     # We don't have element-level section context for text patterns;
     # use empty string for source_section (provision-level tracking is not
     # feasible from plain text without full DOM traversal).
@@ -532,7 +925,12 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         *,
         char_start: int = -1,
         char_end: int = -1,
+        surface: str = "",
     ) -> None:
+        # Expand a 2-digit "(ETY) N:o 2092/91"-style year before sanity-checking
+        # and id-building, so legacy EU citations land on the same canonical
+        # eu/TYPE/YEAR/NUMBER id as their 4-digit form.
+        year = _normalize_eu_year(year)
         if int(year) < 1957 or int(year) > 2050:
             return  # sanity filter
         target_id = _eu_statute_id(eu_type, year, number)
@@ -543,6 +941,9 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
             b_off = len(text[:char_start].encode("utf-8"))
             b_len = len(text[char_start:char_end].encode("utf-8"))
             eu_spans[key] = (b_off, b_len)
+        # Record the matched surface of the first occurrence (verbatim substring).
+        if key not in eu_surfaces and surface:
+            eu_surfaces[key] = surface
 
     # recognize_eu_acts(DIALECT_CROSS_REF) yields all matches across the
     # N:o form, the modern year-first form, and the NUMBER/YEAR/FORM order,
@@ -558,6 +959,7 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         _add(
             eu_type, ref.year, ref.number, subtype,
             char_start=ref.start, char_end=ref.end,
+            surface=ref.raw,
         )
 
     for ref in recognize_celex(text, dialect=DIALECT_CROSS_REF):
@@ -566,6 +968,18 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         _add(
             eu_type, ref.year, str(int(ref.number)), "",
             char_start=ref.start, char_end=ref.end,
+            surface=ref.raw,
+        )
+
+    # Year-first slash form ("2001/23/EY") that the shared NUMBER/YEAR/FORM
+    # recognizer misses because its middle group must be 4 digits. Common in
+    # signature/footer citations like "Neuvoston direktiivi 2001/23/EY".
+    for m in _EU_YEAR_FIRST_SLASH.finditer(text):
+        eu_type = _classify_eu_type(text, m.start())
+        _add(
+            eu_type, m.group(1), m.group(2), "",
+            char_start=m.start(), char_end=m.end(),
+            surface=m.group(0),
         )
 
     edges: List[CrossRefEdge] = []
@@ -580,6 +994,10 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
             source_section=src_sec,
             target_section='',
             count=count,
+            # The matched EU citation surface (verbatim substring of the source
+            # text, e.g. "(EY) N:o 999/2001") — drives byte re-anchoring, the
+            # viewer overlay, and provenance, exactly like the <ref> lane.
+            surface_text=eu_surfaces.get((src_sec, target_id, subtype), ""),
             edge_subtype=subtype,
             source_byte_offset=b_off,
             source_byte_len=b_len,

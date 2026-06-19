@@ -443,14 +443,25 @@ def _segment_matches_locator(segment_addr: str, locator: str) -> bool:
     return False
 
 
-def _placement_candidates(
-    row: LawvmInterlinkRow,
+def place_surface_text_spans(
+    surface_text: str,
+    source_locator: str | None,
     segments_by_date: dict[str, list[RenderedTextSegment]],
 ) -> list[tuple[str, RenderedTextSegment, int]]:
-    surface = row.surface_text
-    if not _has_placeable_surface(row):
+    """Locate a surface string in the rendered text, one match per change-date.
+
+    The neutral span-placement primitive shared by every viewer surface that
+    paints inline over the rendered body (interlinks AND surface overlays). For
+    each date it returns ``(date, segment, char_start)`` only when ``surface_text``
+    occurs EXACTLY ONCE among that date's segments whose address matches
+    ``source_locator`` (an empty/None locator matches every segment). Ambiguous
+    dates (zero or multiple occurrences) yield no placement — the caller keeps the
+    row unplaced rather than guessing a span.
+    """
+    surface = surface_text
+    if not surface.strip():
         return []
-    locator = _normalize_interlink_locator(row.source_locator)
+    locator = _normalize_interlink_locator(source_locator)
     by_date: list[tuple[str, RenderedTextSegment, int]] = []
     for date, segments in segments_by_date.items():
         matches: list[tuple[RenderedTextSegment, int]] = []
@@ -464,6 +475,15 @@ def _placement_candidates(
             segment, start = matches[0]
             by_date.append((date, segment, start))
     return by_date
+
+
+def _placement_candidates(
+    row: LawvmInterlinkRow,
+    segments_by_date: dict[str, list[RenderedTextSegment]],
+) -> list[tuple[str, RenderedTextSegment, int]]:
+    if not _has_placeable_surface(row):
+        return []
+    return place_surface_text_spans(row.surface_text, row.source_locator, segments_by_date)
 
 
 def place_lawvm_interlinks(

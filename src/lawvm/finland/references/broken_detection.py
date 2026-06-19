@@ -445,11 +445,10 @@ def _extract_materialized_tree(result: object) -> Optional[IRNode]:
     """
     products = getattr(result, "products", None)
     state = getattr(products, "materialized_state", None)
-    tree = getattr(state, "tree", None)
-    if isinstance(tree, IRNode):
-        return tree
-    # Some product shapes expose the tree directly on the state via .body/.root.
-    for attr in ("body", "root"):
+    # The point-in-time IR tree lives on ``materialized_state.ir``. (``.tree`` is a
+    # last-resort lxml parse of the ORIGINAL base XML, not the as-of IRNode, so it
+    # must NOT be preferred — doing so made every target read back unavailable.)
+    for attr in ("ir", "tree", "body", "root"):
         candidate = getattr(state, attr, None)
         if isinstance(candidate, IRNode):
             return candidate

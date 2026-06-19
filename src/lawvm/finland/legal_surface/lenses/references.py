@@ -32,8 +32,10 @@ Every rejected candidate and every unlocatable surface becomes an explicit
 """
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
 import hashlib
-from typing import cast
+from typing import Optional, cast
 
 from lawvm.core.legal_surface_graph import SourceSpanRef
 from lawvm.core.legal_surface_lens import (
@@ -50,15 +52,22 @@ from lawvm.core.reference_mention import (
     ReferenceMention,
     RejectedRefCandidate,
 )
-from lawvm.finland.legal_surface.bundle import locate_span
+from lawvm.finland.legal_surface.bundle import decode_body_text, locate_span
+from lawvm.finland.references.defined_terms import (
+    DefinedTermBinding,
+    recognize_defined_term_bindings,
+)
+from lawvm.finland.references.elliptical_resolve import resolve_elliptical_mentions
 from lawvm.finland.references.ref_mention_extractor import (
     ExtractionResult,
     extract_all_reference_mentions,
 )
 from lawvm.finland.references.registries.statute_name import StatuteNameRegistry
 from lawvm.finland.references.resolve import (
+    DefinedTermTable,
     ResolutionStatus,
     ResolvedReference,
+    build_defined_term_table,
     resolve_mentions,
 )
 
@@ -112,6 +121,37 @@ def _status_for_confidence(confidence: CiteConfidence) -> str:
         raise ValueError(
             f"{LENS_ID}: no graph status mapping for cite_confidence {confidence!r}"
         ) from exc
+
+
+def _parse_iso_date(value: str | None) -> Optional[dt.date]:
+    """Parse an ISO ``YYYY-MM-DD`` (date or datetime) bound to a ``date``.
+
+    Returns ``None`` for an empty / unparseable bound — an unknown bound stays
+    open (fail-loud: an unparseable date is NOT silently coerced to a guessed
+    instant, it simply leaves the interval open on that side).
+    """
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _unit_validity_interval(
+    unit: SourceSurfaceUnit,
+) -> tuple[Optional[dt.date], Optional[dt.date]]:
+    """The validity window of this unit's consolidated text as a date interval.
+
+    Sourced from :attr:`SourceSurfaceUnit.effective_interval` (ISO strings). This
+    is the interval during which THIS version of the body text was in force, and
+    is threaded onto each emitted mention's ``valid_at_interval`` so a by-name
+    citation resolves to the version of the cited act in force WHILE the citing
+    text was valid (static-as-of-citing at the unit's granularity). An open start
+    (``None``) keeps a multi-version name AMBIGUOUS downstream (no guess).
+    """
+    start_raw, end_raw = unit.effective_interval
+    return (_parse_iso_date(start_raw), _parse_iso_date(end_raw))
 
 
 def _normalize_surface(surface_text: str) -> str:
@@ -204,24 +244,64 @@ class ReferenceLens:
                 )
                 continue
 
+            # The validity window of this consolidated body version, threaded
+            # onto every mention's valid_at_interval so a multi-version by-name
+            # citation resolves to the act version in force WHILE this text held
+            # (rather than collapsing to AMBIGUOUS over the whole timeline). An
+            # open window leaves the mention's interval open → AMBIGUOUS (no
+            # guess); see resolve_mentions(use_mention_validity=True) below.
+            unit_interval = _unit_validity_interval(unit)
             extraction: ExtractionResult = extract_all_reference_mentions(
-                bytes(xml_bytes), unit.work_id
+                bytes(xml_bytes), unit.work_id, valid_at_interval=unit_interval
             )
+
+            # Elliptical INTERNAL refs (bare momentti / bare kohta) omit part of
+            # their address; the recognizer leaves it empty, which would resolve
+            # to the whole-statute root. Fill the omitted section (convention) /
+            # momentti (structural uniqueness) against the materialized AKN tree
+            # BEFORE the rest of the pipeline reads each mention's target. The
+            # pass is order- and cardinality-preserving (one resolution per input
+            # mention) and downgrades to ambiguous/open fail-loud, never to root.
+            mentions = [
+                res.mention
+                for res in resolve_elliptical_mentions(
+                    list(extraction.mentions), bytes(xml_bytes)
+                )
+            ]
 
             resolutions: list[ResolvedReference | None] = []
             if resolve_targets:
+                # Per-statute local defined-term / alias table. The recognizer
+                # reports binding spans as CHAR offsets into the decoded body
+                # text; the use mentions are re-anchored to BYTE offsets in
+                # ``xml_bytes`` (ref_mention_extractor._relocate). The table's
+                # ordering check ("binding precedes use") compares offsets, so
+                # the binding sites MUST live in the same byte space. We
+                # therefore re-anchor each binding onto its term TOKEN — which
+                # byte-matches ``xml_bytes`` verbatim — before building the table.
+                defined_terms = _build_local_defined_term_table(
+                    bytes(xml_bytes), unit.work_id
+                )
                 resolutions.extend(
                     resolve_mentions(
-                        list(extraction.mentions),
+                        mentions,
                         statute_registry=cast(StatuteNameRegistry, statute_registry),
                         eu_registry=eu_registry if eu_registry is not None else _default_eu_registry(),
+                        defined_terms=defined_terms,
+                        # Resolve each by-name mention against the version of the
+                        # cited act in force WHILE that mention's reference state
+                        # held (its valid_at_interval start), rather than collapsing
+                        # every multi-version name to AMBIGUOUS. An open/unknown
+                        # interval keeps it AMBIGUOUS (no guess); the citing
+                        # statute's enactment year is never used.
+                        use_mention_validity=True,
                     )
                 )
             else:
-                resolutions.extend(None for _ in extraction.mentions)
+                resolutions.extend(None for _ in mentions)
 
             cursor = 0
-            for mention, resolved in zip(extraction.mentions, resolutions, strict=True):
+            for mention, resolved in zip(mentions, resolutions, strict=True):
                 n_mentions += 1
                 located_ref, cursor = self._locate(unit, mention, cursor)
                 # Every real mention becomes a reference_expr node — no locatable
@@ -590,6 +670,74 @@ class ReferenceLens:
             },
             status="blocked" if rej.blocking else "open",
         )
+
+
+def _reanchor_binding_to_xml_bytes(
+    binding: DefinedTermBinding, xml_bytes: bytes
+) -> DefinedTermBinding | None:
+    """Re-anchor a binding's ``source_span`` onto its term token in ``xml_bytes``.
+
+    The recognizer reports the binding construct's span as a CHAR offset into the
+    decoded body text (``decode_body_text``). The resolver compares a binding's
+    byte offset against the USE mention's byte offset (re-anchored into
+    ``xml_bytes`` by ``ref_mention_extractor._relocate``), so the two MUST share a
+    byte space. The whole construct (e.g.
+    ``annetussa asetuksessa (EY) N:o 1069/2009 (sivutuoteasetus)``) seldom
+    byte-matches ``xml_bytes`` because element tags sit inside it — but the
+    binding's ``term`` (e.g. ``sivutuoteasetus``) is a single token present
+    verbatim in ``xml_bytes``.
+
+    BINDING-SITE PROXY: we use the term token's FIRST byte occurrence in
+    ``xml_bytes`` as the binding-site offset. The term is recorded in the
+    NOMINATIVE as written at the binding site; a later USE is inflected (different
+    bytes), so the nominative term's first verbatim occurrence is the binding
+    site, not an earlier use. (A bare nominative use that genuinely precedes the
+    binding — uncommon for an alias — would make this proxy slightly early; the
+    "binding precedes use" guard then errs toward resolving rather than blocking
+    that one use. The use-before-binding case for INFLECTED uses stays correctly
+    unresolved because the inflected bytes never match the nominative anchor.)
+
+    Returns a binding whose ``source_span.byte_offset`` is the xml_bytes byte
+    offset of the term token, or ``None`` when the term token is not found
+    verbatim in ``xml_bytes`` (e.g. tag-split term — refuse to guess a position;
+    the binding is dropped rather than mis-anchored).
+    """
+    if binding.source_span is None:
+        return None
+    term = binding.term.strip()
+    if not term:
+        return None
+    needle = term.encode("utf-8")
+    pos = xml_bytes.find(needle)
+    if pos < 0:
+        return None
+    new_span = dataclasses.replace(
+        binding.source_span, byte_offset=pos, byte_len=len(needle)
+    )
+    return dataclasses.replace(binding, source_span=new_span)
+
+
+def _build_local_defined_term_table(
+    xml_bytes: bytes, work_id: str
+) -> DefinedTermTable:
+    """Build the per-statute defined-term table in ``xml_bytes`` byte space.
+
+    Recognizes binding sites over the decoded body text, then re-anchors each
+    binding onto its term token's byte offset in ``xml_bytes`` so the resolver's
+    "binding precedes use" ordering compares like-for-like (use offsets are
+    ``xml_bytes`` byte offsets). Bindings whose term token does not appear
+    verbatim in ``xml_bytes`` are dropped (no mis-anchored position).
+    """
+    body_text = decode_body_text(xml_bytes)
+    if not body_text:
+        return build_defined_term_table([])
+    bindings = recognize_defined_term_bindings(body_text, source_file=work_id)
+    reanchored: list[DefinedTermBinding] = []
+    for b in bindings:
+        fixed = _reanchor_binding_to_xml_bytes(b, xml_bytes)
+        if fixed is not None:
+            reanchored.append(fixed)
+    return build_defined_term_table(reanchored)
 
 
 def _default_eu_registry() -> object:

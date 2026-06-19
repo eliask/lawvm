@@ -39,6 +39,17 @@ Closed-list discipline (mirrors ``vague.py`` §1.11):
   - A legally-significant shape the scanner sees but cannot type safely is
     emitted as a typed :class:`ActorModalResidual` — never silently dropped,
     never guessed into a frame.
+
+TOKEN-NATIVE REWRITE (decision B)
+=================================
+This recognizer is a TOKEN/GRAMMAR recognizer over a :class:`TokenTape`, NOT a
+regex over raw text. The actor vocabulary is matched by the shared
+:class:`lawvm.finland.references.token_actor_match.TokenActorMatcher` (consecutive
+verbatim ``Token.text`` runs, case-sensitive, longest-first); the modal markers
+are matched by the same matcher over the closed modal phrase set; nearest-actor
+pairing, object capture and gap/clause windows are TOKEN-INDEX / token-char-offset
+operations. Emitted spans are whole-token aligned (re-baselined vs. the old
+char-regex spans — expected and accepted). The frame PAYLOAD shape is UNCHANGED.
 """
 from __future__ import annotations
 
@@ -46,6 +57,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
 
+from lawvm.core.legal_surface_tokens import Token, TokenTape
 from lawvm.core.reference_mention import SourceSpan
 from lawvm.finland.canonical_actor_registry import REGISTRY
 from lawvm.finland.references.role_actors import (
@@ -53,6 +65,9 @@ from lawvm.finland.references.role_actors import (
 )
 from lawvm.finland.references.role_actors import (
     expand_role_actor_phrases,
+)
+from lawvm.finland.references.token_actor_match import (
+    TokenActorMatcher,
 )
 
 Polarity = Literal["positive", "negative"]
@@ -66,7 +81,10 @@ Voice = Literal["active", "passive"]
 # These are SURFACE tokens, not legal categories. Glosses are descriptive of
 # the SURFACE form only:
 #
-#   on             "is" (copula; surface obligation-shape in "on tehtävä")  active
+#   on             necessive shape ONLY: "on" + a -ttava/-tava/-tävä           active
+#                  participle ("on tehtävä", "on toimitettava"). A bare copula
+#                  ("X on Y", "joka on tehty ...") is NOT a modal and does not
+#                  fire — see the necessive gate in _scan_tape.
 #   tulee          "shall / must" (necessive)                               active
 #   saa            "may"                                                     active
 #   ei saa         "may not" (negated saa)                                  active  negative
@@ -107,21 +125,6 @@ _MODAL_MARKERS: tuple[tuple[str, Polarity, Voice], ...] = (
     ("on", "positive", "active"),
 )
 
-#: Cheap substring pre-guards; if none of these tokens appears, no modal can match.
-_MODAL_GUARDS: tuple[str, ...] = (
-    "on",
-    "tulee",
-    "saa",
-    "voi",
-    "voidaan",
-    "säädetään",
-    "määrätään",
-    "annetaan",
-    "antaa",
-    "päättää",
-    "ei ",
-)
-
 # ---------------------------------------------------------------------------
 # Closed generic role-actor list (NORMATIVE)
 # ---------------------------------------------------------------------------
@@ -148,26 +151,29 @@ def _build_actor_phrases() -> Tuple[str, ...]:
 
 _ACTOR_PHRASES_LONGEST_FIRST: Tuple[str, ...] = _build_actor_phrases()
 
-# Compiled actor alternation (module scope). Word boundaries on both sides so
-# that "kunta" does not match inside "kuntalainen". Finnish word chars include
-# the ASCII set plus äöå/ÄÖÅ; \b handles the ASCII boundary and the trailing
-# guard rejects an immediately-following Finnish letter.
-_actor_alternation = "|".join(
-    re.escape(phrase) for phrase in _ACTOR_PHRASES_LONGEST_FIRST
-)
-_ACTOR_RE = re.compile(
-    r"(?<![\wäöåÄÖÅ])(?:" + _actor_alternation + r")(?![\wäöåÄÖÅ])"
-)
+# Token-native actor matcher (module scope). Token boundaries give the
+# word-boundary guarantee the old regex spelled out with lookarounds: "kunta"
+# cannot match inside the single "kuntalainen" word token. Matching is
+# case-sensitive (verbatim Token.text), so the registry's case discipline holds.
+_ACTOR_MATCHER = TokenActorMatcher(_ACTOR_PHRASES_LONGEST_FIRST)
 
-# Compiled modal alternation (module scope), longest-first.
+# Modal-marker token matcher (module scope), longest-first over the closed modal
+# phrase set. Multi-word markers ("ei saa", "on velvollinen") span several tokens;
+# the matcher reconstructs them from consecutive verbatim Token.text runs, so the
+# inter-word separator is the single space the tokenizer preserves.
 _modal_lookup = {tok: (pol, voice) for tok, pol, voice in _MODAL_MARKERS}
-_modal_phrases_longest_first = sorted(_modal_lookup.keys(), key=len, reverse=True)
-_modal_alternation = "|".join(
-    r"\s+".join(re.escape(word) for word in tok.split(" "))
-    for tok in _modal_phrases_longest_first
-)
-_MODAL_RE = re.compile(
-    r"(?<![\wäöåÄÖÅ])(?:" + _modal_alternation + r")(?![\wäöåÄÖÅ])"
+_MODAL_MATCHER = TokenActorMatcher(tuple(_modal_lookup.keys()))
+
+#: The bare ``on`` marker is a genuine deontic surface ONLY in the necessive
+#: construction ``on`` + a passive necessive participle (``-ttava``/``-tava``/
+#: ``-tävä``: "on tehtävä", "on toimitettava", "on annettava"). A plain copula
+#: ("Viranomainen on toimivaltainen", "X on Y") or a relative-clause copula
+#: ("päätös, joka on tehty esittelystä") is NOT a modal and must not fire. The
+#: participle ends in a long vowel ``a``/``ä`` after a ``v``; require the ``ttav``
+#: / ``tav`` / ``täv`` cluster so plain adjectives/past participles (``tehty``,
+#: ``toimivaltainen``) do not qualify.
+_NECESSIVE_PARTICIPLE_RE = re.compile(
+    r"^\w*t[aä]v[aä]$", re.IGNORECASE
 )
 
 #: Maximum gap (in characters) between an actor head and the modal that may
@@ -284,73 +290,106 @@ def _span(source_file: str, start: int, end: int) -> SourceSpan:
     )
 
 
-def _capture_object_span(text: str, after: int) -> Optional[Tuple[int, int]]:
-    """Capture a trailing object surface span after a modal at offset ``after``.
+#: Clause terminators (token-side): a ``punct`` token whose text is one of these,
+#: or any ``whitespace`` token containing a newline, bounds the object window.
+_CLAUSE_TERMINATOR_PUNCT = frozenset(".;:")
 
-    SURFACE ONLY: the object is the run of text up to the next clause terminator
-    (``.``/``;``/``:``/newline) bounded by :data:`_MAX_OBJECT_SPAN`. Returns
-    (start, end) or None if there is nothing but whitespace/terminator.
+
+def _is_terminator(tok: Token) -> bool:
+    if tok.category == "punct" and tok.text in _CLAUSE_TERMINATOR_PUNCT:
+        return True
+    if tok.category == "whitespace" and "\n" in tok.text:
+        return True
+    return False
+
+
+def _capture_object_span(
+    tokens: Tuple[Token, ...], after_index: int
+) -> Optional[Tuple[int, int]]:
+    """Capture a trailing object surface span after the modal end token.
+
+    SURFACE ONLY: the run of tokens from ``after_index`` up to (not including) the
+    next clause-terminator token, bounded by :data:`_MAX_OBJECT_SPAN` characters
+    from the run start. Returns (char_start, char_end) or None if empty. Leading
+    and trailing whitespace tokens are trimmed; the span is whole-token aligned.
     """
-    start = after
+    n = len(tokens)
+    i = after_index
     # skip leading whitespace
-    while start < len(text) and text[start].isspace():
-        start += 1
-    if start >= len(text):
+    while i < n and tokens[i].category == "whitespace":
+        i += 1
+    if i >= n or _is_terminator(tokens[i]):
         return None
-    limit = min(len(text), start + _MAX_OBJECT_SPAN)
-    end = start
-    while end < limit and text[end] not in ".;:\n":
-        end += 1
-    # trim trailing whitespace
-    while end > start and text[end - 1].isspace():
-        end -= 1
-    if end <= start:
+    char_start = tokens[i].char_start
+    limit = char_start + _MAX_OBJECT_SPAN
+    last_nonspace_end: Optional[int] = None
+    j = i
+    while j < n and not _is_terminator(tokens[j]):
+        tok = tokens[j]
+        if tok.char_start >= limit:
+            break
+        if tok.category != "whitespace":
+            last_nonspace_end = tok.char_end
+        j += 1
+    if last_nonspace_end is None:
         return None
-    return (start, end)
+    return (char_start, last_nonspace_end)
 
 
-def recognize_actor_modal_frames(
-    text: str, source_file: str = ""
-) -> ActorModalScan:
-    """Recognise surface actor/modal frames in ``text``.
+def _on_is_necessive(tokens: Tuple[Token, ...], after_index: int) -> bool:
+    """True iff the word following a bare ``on`` is a passive necessive participle.
 
-    Returns an :class:`ActorModalScan` carrying typed frames and typed residuals.
-    Every emitted frame has ``status="surface_fact_only"``. Nothing is silently
-    dropped: a modal with no nearby actor, an actor with no nearby modal, and an
-    ambiguous actor surface each become a typed :class:`ActorModalResidual`.
-
-    The recognizer records SURFACE FACTS ONLY and never asserts legal force.
+    Gates the bare ``on`` marker: only ``on`` + ``-ttava/-tava/-tävä`` ("on
+    tehtävä", "on toimitettava") is a deontic surface. A plain copula
+    ("X on Y") or a relative-clause copula ("joka on tehty ...") fails this gate
+    and emits no frame. ``after_index`` is the token index just past ``on``.
     """
-    if not any(guard in text for guard in _MODAL_GUARDS):
-        # No modal can fire. Still, a lone actor is not a frame, and with no
-        # modal present we emit no residual for it (an actor alone outside any
-        # modal context is not a "seen-but-untypeable frame" — it is just text).
-        return ActorModalScan(frames=(), residuals=())
+    n = len(tokens)
+    j = after_index
+    while j < n and tokens[j].category == "whitespace":
+        j += 1
+    if j >= n or tokens[j].category != "word":
+        return False
+    return _NECESSIVE_PARTICIPLE_RE.match(tokens[j].text) is not None
 
-    actor_matches = list(_ACTOR_RE.finditer(text))
-    modal_matches = list(_MODAL_RE.finditer(text))
+
+def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
+    tokens = tape.tokens
+
+    actor_matches = _ACTOR_MATCHER.find_all(tokens)
+    modal_matches = _MODAL_MATCHER.find_all(tokens)
+    if not modal_matches:
+        # No modal can fire. A lone actor is not a frame and emits no residual.
+        return ActorModalScan(frames=(), residuals=())
 
     frames: List[ActorModalFrame] = []
     residuals: List[ActorModalResidual] = []
 
     consumed_actor_idx: set[int] = set()
-    consumed_modal_idx: set[int] = set()
 
-    # Pair each modal with the nearest preceding actor within the gap window.
-    for m_idx, modal_m in enumerate(modal_matches):
-        token = modal_m.group(0)
-        # Normalise inter-word whitespace back to the canonical single-space token
-        # so the lookup key matches (regex allowed \s+ between words).
-        norm_token = re.sub(r"\s+", " ", token)
+    # Pair each modal with the nearest preceding actor within the gap window. The
+    # gap is measured in source characters between the actor end and the modal
+    # start (the same window the char-regex recognizer used).
+    for modal_m in modal_matches:
+        norm_token = modal_m.surface
         pol, voice = _modal_lookup[norm_token]
+
+        # Bare ``on`` is a deontic surface ONLY in the necessive construction
+        # (``on`` + ``-ttava/-tava/-tävä`` participle). A plain copula ("X on Y")
+        # or a relative-clause copula ("joka on tehty ...") is not a modal — it
+        # is demoted to residual (no frame, no bound actor). The longer ``on
+        # velvollinen`` / ``on oikeus`` / ``on oikeutettu`` markers are distinct
+        # tokens and are unaffected.
+        if norm_token == "on" and not _on_is_necessive(tokens, modal_m.end_index):
+            continue
 
         best_actor_idx: Optional[int] = None
         for a_idx, actor_m in enumerate(actor_matches):
             if a_idx in consumed_actor_idx:
                 continue
-            if actor_m.end() > modal_m.start():
+            if actor_m.char_end > modal_m.char_start:
                 break  # actor not before this modal
-            gap = modal_m.start() - actor_m.end()
+            gap = modal_m.char_start - actor_m.char_end
             if gap <= _MAX_ACTOR_MODAL_GAP:
                 best_actor_idx = a_idx  # keep advancing to the nearest
 
@@ -360,7 +399,7 @@ def recognize_actor_modal_frames(
                     kind="modal_without_actor",
                     surface_text=norm_token,
                     source_span=_span(
-                        source_file, modal_m.start(), modal_m.end()
+                        source_file, modal_m.char_start, modal_m.char_end
                     ),
                     detail=(
                         f"modal marker {norm_token!r} with no known actor "
@@ -371,7 +410,7 @@ def recognize_actor_modal_frames(
             continue
 
         actor_m = actor_matches[best_actor_idx]
-        actor_surface = actor_m.group(0)
+        actor_surface = actor_m.surface
 
         # Ambiguity check against the institutional registry. Role actors are not
         # in the registry; an unmatched registry lookup with a role-actor surface
@@ -384,7 +423,7 @@ def recognize_actor_modal_frames(
                     kind="ambiguous_actor",
                     surface_text=actor_surface,
                     source_span=_span(
-                        source_file, actor_m.start(), actor_m.end()
+                        source_file, actor_m.char_start, actor_m.char_end
                     ),
                     detail=(
                         f"actor surface {actor_surface!r} is ambiguous across "
@@ -393,60 +432,55 @@ def recognize_actor_modal_frames(
                     ),
                 )
             )
-            consumed_modal_idx.add(m_idx)
             continue
 
         modal = SurfaceModality(
             token=norm_token,
             polarity=pol,
             voice=voice,
-            source_span=_span(source_file, modal_m.start(), modal_m.end()),
+            source_span=_span(source_file, modal_m.char_start, modal_m.char_end),
         )
 
-        obj = _capture_object_span(text, modal_m.end())
+        obj = _capture_object_span(tokens, modal_m.end_index)
         object_span = (
             _span(source_file, obj[0], obj[1]) if obj is not None else None
         )
 
-        frame_end = obj[1] if obj is not None else modal_m.end()
+        frame_end = obj[1] if obj is not None else modal_m.char_end
         frames.append(
             ActorModalFrame(
                 actor_surface=actor_surface,
-                actor_span=_span(source_file, actor_m.start(), actor_m.end()),
+                actor_span=_span(
+                    source_file, actor_m.char_start, actor_m.char_end
+                ),
                 modal=modal,
                 object_span=object_span,
-                source_span=_span(source_file, actor_m.start(), frame_end),
+                source_span=_span(source_file, actor_m.char_start, frame_end),
                 status="surface_fact_only",
                 rule_id=_RULE_ID,
             )
         )
         consumed_actor_idx.add(best_actor_idx)
-        consumed_modal_idx.add(m_idx)
 
-    # Any actor that immediately precedes a modal within the gap window but was
-    # never consumed would be unusual; we only emit actor_without_modal for an
-    # actor that has NO modal anywhere after it within the gap window, to avoid
-    # noise on ordinary descriptive prose. An actor consumed into a frame is
-    # excluded.
+    # An actor that was seen near a modal but did not bind to one (a nearer actor
+    # did) is a genuine seen-but-untyped shape, emitted as a typed residual.
     for a_idx, actor_m in enumerate(actor_matches):
         if a_idx in consumed_actor_idx:
             continue
         has_following_modal = any(
-            0 <= (modal_m.start() - actor_m.end()) <= _MAX_ACTOR_MODAL_GAP
+            0 <= (modal_m.char_start - actor_m.char_end) <= _MAX_ACTOR_MODAL_GAP
             for modal_m in modal_matches
         )
         if has_following_modal:
-            # There was a modal close after this actor but it bound to a nearer
-            # actor; this actor is genuinely seen-near-a-modal yet untyped.
             residuals.append(
                 ActorModalResidual(
                     kind="actor_without_modal",
-                    surface_text=actor_m.group(0),
+                    surface_text=actor_m.surface,
                     source_span=_span(
-                        source_file, actor_m.start(), actor_m.end()
+                        source_file, actor_m.char_start, actor_m.char_end
                     ),
                     detail=(
-                        f"actor surface {actor_m.group(0)!r} appears near a "
+                        f"actor surface {actor_m.surface!r} appears near a "
                         f"modal but did not bind to one (a nearer actor did)"
                     ),
                 )
@@ -456,3 +490,28 @@ def recognize_actor_modal_frames(
         frames=tuple(frames),
         residuals=tuple(residuals),
     )
+
+
+def recognize_actor_modal_frames(
+    tape_or_text: TokenTape | str, source_file: str = ""
+) -> ActorModalScan:
+    """Recognise surface actor/modal frames over a :class:`TokenTape`.
+
+    Returns an :class:`ActorModalScan` carrying typed frames and typed residuals.
+    Every emitted frame has ``status="surface_fact_only"``. Nothing is silently
+    dropped: a modal with no nearby actor, an actor with no nearby modal, and an
+    ambiguous actor surface each become a typed :class:`ActorModalResidual`.
+
+    The recognizer records SURFACE FACTS ONLY and never asserts legal force.
+
+    Accepts a :class:`TokenTape` (the token-native path the lens feeds) or, for
+    convenience in tests/baselines, a raw ``str`` (tokenized internally via the
+    Finnish tokenizer). Emitted spans are whole-token aligned.
+    """
+    if isinstance(tape_or_text, str):
+        from lawvm.finland.legal_surface.tokenize import build_token_tape
+
+        tape = build_token_tape(source_file or "actor_modal", tape_or_text)
+    else:
+        tape = tape_or_text
+    return _scan_tape(tape, source_file)

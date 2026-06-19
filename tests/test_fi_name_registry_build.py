@@ -12,11 +12,11 @@ import datetime as dt
 
 from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
+    _extract_title_and_date,
     load_statute_name_entries,
     load_statute_name_registry,
     serialize_entries,
 )
-from lawvm.tools.build_statute_name_registry import _extract_title_and_date
 
 
 # A minimal AKN source XML with a docTitle and a FRBRWork dateIssued.

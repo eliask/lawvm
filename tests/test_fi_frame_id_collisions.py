@@ -42,7 +42,6 @@ from lawvm.finland.legal_surface.lenses.exception_condition import (
 )
 from lawvm.finland.legal_surface.lenses.procedure import ProcedureLens
 from lawvm.finland.legal_surface.lenses.sanction import SanctionLens
-from lawvm.finland.references.exception_condition import ExceptionConditionCue
 from lawvm.finland.references.procedure import (
     ProcedureFrame,
     ProcedureScan,
@@ -210,7 +209,7 @@ def test_procedure_colocated_divergent_frames_distinct(monkeypatch) -> None:
         ),
         residuals=(),
     )
-    monkeypatch.setattr(proc_lens_mod, "scan_procedure", lambda _text: scan)
+    monkeypatch.setattr(proc_lens_mod, "scan_procedure", lambda _text, **_kw: scan)
     bundle, context = _bundle_and_context()
     _assert_distinct_then_assembles(ProcedureLens(), bundle, context)
 
@@ -243,36 +242,26 @@ def test_sanction_colocated_divergent_frames_distinct(monkeypatch) -> None:
         residuals=(),
     )
     monkeypatch.setattr(
-        sanc_lens_mod, "recognize_sanction_frames", lambda _text: scan
+        sanc_lens_mod, "recognize_sanction_frames", lambda _text, **_kw: scan
     )
     bundle, context = _bundle_and_context()
     _assert_distinct_then_assembles(SanctionLens(), bundle, context)
 
 
 def test_exception_condition_colocated_divergent_cues_distinct(monkeypatch) -> None:
-    span = _colocated_span()
-    scope_a = SourceSpan(source_file="", byte_offset=10, byte_len=3)
-    scope_b = SourceSpan(source_file="", byte_offset=20, byte_len=3)
-    cues = (
-        ExceptionConditionCue(
-            cue_kind="CONDITION",
-            marker_text="jos",
-            scope_hint=scope_a,
-            source_span=span,
-            status="surface_fact_only",
-            rule_id="test.exc",
-        ),
-        ExceptionConditionCue(
-            cue_kind="CONDITION",
-            marker_text="jos",
-            scope_hint=scope_b,  # divergent payload, same key+surface+offset
-            source_span=span,
-            status="surface_fact_only",
-            rule_id="test.exc",
-        ),
-    )
-    monkeypatch.setattr(
-        exc_lens_mod, "recognize_exception_condition_cues", lambda _text: cues
-    )
+    # The migrated token lens builds cues from ``_scan_phrases`` (tuples
+    # ``(m_start, m_end, marker_text, scope_start, scope_end)``), not from the
+    # former ``recognize_exception_condition_cues``. Force two cues at the SAME
+    # marker span with DIVERGENT scope payload so the assembler must mint
+    # distinct node ids (the colocation-discriminator regression).
+    def fake_scan(_tape, _raw_text, _phrases, kind):  # noqa: ANN001
+        if kind == "EXCEPTION":
+            return [
+                (10, 13, "jos", 5, 8),
+                (10, 13, "jos", 20, 23),  # same span, divergent scope payload
+            ]
+        return []
+
+    monkeypatch.setattr(exc_lens_mod, "_scan_phrases", fake_scan)
     bundle, context = _bundle_and_context()
     _assert_distinct_then_assembles(ExceptionConditionLens(), bundle, context)

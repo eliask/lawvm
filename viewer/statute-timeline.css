@@ -140,6 +140,47 @@ select {
 .law { font-size: 1.05rem; font-weight: 700; }
 .law .date { color: var(--accent); }
 .date-meta { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
+
+/* Return trail after following an internal reference link. */
+.internal-backbar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #e8dfc4;
+  border-radius: 6px;
+  background: #fffaf0;
+  font-size: 0.8rem;
+}
+.internal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #dcc9a0;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0.18rem 0.55rem;
+  cursor: pointer;
+}
+.internal-back-btn:hover { background: #fff8e6; border-color: #c9a96a; }
+.internal-back-arrow { font-size: 0.95rem; line-height: 1; }
+.internal-back-meta { color: var(--muted); flex: 1 1 auto; min-width: 0; }
+.internal-back-dismiss {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.internal-back-dismiss:hover { color: var(--text); background: #f3ead8; }
 .date-nav { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .date-nav button { font-size: 0.78rem; padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; }
 .date-nav button:hover { background: #eef2f6; }
@@ -264,6 +305,17 @@ select {
 .node-row.clk:hover { background: #eef2f6; }
 .node-row.flash { animation: flash 1.1s ease-out; }
 @keyframes flash { 0% { background: #ffe9a8; } 100% { background: transparent; } }
+/* Internal-link jump: soft highlight on the resolved provision block(s). */
+.pblock.jump-highlight { animation: jump-highlight-pblock 2.5s ease-out; }
+.node.jump-highlight > .node-row { animation: jump-highlight-row 2.5s ease-out; }
+@keyframes jump-highlight-pblock {
+  0%, 14% { background: #fff8dc; border-left-color: #d4a72c; }
+  100% { background: transparent; border-left-color: transparent; }
+}
+@keyframes jump-highlight-row {
+  0%, 14% { background: #fff8dc; box-shadow: inset 0 0 0 1px rgba(212, 167, 44, 0.35); }
+  100% { background: transparent; box-shadow: none; }
+}
 .node-toggle { width: 1em; flex: 0 0 1em; color: var(--muted); font-size: 0.8rem; user-select: none; }
 .node-toggle.leaf { visibility: hidden; }
 .node-label { font-weight: 700; flex: 0 0 auto; }
@@ -615,6 +667,104 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .tomb-meta .ref-link:hover { color: var(--accent); }
 .ref-date { font-variant-numeric: tabular-nums; }
 
+/* Semantic (inline statute citation) references: the surface affordance is
+   keyed by resolution status. Resolved/statute_only/external navigate (accent,
+   pointer); ambiguous/open are hoverable-but-inert; broken is struck through. */
+.ref-sem-resolved, .ref-sem-statute_only, .ref-sem-external {
+  cursor: pointer; border-bottom-style: dashed;
+}
+.ref-sem-external { border-bottom-color: rgba(86, 61, 124, 0.55); }
+.ref-sem-statute_only { border-bottom-style: dotted; }
+.ref-sem-ambiguous {
+  cursor: help; color: #8a5a00;
+  border-bottom: 1px dashed rgba(138, 90, 0, 0.6);
+}
+.ref-sem-open {
+  cursor: help; color: var(--muted);
+  border-bottom: 1px dotted rgba(107, 107, 102, 0.55);
+}
+.ref-sem-broken {
+  cursor: help; color: #8a2b2b; text-decoration: line-through;
+  text-decoration-color: rgba(138, 43, 43, 0.7);
+  border-bottom: none;
+}
+.ref-sem-broken:hover, .ref-sem-broken:focus-visible { border-bottom: none; }
+
+/* Hovercard: status badge + citation-kind chip, candidate list, broken note. */
+.ref-hovercard .hc-status-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; }
+.ref-hovercard .hc-status {
+  font-size: 0.7rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 4px;
+  background: #eef2f6; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em;
+}
+.ref-hovercard .hc-status-resolved { background: #e3f1e6; color: #2c6b3a; }
+.ref-hovercard .hc-status-statute_only { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-status-external { background: #efe9f5; color: #563d7c; }
+.ref-hovercard .hc-status-ambiguous { background: #fbf0d9; color: #8a5a00; }
+.ref-hovercard .hc-status-open { background: #eeeeea; color: #6b6b66; }
+.ref-hovercard .hc-status-broken { background: #f6e3e3; color: #8a2b2b; }
+.ref-hovercard .hc-citekind { font-size: 0.72rem; color: var(--muted); }
+.ref-hovercard .hc-candidates { margin: 0.35rem 0; }
+.ref-hovercard .hc-candidates-lbl { font-weight: 600; color: var(--muted); font-size: 0.72rem; margin-bottom: 0.15rem; }
+.ref-hovercard .hc-candidates ul { margin: 0; padding-left: 1.1rem; }
+.ref-hovercard .hc-candidates li { margin: 0.05rem 0; }
+.ref-hovercard .hc-broken-note { color: #8a2b2b; font-size: 0.76rem; margin: 0.3rem 0; }
+
+/* ---- semantic overlay layers ---- */
+/* Layer toggle bar (pills) under the scrubber. */
+.overlay-bar {
+  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
+  margin-top: 0.4rem; padding-top: 0.35rem; border-top: 1px solid var(--border);
+}
+.overlay-bar-lbl { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-right: 0.2rem; }
+.overlay-pill {
+  font-size: 0.74rem; padding: 0.1rem 0.55rem; border: 1px solid var(--border);
+  border-radius: 999px; background: #f7fafc; color: var(--muted); cursor: pointer;
+  line-height: 1.5;
+}
+.overlay-pill:hover { background: #eef2f6; }
+.overlay-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.overlay-pill:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(43, 92, 138, 0.35); }
+
+/* Overlay span markers: a distinct, quiet affordance per kind. All are
+   hoverable (cursor: help) except term_use, which navigates to its definition. */
+.ref-overlay { cursor: help; }
+.ov-defined_term {
+  border-bottom: 1px dotted rgba(43, 92, 138, 0.7);
+  text-decoration: none; color: inherit; font-style: normal;
+}
+.ov-term_use {
+  cursor: pointer; color: var(--accent);
+  border-bottom: 1px dashed rgba(43, 92, 138, 0.45);
+}
+.ov-temporal {
+  background: #eef4fb; border-radius: 3px; padding: 0 0.15rem;
+  border-bottom: 1px solid rgba(43, 92, 138, 0.3);
+}
+/* Frame badges: a subtle highlight + left rule per frame kind. */
+.ov-delegation, .ov-sanction, .ov-exception_condition, .ov-actor_modal {
+  border-radius: 3px; padding: 0 0.15rem;
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.ov-delegation { background: #eef2f6; color: #2b5c8a; }
+.ov-sanction { background: #f6e3e3; color: #8a2b2b; }
+.ov-exception_condition { background: #fbf0d9; color: #8a5a00; }
+.ov-actor_modal { background: #efe9f5; color: #563d7c; }
+
+/* Overlay hovercard bits (reuse the shared .ref-hovercard chrome). */
+.ref-hovercard .hc-status[class*="hc-overlay-"] { background: #eef2f6; color: var(--muted); }
+.ref-hovercard .hc-overlay-defined_term { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-term_use { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-temporal { background: #eef4fb; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-delegation { background: #e7eef6; color: #2b5c8a; }
+.ref-hovercard .hc-overlay-sanction { background: #f6e3e3; color: #8a2b2b; }
+.ref-hovercard .hc-overlay-exception_condition { background: #fbf0d9; color: #8a5a00; }
+.ref-hovercard .hc-overlay-actor_modal { background: #efe9f5; color: #563d7c; }
+.ref-hovercard .hc-overlay-note { font-size: 0.76rem; color: var(--muted); margin: 0.25rem 0; }
+.ref-hovercard .hc-overlay-links { margin: 0.35rem 0; }
+.ref-hovercard .hc-overlay-links-lbl { font-weight: 600; color: var(--muted); font-size: 0.72rem; margin-bottom: 0.15rem; }
+.ref-hovercard .hc-overlay-links ul { margin: 0; padding-left: 1.1rem; }
+.ref-hovercard .hc-overlay-links li { margin: 0.05rem 0; }
+
 /* Shared hovercard popover (above the sticky topbar at z-index 40). */
 .ref-hovercard {
   position: absolute; z-index: 60; max-width: 28rem;
@@ -629,6 +779,58 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
   font-family: var(--font-text); font-size: 0.86rem; line-height: 1.38;
   border-left: 3px solid #d6e4f2; padding-left: 0.55rem; margin: 0.4rem 0;
 }
+/* Internal-reference live transclusion: pulled from the loaded act's own DOM,
+   not a precomputed preview field. Greener accent marks it as in-page-live. */
+.ref-hovercard .hc-preview.hc-preview-live { border-left-color: #b9d8c3; }
+.ref-hovercard a.hc-internal-jump {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ref-hovercard a.hc-internal-jump:hover { background: #f3faf5; }
+.ref-hovercard .hc-internal-source {
+  color: var(--muted); font-size: 0.72rem; margin: 0.25rem 0 -0.1rem;
+}
+.ref-hovercard .hc-internal-absent {
+  color: var(--muted); font-size: 0.78rem; font-style: italic; margin: 0.4rem 0;
+}
+.ref-hovercard .hc-internal-inactive {
+  color: #8a2b2b; font-size: 0.76rem; margin: 0.3rem 0 0.15rem;
+}
+.ref-hovercard .hc-preview.hc-preview-tombstone {
+  border-left-color: #e8c4c4; color: var(--muted); font-style: italic;
+}
+/* Internal citations are live in-page anchors (deeplink styling), distinct from
+   cross-statute resolved links which depend on a precomputed preview. */
+.ref-sem-internal { cursor: pointer; border-bottom-style: solid; }
+/* Internal target is a ghost tombstone at the scrubbed date — still navigable,
+   but visually distinct from live in-force provisions (wavy red underline). */
+.ref-sem-internal-inactive {
+  color: #8a4a4a;
+  border-bottom: none;
+  text-decoration: underline wavy rgba(138, 43, 43, 0.72);
+  text-underline-offset: 2px;
+}
+.ref-sem-internal-inactive:hover,
+.ref-sem-internal-inactive:focus-visible {
+  color: #8a2b2b;
+  text-decoration-color: rgba(138, 43, 43, 0.9);
+}
+.ref-sem-internal-absent {
+  color: #7a5a5a;
+  border-bottom: none;
+  text-decoration: underline dashed rgba(138, 43, 43, 0.55);
+  text-underline-offset: 2px;
+}
+.ref-link .ref-internal-state {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ref-sem-internal-inactive .ref-internal-state { color: #9a5a5a; }
 .ref-hovercard .hc-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.45rem 0; }
 .ref-hovercard .hc-actions a {
   display: inline-flex; align-items: center; min-height: 1.55rem;

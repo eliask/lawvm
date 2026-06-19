@@ -98,6 +98,84 @@ _DECLARATION_CUE_STEMS: tuple[str, ...] = (
 #: keys on). Bounded quantifiers only (§1.11).
 _ID_PAREN_RE = re.compile(r"\(\s*(\d{1,6})\s*/\s*(\d{2,4})\s*\)")
 
+#: Parenthetical FRACTION surface decline. A ``(N/M)`` paren is NOT a statute id
+#: when it spells a Finnish fraction — ``kymmenesosalla (1/10)`` ("one tenth"),
+#: ``kahdeskymmenesosalla (1/20)``, ``kuusitoista seitsemättätoista (16/17) osaa``.
+#: The construction anchor keys on the bare ``(N/Y)`` shape (it does NOT require the
+#: production plain-text lane's statute-name HEAD), so without this guard a fraction
+#: parenthetical would be read as a cross-statute id. The discriminator is a closed,
+#: audited SURFACE fact — a fraction-noun (``-osa`` family) sits IMMEDIATELY against
+#: the paren — never a numeric-magnitude heuristic (genuine low-numbered cites like
+#: ``ampuma-aselaki (1/1998)`` / ``tavaramerkkilaki (7/1964)`` keep their statute
+#: name against the paren and never match). Two adjacency shapes are declined:
+#:   - LEFT:  a fraction-denominator word directly precedes the ``(`` —
+#:            ``…kymmenesosalla (1/10)`` (the word ends in an ``-osa`` case form).
+#:   - RIGHT: a fraction-numerator/part noun directly follows the ``)`` —
+#:            ``(16/17) osaa`` ("sixteen seventeenths of a part").
+#: Bounded look-around windows (§1.11): a short fixed slice either side of the paren.
+_FRACTION_LEFT_RE = re.compile(
+    r"osa(?:lla|lle|sta|ssa|an|a|n|ksi|lta|t)?\s*$",
+    re.IGNORECASE,
+)
+_FRACTION_RIGHT_RE = re.compile(
+    r"^\s*osa(?:lla|lle|sta|ssa|an|a|n|ksi|lta|t)?\b",
+    re.IGNORECASE,
+)
+#: Look-around window (chars) scanned either side of the ``(N/Y)`` paren for the
+#: fraction-noun adjacency. A fraction noun is glued to its paren in practice, so a
+#: short window suffices and keeps the guard from reaching across intervening words.
+_FRACTION_WINDOW = 24
+
+
+def _is_fraction_paren(text: str, paren_start: int, paren_end: int) -> bool:
+    """Whether a ``(N/Y)`` paren spells a Finnish fraction, not a statute id.
+
+    Closed audited surface decline (see ``_FRACTION_LEFT_RE``/``_FRACTION_RIGHT_RE``):
+    a fraction-denominator word (``-osa`` family) sits directly against the paren on
+    the left (``kymmenesosalla (1/10)``) OR a part noun follows it on the right
+    (``(16/17) osaa``). Never a magnitude heuristic — a statute name against the
+    paren (``ampuma-aselaki (1/1998)``) is untouched.
+    """
+    left = text[max(0, paren_start - _FRACTION_WINDOW) : paren_start]
+    if _FRACTION_LEFT_RE.search(left):
+        return True
+    right = text[paren_end : paren_end + _FRACTION_WINDOW]
+    if _FRACTION_RIGHT_RE.search(right):
+        return True
+    return False
+
+
+def _expand_year(year_raw: str) -> str:
+    """Expand a 2-digit paren year to 4-digit (``95`` -> ``1995``); 4-digit as-is.
+
+    Same convention the plain-text by-id lane and :func:`parse_citation_sentence`
+    use: ``yy <= current two-digit year`` -> ``20yy`` else ``19yy``. Factored so the
+    citation parse AND the segment-paren orientation lookup expand identically (a
+    two-digit-year paren like ``(1767/95)`` must compare against the 4-digit
+    ``1767/1995`` form the projection and the oracle both carry).
+    """
+    if len(year_raw) == 2:
+        from datetime import date
+
+        yy = int(year_raw)
+        current_yy = date.today().year % 100
+        century = 2000 if yy <= current_yy else 1900
+        return str(century + yy)
+    return year_raw
+
+
+def _segment_id_parens(text: str) -> set[str]:
+    """The inline ``(NUMBER/YEAR)`` parens in ``text``, as ``NUMBER/YEAR`` strings.
+
+    Year normalized to 4-digit (:func:`_expand_year`) so a two-digit-year paren
+    matches the canonical 4-digit orientation the oracle/projection keys carry.
+    """
+    return {
+        f"{m.group(1)}/{_expand_year(m.group(2))}"
+        for m in _ID_PAREN_RE.finditer(text)
+    }
+
+
 #: How far past the ``(id)`` paren the structural tail can run before the body
 #: recognizer is asked to stop. Mirrors the production plain-text lane's 120-char
 #: tail window so the construction sees the same span the oracle does.
@@ -204,20 +282,16 @@ def parse_citation_sentence(text: str) -> SentenceParse:
     citations: list[CitationConstruction] = []
     for m in _ID_PAREN_RE.finditer(text):
         num = int(m.group(1))
-        year_raw = m.group(2)
-        if len(year_raw) == 2:
-            # Two-digit year expansion, identical convention to the production
-            # plain-text lane (yy <= current => 20xx else 19xx).
-            from datetime import date
-
-            yy = int(year_raw)
-            current_yy = date.today().year % 100
-            century = 2000 if yy <= current_yy else 1900
-            year = str(century + yy)
-        else:
-            year = year_raw
+        # Two-digit year expansion, identical convention to the production
+        # plain-text lane (yy <= current => 20xx else 19xx).
+        year = _expand_year(m.group(2))
         year_int = int(year)
         if year_int < 1700 or year_int > 2100 or num <= 0 or num > 999999:
+            continue
+        # Fraction decline: ``kymmenesosalla (1/10)`` / ``(16/17) osaa`` is not a
+        # statute id. Closed audited surface adjacency, never a magnitude rule, so
+        # genuine low-numbered cites (``ampuma-aselaki (1/1998)``) are untouched.
+        if _is_fraction_paren(text, m.start(), m.end()):
             continue
         statute_id = f"{num}/{year}"
 
@@ -444,6 +518,13 @@ def oracle_reference_keys_for_span(text: str) -> set[str]:
 
     p_el: ET.Element[str] = ET.Element("p")
     p_el.text = text
+    # The recognizer's ``statute_id`` follows the eId ``YEAR/NUMBER`` convention
+    # since the orientation canonicalization on master; the construction projection
+    # keys the canonical Finnish ``NUMBER/YEAR``. Canonicalize the span-oracle key
+    # the SAME way the full-extractor oracle does so the two sets compare honestly
+    # (the segment's own inline parens resolve the rare both-years-ambiguous
+    # orientation).
+    seg_parens = _segment_id_parens(text)
     keys: set[str] = set()
     for hit in _PLAIN_TEXT_RECOGNIZER.scan_precise(p_el):
         tgt = BodyProvisionTarget(
@@ -453,7 +534,9 @@ def oracle_reference_keys_for_span(text: str) -> set[str]:
             chapter=hit.chapter,
         )
         ref = _target_to_provision_ref(hit.statute_id, tgt)
-        keys.add(ref.serialized())
+        keys.add(
+            _canonicalize_statute_key_in_segment(ref.serialized(), seg_parens)
+        )
     return keys
 
 
@@ -685,6 +768,13 @@ def _bucket_full_extractor_oracle(
         return any(s < re_ and rs < e for (rs, re_) in resolved_spans)
 
     for seg_start, seg_end, seg_text in segments:
+        # The inline ``(NUMBER/YEAR)`` parens the source author actually wrote in
+        # THIS segment. They disambiguate the orientation of a resolved-id key whose
+        # two components are BOTH year-plausible (``1774/1995`` — the statute number
+        # 1774 is itself in the enactment-year range), which the number-only
+        # :func:`_canonicalize_statute_key` cannot resolve. See its segment-aware
+        # variant below.
+        seg_id_parens = _segment_id_parens(seg_text)
         keys: set[str] = set()
         for c_start, c_end, key in located:
             # overlap test (half-open intervals)
@@ -692,7 +782,7 @@ def _bucket_full_extractor_oracle(
                 continue
             if key.startswith("fi-name:") and _by_name_is_same_site(c_start, c_end):
                 continue
-            keys.add(key)
+            keys.add(_canonicalize_statute_key_in_segment(key, seg_id_parens))
         if keys:
             by_segment[seg_text] = _collapse_redundant_statute_only(keys)
 
@@ -729,6 +819,50 @@ def _canonicalize_statute_key(key: str) -> str:
     if _year(a) and not _year(b_num):
         return "/".join([b_num, a, *parts[2:]])
     return key
+
+
+def _canonicalize_statute_key_in_segment(
+    key: str, seg_id_parens: set[str]
+) -> str:
+    """Canonicalize a resolved-id key to ``NUMBER/YEAR``, segment-paren aware.
+
+    First applies the number-only :func:`_canonicalize_statute_key`, which swaps an
+    eId ``YEAR/NUMBER`` head to canonical ``NUMBER/YEAR`` whenever the orientation is
+    UNAMBIGUOUS (the year component is year-plausible and the number component is
+    not). That rule cannot fire when BOTH components are year-plausible — e.g. the
+    ``<ref>``-lane key ``1995/1774`` for ``eläkesäätiölaki (1774/1995)``, whose
+    statute number 1774 also lies in the 1700–2100 enactment-year range. For that
+    ambiguous case the orientation is resolved from the SEGMENT's own inline parens:
+    the ``<ref>`` lane keys ``YEAR/NUMBER``, so if the head's swapped form ``B/A``
+    appears as a literal inline ``(B/A)`` paren the author wrote in this segment,
+    ``A`` is the year and ``B`` the number — swap to the canonical ``NUMBER/YEAR``
+    (``B/A``), preserving any provision tail. This is a SURFACE fact (the paren is
+    literally present), never an orientation guess; with no matching inline paren
+    the key is left as the number-only rule decided (an honest non-swap, not a
+    fabrication).
+    """
+    canon = _canonicalize_statute_key(key)
+    if canon != key or canon.startswith("fi-name:") or "/" not in canon:
+        # already swapped (unambiguous) or not a swappable resolved id
+        return canon
+    parts = canon.split("/")
+    a, b = parts[0], parts[1]
+    b_num = b.split("-", 1)[0]
+    if not (a.isdigit() and b_num.isdigit()):
+        return canon
+
+    def _year(x: str) -> bool:
+        return 1700 <= int(x) <= 2100
+
+    # Only the ambiguous both-years case remains (the unambiguous one was already
+    # swapped by _canonicalize_statute_key above). Disambiguate by the segment's
+    # inline paren: the author-written NUMBER/YEAR form is ``(B/A)``.
+    if _year(a) and _year(b_num):
+        # ``seg_id_parens`` carries each inline paren's ``NUMBER/YEAR`` content
+        # (whitespace-normalized). The author-written NUMBER/YEAR form is ``B/A``.
+        if f"{b_num}/{a}" in seg_id_parens:
+            return "/".join([b_num, a, *parts[2:]])
+    return canon
 
 
 def _collapse_redundant_statute_only(keys: set[str]) -> set[str]:

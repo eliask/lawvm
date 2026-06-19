@@ -50,7 +50,8 @@ def test_parenthetical_alias_binds_to_finnish_act() -> None:
     alias = _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS)
     assert len(alias) == 1
     assert alias[0].term == "ympäristönsuojelulaki"
-    assert alias[0].target_ref == "527/2014"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
+    assert alias[0].target_ref == "2014/527"
     assert alias[0].status == STATUS_OK
 
 
@@ -72,7 +73,8 @@ def test_jaljempana_unquoted_binds_to_finnish_act() -> None:
     jal = _by_kind(bindings, BINDING_JALJEMPANA)
     assert len(jal) == 1
     assert jal[0].term == "ympäristönsuojelulaki"
-    assert jal[0].target_ref == "527/2014"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
+    assert jal[0].target_ref == "2014/527"
     assert jal[0].status == STATUS_OK
 
 
@@ -86,6 +88,35 @@ def test_jaljempana_quoted_binds_to_eu_act() -> None:
     # The quoted alias parenthesis must NOT also be emitted as a bare
     # parenthetical alias.
     assert _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS) == []
+
+
+def test_jaljempana_fi_target_is_canonical_year_number_orientation() -> None:
+    # The Finnish VISIBLE cite is "(906/2019)" (NUMBER/YEAR); the binding's
+    # target_ref is the CANONICAL "YEAR/NUMBER" id (same orientation as the
+    # <ref> / cross-ref lane and the corpus store keys), so the same act never
+    # splits into a second, inverted legal_work_entity.
+    text = (
+        "julkisen hallinnon tiedonhallinnasta annetun lain (906/2019), "
+        "jäljempänä tiedonhallintalaki, mukaan."
+    )
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "tiedonhallintalaki"
+    assert jal[0].target_ref == "2019/906"  # canonical, NOT the visible "906/2019"
+    # The canonical orientation matches how the corpus store splits a statute id
+    # (``year, num = sid.split("/", 1)``): year first, then running number.
+    year, num = jal[0].target_ref.split("/", 1)
+    assert (year, num) == ("2019", "906")
+
+
+def test_jaljempana_eu_target_keeps_source_orientation() -> None:
+    # EU ids are NOT canonicalized: their source surface orientation is kept
+    # (here NUMBER/YEAR from the "N:o 1069/2009" cite), unaffected by the FI fix.
+    text = 'asetuksen (EY) N:o 1069/2009, jäljempänä sivutuoteasetus, mukaan.'
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "sivutuoteasetus"
+    assert jal[0].target_ref == "1069/2009"
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +475,106 @@ def test_celex_parenthetical_is_not_minted_as_alias() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Over-capture: cross-reference idiom + swept clause fragments are NOT definienda
+# ---------------------------------------------------------------------------
+
+
+def test_cross_reference_idiom_in_enum_block_is_not_a_definition() -> None:
+    # "… N §:ssä tarkoitetulla tavalla" is the CROSS-REFERENCE idiom ("in the
+    # manner referred to in § N"), not a definition. After tokenization the
+    # "§:" is lost, leaving "ssä tarkoitetulla" — a bare suffix fragment + the
+    # reference participle. It must NOT be minted as a defined term. (2023/371.)
+    text = (
+        "Tässä laissa tarkoitetaan: tuella avustusta; "
+        "laitokselle on osoitettu määrärahaa 7 luvun 15 ssä tarkoitetulla tavalla;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert "ssä tarkoitetulla" not in terms
+    assert not any("tarkoitetulla" in t for t in terms)
+    # The genuine definiendum in the same block survives.
+    assert "tuella" in terms
+
+
+def test_swept_clause_fragment_with_verb_is_not_a_definition() -> None:
+    # A stray sentence-internal colon ("kuntalain (410/2015) …") lets the enum
+    # item regex sweep a clause containing the infinitive "katsota" and a bare
+    # "n" fragment. It spans a clause boundary → declined. (2023/371.)
+    text = (
+        "Tässä laissa tarkoitetaan: hankkeella toimenpidettä; "
+        "toimintaa, jota ei kuntalain (410/2015) 126 n mukaan katsota "
+        "kilpailluilla markkinoilla tapahtuvaksi toiminnaksi;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert not any("katsota" in t for t in terms)
+    assert not any(t.startswith("n ") for t in terms)
+    assert "hankkeella" in terms
+
+
+def test_swept_clause_fragment_with_postposition_is_not_a_definition() -> None:
+    # "… tämän lain ja EU:n geenivara-asetuksen sekä niiden nojalla annettujen …"
+    # — the "EU:" colon sweeps a clause fragment opening with a bare "n" fragment
+    # and containing the cross-reference postposition "nojalla". Declined; no
+    # garbled term. (2016/394.)
+    text = (
+        "Tässä laissa tarkoitetaan: viranomaisella valvovaa virastoa; "
+        "noudatettava tämän lain ja EU:n geenivara-asetuksen sekä niiden "
+        "nojalla annettujen säännösten vaatimuksia;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert "n geenivara-asetuksen sekä niiden nojalla" not in terms
+    assert not any("nojalla" in t for t in terms)
+    assert "viranomaisella" in terms
+
+
+def test_coordinated_definienda_still_bind() -> None:
+    # Finnish definitions routinely coordinate two definienda with "ja" / "tai":
+    # "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan …". A plain
+    # coordinator is NOT a clause-spill signal — the coordinated phrase must
+    # survive. (1982/1116 / 1982/311 legitimate definitions.)
+    text = (
+        "Pintaverkolla ja pintaverkkopyydyksellä tarkoitetaan ankkuroitua "
+        "verkkoa."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Pintaverkolla ja pintaverkkopyydyksellä" for b in tk)
+
+
+def test_adessive_noun_head_avulla_still_binds() -> None:
+    # "avulla" / "perusteella" are adessive in form but here they are the noun
+    # head of a genuine defined term ("Henkilökohtaisella avulla tarkoitetaan …"),
+    # NOT a postposition. Such a head must NOT be rejected. (1987/380.)
+    text = "Henkilökohtaisella avulla tarkoitetaan vaikeavammaisen henkilön avustamista."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Henkilökohtaisella avulla" for b in tk)
+
+
+def test_inline_cross_reference_participle_is_not_a_definition() -> None:
+    # Inline shape-3: "N §:ssä tarkoitetulla tavalla tarkoitetaan" must not bind
+    # — the head before the verb is the reference participle, not a definiendum.
+    text = "Edellä 5 ssä tarkoitetulla tavalla tarkoitetaan jotain muuta."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    terms = {b.term for b in tk}
+    assert not any("tarkoitetulla" in t for t in terms)
+
+
+def test_clean_multiword_definiendum_still_binds() -> None:
+    # The fix must keep clean multi-word definienda (content-word start, noun
+    # head, no clause-boundary token). (2023/371 legitimate definition.)
+    text = (
+        "Tässä laissa tarkoitetaan: "
+        "Palkkatuella katettavilla palkkakustannuksilla työntekijälle "
+        "maksettavaa palkkaa;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(
+        b.term == "Palkkatuella katettavilla palkkakustannuksilla" for b in tk
+    )
+
+
 def test_jaljempana_alias_markup_is_stripped() -> None:
     # Inline markup "<i>rakennetukilaki</i>" must be stripped to the bare word.
     text = (
@@ -454,4 +585,63 @@ def test_jaljempana_alias_markup_is_stripped() -> None:
     assert len(jal) == 1
     assert jal[0].term == "rakennetukilaki"
     assert "<" not in jal[0].term
-    assert jal[0].target_ref == "1476/2007"
+    # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(1476/2007)").
+    assert jal[0].target_ref == "2007/1476"
+
+
+# ---------------------------------------------------------------------------
+# Definiendum-boundary precision (sentence boundary / coordinated head /
+# leading adverbial / prior-entry connector)
+# ---------------------------------------------------------------------------
+
+
+def test_jaljempana_alias_stops_at_sentence_boundary() -> None:
+    # An unquoted alias is a single naming token; it must terminate at the
+    # sentence-ending period and never swallow the following sentence's first
+    # word. (Observed: "…laissa (1137/2016), jäljempänä markkinavalvontalaki.
+    # Markkinavalvonnan …".)
+    text = (
+        "annetussa laissa (1137/2016), jäljempänä markkinavalvontalaki. "
+        "Markkinavalvonnan, talouden toimijoiden tehtävät."
+    )
+    jal = _by_kind(recognize_defined_term_bindings(text), BINDING_JALJEMPANA)
+    assert len(jal) == 1
+    assert jal[0].term == "markkinavalvontalaki"
+    assert "." not in jal[0].term
+
+
+def test_dangling_hyphen_compound_head_is_kept_in_coordination() -> None:
+    # An elliptical coordination "Lammas- ja vuohirekisterillä" (= lammasrekisteri
+    # + vuohirekisteri) must keep the clipped compound prefix "Lammas-"; the head
+    # must not be clipped to "ja vuohirekisterillä". (2010/233.)
+    text = "Lammas- ja vuohirekisterillä tarkoitetaan lammas- ja vuohieläinten rekisteriä."
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "Lammas- ja vuohirekisterillä" for b in tk)
+
+
+def test_leading_adverbial_clause_is_trimmed_from_definiendum() -> None:
+    # A leading adverbial clause ("… huomioon ottaen") modifies the definition
+    # sentence, not the definiendum NP; the term is the adessive head alone.
+    # (2010/233: "… rajausmahdollisuus huomioon ottaen kasvulohkolla tarkoitetaan
+    # …" → "kasvulohkolla".)
+    text = (
+        "viljelylohkon rajausmahdollisuus huomioon ottaen kasvulohkolla "
+        "tarkoitetaan yhtenäistä viljelyaluetta."
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "kasvulohkolla" for b in tk)
+    assert not any("ottaen" in b.term for b in tk)
+
+
+def test_leading_prior_entry_connector_is_stripped() -> None:
+    # In an enumerated block a prior item's trailing "sekä" must not be prepended
+    # to the next item's definiendum ("…komissiota; sekä [\n] tavaralla …" →
+    # "tavaralla", not "sekä tavaralla"). (1997/231 shape.)
+    text = (
+        "Tässä laissa tarkoitetaan: "
+        "jollakin Euroopan yhteisön komissiota; sekä "
+        "tavaralla sukusoluja, alkioita ja siitoseläimiä;"
+    )
+    tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
+    assert any(b.term == "tavaralla" for b in tk)
+    assert not any(b.term.startswith("sekä") for b in tk)

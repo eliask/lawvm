@@ -75,6 +75,28 @@ def _wrap_with_prelim(prelim_content: bytes) -> bytes:
     )
 
 
+def _wrap_with_amendment_footer(footer_content: bytes) -> bytes:
+    """Wrap content in an amendment entry-into-force footer block.
+
+    Mirrors the real Finlex shape: ``entryIntoForce`` blocks NESTED inside the
+    ``amendmentEntryIntoForceAndApplianceProvisions`` wrapper.  Each amendment's
+    preparatory chain lives here, NOT in the base ``preliminaryWork`` block.
+    """
+    return (
+        _AKN_OPEN
+        + b"<act><meta/><body>"
+        + b'<hcontainer name="amendmentEntryIntoForceAndApplianceProvisions">'
+        + b"<content>"
+        + b'<hcontainer name="entryIntoForce"><content>'
+        + footer_content
+        + b"</content></hcontainer>"
+        + b"</content>"
+        + b"</hcontainer>"
+        + b"</body></act>"
+        + _AKN_CLOSE
+    )
+
+
 def _wrap_body_only(body_content: bytes) -> bytes:
     """Wrap body-only content (no preliminaryWork block) in a minimal AKN act."""
     return (
@@ -498,6 +520,64 @@ LAW_INITIATIVE = PrepCorpusFixture(
 
 
 # ---------------------------------------------------------------------------
+# Fixture 10: Amendment footer block with a PACKED preparatory paragraph
+#
+# The common real shape: an amendment's preparation chain lives in the
+# entry-into-force footer (NOT preliminaryWork), packed into ONE <p> that puts
+# the HE <ref> alongside the committee mietintö and parliament response:
+#   "HE 10/2019, HaVM 3/2019, EV 20/2019"
+# The base statute's preliminaryWork was previously the only block scanned, so
+# every amendment's footer chain was lost; and even within a scanned <p> the
+# packed tokens after the first were dropped. This fixture exercises both:
+# footer-block scanning AND packed-paragraph enumeration, with HE owned by the
+# <ref> lane (excluded from the mention lane, never double-counted).
+# ---------------------------------------------------------------------------
+
+AMENDMENT_FOOTER_PACKED = PrepCorpusFixture(
+    fixture_id="amendment_footer_packed",
+    description=(
+        "Amendment entry-into-force footer with a packed preparatory paragraph "
+        "(HE <ref> + committee + EV in one <p>). Footer-block scanning + "
+        "packed-paragraph enumeration."
+    ),
+    source_statute_id="2019/501",
+    xml_bytes=_wrap_with_amendment_footer(
+        b"<p>T\xc3\xa4m\xc3\xa4 laki tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 "
+        b"tammikuuta 2020.</p>"
+        b'<p><ref href="/akn/fi/doc/government-proposal/2019/10">HE 10/2019</ref>'
+        b", HaVM 3/2019, EV 20/2019</p>"
+    ),
+    expected_refs=[
+        {
+            "source_statute_id": "2019/501",
+            "kind": "he",
+            "canonical_id": "he/2019/10",
+        },
+        {
+            "source_statute_id": "2019/501",
+            "kind": "committee_report",
+            "canonical_id": "fi.committee.havm.3.2019",
+            "committee_abbrev": "HaVM",
+        },
+        {
+            "source_statute_id": "2019/501",
+            "kind": "parliament_response",
+            "canonical_id": "fi.ev.20.2019",
+        },
+    ],
+    # The voimaantulo prose <p> is accounted for as a rejected candidate (§1.8).
+    expected_rejected=[
+        {
+            "rule_id": "fi_prep_ref_unresolved_p_text",
+            "source_statute_id": "2019/501",
+            "blocking": False,
+        },
+    ],
+    expected_lifecycle_obs=[],
+)
+
+
+# ---------------------------------------------------------------------------
 # ALL_FIXTURES registry
 # ---------------------------------------------------------------------------
 
@@ -511,6 +591,7 @@ ALL_FIXTURES = (
     NEGATIVE_OUTSIDE_PRELIM,
     EVK_RESPONSE,
     LAW_INITIATIVE,
+    AMENDMENT_FOOTER_PACKED,
 )
 
 __all__ = [
@@ -525,4 +606,5 @@ __all__ = [
     "NEGATIVE_OUTSIDE_PRELIM",
     "EVK_RESPONSE",
     "LAW_INITIATIVE",
+    "AMENDMENT_FOOTER_PACKED",
 ]

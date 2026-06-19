@@ -78,12 +78,18 @@ _GUARD_CHAPTER = "lu"
 # the § and its momentti/kohta tail, so the captured text can be fed verbatim to
 # the shared body tail parser (no trailing prose). Bounded quantifiers only.
 #
-#   section label:  \d{1,6}[a-z]?      (e.g. 7, 7a, 104)
+#   section label:  \d{1,6}(?:\s*[a-z])?   (e.g. 7, 7a, 7 a, 104, 115 a)
 #   number run:     label (sep label)* with ,/ja/sekä/tai/en-dash joiners
 #   §:             § optionally with an inflection suffix (§:ssä, §:n, §:ää)
 #   tail step:      <number run> momentti|momentin|kohta|kohdassa   (repeatable)
 #
-_SEC_LABEL = r"\d{1,6}[a-zA-Z]?"
+# The letter suffix is written in body prose WITH a space (``115 a §``,
+# ``47 a §:ssä``, ``106 a–106 e §:ää``) far more often than glued (``115a``),
+# so the optional letter must tolerate intervening whitespace. The shared body
+# tail parser already normalizes both spaced and glued forms to the glued AKN
+# eId label (``115 a §`` → ``sec_115a``), so the captured surface resolves
+# regardless of which spacing the source used.
+_SEC_LABEL = r"\d{1,6}(?:\s*[a-zA-Z])?"
 _SEP = r"(?:,|ja|sekä|tai|[–—-])"
 _NUM_RUN = rf"{_SEC_LABEL}(?:\s*{_SEP}\s*{_SEC_LABEL})*"
 _TAIL_NOUN = r"(?:moment\w+|kohda\w+|kohta)"
@@ -98,6 +104,52 @@ _SECTION_SURFACE_RE = re.compile(
     """,
     re.VERBOSE | re.IGNORECASE,
 )
+
+# ---------------------------------------------------------------------------
+# Year / decree-year glue guard
+# ---------------------------------------------------------------------------
+#
+# A number run is GREEDY across coordination joiners, so a 4-digit YEAR that
+# abuts the run gets swallowed as if it were the first SECTION number:
+#
+#   ``vuoden 1971, 53 §:n 5 momentissa``  -> run ``1971, 53`` -> bogus § 1971
+#   ``asetuksessa 1314/1996, 7 ja 17 §``  -> run ``1996, 7 ja 17`` -> bogus § 1996
+#   ``vuoden 1984 ja 16 §:n 3 momentissa`` -> run ``1984 ja 16`` -> bogus § 1984
+#
+# The bogus token is ALWAYS the LEADING element of the captured surface, and the
+# original text preceding it is either a YEAR word (``vuoden`` / ``vuodelta`` /
+# ``vuonna`` / ``vuotta``) or a decree-id slash (``1314/1996`` -> the ``/`` just
+# before the year). A genuine leading § number is NEVER preceded by either. When
+# detected, the leading 4-digit year token + its trailing coordination separator
+# are stripped, so the REAL provisions in the clause (``53 §:n 5 mom``, ``7 ja
+# 17 §``) parse and the year never becomes a §. Stripping is conservative: only a
+# bare 4-digit token with no letter suffix qualifies as a year.
+_LEADING_YEAR_RE = re.compile(
+    rf"^(?P<year>\d{{4}})\s*(?:{_SEP})\s*",
+    re.IGNORECASE,
+)
+# A year-word or decree-id slash immediately before the surface marks the
+# leading 4-digit token as a YEAR (``vuoden 1971`` / ``1314/1996``), not a §.
+_YEAR_CONTEXT_RE = re.compile(
+    r"(?:vuo(?:den|delta|nna|tta|sina|silta)|/)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_leading_year(surface: str, before: str) -> str:
+    """Drop a leading 4-digit YEAR token (+ separator) glued onto a § run.
+
+    Returns ``surface`` with a leading ``YYYY,`` / ``YYYY ja`` stripped IFF the
+    text immediately before the surface is a year word (``vuoden``) or a decree-id
+    slash (``1314/1996``), so the year never parses as a § number. Otherwise the
+    surface is returned unchanged (a genuine leading § is left intact).
+    """
+    ym = _LEADING_YEAR_RE.match(surface)
+    if ym is None:
+        return surface
+    if _YEAR_CONTEXT_RE.search(before):
+        return surface[ym.end() :]
+    return surface
 
 # Chapter prefix (``N luvun`` / ``N luku`` / ``N luvussa`` …) that qualifies a
 # following section reference: ``3 luvun 5 §``, ``2 luvun 4 §:n 1 momentti``,
@@ -146,19 +198,55 @@ _BARE_SUBREF_RE = re.compile(
 # ---------------------------------------------------------------------------
 #
 # A statute-id parenthetical immediately before the citation → plain-text by-id
-# lane owns it.  e.g. ``(123/2020) 5 §``.
+# lane owns it.  e.g. ``(123/2020) 5 §``. The id appears both parenthesised
+# ``(1/1998)`` and bracketed ``[1/1998]`` (the latter in ``(ampuma-aselain
+# [1/1998] 20 §)`` editorial back-references); either form is an EXTERNAL-law
+# anchor, so the following § is NOT an internal self-reference.
+# The year is ``\d{2,4}``: pre-2000 statutes carry a 2-digit decree year
+# (``(555/81)``, ``(495/89)``) as routinely as the modern 4-digit form. A
+# 2-digit-year id is just as much an EXTERNAL-law anchor as a 4-digit one, so the
+# following § is NOT an internal self-reference — gating on ``\d{4}`` let every
+# old-style id leak its sections in as bogus internal targets.
 _PRECEDING_STATUTE_ID_RE = re.compile(
-    r"\(\s*\d{1,6}/\d{4}\s*\)\s*$",
+    r"[(\[]\s*\d{1,6}/\d{2,4}\s*[)\]]\s*$",
 )
 
 # An inflected statute-NAME head immediately before the citation → cross-statute
 # by-name lane owns it.  The trailing word ends in a Finnish law/decree case
 # suffix (``…lain``, ``…laissa``, ``…asetuksen``, …). Captures the (optional)
 # word before it so a self-referential demonstrative can be detected.
+#
+# Beyond the ``laki`` / ``asetus`` families, a small CLOSED set of named
+# constitutional / procedural instruments carry their own nominal stem instead of
+# ``laki``: ``valtiopäiväjärjestys`` (the old parliament act), ``hallitusmuoto``
+# (the old constitution), an institution's ``työjärjestys`` (rules of procedure).
+# These are by-name EXTERNAL statutes too — their § is NOT an internal
+# self-reference — but their head ends in ``-järjestyksen`` / ``-muodon``, not a
+# ``laki`` suffix, so the section leaked in as a bogus internal target
+# (``valtiopäiväjärjestyksen 67 §`` in a 49-§ act). The stems are compound-only
+# (a modifier precedes them), so the surrounding ``[chars]+`` capture keeps them
+# from matching the bare common nouns ``järjestys`` / ``muoto``.
+#
+# The historical CODES (``-kaari``: oikeudenkäymiskaari, maakaari, kauppakaari,
+# perintökaari, …) are by-name EXTERNAL statutes too. ``kaari`` declines as a
+# Kotus type-26 ``-i`` noun with oblique stem ``kaare-`` (genitive ``kaaren``,
+# inessive ``kaaressa``, elative ``kaaresta``, illative ``kaareen``, adessive
+# ``kaarella``, ablative ``kaarelta``, allative ``kaarelle``, translative
+# ``kaareksi``, essive ``kaarena``) plus the partitive ``kaarta``. A ``§`` tail
+# preceded by such a head (``oikeudenkäymiskaaren 12 luvun 32 §:ää``) is owned by
+# the cross-statute by-name lane, NOT an internal self-reference — without this
+# arm it leaked the section in as a bogus internal target. The forms mirror the
+# by-name lane's ``_KAARI_OBLIQUE_ALT`` exactly; the compound-only ``[chars]+``
+# capture keeps the common nouns (``sateenkaari``, ``hammaskaari``) reachable but
+# they never carry a ``§`` tail.
 _NAME_SUFFIX = (
     r"(?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|laki"
     r"|asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi"
-    r"|asetuksella|asetukselle|asetukselta|asetus)"
+    r"|asetuksella|asetukselle|asetukselta|asetus"
+    r"|j\xe4rjestyksen|j\xe4rjestyst\xe4|j\xe4rjestyksess\xe4|j\xe4rjestyksest\xe4|j\xe4rjestys"
+    r"|muodon|muotoa|muodossa|muodosta|muoto"
+    r"|kaaren|kaaressa|kaaresta|kaareen|kaarella|kaarelta|kaarelle"
+    r"|kaareksi|kaarena|kaartta|kaarin|kaarta)"
 )
 _PRECEDING_NAME_HEAD_RE = re.compile(
     rf"(?P<prev>[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5]+)?\s*"
@@ -169,20 +257,181 @@ _PRECEDING_NAME_HEAD_RE = re.compile(
 # A self-referential demonstrative makes ``… lain / … laissa`` mean "THIS act" →
 # INTERNAL → ours (overrides the name-head exclusion). ``tämän lain``,
 # ``tässä laissa``, ``tähän lakiin`` …
-_SELF_DEMONSTRATIVES = frozenset(
-    {
-        "t\xe4m\xe4n",
-        "t\xe4m\xe4",
-        "t\xe4ss\xe4",
-        "t\xe4st\xe4",
-        "t\xe4h\xe4n",
-        "t\xe4t\xe4",
-        "t\xe4ll\xe4",
-    }
+#
+# A demonstrative in a LOCAL (spatial) case binds the law-name head only when it
+# AGREES with the head's case. A local-case demonstrative that DISAGREES does NOT
+# qualify the name — it reaches a DOWNSTREAM noun, leaving the name a genuine
+# EXTERNAL cross-statute anchor. The body shape that exposed this: ``tähän``(ill)
+# ``arvopaperimarkkinalain``(gen) ``6 luvun 10 §:n 2 momentissa tarkoitetussa
+# suhteessa`` — ``tähän`` agrees with ``suhteessa`` (``tähän … suhteessa olevan
+# henkilön``), NOT with the genitive ``…lain`` head, so the citation is
+# cross-statute (arvopaperimarkkinalaki), not internal. The grammatical-case
+# (nom / gen / par) demonstratives carry no such directional reach, so they still
+# bind even on a case mismatch — that mismatch is a drafting/source spelling of
+# "this act" (``Tämä lain 8 a §`` for ``Tämän lain``), and excluding it would
+# drop a genuine internal self-reference. See ``_demonstrative_binds_name``.
+_DEMONSTRATIVE_CASE = {
+    "t\xe4m\xe4": "nom",
+    "t\xe4m\xe4n": "gen",
+    "t\xe4t\xe4": "par",
+    "t\xe4ss\xe4": "ine",
+    "t\xe4st\xe4": "ela",
+    "t\xe4h\xe4n": "ill",
+    "t\xe4ll\xe4": "ade",
+}
+_SELF_DEMONSTRATIVES = frozenset(_DEMONSTRATIVE_CASE)
+
+# Case of a statute-NAME head, by inflection suffix, so a preceding demonstrative
+# can be checked for AGREEMENT. Mirrors the suffixes in ``_NAME_SUFFIX``; an
+# unrecognized suffix yields ``None`` (treated as non-agreeing → no override).
+_NAME_HEAD_CASE_SUFFIXES = (
+    ("ssa", "ine"),  # laissa / asetuksessa / järjestyksessä / muodossa / kaaressa
+    ("ss\xe4", "ine"),
+    ("sta", "ela"),  # laista / asetuksesta / muodosta / kaaresta
+    ("st\xe4", "ela"),
+    ("lla", "ade"),  # lailla / asetuksella / kaarella
+    ("ll\xe4", "ade"),
+    ("een", "ill"),  # kaareen
+    ("iin", "ill"),  # lakiin / asetukseen-style long-vowel illative
+    ("n", "gen"),  # lain / asetuksen / järjestyksen / muodon / kaaren
+    ("a", "par"),  # lakia / asetusta / muotoa / kaartta / kaarta
+    ("\xe4", "par"),  # järjestystä
 )
+
+
+def _name_head_case(head: str) -> Optional[str]:
+    """Grammatical case of a statute-name head from its inflection suffix.
+
+    Returns ``"nom" / "gen" / "par" / "ine" / "ela" / "ill" / "ade"`` or ``None``
+    when the suffix is not one of the recognized ``…lain``/``…laissa``/… forms.
+    Longest distinctive suffix first so ``laissa`` (ine) is not mis-read as the
+    ``…a`` partitive and ``lain`` (gen) is not mis-read as a bare ``…n``.
+    """
+    h = head.lower()
+    for suffix, case in _NAME_HEAD_CASE_SUFFIXES:
+        if h.endswith(suffix):
+            return case
+    # Bare nominative heads (``laki`` / ``asetus`` / ``muoto`` / ``järjestys``).
+    return "nom"
+
+
+# The LOCAL (spatial / directional) cases. A demonstrative in one of these is
+# the tell of a DOWNSTREAM bind: ``tähän``(ill) reaches forward to a later noun
+# (``tähän … suhteessa olevan henkilön``). A genuine "this act" qualifier in a
+# local case ALWAYS agrees with the law form (``tässä laissa`` ine+ine, ``tähän
+# lakiin`` ill+ill), so a local-case demonstrative that DISAGREES with the head
+# never means "this act". The grammatical (nom / gen / par) demonstratives do not
+# carry this directional reach, so a nom/gen/par mismatch is left binding — it is
+# overwhelmingly a drafting/source spelling of "this act" (``Tämä lain 8 a §`` for
+# ``Tämän lain``), not a downstream bind, and excluding it would drop a genuine
+# internal self-reference.
+_LOCAL_CASES = frozenset({"ine", "ela", "ill", "ade"})
+
+
+def _demonstrative_binds_name(prev: str, head: str) -> bool:
+    """True iff a leading demonstrative ``prev`` makes ``head`` mean "this act".
+
+    Binds (→ INTERNAL self-reference) UNLESS the demonstrative is in a LOCAL case
+    that DISAGREES with the law-name head's case — that combination is the
+    downstream-bind tell (``tähän``(ill) ``…lain``(gen) ``… suhteessa``), where
+    the demonstrative reaches a later noun and the name is a genuine external
+    cross-statute anchor. A grammatical-case (nom/gen/par) demonstrative, or one
+    that AGREES with the head (``tässä``+``laissa``, ``tähän``+``lakiin``), still
+    binds.
+    """
+    dem_case = _DEMONSTRATIVE_CASE.get(prev)
+    if dem_case is None:
+        return False
+    if dem_case in _LOCAL_CASES and dem_case != _name_head_case(head):
+        return False
+    return True
 
 # How far back to look for a preceding name head / statute id.
 _LOOKBACK = 80
+# A wider window for coordination-governed citations: a long section list
+# (``2 §:ssä, 69 §:n 1 momentissa, 71 §:ssä, 72 §``) can push the governing
+# anchor several hundred chars before the last member. Used only after the
+# trailing sibling fragments are peeled (so the name-head check still runs on a
+# bounded ``_LOOKBACK`` slice at the head, not the whole window).
+_COORD_LOOKBACK = 600
+
+# A section-coordination FRAGMENT that precedes the citation when several
+# sections of ONE governing act are listed: ``…(48/1999) 2 §:n 13 kohdassa,
+# 69 §:n 1 momentissa, 71 §:ssä, 72 §…``. When the citing § is a later member of
+# such a list, the governing external-law id / name head sits BEFORE the whole
+# run — past the bounded name-head window. To find it we strip trailing
+# ``…N §… ,`` fragments off the preceding context (right to left) so the
+# name-head / id check sees the governing anchor at the head of the coordination,
+# not the intervening sibling §. Each fragment is ``<num run> § <tail> <sep>``.
+# Bounded quantifiers only (§1.11).
+#
+# The fragment tail tolerates the ABBREVIATED ``mom`` / ``mom.`` momentti spelling
+# (``3 §:n 2 mom, 5, 6 …``) alongside the full ``momentissa`` form, because the
+# governing-anchor reachability depends on peeling that fragment whole; a fragment
+# whose ``2 mom`` tail did not match left the bare-number siblings (``5, 6 …``)
+# governed-anchor-blind, leaking them in as bogus internal targets.
+_COORD_TAIL_NOUN = r"(?:moment\w+|kohda\w+|kohta|mom\.?|k\.?)"
+_COORD_FRAGMENT_RE = re.compile(
+    rf"""
+    \s*{_NUM_RUN}\s*§(?::[a-zäöå]+)?
+    (?:\s+{_NUM_RUN}\s+{_COORD_TAIL_NOUN})*
+    \s*(?:{_SEP})\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+# A trailing CHAPTER-bearing coordination fragment governed by the same act, in
+# either of the two chapter shapes that appear mid-list:
+#   * chapter-only:        ``…, 20 luvussa, …``           (no § in the fragment)
+#   * chapter + section:   ``…, 17 luvun 18, 18 a tai 19 §:ssä, …``
+# A long mixed rikoslaki list (``rikoslain (39/1889) 17 luvun … §:ssä, 20
+# luvussa, 21 luvun 1—3 tai 6 §:ssä``) interleaves these with the plain §
+# fragments; without peeling them the governing id sits past reach and the later
+# members (``20 luvussa``, ``21 luvun …``) leak in as bogus internal targets.
+# The optional ``luvun M §`` section tail is consumed so the chapter+section
+# shape is peeled whole. Bounded quantifiers only (§1.11).
+_COORD_CHAPTER_FRAGMENT_RE = re.compile(
+    rf"""
+    \s*{_NUM_RUN}\s+{_CHAPTER_HEAD}
+    (?:\s+{_NUM_RUN}\s*§(?::[a-zäöå]+)?
+        (?:\s+{_NUM_RUN}\s+{_COORD_TAIL_NOUN})*
+    )?
+    \s*(?:{_SEP})\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _strip_trailing_coord_fragments(before: str) -> str:
+    """Remove trailing sibling ``N §…,`` coordination fragments from ``before``.
+
+    A citation that is a later member of a section coordination governed by one
+    act (``…annetun lain 2 §:ssä, 69 §:n 1 momentissa, 72 §``) has its governing
+    name head / id BEFORE the first member. Peeling the trailing ``…, 69 §…,``
+    siblings off the preceding context lets :func:`_is_excluded` see that
+    governing anchor instead of the adjacent sibling §. Iterates while a fragment
+    abuts; bounded (each step shortens the string).
+    """
+    prev = None
+    while before != prev:
+        prev = before
+        # Peel a trailing § fragment OR a chapter-bearing fragment, whichever
+        # abuts. Both shapes appear interleaved in one governed coordination
+        # (``17 luvun … §:ssä, 20 luvussa, 21 luvun … §:ssä``); peeling either
+        # lets the governing id/name at the head of the run become reachable.
+        m = _COORD_FRAGMENT_RE.search(before)
+        cm = _COORD_CHAPTER_FRAGMENT_RE.search(before)
+        # Take the fragment that strips MORE (the earlier start) so a chapter
+        # fragment is not shadowed by a shorter § sub-match inside it.
+        cut = None
+        for cand in (m, cm):
+            if cand is not None and cand.start() >= 0:
+                if cut is None or cand.start() < cut:
+                    cut = cand.start()
+        if cut is None:
+            break
+        before = before[:cut]
+    return before
 
 
 def _strip_chapter_prefix(before: str) -> tuple[str, Optional[str]]:
@@ -227,6 +476,30 @@ def _is_excluded(text: str, start: int) -> bool:
     statute-name head one ``luvun`` token further back (``jätelain 3 luvun 5 §``)
     still owns the citation via the cross-statute by-name lane.
     """
+    # A wider window than the bounded name-head lookback so the governing anchor
+    # at the HEAD of a multi-section coordination is reachable once the trailing
+    # sibling ``N §…,`` fragments are peeled off (``…annetun lain 2 §:ssä,
+    # 69 §:n 1 momentissa, 72 §`` — the name head governs every member).
+    wide = text[max(0, start - _COORD_LOOKBACK) : start]
+    # Peel this member's own ``N luvun`` chapter prefix off the tail FIRST so the
+    # preceding sibling fragments (``…, 20 luvussa, `` before ``21 luvun M §``)
+    # become peelable — otherwise the trailing chapter prefix (no separator)
+    # blocks the coordination peel and the governing id stays out of reach.
+    wide_no_ch, _wch = _strip_chapter_prefix(wide)
+    coord_head = _strip_trailing_coord_fragments(wide_no_ch)
+    if coord_head != wide_no_ch or wide_no_ch != wide:
+        # The citation is a later member of a section coordination; its governing
+        # external-law id / name head (if any) sits just before the first member.
+        head_ctx = coord_head[-_LOOKBACK:]
+        head_ctx, _ch = _strip_chapter_prefix(head_ctx)
+        if _PRECEDING_STATUTE_ID_RE.search(head_ctx):
+            return True
+        hm = _PRECEDING_NAME_HEAD_RE.search(head_ctx)
+        if hm is not None and not _demonstrative_binds_name(
+            (hm.group("prev") or "").lower(), hm.group("head")
+        ):
+            return True
+
     before = text[max(0, start - _LOOKBACK) : start]
     # Look PAST a chapter prefix so a name head before it still excludes
     # (``jätelain 3 luvun 5 §`` is cross-statute, not internal).
@@ -237,10 +510,12 @@ def _is_excluded(text: str, start: int) -> bool:
     if m is not None:
         # A name head (``…lain`` / ``…laissa`` / ``…asetuksen`` …) immediately
         # before the citation is a cross-statute by-name case — EXCLUDED —
-        # UNLESS a self-referential demonstrative makes it "THIS act"
-        # (``tämän lain`` / ``tässä laissa``), which is an internal self-ref.
+        # UNLESS a self-referential demonstrative AGREEING IN CASE with the head
+        # makes it "THIS act" (``tämän lain`` / ``tässä laissa``), an internal
+        # self-ref. A case-mismatched demonstrative (``tähän …lain``) binds a
+        # downstream noun, not the name → stays cross-statute → EXCLUDED.
         prev = (m.group("prev") or "").lower()
-        if prev in _SELF_DEMONSTRATIVES:
+        if _demonstrative_binds_name(prev, m.group("head")):
             return False
         return True
     return False
@@ -371,9 +646,58 @@ def _make_mention(
     )
 
 
+# Numeric prefix of a section label (``16a`` -> 16, ``150f`` -> 150), for the
+# above-max existence guard. ``None`` for a non-numeric label (never guarded).
+_SEC_NUM_PREFIX_RE = re.compile(r"(\d{1,6})")
+
+
+def _section_num_prefix(label: str) -> Optional[int]:
+    m = _SEC_NUM_PREFIX_RE.match(label)
+    return int(m.group(1)) if m is not None else None
+
+
+def _internal_section_unsupported(
+    section_label: str,
+    known_sections: Optional[frozenset[str]],
+) -> bool:
+    """True iff an internal §-target's section cannot belong to this statute.
+
+    A SECONDARY net for the external-law leak: when a governing external-law
+    phrase did not anchor (it sits past the lookback, or in an earlier sentence),
+    a foreign section number leaks in as a bogus INTERNAL target (``93 §`` in a
+    42-section act). When the citing body is a TRUSTED, fully eId'd consolidated
+    tree, a section number that is both ABSENT from that tree AND strictly ABOVE
+    the tree's largest section cannot be a genuine same-statute reference — so the
+    target is declined (the caller emits a fail-loud STATUTE_ONLY, never a
+    concrete bogus internal target).
+
+    Scoped to fail-loud, low collateral:
+      * ``known_sections is None`` (non-consolidated / un-eId'd body, where
+        absence is untrustworthy because the materialized tree is partial) ->
+        NEVER guarded.
+      * Only ABOVE the materialized max declines: a within-range "hole" is far
+        more often a letter-suffix section the structure builder missed than a
+        leak, so it is left intact (recall over a speculative decline).
+    """
+    if known_sections is None or not known_sections:
+        return False
+    if section_label in known_sections:
+        return False
+    tn = _section_num_prefix(section_label)
+    if tn is None:
+        return False
+    maxnum = 0
+    for k in known_sections:
+        kn = _section_num_prefix(k)
+        if kn is not None and kn > maxnum:
+            maxnum = kn
+    return maxnum > 0 and tn > maxnum
+
+
 def recognize_internal_refs(
     text: str,
     statute_id: str,
+    known_sections: Optional[frozenset[str]] = None,
 ) -> List[ReferenceMention]:
     """Recognize bare / internal same-statute section references in ``text``.
 
@@ -422,6 +746,12 @@ def recognize_internal_refs(
             if _is_excluded(text, m.start()):
                 continue
             surface = m.group("surf")
+            # Drop a leading 4-digit YEAR token glued onto the § run when the
+            # text just before it is a year word / decree-id slash (``vuoden 1971,
+            # 53 §`` / ``1314/1996, 7 ja 17 §``), so the year never parses as a §
+            # and the REAL provisions in the clause survive.
+            before_surf = text[max(0, m.start() - 12) : m.start()]
+            surface = _strip_leading_year(surface, before_surf)
             # A ``N luvun`` chapter prefix immediately before the section surface
             # qualifies it (``3 luvun 5 §`` → chapter 3, section 5). Recover the
             # chapter run and consume its span so the chapter-only pass does not
@@ -452,6 +782,24 @@ def recognize_internal_refs(
             chapter_choices: List[Optional[str]] = list(chapters) or [None]
             for chapter in chapter_choices:
                 for tgt in targets:
+                    # Secondary external-leak net: a section that cannot belong
+                    # to this statute (absent + above the trusted tree's max) is
+                    # an external-law number that leaked in because its governing
+                    # phrase did not anchor. Decline it to a fail-loud
+                    # STATUTE_ONLY (act fixed = this statute, provision NOT
+                    # claimed) — never a bogus concrete internal target.
+                    if chapter is None and _internal_section_unsupported(
+                        tgt.section_label, known_sections
+                    ):
+                        mentions.append(
+                            _make_mention(
+                                statute_id,
+                                surface,
+                                ProvisionRef(statute_id=statute_id),
+                                CiteConfidence.STATUTE_ONLY,
+                            )
+                        )
+                        continue
                     mentions.append(
                         _make_mention(
                             statute_id,

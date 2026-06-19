@@ -75,7 +75,6 @@ _SEED: dict[str, tuple[str, ...]] = {
     "kaupunkijätevesidirektiivi": ("31991L0271",),  # UWWTD 91/271/ETY
     "ympäristövastuudirektiivi": ("32004L0035",),  # ELD 2004/35/EY
     "palveludirektiivi": ("32006L0123",),  # Services 2006/123/EY
-    "vesidirektiivi": ("31998L0083",),  # Drinking Water 98/83/EY
     # --- Regulations (R) ---
     "yleinen tietosuoja-asetus": ("32016R0679",),  # GDPR 2016/679
     "tietosuoja-asetus": ("32016R0679",),  # common short form of GDPR
@@ -83,11 +82,49 @@ _SEED: dict[str, tuple[str, ...]] = {
     "reach-asetus": ("32006R1907",),  # REACH 1907/2006
     "clp-asetus": ("32008R1272",),  # CLP 1272/2008
     "dual-use-asetus": ("32021R0821",),  # Dual-use 2021/821
+    "vakavaraisuusasetus": ("32013R0575",),  # CRR — Capital Requirements
+    # Regulation (EU) 575/2013 (banking prudential). Unambiguous: the *asetus*
+    # form is CRR; the *direktiivi* form (CRD IV / Solvency II) is ambiguous and
+    # seeded as MULTIPLE below.
+    "kasvinsuojeluaineasetus": ("32009R1107",),  # PPP Reg (EC) 1107/2009
+    "biosidiasetus": ("32012R0528",),  # Biocidal Products Reg (EU) 528/2012
+    "terveysväiteasetus": ("32006R1924",),  # Nutrition & health claims Reg
+    # (EC) 1924/2006 (often "ravinto- ja terveysväiteasetus" in full prose)
+    "elintarviketietoasetus": ("32011R1169",),  # Food Information to Consumers
+    # Reg (EU) 1169/2011 (FIC)
+    # Mined from corpus R4 bindings (support 7 across distinct statutes): the SE
+    # Statute, Council Reg (EC) 2157/2001 on the Statute for a European company.
+    "eurooppayhtiöasetus": ("32001R2157",),
     # --- Deliberately ambiguous seed (Finnish usage genuinely splits) ---
     # "jätedirektiivi" is used in prose for both the consolidated Waste
     # Framework Directive (2008/98/EY) and, historically, its predecessor
     # 2006/12/EY. The registry reports both and refuses to pick.
     "jätedirektiivi": ("32008L0098", "32006L0012"),
+    # "vesidirektiivi" is NOT a stable term-of-art: Finnish prose prefers the
+    # qualified compounds (juomavesidirektiivi 98/83/EY, vesipuitedirektiivi
+    # 2000/60/EY). The bare word floats between the Drinking Water Directive
+    # 98/83/EY, its recast 2020/2184, and the Water Framework Directive
+    # 2000/60/EY. Ambiguous — list all, never pick (was a risky single before).
+    "vesidirektiivi": ("31998L0083", "32020L2184", "32000L0060"),
+    # "tietosuojadirektiivi" (the *direktiivi*, distinct from the GDPR *asetus*):
+    # the old Data Protection Directive 95/46/EY (repealed by GDPR) in pre-2018
+    # prose, and the Law Enforcement Directive (EU) 2016/680 ("rikosasioiden
+    # tietosuojadirektiivi") in newer prose. Genuinely temporally ambiguous; the
+    # GDPR (32016R0679) is NEVER called a directive, so it is not a candidate.
+    "tietosuojadirektiivi": ("31995L0046", "32016L0680"),
+    # "vakavaraisuusdirektiivi" splits cross-domain: CRD IV 2013/36/EU (banking)
+    # vs Solvency II 2009/138/EY (insurance). Resolvable only by sector context,
+    # which the registry does not see — list both, refuse to pick.
+    "vakavaraisuusdirektiivi": ("32013L0036", "32009L0138"),
+    # "maksupalveludirektiivi": PSD1 2007/64/EY vs PSD2 (EU) 2015/2366 (PSD2
+    # repealed PSD1). Temporally ambiguous in prose — list both.
+    "maksupalveludirektiivi": ("32007L0064", "32015L2366"),
+    # "rahoitusvälinedirektiivi" (MiFID): MiFID I 2004/39/EY vs MiFID II (EU)
+    # 2014/65/EU (MiFID II repealed MiFID I). Temporally ambiguous — list both.
+    "rahoitusvälinedirektiivi": ("32004L0039", "32014L0065"),
+    # "energiatehokkuusdirektiivi" (EED): 2012/27/EU vs the recast (EU) 2023/1791
+    # (which repealed 2012/27). Temporally ambiguous — list both.
+    "energiatehokkuusdirektiivi": ("32012L0027", "32023L1791"),
 }
 
 # Heads that the morphology engine knows and that legitimately terminate a

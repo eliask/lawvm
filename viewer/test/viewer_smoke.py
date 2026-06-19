@@ -166,6 +166,67 @@ with sync_playwright() as p:
     n_seg = page.locator("#doc .chg-strip .seg-rep, #doc .chg-strip .seg-exp").count()
     check("lifecycle strips show repeal/expiry segments", n_seg >= 1, f"{n_seg} segments")
 
+    # Internal semantic ref: item locator scrolls to the rendered paragraph.
+    internal_jump = page.evaluate("""() => {
+      const links = [...document.querySelectorAll('#doc a.ref-semantic.ref-sem-internal')];
+      const hit = links.find(a => (a.textContent || '').includes('114 §:n 4 momentin 1 kohdassa'));
+      if (!hit) return { found: false, total: links.length };
+      const state = hit.querySelector('.ref-internal-state');
+      const inactive = hit.classList.contains('ref-sem-internal-inactive');
+      const suffixOk = !inactive || (state && /\\[(kumottu|rauennut|puuttuu)\\]/i.test(state.textContent || ''));
+      hit.click();
+      return { found: true, inactive, suffixOk, suffix: state ? state.textContent : null };
+    }""")
+    page.wait_for_timeout(900)
+    internal_land = page.evaluate("""() => {
+      const topbar = document.getElementById('topbar');
+      const fold = topbar ? topbar.getBoundingClientRect().bottom : 0;
+      const expectedTop = fold + (typeof JUMP_SCROLL_OFFSET_PX === 'number' ? JUMP_SCROLL_OFFSET_PX : 100);
+      const el = document.querySelector('#doc .pblock[data-addr="chapter:6/section:114/subsection:4/paragraph:1"]');
+      if (!el) return { landed: false };
+      const top = el.getBoundingClientRect().top;
+      return {
+        landed: true,
+        nearOffset: Math.abs(top - expectedTop) < 80,
+        highlighted: el.classList.contains('jump-highlight'),
+      };
+    }""")
+    check("internal semantic ref present in law text", internal_jump.get("found"), str(internal_jump))
+    check("inactive internal ref appends editorial state badge",
+          internal_jump.get("suffixOk", True), str(internal_jump))
+    check("internal semantic ref scrolls to exact paragraph with top offset",
+          internal_land.get("landed") and internal_land.get("nearOffset"), str(internal_land))
+    check("internal semantic ref soft-highlights target", internal_land.get("highlighted"), str(internal_land))
+
+    back_visible = page.evaluate(
+        "(() => { const b = document.getElementById('internal-backbar'); return !!(b && !b.hidden); })()")
+    source_addr = page.evaluate(
+        "(() => internalJumpStack.length ? internalJumpStack[internalJumpStack.length - 1].fromAddr : null)()")
+    check("internal jump shows return trail", back_visible and bool(source_addr), str(source_addr))
+    if back_visible and source_addr:
+        pre_back = page.evaluate("""() => {
+          const frame = internalJumpStack[internalJumpStack.length - 1];
+          return frame ? { fromScrollY: frame.fromScrollY } : null;
+        }""")
+        page.click("#internal-back-btn")
+        page.wait_for_timeout(900)
+        back_land = page.evaluate("""(expected) => {
+          const scrollY = window.scrollY;
+          const restored = expected && typeof expected.fromScrollY === 'number'
+            ? Math.abs(scrollY - expected.fromScrollY) < 8 : false;
+          return {
+            ok: true,
+            restored,
+            scrollY,
+            fromScrollY: expected ? expected.fromScrollY : null,
+            highlighted: !!document.querySelector('#doc .jump-highlight'),
+            trailHidden: document.getElementById('internal-backbar').hidden,
+          };
+        }""", pre_back)
+        check("internal jump back restores source scroll position",
+              back_land.get("ok") and back_land.get("restored"), str(back_land))
+        check("internal jump back clears return trail", back_land.get("trailHidden"), str(back_land))
+
     # Time axis scrub: click at 30% -> date changes
     before = page.text_content("#sel-date")
     axis = page.locator("#timeaxis")
@@ -198,10 +259,47 @@ with sync_playwright() as p:
     check("timeline arrows ignore focused input", guarded_after == guarded_before, f"{guarded_before} -> {guarded_after}")
     page.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")
 
-    # Contextual focus keeps the full law available, but collapses unchanged
-    # outline branches around selected-date changes.
+    # Entirely repealed/expired outline subtrees default collapsed at this
+    # timeslice; expand-all must not open them.
     page.select_option("#date-jump", label="2011-04-05")
     page.wait_for_timeout(700)
+    absent_section = page.evaluate("""() => {
+      for (const el of document.querySelectorAll('#doc .node.kind-section')) {
+        const body = el.querySelector(':scope > .node-body');
+        if (!body) continue;
+        const kids = body.querySelectorAll(':scope > .tombstone, :scope > .pblock.tombstone, :scope > .ghost-line');
+        if (kids.length < 2) continue;
+        const row = el.querySelector(':scope > .node-row');
+        if (!row || !(/\\[(kumottu|rauennut)\\]/.test(row.textContent || ''))) continue;
+        return { addr: el.dataset.addr || '', collapsed: el.classList.contains('collapsed'), kids: kids.length };
+      }
+      return null;
+    }""")
+    check("entirely absent section subtree found for collapse test", bool(absent_section),
+          str(absent_section))
+    if absent_section:
+        check("entirely absent section defaults collapsed",
+              absent_section.get("collapsed"),
+              str(absent_section))
+        page.click("#expand-all")
+        page.wait_for_timeout(300)
+        still_collapsed = page.evaluate("""(addr) => {
+          const el = document.querySelector(`#doc .node[data-addr="${addr}"]`);
+          return !!(el && el.classList.contains('collapsed'));
+        }""", absent_section["addr"])
+        check("expand-all skips entirely absent subtrees", still_collapsed)
+        page.locator(
+            f"#doc .node[data-addr='{absent_section['addr']}'] > .node-row"
+        ).click()
+        page.wait_for_timeout(200)
+        user_expanded = page.evaluate("""(addr) => {
+          const el = document.querySelector(`#doc .node[data-addr="${addr}"]`);
+          return !!(el && !el.classList.contains('collapsed'));
+        }""", absent_section["addr"])
+        check("user can expand entirely absent subtree", user_expanded)
+
+    # Contextual focus keeps the full law available, but collapses unchanged
+    # outline branches around selected-date changes.
     full_addr_count = page.locator("#doc [data-addr]").count()
     page.click("#focus-changes-context")
     page.wait_for_timeout(900)
@@ -311,6 +409,37 @@ with sync_playwright() as p:
     hc_hidden = page.evaluate(
         "(() => { const h = document.querySelector('.ref-hovercard'); return !h || h.hidden; })()")
     check("hovercard hides on mouse-out", hc_hidden)
+
+    # --- Semantic-reference status overlay (pure-function coverage) ---
+    # The inline statute-citation surface branches on the graph-authoritative
+    # interlink resolution status. Drive the render/classify functions over a
+    # one-row-per-status fixture so the affordance mapping is asserted even when
+    # the loaded corpus happens not to exercise every status. Detailed coverage
+    # (CSS strikethrough, candidate lists, hovercard badges) lives in
+    # viewer/test/semantic_refs_dom.py.
+    sem = page.evaluate("""(() => {
+        const mk = (r) => ({ status: semanticRefStatus(r),
+          html: refLink('semantic', { ...r, text: r.surface_text }, r.surface_text),
+          hover: semanticInterlinkHovercardHtml(r) || '' });
+        return {
+          resolved: mk({ surface_text: 'X 5 §', resolution_status: 'resolved', target_local_id: 'X/1', target_locator: 'section:5' }),
+          statute_only: mk({ surface_text: 'X laki', resolution_status: 'resolved', target_local_id: 'X/1', target_locator: '' }),
+          ambiguous: mk({ surface_text: 'laissa', resolution_status: 'ambiguous', candidate_work_ids: 'a|b' }),
+          open: mk({ surface_text: 'erikseen', resolution_status: 'unresolved' }),
+          broken: mk({ surface_text: 'Y 1 §', resolution_status: 'broken', target_local_id: 'Y/9', target_locator: 'section:1' }),
+        };
+    })()""")
+    check("semantic resolved → deep-link class",
+          sem["resolved"]["status"] == "resolved" and "ref-sem-resolved" in sem["resolved"]["html"])
+    check("semantic statute_only → act-level class",
+          sem["statute_only"]["status"] == "statute_only" and "ref-sem-statute_only" in sem["statute_only"]["html"])
+    check("semantic ambiguous → hovercard candidates",
+          sem["ambiguous"]["status"] == "ambiguous" and "hc-candidates" in sem["ambiguous"]["hover"])
+    check("semantic open → tagged non-clickable",
+          sem["open"]["status"] == "open" and "ref-sem-open" in sem["open"]["html"])
+    check("semantic broken → strikethrough + note",
+          sem["broken"]["status"] == "broken" and "ref-sem-broken" in sem["broken"]["html"]
+          and "hc-broken-note" in sem["broken"]["hover"])
 
     # Date ref → law-in-force on that date.
     date_ref = page.locator(".search-hit a.ref-link.ref-date").first

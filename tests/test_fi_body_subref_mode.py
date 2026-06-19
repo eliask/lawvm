@@ -22,6 +22,7 @@ from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.references.sections import (
     BodyProvisionTarget,
     parse_body_provision_tail,
+    parse_body_provision_tail_spanned,
 )
 
 
@@ -149,3 +150,35 @@ def test_tail_momentti_kohta() -> None:
 
 def test_tail_no_section_is_empty() -> None:
     assert parse_body_provision_tail("ei lainkaan pykälää tässä") == []
+
+
+# ── parse_body_provision_tail_spanned: consumed-slice reporting ────────────
+
+
+def test_spanned_reports_consumed_slice_not_trailing_prose() -> None:
+    """The spanned parser returns the bytes the § tail grammar consumed.
+
+    The input carries a leading space (it is the slice right after the
+    statute-name head) and trailing prose; ``consumed_text`` must be just the
+    recognized section reference (``5 a §:ssä``), not the whole window.
+    """
+    parsed = parse_body_provision_tail_spanned(
+        " 5 a §:ssä tarkoitetun luontovahingon, aluehallintoviraston on"
+    )
+    assert parsed.targets == [BodyProvisionTarget(section_label="5a")]
+    assert parsed.consumed_text == "5 a §:ssä"
+
+
+def test_spanned_no_section_consumes_nothing() -> None:
+    parsed = parse_body_provision_tail_spanned("ei lainkaan pykälää tässä")
+    assert parsed.targets == []
+    assert parsed.consumed_text == ""
+
+
+def test_spanned_targets_match_legacy_helper() -> None:
+    """The spanned parser's targets equal the legacy list-only helper's output."""
+    text = "6 §:n 1 momentissa ja 8 §:n 2 momentissa säädetään"
+    assert (
+        parse_body_provision_tail_spanned(text).targets
+        == parse_body_provision_tail(text)
+    )
