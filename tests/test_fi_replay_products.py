@@ -1229,6 +1229,19 @@ def test_replay_xml_2006_386_cited_asetus_version_replaces_chapter_three_section
     assert "joulukuun alusta toukokuun loppuun" in " ".join(irnode_to_text(section_4c).split())
 
 
+def test_replay_xml_2010_290_cited_version_item_does_not_shadow_same_date_section_replace() -> None:
+    """2017/1087 targets 3 § 4 kohta as in 2017/898; it must not hide 2017/898's §3."""
+    replay = replay_xml_for_test("2010/290", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_3 = sections["chapter:1/section:3"]
+
+    text = " ".join(irnode_to_text(section_3).split())
+
+    assert "jos edustaja toimii ainoastaan maksajan tai maksunsaajan puolesta" in text
+    assert "samaan maksulaitoslain (297/2010) 5 §:n 8 kohdassa tarkoitettuun ryhmään" in text
+    assert "kirjanpitolaissa (1336/1997) tarkoitettu emoyritys" not in text
+
+
 def test_replay_xml_preserves_native_same_label_section_after_1958_496_renumber() -> None:
     """1999/1249 must preserve both the migrated 5 c § and the new native 5 b §."""
     replay = pinned_replay("1958/496", mode="legal_pit", quiet=True, stop_before="2004/697")

@@ -934,6 +934,63 @@ def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOper
     return normalized
 
 
+_FI_CITED_VERSION_ID_RE = re.compile(
+    r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
+    flags=re.I | re.S,
+)
+_FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE = (
+    r"(?<!\d){label}\s*§\s*:\s*n\s+[^,;]{{0,120}}\bkoht[a-zäöå]*\b"
+    r"\s*,\s*sellais[ei][a-zäöå]*\s+kuin\b"
+)
+
+
+def _drop_cited_version_item_ancestor_snapshots(lo_ops: list[LegalOperation]) -> list[LegalOperation]:
+    """Drop ancestor snapshots from item-scoped cited-version clauses."""
+    cited_parent_snapshots: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+    for op in lo_ops:
+        source = op.source
+        if source is None or op.action not in {StructuralAction.REPLACE, StructuralAction.INSERT}:
+            continue
+        if not op.target.path or op.target.path[-1][0] not in {"section", "subsection"}:
+            continue
+        cited_parent_snapshots.add((source.statute_id, source.effective, tuple(op.target.path)))
+
+    filtered: list[LegalOperation] = []
+    for op in lo_ops:
+        source = op.source
+        raw_text = source.raw_text if source is not None else ""
+        if (
+            source is None
+            or op.action not in {StructuralAction.REPLACE, StructuralAction.INSERT}
+            or ":n" not in raw_text
+            or "kohta" not in raw_text.lower()
+            or not op.target.path
+            or op.target.path[-1][0] not in {"section", "subsection"}
+        ):
+            filtered.append(op)
+            continue
+        target_label = op.target.path[-1][1]
+        if op.target.path[-1][0] == "subsection" and len(op.target.path) >= 2:
+            target_label = op.target.path[-2][1]
+        local_item_cited_version_re = re.compile(
+            _FI_LOCAL_ITEM_CITED_VERSION_RE_TEMPLATE.format(label=re.escape(target_label)),
+            flags=re.I | re.S,
+        )
+        if local_item_cited_version_re.search(raw_text) is None:
+            filtered.append(op)
+            continue
+        cited_ids = {
+            f"{match.group(2)}/{int(match.group(1))}"
+            for match in _FI_CITED_VERSION_ID_RE.finditer(raw_text)
+        }
+        if not any(
+            (cited_id, source.effective, tuple(op.target.path)) in cited_parent_snapshots
+            for cited_id in cited_ids
+        ):
+            filtered.append(op)
+    return filtered
+
+
 def _drop_explicitly_repealed_source_move_events(
     timelines: dict["LegalAddress", ProvisionTimeline],
     migration_events: tuple[MigrationEvent, ...],
@@ -1223,6 +1280,7 @@ def build_replay_products(
     )
     lo_ops = list(lo_ops_out or [])
     lo_ops = _normalize_repeal_op_sources(lo_ops)
+    lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
     covered_commence_group_ids = frozenset(
         group_id
         for event in resolved_temporal_events
