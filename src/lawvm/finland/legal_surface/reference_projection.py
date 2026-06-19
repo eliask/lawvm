@@ -45,13 +45,13 @@ decision, and authorises no replay.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from typing import Callable
 
-from lawvm.core.reference_mention import ReferenceMention
-from lawvm.finland.references.cross_refs import _make_statute_id
-from lawvm.finland.legal_surface.sentence_parse import (
-    parse_citation_sentence,
-    sentence_parse_to_mentions,
+from lawvm.core.reference_mention import ReferenceMention, SourceSpan
+from lawvm.finland.references.shared_reference_orchestrator import (
+    CITATION_CONSTRUCTION_PHRASE_LEMMA,
+    lift_inline_id_construction_mentions,
 )
 from lawvm.finland.legal_surface.source_syntax_graph import SourceSyntaxGraph
 
@@ -77,8 +77,10 @@ FOREST_UNOWNED_REFERENCE_FAMILIES: tuple[str, ...] = (
 )
 
 #: The single ``phrase_lemma`` the forest-owned citation construction lane stamps
-#: on its lens mentions — the subset key the differential filters the lens to.
-FOREST_OWNED_PHRASE_LEMMA = "citation_construction"
+#: on its mentions — the subset key the differential filters the lens to. Sourced
+#: from the SHARED lifter so the forest projection and the lens citation lane agree
+#: on the lane key by construction (ONE lifter, no rival parser).
+FOREST_OWNED_PHRASE_LEMMA = CITATION_CONSTRUCTION_PHRASE_LEMMA
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,24 +118,6 @@ class ProjectedReference:
 _CHP_PATH_RE = re.compile(r"chp_([0-9]+[a-z]?)", re.IGNORECASE)
 
 
-def _canonicalize_forest_statute_id(statute_id: str) -> str:
-    """Re-orient the forest construction's NUMBER/YEAR cited-act id to YEAR/NUMBER.
-
-    :func:`…sentence_parse.parse_citation_sentence` keys the cited act in the
-    Finnish surface orientation NUMBER/YEAR (``f"{num}/{year}"``, e.g. ``1296/1989``).
-    The lens's ``citation_construction`` lane re-orients it to the canonical corpus
-    key YEAR/NUMBER (``1989/1296``) via ``_make_statute_id(year, num)`` so a cite
-    dedups onto the same entity node. The forest projection MUST apply the SAME
-    re-orientation (it is the lane the forest reproduces), so both sides agree on
-    identity. ``num/year`` → ``_make_statute_id(year, num)``; an id without a
-    ``/`` (defensive) is returned unchanged.
-    """
-    if "/" not in statute_id:
-        return statute_id
-    num, year = statute_id.split("/", 1)
-    return _make_statute_id(year, num)
-
-
 def _canonical_target_key(mention: ReferenceMention) -> str | None:
     """Canonical statute+provision identity key for one citation TARGET.
 
@@ -168,21 +152,33 @@ def _canonical_target_key(mention: ReferenceMention) -> str | None:
     )
 
 
-def _canonicalize_mention(mention: ReferenceMention) -> ReferenceMention:
-    """Re-orient a projected mention's target statute id to canonical YEAR/NUMBER.
+def _segment_char_span_locator(
+    seg_text: str, source_statute_id: str
+) -> "Callable[[str], SourceSpan | None]":
+    """A char-offset surface locator into one segment's text (forest coordinate).
 
-    The construction parse emits the cited act NUMBER/YEAR; the lens lane
-    canonicalises it via ``_make_statute_id``. Apply the same orientation to the
-    forest projection so identity matches. Surface-only: only the target id is
-    rewritten; a target with no provision ref is returned unchanged.
+    Mirrors the lens lane's byte-offset-into-``xml_bytes`` locator: a left-to-right
+    per-surface cursor maps repeated identical surfaces to successive char positions
+    within the segment, so several targets sharing one anchor surface keep the same
+    span and a repeated surface advances. Returns ``None`` when the surface is not
+    found (fail-loud by absence; never a fabricated offset).
     """
-    ref = mention.target_provision_ref
-    if ref is None or not ref.statute_id:
-        return mention
-    canonical = _canonicalize_forest_statute_id(ref.statute_id)
-    if canonical == ref.statute_id:
-        return mention
-    return replace(mention, target_provision_ref=replace(ref, statute_id=canonical))
+    surface_char_cursor: dict[str, int] = {}
+
+    def locate(surface: str) -> SourceSpan | None:
+        if not surface:
+            return None
+        start = seg_text.find(surface, surface_char_cursor.get(surface, 0))
+        if start < 0:
+            return None
+        surface_char_cursor[surface] = start + 1
+        return SourceSpan(
+            source_file=source_statute_id,
+            byte_offset=start,
+            byte_len=len(surface),
+        )
+
+    return locate
 
 
 def _enclosing_segment_id(forest: SourceSyntaxGraph, leaf_node_id: str) -> str | None:
@@ -212,13 +208,21 @@ def project_forest_references(
     sub-span (the citation family's chars merged with adjacent families'), so the
     leaf substring alone loses the citation's provision tail. The reconstruction
     therefore reparses the leaf's ENCLOSING structural segment (the prose / chapeau
-    / list_item the ``contains`` edge points from) via the citation family's OWN
-    construction parse, and lifts each recognised citation to
-    :class:`ReferenceMention`s through the family's own projection
-    (:func:`…sentence_parse.sentence_parse_to_mentions`). One
-    :class:`ProjectedReference` per gated segment; a segment that reparses to no
-    citation (a leaf that was a spurious coalesced fragment, e.g. part of a verb)
-    projects nothing.
+    / list_item the ``contains`` edge points from) and lifts each recognised
+    citation through the SHARED inline-(id) citation lifter
+    (:func:`…shared_reference_orchestrator.lift_inline_id_construction_mentions`) —
+    the SAME lifter the production :class:`ReferenceLens` ``citation_construction``
+    lane uses (ONE lifter, no rival parser). One :class:`ProjectedReference` per
+    gated segment; a segment that reparses to no citation (a leaf that was a
+    spurious coalesced fragment, e.g. part of a verb) projects nothing.
+
+    The shared lifter re-orients each cited-act id NUMBER/YEAR → canonical
+    YEAR/NUMBER, extends the surface to the statute-name head, builds the
+    chapter-qualified provision path, dedups per provision target, and skips
+    self-cites — identically to the lens lane, so the projection dedups onto the
+    same entity identity by construction. The cite's char span is located in the
+    segment text (the forest coordinate); the citing statute id bounds the
+    2-digit-year pivot and the self-cite skip.
 
     Deterministic and surface-only: reads ONLY the assembled forest + the body
     text, makes no attachment decision, authorises no replay. Segments are emitted
@@ -240,26 +244,24 @@ def project_forest_references(
     for seg_id in gated_segment_ids:
         seg = forest.syntax_nodes[seg_id]
         seg_text = body[seg.char_start : seg.char_end]
-        sp = parse_citation_sentence(seg_text, source_statute_id=source_statute_id)
-        if not sp.citations:
-            continue
-        raw_mentions = sentence_parse_to_mentions(
-            sp, source_statute_id, source_file=source_statute_id
+
+        # Char-offset locator into the segment text (the forest coordinate system),
+        # mirroring the lens lane's byte-offset-into-xml_bytes locator. A
+        # left-to-right cursor maps repeated identical surfaces to successive char
+        # positions within the segment.
+        mentions_list, _keys = lift_inline_id_construction_mentions(
+            seg_text,
+            source_statute_id,
+            span_for_surface=_segment_char_span_locator(seg_text, source_statute_id),
         )
-        if not raw_mentions:
+        if not mentions_list:
             continue
-        # Re-orient each cited-act id NUMBER/YEAR → canonical YEAR/NUMBER, exactly as
-        # the lens's citation_construction lane does, so the projection dedups onto
-        # the same entity identity (the construction parse keeps the Finnish surface
-        # orientation; the production lane canonicalises it). Surface-only rewrite of
-        # the target id; all other fields are the construction parse's own output.
-        mentions = tuple(_canonicalize_mention(m) for m in raw_mentions)
         out.append(
             ProjectedReference(
                 segment_node_id=seg_id,
                 char_start=seg.char_start,
                 char_end=seg.char_end,
-                mentions=mentions,
+                mentions=tuple(mentions_list),
             )
         )
     out.sort(key=lambda p: (p.char_start, p.char_end))

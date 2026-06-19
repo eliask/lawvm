@@ -84,8 +84,11 @@ from lawvm.finland.references.treaty_article import recognize_treaty_article_ref
 from lawvm.finland.references.vague import recognize_vague_refs
 from lawvm.finland.references.internal_refs import recognize_internal_refs
 from lawvm.finland.references.by_name import (
-    name_head_np_start_before_paren,
     recognize_by_name_refs,
+)
+from lawvm.finland.references.shared_reference_orchestrator import (
+    inline_id_provision_key,
+    lift_inline_id_construction_mentions,
 )
 from lawvm.core.preparatory_reference import (
     PreparatoryReference,
@@ -94,7 +97,6 @@ from lawvm.core.preparatory_reference import (
 from lawvm.finland.references.preparatory_reference_extractor import (
     extract_preparatory_refs,
 )
-from lawvm.finland.legal_surface.sentence_parse import parse_citation_sentence
 from lawvm.finland.legal_surface.delegation_parse import extract_authority_bases
 from lawvm.finland.authority_basis import _classify_authority_kind, _normalize_year
 
@@ -1806,66 +1808,11 @@ def extract_preparatory_reference_mentions(
 # letters / hyphens (the inflected statute name ``arvonlisäverolain`` /
 # ``-kaaressa`` / the descriptive ``päätös``), optionally one space off the paren.
 # Bounded (§1.11): a single trailing run, length-capped.
-_NAME_HEAD_BEFORE_PAREN_RE = re.compile(
-    r"([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})\s?$"
-)
-
-
-def _extend_surface_to_name_head(text: str, paren_start: int, anchor_end: int) -> str:
-    """Surface for a construction cite, extended LEFT to the statute-name head.
-
-    The construction parse's anchor begins at the ``(id)`` paren (the name head is
-    owned as benign prose for total-ownership accounting). The PRODUCTION mention,
-    however, must carry the SAME name-head-inclusive surface the demoted regex lane
-    carried (``arvonlisäverolain (1767/95) 128 §``), so downstream span-overlap
-    consumers (the surface graph, the census by-name dedup) anchor it identically to
-    the old lane.
-
-    The name head is parsed as a proper inflected NP via the shared by-name
-    recognizer (``by_name.name_head_np_start_before_paren``), so an intervening
-    modifier between the head and the paren is INCLUDED in the surface
-    (``annettu opetusministeriön asetus (253/2001)`` — the genitive
-    ``opetusministeriön``; ``valvotusta koevapaudesta annetun lain (629/2013)`` —
-    the descriptive complement). When the NP recognizer finds no clean name head
-    abutting the paren, it falls back to the contiguous single-token left-scan (the
-    prior behaviour: ``arvonlisäverolain``, ``perintökaaren``); when even that finds
-    nothing (a bare paren) the surface is unchanged (starts at the paren).
-    Tag-don't-guess: the NP path never fabricates a boundary — it returns ``None``
-    and the single-token fallback (itself bounded) applies.
-    """
-    np_start = name_head_np_start_before_paren(text, paren_start)
-    if np_start is not None:
-        return text[np_start:anchor_end]
-    left = text[max(0, paren_start - 61) : paren_start]
-    m = _NAME_HEAD_BEFORE_PAREN_RE.search(left)
-    if m is None:
-        return text[paren_start:anchor_end]
-    head_start = paren_start - (len(left) - m.start(1))
-    return text[head_start:anchor_end]
-
-
-def _inline_id_provision_key(ref: Optional[ProvisionRef]) -> Optional[str]:
-    """Statute+provision dedup key for one inline-(id) citation TARGET.
-
-    Built from the final ``ProvisionRef`` fields (statute id + AKN provision path +
-    section/momentti/kohta labels), so the construction-primary lane and the demoted
-    regex-fallback lane — which build IDENTICAL ``ProvisionRef``s for the same
-    citation — agree on what "the same citation" is regardless of how each lane
-    derived the chapter. Returns None for a target with no statute id (nothing to
-    dedup on; the caller keeps such a mention).
-    """
-    if ref is None or not ref.statute_id:
-        return None
-    return "/".join(
-        part
-        for part in (
-            ref.statute_id,
-            ref.provision_path or "",
-            ref.section_label or "",
-            str(ref.subsection_num) if ref.subsection_num is not None else "",
-            ref.item_label or "",
-        )
-    )
+# The inline-(id) citation-construction surface/dedup helpers live in the shared
+# orchestrator (ONE lifter for the lens lane AND the forest projection). The
+# regex-fallback dedup below reuses the SAME key fn so both lanes agree on what
+# "the same citation" is.
+_inline_id_provision_key = inline_id_provision_key
 
 
 def extract_inline_id_construction_mentions(
@@ -1904,33 +1851,28 @@ def extract_inline_id_construction_mentions(
         return result, covered_keys
 
     covered: set[str] = ref_covered_statute_ids or set()
-    valid_start, valid_end = valid_at_interval
 
+    # Byte-offset locator into ``xml_bytes`` for a cite's name-inclusive surface
+    # (the lens coordinate system). A left-to-right byte cursor maps repeated
+    # identical surfaces to successive byte positions; the per-<p> span cache (held
+    # by the shared lifter) keeps several targets from one anchor on one span.
     surface_byte_cursor: dict[bytes, int] = {}
 
-    def _locate_surface_span(
-        surface: str,
-        local_cache: dict[str, Optional[SourceSpan]],
-    ) -> Optional[SourceSpan]:
+    def _locate_surface_span(surface: str) -> Optional[SourceSpan]:
         if not surface:
             return None
-        if surface in local_cache:
-            return local_cache[surface]
         needle = surface.encode("utf-8")
         start = _find_with_left_boundary(
             xml_bytes, needle, surface_byte_cursor.get(needle, 0)
         )
         if start < 0:
-            local_cache[surface] = None
             return None
         surface_byte_cursor[needle] = start + 1
-        span = SourceSpan(
+        return SourceSpan(
             source_file=statute_id,
             byte_offset=start,
             byte_len=len(needle),
         )
-        local_cache[surface] = span
-        return span
 
     for p_el in root.iter():
         local = p_el.tag.split("}")[-1] if "}" in p_el.tag else p_el.tag
@@ -1939,78 +1881,21 @@ def extract_inline_id_construction_mentions(
         text = _PLAIN_TEXT_RECOGNIZER._collect_non_ref_text(p_el)
         if not text or _PLAIN_TEXT_GUARD_PAREN not in text:
             continue
-        # Thread the CITING statute id so the construction lane's 2-digit-year
-        # century pivot is bounded causally — a cited act cannot post-date the
-        # statute that cites it (e.g. a 1950 statute's ``(1/19)`` is 1919, not
-        # 2019). Unknown citing year falls back to the legacy fixed pivot.
-        sp = parse_citation_sentence(text, source_statute_id=statute_id)
-        if not sp.citations:
-            continue
-        # Per-<p> span cache so multiple targets from one anchor share a span.
-        p_span_cache: dict[str, Optional[SourceSpan]] = {}
-        seen_keys: set[str] = set()
-        for c in sp.citations:
-            # The construction keys the cited act NUMBER/YEAR (canonical Finnish
-            # surface). Re-orient to the canonical corpus key YEAR/NUMBER via the
-            # SAME helper the <ref> and regex lanes use, so this lane dedups onto
-            # the SAME entity node (no re-inverted id).
-            num_str, year_str = c.statute_id.split("/", 1)
-            target_statute_id = _make_statute_id(year_str, num_str)
-            if target_statute_id in covered:
-                continue
-            if target_statute_id == statute_id:
-                continue
-            # Extend the surface LEFT to the statute-name head so the production
-            # mention carries the SAME name-inclusive surface the demoted regex lane
-            # did (``arvonlisäverolain (1767/95) 128 §``) — downstream span-overlap
-            # consumers anchor it identically. ``c.anchor_start`` is the paren start.
-            surface_text = _extend_surface_to_name_head(
-                text, c.anchor_start, c.anchor_end
-            )
-            targets = list(c.targets) or [BodyProvisionTarget(section_label="")]
-            for tgt in targets:
-                src_ref = ProvisionRef(
-                    statute_id=statute_id,
-                    provision_path="",
-                    section_label="",
-                )
-                target_provision_path = (
-                    chapter_akn_path(tgt.chapter, tgt.section_label)
-                    if tgt.chapter is not None
-                    else ""
-                )
-                tgt_ref = ProvisionRef(
-                    statute_id=target_statute_id,
-                    provision_path=target_provision_path,
-                    section_label=tgt.section_label,
-                    subsection_num=tgt.subsection_num,
-                    item_label=tgt.item_label,
-                )
-                key = _inline_id_provision_key(tgt_ref)
-                if key is not None:
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-                    covered_keys.add(key)
-
-                cite_confidence = (
-                    CiteConfidence.EXACT
-                    if tgt.section_label
-                    else CiteConfidence.STATUTE_ONLY
-                )
-                result.mentions.append(
-                    ReferenceMention(
-                        source_provision_ref=src_ref,
-                        target_provision_ref=tgt_ref,
-                        cite_kind=CiteKind.CROSS_STATUTE,
-                        cite_confidence=cite_confidence,
-                        phrase_lemma="citation_construction",
-                        source_span=_locate_surface_span(surface_text, p_span_cache),
-                        valid_at_interval=(valid_start, valid_end),
-                        edge_subtype="CITES",
-                        surface_text=surface_text,
-                    )
-                )
+        # The canonical inline-(id) citation lift, shared with the forest's
+        # reference projection (ONE lifter — no rival parser). The CITING statute id
+        # bounds the 2-digit-year century pivot causally and skips self-cites; the
+        # byte-offset locator anchors each surface in ``xml_bytes`` (the lens
+        # coordinate); targets already owned by the <ref> lane (``covered``) are
+        # dropped so the occurrence is single-sourced.
+        p_mentions, p_keys = lift_inline_id_construction_mentions(
+            text,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            covered_statute_ids=covered,
+            span_for_surface=_locate_surface_span,
+        )
+        result.mentions.extend(p_mentions)
+        covered_keys.update(p_keys)
 
     return result, covered_keys
 
