@@ -96,7 +96,7 @@ from lawvm.finland.references.preparatory_reference_extractor import (
 )
 from lawvm.finland.legal_surface.sentence_parse import parse_citation_sentence
 from lawvm.finland.legal_surface.delegation_parse import extract_authority_bases
-from lawvm.finland.delegation import _classify_authority_kind, _normalize_year
+from lawvm.finland.authority_basis import _classify_authority_kind, _normalize_year
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
