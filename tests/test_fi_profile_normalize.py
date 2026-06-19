@@ -616,6 +616,73 @@ def test_split_trailing_content_only_paragraphs_keeps_final_intro_list_tail_insi
     ]
 
 
+def test_split_trailing_content_only_paragraphs_splits_first_moment_anaphora_tail() -> None:
+    """A tail that refers to 1 momentissa is a later moment, not list wrap-up."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Viranomaisella on oikeus saada seuraavat tiedot:"),
+            _para(label="1", children=(_num("1)"), _content("ensimmäiseltä viranomaiselta;"))),
+            _para(label="2", children=(_num("2)"), _content("toiselta viranomaiselta; sekä"))),
+            _para(label="3", children=(_num("3)"), _content("työnantajalta."))),
+            _para(
+                children=(
+                    _content(
+                        "Kansaneläkelaitoksella on 1 momentissa tarkoitettu oikeus saada "
+                        "välttämättömät tiedot."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 2
+    assert result[0].kind == IRNodeKind.SUBSECTION
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert result[1].kind == IRNodeKind.SUBSECTION
+    assert result[1].attrs["lawvm_source_normalization_rule"] == (
+        "fi_split_trailing_first_moment_anaphora_subsection_v1"
+    )
+    assert "1 momentissa tarkoitettu oikeus" in result[1].children[0].text
+
+
+def test_split_trailing_content_only_paragraphs_keeps_non_right_first_moment_tail_inside_subsection() -> None:
+    """Generic first-moment references are not enough to split an intro-list tail."""
+    sub = _subsection(
+        label="1",
+        children=(
+            _intro("Verovapaan luovutuksen kohteena voivat olla:"),
+            _para(label="1", children=(_num("1)"), _content("vuokra-asunnot;"))),
+            _para(label="2", children=(_num("2)"), _content("asumisoikeusasunnot."))),
+            _para(
+                children=(
+                    _content(
+                        "Edellä 1 momentissa tarkoitettu verovapaus koskee myös "
+                        "eräitä osakkeita."
+                    ),
+                )
+            ),
+        ),
+    )
+
+    result = _apply_split_trailing_content_only_paragraphs_into_subsections([sub])
+
+    assert len(result) == 1
+    assert [c.kind for c in result[0].children] == [
+        IRNodeKind.INTRO,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.WRAP_UP,
+    ]
+
+
 def test_split_trailing_content_only_paragraphs_still_splits_final_list_without_intro() -> None:
     """The new preservation rule is narrow and does not rewrite intro-less list tails."""
     sub = _subsection(

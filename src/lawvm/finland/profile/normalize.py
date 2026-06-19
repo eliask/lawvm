@@ -120,6 +120,11 @@ def apply_all(
 # Regexes used across rules
 # ---------------------------------------------------------------------------
 
+_FIRST_SUBSECTION_RIGHT_ANAPHORA_RE = re.compile(
+    r"(?<!\w)1\s*\.?\s*momentissa\s+tarkoitettu\s+oikeus\b",
+    re.IGNORECASE,
+)
+
 _EMBEDDED_PARAGRAPH_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?|[a-zA-Z]+)\s*\)\s*(.+)$")
 _EMBEDDED_DOTTED_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\.\s+(.+)$")
 _EMBEDDED_PLAIN_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\s+(.+)$")
@@ -1211,6 +1216,18 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
     if last_subsection_idx is None:
         return children
 
+    def _trailing_refers_to_first_subsection(nodes: tuple[IRNode, ...]) -> bool:
+        for node in nodes:
+            text = irnode_to_text(node).strip()
+            text_lower = text.lower()
+            if (
+                "momentissa" in text_lower
+                and "oikeus" in text_lower
+                and _FIRST_SUBSECTION_RIGHT_ANAPHORA_RE.search(text)
+            ):
+                return True
+        return False
+
     rewritten: List[IRNode] = []
     for idx, child in enumerate(children):
         if child.kind != IRNodeKind.SUBSECTION:
@@ -1268,6 +1285,29 @@ def _apply_split_trailing_content_only_paragraphs_into_subsections(
                     )
                     and all(_paragraph_is_content_only(node) for node in trailing)
                 ):
+                    if _trailing_refers_to_first_subsection(trailing):
+                        rewritten.append(
+                            IRNode(
+                                kind=child.kind,
+                                label=child.label,
+                                text=child.text,
+                                attrs=child.attrs,
+                                children=child.children[: last_numbered_idx + 1],
+                            )
+                        )
+                        for node in trailing:
+                            attrs = dict(node.attrs)
+                            attrs["lawvm_source_normalization_rule"] = (
+                                "fi_split_trailing_first_moment_anaphora_subsection_v1"
+                            )
+                            rewritten.append(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    children=tuple(node.children),
+                                    attrs=attrs,
+                                )
+                            )
+                        continue
                     rewritten_children = list(child.children[: last_numbered_idx + 1])
                     for trailing_idx, node in enumerate(trailing):
                         text = irnode_to_text(node).strip()
