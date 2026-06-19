@@ -192,6 +192,15 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _PARA_KUMOTTU_RE has nested quantifiers. "
         "Pre-existing baseline."
     ),
+    "src/lawvm/finland/johtolause_supplements.py": (
+        "_SPARSE_OSALTA_ROW_OMISSION_RE has two BOUNDED lazy gaps "
+        "(.{0,500}? / .{0,300}?) between literal anchors (muut… / a section + § / "
+        "oikeusaputoimiston … osalta seuraavasti). Because both gaps are bounded, "
+        "the per-anchor work is capped and the total is linear — verified worst-case "
+        "48 ms on a 64k string packed with thousands of muut/§/oikeusaputoimiston "
+        "near-misses, no catastrophic blowup. The static lint flags the adjacent "
+        "bounded-lazy .{0,N}? pair as overlapping; benign-linear false positive."
+    ),
     "src/lawvm/finland/inline_citation_extractor.py": (
         "Pre-existing baseline from inline-citation inventory: compact citation "
         "recognizers for ombudsman, chancellor, audit, and committee references. "
@@ -335,6 +344,15 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "anchored, bounded; low practical risk. Surfaced after earlier-shard "
         "fixes un-masked this gate (hyperlinks merge 514bd8f5 predates this "
         "branch and is not modified here). Batch 6."
+    ),
+    "src/lawvm/tools/oracle_check.py": (
+        "_SECTION_HEADING_RE (^\\d+\\s*[a-zäöå]?\\s*§\\s*(.+?)(?:\\s{2,}|\\n|$)) is "
+        "^-anchored, so .match never restarts at a later position; the lazy (.+?) walks "
+        "forward once and is hard-stopped by the \\s{2,}/\\n/$ terminator. Verified "
+        "linear — worst-case 2.3 ms on a 60k single-spaced no-terminator input. The "
+        "lazy (.+?) legitimately captures whitespace (a heading alpha tail), so the "
+        "inter-token \\s* cannot be made possessive without changing the match; the "
+        "static adjacent-\\s* flag is a benign-linear false positive under the anchor."
     ),
     "src/lawvm/tools/oracle_text.py": (
         "Pre-existing baseline: _REPEAL_MARKER_RE — anchored Finnish "
@@ -544,6 +562,24 @@ _KNOWN_UNFIXED: dict[str, str] = {
     # bounded (\\d{1,N}) or literal-delimited (\\d+(?:-\\d+)? around a '-'); the
     # static lint flags the optional (?:...)? sub-groups as nested quantifiers.
     # Each verified linear and sub-millisecond on adversarial inputs.
+    "src/lawvm/finland/references/by_name.py": (
+        "_DESC_WORD_RE (^[a-zäöå]{2,40}(?:-[a-zäöå]{2,40})?(?::[a-zäöå]{1,20})?$) is "
+        "fully anchored at both ends with bounded quantifiers, the optional sub-groups "
+        "delimited by literal '-'/':' (no overlap), so a single token can never "
+        "backtrack — <0.01 ms on adversarial inputs. _DATE_PHRASE_RE matches a "
+        "Finnish enactment date ('14 päivänä heinäkuuta 1898 ') anchored at $; every "
+        "group is bounded and the month is a literal alternation — verified <3 ms on "
+        "15-20k adversarial inputs. The static lint flags the optional (?:...)? groups "
+        "as nested quantifiers; benign-linear false positives."
+    ),
+    "src/lawvm/finland/references/sections.py": (
+        "_CLAUSE_SEP_RE (\\s*(?:,\\s*)?(?:(?:ja|sekä|tai)\\s+)?) is an all-nullable "
+        "separator used with .match at a fixed offset; every branch is bounded literal "
+        "+ \\s* and it consumes a tiny separator — <0.001 ms on 20-30k adversarial "
+        "runs. The static lint flags the optional comma/joiner groups as nested "
+        "quantifiers; benign-linear false positive. (_REF_ID_PAREN_RE was rewritten "
+        "to a bounded tempered-possessive form and is no longer flagged.)"
+    ),
     "src/lawvm/finland/references/cross_refs.py": (
         "_REF_PATTERN and _HE_REF_PATTERN are AKN-href recognizers. The id group "
         "is \\d+(?:-\\d+)? (the optional range half is delimited by a literal '-', "
