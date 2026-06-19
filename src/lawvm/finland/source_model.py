@@ -875,7 +875,6 @@ class AmendmentSourceModel:
         from lawvm.finland.lowering_scope_recovery import resolve_group_surface_scope
 
         return resolve_group_surface_scope(
-            muutos_tree=self.muutos_tree,
             source_model=self,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,

@@ -148,6 +148,11 @@ from lawvm.finland.compile_group_elaboration import (
 )
 from lawvm.finland.compile_amendment import _split_numbered_table_child_group_ops
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
+from lawvm.finland.compile_group_scope_recovery import (
+    CompileGroupScopeRecoveryRequest,
+    _source_body_is_single_mixed_chapter_wrapper,
+    resolve_compile_group_scope_recovery,
+)
 from tests.corpus_pin_helpers import replay_xml_for_test as replay_xml
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
@@ -4625,6 +4630,16 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
                 ),
                 IRNode(
                     kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="14"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="8",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="43"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
                     label="9",
                     children=(IRNode(kind=IRNodeKind.SECTION, label="62"),),
                 ),
@@ -4638,6 +4653,8 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
             <body>
               <chapter>
                 <num>1 luku</num>
+                <section><num>14 a §</num><content><p>payload 14a</p></content></section>
+                <section><num>43 §</num><content><p>payload 43</p></content></section>
                 <section><num>62 a §</num><content><p>payload 62a</p></content></section>
               </chapter>
             </body>
@@ -4752,30 +4769,29 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
         ),
     )
 
-    result = _compile_group(
-        master,
-        "section",
-        "62a",
-        "9",
-        None,
-        [op],
-        set(),
-        set(),
-        muutos_tree,
-        "",
-        get_replay_profile("legal_pit"),
-        None,
-        None,
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="62a",
+            target_chapter="9",
+            target_part=None,
+            group_ops=[op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
     )
 
-    assert len(result.output) == 1
-    rop = result.output[0]
-    assert rop.resolved_target_scope_view.target_chapter == "9"
-    assert rop.scope_confidence is not None
-    assert rop.scope_confidence.source == "live_stem_host"
-    assert rop.scope_confidence.resolved_chapter == "9"
-    assert rop.op.lo is not None
-    assert rop.op.lo.target.path == (("chapter", "9"), ("section", "62a"))
+    recovered = result.output
+    assert recovered.effective_target_chapter == "9"
+    assert len(recovered.group_ops) == 1
+    recovered_op = recovered.group_ops[0]
+    assert recovered_op.scope_confidence is not None
+    assert recovered_op.scope_confidence.source == "live_stem_host"
+    assert recovered_op.scope_confidence.resolved_chapter == "9"
+    assert recovered_op.lo is not None
+    assert recovered_op.lo.target.path == (("chapter", "9"), ("section", "62a"))
     assert not any(
         finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
         for finding in result.findings()

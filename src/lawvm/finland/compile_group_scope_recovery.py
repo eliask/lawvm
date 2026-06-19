@@ -126,6 +126,42 @@ def _group_has_scope_that_overrides_body_wrapper(
     return False
 
 
+def _source_body_is_single_mixed_chapter_wrapper(
+    source_model: AmendmentSourceModel,
+    body_chapter: str,
+    master: ReplayState,
+) -> bool:
+    body_chapter_norm = _norm_num_token(body_chapter)
+    real_chapter_labels = {
+        _norm_num_token(unit.label)
+        for unit in source_model.observed_body_inventory()
+        if unit.kind == "chapter" and unit.source_tag == "chapter"
+    }
+    if real_chapter_labels != {body_chapter_norm}:
+        return False
+
+    foreign_live_chapters: set[str] = set()
+    for unit in source_model.observed_body_inventory():
+        if unit.kind != "section" or _norm_num_token(unit.chapter_label) != body_chapter_norm:
+            continue
+        section_label = _norm_num_token(unit.label)
+        section_path = master.find_section_path(section_label, None, unit.part_label or None)
+        if section_path is None:
+            stem_match = re.fullmatch(r"(\d+)[a-z]+", section_label, re.I)
+            if stem_match is not None:
+                section_path = master.find_section_path(
+                    stem_match.group(1),
+                    None,
+                    unit.part_label or None,
+                )
+        if section_path is None:
+            continue
+        live_chapter = next((label for kind, label in section_path if kind == "chapter"), "")
+        if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
+            foreign_live_chapters.add(_norm_num_token(live_chapter))
+    return len(foreign_live_chapters) >= 2
+
+
 def _body_chapter_corrected_ops(
     group_ops: list[AmendmentOp],
     *,
@@ -291,15 +327,17 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and re.fullmatch(r"\d+[a-z]+", body_chapter, re.I) is not None
     )
-    body_chapter_is_live = (
-        body_chapter is not None
-        and request.master.find_chapter(body_chapter) is not None
-    )
     body_wrapper_overridden_by_scope = (
         body_chapter is not None
         and request.target_chapter is not None
         and body_chapter != request.target_chapter
-        and not body_chapter_is_live
+        and _source_body_is_single_mixed_chapter_wrapper(
+            request.source_model,
+            body_chapter,
+            request.master,
+        )
+        and _norm_num_token(body_chapter)
+        not in {_norm_num_token(label) for label in request.inserted_chapter_labels}
         and _group_has_scope_that_overrides_body_wrapper(
             request.group_ops,
             target_chapter=request.target_chapter,

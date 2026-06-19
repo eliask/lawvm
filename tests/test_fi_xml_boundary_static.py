@@ -112,8 +112,13 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:
     source = _source("src/lawvm/finland/lowering_scope_recovery.py")
 
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "_find_muutos_node" not in source
+    assert "muutos_tree" not in source
     assert "source_model.find_xml_node" not in source
-    assert "source_model.body_section_lookup(" in source
+    assert "source_model.body_section_scope(" in source
+    assert "source_model.body_has_section(" in source
 
 
 def test_source_model_has_source_node_uses_inventory_not_xml_nodes() -> None:
