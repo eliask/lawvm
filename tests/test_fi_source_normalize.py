@@ -1156,6 +1156,70 @@ class TestDigitResetSubparagraphSplit:
         assert any("digit-labelled subparagraph 5" in f.before for f in repair_facts)
         assert not any(f.kind_value == SourceNormalizationKind.NUMBERING_REPAIR.value for f in facts)
 
+    def test_splits_terminal_digit_subparagraph_when_peer_sequence_witnesses_item(self) -> None:
+        raw = fi_xml_to_ir_node(
+            etree.fromstring(
+                """
+                <subsection>
+                  <intro><p>Momentissa tarkoitetaan:</p></intro>
+                  <paragraph>
+                    <num>2)</num>
+                    <intro><p>hyödykettä koskevia sopimuksia, joita ovat:</p></intro>
+                    <subparagraph><num>a)</num><content><p>ensimmäinen alakohta;</p></content></subparagraph>
+                    <subparagraph><num>b)</num><content><p>toinen alakohta; sekä</p></content></subparagraph>
+                    <subparagraph><num>3)</num><content><p>kolmas kohta.</p></content></subparagraph>
+                  </paragraph>
+                  <paragraph><num>4)</num><content><p>neljäs kohta.</p></content></paragraph>
+                </subsection>
+                """
+            ),
+            _fi_label_postprocessor,
+        )
+
+        normalized, facts = normalize_source_ir(raw, "2014/1194")
+
+        paragraphs = [child for child in normalized.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [child.label for child in paragraphs] == ["2", "3", "4"]
+        assert [child.label for child in paragraphs[0].children if child.kind == IRNodeKind.SUBPARAGRAPH] == [
+            "a",
+            "b",
+        ]
+        assert [child.label for child in paragraphs[1].children if child.kind == IRNodeKind.SUBPARAGRAPH] == []
+        assert "kolmas kohta" in irnode_to_text(paragraphs[1])
+        assert check_invariants(normalized) == []
+
+        repair_facts = [f for f in facts if f.kind_value == BASE_DIGIT_RESET_SPLIT]
+        assert any("digit-labelled subparagraph 3" in f.before for f in repair_facts)
+
+    def test_does_not_split_terminal_digit_subparagraph_without_peer_sequence_witness(self) -> None:
+        raw = fi_xml_to_ir_node(
+            etree.fromstring(
+                """
+                <subsection>
+                  <intro><p>Momentissa tarkoitetaan:</p></intro>
+                  <paragraph>
+                    <num>2)</num>
+                    <intro><p>hyödykettä koskevia sopimuksia, joita ovat:</p></intro>
+                    <subparagraph><num>a)</num><content><p>ensimmäinen alakohta;</p></content></subparagraph>
+                    <subparagraph><num>5)</num><content><p>ei seuraa peer-sarjaa.</p></content></subparagraph>
+                  </paragraph>
+                  <paragraph><num>4)</num><content><p>neljäs kohta.</p></content></paragraph>
+                </subsection>
+                """
+            ),
+            _fi_label_postprocessor,
+        )
+
+        normalized, facts = normalize_source_ir(raw, "2020/1")
+
+        paragraphs = [child for child in normalized.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [child.label for child in paragraphs] == ["2", "4"]
+        assert [child.label for child in paragraphs[0].children if child.kind == IRNodeKind.SUBPARAGRAPH] == [
+            "a",
+            "5",
+        ]
+        assert not any("digit-labelled subparagraph 5" in f.before for f in facts)
+
     def test_does_not_split_plain_lettered_subparagraph_run(self) -> None:
         raw = fi_xml_to_ir_node(
             etree.fromstring(

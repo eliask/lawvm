@@ -67,7 +67,8 @@ Currently handled corrections
    paragraph whose direct ``subparagraph`` run contains a later digit reset
    (for example ``a)``, ``b)``, ..., ``5)``, ``a)``, ``b)``).  The digit
    reset becomes a new sibling paragraph and following lettered children are
-   carried under it.
+   carried under it.  A terminal digit reset is split only when the surrounding
+   peer item sequence witnesses it as the next sibling paragraph.
 
 9. **UNNUMBERED_PEER_REPARENT / PROFILE_INVALID** -- an unnumbered paragraph
    peer of numbered kohdat carrying a subparagraph list (``sub_clause_with_list``
@@ -813,7 +814,9 @@ def _split_digit_reset_subparagraph_runs(
 
     The digit-labelled subparagraph is actually the start of a new paragraph 5,
     and the following letter-labelled subparagraphs belong under that new
-    paragraph, not under paragraph 4.
+    paragraph, not under paragraph 4.  A terminal digit-labelled subparagraph is
+    also split when the parent paragraph and the immediately following sibling
+    paragraph prove the same consecutive item sequence.
     """
 
     def _is_letter_subparagraph(node: IRNode) -> bool:
@@ -829,8 +832,32 @@ def _split_digit_reset_subparagraph_runs(
             and _ARABIC_LABEL_RE.match(raw_label)
         )
 
+    def _next_paragraph_numeric_value(start_idx: int) -> int | None:
+        for sibling in children[start_idx:]:
+            if sibling.kind != IRNodeKind.PARAGRAPH:
+                return None
+            value = _numeric_label_value(sibling.label)
+            if value is not None:
+                return value
+            return None
+        return None
+
+    def _terminal_digit_reset_is_peer_item(
+        parent: IRNode,
+        reset_node: IRNode,
+        next_sibling_value: int | None,
+    ) -> bool:
+        parent_value = _numeric_label_value(parent.label)
+        reset_value = _numeric_label_value(reset_node.label)
+        return (
+            parent_value is not None
+            and reset_value is not None
+            and reset_value == parent_value + 1
+            and next_sibling_value == reset_value + 1
+        )
+
     rewritten: List[IRNode] = []
-    for child in children:
+    for child_pos, child in enumerate(children):
         if child.kind != IRNodeKind.PARAGRAPH:
             rewritten.append(child)
             continue
@@ -849,7 +876,13 @@ def _split_digit_reset_subparagraph_runs(
             trailing = [child.children[j] for j in sub_idx[idx + 1 :]]
             if not prior or not any(_is_letter_subparagraph(node) for node in prior):
                 continue
-            if not trailing or not all(_is_letter_subparagraph(node) for node in trailing):
+            if trailing and not all(_is_letter_subparagraph(node) for node in trailing):
+                continue
+            if not trailing and not _terminal_digit_reset_is_peer_item(
+                child,
+                gc,
+                _next_paragraph_numeric_value(child_pos + 1),
+            ):
                 continue
             split_at = child_idx
             break
