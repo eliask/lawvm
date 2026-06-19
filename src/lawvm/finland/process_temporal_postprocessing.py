@@ -13,8 +13,6 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set
 
-from lxml import etree
-
 from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
@@ -58,8 +56,7 @@ class ProcessTemporalPostprocessContext:
     ctx_id: str
     source_title: str
     johto: str
-    xml_bytes: bytes
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     base_ir: IRNode
     state: ReplayState
     replay_mode: str
@@ -72,7 +69,6 @@ class ProcessTemporalPostprocessContext:
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
     section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
-    source_model: AmendmentSourceModel | None = None
 
     def run(self) -> None:
         self.collect_law_level_text_patches()
@@ -103,12 +99,8 @@ class ProcessTemporalPostprocessContext:
             for target_mid, _labels, _expiry in self.section_expiry_overrides
         )
         accepted = None
-        if has_foreign_scoped_expiry or b"voimaantulos" in self.xml_bytes.lower():
-            source_model = self.source_model or AmendmentSourceModel.from_tree(
-                self.muutos_tree,
-                source_ref=self.amendment_id,
-            )
-            accepted = source_model.commencement_expiry_override(
+        if has_foreign_scoped_expiry or self.source_model.source_text_contains("voimaantulos"):
+            accepted = self.source_model.commencement_expiry_override(
                 self.amendment_id,
                 section_expiry_overrides=self.section_expiry_overrides,
             )
@@ -164,11 +156,7 @@ class ProcessTemporalPostprocessContext:
                 )
 
     def apply_section_commencement_overrides(self) -> None:
-        source_model = self.source_model or AmendmentSourceModel.from_tree(
-            self.muutos_tree,
-            source_ref=self.amendment_id,
-        )
-        override = source_model.section_commencement_effective_override(self.amendment_id)
+        override = self.source_model.section_commencement_effective_override(self.amendment_id)
         if override is not None:
             target_mid, chapter_section_map, effective = override
             lo_updated = _rewrite_lo_op_source_effective(
@@ -219,7 +207,7 @@ class ProcessTemporalPostprocessContext:
                     }
                 )
 
-        subsection_override = source_model.section_subsection_commencement_effective_override(
+        subsection_override = self.source_model.section_subsection_commencement_effective_override(
             self.amendment_id
         )
         if subsection_override is None:
@@ -379,11 +367,7 @@ class ProcessTemporalPostprocessContext:
 
         johto_for_subsection = self.johto
         if not _extract_kumotaan_subsection_refs(self.johto):
-            source_model = self.source_model or AmendmentSourceModel.from_tree(
-                self.muutos_tree,
-                source_ref=self.amendment_id,
-            )
-            body_repeal = source_model.operative_body_repeal_candidate()
+            body_repeal = self.source_model.operative_body_repeal_candidate()
             if body_repeal:
                 johto_for_subsection = self.johto + " " + body_repeal
         subsection_map = _extract_kumotaan_subsection_refs(johto_for_subsection)

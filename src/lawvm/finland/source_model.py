@@ -109,6 +109,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _text_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     @classmethod
     def from_tree(
@@ -416,6 +421,22 @@ class AmendmentSourceModel:
         if johto_el is None:
             return ""
         return etree.tostring(johto_el, method="text", encoding="unicode")
+
+    def source_text(self) -> str:
+        """Return cached plain source text for this amendment."""
+        if self._text_cache is None:
+            self._text_cache = etree.tostring(
+                self.muutos_tree,
+                method="text",
+                encoding="unicode",
+            )
+        return self._text_cache
+
+    def source_text_contains(self, fragment: str) -> bool:
+        """Return whether the plain source text contains ``fragment`` case-insensitively."""
+        if not fragment:
+            return False
+        return fragment.lower() in self.source_text().lower()
 
     def title(self) -> str:
         """Return the source title through the source-model adapter."""

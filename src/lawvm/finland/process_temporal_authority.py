@@ -7,8 +7,6 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from lxml import etree
-
 from lawvm.core.compile_result import ActivationRule
 from lawvm.core.phase_result import Finding
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
@@ -39,18 +37,13 @@ class AmendmentTemporalAuthority:
 class ProcessTemporalAuthorityContext:
     amendment_id: str
     johto: str
-    muutos_tree: etree._Element
+    source_model: AmendmentSourceModel
     record_finding: RecordProcessFinding
-    source_model: AmendmentSourceModel | None = None
 
     def derive(self) -> AmendmentTemporalAuthority:
-        source_model = self.source_model or AmendmentSourceModel.from_tree(
-            self.muutos_tree,
-            source_ref=self.amendment_id,
-        )
-        effective_date, effective_step = source_model.effective_date_with_step()
-        expiry_date = source_model.expiry_date()
-        issue_date = source_model.issue_date()
+        effective_date, effective_step = self.source_model.effective_date_with_step()
+        expiry_date = self.source_model.expiry_date()
+        issue_date = self.source_model.issue_date()
 
         meta_clauses = extract_meta_surface_clauses(self.johto)
         activation_rules = activation_rules_from_meta_clauses(meta_clauses)

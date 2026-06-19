@@ -485,6 +485,9 @@ def test_source_model_preamble_text_and_content_authorization() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/6")
 
     assert "lisätään" in model.preamble_text()
+    assert model.source_text() is model.source_text()
+    assert model.source_text_contains("LISÄTÄÄN")
+    assert not model.source_text_contains("")
     assert model.has_uncovered_recovery_content_ops([])
 
 

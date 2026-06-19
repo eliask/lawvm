@@ -109,6 +109,9 @@ def test_compile_amendment_metadata_reads_use_source_model() -> None:
 def test_temporal_authority_date_reads_use_source_model() -> None:
     source = _source("src/lawvm/finland/process_temporal_authority.py")
 
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "muutos_tree" not in source
     assert "from lawvm.finland.metadata import" not in source
     assert "_amendment_effective_date_with_step" not in source
     assert "_amendment_expiry_date" not in source
@@ -145,8 +148,13 @@ def test_route_rejection_expiry_override_uses_source_model() -> None:
 def test_temporal_postprocessing_expiry_override_uses_source_model() -> None:
     source = _source("src/lawvm/finland/process_temporal_postprocessing.py")
 
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "muutos_tree" not in source
+    assert "xml_bytes" not in source
     assert "from lawvm.finland.metadata import _commencement_expiry_override" not in source
     assert "_commencement_expiry_override(" not in source
+    assert 'source_model.source_text_contains("voimaantulos")' in source
     assert "source_model.commencement_expiry_override(" in source
 
 
