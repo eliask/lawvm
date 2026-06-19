@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
-from typing import Optional
+from typing import Optional, Sequence
 
 import lxml.etree as etree
 
@@ -13,6 +13,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.finland.body_pairing import ObservedBodyUnit
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget,
@@ -59,6 +60,7 @@ class CompileGroupScopeRecoveryRequest:
     inserted_chapter_labels: set[str]
     muutos_tree: etree._Element
     strict_profile: Optional[StrictProfile]
+    body_inventory: Sequence[ObservedBodyUnit] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,9 +257,29 @@ def _maybe_apply_body_chapter_insert_correction(
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
     if request.target_unit_kind != "section":
         return PhaseResult(output=result)
-    body_chapter = find_body_section_chapter(request.muutos_tree, request.target_norm)
+    body_chapter = find_body_section_chapter(
+        request.muutos_tree,
+        request.target_norm,
+        inventory=request.body_inventory,
+    )
     resolved_body_chapter = body_chapter
     carry_forward_scoped = group_has_scope_source(request.group_ops, "carry_forward")
+    source_owned_inserted_chapter_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and not carry_forward_scoped
+        and (
+            body_chapter in request.inserted_chapter_labels
+            or request.master.find("chapter", body_chapter) is None
+        )
+        and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
+        is not None
+        and body_has_real_chapter_container(
+            request.muutos_tree,
+            body_chapter,
+            inventory=request.body_inventory,
+        )
+    )
     if body_chapter is not None and (not request.target_chapter or carry_forward_scoped):
         sibling_consensus_scope = retarget_duplicate_body_section_scope_from_close_live_siblings(
             muutos_tree=request.muutos_tree,
@@ -296,6 +318,8 @@ def _maybe_apply_body_chapter_insert_correction(
             re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]", resolved_body_chapter, re.I)
             is not None
         )
+    elif source_owned_inserted_chapter_scope:
+        apply_correction = True
     if not apply_correction:
         return PhaseResult(output=result)
     corrected = dc_replace(
@@ -347,6 +371,9 @@ def _replacement_ops(
             and _norm_num_token(op.target_section or "") == target_norm
             and op.target_chapter == target_chapter
             and op.op_type == "REPLACE"
+            and not op.target_paragraph
+            and not op.target_item
+            and not op.target_special
         )
     ]
 
@@ -361,20 +388,32 @@ def _maybe_apply_replace_to_insert_move(
         or not any(op.op_type == "REPLACE" for op in request.group_ops)
     ):
         return PhaseResult(output=result)
-    body_chapter = find_body_section_chapter(request.muutos_tree, request.target_norm)
+    body_chapter = find_body_section_chapter(
+        request.muutos_tree,
+        request.target_norm,
+        inventory=request.body_inventory,
+    )
     trigger_evidence = tuple(
         evidence
         for evidence, present in (
             (
                 "pseudo_chapter_marker",
                 body_chapter is not None
-                and body_has_pseudo_chapter_marker(request.muutos_tree, body_chapter),
+                and body_has_pseudo_chapter_marker(
+                    request.muutos_tree,
+                    body_chapter,
+                    inventory=request.body_inventory,
+                ),
             ),
             (
                 "real_inserted_chapter",
                 body_chapter is not None
                 and request.master.find("chapter", body_chapter) is None
-                and body_has_real_chapter_container(request.muutos_tree, body_chapter),
+                and body_has_real_chapter_container(
+                    request.muutos_tree,
+                    body_chapter,
+                    inventory=request.body_inventory,
+                ),
             ),
             (
                 "inserted_chapter_op",
@@ -396,6 +435,8 @@ def _maybe_apply_replace_to_insert_move(
         target_norm=request.target_norm,
         target_chapter=request.target_chapter,
     )
+    if not replacement_ops:
+        return PhaseResult(output=result)
     finding = Finding(
         kind=_BODY_CHAPTER_MOVE_RULE_ID,
         role="observation",
@@ -624,6 +665,14 @@ def _maybe_retarget_live_section(
     return PhaseResult(output=recovered, findings=(finding,))
 
 
+def _body_chapter_insert_correction_candidate(group_ops: Sequence[AmendmentOp]) -> bool:
+    return all(
+        op.op_type == "INSERT"
+        or (op.op_type == "REPLACE" and str(op.target_special or "").strip() == "otsikko")
+        for op in group_ops
+    )
+
+
 def resolve_compile_group_scope_recovery(
     request: CompileGroupScopeRecoveryRequest,
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
@@ -644,7 +693,7 @@ def resolve_compile_group_scope_recovery(
         group_ops=request.group_ops,
     )
     findings: tuple[Finding, ...] = ()
-    if all(op.op_type == "INSERT" for op in request.group_ops):
+    if _body_chapter_insert_correction_candidate(request.group_ops):
         insert_result = _maybe_apply_body_chapter_insert_correction(request, result)
         result = insert_result.output
         findings += insert_result.findings()
