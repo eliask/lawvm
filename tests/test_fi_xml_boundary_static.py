@@ -36,6 +36,17 @@ def test_uncovered_recovery_support_is_xml_free() -> None:
     assert "_xml_part_label" not in source
 
 
+def test_uncovered_recovery_context_is_preamble_text_primary() -> None:
+    source = _source("src/lawvm/finland/uncovered_recovery_context.py")
+    source_model = _source("src/lawvm/finland/source_model.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "muutos_tree" not in source
+    assert "preamble_text:" in source
+    assert "preamble_text=self.preamble_text()" in source_model
+
+
 def test_finland_body_coverage_payload_refs_are_typed_not_xml_handles() -> None:
     source = _source("src/lawvm/finland/body_coverage.py")
 

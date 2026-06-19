@@ -643,7 +643,16 @@ def test_source_model_preamble_text_and_content_authorization() -> None:
 
 
 def test_source_model_builds_uncovered_recovery_context() -> None:
-    tree = etree.fromstring(b"<akomaNtoso><act><body/></act></akomaNtoso>")
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <preamble><p>muutetaan 4 \xc2\xa7 ja lis\xc3\xa4t\xc3\xa4\xc3\xa4n uusi 9 luku</p></preamble>
+            <body/>
+          </act>
+        </akomaNtoso>
+        """
+    )
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/7")
     op = AmendmentOp(
         op_id="insert_4",
@@ -658,3 +667,5 @@ def test_source_model_builds_uncovered_recovery_context() -> None:
     )
 
     assert "2" in context.owned_chapter_labels
+    assert "4" in context.johto_mentioned_labels
+    assert "9" in context.source_owned_insert_chapter_labels

@@ -796,7 +796,7 @@ class AmendmentSourceModel:
         from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
 
         return build_uncovered_recovery_context(
-            muutos_tree=self.muutos_tree,
+            preamble_text=self.preamble_text(),
             ops=ops,
             new_chapter_labels=new_chapter_labels,
         )

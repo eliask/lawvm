@@ -100,10 +100,8 @@ def test_uncovered_recovery_context_records_relabel_destinations() -> None:
             ),
         ),
     )
-    xml = etree.fromstring(b"<act><body/></act>")
-
     context = build_uncovered_recovery_context(
-        muutos_tree=xml,
+        preamble_text="",
         ops=[cast(Any, op)],
         new_chapter_labels={"4"},
     )
@@ -331,11 +329,8 @@ def test_recovery_run_label_gate_allows_part_insert_subtree_sections() -> None:
 
 
 def test_uncovered_recovery_context_collects_johto_moment_targets() -> None:
-    xml = etree.fromstring(
-        b"<act><preamble>muutetaan 74 \xc2\xa7:n 4 momentti ja 75 \xc2\xa7:n 3 momentti</preamble><body/></act>"
-    )
     context = build_uncovered_recovery_context(
-        muutos_tree=xml,
+        preamble_text="muutetaan 74 §:n 4 momentti ja 75 §:n 3 momentti",
         ops=[],
         new_chapter_labels=set(),
     )
@@ -350,9 +345,8 @@ def test_uncovered_recovery_context_collects_part_insert_labels() -> None:
         target_section="5",
         target_part=None,
     )
-    xml = etree.fromstring(b"<act><body/></act>")
     context = build_uncovered_recovery_context(
-        muutos_tree=xml,
+        preamble_text="",
         ops=[cast(Any, op)],
         new_chapter_labels=set(),
     )
