@@ -103,6 +103,18 @@ def _source_statute(group_ops: list[AmendmentOp]) -> str:
     return next((str(op.source_statute or "") for op in group_ops if op.source_statute), "")
 
 
+def _group_has_explicit_chapter_scope(group_ops: list[AmendmentOp]) -> bool:
+    for op in group_ops:
+        witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if witness is not None and witness.is_explicit and witness.resolved_chapter:
+            return True
+    return False
+
+
 def _body_chapter_corrected_ops(
     group_ops: list[AmendmentOp],
     *,
@@ -261,16 +273,17 @@ def _maybe_apply_body_chapter_insert_correction(
     )
     resolved_body_chapter = body_chapter
     carry_forward_scoped = group_has_scope_source(request.group_ops, "carry_forward")
+    explicit_chapter_scoped = _group_has_explicit_chapter_scope(request.group_ops)
+    body_chapter_is_subchapter = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
+        is not None
+    )
     source_owned_inserted_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
-        and not carry_forward_scoped
-        and (
-            body_chapter in request.inserted_chapter_labels
-            or request.master.find("chapter", body_chapter) is None
-        )
-        and re.fullmatch(rf"{re.escape(request.target_chapter)}[a-z]+", body_chapter, re.I)
-        is not None
+        and (body_chapter_is_subchapter or carry_forward_scoped or not explicit_chapter_scoped)
         and body_has_real_chapter_container(
             request.source_model.muutos_tree,
             body_chapter,

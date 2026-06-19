@@ -131,6 +131,7 @@ def recover_uncovered_body_ops(
         "fi.uncovered.recovery_runner",
         lambda: UncoveredRecoveryRun(
             state=request.state,
+            source_model=request.source_model,
             ops=request.ops,
             amendment_id=request.amendment_id,
             future_repeals=request.future_repeals,

@@ -30,6 +30,7 @@ from lawvm.finland.uncovered_recovery_support import (
     _xml_part_label,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.uncovered_chapter_scaffold import (
     FI_RECOVERY_UNCOVERED_CHAPTER_SCAFFOLD_RULE_ID,
     UncoveredChapterScaffoldDraft,
@@ -292,6 +293,9 @@ def _empty_run(
     rstate = _empty_state(None)
     return _UncoveredRecoveryRun(
         state=cast(Any, _MinimalRunState()),
+        source_model=AmendmentSourceModel.from_tree(
+            etree.fromstring(b"<akomaNtoso><act><body/></act></akomaNtoso>")
+        ),
         ops=[],
         amendment_id="2020/1",
         future_repeals=future_repeals,
