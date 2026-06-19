@@ -8147,6 +8147,7 @@ def test_replay_xml_2002_1330_prefers_live_substantive_section_8_over_repeal_pla
     assert "julkisesta työvoima- ja yrityspalvelusta annetun lain 4 luvun 12 §:ssä" not in text
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_retargets_explicit_chunk_sections_from_2023_497_to_live_part_chapter(
     replay_2013_588_finlex_oracle: Any,
 ) -> None:
@@ -13864,6 +13865,7 @@ def test_replay_xml_2017_444_applies_explicit_2023_444_targets_for_sections_10_a
     assert "ilmoitusvelvollisen ylemmän johdon on hyväksyttävä asiakassuhteen aloittaminen" in sec13_text
 
 
+@pytest.mark.slow
 def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail(
     replay_2003_549_finlex_oracle: Any,
 ) -> None:
@@ -14671,6 +14673,7 @@ def test_reject_overbroad_section_repeal_for_deep_target_keeps_plain_section_rep
     assert findings == []
 
 
+@pytest.mark.slow
 def test_inspect_amendment_1994_674_2016_860_keeps_section_1_inside_new_chapter_11a() -> None:
     bundle = build_amendment_bundle("1994/674", "2016/860", mode="official_consolidation")
     group11a = next(
@@ -14817,6 +14820,7 @@ def test_inspect_amendment_2002_780_2003_666_keeps_head_insert_and_renumber_grou
     assert group4["ops_final"] == ["RENUMBER 4 § 1 mom", "INSERT 4 § 1 mom"]
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_restores_section_49a_item_10_after_2025_201(
     replay_2013_588_finlex_oracle: Any,
 ) -> None:
@@ -14832,6 +14836,7 @@ def test_replay_xml_2013_588_restores_section_49a_item_10_after_2025_201(
     assert "tietojen säilyttäminen" in irnode_to_text(sub1)
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_routes_section_87_only_under_chapter_13_after_2025_201(
     replay_2013_588_finlex_oracle: Any,
 ) -> None:
@@ -14949,6 +14954,7 @@ def test_replay_xml_1959_191_updates_section_53_after_1992_203() -> None:
 
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_restores_sections_21a_and_21b_from_2023_497() -> None:
     replay = pinned_replay("2013/588", mode="official_consolidation", quiet=True)
 
@@ -14983,6 +14989,7 @@ def test_inspect_amendment_2013_588_2019_108_keeps_section_87_subsection_replace
     )
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_does_not_keep_section_87_under_chapter_11a_after_2019_108(
     replay_2013_588_finlex_oracle: Any,
 ) -> None:
@@ -15007,6 +15014,7 @@ def test_inspect_amendment_2013_588_2023_497_owns_sparse_higher_moment_binding_f
     )
 
 
+@pytest.mark.slow
 def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497(
     replay_2013_588_finlex_oracle: Any,
 ) -> None:
@@ -15061,6 +15069,7 @@ def test_replay_xml_2005_579_preserves_section_9_structure_after_2013_1230_and_2
     assert "rajavartiolain 31 §:ssä säädetyn tunnistamisen suorittamiseksi" in sub3_text
 
 
+@pytest.mark.slow
 def test_replay_xml_2003_549_keeps_section_149_subsection_4_as_wrapup_only(
     replay_2003_549_finlex_oracle: Any,
 ) -> None:

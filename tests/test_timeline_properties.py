@@ -4210,6 +4210,7 @@ def test_intro_list_subsection_replace_keeps_embedded_items() -> None:
     assert sub2.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+@pytest.mark.slow
 def test_snapshot_fallback_keeps_placeholder_for_missing_repealed_section() -> None:
     """Whole-section repeals should emit placeholders even if the live section is absent."""
     master = pinned_replay("2009/1672", mode="official_consolidation")

@@ -1963,6 +1963,7 @@ def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1997_1412_section_11_drops_expired_temporary_items() -> None:
     payload = resolve_provision_state(
         statute_id="1997/1412",
@@ -2038,6 +2039,7 @@ def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness() -> None:
     payload = resolve_provision_state(
         statute_id="1972/66",
@@ -2091,6 +2093,7 @@ def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witn
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+@pytest.mark.slow
 def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness() -> None:
     payload = resolve_provision_state(
         statute_id="1972/66",

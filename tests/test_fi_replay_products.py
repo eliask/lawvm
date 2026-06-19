@@ -899,6 +899,7 @@ def test_replay_xml_1929_234_part_v_rebirth_does_not_repeal_unrelated_part_chapt
     assert part2_ch4 is not None
 
 
+@pytest.mark.slow
 def test_replay_xml_1994_674_keeps_section_1_under_inserted_chapter_11a(
     replay_1994_674_finlex_oracle: ReplayResult,
 ) -> None:
@@ -908,6 +909,7 @@ def test_replay_xml_1994_674_keeps_section_1_under_inserted_chapter_11a(
     assert inserted_text.startswith("1 § Nairobin yleissopimuksen soveltaminen Suomessa")
 
 
+@pytest.mark.slow
 def test_replay_xml_1994_674_replaces_section_6_without_stale_subsection_tail(
     replay_1994_674_finlex_oracle: ReplayResult,
 ) -> None:
@@ -922,6 +924,7 @@ def test_replay_xml_1994_674_replaces_section_6_without_stale_subsection_tail(
     assert "Sama koskee muulla tavalla tehtyä sopimusta" not in text
 
 
+@pytest.mark.slow
 def test_replay_xml_1994_674_replaces_section_1_without_stale_subsection_tail(
     replay_1994_674_finlex_oracle: ReplayResult,
 ) -> None:
@@ -938,6 +941,7 @@ def test_replay_xml_1994_674_replaces_section_1_without_stale_subsection_tail(
     assert "Pelastuspalkkiota on vaadittaessa suoritettava myös silloin" not in text
 
 
+@pytest.mark.slow
 def test_replay_xml_1994_674_repeals_section_6_1_second_subsection_without_resurrection(
     replay_1994_674_finlex_oracle: ReplayResult,
 ) -> None:
@@ -1038,6 +1042,7 @@ def test_replay_xml_keeps_inserted_moments_separate_for_2005_452_section_6() -> 
     assert "lyhyt kuvaus arvopaperiin tehtävän sijoituksen" in second_text or "lyhyt kuvaus kyseiseen arvopaperiin tehtävän sijoituksen" in second_text
 
 
+@pytest.mark.slow
 def test_replay_xml_1967_550_section_8_preserves_subsection_1_repeal_in_export(
     replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -1071,6 +1076,7 @@ def test_replay_xml_1967_550_section_8_preserves_subsection_1_repeal_in_export(
     assert [sub.label for sub in legal_subsections] == ["2", "3", "4", "5", "6", "7"]
 
 
+@pytest.mark.slow
 def test_replay_xml_1967_550_section_8_keeps_distinct_sparse_tail_moments(
     replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -1092,6 +1098,7 @@ def test_replay_xml_1967_550_section_8_keeps_distinct_sparse_tail_moments(
     assert sixth_text != seventh_text
 
 
+@pytest.mark.slow
 def test_replay_xml_1967_550_section_70p_preserves_reborn_moment_slots(
     replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -2403,6 +2410,7 @@ def test_replay_xml_repeals_2021_984_range_sections_10d_to_10i(
         assert replay_1999_488_legal_pit.materialized_state.find_section(label, "2a") is None
 
 
+@pytest.mark.slow
 def test_replay_xml_2009_1672_whole_chapter_replace_retires_7a_2abc_from_materialized_state(
     replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -2426,6 +2434,7 @@ def test_replay_xml_2009_1672_whole_chapter_replace_retires_7a_2abc_from_materia
     assert (("chapter", "7a"), ("section", "2c")) in repeal_targets
 
 
+@pytest.mark.slow
 def test_replay_xml_2009_1672_keeps_section_2_8_body_when_vts_repeals_only_subsection(
     replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -2441,6 +2450,7 @@ def test_replay_xml_2009_1672_keeps_section_2_8_body_when_vts_repeals_only_subse
     assert "Muut haitallisten nestemäisten aineiden kuljetuksen todistuskirjat" not in text
 
 
+@pytest.mark.slow
 def test_replay_xml_2009_1672_sparse_chapter_replace_does_not_drop_section_5(
     replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
 ) -> None:
@@ -5069,6 +5079,7 @@ def test_replay_xml_2011_756_inserts_section_8a_into_chapter_5() -> None:
     assert "8a" in _chapter_section_labels("5"), "chapter 5 must have section 8a inserted by 2022/33"
 
 
+@pytest.mark.slow
 def test_replay_xml_2012_916_keeps_section_8_in_chapter_13(
     replay_2012_916_finlex_oracle: ReplayResult,
 ) -> None:
@@ -5092,6 +5103,7 @@ def test_replay_xml_2012_916_keeps_section_8_in_chapter_13(
     assert "8" in section_labels, "chapter 13 must keep section 8 from 2022/337"
 
 
+@pytest.mark.slow
 def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13(
     replay_2012_916_finlex_oracle: ReplayResult,
 ) -> None:
@@ -5136,6 +5148,7 @@ def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13(
     assert "Työ- ja elinkeinotoimiston asiakastietojärjestelmää käytetään" in subsection_text
 
 
+@pytest.mark.slow
 def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane(
     replay_2012_916_finlex_oracle: ReplayResult,
 ) -> None:
