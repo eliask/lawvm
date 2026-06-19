@@ -1239,6 +1239,80 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     return chapter
 
 
+def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> tuple[str | None, str] | None:
+    """Infer scope for a flat source-body REPLACE from neighboring live sections.
+
+    This covers source bodies that serialize a chapter-scoped run as flat
+    sibling sections while the johtolause names one descendant target without
+    repeating the chapter, e.g. ``78 §, 79 §:n 1 momentti, 80 §``.  The exact
+    target label may be duplicated by temporary provisions, so the witness is
+    the closest lower and upper source-neighbor labels that already agree on a
+    live chapter.
+    """
+    if (
+        op.op_type != "REPLACE"
+        or op.target_unit_kind != "section"
+        or not op.target_section
+        or op.target_chapter is not None
+        or op.target_special is not None
+        or op.target_item
+    ):
+        return None
+    section_norm = _norm_num_token(op.target_section)
+    if re.fullmatch(r"\d+", section_norm) is None:
+        return None
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+
+    target_num = int(section_norm)
+    lower_by_distance: dict[int, set[tuple[str | None, str]]] = {}
+    upper_by_distance: dict[int, set[tuple[str | None, str]]] = {}
+
+    def _walk(node: IRNode, current_part: str | None, current_chapter: str | None) -> None:
+        next_part = current_part
+        next_chapter = current_chapter
+        if node.kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.CHAPTER:
+            next_chapter = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.SECTION and node.label and next_chapter:
+            sibling_norm = _norm_num_token(str(node.label))
+            if sibling_norm == section_norm:
+                return
+            if re.fullmatch(r"\d+", sibling_norm) is not None and (
+                op.target_part is None or next_part == op.target_part
+            ):
+                sibling_num = int(sibling_norm)
+                distance = abs(sibling_num - target_num)
+                if 0 < distance <= 2:
+                    bucket = lower_by_distance if sibling_num < target_num else upper_by_distance
+                    bucket.setdefault(distance, set()).add((next_part, next_chapter))
+            return
+        for child in node.children:
+            _walk(child, next_part, next_chapter)
+
+    _walk(master.ir, None, None)
+    if not lower_by_distance or not upper_by_distance:
+        return None
+    lower_scopes = lower_by_distance[min(lower_by_distance)]
+    upper_scopes = upper_by_distance[min(upper_by_distance)]
+    if len(lower_scopes) != 1 or lower_scopes != upper_scopes:
+        return None
+    part, chapter = next(iter(lower_scopes))
+    if master.find_section_path(section_norm, chapter, part) is None:
+        return None
+    return part, chapter
+
+
 def _flat_source_body_section_nums(
     *,
     muutos_tree: etree._Element,
@@ -2174,6 +2248,15 @@ def _enrich_ops_from_amendment_tree(
                         master=master,
                     )
                     inferred_rule_id = "fi_flat_body_replace_scope_from_live_section_gap"
+                if inferred_chapter is None:
+                    sibling_scope = _infer_flat_body_replace_scope_from_bracketing_live_siblings(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    if sibling_scope is not None:
+                        inferred_part, inferred_chapter = sibling_scope
+                        inferred_rule_id = "fi_flat_body_replace_scope_from_bracketing_live_siblings"
                 if (
                     inferred_chapter is None
                     and _is_whole_section_insert(scoped_op)

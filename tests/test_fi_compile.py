@@ -2441,6 +2441,44 @@ def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reins
     assert section_3.lo is None or section_3.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
 
 
+def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_siblings() -> None:
+    before = replay_xml("2016/1227", stop_before="2022/1149", mode="legal_pit", quiet=True, build_full_products=False)
+    corpus = get_corpus_store()
+    xml = corpus.read_source("2022/1149")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        base_ir=before.ctx.base_ir,
+        amendment_id="2022/1149",
+        source_title="",
+        used_sec1_fallback=False,
+        parent_id="2016/1227",
+        strict_profile=None,
+    )
+
+    section_79_ops = [
+        op
+        for op in phase.output
+        if op.op_type == "REPLACE"
+        and op.target_unit_kind == "section"
+        and op.target_section == "79"
+    ]
+
+    assert [op.description() for op in section_79_ops] == ["REPLACE 8 luku 79 § 1 mom"]
+    assert section_79_ops[0].witness_rule_id == "fi_flat_body_replace_scope_from_bracketing_live_siblings"
+    assert section_79_ops[0].lo is not None
+    assert tuple(section_79_ops[0].lo.target.path) == (
+        ("chapter", "8"),
+        ("section", "79"),
+        ("subsection", "1"),
+    )
+
+
 def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_local() -> None:
     before = replay_xml("1979/1062", stop_before="1997/611", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()
