@@ -16,7 +16,8 @@ def test_uncovered_recovery_runner_stays_source_model_primary() -> None:
     assert "import lxml.etree as etree" not in source
     assert "fi_xml_to_ir_node" not in source
     assert "_xml_part_label" not in source
-    assert "lookup_payload_ir(" in source
+    assert "lookup_payload_ir_for_coverage_ref(" in source
+    assert "lookup_payload_ir(" not in source
     assert "find_payload_ir(" not in source
 
 
@@ -104,9 +105,13 @@ def test_source_model_exposes_typed_payload_lookup_result() -> None:
 
     assert "class SourcePayloadLookupResult" in source
     assert "def lookup_payload_ir(" in source
+    assert "def lookup_payload_ir_for_coverage_ref(" in source
     assert "body_lookup_status:" in source
     assert "body_candidates:" in source
     assert "payload_basis:" in source
+    assert "_coverage_node_cache" not in source
+    assert "_coverage_payload_nodes_by_unit_id" not in source
+    assert "_coverage_payload_ir_cache" in source
 
 
 def test_lowering_scope_recovery_source_model_path_uses_inventory_not_xml_nodes() -> None:

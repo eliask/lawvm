@@ -109,14 +109,18 @@ def _xml_num_text(el: etree._Element) -> str | None:
     return num_el.text.strip()
 
 
-def _coverage_payload_nodes_by_unit_id(muutos_tree: etree._Element) -> dict[str, etree._Element]:
-    """Return XML payload nodes keyed by the same unit ids as body coverage."""
+def _coverage_payload_ir_by_unit_id(
+    muutos_tree: etree._Element,
+) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+    """Return converted payload IR keyed by the same unit ids as body coverage."""
+    from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
+
     body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
     if body is None:
         body = muutos_tree.find(".//body")
     if body is None:
         return {}
-    nodes: dict[str, etree._Element] = {}
+    payloads: dict[str, tuple[IRNode | None, IRNode | None]] = {}
     seen_ids: set[str] = set()
 
     def append_node(
@@ -134,7 +138,11 @@ def _coverage_payload_nodes_by_unit_id(muutos_tree: etree._Element) -> dict[str,
             unit_id = f"{base_id}_{counter}"
             counter += 1
         seen_ids.add(unit_id)
-        nodes[unit_id] = el
+        payloads[unit_id] = _payload_ir_from_muutos_node(
+            el,
+            target_unit_kind=kind,
+            target_norm=observed_label,
+        )
 
     def walk_children(parent: etree._Element, active_chapter: str | None = None) -> None:
         current_chapter = active_chapter
@@ -184,7 +192,7 @@ def _coverage_payload_nodes_by_unit_id(muutos_tree: etree._Element) -> dict[str,
             walk_children(child, current_chapter)
 
     walk_children(body)
-    return nodes
+    return payloads
 
 
 @dataclass(slots=True)
@@ -214,7 +222,7 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
-    _coverage_node_cache: dict[str, etree._Element] | None = field(
+    _coverage_payload_ir_cache: dict[str, tuple[IRNode | None, IRNode | None]] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -477,10 +485,10 @@ class AmendmentSourceModel:
             )
         return self._node_cache[key]
 
-    def _coverage_payload_nodes_by_unit_id(self) -> dict[str, etree._Element]:
-        if self._coverage_node_cache is None:
-            self._coverage_node_cache = _coverage_payload_nodes_by_unit_id(self.muutos_tree)
-        return self._coverage_node_cache
+    def _coverage_payload_ir_by_unit_id(self) -> dict[str, tuple[IRNode | None, IRNode | None]]:
+        if self._coverage_payload_ir_cache is None:
+            self._coverage_payload_ir_cache = _coverage_payload_ir_by_unit_id(self.muutos_tree)
+        return self._coverage_payload_ir_cache
 
     def has_source_node(
         self,
@@ -601,17 +609,9 @@ class AmendmentSourceModel:
                 cross_heading_ir=None,
             )
 
-        from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
-
-        source_node = self._coverage_payload_nodes_by_unit_id().get(source_ref.unit_id)
-        payload_ir, cross_heading_ir = (
-            _payload_ir_from_muutos_node(
-                source_node,
-                target_unit_kind=source_ref.unit_kind,
-                target_norm=source_ref.label,
-            )
-            if source_node is not None
-            else (None, None)
+        payload_ir, cross_heading_ir = self._coverage_payload_ir_by_unit_id().get(
+            source_ref.unit_id,
+            (None, None),
         )
         return SourcePayloadLookupResult(
             status="unique" if payload_ir is not None else "missing",
