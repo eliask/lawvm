@@ -183,6 +183,24 @@ class AmendmentSourceModel:
             )
         return self._node_cache[key]
 
+    def has_source_node(
+        self,
+        target_unit_kind: TargetUnitKind | str,
+        target_norm: str,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> bool:
+        """Return whether the source body contains the normalized target."""
+        return (
+            self.find_xml_node(
+                target_unit_kind,
+                target_norm,
+                target_chapter,
+                target_part,
+            )
+            is not None
+        )
+
     def find_payload_ir(
         self,
         target_unit_kind: TargetUnitKind | str,

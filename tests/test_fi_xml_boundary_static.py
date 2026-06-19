@@ -27,6 +27,14 @@ def test_uncovered_candidate_iteration_does_not_dispatch_xml_nodes() -> None:
     assert "UncoveredSectionCandidate" in source
 
 
+def test_uncovered_recovery_support_is_xml_free() -> None:
+    source = _source("src/lawvm/finland/uncovered_recovery_support.py")
+
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "_xml_part_label" not in source
+
+
 def test_finland_body_coverage_payload_refs_are_typed_not_xml_handles() -> None:
     source = _source("src/lawvm/finland/body_coverage.py")
 
@@ -53,3 +61,11 @@ def test_compile_group_scope_recovery_uses_source_model_not_xml_root() -> None:
     assert "request.source_model.muutos_tree" not in source
     assert "muutos_tree=" not in source
     assert "request.source_model.resolve_group_surface_scope(" in source
+
+
+def test_compile_group_elaboration_constraint_filter_uses_source_model_not_xml_root() -> None:
+    source = _source("src/lawvm/finland/compile_group_elaboration.py")
+
+    assert "source_model.muutos_tree" not in source
+    assert "muutos_tree=" not in source
+    assert "source_model=source_model" in source

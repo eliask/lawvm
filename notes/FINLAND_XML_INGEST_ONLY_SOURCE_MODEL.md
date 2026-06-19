@@ -15,6 +15,35 @@ receive, store, or query `lxml.etree._Element`, XPath results, XML roots, or
 XML-root-retaining opaque refs. XML may reappear only in explicitly separate
 oracle ingestion, debug witness rendering, or export projection.
 
+The model is not "lxml behind a wrapper." XML is a source serialization format.
+After ingest, the semantic substrate is typed source facts, source-local
+identity, witnesses, lookup verdicts, payload surfaces, diagnostics, and
+canonical operations. A method that returns an XML node, performs XPath for a
+post-ingest caller, or keeps an XML root alive for late semantic lookup is still
+part of the transitional adapter, not the target architecture.
+
+## Target Desiderata
+
+- XML/lxml exists only in explicit adapter zones: acquisition, source patching,
+  XML-to-source-model construction, oracle ingestion, debug witness rendering,
+  and export projection.
+- The authoritative post-ingest object is an immutable source dossier:
+  artifact identity, witnesses, source-unit graph, body model, payload surfaces,
+  johtolause and temporal surfaces, diagnostics, and lookup indexes.
+- Source identity is not legal identity and not XML identity. Labels, chapter
+  context, XML paths, and eIds are facts on a source unit, not the unit's
+  identity.
+- Every legal-state-affecting source fact carries a stable witness reference
+  with source path, span where available, and hashes.
+- Lookup APIs return typed verdicts: `unique`, `missing`, `ambiguous`, or
+  `unsupported`. No post-ingest caller may interpret `None` through local
+  folklore or choose the first XML traversal match.
+- Payload ownership is explicit: claimed payload, carried context, omitted
+  child, ignored or malformed source unit, overbundled container, sparse block,
+  orphan attachment, and uncovered recovery are typed outcomes with witnesses.
+- XML export is a projection only. Exported XML becomes authority only if it is
+  re-ingested as a new source artifact lane with hashes and provenance.
+
 ## Allowed XML Zones
 
 XML/lxml is allowed in:
@@ -258,6 +287,56 @@ The allowlist is limited to acquisition, corrigendum, XML adapter/model-builder
 modules, oracle ingestion/adjudication, export projection, and explicit debug
 witness rendering.
 
+## Process And Cache Requirements
+
+The source model should be built in one bounded ingest pass per source artifact.
+That pass should derive:
+
+- corrected bytes hash and artifact identity;
+- source-unit graph and body indexes;
+- observed body inventory and coverage units;
+- payload surfaces and payload ownership facts;
+- johtolause surface and parsed operative-language residuals;
+- temporal source facts and VTS/decree candidate facts;
+- source diagnostics and normalization events.
+
+Replay must not parse the same amendment XML in a future-repeal prescan and then
+again during main processing when the earlier pass can produce root-free facts.
+Plan-scoped caches may retain immutable source facts and hashes, but must not
+retain XML roots. Root lifetime should shrink as the model improves.
+
+Base-statute XML facts follow the same rule. Base-derived facts such as chapter
+expiry, metadata, and structural indexes should live on the statute/context
+ingest result, not be reparsed during product assembly.
+
+## Current High-Value Transitional Targets
+
+- `_find_muutos_node` is the largest late XML semantic lookup. Its rules for
+  logical parts/chapters, pseudo chapter markers, source fallback, and
+  synthesized fragments belong in source-model construction with diagnostics.
+- `_find_muutos_ir` and payload lookup still use XML sibling/parent navigation.
+  They should become `payload_for(query)` over source units and payload
+  surfaces.
+- Scope recovery and lowering should consume body/source-unit lookup verdicts,
+  not climb XML parents or re-query source XML.
+- Chapter precreation should consume typed `SourceChapterDeclaration` facts,
+  not body XML containers.
+- Process/apply/temporal signatures should stop carrying `xml_bytes` and
+  `muutos_tree` after the source model exists, except in explicit adapter
+  phases.
+
+## Non-Goals
+
+- Do not build a jurisdiction-erasing universal XML-neutral source model.
+  Shared contracts are welcome, but Finnish source interpretation remains
+  frontend-local unless proven cross-jurisdictional.
+- Do not make XML export round-trip authority by default.
+- Do not move Finnish XML quirks into core.
+- Do not remove XML by deleting evidence, diagnostics, strict barriers,
+  rejected operations, or source-pathology records.
+- Do not use final-text parity as the migration metric. The gate is semantic,
+  evidence, strict-mode, temporal, migration, and structural-diagnostic parity.
+
 ## Migration Order
 
 1. Expand `AmendmentSourceModel` into a dossier: artifact, metadata, johto,
@@ -266,15 +345,16 @@ witness rendering.
 2. Convert body coverage and body pairing to views over source units. Remove
    lxml `payload_ref` and `xml_element` from downstream contracts.
 3. Replace `_find_muutos_node` users with typed `find_unit` /
-   `payload_for` results. Start with constraints, scope recovery, compile-group
-   scope recovery, and `scope.py`.
+   `payload_for` results. Start with constraints, payload lookup, scope
+   recovery, compile-group scope recovery, and `scope.py`.
 4. Port frontend XML body fallback helpers to source-model queries: direct body
    sections, no-eId sections, item labels, omission checks, sparse blocks,
    temporary payload text, and metadata enrichment.
-5. Port temporal authority and postprocessing to model-owned temporal surfaces.
-6. Remove `muutos_tree` from process, frontend, compile, apply, and temporal
+5. Port chapter precreation and apply preparation to typed source declarations.
+6. Port temporal authority and postprocessing to model-owned temporal surfaces.
+7. Remove `muutos_tree` from process, frontend, compile, apply, and temporal
    phase request types.
-7. Add static lxml exposure gates, parity tests for lookup/coverage/pairing/
+8. Add static lxml exposure gates, parity tests for lookup/coverage/pairing/
    temporal metadata, strict-mode parity, and corpus replay parity for hard
    statutes such as `1992/1535`, `2017/320`, and `2009/862`.
 
@@ -282,4 +362,3 @@ The migration rule is: do not delete evidence to remove XML. Replace XML
 handles with stable source witnesses and derived IR, then prove parity at the
 operation, finding, strict-mode, temporal, migration, and structural-diagnostic
 layers.
-

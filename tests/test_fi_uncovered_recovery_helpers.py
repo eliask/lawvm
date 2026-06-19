@@ -27,7 +27,6 @@ from lawvm.finland.uncovered_recovery_support import (
     _part_label_from_path,
     _section_heading_text,
     _uncovered_disposition_for_op_id,
-    _xml_part_label,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.source_model import AmendmentSourceModel
@@ -74,37 +73,6 @@ def test_next_letter_label_stops_at_z() -> None:
 
 def test_next_letter_label_rejects_non_numeric() -> None:
     assert _next_letter_label("foo") is None
-
-
-def test_xml_part_label_walks_to_part_ancestor() -> None:
-    root = etree.fromstring(
-        b"<part><num>II OSA</num><chapter><num>3 luku</num>"
-        b"<section><num>5 \xc2\xa7</num></section></chapter></part>"
-    )
-    sec = root.find(".//section")
-    assert sec is not None
-    # Normalized part label (roman/normalized); just assert it is non-None and stable.
-    assert _xml_part_label(sec) is not None
-
-
-def test_xml_part_label_none_without_part_ancestor() -> None:
-    root = etree.fromstring(b"<chapter><num>3 luku</num><section><num>5</num></section></chapter>")
-    sec = root.find(".//section")
-    assert sec is not None
-    assert _xml_part_label(sec) is None
-
-
-def test_xml_part_label_reads_preceding_cross_heading_part_marker() -> None:
-    root = etree.fromstring(
-        b"<body><section><num>6 \xc2\xa7</num></section>"
-        b"<crossHeading>V OSA</crossHeading>"
-        b"<chapter><num>1 luku</num><section><num>110 \xc2\xa7</num></section></chapter></body>"
-    )
-    before_part = root.find("./section")
-    in_part = root.find(".//chapter/section")
-    assert before_part is not None and in_part is not None
-    assert _xml_part_label(before_part) is None
-    assert _xml_part_label(in_part) == "5"
 
 
 def test_part_label_from_path_finds_part() -> None:

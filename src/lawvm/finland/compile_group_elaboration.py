@@ -256,7 +256,6 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
     local_rejected_ops: list[FailedOp] = []
     fctx = _FilterCtx(
         muutos_ir=muutos_ir,
-        muutos_tree=source_model.muutos_tree,
         johto=johto,
         source_model=source_model,
     )
