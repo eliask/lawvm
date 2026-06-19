@@ -426,3 +426,38 @@
   correction_type: body_text
   notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'jolloi'; cached consolidated XML fin@20240771 has 'jollei'. Minimal body_text patch applies only when the exact faulty item text is present."
   verified: "2026-06-19"
+
+# 494/1981 (Laki saariston kehityksen edistämisestä) —
+# base XML has OCR/source defects in still-live provisions. No official
+# corrigendum row was harvested for 1981/494. The cached consolidated XML
+# fin@20151630 carries the corrected text; each row below is an exact text-node
+# patch so unrelated occurrences cannot match. Section 10 is intentionally not
+# patched here: the base text "tuen määrään" is legally plausible, while the
+# oracle omits "tuen".
+- amendment_id: "494/1981"
+  wrong_text: "Valtion on pyrittävä huolehtimaan siitä, että saariston vakinaisella väestöllä on käytettävissään asumisen, toimeentulon ja välttämättömän asioina kannalta tarpeelliset liikenne- ja kuljetuspalvelut, sekä siitä, että nämä palvelut ovat mahdollisimman joustavat ja ilmaiset tai hinnaltaan kohtuulliset."
+  correct_text: "Valtion on pyrittävä huolehtimaan siitä, että saariston vakinaisella väestöllä on käytettävissään asumisen, toimeentulon ja välttämättömän asioinnin kannalta tarpeelliset liikenne- ja kuljetuspalvelut, sekä siitä, että nämä palvelut ovat mahdollisimman joustavat ja ilmaiset tai hinnaltaan kohtuulliset."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'asioina'; cached consolidated XML fin@20151630 has 'asioinnin'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "494/1981"
+  wrong_text: "Milloin saariston vakinaiselle väestölle korvataan valtion varoista 1 momentissa tarkoitetuista matkoista aiheutuneita kustannuksia, on vesitse tehty matka otettava huomioon lisäkustannuksena siten kuin erikseen säädetä."
+  correct_text: "Milloin saariston vakinaiselle väestölle korvataan valtion varoista 1 momentissa tarkoitetuista matkoista aiheutuneita kustannuksia, on vesitse tehty matka otettava huomioon lisäkustannuksena siten kuin erikseen säädetään."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR/truncated verb 'säädetä'; cached consolidated XML fin@20151630 has 'säädetään'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "494/1981"
+  wrong_text: "Edellä 1 momentissa tarkoitetuiksi peruspalveluiksi katsotaan terveys- ja sosiaalitoimen, koulu- ja kulttuuritoimen, kaupan ja tietoliikenteen tavanomaiset lakipalvelut sekä sähköenergia."
+  correct_text: "Edellä 1 momentissa tarkoitetuiksi peruspalveluiksi katsotaan terveys- ja sosiaalitoimen, koulu- ja kulttuuritoimen, kaupan ja tietoliikenteen tavanomaiset lähipalvelut sekä sähköenergia."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'lakipalvelut'; cached consolidated XML fin@20151630 has 'lähipalvelut'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "494/1981"
+  wrong_text: "Valtioneuvosto määrää saaristokunniksi ne kunnat, joissa saaristo-olot ovat olennaisena esteenä kunnan kehitykselle. Valtioneuvosto voi erityisestä syystä päättää, että saaristokuntaa koskevia säännöksiä sovelletaan myös muun"
+  correct_text: "Valtioneuvosto määrää saaristokunniksi ne kunnat, joissa saaristo-olot ovat olennaisena esteenä kunnan kehitykselle. Valtioneuvosto voi erityisestä syystä päättää, että saaristokuntaa koskevia säännöksiä sovelletaan myös muun kunnan saaristo-osaan."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML truncates the sentence after 'myös muun'; cached consolidated XML fin@20151630 has the complete sentence. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"

@@ -7,7 +7,11 @@ import pytest
 
 from lawvm.finland import corrigendum as corr
 from lawvm.finland import corrigendum_records
+from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.tools.section_keys import extract_ir_sections
+from tests.corpus_pin_helpers import replay_xml_for_test
 
 
 def test_patch_table_loads_from_text_corpus(tmp_path: Path, monkeypatch) -> None:
@@ -154,6 +158,78 @@ def test_manual_base_source_patch_1965_41_corrects_base_ocr_typos() -> None:
     for wrong, correct in zip(wrongs, corrects, strict=True):
         assert wrong.encode("utf-8") not in patched
         assert correct.encode("utf-8") in patched
+
+
+def test_manual_base_source_patch_1981_494_corrects_owned_source_defects() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        (
+            "Valtion on pyrittävä huolehtimaan siitä, että saariston vakinaisella "
+            "väestöllä on käytettävissään asumisen, toimeentulon ja välttämättömän "
+            "asioina kannalta tarpeelliset liikenne- ja kuljetuspalvelut, sekä siitä, "
+            "että nämä palvelut ovat mahdollisimman joustavat ja ilmaiset tai "
+            "hinnaltaan kohtuulliset."
+        ),
+        (
+            "Milloin saariston vakinaiselle väestölle korvataan valtion varoista "
+            "1 momentissa tarkoitetuista matkoista aiheutuneita kustannuksia, on "
+            "vesitse tehty matka otettava huomioon lisäkustannuksena siten kuin "
+            "erikseen säädetä."
+        ),
+        (
+            "Edellä 1 momentissa tarkoitetuiksi peruspalveluiksi katsotaan terveys- "
+            "ja sosiaalitoimen, koulu- ja kulttuuritoimen, kaupan ja tietoliikenteen "
+            "tavanomaiset lakipalvelut sekä sähköenergia."
+        ),
+        (
+            "Valtioneuvosto määrää saaristokunniksi ne kunnat, joissa saaristo-olot "
+            "ovat olennaisena esteenä kunnan kehitykselle. Valtioneuvosto voi "
+            "erityisestä syystä päättää, että saaristokuntaa koskevia säännöksiä "
+            "sovelletaan myös muun"
+        ),
+    ]
+    corrects = [
+        wrongs[0].replace("asioina", "asioinnin"),
+        wrongs[1].replace("säädetä.", "säädetään."),
+        wrongs[2].replace("lakipalvelut", "lähipalvelut"),
+        wrongs[3] + " kunnan saaristo-osaan.",
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1981/494")
+
+    assert applied == [f"body_patch/1981/494/{idx}" for idx in range(4)]
+    for wrong, correct in zip(wrongs[:3], corrects[:3], strict=True):
+        assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+    assert (wrongs[3] + "</p>").encode("utf-8") not in patched
+    assert corrects[3].encode("utf-8") in patched
+
+
+def test_replay_xml_1981_494_applies_owned_source_defects_without_overpatching() -> None:
+    replay = replay_xml_for_test(
+        "1981/494",
+        mode="official_consolidation",
+        quiet=True,
+        oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    section_5 = " ".join(irnode_to_text(sections["section:5"]).split())
+    section_6 = " ".join(irnode_to_text(sections["section:6"]).split())
+    section_9 = " ".join(irnode_to_text(sections["section:9"]).split())
+    section_10 = " ".join(irnode_to_text(sections["section:10"]).split())
+
+    assert "välttämättömän asioinnin kannalta" in section_5
+    assert "siten kuin erikseen säädetään" in section_5
+    assert "tavanomaiset lähipalvelut" in section_6
+    assert "sovelletaan myös muun kunnan saaristo-osaan" in section_9
+    assert "tuen määrään vaikuttavana" in section_10
 
 
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
