@@ -565,6 +565,7 @@ def test_reproducibility_same_zip_same_metadata(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(_SKIP_REAL_CORPUS, reason=_SKIP_REASON)
+@pytest.mark.slow
 class TestRealCorpus:
     """Ingest at least 3 real HEs from government-proposal.zip and verify metadata."""
 
