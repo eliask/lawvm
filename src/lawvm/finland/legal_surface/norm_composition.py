@@ -103,7 +103,7 @@ from lawvm.finland.legal_surface.condition_exception_parse import (
 )
 from lawvm.finland.legal_surface.source_syntax_graph import (
     SyntaxNode,
-    assemble_source_syntax_graph,
+    assemble_source_syntax_graph_for_unit,
 )
 
 JURISDICTION = "fi"
@@ -373,7 +373,9 @@ class ConditionAttachmentPass:
             # ``object | None`` on the unit, so narrow it before passing.
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+                index = unit.clause_index or build_clause_index(
+                    unit_id, unit.raw_text, token_tape=tape
+                )
             except Exception:
                 # raw_text unparseable for this unit → no sentences, no edges.
                 continue
@@ -832,7 +834,9 @@ class DeonticFrameAttachmentPass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+                index = unit.clause_index or build_clause_index(
+                    unit_id, unit.raw_text, token_tape=tape
+                )
             except Exception:
                 continue
             sentences = [(s.char_start, s.char_end) for s in index.sentences]
@@ -1350,7 +1354,9 @@ class SanctionReferencePass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+                index = unit.clause_index or build_clause_index(
+                    unit_id, unit.raw_text, token_tape=tape
+                )
             except Exception:
                 continue
             sentences = [(s.char_start, s.char_end) for s in index.sentences]
@@ -1772,7 +1778,9 @@ class ProcedureGovernancePass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+                index = unit.clause_index or build_clause_index(
+                    unit_id, unit.raw_text, token_tape=tape
+                )
             except Exception:
                 continue
             sentences = [(s.char_start, s.char_end) for s in index.sentences]
@@ -2367,17 +2375,17 @@ class ForestStructuralAttachmentPass:
                 continue
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
             try:
-                index = build_clause_index(unit_id, unit.raw_text, token_tape=tape)
+                index = unit.clause_index or build_clause_index(
+                    unit_id, unit.raw_text, token_tape=tape
+                )
             except Exception:
                 continue
             # The forest carries the structural segments + inherits_chapeau the
             # clause-segmented sentence drops. Built per-unit, surface-only.
             try:
-                forest = assemble_source_syntax_graph(
+                forest = assemble_source_syntax_graph_for_unit(
                     subject=graph.subject,
-                    source_units=(),
-                    statute_id=unit_id,
-                    body=unit.raw_text,
+                    unit=unit,
                 )
             except Exception:
                 continue

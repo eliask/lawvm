@@ -146,7 +146,7 @@ class DelegatedInstrumentLens:
         for unit in bundle.units:
             units_scanned += 1
             tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
-            index = build_clause_index(
+            index = unit.clause_index or build_clause_index(
                 unit.source_unit_id, unit.raw_text, token_tape=tape
             )
             for sent in index.sentences:

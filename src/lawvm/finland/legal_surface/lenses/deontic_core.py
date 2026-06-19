@@ -168,7 +168,9 @@ def deontic_core_seeds_for_unit(unit: SourceSurfaceUnit) -> list[SurfaceNodeSeed
     ownership — proven node-identical to this scan corpus-wide.
     """
     tape = unit.token_tape if isinstance(unit.token_tape, TokenTape) else None
-    index = build_clause_index(unit.source_unit_id, unit.raw_text, token_tape=tape)
+    index = unit.clause_index or build_clause_index(
+        unit.source_unit_id, unit.raw_text, token_tape=tape
+    )
     seeds: list[SurfaceNodeSeed] = []
     for sent in index.sentences:
         base = sent.char_start

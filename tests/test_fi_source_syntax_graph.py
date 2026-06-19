@@ -19,12 +19,15 @@ import os
 from pathlib import Path
 
 from lawvm.core.legal_surface_graph import SurfaceGraphSubject
+from lawvm.finland.legal_surface.bundle import build_surface_bundle
+from lawvm.finland.legal_surface import source_syntax_graph as ssg
 from lawvm.finland.legal_surface.source_syntax_graph import (
     SYNTAX_EDGE_KINDS,
     SYNTAX_NODE_KINDS,
     SourceSyntaxGraph,
     _assemble_source_syntax_graph,
     assemble_source_syntax_graph,
+    assemble_source_syntax_graph_for_unit,
     clear_forest_cache,
     project_list_inheritance,
 )
@@ -380,6 +383,39 @@ def test_cache_hit_returns_same_object_value_identical_to_fresh() -> None:
     )
     assert fresh is not first
     _forests_value_equal(first, fresh)
+
+
+def test_unit_assembler_reuses_prebuilt_substrate_views(monkeypatch) -> None:
+    clear_forest_cache()
+    xml = """
+    <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act><body><section><paragraph><content>
+        <p>Tämä laki tulee voimaan 1 päivänä tammikuuta 2020.</p>
+      </content></paragraph></section></body></act>
+    </akomaNtoso>
+    """.encode()
+    bundle = build_surface_bundle(xml, "test/1")
+    unit = bundle.units[0]
+    fresh = _assemble_source_syntax_graph(
+        subject=bundle.subject,
+        source_units=(),
+        statute_id=unit.source_unit_id,
+        body=unit.raw_text,
+    )
+
+    def fail_rebuild(*_args, **_kwargs):
+        raise AssertionError("prebuilt substrate view was not reused")
+
+    monkeypatch.setattr(ssg, "build_segmentation_graph", fail_rebuild)
+    monkeypatch.setattr(ssg, "build_clause_index", fail_rebuild)
+    clear_forest_cache()
+
+    reused = assemble_source_syntax_graph_for_unit(
+        subject=bundle.subject,
+        unit=unit,
+    )
+
+    _forests_value_equal(reused, fresh)
 
 
 def test_cache_keyed_on_inputs_distinct_bodies_distinct_forests() -> None:
