@@ -6,6 +6,7 @@ import warnings
 from collections import Counter
 from typing import Any, cast
 
+import Levenshtein
 import pytest
 
 from lawvm.tools import bench
@@ -15,6 +16,21 @@ from lawvm.tools import bench_diagnostic_tiers
 class _DummyReplay:
     def serialize_text(self) -> str:
         return "foo"
+
+
+def test_bench_levenshtein_ratio_helper_matches_python_levenshtein() -> None:
+    pairs = (
+        ("", ""),
+        ("abc", ""),
+        ("abc", "abc"),
+        ("abc", "axc"),
+        ("momentti kumotaan", "momentti muutetaan"),
+    )
+
+    for left, right in pairs:
+        assert bench._levenshtein_ratio(left, right) == pytest.approx(
+            Levenshtein.ratio(left, right)
+        )
 
 
 def test_fi_bench_worker_count_defaults_to_sequential() -> None:

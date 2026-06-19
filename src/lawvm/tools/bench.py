@@ -33,7 +33,7 @@ import warnings as py_warnings
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
-import Levenshtein
+from rapidfuzz.distance import Indel as _RapidFuzzIndel
 
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
@@ -49,6 +49,7 @@ from lawvm.semantic.projection import get_oracle_text_normalizer
 from lawvm.tools.editorial_hygiene import (  # via shim (pulls registration)
     count_kumottu_bytes,
     normalize_finlex_oracle_comparison_text,
+    strip_editorial_annotations,
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
@@ -381,8 +382,22 @@ def _normalize(t: str) -> str:
     return normalize_finlex_oracle_comparison_text(t, strip_editorial=True)
 
 
+_CLEAN_RE = re.compile(r"[^a-z0-9äöå]")
+
+
 def _clean(t: str) -> str:
-    return re.sub(r"[^a-z0-9äöå]", "", _normalize(t).lower())
+    return _CLEAN_RE.sub("", _normalize(t).lower())
+
+
+def _clean_pre_normalized_oracle(t: str) -> str:
+    """Clean oracle text returned by get_ground_truth without re-running FI projection rules."""
+    return _CLEAN_RE.sub("", strip_editorial_annotations(t).lower())
+
+
+def _levenshtein_ratio(left: str, right: str) -> float:
+    """Return the same normalized indel similarity as ``python-Levenshtein.ratio``."""
+
+    return float(_RapidFuzzIndel.normalized_similarity(left, right))
 
 
 def _lev_sim_fast(sid: str, master: Any) -> float:
@@ -393,10 +408,12 @@ def _lev_sim_fast(sid: str, master: Any) -> float:
     """
     try:
         c_res = _clean(master.serialize_text())
-        c_truth = _clean(get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR))
+        c_truth = _clean_pre_normalized_oracle(
+            get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
+        )
         if not c_truth:
             return -1.0
-        return Levenshtein.ratio(c_res, c_truth)
+        return _levenshtein_ratio(c_res, c_truth)
     except Exception:
         return -1.0
 
@@ -585,6 +602,7 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
         sid,
         oracle_selector_mode="bench_comparable",
         replay_master=master,
+        support_mode="diff_only",
     )
     if oracle_absent:
         return -1.0, Counter()
@@ -720,10 +738,12 @@ def _section_score(
 
         # Full-text similarity (existing metric)
         c_res = _clean(master.serialize_text())
-        c_truth = _clean(get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR))
+        c_truth = _clean_pre_normalized_oracle(
+            get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
+        )
         if not c_truth:
             return sid, -1.0, -1.0, "NO_TRUTH"
-        text_sim = Levenshtein.ratio(c_res, c_truth)
+        text_sim = _levenshtein_ratio(c_res, c_truth)
 
         # Section-level similarity. Keys are full provision paths where needed,
         # so duplicate section numbers across chapters compare correctly.
@@ -760,7 +780,7 @@ def _section_score(
             elif not r_text or not o_text:
                 scores.append(0.0)
             else:
-                scores.append(Levenshtein.ratio(r_text, o_text))
+                scores.append(_levenshtein_ratio(r_text, o_text))
 
         section_sim = sum(scores) / len(scores)
         return sid, text_sim, section_sim, "OK"
@@ -797,10 +817,12 @@ def _section_score_with_warning_summary(
         )
 
         c_res = _clean(master.serialize_text())
-        c_truth = _clean(get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR))
+        c_truth = _clean_pre_normalized_oracle(
+            get_ground_truth(sid, selector=_BENCH_CONSOLIDATED_SELECTOR)
+        )
         if not c_truth:
             return sid, -1.0, -1.0, "NO_TRUTH", warning_counts
-        text_sim = Levenshtein.ratio(c_res, c_truth)
+        text_sim = _levenshtein_ratio(c_res, c_truth)
 
         oracle_root = get_ground_truth_tree(
             sid,
@@ -835,7 +857,7 @@ def _section_score_with_warning_summary(
             elif not r_text or not o_text:
                 scores.append(0.0)
             else:
-                scores.append(Levenshtein.ratio(r_text, o_text))
+                scores.append(_levenshtein_ratio(r_text, o_text))
 
         section_sim = sum(scores) / len(scores)
         return sid, text_sim, section_sim, "OK", warning_counts
@@ -2007,7 +2029,7 @@ def _diag_score(r_el, o_el) -> float:
         return 1.0
     if not r or not o:
         return 0.0
-    return Levenshtein.ratio(r, o)
+    return _levenshtein_ratio(r, o)
 
 
 def _classify_section_pair(r_el, o_el, o_text: str) -> str:

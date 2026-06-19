@@ -196,6 +196,13 @@ def _element_clean_text(el: etree._Element) -> str:
     return re.sub(r"[^a-z0-9äöå]", "", raw.lower())
 
 
+def _sequence_ratio_at_least(left: str, right: str, threshold: float) -> bool:
+    matcher = SequenceMatcher(None, left, right)
+    if matcher.quick_ratio() < threshold:
+        return False
+    return matcher.ratio() >= threshold
+
+
 def _dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
     """Remove duplicate versioned children with the same eId base.
 
@@ -250,11 +257,10 @@ def _dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
             candidate_text = _element_clean_text(child)
             if existing_text and candidate_text:
                 if existing_has_orig != candidate_has_orig:
-                    similarity = SequenceMatcher(None, existing_text, candidate_text).ratio()
                     overlaps_as_prior_wording = (
                         existing_text in candidate_text
                         or candidate_text in existing_text
-                        or similarity >= 0.55
+                        or _sequence_ratio_at_least(existing_text, candidate_text, 0.55)
                     )
                     if overlaps_as_prior_wording:
                         # Finlex can pair one live versioned child with one plain
@@ -280,8 +286,7 @@ def _dedup_versioned_children(parent: etree._Element, child_tag: str) -> None:
                 # for prior-wording editorial shadows.
                 shorter = min(len(existing_text), len(candidate_text))
                 longer = max(len(existing_text), len(candidate_text))
-                similarity = SequenceMatcher(None, existing_text, candidate_text).ratio()
-                if shorter / longer < 0.5 or similarity < 0.75:
+                if shorter / longer < 0.5 or not _sequence_ratio_at_least(existing_text, candidate_text, 0.75):
                     # The texts are substantially different.  Usually this means
                     # a genuinely new provision at the same positional slot, and
                     # we would preserve both.  However, Finlex VÄLIAIKAINEN
@@ -594,9 +599,9 @@ def reconcile_unique_unscoped_aliases(
             r_text = _clean_section_text(getter(replay[rkey]))
             o_text = _clean_section_text(getter(oracle[okey]))
             if r_text and o_text:
-                ratio = SequenceMatcher(None, r_text, o_text).ratio()
                 both_substantial = min(len(r_text), len(o_text)) >= 40
-                if ratio >= 0.9 or (both_substantial and ratio >= 0.6):
+                threshold = 0.6 if both_substantial else 0.9
+                if _sequence_ratio_at_least(r_text, o_text, threshold):
                     replay[okey] = replay.pop(rkey)
 
     return replay, oracle

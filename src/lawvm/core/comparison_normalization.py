@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal, Mapping, Optional, cast
 
 from lawvm.core.ir import IRNode
 
-ComparisonRuleKind = Literal["translation", "literal", "regex", "placeholder"]
+ComparisonRuleKind = Literal["translation", "literal", "regex", "placeholder", "callable"]
 TranslationTable = Mapping[int, str | int | None]
 
 
@@ -25,6 +25,9 @@ class ComparisonNormalizationRule:
     translation: Optional[TranslationTable] = None
     pattern: Optional[re.Pattern[str]] = None
     replacement: str | Callable[[re.Match[str]], str] = ""
+    transform: Callable[[str], str] | None = None
+    required_substring: str = ""
+    required_any_substrings: tuple[str, ...] = ()
     old_text: str = ""
     new_text: str = ""
 
@@ -49,6 +52,8 @@ def validate_comparison_normalization_rule(rule: ComparisonNormalizationRule) ->
         issues.append(f"comparison normalization rule {rule.name!r} requires non-empty old_text")
     elif rule.kind in {"regex", "placeholder"} and rule.pattern is None:
         issues.append(f"comparison normalization rule {rule.name!r} requires a regex pattern")
+    elif rule.kind == "callable" and rule.transform is None:
+        issues.append(f"comparison normalization rule {rule.name!r} requires a transform")
     return tuple(issues)
 
 
@@ -79,6 +84,12 @@ def normalize_comparison_text(
     normalized = text
     fired: list[str] = []
     for rule in rules:
+        if rule.required_substring and rule.required_substring not in normalized:
+            continue
+        if rule.required_any_substrings and not any(
+            literal in normalized for literal in rule.required_any_substrings
+        ):
+            continue
         before = normalized
         if rule.kind == "translation":
             translation = rule.translation
@@ -95,6 +106,10 @@ def normalize_comparison_text(
             assert pattern is not None
             if pattern.fullmatch(normalized.strip()):
                 normalized = cast(str, rule.replacement)
+        elif rule.kind == "callable":
+            transform = rule.transform
+            assert transform is not None
+            normalized = transform(normalized)
         if normalized != before:
             fired.append(rule.name)
     return ComparisonNormalizationResult(text=normalized, fired_rules=tuple(fired))

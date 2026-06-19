@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 
 from lawvm.semantic.align import align_semantic_facets, align_semantic_trees
@@ -16,6 +17,24 @@ from lawvm.semantic.model import (
 _HEADING_ATTRIBUTION_RE = re.compile(r"\s*\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)\s*$")
 _DASH_VARIANTS_RE = re.compile(r"[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D\u00AD]")
 _ORDINAL_LABEL_RE = re.compile(r"^\d+[a-zäöå]?$", re.IGNORECASE)
+_SECTION_LABEL_SPACING_RE = re.compile(r"§\s+")
+_MOMENTTI_ORDINAL_PREFIX_RE = re.compile(r"^\s*([0-9]+[a-zäöå]?)\.\s+", re.IGNORECASE)
+_SECTION_SIGN_SPACING_RE = re.compile(r"\s*§\s*")
+_SECTION_SUFFIX_SPACING_RE = re.compile(r"§\s*:\s+([A-Za-zÅÄÖåäö]+)")
+_DIGIT_SLASH_SPACING_RE = re.compile(r"(?<=\d)\s*/\s*(?=\d)")
+_DOT_LEADER_RE = re.compile(r"\.{3,}")
+_CHEMICAL_LIST_QUALIFIER_TAIL_RE = re.compile(
+    r"\s*(?:tämän luettelon aineiden suolat mikäli sellaisten olemassaol|tässä mainittuja aineita sisältävät valmisteet lukuun ottama).*$",
+    flags=re.IGNORECASE,
+)
+_DEGREE_C_SPACING_RE = re.compile(r"(?<=\d)\s*[oº˚°]\s*C\b")
+_DOUBLE_QUOTE_VARIANTS_RE = re.compile(r'[\u201c\u201d\u201e\u201f\u2033\u2036]')
+_SINGLE_QUOTE_VARIANTS_RE = re.compile(r"[\u2018\u2019\u201a\u201b\u2032\u2035]")
+_SPACE_BEFORE_PUNCTUATION_RE = re.compile(r"\s+([.,;:)])")
+_HYPHEN_SPACED_BOTH_RE = re.compile(r"(\w)\s+-\s+(\w)")
+_HYPHEN_SPACED_LEFT_RE = re.compile(r"(\w)\s+-(\w)")
+_HYPHEN_SPACED_RIGHT_RE = re.compile(r"(\w)-\s+(\w)")
+_COMPOUND_HYPHEN_RE = re.compile(r"(\w)-(\w)")
 
 
 def _normalize_heading_for_diff(text: str) -> str:
@@ -35,7 +54,7 @@ def _normalize_heading_for_diff(text: str) -> str:
     # Collapse any whitespace after the section symbol to a single space.
     # This is the key for oracle HTML rendering artifacts in tiny "päätös"
     # documents that were polluting the worst list with 100% err + near-zero lev.
-    text = re.sub(r'§\s+', '§ ', text)
+    text = _SECTION_LABEL_SPACING_RE.sub("§ ", text)
     return text.rstrip(". ")
 
 
@@ -54,12 +73,13 @@ def _strip_momentti_ordinal_prefix(text: str, label: str) -> str:
     """
     if not label:
         return text
-    m = re.match(r"^\s*([0-9]+[a-zäöå]?)\.\s+", text, re.IGNORECASE)
+    m = _MOMENTTI_ORDINAL_PREFIX_RE.match(text)
     if m and m.group(1).lower() == label.lower():
         return text[m.end():]
     return text
 
 
+@lru_cache(maxsize=8192)
 def _normalize_wording_for_diff(text: str, label: str = "") -> str:
     """Normalize encoding artifacts for wording comparison.
 
@@ -84,13 +104,13 @@ def _normalize_wording_for_diff(text: str, label: str = "") -> str:
     """
     text = _strip_momentti_ordinal_prefix(text, label)
     text = _DASH_VARIANTS_RE.sub("-", text)
-    text = re.sub(r"\s*§\s*", " § ", text)
-    text = re.sub(r"§\s*:\s+([A-Za-zÅÄÖåäö]+)", r"§:\1", text)
-    text = re.sub(r"(?<=\d)\s*/\s*(?=\d)", "/", text)
+    text = _SECTION_SIGN_SPACING_RE.sub(" § ", text)
+    text = _SECTION_SUFFIX_SPACING_RE.sub(r"§:\1", text)
+    text = _DIGIT_SLASH_SPACING_RE.sub("/", text)
     # Dot leaders in oracle table/fee schedule formatting (presentation only;
     # "henkilö.........." for alignment in printed decisions). Safe for comparison
     # because we only use in _normalize_*_for_diff which is for semantic diff stats.
-    text = re.sub(r"\.{3,}", "", text)
+    text = _DOT_LEADER_RE.sub("", text)
     # Greek letter variants common in FI chemical lists (presentation/form in
     # convention appendices). Normalize to consistent form for comparison.
     # (Not universal; motivated by FI oracle but harmless general transform.)
@@ -98,17 +118,17 @@ def _normalize_wording_for_diff(text: str, label: str = "") -> str:
     text = text.replace("Α", "Alpha").replace("Β", "Beta")
     # Common list qualifier boilerplate normalization for chemical/controlled
     # substance lists (salts, preparations notes). FI oracle presentation.
-    text = re.sub(r'\s*(?:tämän luettelon aineiden suolat mikäli sellaisten olemassaol|tässä mainittuja aineita sisältävät valmisteet lukuun ottama).*$', '', text, flags=re.IGNORECASE)
-    text = re.sub(r"(?<=\d)\s*[oº˚°]\s*C\b", "°C", text)
-    text = re.sub(r'[\u201c\u201d\u201e\u201f\u2033\u2036]', '"', text)  # curly/fancy → ASCII "
-    text = re.sub(r"[\u2018\u2019\u201a\u201b\u2032\u2035]", "'", text)  # curly single → ASCII '
+    text = _CHEMICAL_LIST_QUALIFIER_TAIL_RE.sub("", text)
+    text = _DEGREE_C_SPACING_RE.sub("°C", text)
+    text = _DOUBLE_QUOTE_VARIANTS_RE.sub('"', text)  # curly/fancy → ASCII "
+    text = _SINGLE_QUOTE_VARIANTS_RE.sub("'", text)  # curly single → ASCII '
     text = text.replace("''", '"')
-    text = re.sub(r"\s+([.,;:)])", r"\1", text)
-    text = re.sub(r"§:\s+([A-Za-zÅÄÖåäö]+)", r"§:\1", text)
-    text = re.sub(r"(\w)\s+-\s+(\w)", r"\1-\2", text)  # "EU - asianajaja" → "EU-asianajaja"
-    text = re.sub(r"(\w)\s+-(\w)", r"\1-\2", text)  # "EU -asianajaja" → "EU-asianajaja"
-    text = re.sub(r"(\w)-\s+(\w)", r"\1-\2", text)  # "2- kohdassa" → "2-kohdassa"
-    text = re.sub(r"(\w)-(\w)", r"\1\2", text)
+    text = _SPACE_BEFORE_PUNCTUATION_RE.sub(r"\1", text)
+    text = _SECTION_SUFFIX_SPACING_RE.sub(r"§:\1", text)
+    text = _HYPHEN_SPACED_BOTH_RE.sub(r"\1-\2", text)  # "EU - asianajaja" → "EU-asianajaja"
+    text = _HYPHEN_SPACED_LEFT_RE.sub(r"\1-\2", text)  # "EU -asianajaja" → "EU-asianajaja"
+    text = _HYPHEN_SPACED_RIGHT_RE.sub(r"\1-\2", text)  # "2- kohdassa" → "2-kohdassa"
+    text = _COMPOUND_HYPHEN_RE.sub(r"\1\2", text)
     text = _HEADING_ATTRIBUTION_RE.sub("", text)
     text = text.rstrip(". ")  # trailing period presence varies between sources
     return text.strip()

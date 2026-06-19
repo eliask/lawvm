@@ -34,6 +34,14 @@ SEMANTIC_STRUCTURE_KINDS = frozenset(
 _FACET_KINDS = ("heading", "intro", "wrapUp")
 _WORDING_FACET_KIND = "wording"
 _SEMANTIC_FACET_KINDS = frozenset(_FACET_KINDS)
+_WHITESPACE_RE = re.compile(r"\s+")
+_SECTION_MARK_SUFFIX_RE = re.compile(r"\s*§\s*$", flags=re.IGNORECASE)
+_LETTER_SUFFIX_SPACE_RE = re.compile(r"^(\d+)\s+([a-zäöå])$", flags=re.IGNORECASE)
+_LEADING_NUMERIC_LABEL_RE = re.compile(r"^(\d+[a-zäöå]?)", flags=re.IGNORECASE)
+_ITEM_SUFFIX_RE = re.compile(r"\s+kohta\s*$", flags=re.IGNORECASE)
+_SUBITEM_SUFFIX_RE = re.compile(r"\s+alakohta\s*$", flags=re.IGNORECASE)
+_TRAILING_LABEL_DECORATION_RE = re.compile(r"[)\s.]+$")
+_COMPACT_LETTER_SUFFIX_LABEL_RE = re.compile(r"^(\d+)([a-zäöå])$", flags=re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -300,7 +308,7 @@ class SemanticDiffEvent:
 
 
 def _normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", str(text or "")).strip()
+    return _WHITESPACE_RE.sub(" ", str(text or "")).strip()
 
 
 def canonical_structure_kind(kind: str) -> str:
@@ -312,20 +320,20 @@ def normalize_semantic_label(kind: str, label: str) -> str:
     if not raw:
         return ""
     if kind == "section":
-        raw = re.sub(r"\s*§\s*$", "", raw, flags=re.IGNORECASE)
+        raw = _SECTION_MARK_SUFFIX_RE.sub("", raw)
         # Compress "11 a" → "11a" for letter-suffixed sections
-        return re.sub(r"^(\d+)\s+([a-zäöå])$", r"\1\2", raw, flags=re.IGNORECASE)
+        return _LETTER_SUFFIX_SPACE_RE.sub(r"\1\2", raw)
     if kind == "subsection":
-        match = re.match(r"^(\d+[a-zäöå]?)", raw, flags=re.IGNORECASE)
+        match = _LEADING_NUMERIC_LABEL_RE.match(raw)
         return match.group(1) if match else raw
     if kind == "item":
-        raw = re.sub(r"\s+kohta\s*$", "", raw, flags=re.IGNORECASE)
-        raw = re.sub(r"[)\s.]+$", "", raw)
-        return re.sub(r"^(\d+)\s+([a-zäöå])$", r"\1\2", raw, flags=re.IGNORECASE)
+        raw = _ITEM_SUFFIX_RE.sub("", raw)
+        raw = _TRAILING_LABEL_DECORATION_RE.sub("", raw)
+        return _LETTER_SUFFIX_SPACE_RE.sub(r"\1\2", raw)
     if kind == "subitem":
-        raw = re.sub(r"\s+alakohta\s*$", "", raw, flags=re.IGNORECASE)
-        raw = re.sub(r"[)\s.]+$", "", raw)
-        return re.sub(r"^(\d+)\s+([a-zäöå])$", r"\1\2", raw, flags=re.IGNORECASE)
+        raw = _SUBITEM_SUFFIX_RE.sub("", raw)
+        raw = _TRAILING_LABEL_DECORATION_RE.sub("", raw)
+        return _LETTER_SUFFIX_SPACE_RE.sub(r"\1\2", raw)
     return raw
 
 
@@ -333,7 +341,7 @@ def display_structure_label(label: str) -> str:
     raw = str(label or "").strip()
     if not raw:
         return ""
-    match = re.match(r"^(\d+)([a-zäöå])$", raw, flags=re.IGNORECASE)
+    match = _COMPACT_LETTER_SUFFIX_LABEL_RE.match(raw)
     if match:
         return f"{match.group(1)} {match.group(2)}"
     return raw
@@ -350,16 +358,16 @@ def normalize_visible_semantic_label(kind: str, label: str) -> str:
     if not raw:
         return ""
     if kind == "section":
-        raw = re.sub(r"\s*§\s*$", "", raw, flags=re.IGNORECASE)
-        return re.sub(r"^(\d+)\s+([a-zäöå])$", r"\1\2", raw, flags=re.IGNORECASE)
+        raw = _SECTION_MARK_SUFFIX_RE.sub("", raw)
+        return _LETTER_SUFFIX_SPACE_RE.sub(r"\1\2", raw)
     if kind == "subsection":
-        match = re.match(r"^(\d+[a-zäöå]?)", raw, flags=re.IGNORECASE)
+        match = _LEADING_NUMERIC_LABEL_RE.match(raw)
         return match.group(1) if match else raw
     if kind in ("item", "subitem"):
-        suffix = "alakohta" if kind == "subitem" else "kohta"
-        raw = re.sub(rf"\s+{suffix}\s*$", "", raw, flags=re.IGNORECASE)
-        raw = re.sub(r"[)\s.]+$", "", raw)
-        return re.sub(r"^(\d+)\s+([a-zäöå])$", r"\1\2", raw, flags=re.IGNORECASE)
+        suffix_re = _SUBITEM_SUFFIX_RE if kind == "subitem" else _ITEM_SUFFIX_RE
+        raw = suffix_re.sub("", raw)
+        raw = _TRAILING_LABEL_DECORATION_RE.sub("", raw)
+        return _LETTER_SUFFIX_SPACE_RE.sub(r"\1\2", raw)
     return raw
 
 

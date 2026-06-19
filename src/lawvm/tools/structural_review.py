@@ -29,7 +29,7 @@ import json
 import warnings
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 # Suppress projection warnings during bulk review
@@ -776,6 +776,7 @@ def compute_statute_section_diffs(
     mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
     replay_master: Any = None,
+    support_mode: Literal["full", "diff_only"] = "full",
 ) -> tuple[dict[str, dict[str, Any]], bool]:
     """Compute per-section semantic diffs for one statute.
 
@@ -793,7 +794,10 @@ def compute_statute_section_diffs(
     """
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
     from lawvm.finland.replay_entrypoint import replay_xml
-    from lawvm.semantic.contracts import build_semantic_support
+    from lawvm.semantic.contracts import (
+        build_semantic_diff_support,
+        build_semantic_support,
+    )
     from lawvm.semantic.structure import (
         semantic_structure_from_ir,
         semantic_structure_from_oracle,
@@ -804,7 +808,7 @@ def compute_statute_section_diffs(
         reconcile_unique_unscoped_aliases,
     )
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
-    from typing import cast, Literal
+    from typing import cast
 
     if corpus is None:
         corpus = get_corpus()
@@ -845,7 +849,12 @@ def compute_statute_section_diffs(
         oracle_node = oracle_sections.get(key)
         replay_sem = semantic_structure_from_ir(replay_node) if replay_node is not None else None
         oracle_sem = semantic_structure_from_oracle(oracle_node) if oracle_node is not None else None
-        item = build_semantic_support(replay_sem, oracle_sem)
+        if support_mode == "full":
+            item = build_semantic_support(replay_sem, oracle_sem)
+        elif support_mode == "diff_only":
+            item = build_semantic_diff_support(replay_sem, oracle_sem)
+        else:
+            raise ValueError(f"unsupported structural diff support mode: {support_mode}")
         if item:
             sections[key] = item
 

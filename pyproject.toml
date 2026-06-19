@@ -10,6 +10,7 @@ dependencies = [
   "lxml>=6.0.0",
   "aiohttp",
   "python-Levenshtein",
+  "rapidfuzz",
   "zstandard>=0.21",
   "icontract>=2.7.3",
   "ortools>=9.15.6755",

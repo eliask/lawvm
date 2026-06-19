@@ -3,6 +3,7 @@ from datetime import date
 import json
 import sqlite3
 
+import pytest
 from lxml import etree
 
 from lawvm.core.compile_result import SourcePathology
@@ -260,6 +261,7 @@ def test_diagnose_oracle_repeal_stub_real_bug_when_available_and_in_window() -> 
     )
 
 
+@pytest.mark.slow
 def test_classify_statute_1993_1501_eu_accession_repeal_stubs_are_source_limit() -> None:
     # 1993/1501 ch.4 §47-54 and ch.10 §107-109 are oracle repeal stubs from the
     # contingent-effective EU-accession restructure 1994/1218 (entry into force
@@ -829,6 +831,23 @@ def test_normalize_finlex_oracle_comparison_text_removes_shared_presentation_res
     assert "9.7.1982/540" not in normalized
     assert "Aiempi sanamuoto kuuluu" not in normalized
     assert "Tätä lakia sovelletaan." in normalized
+
+
+def test_normalize_finlex_oracle_comparison_text_preserves_non_stub_kumottu_prose() -> None:
+    text = (
+        "Jos muussa lainsäädännössä viitataan tällä lailla kumottujen lakien "
+        "säännöksiin, viittauksen on katsottava tarkoittavan vastaavaa lainkohtaa."
+    )
+
+    assert normalize_finlex_oracle_comparison_text(text) == text
+
+
+def test_normalize_finlex_oracle_comparison_text_normalizes_chemical_list_spacing() -> None:
+    text = "Safroli;  Isosafroli\n        Piperonaali"
+
+    normalized = normalize_finlex_oracle_comparison_text(text)
+
+    assert normalized == "Safroli; Isosafroli\n; Piperonaali"
 
 
 def test_normalize_finlex_oracle_comparison_text_normalizes_embedded_five_ocr() -> None:
@@ -1643,6 +1662,7 @@ def test_fi_ledger_inputs_attributes_restructure_blame_via_migration_lineage(
     assert row.diagnosis == "SOURCE_INCOMPLETE"
 
 
+@pytest.mark.slow
 def test_classify_statute_2017_320_recodification_omission_shell_at_chapter_25_is_source_incomplete() -> None:
     """2019/371 relabel snapshots for §209-210 omit operative bodies; 2020/1256 renumbers ch.4→ch.25."""
     result = _classify_statute_sync("2017/320", "official_consolidation")
@@ -1723,6 +1743,7 @@ def test_recodification_blame_frame_diagnosis_maps_section_renumber_heading_swap
     assert diagnosis == "SOURCE_INCOMPLETE"
 
 
+@pytest.mark.slow
 def test_classify_statute_2017_320_recodification_frame_wave_is_source_incomplete() -> None:
     """2019/371 relabel snapshots compare at pre-migration frames; ch.2/ch.4 waves are source limits."""
     result = _classify_statute_sync("2017/320", "official_consolidation")
@@ -1755,6 +1776,7 @@ def test_classify_statute_2017_320_recodification_frame_wave_is_source_incomplet
         assert row["blame_source"] == "2019/371"
 
 
+@pytest.mark.slow
 def test_classify_statute_2017_320_recodification_extra_shells_are_source_incomplete() -> None:
     """2019/371 renumber shells present only in replay must not stay bare EXTRA."""
     result = _classify_statute_sync("2017/320", "official_consolidation")

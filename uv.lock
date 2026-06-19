@@ -593,6 +593,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "python-levenshtein" },
     { name = "pyyaml" },
+    { name = "rapidfuzz" },
     { name = "zstandard" },
 ]
 
@@ -633,6 +634,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "python-levenshtein" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rapidfuzz" },
     { name = "zstandard", specifier = ">=0.21" },
 ]
 provides-extras = ["analytics", "test"]

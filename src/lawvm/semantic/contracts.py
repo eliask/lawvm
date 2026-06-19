@@ -81,6 +81,31 @@ def build_semantic_support(
     return item
 
 
+def build_semantic_diff_support(
+    replay_semantic: Any,
+    oracle_semantic: Any,
+    *,
+    section_oracle_diagnosis: str = "",
+) -> dict[str, Any]:
+    """Build the semantic-diff subset of the support contract."""
+    item: dict[str, Any] = {"semantic_contract_version": SEMANTIC_CONTRACT_VERSION}
+    if replay_semantic is not None or oracle_semantic is not None:
+        diff = semantic_diff(replay_semantic, oracle_semantic)
+        events = semantic_diff_events(replay_semantic, oracle_semantic)
+        if section_oracle_diagnosis:
+            events = _annotate_events_with_oracle_diagnosis(events, section_oracle_diagnosis)
+        item["semantic_diff"] = {
+            "kind": diff.kind,
+            "summary": diff.summary,
+            "structural": diff.stats.structural,
+            "label": diff.stats.label,
+            "text": diff.stats.text,
+            "editorial": diff.stats.editorial,
+            "events": [event.to_dict() for event in events],
+        }
+    return item
+
+
 def semantic_support_projection(support: dict[str, Any]) -> dict[str, Any]:
     projection: dict[str, Any] = {
         "semantic_contract_version": support.get("semantic_contract_version"),

@@ -65,6 +65,35 @@ def test_build_semantic_support_exposes_owned_contract_version() -> None:
     assert support["semantic_contract_version"] == semantic_contracts.SEMANTIC_CONTRACT_VERSION
 
 
+def test_build_semantic_diff_support_matches_full_diff_payload() -> None:
+    left = SemanticStructureNode(
+        kind="section",
+        label="10",
+        facets=(SemanticStructureFacet(kind="heading", text="Old heading"),),
+        children=(SemanticStructureNode(kind="subsection", label="1", text="A"),),
+    )
+    right = SemanticStructureNode(
+        kind="section",
+        label="10",
+        facets=(SemanticStructureFacet(kind="heading", text="New heading"),),
+        children=(
+            SemanticStructureNode(kind="subsection", label="1", text="A"),
+            SemanticStructureNode(kind="subsection", label="2", text="B"),
+        ),
+    )
+
+    full = semantic_contracts.build_semantic_support(left, right)
+    diff_only = semantic_contracts.build_semantic_diff_support(left, right)
+
+    assert diff_only == {
+        "semantic_contract_version": semantic_contracts.SEMANTIC_CONTRACT_VERSION,
+        "semantic_diff": full["semantic_diff"],
+    }
+    assert "replay" not in diff_only
+    assert "oracle" not in diff_only
+    assert "aligned" not in diff_only
+
+
 def test_semantic_diff_event_to_dict_exposes_structured_semantic_path_parts() -> None:
     event = SemanticDiffEvent(
         kind="wording_text_changed",

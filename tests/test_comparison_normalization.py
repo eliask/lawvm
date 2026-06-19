@@ -70,6 +70,72 @@ def test_normalize_comparison_text_supports_placeholder_equivalence() -> None:
     assert result.fired_rules == ("bare_dash_placeholder",)
 
 
+def test_normalize_comparison_text_supports_named_callable_rule() -> None:
+    rule = ComparisonNormalizationRule(
+        name="callable_trim",
+        rule_class="presentation_cleanup",
+        kind="callable",
+        description="Use an explicit named callable for comparison projection.",
+        transform=lambda text: text.strip(),
+    )
+
+    result = normalize_comparison_text(" text ", (rule,))
+
+    assert result.text == "text"
+    assert result.fired_rules == ("callable_trim",)
+
+
+def test_normalize_comparison_text_honors_required_substring_prefilter() -> None:
+    called = False
+
+    def transform(text: str) -> str:
+        nonlocal called
+        called = True
+        return text.upper()
+
+    rule = ComparisonNormalizationRule(
+        name="guarded_callable",
+        rule_class="presentation_cleanup",
+        kind="callable",
+        description="Skip expensive comparison projection when a required literal is absent.",
+        transform=transform,
+        required_substring="needle",
+    )
+
+    result = normalize_comparison_text("plain text", (rule,))
+
+    assert result.text == "plain text"
+    assert result.fired_rules == ()
+    assert not called
+
+
+def test_normalize_comparison_text_honors_required_any_substrings_prefilter() -> None:
+    called = False
+
+    def transform(text: str) -> str:
+        nonlocal called
+        called = True
+        return text.upper()
+
+    rule = ComparisonNormalizationRule(
+        name="guarded_any_callable",
+        rule_class="presentation_cleanup",
+        kind="callable",
+        description="Skip expensive comparison projection unless one trigger literal is present.",
+        transform=transform,
+        required_any_substrings=("alpha", "beta"),
+    )
+
+    skipped = normalize_comparison_text("plain text", (rule,))
+    applied = normalize_comparison_text("plain alpha text", (rule,))
+
+    assert skipped.text == "plain text"
+    assert skipped.fired_rules == ()
+    assert applied.text == "PLAIN ALPHA TEXT"
+    assert applied.fired_rules == ("guarded_any_callable",)
+    assert called
+
+
 def test_validate_comparison_normalization_rule_rejects_silent_noops() -> None:
     missing_pattern = ComparisonNormalizationRule(
         name="bad_regex",
@@ -83,12 +149,21 @@ def test_validate_comparison_normalization_rule_rejects_silent_noops() -> None:
         kind="literal",
         description="Invalid literal rule with no old_text.",
     )
+    missing_transform = ComparisonNormalizationRule(
+        name="bad_callable",
+        rule_class="presentation_cleanup",
+        kind="callable",
+        description="Invalid callable rule with no transform.",
+    )
 
     assert validate_comparison_normalization_rule(missing_pattern) == (
         "comparison normalization rule 'bad_regex' requires a regex pattern",
     )
     assert validate_comparison_normalization_rule(empty_literal) == (
         "comparison normalization rule 'bad_literal' requires non-empty old_text",
+    )
+    assert validate_comparison_normalization_rule(missing_transform) == (
+        "comparison normalization rule 'bad_callable' requires a transform",
     )
 
     with pytest.raises(ValueError, match="requires a regex pattern"):

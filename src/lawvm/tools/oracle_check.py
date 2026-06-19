@@ -228,7 +228,7 @@ _RESTRUCTURE_BLAME_WITNESS_RULE_IDS = frozenset(
 )
 
 _SECTION_HEADING_RE = re.compile(
-    r"^\d+\s*[a-zäöå]?\s*§\s*(.+?)(?:\s{2,}|\n|$)",
+    r"^\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?\s{0,10}§\s{0,20}([^\n]{0,240}?)(?:\s{2,}|\n|$)",
     re.IGNORECASE,
 )
 
