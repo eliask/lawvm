@@ -7,16 +7,17 @@ does not decide replay semantics.
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict
 from typing import Any, Dict, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
+from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
+from lawvm.core.mutation_events import DeclaredMutationAllowance, MutationEvent
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding
-from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
+from lawvm.core.tree_ops import iter_tree_invariant_violations
 from lawvm.finland.replay_notices import replay_print as _replay_print
 
 
@@ -173,15 +174,80 @@ def _apply_mutation_fallback_event_finding(
     )
 
 
-def _serialize_apply_mutation_event(event: Any) -> dict[str, object]:
-    payload = asdict(event)
+def _serialize_declared_mutation_allowance(allowance: DeclaredMutationAllowance) -> dict[str, object]:
+    return {
+        "kind": allowance.kind,
+        "paths": allowance.paths,
+        "rule_id": allowance.rule_id,
+        "note": allowance.note,
+    }
+
+
+def _serialize_apply_mutation_event(event: MutationEvent) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "op_id": event.op_id,
+        "source_statute": event.source_statute,
+        "action": event.action,
+        "helper": event.helper,
+        "outcome": event.outcome,
+        "resolved_target_path": event.resolved_target_path,
+        "parent_path": event.parent_path,
+        "declared_allowances": tuple(
+            _serialize_declared_mutation_allowance(allowance)
+            for allowance in event.declared_allowances
+        ),
+        "consumed_paths": event.consumed_paths,
+        "created_paths": event.created_paths,
+        "removed_paths": event.removed_paths,
+        "replaced_paths": event.replaced_paths,
+        "renumbered_paths": event.renumbered_paths,
+        "placeholder_created_paths": event.placeholder_created_paths,
+        "placeholder_consumed_paths": event.placeholder_consumed_paths,
+        "used_fallback_tags": event.used_fallback_tags,
+        "failure_reason": event.failure_reason,
+        "reason_code": event.reason_code,
+    }
     if not payload.get("declared_allowances"):
         payload.pop("declared_allowances", None)
     return payload
 
 
-def _serialize_apply_mutation_invariant_report(report: Any) -> dict[str, object]:
-    return asdict(report)
+def _serialize_mutation_accounting_result(result: MutationAccountingResult) -> dict[str, object]:
+    return {
+        "code": result.code,
+        "op_id": result.op_id,
+        "helper": result.helper,
+        "touched_count": result.touched_count,
+        "allowed_roots": result.allowed_roots,
+        "out_of_scope_paths": result.out_of_scope_paths,
+        "allowed_paths": result.allowed_paths,
+        "matched_allowance_rule_ids": result.matched_allowance_rule_ids,
+    }
+
+
+def _serialize_apply_mutation_invariant_report(report: MutationInvariantReport) -> dict[str, object]:
+    return {
+        "op_id": report.op_id,
+        "helper": report.helper,
+        "outcome": report.outcome,
+        "touched_paths": report.touched_paths,
+        "changed_paths": report.changed_paths,
+        "allowed_roots": report.allowed_roots,
+        "allowed_effect_region_paths": report.allowed_effect_region_paths,
+        "declared_allowance_paths": report.declared_allowance_paths,
+        "declared_recovery_paths": report.declared_recovery_paths,
+        "declared_recovery_rule_ids": report.declared_recovery_rule_ids,
+        "declared_migration_paths": report.declared_migration_paths,
+        "declared_migration_rule_ids": report.declared_migration_rule_ids,
+        "permitted_paths": report.permitted_paths,
+        "covered_changed_paths": report.covered_changed_paths,
+        "unexplained_changed_paths": report.unexplained_changed_paths,
+        "allowed_non_target_paths": report.allowed_non_target_paths,
+        "out_of_scope_paths": report.out_of_scope_paths,
+        "matched_allowance_rule_ids": report.matched_allowance_rule_ids,
+        "path_set_invariant_holds": report.path_set_invariant_holds,
+        "results": tuple(_serialize_mutation_accounting_result(result) for result in report.results),
+    }
 
 
 def _serialize_observed_write_audit(audit: ObservedWriteAudit) -> dict[str, object]:
@@ -319,23 +385,17 @@ def _structural_dedup_applied_finding(
 def _pre_dedup_duplicate_details(tree: IRNode) -> list[dict[str, str]]:
     """Extract duplicate-label details from a tree before the dedup backstop runs."""
     details: list[dict[str, str]] = []
-    duplicate_re = re.compile(r"duplicate\s+(\w+):(\S+)", re.IGNORECASE)
-    for violation in _check_tree_invariants(tree):
-        last_slash = violation.rfind("/")
-        search_from = last_slash + 1 if last_slash != -1 else 0
-        sep = violation.find(": ", search_from)
-        if sep == -1:
-            continue
-        path = violation[:sep].strip()
-        message = violation[sep + 2 :].strip()
-        match = duplicate_re.search(message)
-        if match is None:
+    for violation in iter_tree_invariant_violations(
+        tree,
+        families={"duplicate_label"},
+    ):
+        if violation.child_kind is None or violation.label is None:
             continue
         details.append(
             {
-                "path": path,
-                "kind": match.group(1),
-                "label": match.group(2),
+                "path": violation.path_text,
+                "kind": violation.child_kind,
+                "label": violation.label,
             }
         )
     return details

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
-from typing import Iterable, cast
+from typing import Iterable
 
 from lawvm.core.mutation_boundary import (
     TreePath,
@@ -236,8 +236,8 @@ def _normalize_tree_paths(field_name: str, paths: Iterable[Iterable[object]]) ->
                 raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step, not a string")
             if not isinstance(step, IterableABC):
                 raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step")
-            tree_steps.append(tuple(cast(Iterable[object], step)))
-        tree_path = cast(TreePath, tuple(tree_steps))
+            tree_steps.append(tuple(step))
+        tree_path = tuple(tree_steps)
         issues = validate_tree_path(tree_path, field_name=f"{field_name}[{index}]")
         if issues:
             raise ValueError("; ".join(issues))
@@ -249,7 +249,7 @@ def _normalize_rule_ids(field_name: str, rule_ids: Iterable[object]) -> tuple[st
     normalized = tuple(rule_ids)
     if not all(isinstance(rule_id, str) for rule_id in normalized):
         raise ValueError(f"{field_name} must contain strings")
-    return cast(tuple[str, ...], normalized)
+    return normalized
 
 
 def build_mutation_invariant_reports(
@@ -268,14 +268,13 @@ def build_mutation_invariant_reports(
     reports: list[MutationInvariantReport] = []
     for event in events:
         touched_paths = mutation_event_touched_paths(event)
-        path_report = build_mutation_event_path_set_report(event, ())
         results: list[MutationAccountingResult] = []
         allowed_roots: TreePaths = ()
-        declared_allowance_paths = path_report.declared_allowance_paths
-        declared_recovery_paths = path_report.declared_recovery_paths
-        declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
-        declared_migration_paths = path_report.declared_migration_paths
-        declared_migration_rule_ids = path_report.declared_migration_rule_ids
+        declared_allowance_paths: TreePaths = ()
+        declared_recovery_paths: TreePaths = ()
+        declared_recovery_rule_ids: tuple[str, ...] = ()
+        declared_migration_paths: TreePaths = ()
+        declared_migration_rule_ids: tuple[str, ...] = ()
         allowed_effect_region_paths: TreePaths = ()
         permitted_paths: TreePaths = ()
         covered_changed_paths: TreePaths = ()
@@ -284,6 +283,7 @@ def build_mutation_invariant_reports(
         out_of_scope_paths: TreePaths = ()
         matched_allowance_rule_ids: tuple[str, ...] = ()
         path_set_invariant_holds = True
+        path_report = None
         outcome_family = mutation_event_outcome_family(event.outcome)
         if outcome_family == "unknown":
             # An outcome label missing from the registered outcome sets means
@@ -333,7 +333,11 @@ def build_mutation_invariant_reports(
                     parent_boundary_actions=parent_boundary_actions,
                 )
                 allowed_effect_region_paths = allowed_roots
-                path_report = build_mutation_event_path_set_report(event, allowed_effect_region_paths)
+                path_report = build_mutation_event_path_set_report(
+                    event,
+                    allowed_effect_region_paths,
+                    touched_paths=touched_paths,
+                )
                 declared_allowance_paths = path_report.declared_allowance_paths
                 declared_recovery_paths = path_report.declared_recovery_paths
                 declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
@@ -378,6 +382,13 @@ def build_mutation_invariant_reports(
                                 out_of_scope_paths=out_of_scope_paths,
                             )
                         )
+        if path_report is None:
+            path_report = build_mutation_event_path_set_report(event, (), touched_paths=touched_paths)
+            declared_allowance_paths = path_report.declared_allowance_paths
+            declared_recovery_paths = path_report.declared_recovery_paths
+            declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
+            declared_migration_paths = path_report.declared_migration_paths
+            declared_migration_rule_ids = path_report.declared_migration_rule_ids
         reports.append(
             MutationInvariantReport(
                 op_id=event.op_id,

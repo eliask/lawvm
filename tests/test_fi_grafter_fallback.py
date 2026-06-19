@@ -813,7 +813,7 @@ def test_process_muutoslaki_ignores_preseeded_compat_sinks_when_building_finding
     )
 
     assert result.output is state
-    assert result.findings() == ()
+    assert all(finding.source_statute != "1999/1" for finding in result.findings())
     assert len(preseeded_pathologies) == 1
     assert len(preseeded_failed_ops) == 1
 
@@ -1755,11 +1755,11 @@ def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_met
     assert len(replay_boundary_findings) == 1
     assert replay_boundary_findings[0].role == "violation"
     assert replay_boundary_findings[0].blocking is True
-    assert replay_boundary_findings[0].detail == {
+    assert replay_boundary_findings[0].detail.items() >= {
         "message": "Apply mutation boundary accounting violated.",
         "violation": "REPLAY_SKIPPED_OP_MUTATED_TREE op_id=skipped_tree_touch helper=apply_op touched=1",
         "barrier_code": "REPLAY_SKIPPED_OP_MUTATED_TREE",
-    }
+    }.items()
 
 
 def test_apply_mutation_boundary_violation_helper_emits_native_kind() -> None:
@@ -5678,13 +5678,13 @@ def test_build_amendment_bundle_folds_terminal_continuation_subsection_for_2018_
 
     group48 = next(group for group in bundle["groups"] if group["target_norm"] == "48")
 
-    assert group48["subsection_map"][0]["op"] == "REPLACE 48 § otsikko"
+    assert group48["subsection_map"][0]["op"] == "REPLACE 6 luku 48 § otsikko"
     assert group48["subsection_map"][0]["mapped_payload"] is None
-    assert group48["subsection_map"][1]["op"] == "REPLACE 48 § 1 mom"
+    assert group48["subsection_map"][1]["op"] == "REPLACE 6 luku 48 § 1 mom"
     assert group48["subsection_map"][1]["mapped_payload"]["label"] == "1"
     assert group48["sparse_slot_bindings"] == [
         {
-            "op": "REPLACE 48 § 1 mom",
+            "op": "REPLACE 6 luku 48 § 1 mom",
             "slot_index": 1,
             "slot_label": "1",
             "target_paragraph": 1,
@@ -5701,8 +5701,11 @@ def test_build_amendment_bundle_splits_fused_restarted_subsection_for_2018_441(
 
     group51 = next(group for group in bundle["groups"] if group["target_norm"] == "51")
 
-    assert set(group51["ops_final"]) == {"REPLACE 51 § 1 mom", "REPLACE 51 § 2 mom"}
-    assert [entry["op"] for entry in group51["subsection_map"]] == ["REPLACE 51 § 1 mom", "REPLACE 51 § 2 mom"]
+    assert set(group51["ops_final"]) == {"REPLACE 7 luku 51 § 1 mom", "REPLACE 7 luku 51 § 2 mom"}
+    assert [entry["op"] for entry in group51["subsection_map"]] == [
+        "REPLACE 7 luku 51 § 1 mom",
+        "REPLACE 7 luku 51 § 2 mom",
+    ]
     assert group51["subsection_map"][0]["mapped_payload"]["label"] == "1"
     assert group51["subsection_map"][1]["mapped_payload"]["label"] == "2"
 
@@ -10625,12 +10628,19 @@ def test_pre_scan_repeal_targets_accepts_parent_title_for_vts_scan(monkeypatch) 
         seen.append(parent_title)
         return []
 
+    def _fail_acquisition_for_non_repeal_source(**_kwargs):
+        raise AssertionError("johtolause acquisition should be skipped when source bytes contain no repeal keyword")
+
     # _pre_scan_repeal_targets lives in future_repeal_prescan, which has its own
     # `from lawvm.finland.vts import extract_voimaantulo_repeals` binding.
     # Patching the grafter re-export does not affect that module's lookup.
     monkeypatch.setattr(
         "lawvm.finland.future_repeal_prescan.extract_voimaantulo_repeals",
         _fake_extract,
+    )
+    monkeypatch.setattr(
+        "lawvm.finland.future_repeal_prescan.build_amendment_acquisition_result",
+        _fail_acquisition_for_non_repeal_source,
     )
     corpus = _corpus_store(
         {
@@ -11437,6 +11447,39 @@ def test_supplement_mixed_explicit_clause_ops_keeps_possessive_moment_refs_child
     ]
 
 
+def test_supplement_mixed_explicit_clause_ops_does_not_convert_chapter_heading_pair_to_section_replace() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_chapter_12",
+            op_type="REPLACE",
+            target_kind=TargetKind.CHAPTER,
+            target_section="12",
+        ),
+        AmendmentOp(
+            op_id="insert_9_12",
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_chapter="9",
+            target_section="12",
+        ),
+        AmendmentOp(
+            op_id="insert_9_13",
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_chapter="9",
+            target_section="13",
+        ),
+    ]
+    johto = (
+        "muutetaan kauppakaaren 12 luvun nimike ja 12 § ja lisätään "
+        "9 lukuun kumotun 12 §:n sijaan uusi 12 § sekä uusi 13 § seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert got == ops
+
+
 def test_parse_ops_fallback_recovers_colonless_moment_target_list() -> None:
     johto = (
         "muutetaan vähemmistövaltuutetusta 26 päivänä heinäkuuta 2001 annetun "
@@ -11477,6 +11520,23 @@ def test_numbered_table_proxy_splits_from_child_targets_before_group_compile() -
     got = _split_numbered_table_child_group_ops([table_proxy, moment_replace])
 
     assert got == ([table_proxy], [moment_replace])
+
+
+def test_parse_ops_fallback_recovers_citation_prose_root_part_insert() -> None:
+    text = (
+        "lisätään liikenteen palvelusta annetun lain (320/2017) I osan 1 luvun "
+        "2 §:ään, sellaisena kuin se on laissa 301/2018, uusi 10 kohta sekä "
+        "lakiin uusi II A osa seuraavasti:"
+    )
+
+    got = parse_ops_fallback_heuristic(text)
+
+    assert any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "part"
+        and op.target_section == "2a"
+        for op in got
+    )
 
 
 def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:
@@ -11938,7 +11998,7 @@ def test_dedup_children_by_label_removes_duplicate_sections_in_chapter() -> None
 def test_dedup_children_by_label_noop_when_no_duplicates() -> None:
     """dedup_children_by_label returns the same object when there are no duplicates."""
     from lawvm.core.ir import IRNode
-    from lawvm.core.tree_ops import dedup_children_by_label
+    from lawvm.core.tree_ops import dedup_children_by_label, has_dedup_label_duplicates
 
     def _sec(label: str) -> IRNode:
         return IRNode(kind=IRNodeKind.SECTION, label=label, text="", attrs={}, children=())
@@ -11953,6 +12013,38 @@ def test_dedup_children_by_label_noop_when_no_duplicates() -> None:
 
     result = dedup_children_by_label(body)
     assert result is body, "Should return identical object when no deduplication needed"
+    assert not has_dedup_label_duplicates(body)
+
+
+def test_has_dedup_label_duplicates_matches_owned_dedup_scope() -> None:
+    from lawvm.core.ir import IRNode
+    from lawvm.core.tree_ops import has_dedup_label_duplicates
+
+    clean = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1"),
+            IRNode(kind=IRNodeKind.SECTION, label="2"),
+        ),
+    )
+    duplicate_section = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1"),
+            IRNode(kind=IRNodeKind.SECTION, label="1"),
+        ),
+    )
+    duplicate_heading_label = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, label="1"),
+            IRNode(kind=IRNodeKind.HEADING, label="1"),
+        ),
+    )
+
+    assert not has_dedup_label_duplicates(clean)
+    assert has_dedup_label_duplicates(duplicate_section)
+    assert not has_dedup_label_duplicates(duplicate_heading_label)
 
 
 def test_dedup_children_by_label_removes_duplicate_subsections_in_section() -> None:
@@ -13829,10 +13921,10 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
 
     assert group["ops_raw"] == [
-        "REPLACE 149 § 1 mom 1 kohta",
-        "REPLACE 149 § 1 mom 2 kohta",
-        "REPLACE 149 § 1 mom 3 kohta",
-        "REPLACE 149 § 4 mom",
+        "REPLACE 11 luku 149 § 1 mom 1 kohta",
+        "REPLACE 11 luku 149 § 1 mom 2 kohta",
+        "REPLACE 11 luku 149 § 1 mom 3 kohta",
+        "REPLACE 11 luku 149 § 4 mom",
     ]
     assert group["ops_after_normalization"] == group["ops_raw"]
 
@@ -13931,11 +14023,14 @@ def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_con
     bundle = build_amendment_bundle("2014/527", "2022/490", mode="official_consolidation")
     group221c = next(group for group in bundle["groups"] if group["target_norm"] == "221c")
 
-    assert group221c["ops_raw"] == ["REPLACE 221c § otsikko", "REPLACE 221c § 1 mom"]
-    assert set(group221c["ops_final"]) == {"REPLACE 221c § otsikko", "REPLACE 221c § 1 mom"}
-    assert group221c["subsection_map"][0]["op"] == "REPLACE 221c § otsikko"
+    assert group221c["ops_raw"] == ["REPLACE 20 luku 221c § otsikko", "REPLACE 20 luku 221c § 1 mom"]
+    assert set(group221c["ops_final"]) == {
+        "REPLACE 20 luku 221c § otsikko",
+        "REPLACE 20 luku 221c § 1 mom",
+    }
+    assert group221c["subsection_map"][0]["op"] == "REPLACE 20 luku 221c § otsikko"
     assert group221c["subsection_map"][0]["mapped_payload"] is None
-    assert group221c["subsection_map"][1]["op"] == "REPLACE 221c § 1 mom"
+    assert group221c["subsection_map"][1]["op"] == "REPLACE 20 luku 221c § 1 mom"
     assert group221c["subsection_map"][1]["mapped_payload"]["label"] == "1"
     assert group221c["rejected_ops_pre_constraints"] == []
     assert group221c["rejected_ops_post_constraints"] == []

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Literal, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -393,7 +394,12 @@ def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
 
 
 def _path_strings(paths: TreePaths) -> list[str]:
-    return [tree_path_to_diagnostic_string(path) for path in paths]
+    return [_cached_tree_path_to_diagnostic_string(path) for path in paths]
+
+
+@lru_cache(maxsize=16384)
+def _cached_tree_path_to_diagnostic_string(path: tuple[tuple[str, str], ...]) -> str:
+    return tree_path_to_diagnostic_string(path)
 
 
 def _tree_paths_from_diagnostics(value: Any) -> TreePaths:

@@ -198,6 +198,8 @@ def mutation_event_matching_allowance_rule_ids(
 def build_mutation_event_path_set_report(
     event: MutationEvent,
     allowed_effect_region_paths: TreePaths,
+    *,
+    touched_paths: TreePaths | None = None,
 ) -> MutationEventPathSetReport:
     """Partition one event's touched paths through target, recovery, and migration regions."""
 
@@ -212,8 +214,26 @@ def build_mutation_event_path_set_report(
     )
     if issues:
         raise ValueError("; ".join(issues))
-    touched_paths = mutation_event_touched_paths(event)
+    if touched_paths is None:
+        touched_paths = mutation_event_touched_paths(event)
     allowed_roots = dedupe_tree_paths(allowed_effect_region_paths)
+    if (
+        allowed_roots
+        and touched_paths
+        and not event.declared_allowances
+        and all(path_has_prefix(path, allowed_roots) for path in touched_paths)
+    ):
+        return MutationEventPathSetReport(
+            op_id=event.op_id,
+            helper=event.helper,
+            outcome=event.outcome,
+            touched_paths=touched_paths,
+            changed_paths=touched_paths,
+            allowed_effect_region_paths=allowed_roots,
+            permitted_paths=allowed_roots,
+            covered_changed_paths=touched_paths,
+            path_set_invariant_holds=True,
+        )
     declared_allowance_paths = mutation_event_declared_allowance_paths(event)
     declared_recovery_paths = mutation_event_allowance_paths_by_kind(event, "recovery", "recovery_path")
     declared_recovery_rule_ids = mutation_event_allowance_rule_ids_by_kind(event, "recovery", "recovery_path")
