@@ -33,6 +33,30 @@ def test_fi_bench_worker_count_rejects_zero(capsys: pytest.CaptureFixture[str]) 
     assert "--parallel must be a positive integer" in capsys.readouterr().err
 
 
+def test_save_run_preserves_non_scored_status_labels(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
+
+    path = bench._save_run(
+        [
+            (1, "1987/182", -1.0, "NO_TRUTH", 0.5),
+            (1, "2000/1", -1.0, "RuntimeError('boom')", 0.1),
+        ],
+        label="run_test",
+        timestamp="2026-06-19T06:45:00",
+        lev_sims={"1987/182": -1.0, "2000/1": -1.0},
+    )
+
+    with path.open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert rows[0]["similarity"] == "NO_TRUTH"
+    assert rows[0]["lev_similarity"] == "NO_TRUTH"
+    assert rows[0]["status"] == "NO_TRUTH"
+    assert rows[1]["similarity"] == "ERR"
+    assert rows[1]["lev_similarity"] == "ERR"
+    assert rows[1]["status"] == "RuntimeError('boom')"
+
+
 def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
     seen: dict[str, object] = {}
 

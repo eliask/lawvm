@@ -82,6 +82,22 @@ _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_edito
 _BENCH_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.bench_comparable()
 
 
+def _format_error_for_display(similarity: float, status: str) -> str:
+    if similarity >= 0:
+        return f"{(1 - similarity) * 100:.2f}%"
+    if status in _NONSCORED_STATUSES:
+        return "n/a"
+    return "ERR"
+
+
+def _format_similarity_for_csv(similarity: float, status: str) -> str:
+    if similarity >= 0:
+        return f"{similarity:.6f}"
+    if status in _NONSCORED_STATUSES:
+        return status
+    return "ERR"
+
+
 def _format_bench_warning_summary(diagnostics: Counter[str]) -> str:
     return format_tiered_bench_warning_summary(diagnostics)
 
@@ -1076,7 +1092,7 @@ def _run_benchmark_section(
                     diagnostic_counts_out[result[1]] = result[7]
                 if verbose:
                     count, sid, text_sim, section_sim, status, elapsed, warning_summary, _counts = result
-                    t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
+                    t_err = _format_error_for_display(text_sim, status)
                     s_err = f"{(1 - section_sim) * 100:.2f}%" if section_sim >= 0 else "---"
                     extra = "" if status == "OK" else f"  {status}"
                     print(
@@ -1101,7 +1117,7 @@ def _run_benchmark_section(
         if diagnostic_counts_out is not None:
             diagnostic_counts_out[sid] = dict(warning_counts)
         if verbose:
-            t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
+            t_err = _format_error_for_display(text_sim, status)
             s_err = f"{(1 - section_sim) * 100:.2f}%" if section_sim >= 0 else "---"
             extra = "" if status == "OK" else f"  {status}"
             print(
@@ -1173,7 +1189,7 @@ def _run_benchmark(
                     diagnostic_counts_out[sid] = warning_counts
                 done += 1
                 if verbose:
-                    err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
+                    err = _format_error_for_display(sim, status)
                     lev_str = f" lev {(1 - lev_sim) * 100:.2f}%" if lev_sim >= 0 else ""
                     extra = "" if status == "OK" else f"  {status}"
                     print(f"[{done}/{total}] {count:2d}amend {sid:12s} → err {err:>7s}{lev_str} ({elapsed:.1f}s){extra}{warning_summary}")
@@ -1198,7 +1214,7 @@ def _run_benchmark(
         if diagnostic_counts_out is not None:
             diagnostic_counts_out[sid] = dict(warning_counts)
         if verbose:
-            err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
+            err = _format_error_for_display(sim, status)
             lev_str = f" lev {(1 - lev_sim) * 100:.2f}%" if lev_sim >= 0 else ""
             extra = "" if status == "OK" else f"  {status}"
             print(f"[{i}/{total}] {count:2d}amend {sid:12s} → err {err:>7s}{lev_str} ({elapsed:.1f}s){extra}{warning_summary}")
@@ -1287,15 +1303,15 @@ def _save_run(
             header.append("diagnostics_summary")
         w.writerow(header)
         for count, sid, sim, status, elapsed in results:
-            sim_str = f"{sim:.6f}" if sim >= 0 else "ERR"
+            sim_str = _format_similarity_for_csv(sim, status)
             row_vals: List[Any] = [count, sid, sim_str]
             if sec_sim_map:
                 ssim = sec_sim_map.get(sid, -1.0)
-                row_vals.append(f"{ssim:.6f}" if ssim >= 0 else "ERR")
+                row_vals.append(_format_similarity_for_csv(ssim, status))
             if has_lev:
                 assert lev_sims is not None
                 lsim = lev_sims.get(sid, -1.0)
-                row_vals.append(f"{lsim:.6f}" if lsim >= 0 else "ERR")
+                row_vals.append(_format_similarity_for_csv(lsim, status))
             row_vals += [status, f"{elapsed:.1f}"]
             if has_diagnostics:
                 row_vals.append((diagnostic_summaries or {}).get(sid, ""))
