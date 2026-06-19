@@ -49,6 +49,7 @@ from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import project_materialized_provisions_wrapper
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
@@ -2375,7 +2376,7 @@ def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_
     resolved = compile_amendment_ops(
         base_replay.replay_fold_state,
         phase2.output,
-        muutos_tree,
+        AmendmentSourceModel.from_tree(muutos_tree, source_ref="2025/1162"),
         johto,
         "legal_pit",
         source_ref="2025/1162",

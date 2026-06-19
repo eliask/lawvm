@@ -34,7 +34,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import ReplayLookups, TargetContext, snapshot_target_context
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
-from lawvm.finland.compile_amendment import compile_amendment_ops
+from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
@@ -56,6 +56,23 @@ from lawvm.finland.payload_normalize import (
 )
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor
+
+
+def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
+    if "muutos_tree" in kwargs:
+        tree = kwargs.pop("muutos_tree")
+        kwargs["source_model"] = AmendmentSourceModel.from_tree(
+            tree,
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+    elif len(args) >= 3 and not isinstance(args[2], AmendmentSourceModel):
+        patched_args = list(args)
+        patched_args[2] = AmendmentSourceModel.from_tree(
+            args[2],
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+        args = tuple(patched_args)
+    return _real_compile_amendment_ops(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------

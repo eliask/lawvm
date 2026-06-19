@@ -70,6 +70,21 @@ def get_corpus_store() -> Any:
 
 def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
     from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    if "muutos_tree" in kwargs:
+        tree = kwargs.pop("muutos_tree")
+        kwargs["source_model"] = AmendmentSourceModel.from_tree(
+            tree,
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+    elif len(args) >= 3 and not isinstance(args[2], AmendmentSourceModel):
+        patched_args = list(args)
+        patched_args[2] = AmendmentSourceModel.from_tree(
+            args[2],
+            source_ref=str(kwargs.get("source_ref", "") or ""),
+        )
+        args = tuple(patched_args)
 
     return _real_compile_amendment_ops(*args, **kwargs)
 

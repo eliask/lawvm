@@ -103,6 +103,10 @@ def test_apply_executor_precreates_chapters_through_source_model() -> None:
 def test_compile_amendment_metadata_reads_use_source_model() -> None:
     source = _source("src/lawvm/finland/compile_amendment.py")
 
+    assert "import lxml.etree as etree" not in source
+    assert "etree._Element" not in source
+    assert "muutos_tree" not in source
+    assert "AmendmentSourceModel.from_tree" not in source
     assert "from lawvm.finland.frontend_compile import _tree_title" not in source
     assert "from lawvm.finland.metadata import _amendment_effective_date" not in source
     assert "from lawvm.finland.metadata import _statute_issue_date" not in source

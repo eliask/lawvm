@@ -446,7 +446,7 @@ def process_muutoslaki_resolved(
             compile_result = compile_amendment_ops(
                 state,
                 ops,
-                muutos_tree,
+                source_model,
                 johto,
                 replay_mode,
                 compiled_ops_out=compiled_ops_out,
@@ -454,7 +454,6 @@ def process_muutoslaki_resolved(
                 source_ref=amendment_id,
                 source_title=source_title,
                 target_statute=ctx.id,
-                source_model=source_model,
             )
         resolved = compile_result.output
 
