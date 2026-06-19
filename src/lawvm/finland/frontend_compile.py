@@ -1407,6 +1407,80 @@ def _infer_unique_live_section_chapter_scope(
     )
 
 
+def _infer_letter_suffix_insert_chapter_from_stem_host(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> str | None:
+    """Bind a new letter-suffix section insert to its live stem section host.
+
+    Finnish source XML can over-wrap trailing new sections in a newly inserted
+    chapter container while the johtolause also lists those sections as separate
+    ``uusi N a §`` inserts. If a previous chapter scope was carried forward
+    from an unrelated group, or mis-tagged as explicit while the amendment body
+    places the section under a different not-yet-live container, the live stem
+    section (``16`` for ``16a``) is stronger ownership evidence than the stale
+    chapter.
+    """
+    if not _is_whole_section_insert(op):
+        return None
+    section_label = _norm_num_token(op.target_section)
+    if re.fullmatch(r"\d+[a-z]", section_label, flags=re.I) is None:
+        return None
+    scope_witness = projection_scope_confidence(
+        scope_confidence=op.scope_confidence,
+        scope_provenance_tags=op.scope_provenance_tags,
+        resolved_chapter=op.target_chapter,
+    )
+    body_scope = _body_scope_for_section_label(
+        muutos_tree=muutos_tree,
+        section_label=section_label,
+    )
+    if op.target_chapter is not None:
+        if scope_witness is None:
+            return None
+        if scope_witness.source == "carry_forward":
+            pass
+        elif scope_witness.source == "explicit_chunk":
+            if body_scope is None:
+                return None
+            body_part, body_chapter = body_scope
+            if body_part == op.target_part and body_chapter == op.target_chapter:
+                return None
+            if len(_unborn_source_chapter_labels(muutos_tree=muutos_tree, master=master)) != 1:
+                return None
+            if body_chapter is None or master.find_chapter(body_chapter) is not None:
+                return None
+            if _source_chapter_direct_section_count(
+                muutos_tree=muutos_tree,
+                chapter_label=body_chapter,
+            ) > 20:
+                return None
+        else:
+            return None
+    if not _source_body_carries_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_label,
+        target_part=op.target_part,
+    ):
+        return None
+    if op.target_chapter is not None and master.find_section_path(
+        section_label,
+        op.target_chapter,
+        op.target_part,
+    ) is not None:
+        return None
+    inferred_chapter = infer_letter_suffix_section_chapter_from_stem_host(
+        master,
+        section_label,
+        part_label=op.target_part,
+    )
+    if inferred_chapter is None or inferred_chapter == op.target_chapter:
+        return None
+    return inferred_chapter
+
+
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
@@ -1487,6 +1561,51 @@ def _body_scope_for_section_label(
     if len(scopes) != 1:
         return None
     return next(iter(scopes))
+
+
+def _unborn_source_chapter_labels(
+    *,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> set[str]:
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return set()
+    labels: set[str] = set()
+    for chapter in body.findall(".//{*}chapter"):
+        num_el = chapter.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        chapter_label = _norm_num_token(num_el.text).removesuffix("luku")
+        if chapter_label and master.find_chapter(chapter_label) is None:
+            labels.add(chapter_label)
+    return labels
+
+
+def _source_chapter_direct_section_count(
+    *,
+    muutos_tree: etree._Element,
+    chapter_label: str,
+) -> int:
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return 0
+    for chapter in body.findall(".//{*}chapter"):
+        num_el = chapter.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        label = _norm_num_token(num_el.text).removesuffix("luku")
+        if label == chapter_label:
+            return sum(1 for child in chapter if _direct_child_localname(child) == "section")
+    return 0
 
 
 def _master_has_any_chapter(master: "ReplayState") -> bool:
@@ -1744,7 +1863,7 @@ def _enrich_ops_from_amendment_tree(
                 and scoped_op.target_item is None
                 and scoped_op.target_special is None
                 and scope_witness is not None
-                and scope_witness.source == "carry_forward"
+                and scope_witness.source in {"carry_forward", "explicit_chunk"}
             ):
                 inferred_chapter = _body_chapter_scope_for_section_op(
                     op=scoped_op,
@@ -1762,6 +1881,13 @@ def _enrich_ops_from_amendment_tree(
                     if reinstated_scope is not None:
                         inferred_part, inferred_chapter = reinstated_scope
                         inferred_rule_id = "fi_flat_reinstated_section_scope_from_base_prior_address"
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    inferred_rule_id = "fi_letter_suffix_insert_scope_from_stem_host"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,

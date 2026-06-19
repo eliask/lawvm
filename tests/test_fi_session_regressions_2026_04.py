@@ -1850,6 +1850,187 @@ def test_2002_197_2011_535_inserted_chapter3a_does_not_keep_shadowed_sections_20
     assert "chapter:4/section:21" in sections
 
 
+def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scope() -> None:
+    """Synthetic anchor for stale chunk scope on new letter-suffix sections."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
+    from lawvm.finland.ops import ScopeConfidence
+
+    master = ReplayState(
+        ir=_body(
+            _chapter("5", _sec("16"), _sec("17")),
+            _chapter("7", _sec("20")),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>3 a luku</num>
+            <section><num>16 a §</num><content><p>new 16a</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="16a",
+        target_chapter="7",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="7",
+        ),
+        scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
+    )
+
+    got = _infer_letter_suffix_insert_chapter_from_stem_host(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got == "5"
+
+
+def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
+    """Explicit source chapter scope must not be rewritten by stem-host inference."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
+    from lawvm.finland.ops import ScopeConfidence
+
+    master = ReplayState(ir=_body(_chapter("5", _sec("16")), _chapter("7")))
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>7 luku</num>
+            <section><num>16 a §</num><content><p>new 16a</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="16a",
+        target_chapter="7",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="7",
+        ),
+        scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
+    )
+
+    got = _infer_letter_suffix_insert_chapter_from_stem_host(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
+def test_letter_suffix_insert_skips_multi_unborn_chapter_batch() -> None:
+    """Broad recodification batches need explicit chapter ownership, not stem-host rewrite."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
+    from lawvm.finland.ops import ScopeConfidence
+
+    master = ReplayState(ir=_body(_chapter("5", _sec("44")), _chapter("7", _sec("60"))))
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>5 a luku</num>
+            <section><num>44 b §</num><content><p>new 44b</p></content></section>
+          </chapter>
+          <chapter>
+            <num>5 c luku</num>
+            <section><num>60 a §</num><content><p>new 60a</p></content></section>
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="44b",
+        target_chapter="8",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="8",
+        ),
+        scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
+    )
+
+    got = _infer_letter_suffix_insert_chapter_from_stem_host(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
+def test_letter_suffix_insert_skips_large_single_chapter_recodification_batch() -> None:
+    """Large unborn chapter payloads are not treated as small spillover wrappers."""
+    from lxml import etree
+
+    from lawvm.finland.frontend_compile import _infer_letter_suffix_insert_chapter_from_stem_host
+    from lawvm.finland.ops import ScopeConfidence
+
+    master = ReplayState(ir=_body(_chapter("11", _sec("71"))))
+    sections = "\n".join(
+        f"<section><num>{num} §</num><content><p>payload</p></content></section>"
+        for num in (
+            "30 a", "30 b", "30 c", "34", "38", "41", "43", "45", "47", "48",
+            "50", "51", "53", "66", "69", "71", "71 a", "72", "73", "73 a",
+            "74",
+        )
+    )
+    muutos_tree = etree.fromstring(
+        f"""
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>4 a luku</num>
+            {sections}
+          </chapter>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="71a",
+        target_chapter="4a",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="4a",
+        ),
+        scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
+    )
+
+    got = _infer_letter_suffix_insert_chapter_from_stem_host(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
 def test_1994_719_2001_124_does_not_keep_or_misroute_16a_17a_cluster() -> None:
     """Real corpus anchor for inserted 3a chapter shadow-retention plus misrouting."""
     from lawvm.tools.section_keys import extract_ir_sections
