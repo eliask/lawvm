@@ -686,6 +686,302 @@ def bind_case_frames(text: str) -> CaseFrameResult:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Per-verb-group role layer (promotion of the raw-text spike)
+#
+# The spike's own top recommendation: feed the engine the johtolause parser's
+# already-segmented ``SurfaceClause`` verb groups instead of raw text.  The
+# construction forest owns clause segmentation + coordination scope; THIS layer
+# owns predicate→role binding *per recognized operative verb group*.  Because
+# each verb group has exactly ONE operative verb, the multi-verb-compound
+# "refusals" the raw-text spike hit (a whole compound clause it could not
+# segment) become per-group bindings — without this layer ever doing its own
+# clause segmentation.
+#
+# It is ADDITIVE and bench-neutral by construction: it is a NEW consumer of the
+# existing ``parse_clause`` output (the SurfaceClause and the raw source text);
+# it does not touch ``parse_clause``, the resolver, the lowerer, ``parsed_ops``,
+# or any replay path.  It only READS the already-produced verb groups.
+# --------------------------------------------------------------------------- #
+
+
+# The four STRUCTURAL frames, keyed by the johtolause parser's VerbKind code.
+# SAATAA_ASETUKSELLA is deliberately ABSENT: delegation (`asetuksella
+# säädetään`) is a meta/modal clause, not a structural verb group — the parser
+# emits it as a meta clause with an EMPTY verb_groups list, so there is no
+# structural verb group for this layer to consume.  It stays the distinct domain
+# of the raw-text :func:`bind_case_frames` engine.
+_VERB_CODE_TO_FRAME: dict[str, CaseFrame] = {
+    "K": KUMOTA_FRAME,  # VerbKind.KUMOTA
+    "L": LISATA_FRAME,  # VerbKind.LISATA
+    "S": SIIRTAA_FRAME,  # VerbKind.SIIRTAA
+    # VerbKind.MUUTTAA carries `korvataan ... uudella Y:llä` (the KORVATA shape);
+    # a non-korvata muutos fails loud with MissingRequiredRole(replacement),
+    # which is the correct typed residue for an out-of-scope MUUTTAA shape.
+    "M": KORVATA_FRAME,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class GroupRoleBinding:
+    """Per-verb-group deterministic role binding (success).
+
+    Attributes:
+        verb_code:      The johtolause VerbKind code of the group (K/L/S/M).
+        frame_id:       The case frame this group bound against.
+        predicate_text: The operative predicate surface in the group's slice.
+        group_index:    The verb group's ordinal position in the clause.
+        group_text:     The verbatim source-text slice this group owns.
+        bindings:       The deterministic role→span bindings.
+    """
+
+    verb_code: str
+    frame_id: str
+    predicate_text: str
+    group_index: int
+    group_text: str
+    bindings: tuple[RoleBinding, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupRoleResidue:
+    """Per-verb-group typed fail-loud refusal: NO role guessed for this group.
+
+    Carries the same typed :class:`ResidueReason` taxonomy as the raw-text
+    engine, now at verb-group granularity.
+    """
+
+    verb_code: str
+    frame_id: str
+    group_index: int
+    group_text: str
+    reason: ResidueReason
+    detail: str
+    evidence_text: str = ""
+
+
+GroupRoleOutcome = "GroupRoleBinding | GroupRoleResidue"
+
+
+def _verb_code(verb: object) -> str:
+    """The single-letter VerbKind code for a SurfaceVerbGroup.verb value."""
+    value = getattr(verb, "value", verb)
+    return str(value)
+
+
+def _group_char_windows(
+    source_text: str,
+    verb_groups: tuple[object, ...],
+) -> list[tuple[int, int]]:
+    """Char windows (one per verb group) over the verbatim source text.
+
+    Each window is the source slice the verb group OWNS.  The slice is anchored
+    on the group's OPERATIVE VERB token (the natural attachment point for the
+    group's case-marked adjuncts): it runs from the group's verb up to — but not
+    including — the NEXT group's verb, so a group keeps the adjuncts both before
+    and after its own structural nodes (`korvataan 4 § uudella säännöksellä`
+    keeps the adessive replacement that follows; the FIRST group additionally
+    keeps any clause-initial adjunct such as `Lakiin lisätään`).
+
+    Windows are derived from the FILTERED token stream the johtolause parser
+    itself uses, so the node ``source_span`` indices the parser stamped on each
+    surface node map straight to char offsets here.  Each verb group is anchored
+    to the last ``VERB`` token at or before its first recognized node, which is
+    robust against meta-verb tokens that do not correspond to a structural verb
+    group.
+
+    A group whose nodes carry no usable witness span yields a ``(-1, -1)``
+    window; the caller maps that to an honest residue rather than guessing.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize as _tokenize
+    from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
+
+    filtered, _ = apply_annotations_with_jolloin_pairs(list(_tokenize(source_text)))
+    n_filtered = len(filtered)
+    verb_positions = [i for i, t in enumerate(filtered) if t.cat == "VERB"]
+
+    # The first node token-index each group's nodes cover (its anchor point).
+    group_first_tok: list[int | None] = []
+    for vg in verb_groups:
+        starts = [
+            int(span[0])
+            for node in getattr(vg, "nodes", ())  # type: ignore[attr-defined]
+            if (witness := getattr(node, "witness", None)) is not None
+            and (span := getattr(witness, "source_span", None)) is not None
+        ]
+        group_first_tok.append(min(starts) if starts else None)
+
+    # Anchor each group to the last VERB token at or before its first node.
+    group_verb_tok: list[int | None] = []
+    for first_tok in group_first_tok:
+        if first_tok is None:
+            group_verb_tok.append(None)
+            continue
+        anchor = None
+        for vp in verb_positions:
+            if vp <= first_tok:
+                anchor = vp
+            else:
+                break
+        group_verb_tok.append(anchor)
+
+    windows: list[tuple[int, int]] = []
+    for i, verb_tok in enumerate(group_verb_tok):
+        if verb_tok is None:
+            windows.append((-1, -1))
+            continue
+        # Left edge: clause start for the first anchored group (keep a
+        # clause-initial adjunct), else this group's own verb token.
+        is_first_anchored = all(v is None for v in group_verb_tok[:i])
+        win_lo_tok = 0 if is_first_anchored else verb_tok
+        # Right edge: the NEXT group's verb token, else end of stream.
+        win_hi_tok = n_filtered
+        for nxt in group_verb_tok[i + 1 :]:
+            if nxt is not None:
+                win_hi_tok = nxt
+                break
+        slice_toks = filtered[win_lo_tok:win_hi_tok]
+        char_starts = [t.char_start for t in slice_toks if t.char_start >= 0]
+        char_ends = [t.char_end for t in slice_toks if t.char_end >= 0]
+        if not char_starts or not char_ends:
+            windows.append((-1, -1))
+            continue
+        windows.append((min(char_starts), max(char_ends)))
+    return windows
+
+
+def bind_roles_for_clause(
+    surface_clause: object,
+    *,
+    source_text: str | None = None,
+) -> tuple[GroupRoleBinding | GroupRoleResidue, ...]:
+    """Bind operative roles PER already-segmented johtolause verb group.
+
+    This is the promoted, per-verb-group entry point.  It consumes the johtolause
+    parser's ``SurfaceClause`` (``surface_clause.verb_groups``) — already
+    segmented to one operative verb per group — and runs the deterministic
+    case-frame engine over EACH group's own source slice, constrained to the
+    frame the group's :class:`VerbKind` selects.
+
+    For each structural verb group it returns EITHER a :class:`GroupRoleBinding`
+    (deterministic success) OR a :class:`GroupRoleResidue` (typed fail-loud
+    refusal).  The fail-loud taxonomy is unchanged: ``CaseFrameAmbiguous`` /
+    ``MissingRequiredRole`` / ``CoordinationScopeUnresolved`` /
+    ``UnsupportedAnaphora``; the multi-payload↔container pairing stays typed
+    residue (a real linguistic limit), never guessed.
+
+    META verb groups (commencement/expiry/transition/delegation, incl. the
+    ``asetuksella säädetään`` delegation shape) are SKIPPED — they are not
+    structural amendment verbs and have no operative roles to bind here.
+
+    Args:
+        surface_clause: The johtolause ``SurfaceClause`` (its ``verb_groups``
+                        and ``source_text`` are read).
+        source_text:    Verbatim source text; defaults to
+                        ``surface_clause.source_text``.
+
+    Returns:
+        One outcome per structural verb group, in source order.
+    """
+    verb_groups = tuple(getattr(surface_clause, "verb_groups", ()) or ())
+    text = (
+        source_text
+        if source_text is not None
+        else getattr(surface_clause, "source_text", "")
+    )
+    if not verb_groups:
+        return ()
+
+    windows = _group_char_windows(text, verb_groups)
+
+    outcomes: list[GroupRoleBinding | GroupRoleResidue] = []
+    for index, vg in enumerate(verb_groups):
+        code = _verb_code(getattr(vg, "verb", ""))
+        frame = _VERB_CODE_TO_FRAME.get(code)
+        if frame is None:
+            # META (or any non-structural verb): nothing to bind, skip silently.
+            continue
+
+        char_lo, char_hi = windows[index]
+        if char_lo < 0 or char_hi <= char_lo or char_hi > len(text):
+            outcomes.append(
+                GroupRoleResidue(
+                    verb_code=code,
+                    frame_id=frame.frame_id,
+                    group_index=index,
+                    group_text="",
+                    reason=ResidueReason.UNBOUND_REQUIRED_SPAN,
+                    detail="verb group has no source span to bind roles from",
+                    evidence_text=text.strip(),
+                )
+            )
+            continue
+
+        group_text = text[char_lo:char_hi]
+        outcomes.append(
+            _bind_group_slice(code, frame, index, group_text)
+        )
+    return tuple(outcomes)
+
+
+def _bind_group_slice(
+    code: str,
+    frame: CaseFrame,
+    index: int,
+    group_text: str,
+) -> GroupRoleBinding | GroupRoleResidue:
+    """Run the case engine over ONE verb group's slice, constrained to ``frame``.
+
+    The slice carries exactly one operative verb, so the raw-text engine's
+    multi-predicate handling collapses to a single predicate.  We then keep only
+    the outcome for the group's selected frame (the slice is guaranteed to hold
+    only that group's predicate, but we filter defensively so a stray predicate
+    surface in adjunct text can never hijack the group's frame).
+    """
+    result = bind_case_frames(group_text)
+
+    # Prefer an assignment for the group's own frame.
+    for assignment in result.assignments:
+        if assignment.frame_id == frame.frame_id:
+            return GroupRoleBinding(
+                verb_code=code,
+                frame_id=frame.frame_id,
+                predicate_text=assignment.predicate_text,
+                group_index=index,
+                group_text=group_text,
+                bindings=assignment.bindings,
+            )
+
+    # Otherwise surface the typed residue for the group's frame.
+    for residue in result.residues:
+        if residue.frame_id == frame.frame_id:
+            return GroupRoleResidue(
+                verb_code=code,
+                frame_id=frame.frame_id,
+                group_index=index,
+                group_text=group_text,
+                reason=residue.reason,
+                detail=residue.detail,
+                evidence_text=residue.evidence_text,
+            )
+
+    # The group's predicate surface was not found in its slice (e.g. a MUUTTAA
+    # group whose verb is `muutetaan`, out of the KORVATA frame's closed table):
+    # honest residue, never a guess.
+    return GroupRoleResidue(
+        verb_code=code,
+        frame_id=frame.frame_id,
+        group_index=index,
+        group_text=group_text,
+        reason=ResidueReason.NO_LICENSED_FRAME,
+        detail=(
+            f"verb group {code} carries no predicate surface licensed by frame "
+            f"{frame.frame_id}"
+        ),
+        evidence_text=group_text.strip(),
+    )
+
+
 def _detect_predicates(text: str) -> list[tuple[str, CaseFrame]]:
     """Find scoped operative predicate occurrences by closed surface match."""
     hits: list[tuple[str, CaseFrame]] = []
@@ -870,8 +1166,11 @@ __all__ = [
     "FrameRole",
     "FrameRoleSpec",
     "FRAMES",
+    "GroupRoleBinding",
+    "GroupRoleResidue",
     "ResidueReason",
     "RoleBinding",
     "SpanKind",
     "bind_case_frames",
+    "bind_roles_for_clause",
 ]
