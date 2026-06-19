@@ -159,6 +159,25 @@ class AmendmentSourceModel:
             for unit in self.observed_body_inventory()
         )
 
+    def body_has_section(
+        self,
+        target_norm: str,
+        *,
+        target_chapter: str | None = None,
+        target_part: str | None = None,
+    ) -> bool:
+        """Return True if the observed body has a section in the requested scope."""
+        wanted = _norm_num_token(target_norm)
+        chapter = _norm_num_token(target_chapter or "") if target_chapter else None
+        part = _norm_num_token(target_part or "") if target_part else None
+        return any(
+            unit.kind == "section"
+            and _norm_num_token(unit.label) == wanted
+            and (chapter is None or _norm_num_token(unit.chapter_label) == chapter)
+            and (part is None or _norm_num_token(unit.part_label) == part)
+            for unit in self.observed_body_inventory()
+        )
+
     def find_xml_node(
         self,
         target_unit_kind: TargetUnitKind | str,
@@ -294,13 +313,8 @@ class AmendmentSourceModel:
         self,
         target_norm: str,
     ) -> tuple[str | None, str | None] | None:
-        """Return the source-body scope for a section through the XML adapter."""
-        from lawvm.finland.lowering_scope_recovery import source_body_scope_for_section_target
-
-        return source_body_scope_for_section_target(
-            muutos_tree=self.muutos_tree,
-            target_norm=target_norm,
-        )
+        """Return the unique observed source-body scope for a section."""
+        return self.body_section_scope(target_norm)
 
     def source_body_chapter_for_scoped_section_target(
         self,

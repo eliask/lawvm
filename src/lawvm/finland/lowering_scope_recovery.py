@@ -168,49 +168,57 @@ def resolve_group_surface_scope(
     if target_unit_kind != "section":
         return surface_target_chapter, surface_target_part
 
-    body_scope = source_body_scope_for_section_target(
-        muutos_tree=muutos_tree,
-        target_norm=target_norm,
+    body_scope = (
+        source_model.body_section_scope(target_norm)
+        if source_model is not None
+        else source_body_scope_for_section_target(
+            muutos_tree=muutos_tree,
+            target_norm=target_norm,
+        )
     )
     if carry_forward_scoped and body_scope == (None, None):
         return None, None
     if target_chapter and body_scope is not None:
         body_part, body_chapter = body_scope
-        scoped_node = (
-            source_model.find_xml_node(
-                "section",
+        scoped_node_exists = (
+            source_model.body_has_section(
                 target_norm,
-                target_chapter,
-                target_part,
+                target_chapter=target_chapter,
+                target_part=target_part,
             )
             if source_model is not None
-            else _find_muutos_node(
-                muutos_tree,
-                "section",
-                target_norm,
-                target_chapter,
-                target_part,
+            else (
+                _find_muutos_node(
+                    muutos_tree,
+                    "section",
+                    target_norm,
+                    target_chapter,
+                    target_part,
+                )
+                is not None
             )
         )
-        body_node = (
-            source_model.find_xml_node(
-                "section",
+        body_node_exists = (
+            source_model.body_has_section(
                 target_norm,
-                body_chapter,
-                body_part,
+                target_chapter=body_chapter,
+                target_part=body_part,
             )
             if source_model is not None
-            else _find_muutos_node(
-                muutos_tree,
-                "section",
-                target_norm,
-                body_chapter,
-                body_part,
+            else (
+                _find_muutos_node(
+                    muutos_tree,
+                    "section",
+                    target_norm,
+                    body_chapter,
+                    body_part,
+                )
+                is not None
             )
         )
         if (
-            scoped_node is None
-            and body_node is not None
+            not scoped_node_exists
+            and body_node_exists
             and (body_chapter != target_chapter or body_part != target_part)
         ):
             return body_chapter, body_part

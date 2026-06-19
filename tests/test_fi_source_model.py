@@ -90,6 +90,9 @@ def test_source_model_body_scope_queries_use_observed_inventory() -> None:
 
     assert model.body_section_scope("5") == ("5", None)
     assert model.body_section_chapter("5") is None
+    assert model.body_has_section("5")
+    assert model.body_has_section("5", target_part="5")
+    assert not model.body_has_section("5", target_chapter="2")
     assert model.body_has_real_chapter_container("2")
     assert not model.body_has_pseudo_chapter_marker("2")
 
