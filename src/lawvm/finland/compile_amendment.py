@@ -35,6 +35,72 @@ from lawvm.finland.temporal_lowering import (
     default_activation_rule,
 )
 
+_NUMBERED_TABLE_CHILD_GROUP_SPLIT_RULE = "ELAB.NUMBERED_TABLE_CHILD_GROUP_SPLIT"
+
+
+def _is_numbered_table_proxy_op(op: AmendmentOp) -> bool:
+    return (
+        op.target_unit_kind == "section"
+        and bool(op.numbered_table_targets)
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+    )
+
+
+def _has_child_target(op: AmendmentOp) -> bool:
+    return op.target_paragraph is not None or bool(op.target_item) or bool(op.target_special)
+
+
+def _split_numbered_table_child_group_ops(group_ops: list[AmendmentOp]) -> tuple[list[AmendmentOp], ...]:
+    """Separate numbered-table proxies from explicit child ops in one section group.
+
+    A numbered-table proxy is executable as a whole-section replace only after
+    its payload has been rewritten to "live section plus amended table".  If it
+    shares a group with paragraph/item ops, that proxy must not carry those
+    child mutations.  Compile the proxy and child ops independently against the
+    same source body so each op receives only its own target authority.
+    """
+    table_ops = [op for op in group_ops if _is_numbered_table_proxy_op(op)]
+    child_ops = [op for op in group_ops if _has_child_target(op)]
+    if not table_ops or not child_ops:
+        return (group_ops,)
+
+    remaining_ops = [op for op in group_ops if op not in table_ops]
+    return (table_ops, remaining_ops)
+
+
+def _numbered_table_child_group_split_finding(
+    *,
+    group_key: object,
+    subgroups: tuple[list[AmendmentOp], ...],
+    source_ref: str,
+) -> Finding:
+    table_op_ids = [
+        op.op_id or op.target_section
+        for group in subgroups
+        for op in group
+        if _is_numbered_table_proxy_op(op)
+    ]
+    child_op_ids = [
+        op.op_id or f"{op.target_section}:{op.target_paragraph or ''}:{op.target_item or ''}"
+        for group in subgroups
+        for op in group
+        if _has_child_target(op)
+    ]
+    return Finding(
+        kind=_NUMBERED_TABLE_CHILD_GROUP_SPLIT_RULE,
+        role="observation",
+        stage="compile_amendment_ops",
+        detail={
+            "group_key": str(group_key),
+            "table_op_ids": table_op_ids,
+            "child_op_ids": child_op_ids,
+        },
+        source_statute=source_ref,
+        blocking=False,
+    )
+
 
 def compile_amendment_ops(
     master: ReplayState,
@@ -92,28 +158,38 @@ def compile_amendment_ops(
             target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
-        group_result = _compile_group_typed(
-            CompileGroupRequest(
-                master=master,
-                target_unit_kind=target_unit_kind_value,
-                target_norm=group_key.target_norm,
-                target_chapter=group_key.target_chapter,
-                target_part=group_key.target_part,
-                group_ops=group_ops,
-                standalone_section_targets=standalone_section_targets,
-                foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-                foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
-                inserted_chapter_labels=inserted_chapter_labels,
-                muutos_tree=muutos_tree,
-                johto=johto,
-                profile=profile,
-                strict_profile=strict_profile,
-                lookups=precomputed_lookups,
-            ),
-            CompileGroupSinks(compiled_ops_out=compiled_ops_out),
-        )
-        resolved.extend(group_result.output)
-        all_findings.extend(group_result.findings())
+        subgroups = _split_numbered_table_child_group_ops(group_ops)
+        if len(subgroups) > 1:
+            all_findings.append(
+                _numbered_table_child_group_split_finding(
+                    group_key=group_key,
+                    subgroups=subgroups,
+                    source_ref=source_ref,
+                )
+            )
+        for subgroup_ops in subgroups:
+            group_result = _compile_group_typed(
+                CompileGroupRequest(
+                    master=master,
+                    target_unit_kind=target_unit_kind_value,
+                    target_norm=group_key.target_norm,
+                    target_chapter=group_key.target_chapter,
+                    target_part=group_key.target_part,
+                    group_ops=subgroup_ops,
+                    standalone_section_targets=standalone_section_targets,
+                    foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+                    foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
+                    inserted_chapter_labels=inserted_chapter_labels,
+                    muutos_tree=muutos_tree,
+                    johto=johto,
+                    profile=profile,
+                    strict_profile=strict_profile,
+                    lookups=precomputed_lookups,
+                ),
+                CompileGroupSinks(compiled_ops_out=compiled_ops_out),
+            )
+            resolved.extend(group_result.output)
+            all_findings.extend(group_result.findings())
 
     lowered_temporal_events: tuple[TemporalEvent, ...] = ()
     activation_rules: list[ActivationRule] = []

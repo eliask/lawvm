@@ -59,6 +59,17 @@ _ITEM_REPLACE_RE = re.compile(
     r"(?P<item>\d{1,3}\s*[a-zäöå]?)\b",
     flags=re.I,
 )
+_TABLE_AND_MOMENT_RE = re.compile(
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    r"taulukko\s+\d{1,4}\s*[a-zäöå]?\s+ja\s+"
+    r"(?P<moment>\d{1,3})\s+momentti\b",
+    flags=re.I,
+)
+_INSERT_MOMENT_RE = re.compile(
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*ään\s+uusi\s+"
+    r"(?P<moment>\d{1,3})\s+momentti\b",
+    flags=re.I,
+)
 _BARE_REPLACE_SECTION_RE = re.compile(
     r"(?<![/\d])(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?!\s*:)",
     flags=re.I,
@@ -144,6 +155,17 @@ class BareSectionReplaceClause:
 
     section: str
     raw_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class MomentTargetClause:
+    """Typed supplement for explicit moment targets skipped in mixed lists."""
+
+    section: str
+    moment: int
+    op_type: str
+    raw_text: str
+    table_labels: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -598,6 +620,7 @@ def _append_unique_op(
     section: str,
     moment: int | None = None,
     item: str | None = None,
+    numbered_table_targets: tuple[str, ...] = (),
 ) -> None:
     if _has_op(
         ops,
@@ -625,6 +648,7 @@ def _append_unique_op(
             target_unit_kind="section",
             target_paragraph=moment,
             target_item=item,
+            numbered_table_targets=numbered_table_targets,
             extraction_provenance_tags=(_MIXED_EXPLICIT_TARGET_TAG,),
             witness_rule_id=_MIXED_EXPLICIT_TARGET_RULE_ID,
         )
@@ -662,6 +686,45 @@ def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceC
     return tuple(clauses)
 
 
+def _parse_table_and_moment_replace_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
+    clauses: list[MomentTargetClause] = []
+    for match in _TABLE_AND_MOMENT_RE.finditer(johto or ""):
+        section = _norm_num_token(match.group("section"))
+        if not section:
+            continue
+        clauses.append(
+            MomentTargetClause(
+                section=section,
+                moment=int(match.group("moment")),
+                op_type="REPLACE",
+                raw_text=match.group(0),
+                table_labels=_numbered_table_targets_by_section(johto).get(section, ()),
+            )
+        )
+    return tuple(clauses)
+
+
+def _parse_moment_insert_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
+    lisataan_segment = ""
+    parts = re.split(r"\blisätään\b", johto or "", maxsplit=1, flags=re.I)
+    if len(parts) == 2:
+        lisataan_segment = parts[1]
+    clauses: list[MomentTargetClause] = []
+    for match in _INSERT_MOMENT_RE.finditer(lisataan_segment):
+        section = _norm_num_token(match.group("section"))
+        if not section:
+            continue
+        clauses.append(
+            MomentTargetClause(
+                section=section,
+                moment=int(match.group("moment")),
+                op_type="INSERT",
+                raw_text=match.group(0),
+            )
+        )
+    return tuple(clauses)
+
+
 def _supplement_mixed_explicit_clause_ops(
     ops: List[AmendmentOp],
     johto: str,
@@ -669,10 +732,15 @@ def _supplement_mixed_explicit_clause_ops(
     """Recover explicit targets skipped by long mixed ``muutetaan`` lists."""
     item_clauses = _parse_item_replace_clauses(johto)
     bare_sections = _parse_bare_section_replace_clauses(johto)
-    if not item_clauses and not bare_sections:
+    moment_clauses = (
+        *_parse_table_and_moment_replace_clauses(johto),
+        *_parse_moment_insert_clauses(johto),
+    )
+    if not item_clauses and not bare_sections and not moment_clauses:
         return ops
 
     supplemented = list(ops)
+    table_targets_by_section = _numbered_table_targets_by_section(johto)
     for idx, clause in enumerate(item_clauses):
         _append_unique_op(
             supplemented,
@@ -681,6 +749,15 @@ def _supplement_mixed_explicit_clause_ops(
             section=clause.section,
             moment=clause.moment,
             item=clause.item_label,
+        )
+    for idx, clause in enumerate(moment_clauses):
+        _append_unique_op(
+            supplemented,
+            op_id=f"mixed_moment_{clause.op_type.lower()}_{idx}_{clause.section}_{clause.moment}",
+            op_type=clause.op_type,
+            section=clause.section,
+            moment=clause.moment,
+            numbered_table_targets=clause.table_labels or table_targets_by_section.get(clause.section, ()),
         )
     for idx, clause in enumerate(bare_sections):
         _append_unique_op(

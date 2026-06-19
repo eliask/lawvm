@@ -803,8 +803,13 @@ def _group_has_item_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> b
 
 
 def _group_has_descendant_scoped_snapshot_mutations(group_rops: list[ResolvedOp]) -> bool:
-    """Backward-compatible alias for item-scoped snapshot escalation checks."""
-    return _group_has_item_scoped_snapshot_mutations(group_rops)
+    """True when child-scoped ops must not promote a sparse whole-section shell."""
+    return any(
+        rop.effective_target_paragraph is not None
+        or rop.effective_target_item_label is not None
+        or rop.effective_target_special is not None
+        for rop in group_rops
+    )
 
 
 def _normalized_snapshot_text_len(node: IRNode) -> int:

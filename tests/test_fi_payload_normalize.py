@@ -36,6 +36,7 @@ from lawvm.finland.payload_normalize import (
     _normalize_item_like_target,
     _prune_container_payload_sections_shadowed_by_standalone_targets,
     _rebase_item_targets_to_sparse_slot_labels,
+    _rebase_numbered_table_offset_targets_to_sparse_slot_labels,
     _slot_ir_has_item,
     SparsePayloadSlotBinding,
     SubsectionSlotAssignmentResult,
@@ -311,6 +312,115 @@ def test_prepare_payload_surface_merges_numbered_table_target_without_whole_sect
     assert "live prose" in irnode_to_text(prepared)
     assert "new table" in irnode_to_text(prepared)
     assert "old table" not in irnode_to_text(prepared)
+
+
+def test_sparse_slot_binding_excludes_numbered_table_payload_from_child_moment() -> None:
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="26",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Heading"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="new third moment"),),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+            _table_subsection("2", "8", "new table"),
+        ),
+    )
+    op = AmendmentOp(
+        op_id="insert_26_3",
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="26",
+        target_paragraph=3,
+        numbered_table_targets=("8",),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(amendment, [op])
+    assert slot_inputs is not None
+    assert [irnode_to_text(sub) for sub in slot_inputs.amend_subs] == ["new third moment"]
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    mapped = assignment.resolve_for_op(op)
+
+    assert mapped is not None
+    assert irnode_to_text(mapped) == "new third moment"
+    assert "new table" not in irnode_to_text(mapped)
+
+
+def test_sparse_slot_binding_maps_numbered_table_xml_offset_to_following_subsection() -> None:
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="33",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="live first"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="new legal second"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="live fourth"),)),
+        ),
+    )
+    op = AmendmentOp(
+        op_id="replace_33_2",
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+        target_paragraph=2,
+        numbered_table_targets=("11",),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(amendment, [op])
+    assert slot_inputs is not None
+    assignment = _assign_subsection_slots(slot_inputs)
+    mapped = assignment.resolve_for_op(op)
+
+    assert mapped is not None
+    assert mapped.label == "3"
+    assert irnode_to_text(mapped) == "new legal second"
+    assert [obs.kind for obs in assignment.binding_observations] == [
+        "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
+    ]
+
+
+def test_rebase_numbered_table_offset_targets_to_structural_subsection_label() -> None:
+    op = AmendmentOp(
+        op_id="replace_33_2",
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+        target_paragraph=2,
+        numbered_table_targets=("11",),
+    )
+    assignment = SubsectionSlotAssignmentResult(
+        subsec_map=SubsectionSlotMap(
+            by_op_id={id(op): IRNode(kind=IRNodeKind.SUBSECTION, label="3")}
+        ),
+        sparse_slot_bindings=(),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+
+    rebased, changed, details = _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
+        [op],
+        assignment,
+    )
+
+    assert changed is True
+    assert rebased[0].target_paragraph == 3
+    assert rebased[0].target_guessing_provenance_tags == (
+        "numbered_table_xml_subsection_offset",
+    )
+    assert details == [
+        {
+            "op_description": "REPLACE 33 § 2 mom",
+            "source_target_paragraph": 2,
+            "structural_target_paragraph": 3,
+            "payload_slot_label": "3",
+            "original_sparse_subsection_label": "",
+            "numbered_table_targets": ["11"],
+        }
+    ]
 
 
 def test_payload_elaboration_projection_from_group_result_records_slot_bindings() -> None:
@@ -2004,6 +2114,63 @@ def test_text_table_row_subsections_do_not_fold_with_multiple_moment_targets() -
     got = elaborate_payload_against_live(ctx, [op1, op2], muutos_ir, set())
 
     assert _slot_assignment_result(got).unassigned_payload_slots == ("3:3",)
+
+
+def test_numbered_table_prefix_does_not_absorb_explicit_moment_payload() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="33",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4"),
+        ),
+    )
+    ctx = _mock_ctx("section", "33", target_chapter="6", live_node=live_sec)
+    op = AmendmentOp(
+        op_id="replace_33_2",
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+        target_chapter="6",
+        target_paragraph=2,
+        numbered_table_targets=("11",),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="33",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="33 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Taulukko 11. Uloskäytävien vähimmäislukumäärä"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Yhtä uloskäytävää voidaan pitää riittävänä:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="pienessä rakennuksessa;"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                ),
+            ),
+        ),
+    )
+
+    prepared = prepare_payload_surface(ctx, [op], muutos_ir, _replay_profile_stub(), None)
+    got = elaborate_payload_against_live(ctx, [op], prepared, set())
+
+    assert got.rejected_ops == ()
+    assert [op.target_paragraph for op in got.group_ops] == [3]
+    mapped = _slot_assignment_result(got).for_stable_op_id("replace_33_2")
+    assert mapped is not None
+    assert "Yhtä uloskäytävää" in irnode_to_text(mapped)
+    assert "Taulukko 11" not in irnode_to_text(mapped)
+    observation_kinds = {observation.kind for observation in _observations(got)}
+    assert "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET" in observation_kinds
 
 
 def test_normalize_group_payload_rewrites_named_row_repeal_with_fuzzy_anchor_match() -> None:

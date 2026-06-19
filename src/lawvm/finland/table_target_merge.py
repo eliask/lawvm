@@ -70,6 +70,11 @@ def _mentioned_table_labels(node: IRNode) -> frozenset[str]:
     return frozenset(labels)
 
 
+def mentioned_numbered_table_labels(node: IRNode) -> frozenset[str]:
+    """Return numbered table labels mentioned in one payload subtree."""
+    return _mentioned_table_labels(node)
+
+
 def _table_child_indexes(section: IRNode, table_label: str) -> tuple[int, ...]:
     wanted = _norm_num_token(table_label)
     indexes: list[int] = []
@@ -204,4 +209,5 @@ def merge_numbered_table_targets_into_live_section(
 __all__ = [
     "NumberedTableMergeResult",
     "merge_numbered_table_targets_into_live_section",
+    "mentioned_numbered_table_labels",
 ]

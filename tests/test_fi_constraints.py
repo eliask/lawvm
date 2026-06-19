@@ -116,6 +116,7 @@ def _op(
     target_paragraph: "int | None" = None,
     target_item: "str | None" = None,
     target_special: "str | None" = None,
+    numbered_table_targets: tuple[str, ...] = (),
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="",
@@ -125,6 +126,7 @@ def _op(
         target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
+        numbered_table_targets=numbered_table_targets,
     )
 
 
@@ -317,6 +319,45 @@ def test_c_whole_section_subsumes_keeps_child_when_no_whole_op() -> None:
     child_op = _op(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=2)
     keep, _ = _c_whole_section_subsumes_children(child_op, [child_op], ctx)
     assert keep is True
+
+
+def test_c_whole_section_subsumes_keeps_child_when_only_whole_op_is_numbered_table_proxy() -> None:
+    ir = IRNode(kind=IRNodeKind.SECTION, label="33")
+    ctx = _ctx(muutos_ir=ir)
+    table_proxy = _op(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+        numbered_table_targets=("11",),
+    )
+    child_op = _op(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="33", target_paragraph=2)
+
+    keep, reason = _c_whole_section_subsumes_children(child_op, [table_proxy, child_op], ctx)
+
+    assert keep is True
+    assert reason == ""
+
+
+def test_c_whole_section_subsumes_keeps_child_when_same_group_child_has_numbered_table_witness() -> None:
+    ir = IRNode(kind=IRNodeKind.SECTION, label="33")
+    ctx = _ctx(muutos_ir=ir)
+    table_proxy = _op(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+    )
+    child_op = _op(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="33",
+        target_paragraph=3,
+        numbered_table_targets=("11",),
+    )
+
+    keep, reason = _c_whole_section_subsumes_children(child_op, [table_proxy, child_op], ctx)
+
+    assert keep is True
+    assert reason == ""
 
 
 def test_c_whole_section_subsumes_keeps_explicit_child_repeal() -> None:

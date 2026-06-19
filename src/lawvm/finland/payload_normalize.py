@@ -51,6 +51,7 @@ from lawvm.finland.merge import (
 )
 from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
+from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
 
 from lawvm.core.elaboration_context import PayloadElaborationContext
 from lawvm.core.payload_surface import PayloadSurface, TargetUnitKind
@@ -58,6 +59,9 @@ from lawvm.core.payload_surface import PayloadSurface, TargetUnitKind
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
     from lawvm.finland.ops import ReplayProfile
+
+
+_NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE = "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
 
 
 class SubsectionSlotMap(MutableMapping[int, IRNode]):
@@ -1110,6 +1114,111 @@ def _assign_exact_plain_slot_ops(
                 continue
             state.used_subs.add(exact_idx)
         state.subsec_map.assign(op, slot_inputs.amend_subs[exact_idx])
+
+
+def _assign_numbered_table_offset_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind legal moment targets shifted by Finlex table-as-subsection markup.
+
+    Some Finlex XML serializes a numbered table as a ``subsection``. The
+    johtolause still speaks in legal moment numbers, so a target like
+    ``taulukko 11 ja 2 momentti`` maps to the XML subsection immediately after
+    the table, commonly label ``3``. This rule only binds the single +1 shape
+    and only for ops already carrying the explicit numbered-table witness.
+    """
+    for op in slot_inputs.payload_subsec_ops:
+        if (
+            op in state.subsec_map
+            or not op.numbered_table_targets
+            or op.target_paragraph is None
+            or op.target_item
+            or op.target_special
+        ):
+            continue
+        target = int(op.target_paragraph)
+        if any(
+            idx not in state.used_subs and _norm_num_token(sub.label or "") == str(target)
+            for idx, sub in enumerate(slot_inputs.amend_subs)
+        ):
+            continue
+        shifted_label = str(target + 1)
+        shifted_candidates = [
+            (idx, sub)
+            for idx, sub in enumerate(slot_inputs.amend_subs)
+            if idx not in state.used_subs and _norm_num_token(sub.label or "") == shifted_label
+        ]
+        if len(shifted_candidates) != 1:
+            continue
+        idx, sub = shifted_candidates[0]
+        state.subsec_map.assign(op, sub)
+        state.used_subs.add(idx)
+        state.binding_rule_by_op_id[id(op)] = "numbered_table_xml_subsection_offset"
+        state.binding_observations.append(
+            _obs(
+                _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE,
+                "sparse_subsection_elaboration",
+                source_target_paragraph=target,
+                structural_payload_label=shifted_label,
+                numbered_table_targets=list(op.numbered_table_targets),
+                op_description=op.description(),
+            )
+        )
+
+
+def _assign_numbered_table_companion_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind the sole non-table slot paired with an explicit numbered-table target.
+
+    Omission alignment can relabel an amendment-local table and its companion
+    moment to live-relative structural labels.  Once the explicitly cited table
+    slot has been filtered out of ``amend_subs``, a single remaining slot is the
+    only payload witness for the same johtolause clause and should stay owned by
+    the legal moment target rather than becoming a phantom subsection.
+    """
+    candidates = [
+        op
+        for op in slot_inputs.payload_subsec_ops
+        if (
+            op not in state.subsec_map
+            and op.numbered_table_targets
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    remaining_slots = [
+        (idx, sub)
+        for idx, sub in enumerate(slot_inputs.amend_subs)
+        if idx not in state.used_subs
+    ]
+    if len(candidates) != 1 or len(remaining_slots) != 1:
+        return
+
+    op = candidates[0]
+    if any(
+        idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+        for idx, sub in enumerate(slot_inputs.amend_subs)
+    ):
+        return
+
+    idx, sub = remaining_slots[0]
+    state.subsec_map.assign(op, sub)
+    state.used_subs.add(idx)
+    state.binding_rule_by_op_id[id(op)] = "numbered_table_companion_subsection_binding"
+    state.binding_observations.append(
+        _obs(
+            "ELAB.NUMBERED_TABLE_COMPANION_SUBSECTION_BINDING",
+            "sparse_subsection_elaboration",
+            source_target_paragraph=int(op.target_paragraph),
+            structural_payload_label=str(sub.label or ""),
+            numbered_table_targets=list(op.numbered_table_targets),
+            op_description=op.description(),
+        )
+    )
 
 
 def _plain_target_is_inadmissible_for_positional_fallback(
@@ -2278,6 +2387,12 @@ def _fold_split_omission_subsection_prefix_into_following_intro_list(
     if plain_subsection_ops and all(op.op_type == "INSERT" for op in plain_subsection_ops):
         return muutos_ir
 
+    numbered_table_targets = frozenset(
+        _norm_num_token(label)
+        for op in group_ops
+        for label in op.numbered_table_targets
+        if _norm_num_token(label)
+    )
     children = list(muutos_ir.children)
     new_children: List[IRNode] = []
     changed = False
@@ -2296,6 +2411,10 @@ def _fold_split_omission_subsection_prefix_into_following_intro_list(
         prefix_text = _content_only_non_item_subsection_text(child)
         nxt = children[i + 1]
         if prefix_text is None or nxt.kind is not IRNodeKind.SUBSECTION or not _is_intro_list_subsection_ir(nxt):
+            new_children.append(child)
+            i += 1
+            continue
+        if numbered_table_targets and mentioned_numbered_table_labels(child) & numbered_table_targets:
             new_children.append(child)
             i += 1
             continue
@@ -3265,6 +3384,73 @@ def _rebase_item_targets_to_sparse_slot_labels(
     return rebased, changed
 
 
+def _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
+    group_ops: List[AmendmentOp],
+    assignment: SubsectionSlotAssignmentResult,
+) -> tuple[list[AmendmentOp], bool, list[dict[str, object]]]:
+    """Rebase legal moment targets over Finlex table-as-subsection offsets."""
+    changed = False
+    rebased: list[AmendmentOp] = []
+    details: list[dict[str, object]] = []
+    for op in group_ops:
+        mapped = assignment.for_op(op)
+        mapped_label = _norm_num_token(mapped.label or "") if mapped is not None else ""
+        original_sparse_label = (
+            _norm_num_token(str(mapped.attrs.get("original_sparse_subsection_label") or ""))
+            if mapped is not None
+            else ""
+        )
+        if (
+            mapped is None
+            or not op.numbered_table_targets
+            or op.target_paragraph is None
+            or op.target_item
+            or op.target_special
+        ):
+            rebased.append(op)
+            continue
+        source_target = int(op.target_paragraph)
+        new_paragraph: int | None = None
+        if mapped_label.isdigit() and int(mapped_label) == source_target + 1:
+            new_paragraph = int(mapped_label)
+        elif original_sparse_label == str(source_target):
+            new_paragraph = source_target + 1
+        if new_paragraph is None:
+            rebased.append(op)
+            continue
+        rebased.append(
+            dc_replace(
+                op,
+                target_paragraph=new_paragraph,
+                lo=(
+                    _lo_with_path_update(op.lo, subsection=str(new_paragraph))
+                    if op.lo is not None
+                    else None
+                ),
+                target_guessing_provenance_tags=tuple(
+                    dict.fromkeys(
+                        (
+                            *op.target_guessing_provenance_tags,
+                            "numbered_table_xml_subsection_offset",
+                        )
+                    )
+                ),
+            )
+        )
+        details.append(
+            {
+                "op_description": op.description(),
+                "source_target_paragraph": int(op.target_paragraph),
+                "structural_target_paragraph": new_paragraph,
+                "payload_slot_label": str(mapped.label or ""),
+                "original_sparse_subsection_label": original_sparse_label,
+                "numbered_table_targets": list(op.numbered_table_targets),
+            }
+        )
+        changed = True
+    return rebased, changed, details
+
+
 def _rebase_sparse_stale_predecessor_replace(
     ctx: PayloadElaborationContext,
     muutos_ir: Optional[IRNode],
@@ -3725,6 +3911,8 @@ def _assign_subsection_slots(
     _assign_dense_local_slot_ops(slot_inputs, state)
     _assign_intro_slot_ops(slot_inputs, state)
     _assign_exact_plain_slot_ops(slot_inputs, state)
+    _assign_numbered_table_offset_slot_ops(slot_inputs, state)
+    _assign_numbered_table_companion_slot_ops(slot_inputs, state)
     _assign_fallback_plain_slot_ops(slot_inputs, state)
     _assign_item_prefix_slot_ops(slot_inputs, state)
     _assign_highest_insert_slot_op(slot_inputs, state)
@@ -3808,7 +3996,12 @@ def _assign_subsection_slots(
                 binding.payload_slot_index,
             )
         )
-        if binding_rule in {"local_dense_subsection_numbering", "trailing_sparse_insert_binding"}:
+        if binding_rule in {
+            "local_dense_subsection_numbering",
+            "numbered_table_xml_subsection_offset",
+            "numbered_table_companion_subsection_binding",
+            "trailing_sparse_insert_binding",
+        }:
             count = 1
             admissibility: Literal["single", "ambiguous", "fallback"] = "single"
         elif binding.target_item:
@@ -3889,6 +4082,18 @@ def _collect_subsection_slot_inputs(
     if muutos_ir is None or not subsec_ops:
         return None
     amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
+    table_labels_for_child_binding = frozenset(
+        _norm_num_token(label)
+        for op in subsec_ops
+        for label in op.numbered_table_targets
+        if _norm_num_token(label)
+    )
+    if table_labels_for_child_binding:
+        amend_subs = [
+            child
+            for child in amend_subs
+            if not (mentioned_numbered_table_labels(child) & table_labels_for_child_binding)
+        ]
     # ``surface`` may describe the pre-normalized body.  Later payload
     # normalization can create owned subsection slots from malformed source
     # markup, so only the no-subsection case can short-circuit here.
@@ -4348,6 +4553,31 @@ def _elaborate_sparse_subsection_payload(
     rebased_ops, rebased_item_targets = _rebase_item_targets_to_sparse_slot_labels(group_ops, assignment)
     if rebased_item_targets:
         group_ops = rebased_ops
+        assignment = _build_subsection_slot_assignment(muutos_ir, group_ops, surface)
+        muutos_ir, assignment = _attach_terminal_section_omission_to_tail_subsection(
+            ctx,
+            target_unit_kind,
+            target_norm,
+            target_chapter,
+            muutos_ir,
+            group_ops,
+            assignment,
+        )
+    (
+        rebased_ops,
+        rebased_numbered_table_offset,
+        numbered_table_offset_details,
+    ) = _rebase_numbered_table_offset_targets_to_sparse_slot_labels(group_ops, assignment)
+    if rebased_numbered_table_offset:
+        group_ops = rebased_ops
+        observations.append(
+            _obs(
+                _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE,
+                "sparse_subsection_elaboration",
+                rebased_count=len(numbered_table_offset_details),
+                rebases=numbered_table_offset_details,
+            )
+        )
         assignment = _build_subsection_slot_assignment(muutos_ir, group_ops, surface)
         muutos_ir, assignment = _attach_terminal_section_omission_to_tail_subsection(
             ctx,

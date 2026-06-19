@@ -524,12 +524,29 @@ def _c_whole_section_subsumes_children(
     )
     if has_section_facet_replace:
         return True, ""
+    numbered_table_target_sections = {
+        (
+            o.target_unit_kind,
+            o.target_section,
+            o.target_chapter,
+            o.target_part,
+        )
+        for o in all_ops
+        if o.numbered_table_targets
+    }
     has_whole = any(
         o.target_unit_kind == "section"
         and o.op_type == "REPLACE"
         and not o.target_paragraph
         and not o.target_item
         and not o.target_special
+        and (
+            o.target_unit_kind,
+            o.target_section,
+            o.target_chapter,
+            o.target_part,
+        )
+        not in numbered_table_target_sections
         for o in all_ops
     )
     if not has_whole:

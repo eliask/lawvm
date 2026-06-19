@@ -145,6 +145,7 @@ from lawvm.finland.compile_group_elaboration import (
     _drop_payloadless_source_replace_shadowed_by_same_group_relabel,
     elaborate_group as _elaborate_group,
 )
+from lawvm.finland.compile_amendment import _split_numbered_table_child_group_ops
 from lawvm.finland.compile_group import compile_group_typed as _compile_group_typed
 from tests.corpus_pin_helpers import replay_xml_for_test as replay_xml
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
@@ -11354,12 +11355,35 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
         ("REPLACE", "26", None, None, ("8",)),
         ("REPLACE", "33", None, None, ("11",)),
         ("REPLACE", "41", 1, "1", ()),
+        ("REPLACE", "33", 2, None, ("11",)),
+        ("INSERT", "26", 3, None, ("8",)),
         ("REPLACE", "25", None, None, ()),
         ("REPLACE", "43", None, None, ()),
     ]
     recovered = got[3:]
     assert {op.witness_rule_id for op in recovered} == {"fi.mixed_explicit_target_supplement.v1"}
     assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
+
+
+def test_numbered_table_proxy_splits_from_child_targets_before_group_compile() -> None:
+    table_proxy = AmendmentOp(
+        op_id="table_proxy",
+        op_type="REPLACE",
+        target_section="33",
+        target_kind=TargetKind.SECTION,
+        numbered_table_targets=("11",),
+    )
+    moment_replace = AmendmentOp(
+        op_id="moment_replace",
+        op_type="REPLACE",
+        target_section="33",
+        target_kind=TargetKind.SECTION,
+        target_paragraph=2,
+    )
+
+    got = _split_numbered_table_child_group_ops([table_proxy, moment_replace])
+
+    assert got == ([table_proxy], [moment_replace])
 
 
 def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:
