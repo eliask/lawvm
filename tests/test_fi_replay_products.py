@@ -588,6 +588,7 @@ def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     assert _section_text("4", "32").startswith("32 § Hallinto-oikeuden päätökseen ei saa hakea muutosta")
 
 
+@pytest.mark.slow
 def test_replay_xml_1987_1250_chapter_scoped_kumotaan_repeals_right_section() -> None:
     """A chapter-scoped kumotaan repeals the named chapter's section, not a homonym.
 
@@ -1728,6 +1729,7 @@ def test_cleanup_sourceless_base_merge_conflicts_is_noop_without_sourceless_base
     assert cleaned == versions
 
 
+@pytest.mark.slow
 def test_replay_xml_surfaces_migration_events_for_renumbered_statute() -> None:
     replay = pinned_replay(
         "2017/320",
@@ -1925,6 +1927,7 @@ def test_fold_timeline_backfill_reuses_preview_timelines_when_no_backfills(monke
     assert products.materialized_state.find_section("1") is not None
 
 
+@pytest.mark.slow
 def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> None:
     """2019/371 section relabels must snapshot at live IR paths, not amendment frames."""
     from lawvm.finland.restructure_plan_replay import (
@@ -1948,6 +1951,7 @@ def test_replay_xml_2017_320_emits_relabel_section_snapshots_at_live_paths() -> 
     assert snapshot.payload is not None
 
 
+@pytest.mark.slow
 def test_replay_xml_2017_320_materializes_part_5_chapter_25_sections() -> None:
     """Regression: restructure renumber waves must not drop fold-owned ch25 sections from PIT."""
     replay = pinned_replay("2017/320", mode="legal_pit", quiet=True)
@@ -1968,6 +1972,7 @@ def test_replay_xml_2017_320_materializes_part_5_chapter_25_sections() -> None:
     )
 
 
+@pytest.mark.slow
 def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery() -> None:
     """2019/371 omission-only destination shells must not be inserted via uncovered recovery."""
     replay_meta: dict[str, object] = {}
@@ -1998,6 +2003,7 @@ def test_replay_xml_2019_371_johto_guard_skips_omission_shell_uncovered_recovery
     assert all(str((finding.detail or {}).get("reason")) == "johto_guard" for finding in findings)
 
 
+@pytest.mark.slow
 def test_replay_xml_emits_payloaded_part_snapshot_for_2020_1256() -> None:
     lo_ops: list[LegalOperation] = []
 
@@ -2211,6 +2217,7 @@ def test_replay_xml_1999_488_places_replaced_section_18_under_chapter_4_after_20
     assert replay_1999_488_legal_pit.materialized_state.find_section("18", "3") is None
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_1224_keeps_permanent_2016_1100_insert_sections_active() -> None:
     """2016/1100's alpha-suffix chapter-6 inserts must remain live after 2019.
 
@@ -2441,6 +2448,7 @@ def test_replay_xml_1940_378_chapter_range_replace_retires_omitted_sections() ->
         assert state.find_node("section", orphan, "chapter", "7") is None, orphan
 
 
+@pytest.mark.slow
 def test_replay_xml_1987_1250_chapter_9_replace_retires_orphans_keeps_chapter_2() -> None:
     """Regression: a complete chapter-9 REPLACE retires its omitted sections.
 
@@ -4901,6 +4909,7 @@ def test_build_replay_products_rejects_payloadless_replace_timeline_ops() -> Non
         )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "statute_id",
     [
@@ -5239,6 +5248,7 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_2016_454_snapshots_86b_under_chapter_five() -> None:
     """2016/454 must not mint a bare root timeline for uniquely hosted §86b."""
     lo_ops: list[LegalOperation] = []
@@ -5247,6 +5257,7 @@ def test_replay_xml_2004_301_2016_454_snapshots_86b_under_chapter_five() -> None
     assert str(snapshot.target) == "chapter:5/section:86b"
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_has_no_orphan_bare_86b_timeline_after_repeal() -> None:
     """2023/216 repeal must not leave a viewer-visible bare §86b tombstone."""
     replay = replay_xml_for_test("2004/301", mode="legal_pit", quiet=True, as_of="2024-01-01")
@@ -5310,6 +5321,7 @@ def test_replay_xml_2004_301_section_78_moment_three_nests_abc_under_item_four()
     assert nested_labels == ["a", "b", "c"]
 
 
+@pytest.mark.slow
 def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublist_warning() -> None:
     """Part II ch.2 §19 subs:1 is a legitimate definitions list, not a nesting bug."""
     replay = replay_xml_for_test("2017/320", mode="legal_pit", quiet=True)
@@ -5322,6 +5334,7 @@ def test_replay_xml_2017_320_section_19_definitions_do_not_emit_flattened_sublis
     assert flat_warnings == []
 
 
+@pytest.mark.slow
 def test_replay_xml_2004_301_2023_389_does_not_duplicate_applicability_subsections() -> None:
     """2023/389 moment-scoped uncovered merges must not leave stale 72 a clauses.
 
