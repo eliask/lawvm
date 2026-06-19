@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import replace as dc_replace
+from dataclasses import dataclass, replace as dc_replace
+from datetime import date
 from typing import TYPE_CHECKING, FrozenSet, List, Optional
 
 import lxml.etree as etree
@@ -73,6 +74,7 @@ from lawvm.finland.scope import (
     assign_scope_from_renumber_destinations as _assign_scope_from_renumber_destinations,
 )
 from lawvm.finland.metadata import (
+    TemporaryProvisionExpiryOverride,
     _statute_issue_date,
     _amendment_effective_date,
     _amendment_expiry_date,
@@ -84,6 +86,7 @@ from lawvm.finland.metadata import (
     _normalize_fi_parse_text,
     get_johtolause,
 )
+
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.fallback_op_ids import mint_fallback_op_id
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
@@ -94,6 +97,13 @@ from lawvm.finland.frontend_observations import (
     _scope_anchor_dependence_observations,
 )
 from lawvm.finland.replay_notices import replay_print as _replay_print
+
+_WHITESPACE_RE = re.compile(r"\s+")
+_DEEP_REPEAL_TARGET_RE = re.compile(
+    r"§\s*:n\s+.+\b(?:kohta|kohdan|alakohta|alakohdan)\b",
+    flags=re.I,
+)
+_TEMPORARY_SECTION_PREFIX_RE = re.compile(r"^\s*(?:uusi|uudet)\s*", flags=re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -284,10 +294,8 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     into a parent deletion. Keep the unsupported overbroad repeal visible
     instead of mutating the parent.
     """
-    cleaned = re.sub(r"\s+", " ", johto or "").strip().lower()
-    mentions_deep_repeal = bool(
-        re.search(r"§\s*:n\s+.+\b(?:kohta|kohdan|alakohta|alakohdan)\b", cleaned, flags=re.I)
-    )
+    cleaned = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
+    mentions_deep_repeal = bool(_DEEP_REPEAL_TARGET_RE.search(cleaned))
     if not mentions_deep_repeal:
         return ops, []
 
@@ -1873,6 +1881,31 @@ def _retarget_stale_body_scope_for_section_op(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class _AmendmentTreeMetadata:
+    source_issue_date: date | None
+    source_title: str
+    effective_date: date | None
+    expiry_date: date | None
+    provision_expiry_overrides: tuple[TemporaryProvisionExpiryOverride, ...]
+    section_expiry_overrides: tuple[tuple[str, set[str], date], ...]
+
+
+def _amendment_tree_metadata(
+    *,
+    amendment_id: str,
+    muutos_tree: "etree._Element",
+) -> _AmendmentTreeMetadata:
+    return _AmendmentTreeMetadata(
+        source_issue_date=_statute_issue_date(muutos_tree),
+        source_title=_tree_title(muutos_tree),
+        effective_date=_amendment_effective_date(muutos_tree),
+        expiry_date=_amendment_expiry_date(muutos_tree),
+        provision_expiry_overrides=_temporary_provision_expiry_overrides(muutos_tree, amendment_id),
+        section_expiry_overrides=_temporary_section_expiry_overrides(muutos_tree, amendment_id),
+    )
+
+
 def _enrich_ops_from_amendment_tree(
     ops: List[AmendmentOp],
     amendment_id: str,
@@ -1881,17 +1914,22 @@ def _enrich_ops_from_amendment_tree(
     johto: str = "",
     base_ir: IRNode | None = None,
     parent_id: str = "",
+    metadata: _AmendmentTreeMetadata | None = None,
 ) -> List[AmendmentOp]:
     """Stamp source-statute metadata (date, title, expiry) onto every op.
 
     Pure ``(ops, amendment_id, tree) -> ops`` transform.  The lxml tree is read-only.
     """
-    source_issue_date = _statute_issue_date(muutos_tree)
-    source_title = _tree_title(muutos_tree)
-    eff_date = _amendment_effective_date(muutos_tree)
-    expiry_date = _amendment_expiry_date(muutos_tree)
-    provision_expiry_overrides = _temporary_provision_expiry_overrides(muutos_tree, amendment_id)
-    section_expiry_overrides = _temporary_section_expiry_overrides(muutos_tree, amendment_id)
+    metadata = metadata or _amendment_tree_metadata(
+        amendment_id=amendment_id,
+        muutos_tree=muutos_tree,
+    )
+    source_issue_date = metadata.source_issue_date
+    source_title = metadata.source_title
+    eff_date = metadata.effective_date
+    expiry_date = metadata.expiry_date
+    provision_expiry_overrides = metadata.provision_expiry_overrides
+    section_expiry_overrides = metadata.section_expiry_overrides
     # Only stamp the expiry on op_source when the amendment has WHOLE-ACT expiry
     # ("Tämä laki on voimassa N päivään ...").  When the expiry is section-scoped
     # ("Lain 43 a—43 c § ovat voimassa ..."), op_source.expires must remain empty
@@ -2513,7 +2551,7 @@ def _extract_temporary_targets_from_johtolause(
         if pykala_pos >= 0:
             section_fragment = after_vaali[:pykala_pos]
             # Strip a leading "uusi" / "uudet" word (insertion clauses)
-            section_fragment = re.sub(r'^\s*(?:uusi|uudet)\s*', '', section_fragment, flags=re.IGNORECASE)
+            section_fragment = _TEMPORARY_SECTION_PREFIX_RE.sub("", section_fragment)
             raw_labels = _parse_section_list_labels(section_fragment)
 
             # Filter: keep only labels that look like valid Finnish section identifiers.
@@ -2545,6 +2583,149 @@ def _extract_temporary_targets_from_johtolause(
 _ENACTING_FORMULA_EXACT = "eduskunnan päätöksen mukaisesti"
 _LETTER_SUFFIX_NUM_RE = re.compile(r"^\d+\s+[a-z]\s*§", re.IGNORECASE)
 _PLAIN_SECTION_NUM_RE = re.compile(r"^\d+\s*§", re.IGNORECASE)
+_OPERATIVE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE)
+_BODY_ONLY_ITEM_LABEL_RE = re.compile(r"^\s*(\d+[a-z]?)\)")
+
+
+def _body_direct_sections(muutos_tree: "etree._Element") -> "list[etree._Element]":
+    body = muutos_tree.find(".//{*}body")
+    if body is None:
+        return []
+    direct_sections = list(body.findall("./{*}section"))
+    if direct_sections:
+        return direct_sections
+    sections: list[etree._Element] = []
+    for container in body.findall("./{*}hcontainer"):
+        name = (container.get("name") or "").strip()
+        if name in {"entryIntoForce", "conclusions", "signatures"}:
+            continue
+        sections.extend(container.findall("./{*}section"))
+    return sections
+
+
+def _body_section_groups(muutos_tree: "etree._Element") -> "list[tuple[etree._Element, tuple[etree._Element, ...]]]":
+    body = muutos_tree.find(".//{*}body")
+    if body is None:
+        return []
+    groups: list[tuple[etree._Element, list[etree._Element]]] = []
+
+    containers = list(body.findall("./{*}hcontainer"))
+    if not containers:
+        return [(section, ()) for section in body.findall("./{*}section")]
+
+    for container in containers:
+        name = (container.get("name") or "").strip()
+        if name in {"entryIntoForce", "conclusions", "signatures"}:
+            continue
+        for child in container:
+            child_tag = _direct_child_localname(child)
+            if child_tag == "section":
+                groups.append((child, []))
+            elif child_tag == "subsection" and groups:
+                groups[-1][1].append(child)
+
+    return [(section, tuple(orphans)) for section, orphans in groups]
+
+
+def _is_body_only_amendment_surface(johto: str, source_title: str) -> bool:
+    cleaned_johto = _WHITESPACE_RE.sub(" ", johto or "").strip().lower()
+    cleaned_title = _WHITESPACE_RE.sub(" ", source_title or "").strip().lower()
+    if not cleaned_johto or _OPERATIVE_VERB_RE.search(cleaned_johto):
+        return False
+    if "muuttamisesta" not in cleaned_title or "kumoamisesta" in cleaned_title:
+        return False
+    return "päätöksen mukaisesti" in cleaned_johto or cleaned_johto.endswith("esittelystä")
+
+
+def _section_label_from_xml(sec: "etree._Element") -> str:
+    num_el = sec.find("{*}num")
+    if num_el is None:
+        return ""
+    return _norm_num_token(num_el.text or "")
+
+
+def _live_subsection_label_for_item(section: IRNode, item_label: str) -> int | None:
+    hits: set[int] = set()
+    for child in section.children:
+        if child.kind is not IRNodeKind.SUBSECTION or child.label is None:
+            continue
+        for grandchild in child.children:
+            if grandchild.kind is IRNodeKind.PARAGRAPH and _norm_num_token(str(grandchild.label or "")) == item_label:
+                try:
+                    hits.add(int(str(child.label)))
+                except ValueError:
+                    continue
+    if len(hits) != 1:
+        return None
+    return next(iter(hits))
+
+
+def _body_section_item_labels(
+    sec: "etree._Element",
+    orphan_subsections: "tuple[etree._Element, ...]" = (),
+) -> list[str]:
+    labels: list[str] = []
+    p_elements = list(sec.findall(".//{*}p"))
+    for orphan in orphan_subsections:
+        p_elements.extend(orphan.findall(".//{*}p"))
+    for p_el in p_elements:
+        text = _WHITESPACE_RE.sub(" ", etree.tostring(p_el, method="text", encoding="unicode")).strip()
+        match = _BODY_ONLY_ITEM_LABEL_RE.match(text)
+        if match:
+            labels.append(_norm_num_token(match.group(1)))
+    return [label for label in labels if label]
+
+
+def _section_has_direct_omission(sec: "etree._Element") -> bool:
+    for child in sec:
+        tag = _direct_child_localname(child)
+        if tag == "omission":
+            return True
+        if tag == "p" and (child.get("class") or "").strip() == "omission":
+            return True
+        if tag == "hcontainer" and (child.get("name") or "").strip() == "omission":
+            return True
+    return False
+
+
+def _section_direct_payload_paragraph_count(
+    sec: "etree._Element",
+    orphan_subsections: "tuple[etree._Element, ...]" = (),
+) -> int:
+    count = 0
+    for child in sec:
+        if _direct_child_localname(child) != "p":
+            continue
+        if (child.get("class") or "").strip() == "omission":
+            continue
+        text = _WHITESPACE_RE.sub(" ", etree.tostring(child, method="text", encoding="unicode")).strip()
+        if text:
+            count += 1
+    for orphan in orphan_subsections:
+        text = _WHITESPACE_RE.sub(" ", etree.tostring(orphan, method="text", encoding="unicode")).strip()
+        if text:
+            count += 1
+    for child in sec:
+        if _direct_child_localname(child) != "subsection":
+            continue
+        text = _WHITESPACE_RE.sub(" ", etree.tostring(child, method="text", encoding="unicode")).strip()
+        if text and not _BODY_ONLY_ITEM_LABEL_RE.match(text):
+            count += 1
+    return count
+
+
+def _next_integer_subsection_label(section: IRNode) -> int | None:
+    labels: list[int] = []
+    for child in section.children:
+        if child.kind is not IRNodeKind.SUBSECTION or child.label is None:
+            continue
+        try:
+            labels.append(int(str(child.label)))
+        except ValueError:
+            return None
+    if not labels:
+        return 1
+    return max(labels) + 1
 
 
 def _extract_enacting_formula_body_insert_ops_fallback(
@@ -2569,7 +2750,7 @@ def _extract_enacting_formula_body_insert_ops_fallback(
     - body has at least one section without an eId attribute
     - at least one such section has a letter-suffix label absent from master
     """
-    cleaned = re.sub(r"\s+", " ", johto).strip().lower()
+    cleaned = _WHITESPACE_RE.sub(" ", johto).strip().lower()
     if cleaned != _ENACTING_FORMULA_EXACT:
         return []
     body = muutos_tree.find(".//{*}body")
@@ -2604,7 +2785,7 @@ def _enacting_formula_body_insert_unowned_section_findings(
     amendment_id: str,
 ) -> "list[Finding]":
     """Own sibling body sections skipped by the enacting-formula insert fallback."""
-    cleaned = re.sub(r"\s+", " ", johto).strip().lower()
+    cleaned = _WHITESPACE_RE.sub(" ", johto).strip().lower()
     if cleaned != _ENACTING_FORMULA_EXACT:
         return []
 
@@ -2683,7 +2864,7 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     - there must be exactly one section without an eId
     - the section label must be a plain-number section already present in master
     """
-    cleaned = re.sub(r"\s+", " ", johto).strip().lower()
+    cleaned = _WHITESPACE_RE.sub(" ", johto).strip().lower()
     if cleaned != _ENACTING_FORMULA_EXACT:
         return []
     body = muutos_tree.find(".//{*}body")
@@ -2707,6 +2888,96 @@ def _extract_enacting_formula_body_replace_ops_fallback(
     return [AmendmentOp(op_id="", op_type="REPLACE", target_section=label, target_unit_kind="section")]
 
 
+def _extract_ceremonial_body_only_ops_fallback(
+    johto: str,
+    source_title: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState",
+) -> "list[AmendmentOp]":
+    """Recover sparse body-only amendments with no operative preamble.
+
+    Some decree amendments publish only a ceremonial preamble and encode the
+    operative surface as body sections. The title supplies amendment character
+    (``... muuttamisesta``); the body supplies explicit provision labels. This
+    fallback owns only labels visible in the body and only against matching live
+    state:
+
+    - body item labels become item-level REPLACE/INSERT ops under the unique
+      live subsection that owns the item list;
+    - a direct omission followed by one body paragraph appends a new subsection;
+    - one direct body paragraph with no omission replaces subsection 1, keeping
+      the existing section heading outside the mutation boundary.
+    """
+    if not _is_body_only_amendment_surface(johto, source_title):
+        return []
+    if muutos_tree.find(".//{*}chapter") is not None or muutos_tree.find(".//{*}part") is not None:
+        return []
+
+    ops: list[AmendmentOp] = []
+    for sec, orphan_subsections in _body_section_groups(muutos_tree):
+        section_label = _section_label_from_xml(sec)
+        if not section_label:
+            continue
+        live_section = master.find_section(section_label)
+        if live_section is None:
+            continue
+
+        item_labels = _body_section_item_labels(sec, orphan_subsections)
+        if item_labels:
+            existing_owner_labels = {
+                owner_label
+                for item_label in item_labels
+                for owner_label in [_live_subsection_label_for_item(live_section, item_label)]
+                if owner_label is not None
+            }
+            if len(existing_owner_labels) != 1:
+                continue
+            [owner_label] = list(existing_owner_labels)
+            for item_label in item_labels:
+                op_type = "REPLACE" if _live_subsection_label_for_item(live_section, item_label) is not None else "INSERT"
+                ops.append(
+                    AmendmentOp(
+                        op_id="",
+                        op_type=op_type,
+                        target_section=section_label,
+                        target_paragraph=owner_label,
+                        target_item=item_label,
+                        target_unit_kind="section",
+                    )
+                )
+            continue
+
+        direct_payload_count = _section_direct_payload_paragraph_count(sec, orphan_subsections)
+        if direct_payload_count != 1:
+            continue
+        if _section_has_direct_omission(sec):
+            next_label = _next_integer_subsection_label(live_section)
+            if next_label is None:
+                continue
+            ops.append(
+                AmendmentOp(
+                    op_id="",
+                    op_type="INSERT",
+                    target_section=section_label,
+                    target_paragraph=next_label,
+                    target_unit_kind="section",
+                )
+            )
+            continue
+        if _live_subsection_label_for_item(live_section, "1") is None and live_section.children:
+            ops.append(
+                AmendmentOp(
+                    op_id="",
+                    op_type="REPLACE",
+                    target_section=section_label,
+                    target_paragraph=1,
+                    target_unit_kind="section",
+                )
+            )
+
+    return _dedupe_fallback_ops_ir(ops)
+
+
 # ---------------------------------------------------------------------------
 # normalize_and_compile_ops — the main frontend extraction orchestrator
 # ---------------------------------------------------------------------------
@@ -2724,6 +2995,7 @@ def normalize_and_compile_ops(
     parse_result: "ClauseParseResult | None" = None,
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
     base_ir: IRNode | None = None,
+    amendment_metadata: _AmendmentTreeMetadata | None = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -2972,6 +3244,10 @@ def normalize_and_compile_ops(
         )
 
     # Metadata enrichment (source statute/date/title) on all AmendmentOps
+    tree_metadata = amendment_metadata or _amendment_tree_metadata(
+        amendment_id=amendment_id,
+        muutos_tree=muutos_tree,
+    )
     ops = _enrich_ops_from_amendment_tree(
         ops,
         amendment_id,
@@ -2980,6 +3256,7 @@ def normalize_and_compile_ops(
         johto=johto,
         base_ir=base_ir,
         parent_id=parent_id or "",
+        metadata=tree_metadata,
     )
     ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(
         ops,
@@ -3075,6 +3352,7 @@ def normalize_and_compile_ops(
             johto=johto,
             base_ir=base_ir,
             parent_id=parent_id or "",
+            metadata=tree_metadata,
         )
         fallback_plain_insert_count = sum(
             1
@@ -3168,6 +3446,7 @@ def normalize_and_compile_ops(
                     johto=johto,
                     base_ir=base_ir,
                     parent_id=parent_id or "",
+                    metadata=tree_metadata,
                 )
                 for op in ops:
                     op.body_root_replace_fallback = True
@@ -3199,6 +3478,7 @@ def normalize_and_compile_ops(
                     johto=johto,
                     base_ir=base_ir,
                     parent_id=parent_id or "",
+                    metadata=tree_metadata,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3210,6 +3490,39 @@ def normalize_and_compile_ops(
                     _strict_rejected_op_findings(
                         ef_replace_ops,
                         source="_extract_enacting_formula_body_replace_ops_fallback",
+                    )
+                )
+
+    if not ops:
+        ceremonial_body_ops = _extract_ceremonial_body_only_ops_fallback(johto, source_title, muutos_tree, master)
+        if ceremonial_body_ops:
+            if _allows_fallback:
+                logger.debug(
+                    "  %s ceremonial_body_only_ops: %s",
+                    amendment_id,
+                    [op.description() for op in ceremonial_body_ops],
+                )
+                ops = _enrich_ops_from_amendment_tree(
+                    ceremonial_body_ops,
+                    amendment_id,
+                    muutos_tree,
+                    master,
+                    johto=johto,
+                    base_ir=base_ir,
+                    parent_id=parent_id or "",
+                    metadata=tree_metadata,
+                )
+                for op in ops:
+                    op.fallback_provenance = True
+                    op.witness_rule_id = FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID
+                    op.extraction_provenance_tags = tuple(
+                        dict.fromkeys((*op.extraction_provenance_tags, "extraction_ceremonial_body_only"))
+                    )
+            else:
+                frontend_findings_out.extend(
+                    _strict_rejected_op_findings(
+                        ceremonial_body_ops,
+                        source="_extract_ceremonial_body_only_ops_fallback",
                     )
                 )
 
@@ -3230,6 +3543,7 @@ def normalize_and_compile_ops(
                     johto=johto,
                     base_ir=base_ir,
                     parent_id=parent_id or "",
+                    metadata=tree_metadata,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -3270,6 +3584,7 @@ def normalize_and_compile_ops(
                     johto=johto,
                     base_ir=base_ir,
                     parent_id=parent_id or "",
+                    metadata=tree_metadata,
                 )
                 for op in ops:
                     op.fallback_provenance = True

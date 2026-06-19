@@ -2436,6 +2436,107 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
     assert any(child.kind == IRNodeKind.PARAGRAPH and child.label == "1" for child in amend_sub.children)
 
 
+def test_1986_508_1996_755_body_only_fallback_binds_wrapper_orphan_subsections() -> None:
+    """1996/755 publishes source-owned payload as wrapper-level subsection siblings."""
+    before = replay_xml(
+        "1986/508",
+        mode="official_consolidation",
+        stop_before="1996/755",
+        quiet=True,
+        build_full_products=False,
+    )
+    corpus = get_corpus_store()
+    xml = corpus.read_source("1996/755")
+    assert xml is not None
+    muutos_tree = etree.fromstring(xml)
+    johto = get_johtolause(xml)
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=before.state,
+        mid="1996/755",
+        source_title="Asetus nuorten työntekijäin suojelusta annetun asetuksen muuttamisesta",
+        used_sec1_fallback=False,
+        parent_id="1986/508",
+        strict_profile=None,
+    )
+    targets = {
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in phase2.output
+    }
+    assert targets == {
+        ("REPLACE", "2", 2, "1"),
+        ("REPLACE", "2", 2, "6"),
+        ("REPLACE", "2", 2, "8"),
+        ("REPLACE", "2", 2, "9"),
+        ("REPLACE", "2", 2, "10"),
+        ("INSERT", "2", 2, "11"),
+        ("INSERT", "5", 4, None),
+        ("REPLACE", "6", 1, None),
+    }
+    assert all("extraction_ceremonial_body_only" in op.extraction_provenance_tags for op in phase2.output)
+
+    result = compile_amendment_ops(
+        before.state,
+        phase2.output,
+        muutos_tree,
+        johto,
+        "official_consolidation",
+        source_ref="1996/755",
+        target_statute="1986/508",
+    )
+    findings = result.findings()
+    assert {
+        f.detail.get("target_norm")
+        for f in findings
+        if f.kind == "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION"
+    } == {"2", "5"}
+    sparse_slots = {
+        (
+            f.detail.get("op_description"),
+            f.detail.get("payload_slot_label"),
+        )
+        for f in findings
+        if f.kind == "ELAB.SPARSE_SLOT_BINDING"
+    }
+    assert ("REPLACE 2 § 2 mom 8 kohta", "3") in sparse_slots
+    assert ("INSERT 2 § 2 mom 11 kohta", "6") in sparse_slots
+    assert ("INSERT 5 § 4 mom", "4") in sparse_slots
+
+
+def test_1986_508_replay_keeps_1996_755_body_only_amendment_after_precompile_selection() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    replay_xml(
+        "1986/508",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+        compiled_ops_out=compiled_ops,
+    )
+    rows = [
+        (
+            row.get("action"),
+            row.get("target_norm"),
+            row.get("target_paragraph"),
+            row.get("target_item"),
+        )
+        for row in compiled_ops
+        if row.get("source_statute") == "1996/755"
+    ]
+
+    assert rows == [
+        ("replace", "2", "2", "1"),
+        ("replace", "2", "2", "6"),
+        ("replace", "2", "2", "8"),
+        ("replace", "2", "2", "9"),
+        ("replace", "2", "2", "10"),
+        ("insert", "2", "2", "11"),
+        ("insert", "5", "4", ""),
+        ("replace", "6", "1", ""),
+    ]
+
+
 def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_momentti_target() -> None:
     before = pinned_replay("1974/16", stop_before="1980/1037", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()

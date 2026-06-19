@@ -34,6 +34,9 @@ _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _UNLABELED_ADJACENT_SECTION_CONTINUATION_RULE_ID = (
     "ELAB.UNLABELED_ADJACENT_SECTION_CONTINUATION"
 )
+_WRAPPER_ORPHAN_SUBSECTION_CONTINUATION_RULE_ID = (
+    "ELAB.WRAPPER_ORPHAN_SUBSECTION_CONTINUATION"
+)
 
 
 def _tag(el: etree._Element) -> str:
@@ -311,6 +314,30 @@ def _merge_unlabeled_adjacent_section_continuation_ir(
     )
 
 
+def _section_with_following_orphan_subsections(
+    muutos_sec: etree._Element,
+) -> tuple[etree._Element, bool]:
+    """Clone a section with immediately following wrapper-level subsections.
+
+    Historical Finlex amendment bodies sometimes encode continuation payloads
+    for one printed section as sibling ``subsection`` elements under the wrapper
+    instead of children of that section. The siblings remain source-owned by the
+    preceding section until the next non-subsection sibling starts a new unit.
+    """
+    orphan_subsections: list[etree._Element] = []
+    sibling = muutos_sec.getnext()
+    while sibling is not None and _tag(sibling) == "subsection":
+        orphan_subsections.append(sibling)
+        sibling = sibling.getnext()
+    if not orphan_subsections:
+        return muutos_sec, False
+
+    cloned = copy.deepcopy(muutos_sec)
+    for orphan in orphan_subsections:
+        cloned.append(copy.deepcopy(orphan))
+    return cloned, True
+
+
 def _find_muutos_ir(
     muutos_tree: etree._Element,
     target_unit_kind: str,
@@ -339,7 +366,17 @@ def _find_muutos_ir(
         target_norm=target_norm,
     )
     if muutos_ir is None:
-        muutos_ir = fi_xml_to_ir_node(muutos_sec, _fi_label_postprocessor)
+        payload_el, attached_orphan_subsections = (
+            _section_with_following_orphan_subsections(muutos_sec)
+            if _tag(muutos_sec) == "section"
+            else (muutos_sec, False)
+        )
+        muutos_ir = fi_xml_to_ir_node(payload_el, _fi_label_postprocessor)
+        if attached_orphan_subsections:
+            muutos_ir = _with_payload_normalization_rule(
+                muutos_ir,
+                _WRAPPER_ORPHAN_SUBSECTION_CONTINUATION_RULE_ID,
+            )
         muutos_ir = _merge_unlabeled_adjacent_section_continuation_ir(
             muutos_sec,
             muutos_ir,

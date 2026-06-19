@@ -122,6 +122,31 @@ class TestBuildObservedBodyInventory:
         assert inventory[1].label == "2"
         assert inventory[2].label == "3"
 
+    def test_wrapper_level_orphan_subsections_are_attached_in_inventory_view_only(self) -> None:
+        xml = _make_amendment_xml("""\
+      <hcontainer name="statuteProvisionsWrapper">
+        <section>
+          <num>2 §</num>
+          <content><p>1) ensimmäinen kohta</p></content>
+        </section>
+        <subsection>
+          <content><p>2) jatkokohta</p></content>
+        </subsection>
+        <section>
+          <num>3 §</num>
+          <content><p>Toinen pykälä.</p></content>
+        </section>
+      </hcontainer>""")
+
+        inventory = build_observed_body_inventory(xml)
+
+        assert [unit.label for unit in inventory] == ["2", "3"]
+        first_section_text = " ".join("".join(inventory[0].xml_element.itertext()).split())
+        assert "2) jatkokohta" in first_section_text
+        wrapper = xml.find(".//{*}hcontainer")
+        assert wrapper is not None
+        assert [child.tag.rsplit("}", 1)[-1] for child in wrapper] == ["section", "subsection", "section"]
+
     def test_sections_in_chapters(self) -> None:
         xml = _make_amendment_xml(
             _make_chapter_with_sections("2", ["3", "4"]) + "\n" + _make_chapter_with_sections("5", ["10", "11"])

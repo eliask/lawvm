@@ -34,6 +34,7 @@ Design decisions (from PRO_FI_PEG_VPRI_2026-04-07c.md §2, §5):
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Union
@@ -194,6 +195,36 @@ def _is_pseudo_chapter_marker_section(raw_num: str) -> bool:
     return norm.endswith("luku")
 
 
+def _body_with_orphan_subsections_attached(body: etree._Element) -> etree._Element:
+    """Return a cloned body with wrapper-level orphan subsections attached.
+
+    Some older Finlex amendment bodies encode sparse continuation payloads as
+    sibling ``subsection`` elements after the owning ``section`` under
+    ``statuteProvisionsWrapper``. The source tree is left untouched; this
+    inventory-only view lets payload pairing see the subsection under the
+    section whose label owns it.
+    """
+    cloned = copy.deepcopy(body)
+
+    def _attach(parent: etree._Element) -> None:
+        last_section: etree._Element | None = None
+        for child in list(parent):
+            child_kind = _localname(child)
+            if child_kind == "section":
+                last_section = child
+                _attach(child)
+                continue
+            if child_kind == "subsection" and last_section is not None:
+                parent.remove(child)
+                last_section.append(child)
+                continue
+            last_section = None
+            _attach(child)
+
+    _attach(cloned)
+    return cloned
+
+
 # ---------------------------------------------------------------------------
 # 1. Build observed body inventory
 # ---------------------------------------------------------------------------
@@ -212,6 +243,7 @@ def build_observed_body_inventory(
     body = muutos_tree.find(".//{*}body")
     if body is None:
         return []
+    body = _body_with_orphan_subsections_attached(body)
 
     units: List[ObservedBodyUnit] = []
     seen_ids: set[str] = set()
