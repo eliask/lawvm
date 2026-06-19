@@ -299,11 +299,11 @@ def _find_existing_chapter_path(
 ) -> Optional[tuple[tuple[str, str], ...]]:
     if part_label:
         part_path = state.find("part", part_label)
-        part_node = _tops.resolve(state.ir, part_path) if part_path is not None else None
-        if part_path is not None and part_node is not None:
-            chapter_path = _tops.find(part_node, "chapter", chapter_label)
-            if chapter_path is not None:
-                return part_path + chapter_path
+        if part_path is not None:
+            chapter_key = ("chapter", _tops.normalized_label_key(chapter_label))
+            for chapter_path in state.provision_index.get(chapter_key, []):
+                if len(chapter_path) > len(part_path) and chapter_path[: len(part_path)] == part_path:
+                    return tuple(chapter_path)
         # The part-scoped lookup missed. Before seeding a duplicate, treat a
         # globally-unique existing chapter as the same unit relocated under a
         # relabelled part (continuous-numbering statutes); only fall through to
@@ -319,10 +319,14 @@ def state_has_scoped_chapter(
 ) -> bool:
     if part_label:
         part_path = state.find("part", part_label)
-        part_node = _tops.resolve(state.ir, part_path) if part_path else None
-        if part_node is None:
+        if part_path is None:
             return False
-        return _tops.find(part_node, "chapter", chapter_label) is not None
+        chapter_key = ("chapter", _tops.normalized_label_key(chapter_label))
+        return any(
+            len(chapter_path) > len(part_path)
+            and chapter_path[: len(part_path)] == part_path
+            for chapter_path in state.provision_index.get(chapter_key, [])
+        )
     return state.find("chapter", chapter_label) is not None
 
 
