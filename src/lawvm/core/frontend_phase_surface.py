@@ -44,23 +44,44 @@ class FrontendDiagnostic:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
+        object.__setattr__(
+            self,
             "diagnostic_id",
+            _required_string("FrontendDiagnostic.diagnostic_id", self.diagnostic_id),
+        )
+        object.__setattr__(
+            self,
             "jurisdiction",
+            _required_string("FrontendDiagnostic.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
             "frontend",
-            "phase",
+            _required_string("FrontendDiagnostic.frontend", self.frontend),
+        )
+        object.__setattr__(self, "phase", _required_string("FrontendDiagnostic.phase", self.phase))
+        object.__setattr__(
+            self,
             "severity",
-            "rule_id",
-            "message",
+            _required_string("FrontendDiagnostic.severity", self.severity),
+        )
+        object.__setattr__(self, "rule_id", _required_string("FrontendDiagnostic.rule_id", self.rule_id))
+        object.__setattr__(self, "message", _required_string("FrontendDiagnostic.message", self.message))
+        object.__setattr__(
+            self,
             "strict_disposition",
+            _required_string("FrontendDiagnostic.strict_disposition", self.strict_disposition),
+        )
+        object.__setattr__(
+            self,
             "quirks_disposition",
+            _required_string("FrontendDiagnostic.quirks_disposition", self.quirks_disposition),
+        )
+        object.__setattr__(
+            self,
             "safe_default",
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"FrontendDiagnostic.{field_name}", getattr(self, field_name)),
-            )
+            _required_string("FrontendDiagnostic.safe_default", self.safe_default),
+        )
         if not isinstance(self.blocking, bool):
             raise ValueError("FrontendDiagnostic.blocking must be boolean")
         object.__setattr__(
@@ -105,12 +126,18 @@ class FrontendPhaseRow:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in ("phase", "status", "artifact_kind", "authority_role"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"FrontendPhaseRow.{field_name}", getattr(self, field_name)),
-            )
+        object.__setattr__(self, "phase", _required_string("FrontendPhaseRow.phase", self.phase))
+        object.__setattr__(self, "status", _required_string("FrontendPhaseRow.status", self.status))
+        object.__setattr__(
+            self,
+            "artifact_kind",
+            _required_string("FrontendPhaseRow.artifact_kind", self.artifact_kind),
+        )
+        object.__setattr__(
+            self,
+            "authority_role",
+            _required_string("FrontendPhaseRow.authority_role", self.authority_role),
+        )
         if not isinstance(self.produced, bool):
             raise ValueError("FrontendPhaseRow.produced must be boolean")
         object.__setattr__(
@@ -173,12 +200,27 @@ class FrontendPhaseSurface:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in ("jurisdiction", "frontend", "schema", "truth_claim", "source_hash"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_string(f"FrontendPhaseSurface.{field_name}", getattr(self, field_name)),
-            )
+        object.__setattr__(
+            self,
+            "jurisdiction",
+            _required_string("FrontendPhaseSurface.jurisdiction", self.jurisdiction),
+        )
+        object.__setattr__(
+            self,
+            "frontend",
+            _required_string("FrontendPhaseSurface.frontend", self.frontend),
+        )
+        object.__setattr__(self, "schema", _required_string("FrontendPhaseSurface.schema", self.schema))
+        object.__setattr__(
+            self,
+            "truth_claim",
+            _required_string("FrontendPhaseSurface.truth_claim", self.truth_claim),
+        )
+        object.__setattr__(
+            self,
+            "source_hash",
+            _required_string("FrontendPhaseSurface.source_hash", self.source_hash),
+        )
         if not isinstance(self.source_length, int) or self.source_length < 0:
             raise ValueError("FrontendPhaseSurface.source_length must be a non-negative integer")
         object.__setattr__(
@@ -201,13 +243,13 @@ class FrontendPhaseSurface:
             raise ValueError("FrontendPhaseSurface.diagnostics must contain FrontendDiagnostic objects")
         object.__setattr__(self, "phase_rows", rows)
         object.__setattr__(self, "diagnostics", diagnostics)
-        for field_name in (
-            "replay_claims",
-            "canonical_effect_claims",
-            "dry_run_claims",
-            "agreement_claims",
+        for field_name, value in (
+            ("replay_claims", self.replay_claims),
+            ("canonical_effect_claims", self.canonical_effect_claims),
+            ("dry_run_claims", self.dry_run_claims),
+            ("agreement_claims", self.agreement_claims),
         ):
-            if not isinstance(getattr(self, field_name), bool):
+            if not isinstance(value, bool):
                 raise ValueError(f"FrontendPhaseSurface.{field_name} must be boolean")
         if not isinstance(self.detail, Mapping):
             raise ValueError("FrontendPhaseSurface.detail must be a mapping")
