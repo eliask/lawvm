@@ -1400,6 +1400,7 @@ def test_replay_ee_to_pit_carries_s_inflected_wrapper_intro_context_in_lahetatud
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_collapses_generic_minister_tail_in_rahuaja_riigikaitse() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1418,6 +1419,7 @@ def test_replay_ee_to_pit_collapses_generic_minister_tail_in_rahuaja_riigikaitse
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_applies_maavalitsus_delete_rewrites_in_veeseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1458,6 +1460,7 @@ def test_replay_ee_to_pit_closes_advokatuur_chapter4_and_leaves_only_oracle_drif
     }
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_keeps_nominative_ministry_in_vaarteomenetlus_coordination() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1476,6 +1479,7 @@ def test_replay_ee_to_pit_keeps_nominative_ministry_in_vaarteomenetlus_coordinat
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_preserves_duplicate_loige_numbers_in_raudteeseadus_section_20() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1592,6 +1596,7 @@ def test_replay_ee_to_pit_repeals_flat_part_section_run_and_applies_nik_plural_c
     assert "ametnikke ja töötajaid vajalike töövahenditega" in (section_18_item_19.text or "")
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_replays_riigikogu_term_start_slice_in_erakonnaseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1658,6 +1663,7 @@ def test_replay_ee_to_pit_handles_year_prefixed_target_title_in_riigieelarve_ame
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_repeals_companion_subsection_tail_in_planeerimisseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1694,6 +1700,7 @@ def test_replay_ee_to_pit_handles_section_scoped_target_paragraph_title_in_asjao
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_finalizes_last_live_item_before_short_repeal_tail_in_fkes() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1712,6 +1719,7 @@ def test_replay_ee_to_pit_finalizes_last_live_item_before_short_repeal_tail_in_f
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_keeps_subsection_intro_text_replace_local_in_maagaasiseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -2202,6 +2210,7 @@ def test_replay_ee_to_pit_adjudicates_linnalised_piirkonnad_ministry_tail() -> N
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2416,6 +2425,7 @@ def test_replay_ee_to_pit_adjudicates_asjaoigusseaduse_rakendamise_forward_looki
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_vanemahuvitise_forward_looking_oracle() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2646,6 +2656,7 @@ def test_replay_ee_to_pit_adjudicates_korteriomandiseaduse_forward_looking_oracl
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_sotsiaalhoolekande_forward_looking_oracle() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2762,6 +2773,7 @@ def test_replay_ee_to_pit_adjudicates_riigiloivuseadus_forward_looking_oracle() 
     )
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_elektrituruseadus_now_replays_cleanly() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2818,6 +2830,7 @@ def test_replay_ee_to_pit_energiamajandus_now_replays_cleanly() -> None:
     assert residual_summary.matched_current_divergence_count == 0
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_keeps_plain_range_endpoint_superscript_subsection() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -3145,6 +3158,7 @@ def test_replay_ee_to_pit_adjudicates_politsei_ja_piirivalve_same_chain_insertio
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_kutseoppeasutuse_seadus_same_chain_editorial_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -3260,6 +3274,7 @@ def test_replay_ee_to_pit_closes_sihtasutuste_register_cleanup_and_leaves_only_o
     )
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_keeps_kalapuugiseadus_minister_subject_nominative_before_kaskkirjaga() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
