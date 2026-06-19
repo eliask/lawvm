@@ -467,6 +467,11 @@ class AmendmentSourceModel:
         init=False,
         repr=False,
     )
+    _preamble_text_cache: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _text_lower_cache: str | None = field(
         default=None,
         init=False,
@@ -913,10 +918,14 @@ class AmendmentSourceModel:
 
     def preamble_text(self) -> str:
         """Return normalized source preamble text for this amendment."""
-        johto_el = self.muutos_tree.find(".//{*}preamble")
-        if johto_el is None:
-            return ""
-        return etree.tostring(johto_el, method="text", encoding="unicode")
+        if self._preamble_text_cache is None:
+            johto_el = self.muutos_tree.find(".//{*}preamble")
+            self._preamble_text_cache = (
+                ""
+                if johto_el is None
+                else etree.tostring(johto_el, method="text", encoding="unicode")
+            )
+        return self._preamble_text_cache
 
     def source_text(self) -> str:
         """Return cached plain source text for this amendment."""
