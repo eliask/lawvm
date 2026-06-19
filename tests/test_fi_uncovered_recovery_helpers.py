@@ -302,6 +302,7 @@ def _empty_run(
         bp_assignments=None,
         johto_mentioned_labels=johto_mentioned_labels or set(),
         johto_moment_targets={},
+        johto_numbered_table_targets={},
         johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
         moved_section_destinations={},
         owned_chapter_labels=owned_chapter_labels or set(),
