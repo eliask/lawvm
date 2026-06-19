@@ -398,6 +398,7 @@ _DETERMINISM_WORK_IDS = (
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_run_cache_produces_identical_report_to_uncached_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # The run-scoped parse/archive cache is a pure performance layer: the report
     # built with the cache active must be byte-identical (same JSON) to the report
@@ -430,6 +431,7 @@ def test_run_cache_produces_identical_report_to_uncached_path(monkeypatch: pytes
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_north_star_over_real_work_matches_pinned_ground_truth() -> None:
     # The pinned denominator must equal the operation surface's ground-truth
     # family counts, and the agreeing numerator must be bounded by it.

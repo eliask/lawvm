@@ -312,6 +312,7 @@ def test_resolve_workers_semantics() -> None:
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.slow
 def test_nz_bench_canary_scores_high_similarity_on_replayed_transitions(capsys, tmp_path) -> None:
     corpus = tmp_path / "canary_corpus.csv"
     corpus.write_text(f"work_id\n{_CANARY_WORK}\n", encoding="utf-8")
@@ -390,6 +391,7 @@ def _run_bench_json(*, db, corpus, parallel, out_json) -> dict:
     not (_REAL_DB.exists() and _REAL_CORPUS.exists()),
     reason="archived NZ farchive / corpus not present",
 )
+@pytest.mark.slow
 def test_parallel_aggregate_is_byte_identical_to_serial(tmp_path) -> None:
     # Parallelism + largest-work-first ordering must NOT change any score: the
     # aggregate summary and the per-work payloads (sorted to CSV order) are
@@ -428,6 +430,7 @@ def test_parallel_aggregate_is_byte_identical_to_serial(tmp_path) -> None:
     not (_REAL_DB.exists() and _REAL_CORPUS.exists()),
     reason="archived NZ farchive / corpus not present",
 )
+@pytest.mark.slow
 def test_run_scoped_parse_cache_is_byte_identical_to_uncached(
     tmp_path, monkeypatch
 ) -> None:
