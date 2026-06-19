@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget,
@@ -160,13 +160,6 @@ def _source_body_is_single_mixed_chapter_wrapper(
         if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
             foreign_live_chapters.add(_norm_num_token(live_chapter))
     return len(foreign_live_chapters) >= 2
-
-
-def _live_chapter_has_no_section_children(master: ReplayState, chapter_label: str) -> bool:
-    chapter = master.find_chapter(chapter_label)
-    if chapter is None:
-        return False
-    return not any(child.kind is IRNodeKind.SECTION for child in chapter.children)
 
 
 def _body_chapter_corrected_ops(
@@ -341,10 +334,6 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and _norm_num_token(body_chapter) in inserted_chapter_labels
     )
-    body_chapter_is_empty_live_chapter = (
-        body_chapter is not None
-        and _live_chapter_has_no_section_children(request.master, body_chapter)
-    )
     body_wrapper_overridden_by_scope = (
         body_chapter is not None
         and request.target_chapter is not None
@@ -374,15 +363,10 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.target_chapter is not None
         and (
             body_chapter_is_subchapter
-            or (
-                (body_chapter_is_inserted or body_chapter_is_empty_live_chapter)
-                and not explicit_chapter_scoped
-                and not carry_forward_scoped
-            )
+            or (not explicit_chapter_scoped and not carry_forward_scoped)
             or (
                 carry_forward_scoped
                 and not body_chapter_is_letter_suffix
-                and body_chapter_is_inserted
             )
         )
         and request.source_model.body_has_real_chapter_container(body_chapter)
