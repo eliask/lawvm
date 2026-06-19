@@ -4809,6 +4809,122 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
     )
 
 
+def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="4"),
+                        IRNode(kind=IRNodeKind.SECTION, label="5"),
+                        IRNode(kind=IRNodeKind.SECTION, label="6"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="7"),
+                        IRNode(kind=IRNodeKind.SECTION, label="12"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="16"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>2 luku</num>
+                <section><num>4 §</num><content><p>payload 4</p></content></section>
+                <section><num>5 §</num><content><p>payload 5</p></content></section>
+                <section><num>6 §</num><content><p>payload 6</p></content></section>
+                <section><num>7 §</num><content><p>payload 7</p></content></section>
+                <section>
+                  <num>12 §</num>
+                  <heading>new heading</heading>
+                  <subsection><num>2 mom.</num><content><p>payload 12.2</p></content></subsection>
+                </section>
+                <section><num>16 §</num><content><p>payload 16</p></content></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    heading_op = AmendmentOp(
+        op_id="replace_12_heading",
+        op_type="REPLACE",
+        target_section="12",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_special="otsikko",
+        source_statute="2007/930",
+        lo=LegalOperation(
+            op_id="replace_12_heading",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "12")), special="otsikko"),
+            payload=None,
+        ),
+    )
+    subsection_op = AmendmentOp(
+        op_id="insert_12_2",
+        op_type="INSERT",
+        target_section="12",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=2,
+        source_statute="2007/930",
+        lo=LegalOperation(
+            op_id="insert_12_2",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "3"), ("section", "12"), ("subsection", "2"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="12",
+            target_chapter="3",
+            target_part=None,
+            group_ops=[heading_op, subsection_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    recovered = result.output
+    assert recovered.effective_target_chapter == "3"
+    assert [op.target_chapter for op in recovered.group_ops] == ["3", "3"]
+    assert all(op.lo is not None for op in recovered.group_ops)
+    assert recovered.group_ops[0].lo.target.path == (("chapter", "3"), ("section", "12"))
+    assert recovered.group_ops[1].lo.target.path == (
+        ("chapter", "3"),
+        ("section", "12"),
+        ("subsection", "2"),
+    )
+    assert not any(
+        finding.kind == "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
+        for finding in result.findings()
+    )
+
+
 def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> None:
     master = ReplayState(
         ir=IRNode(

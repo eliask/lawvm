@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
 from lxml import etree
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.phase_result import PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
@@ -516,16 +518,96 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
         "2",
         "5",
     )
-    assert payload_lookup.status == "unique"
+    assert payload_lookup.status == "missing"
     assert payload_lookup.body_lookup_status == "missing"
-    assert payload_lookup.payload_basis == "legacy_xml_fallback"
-    assert payload_lookup.payload_ir == direct_ir
-    assert payload_lookup.cross_heading_ir == direct_cross_ir
-    assert model.find_payload_ir("section", "5", "2", "5") == (direct_ir, direct_cross_ir)
+    assert payload_lookup.payload_basis == "none"
+    assert payload_lookup.payload_ir is None
+    assert payload_lookup.cross_heading_ir is None
+    assert model.find_payload_ir("section", "5", "2", "5") == (None, None)
     assert inventory_payload_lookup.status == "unique"
     assert inventory_payload_lookup.body_lookup_status == "unique"
     assert inventory_payload_lookup.payload_basis == "body_inventory"
     assert inventory_payload_lookup.payload_ir == direct_ir
+    assert inventory_payload_lookup.cross_heading_ir == direct_cross_ir
+
+
+def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_verdicts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <chapter><num>1 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+              <chapter><num>2 luku</num><section><num>5 \xc2\xa7</num></section></chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/10")
+
+    def fail_xml_lookup(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("typed non-unique payload lookup must not fall back to XML")
+
+    monkeypatch.setattr(AmendmentSourceModel, "find_xml_node", fail_xml_lookup)
+
+    ambiguous = model.lookup_payload_ir("section", "5")
+    assert ambiguous.status == "ambiguous"
+    assert ambiguous.body_lookup_status == "ambiguous"
+    assert ambiguous.payload_basis == "none"
+    assert ambiguous.payload_ir is None
+
+    missing = model.lookup_payload_ir("section", "6")
+    assert missing.status == "missing"
+    assert missing.body_lookup_status == "missing"
+    assert missing.payload_basis == "none"
+    assert missing.payload_ir is None
+
+    scoped_mismatch = model.lookup_payload_ir("section", "5", target_chapter="3")
+    assert scoped_mismatch.status == "missing"
+    assert scoped_mismatch.body_lookup_status == "missing"
+    assert scoped_mismatch.payload_basis == "none"
+    assert scoped_mismatch.payload_ir is None
+
+
+def test_source_model_payload_lookup_resolves_duplicate_coverage_refs_by_unit_id() -> None:
+    tree = etree.fromstring(
+        b"""
+        <akomaNtoso>
+          <act>
+            <body>
+              <section>
+                <num>4 a \xc2\xa7</num>
+                <subsection><content><p>foo</p></content></subsection>
+              </section>
+              <section>
+                <num>4 a \xc2\xa7</num>
+                <subsection><content><p>bar</p></content></subsection>
+              </section>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+    model = AmendmentSourceModel.from_tree(tree, source_ref="2000/11")
+    coverage_units = model.body_coverage_units()
+    source_refs = [unit.payload_ref for unit in coverage_units]
+
+    first = model.lookup_payload_ir_for_coverage_ref(source_refs[0])
+    second = model.lookup_payload_ir_for_coverage_ref(source_refs[1])
+
+    assert first.status == "unique"
+    assert first.body_lookup_status == "ambiguous"
+    assert first.payload_basis == "coverage_payload_ref"
+    assert first.payload_ir is not None
+    assert "foo" in irnode_to_text(first.payload_ir)
+    assert second.status == "unique"
+    assert second.body_lookup_status == "ambiguous"
+    assert second.payload_basis == "coverage_payload_ref"
+    assert second.payload_ir is not None
+    assert "bar" in irnode_to_text(second.payload_ir)
 
 
 def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() -> None:

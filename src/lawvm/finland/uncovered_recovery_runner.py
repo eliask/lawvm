@@ -139,12 +139,7 @@ class UncoveredRecoveryRun:
 
     def section_payload_ir(self, candidate: UncoveredSectionCandidate) -> IRNode | None:
         """Resolve one candidate's section payload through the source model."""
-        payload_lookup = self.source_model.lookup_payload_ir(
-            "section",
-            candidate.label,
-            candidate.amend_chapter_label,
-            candidate.amend_part_label,
-        )
+        payload_lookup = self.source_model.lookup_payload_ir_for_coverage_ref(candidate.source_ref)
         return payload_lookup.payload_ir
 
     def process_section_candidate(self, candidate: UncoveredSectionCandidate) -> None:

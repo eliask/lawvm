@@ -22,9 +22,6 @@ from lawvm.finland.group_plan import (
     coalesce_same_target_mixed_scope_section_groups as _coalesce_same_target_mixed_scope_section_groups,
     group_ops_by_target as _group_ops_by_target,
 )
-from lawvm.finland.lowering_scope_recovery import (
-    resolve_group_surface_scope as _resolve_group_surface_scope,
-)
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
@@ -424,8 +421,7 @@ def build_amendment_bundle(
             target_norm = group_key.target_norm
             target_chapter = group_key.target_chapter
             target_part = group_key.target_part
-            surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
-                muutos_tree=muutos_tree,
+            surface_target_chapter, surface_target_part = source_model.resolve_group_surface_scope(
                 target_unit_kind=target_unit_kind_value,
                 target_norm=target_norm,
                 target_chapter=target_chapter,

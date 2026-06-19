@@ -19,10 +19,14 @@ import lxml.etree as etree
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageUnit
 from lawvm.core.ir import IRNode
 from lawvm.core.payload_surface import TargetUnitKind
-from lawvm.finland.body_coverage import extract_body_coverage
+from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.constraints import _find_muutos_node_uncached
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.helpers import (
+    _normalize_source_part_num,
+    _normalize_source_section_num,
+    _norm_num_token,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
@@ -84,9 +88,103 @@ class SourcePayloadLookupResult:
     query: SourceBodyUnitQuery
     body_lookup_status: Literal["unique", "missing", "ambiguous"]
     body_candidates: tuple[ObservedBodyUnit, ...]
-    payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"]
+    payload_basis: Literal["body_inventory", "coverage_payload_ref", "legacy_xml_fallback", "none"]
     payload_ir: IRNode | None
     cross_heading_ir: IRNode | None
+
+
+def _xml_localname(el: etree._Element) -> str:
+    tag = el.tag
+    if isinstance(tag, str):
+        return tag.rsplit("}", 1)[-1]
+    return ""
+
+
+def _xml_num_text(el: etree._Element) -> str | None:
+    num_el = el.find("{*}num")
+    if num_el is None:
+        num_el = el.find("num")
+    if num_el is None or not num_el.text:
+        return None
+    return num_el.text.strip()
+
+
+def _coverage_payload_nodes_by_unit_id(muutos_tree: etree._Element) -> dict[str, etree._Element]:
+    """Return XML payload nodes keyed by the same unit ids as body coverage."""
+    body = muutos_tree if _xml_localname(muutos_tree) == "body" else muutos_tree.find(".//{*}body")
+    if body is None:
+        body = muutos_tree.find(".//body")
+    if body is None:
+        return {}
+    nodes: dict[str, etree._Element] = {}
+    seen_ids: set[str] = set()
+
+    def append_node(
+        kind: str,
+        observed_label: str,
+        parent_label: str | None,
+        el: etree._Element,
+    ) -> None:
+        base_id = f"{kind}_{observed_label}"
+        if parent_label:
+            base_id = f"{kind}_{parent_label}_{observed_label}"
+        unit_id = base_id
+        counter = 1
+        while unit_id in seen_ids:
+            unit_id = f"{base_id}_{counter}"
+            counter += 1
+        seen_ids.add(unit_id)
+        nodes[unit_id] = el
+
+    def walk_children(parent: etree._Element, active_chapter: str | None = None) -> None:
+        current_chapter = active_chapter
+        for child in parent:
+            kind = _xml_localname(child)
+            if kind == "crossHeading":
+                raw_part = " ".join("".join(str(part) for part in child.itertext()).split())
+                if _normalize_source_part_num(raw_part):
+                    current_chapter = None
+                    continue
+            if kind == "part":
+                raw_num = _xml_num_text(child)
+                if raw_num and _normalize_source_part_num(raw_num):
+                    walk_children(child, active_chapter=None)
+                    current_chapter = active_chapter
+                    continue
+            if kind == "chapter":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    chapter_label = _norm_num_token(raw_num).removesuffix("luku")
+                    if chapter_label:
+                        append_node("chapter", chapter_label, None, child)
+                        walk_children(child, chapter_label)
+                        current_chapter = active_chapter
+                        continue
+            if kind == "section":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    if _norm_num_token(raw_num).endswith("luku"):
+                        pseudo_chapter = _norm_num_token(raw_num).removesuffix("luku")
+                        if pseudo_chapter:
+                            append_node("chapter", pseudo_chapter, None, child)
+                            walk_children(child, pseudo_chapter)
+                            current_chapter = pseudo_chapter
+                            continue
+                    observed_label = _normalize_source_section_num(raw_num)
+                    if observed_label:
+                        append_node("section", observed_label, current_chapter, child)
+                        walk_children(child, current_chapter)
+                        continue
+            if kind == "article":
+                raw_num = _xml_num_text(child)
+                if raw_num:
+                    observed_label = _norm_num_token(raw_num)
+                    if observed_label:
+                        append_node("article", observed_label, current_chapter, child)
+            walk_children(child, current_chapter)
+
+    walk_children(body)
+    return nodes
 
 
 @dataclass(slots=True)
@@ -113,6 +211,11 @@ class AmendmentSourceModel:
     )
     _node_cache: dict[SourceUnitLookup, etree._Element | None] = field(
         default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _coverage_node_cache: dict[str, etree._Element] | None = field(
+        default=None,
         init=False,
         repr=False,
     )
@@ -374,6 +477,11 @@ class AmendmentSourceModel:
             )
         return self._node_cache[key]
 
+    def _coverage_payload_nodes_by_unit_id(self) -> dict[str, etree._Element]:
+        if self._coverage_node_cache is None:
+            self._coverage_node_cache = _coverage_payload_nodes_by_unit_id(self.muutos_tree)
+        return self._coverage_node_cache
+
     def has_source_node(
         self,
         target_unit_kind: TargetUnitKind | str,
@@ -407,17 +515,15 @@ class AmendmentSourceModel:
             part=target_part,
         )
         if key not in self._payload_ir_cache:
-            from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
-
             body_lookup = self.lookup_body_unit(
                 key.unit_kind,
                 key.label,
                 target_chapter=key.chapter,
                 target_part=key.part,
             )
-            if body_lookup.status == "ambiguous":
+            if body_lookup.status != "unique":
                 self._payload_ir_cache[key] = SourcePayloadLookupResult(
-                    status="ambiguous",
+                    status=body_lookup.status,
                     query=body_lookup.query,
                     body_lookup_status=body_lookup.status,
                     body_candidates=body_lookup.candidates,
@@ -426,6 +532,8 @@ class AmendmentSourceModel:
                     cross_heading_ir=None,
                 )
                 return self._payload_ir_cache[key]
+
+            from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
 
             source_node = self.find_xml_node(
                 key.unit_kind,
@@ -444,11 +552,7 @@ class AmendmentSourceModel:
             )
             if payload_ir is not None:
                 status = "unique"
-                payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"] = (
-                    "body_inventory"
-                    if body_lookup.status == "unique"
-                    else "legacy_xml_fallback"
-                )
+                payload_basis: Literal["body_inventory", "legacy_xml_fallback", "none"] = "body_inventory"
             else:
                 status = "missing"
                 payload_basis = "none"
@@ -462,6 +566,62 @@ class AmendmentSourceModel:
                 cross_heading_ir=cross_heading_ir,
             )
         return self._payload_ir_cache[key]
+
+    def lookup_payload_ir_for_coverage_ref(
+        self,
+        source_ref: BodyCoveragePayloadRef,
+    ) -> SourcePayloadLookupResult:
+        """Return payload IR for one concrete body-coverage source unit."""
+        query = SourceBodyUnitQuery(
+            unit_kind=source_ref.unit_kind,
+            label=_norm_num_token(source_ref.label),
+            chapter=_norm_num_token(source_ref.chapter or "") if source_ref.chapter else None,
+            part=_norm_num_token(source_ref.part or "") if source_ref.part else None,
+        )
+        matching_units = tuple(
+            unit
+            for unit in self.body_coverage_units()
+            if isinstance(unit.payload_ref, BodyCoveragePayloadRef)
+            and unit.payload_ref.unit_id == source_ref.unit_id
+        )
+        body_lookup = self.lookup_body_unit(
+            source_ref.unit_kind,
+            source_ref.label,
+            target_chapter=source_ref.chapter,
+            target_part=source_ref.part,
+        )
+        if len(matching_units) != 1:
+            return SourcePayloadLookupResult(
+                status="missing",
+                query=query,
+                body_lookup_status=body_lookup.status,
+                body_candidates=body_lookup.candidates,
+                payload_basis="none",
+                payload_ir=None,
+                cross_heading_ir=None,
+            )
+
+        from lawvm.finland.amendment_payload_lookup import _payload_ir_from_muutos_node
+
+        source_node = self._coverage_payload_nodes_by_unit_id().get(source_ref.unit_id)
+        payload_ir, cross_heading_ir = (
+            _payload_ir_from_muutos_node(
+                source_node,
+                target_unit_kind=source_ref.unit_kind,
+                target_norm=source_ref.label,
+            )
+            if source_node is not None
+            else (None, None)
+        )
+        return SourcePayloadLookupResult(
+            status="unique" if payload_ir is not None else "missing",
+            query=query,
+            body_lookup_status=body_lookup.status,
+            body_candidates=body_lookup.candidates,
+            payload_basis="coverage_payload_ref" if payload_ir is not None else "none",
+            payload_ir=payload_ir,
+            cross_heading_ir=cross_heading_ir,
+        )
 
     def find_payload_ir(
         self,

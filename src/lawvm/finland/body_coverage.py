@@ -41,6 +41,7 @@ from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_
 class BodyCoveragePayloadRef:
     """Typed source-model lookup for a Finland coverage unit payload."""
 
+    unit_id: str
     unit_kind: str
     label: str
     chapter: Optional[str] = None
@@ -300,6 +301,7 @@ def extract_body_coverage(
                 observed_label=observed_label,
                 parent_label=parent_label,
                 payload_ref=BodyCoveragePayloadRef(
+                    unit_id=unit_id,
                     unit_kind=kind,
                     label=observed_label,
                     chapter=parent_label,

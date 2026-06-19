@@ -125,6 +125,7 @@ def test_extract_body_coverage_payload_ref_is_typed_and_part_scoped() -> None:
     assert unit.unit_id == "section_3_9"
     assert isinstance(unit.payload_ref, BodyCoveragePayloadRef)
     assert unit.payload_ref == BodyCoveragePayloadRef(
+        unit_id="section_3_9",
         unit_kind="section",
         label="9",
         chapter="3",
