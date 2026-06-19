@@ -1713,3 +1713,35 @@ fix-or-journal discipline.
   - **Skip these residual extras for replay** unless a source-owned repeal or
     migration witness is found. Do not delete transitional provisions by
     oracle absence alone.
+
+### `1999/1179` — Opetusministeriön päätös museoviraston suoritteiden maksullisuudesta
+
+- Baseline row (`20260618T2235`): structural `0.857143`, Levenshtein
+  `0.925492`; one amendment.
+- Root cause fixed:
+  - Source amendment `2000/1157` explicitly targets `6 §:n 1 momentti`.
+  - Source XML encodes the changed museum fee table as one targeted subsection
+    lead-in (`Museo mk`) followed by textual row sibling subsections
+    (`Alikartano 15`, `Hvitträsk 25`, `Olavinlinna 30`, ...).
+  - Sparse slot binding previously mapped only slot `1:1` to the replace op
+    and left table rows as unassigned sparse slots, so replay dropped the fee
+    rows from `6 §`.
+  - `a089962f` adds `ELAB.TEXT_TABLE_ROW_CONTINUATION`: a narrow payload
+    normalization rule that folds row-like sibling subsections into the single
+    explicitly targeted subsection when the target has a `seuraavasti:` table
+    lead-in.
+- Verification:
+  - Synthetic positive and negative payload-normalize tests pass.
+  - `lawvm inspect-amendment 1999/1179 --source 2000/1157 --stage all`
+    now maps `REPLACE 6 § 1 mom` to a subsection payload containing the fee
+    rows.
+  - `lawvm diff 1999/1179 --text --threshold 0.999 --compile-summary`
+    improves to `7 compared`, `6 perfect`, score `99.92%`; `6 §` is no
+    longer listed as divergent.
+- Residual disposition:
+  - Remaining visible diff is `7 §` editorial residue (`Voimaantulo 1Tämä`
+    vs `Voimaantulo Tämä`).
+  - The row also has an oracle cutoff wrinkle: the selected oracle reflects
+    `2000/1157` even though the amendment takes effect after the cached
+    consolidation cutoff. Do not use this row to tune temporal selection
+    without a broader oracle-horizon rule.
