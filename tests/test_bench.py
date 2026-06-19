@@ -420,6 +420,45 @@ def test_save_bench_diagnostic_sidecar_writes_structured_rows(tmp_path, monkeypa
     assert '"diagnostic_tier": "audit"' in text
 
 
+def test_oracle_check_diagnostics_are_oracle_tier() -> None:
+    from lawvm.tools import bench_diagnostic_tiers
+
+    key = "oracle_check:top_diagnosis:ORACLE_STALE"
+
+    assert bench_diagnostic_tiers.classify_bench_diagnostic_key(key) == "oracle"
+    summary = bench_diagnostic_tiers.format_tiered_bench_warning_summary(Counter({key: 1}))
+    assert "oracle: oracle_check:ORACLE_STALE×1" in summary
+
+
+def test_oracle_stale_adjusted_stats_enriches_diagnostic_counts(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bench,
+        "_run_oracle_checks_parallel",
+        lambda sids, workers, mode="official_consolidation", progress=False: {
+            "2000/1": {"top_diagnosis": "ORACLE_STALE"},
+            "2000/2": {"top_diagnosis": "REPLAY_EXTRA"},
+            "2000/3": {"top_diagnosis": "UNKNOWN"},
+        },
+    )
+    diagnostic_counts: dict[str, dict[str, int]] = {}
+
+    summary = bench._oracle_stale_adjusted_stats(
+        [
+            (1, "2000/1", 0.8, "OK", 0.1),
+            (1, "2000/2", 0.7, "OK", 0.1),
+            (1, "2000/3", 0.6, "OK", 0.1),
+        ],
+        workers=1,
+        diagnostic_counts=diagnostic_counts,
+    )
+
+    assert summary is not None
+    assert summary["excluded"] == ["2000/1"]
+    assert diagnostic_counts["2000/1"]["oracle_check:top_diagnosis:ORACLE_STALE"] == 1
+    assert diagnostic_counts["2000/2"]["oracle_check:top_diagnosis:REPLAY_EXTRA"] == 1
+    assert "2000/3" not in diagnostic_counts
+
+
 def test_print_bench_diagnostic_tier_rollup(capsys: pytest.CaptureFixture[str]) -> None:
     from lawvm.tools import bench_diagnostic_tiers
 

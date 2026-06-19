@@ -973,6 +973,7 @@ def _oracle_stale_adjusted_stats(
     *,
     workers: int,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    diagnostic_counts: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Compute an oracle-stale-aware headline mean over the current bench rows.
 
@@ -991,6 +992,13 @@ def _oracle_stale_adjusted_stats(
         mode=mode,
         progress=False,
     )
+    if diagnostic_counts is not None:
+        for sid, oracle_info in oracle_checks.items():
+            top_diagnosis = str(oracle_info.get("top_diagnosis") or "").strip()
+            if top_diagnosis and top_diagnosis != "UNKNOWN":
+                counts = diagnostic_counts.setdefault(sid, {})
+                key = f"oracle_check:top_diagnosis:{top_diagnosis}"
+                counts[key] = counts.get(key, 0) + 1
 
     kept: List[float] = []
     excluded: List[str] = []
@@ -2539,6 +2547,7 @@ def main(args) -> None:
             results,
             workers=workers,
             mode=bench_mode,
+            diagnostic_counts=diagnostic_counts,
         )
 
     verified = _load_verified_statutes()
