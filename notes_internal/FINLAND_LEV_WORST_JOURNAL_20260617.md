@@ -26,6 +26,10 @@ Current top Levenshtein gaps from the refresh run:
 - `1929/234`: lev `0.821830`, structural `0.887417` — part-move boundary +
   part-insert uncovered-body fix landed; residual editorial/extra topology;
   journaled below.
+- `1992/1243`: lev `0.856041`, structural `0.935897` in
+  `run_20260619T0815`; chapter-8a migration/repeal fix landed; residual
+  structural/text gap is list-topology plus editorial-heading/repeal-note
+  projection; journaled below.
 
 Purpose: track high-Levenshtein-gap Finnish statutes, root-cause classification,
 and whether the case is actionable or deferred. Entries here are working notes:
@@ -586,6 +590,47 @@ Dominant overlapping diagnostics among non-perfect Levenshtein rows:
   `0.801350` in `T1058`).
 - Residual: editorial wording deltas, replay-extra topology under other parts,
   and sparse johto-only gaps outside part-insert payloads.
+
+### `1992/1243` — Asetus valtion talousarviosta
+
+- Run row (`run_20260619T0815`): Levenshtein `0.856041`, structural
+  `0.935897`. Focused post-fix check: `uv run lawvm diff 1992/1243 --text
+  --threshold 0.999 --compile-summary` reports **97 compared, 79 perfect,
+  0 replay-missing, 0 replay-extra**, and compared-section score `99.35%`.
+- Fixed root cause: amendment `2016/118` says `lisätään 68 a §:n edelle uusi
+  luvun otsikko`, while the amendment body carries `<chapter><num>8 a
+  luku</num>...<section>68 a §</section><section>68 b §</section>...</chapter>`.
+  The old precreate pass only recognized chapter-heading anchors when the
+  johto named the new chapter number, so `68 a`/`68 b` stayed in chapter 7.
+  Later amendment `2024/853` repealed chapter `8a`, leaving those sections live
+  as replay extras.
+- Fix landed: unnumbered chapter-heading anchors can now be owned by the
+  source-body chapter number; membership migration moves only the section span
+  bounded by the next source/existing chapter start. Direct provision-state
+  reads now also mask descendants below selected ancestor tombstones, matching
+  PIT materialization.
+- Regression:
+  `tests/test_fi_session_regressions_2026_04.py::
+  test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections`,
+  `tests/test_fi_session_regressions_2026_04.py::
+  test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853`, and
+  `tests/test_fi_provision_state.py::
+  test_provision_state_masks_descendant_under_selected_chapter_tombstone`.
+- Residual classification:
+  - `oracle-check 1992/1243`: `EDITORIAL_CONVENTION=50`, `REPLAY_EXTRA=1`,
+    `UNKNOWN=2`; source pathologies include `DESTRUCTIVE_SHAPE_LOSS_RISK` and
+    `ITEM_TARGET_STRUCTURE_ABSENT`.
+  - Text residuals are mostly Finlex editorial repeal notices and omitted
+    headings (`41 §`, `61 §`, `66 b §`, etc.) plus one stale/source-tail-looking
+    `69 a §` sentence.
+  - Structural residuals concentrate in `3 §`/`4 §`: the source/oracle surfaces
+    disagree about budget-classification topology. Base XML encodes several
+    list-like labels as plain `<subsection>` or numberless `<paragraph>` nodes,
+    while the comparison surface projects corresponding current HTML rows as
+    numbered items. Do not rewrite legal topology from that display mismatch
+    without a named source-normalization family and broader evidence.
+- Current status: replay bug fixed; remaining gap belongs to editorial
+  projection / source-topology comparison, not a queued universal mutation fix.
 
 ### `1987/322`
 
