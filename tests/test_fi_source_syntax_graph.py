@@ -24,6 +24,7 @@ from lawvm.finland.legal_surface.source_syntax_graph import (
     SYNTAX_NODE_KINDS,
     SourceSyntaxGraph,
     assemble_source_syntax_graph,
+    project_list_inheritance,
 )
 from lawvm.finland.legal_surface.union_ownership_census import classify_body
 
@@ -120,6 +121,126 @@ def test_structural_skeleton_and_list_inheritance() -> None:
     assert inherit
     chapeau_ids = {n.node_id for n in chapeaux}
     assert all(e.dst in chapeau_ids for e in inherit)
+
+
+def test_list_construction_binds_chapeau_frame_onto_items() -> None:
+    # A chapeau setting a deontic frame (``Viranomainen voi …`` — permission) +
+    # two governed items. The L2 ListConstruction must bind the chapeau's
+    # actor/modal frame onto EACH item via the reserved has_subject / has_condition
+    # edges, and the projection must emit one frame-inheriting sub-norm per item.
+    body = (
+        "Viranomainen voi myöntää luvan seuraavin edellytyksin:\n"
+        "hakija täyttää vaatimukset;\n"
+        "toiminta on turvallista.\n"
+    )
+    forest = _assemble(body)
+
+    # The chapeau carries a parseable modal frame leaf.
+    modals = forest.nodes_of_kind("modal_predicate")
+    assert modals, [n.kind for n in forest.syntax_nodes.values()]
+
+    # Exactly one ListConstruction, with an inherited frame and two items.
+    assert len(forest.list_constructions) == 1
+    lc = forest.list_constructions[0]
+    assert lc.frame_status == "inherited"
+    assert lc.is_inherited
+    assert lc.frame_node_id
+    assert len(lc.item_ids) == 2
+
+    # The frame node is the chapeau's modal leaf, contained in the chapeau span.
+    chapeau = next(
+        n for n in forest.nodes_of_kind("chapeau") if n.node_id == lc.chapeau_id
+    )
+    frame = forest.syntax_nodes[lc.frame_node_id]
+    assert frame.kind == "modal_predicate"
+    assert chapeau.char_start <= frame.char_start and frame.char_end <= chapeau.char_end
+
+    # Each item is bound to the chapeau's frame by the reserved edges.
+    has_subject = forest.edges_of_kind("has_subject")
+    has_condition = forest.edges_of_kind("has_condition")
+    assert len(has_subject) == 2
+    assert len(has_condition) == 2
+    item_ids = set(lc.item_ids)
+    # has_subject: item -> frame leaf (item inherits the chapeau's actor/modal).
+    assert all(e.src in item_ids and e.dst == lc.frame_node_id for e in has_subject)
+    # has_condition: frame leaf -> item (item is a condition-set member of the norm).
+    assert all(e.src == lc.frame_node_id and e.dst in item_ids for e in has_condition)
+
+    # The structural inherits_chapeau link still holds for each item.
+    inherit = forest.edges_of_kind("inherits_chapeau")
+    assert len(inherit) == 2
+    assert all(e.src in item_ids and e.dst == lc.chapeau_id for e in inherit)
+
+    # Projection: one frame-inheriting sub-norm per item, carrying the modal family.
+    projected = project_list_inheritance(forest)
+    assert len(projected) == 2
+    assert all(p.frame_node_id == lc.frame_node_id for p in projected)
+    assert all(p.chapeau_id == lc.chapeau_id for p in projected)
+    assert all("modal" in p.inherited_families for p in projected)
+    # Each projected sub-norm's item span recovers the verbatim item text.
+    for p in projected:
+        assert body[p.item_span[0] : p.item_span[1]].strip()
+
+    # Edge/node vocab unchanged (no new kinds invented).
+    assert {e.kind for e in forest.syntax_edges} <= SYNTAX_EDGE_KINDS
+    assert {n.kind for n in forest.syntax_nodes.values()} <= SYNTAX_NODE_KINDS
+
+
+def test_chapeau_without_parseable_frame_leaves_items_unattached() -> None:
+    # A chapeau with NO parseable deontic/modal frame (a definitional lead-in,
+    # ``Tässä laissa tarkoitetaan seuraavaa:``) must NOT fabricate inheritance:
+    # the items keep their structural inherits_chapeau link but get NO frame edge,
+    # and the construction is recorded ``unsupported`` (fail-loud).
+    body = (
+        "Tässä laissa tarkoitetaan seuraavaa:\n"
+        "sivutuotteella eläinperäistä materiaalia;\n"
+        "jätteellä hylättyä ainetta.\n"
+    )
+    forest = _assemble(body)
+
+    # No modal frame leaf inside the chapeau → no governing frame.
+    assert len(forest.list_constructions) == 1
+    lc = forest.list_constructions[0]
+    assert lc.frame_status == "unsupported"
+    assert not lc.is_inherited
+    assert lc.frame_node_id == ""
+    assert len(lc.item_ids) == 2
+
+    # NO frame edge fabricated.
+    assert not forest.edges_of_kind("has_subject")
+    assert not forest.edges_of_kind("has_condition")
+    # Structural inheritance still holds (items not dropped).
+    assert len(forest.edges_of_kind("inherits_chapeau")) == 2
+    # Projection emits nothing for an unsupported construction.
+    assert project_list_inheritance(forest) == ()
+
+
+def test_list_inheritance_preserves_coverage_consistency_vs_l0() -> None:
+    # The L2 list-inheritance construction adds only edges + a typed view; it must
+    # NOT perturb the L0 union-ownership coverage the forest carries (no token
+    # previously owned becomes unowned; no silent-unowned span appears).
+    for body in (
+        "Viranomainen voi myöntää luvan seuraavin edellytyksin:\n"
+        "hakija täyttää vaatimukset;\n"
+        "toiminta on turvallista.\n",
+        "Toiminnanharjoittaja ei saa:\n"
+        "laiminlyödä velvollisuuksiaan;\n"
+        "vaarantaa turvallisuutta.\n",
+        "Tässä laissa tarkoitetaan seuraavaa:\n"
+        "sivutuotteella eläinperäistä materiaalia;\n"
+        "jätteellä hylättyä ainetta.\n",
+    ):
+        forest = _assemble(body)
+        bc, fc, usc, _ex, _sc = classify_body("test/1", body)
+        cov = forest.coverage
+        assert cov.total_tokens == sum(bc.values()), body
+        assert cov.owned_tokens == bc.get("owned", 0), body
+        assert cov.silent_tokens == bc.get("silent", 0), body
+        assert cov.is_partition(), body
+        # Every edge endpoint still resolves to a node (graph invariant).
+        node_ids = set(forest.syntax_nodes)
+        for e in forest.syntax_edges:
+            assert e.src in node_ids and e.dst in node_ids, body
 
 
 def test_totality_promotes_silent_unowned_to_unsupported(monkeypatch) -> None:

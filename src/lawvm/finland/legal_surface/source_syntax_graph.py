@@ -274,6 +274,48 @@ class SyntaxResidual:
 
 
 @dataclass(frozen=True, slots=True)
+class ListConstruction:
+    """A chapeau + its governed list items, with the chapeau's inherited frame.
+
+    grammar6 §"list inheritance": a Finnish provision is often ``chapeau (sets the
+    actor/modal/deontic frame) + ":" + numbered/lettered items (each a
+    condition/sub-norm that INHERITS the chapeau's frame)``. This is the typed
+    grouping the forest carries for ONE such construction: the chapeau structural
+    node, the chapeau's GOVERNING FRAME leaf (the ``modal_predicate`` construction
+    leaf sitting inside the chapeau span — the actor + necessity/permission the
+    items inherit), and the governed ``list_item`` structural nodes.
+
+    The construction is STRUCTURAL (the item membership comes from the
+    SegmentationGraph ``parent_index`` links, never guessed) and the frame is taken
+    from the chapeau's own parseable modal leaf — NEVER fabricated. When the chapeau
+    has NO parseable modal frame, ``frame_node_id`` is ``""`` and the items are left
+    frame-unattached (``frame_status == "unsupported"``): the construction is still
+    recorded (the items still ``inherits_chapeau`` structurally) but NO frame edge
+    is emitted, so no inheritance is invented (fail-loud).
+
+    Attributes:
+        chapeau_id:    ``node_id`` of the governing chapeau structural node.
+        frame_node_id: ``node_id`` of the chapeau's governing ``modal_predicate``
+                       leaf (the inherited actor/modal frame), or ``""`` when the
+                       chapeau carries no parseable modal frame.
+        item_ids:      ``node_id``s of the governed ``list_item`` nodes, in span
+                       order.
+        frame_status:  ``"inherited"`` when a frame leaf was found and bound onto
+                       the items; ``"unsupported"`` when the chapeau has no
+                       parseable frame (items left unattached — no fabrication).
+    """
+
+    chapeau_id: str
+    frame_node_id: str
+    item_ids: tuple[str, ...]
+    frame_status: Literal["inherited", "unsupported"]
+
+    @property
+    def is_inherited(self) -> bool:
+        return self.frame_status == "inherited"
+
+
+@dataclass(frozen=True, slots=True)
 class SyntaxCoverage:
     """The L0 union-ownership partition for ONE provision (grammar6 SyntaxCoverage).
 
@@ -337,6 +379,12 @@ class SourceSyntaxGraph:
         parse_status: A member of :data:`ParseStatus` for the WHOLE provision.
         residuals:    Explicit unowned-but-cheap-signal spans (self-evidencing).
         coverage:     The L0 union-ownership partition for this provision.
+        list_constructions: The chapeau+items :class:`ListConstruction` groupings,
+                      each carrying the chapeau's inherited frame (or marked
+                      ``unsupported`` when the chapeau has no parseable frame). The
+                      ``inherits_chapeau`` / ``has_subject`` / ``has_condition``
+                      edges that bind the frame onto the items are in
+                      ``syntax_edges``; this is the queryable typed VIEW.
     """
 
     graph_id: str
@@ -349,6 +397,7 @@ class SourceSyntaxGraph:
     parse_status: ParseStatus
     residuals: tuple[SyntaxResidual, ...]
     coverage: SyntaxCoverage
+    list_constructions: tuple[ListConstruction, ...] = ()
 
     def __post_init__(self) -> None:
         for nid, node in self.syntax_nodes.items():
@@ -561,6 +610,19 @@ def assemble_source_syntax_graph(
         edges=edges,
     )
 
+    # ── 2b. ListConstruction + chapeau-frame inheritance (the L2 construction) ─
+    # Bind each chapeau's governing modal frame onto its governed list items via
+    # the RESERVED has_subject / has_condition edges (grammar6 §"list inheritance").
+    # Structural only (item membership from parent_index, frame from the chapeau's
+    # own parseable modal leaf); a chapeau with no parseable frame leaves its items
+    # frame-unattached (no fabrication).
+    list_constructions = _emit_list_inheritance(
+        seg_graph=seg_graph,
+        seg_node_id=seg_node_id,
+        nodes=nodes,
+        edges=edges,
+    )
+
     # ── 3 + 4. coverage + residuals (REUSE the L0 ruler) ─────────────────────
     bucket_counts, family_counts, unowned_shape_counts, unowned_examples, _sents = (
         classify_body(statute_id, body, max_examples_per_shape=10_000)
@@ -603,6 +665,7 @@ def assemble_source_syntax_graph(
         parse_status=parse_status,
         residuals=residuals,
         coverage=coverage,
+        list_constructions=list_constructions,
     )
 
 
@@ -760,6 +823,128 @@ def _sentence_parse_kinds(seg_text: str) -> dict[str, str]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# ListConstruction + chapeau-frame inheritance (the L2 construction).
+# ---------------------------------------------------------------------------
+
+
+def _enclosed_modal_leaf(
+    chapeau: SyntaxNode, nodes: dict[str, SyntaxNode]
+) -> SyntaxNode | None:
+    """The chapeau's GOVERNING modal frame leaf, or None when it has no frame.
+
+    The chapeau's governing actor/modal frame is its OWN ``modal_predicate``
+    construction leaf — the leaf the modal family already minted inside the chapeau
+    span (``Viranomainen voi …`` / ``X ei saa …`` / ``X:n on tehtävä …``). We pick
+    the modal leaf fully contained in the chapeau span; when several exist (e.g. a
+    coordinated modal pair) the earliest-in-span one is the governing frame (the
+    sentence-initial deontic core), kept deterministic by ``(start, end)`` order.
+
+    Returns ``None`` when NO modal leaf sits inside the chapeau — the chapeau then
+    carries no parseable frame and its items are left unattached (no fabrication).
+    The frame is taken from the chapeau's OWN parse, never guessed from the items.
+    """
+    candidates = [
+        n
+        for n in nodes.values()
+        if n.kind == "modal_predicate"
+        and chapeau.char_start <= n.char_start
+        and n.char_end <= chapeau.char_end
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda n: (n.char_start, n.char_end))
+    return candidates[0]
+
+
+def _emit_list_inheritance(
+    *,
+    seg_graph: SegmentationGraph,
+    seg_node_id: list[str | None],
+    nodes: dict[str, SyntaxNode],
+    edges: list[SyntaxEdge],
+) -> tuple[ListConstruction, ...]:
+    """Build the :class:`ListConstruction` groupings + bind each chapeau's frame.
+
+    For every chapeau structural node that governs >=1 ``list_item`` (the
+    ``parent_index`` links the structural pass already emitted as
+    ``inherits_chapeau``), locate the chapeau's governing modal frame leaf
+    (:func:`_enclosed_modal_leaf`). When one is found, bind it onto EACH governed
+    item with the RESERVED frame edges (grammar6 §"list inheritance"):
+
+      * ``has_subject``  — item ← the chapeau's modal frame leaf: the item inherits
+        the chapeau's actor/modal (the deontic frame the chapeau sets is the
+        subject frame each item carries);
+      * ``has_condition`` — the chapeau's modal frame leaf → item: the item is a
+        condition-set member / sub-norm of the chapeau's norm.
+
+    When the chapeau has NO parseable modal frame, NO frame edge is emitted (the
+    items keep only their structural ``inherits_chapeau`` link) and the construction
+    is recorded with ``frame_status="unsupported"`` — the fail-loud, never-fabricate
+    behaviour. The ``inherits_chapeau`` edges themselves were already emitted by the
+    structural pass; this step adds ONLY the frame edges + the typed view.
+    """
+    # Map each chapeau segment-index → its governed list_item segment-indices,
+    # from the structural parent_index links (the same links the structural pass
+    # turned into inherits_chapeau edges).
+    items_by_chapeau: dict[int, list[int]] = {}
+    for i, seg in enumerate(seg_graph.segments):
+        if seg.kind != "list_item" or seg.parent_index is None:
+            continue
+        parent = seg_graph.segments[seg.parent_index]
+        if parent.kind != "chapeau":
+            continue
+        items_by_chapeau.setdefault(seg.parent_index, []).append(i)
+
+    constructions: list[ListConstruction] = []
+    for chapeau_seg_i in sorted(items_by_chapeau):
+        chapeau_nid = seg_node_id[chapeau_seg_i]
+        if chapeau_nid is None:
+            continue
+        chapeau_node = nodes[chapeau_nid]
+        item_nids = tuple(
+            nid
+            for seg_i in items_by_chapeau[chapeau_seg_i]
+            if (nid := seg_node_id[seg_i]) is not None
+        )
+        if not item_nids:
+            continue
+
+        frame_leaf = _enclosed_modal_leaf(chapeau_node, nodes)
+        if frame_leaf is None:
+            # No parseable frame on the chapeau → leave items unattached. The
+            # structural inherits_chapeau edges still hold; we emit NO frame edge
+            # (fail-loud: never fabricate an inherited actor/modal).
+            constructions.append(
+                ListConstruction(
+                    chapeau_id=chapeau_nid,
+                    frame_node_id="",
+                    item_ids=item_nids,
+                    frame_status="unsupported",
+                )
+            )
+            continue
+
+        for item_nid in item_nids:
+            # item inherits the chapeau's actor/modal (the subject frame) …
+            edges.append(
+                SyntaxEdge(kind="has_subject", src=item_nid, dst=frame_leaf.node_id)
+            )
+            # … and is a condition-set member / sub-norm of the chapeau's norm.
+            edges.append(
+                SyntaxEdge(kind="has_condition", src=frame_leaf.node_id, dst=item_nid)
+            )
+        constructions.append(
+            ListConstruction(
+                chapeau_id=chapeau_nid,
+                frame_node_id=frame_leaf.node_id,
+                item_ids=item_nids,
+                frame_status="inherited",
+            )
+        )
+    return tuple(constructions)
+
+
 def _emit_residual_nodes(
     body: str,
     *,
@@ -853,3 +1038,77 @@ def _decide_parse_status(
     if residual_count or coverage.silent_tokens or coverage.residual_tokens:
         return "partial_with_residuals"
     return "parsed"
+
+
+# ---------------------------------------------------------------------------
+# Projection: ListConstruction → per-item inherited norm/condition frames.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class InheritedItemFrame:
+    """One list item projected as a sub-norm INHERITING its chapeau's frame.
+
+    The projection of a :class:`ListConstruction`: each governed ``list_item`` is
+    re-read as a condition-set member / sub-norm of the chapeau's norm, CARRYING
+    the chapeau's deontic frame (actor + necessity/permission) instead of being an
+    unattached fragment (grammar6 §"list inheritance"). Surface-only — it carries
+    the SPANS of the inherited frame leaf (the chapeau's ``modal_predicate``) and
+    the item, not a legal conclusion; it authorizes no replay.
+
+    Attributes:
+        item_id:         ``node_id`` of the governed ``list_item`` node.
+        chapeau_id:      ``node_id`` of the governing chapeau.
+        frame_node_id:   ``node_id`` of the chapeau's inherited ``modal_predicate``
+                         frame leaf.
+        item_span:       ``[char_start, char_end)`` of the item (the sub-norm body).
+        frame_span:      ``[char_start, char_end)`` of the inherited frame leaf.
+        inherited_families: The family ids on the inherited frame leaf (``modal``,
+                         plus any coordinating family — the actor/modal the item
+                         inherits).
+    """
+
+    item_id: str
+    chapeau_id: str
+    frame_node_id: str
+    item_span: tuple[int, int]
+    frame_span: tuple[int, int]
+    inherited_families: tuple[str, ...]
+
+
+def project_list_inheritance(
+    forest: SourceSyntaxGraph,
+) -> tuple[InheritedItemFrame, ...]:
+    """Project each chapeau-governed list item as a frame-inheriting sub-norm.
+
+    The L2 projection (grammar6 §"list inheritance is where half-understanding
+    becomes powerful"): for every :class:`ListConstruction` the forest carries with
+    a parseable frame (``frame_status == "inherited"``), emit ONE
+    :class:`InheritedItemFrame` per governed item — the item re-read as a
+    condition-set member / sub-norm CARRYING the chapeau's actor/modal frame. A
+    construction with NO parseable frame (``frame_status == "unsupported"``)
+    projects NOTHING (the items stay unattached; no inheritance is invented).
+
+    Deterministic and surface-only: it reads ONLY the already-assembled forest
+    (the chapeau's modal leaf + the structural item nodes), makes NO new attachment
+    decision, and authorizes no replay. Items are emitted in span order.
+    """
+    out: list[InheritedItemFrame] = []
+    for lc in forest.list_constructions:
+        if lc.frame_status != "inherited" or not lc.frame_node_id:
+            continue
+        frame = forest.syntax_nodes[lc.frame_node_id]
+        for item_id in lc.item_ids:
+            item = forest.syntax_nodes[item_id]
+            out.append(
+                InheritedItemFrame(
+                    item_id=item_id,
+                    chapeau_id=lc.chapeau_id,
+                    frame_node_id=lc.frame_node_id,
+                    item_span=(item.char_start, item.char_end),
+                    frame_span=(frame.char_start, frame.char_end),
+                    inherited_families=frame.families,
+                )
+            )
+    out.sort(key=lambda f: f.item_span)
+    return tuple(out)
