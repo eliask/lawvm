@@ -705,6 +705,7 @@ def rekey_timelines_with_migration_events(
         event for event in migration_events if event.kind == "renumber"
     )
     native_boundary_signatures: dict[str, tuple[PrefixMigrationEventSignature, ...]] = {}
+    native_boundary_events: dict[str, tuple[MigrationEvent, ...]] = {}
 
     def _signatures_after_native_boundary(
         native_boundary: str,
@@ -720,6 +721,20 @@ def rekey_timelines_with_migration_events(
             and event_signature.effective > native_boundary
         )
         native_boundary_signatures[native_boundary] = filtered
+        return filtered
+
+    def _events_after_native_boundary(
+        native_boundary: str,
+    ) -> tuple[MigrationEvent, ...]:
+        cached = native_boundary_events.get(native_boundary)
+        if cached is not None:
+            return cached
+        filtered = tuple(
+            event
+            for event in migration_events
+            if native_boundary and event.effective and event.effective > native_boundary
+        )
+        native_boundary_events[native_boundary] = filtered
         return filtered
 
     def _current_address_after_prefix_migrations(
@@ -889,10 +904,10 @@ def rekey_timelines_with_migration_events(
             migrated_address = (
                 _current_address_after_prefix_migrations(
                     bucket.address,
-                    tuple(
-                        event
-                        for event in migration_events
-                        if bucket.native_boundary and event.effective and event.effective > bucket.native_boundary
+                    (
+                        ()
+                        if current_address_with_prefix_migration_signatures_fn is not None
+                        else _events_after_native_boundary(bucket.native_boundary)
                     ),
                     _signatures_after_native_boundary(bucket.native_boundary),
                     not_before=bucket.native_boundary,
