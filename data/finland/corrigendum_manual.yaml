@@ -358,3 +358,71 @@
   correction_type: body_text
   notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has 'virnaomainen' and 'valtioneuvosta'; cached consolidated XML fin@19900674 and Finlex HTML have 'viranomainen' and 'valtioneuvosto'. Minimal body_text patch applies only when the exact faulty sentence is present."
   verified: "2026-06-19"
+
+# 41/1965 (Laki perintökaaren voimaanpanosta) —
+# base XML has several OCR/source typos in still-live provisions. No official
+# corrigendum row was harvested for 1965/41. The cached consolidated XML
+# fin@20240771 carries the corrected spellings; each row below is an exact
+# text-node patch so unrelated occurrences cannot match.
+- amendment_id: "41/1965"
+  wrong_text: "Milloin laissa tai asetuksessa on viitattu lainkohtaan, jonka sijaan on tullut uuden perintökaaren säännös, on tätä sen asemasta sovellettava."
+  correct_text: "Milloin laissa tai asetuksessa on viitattu lainkohtaan, jonka sijaan on tullut uuden perintökaaren säännös, on tätä sen asemesta sovellettava."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has 'asemasta'; cached consolidated XML fin@20240771 has 'asemesta'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Mitä avioliittolain voimaanpanosta annetun lain 6 §:n 2 momentissa säädetään eräiden ennen avioliittolain voimaantuloa siitettyjen lasten oikeudellisesta asemasta, on edelleen voimassa myös täilaisten lasten perintöoikeudesta ja oikeudesta periä tällainen lapsi."
+  correct_text: "Mitä avioliittolain voimaanpanosta annetun lain 6 §:n 2 momentissa säädetään eräiden ennen avioliittolain voimaantuloa siitettyjen lasten oikeudellisesta asemasta, on edelleen voimassa myös tällaisten lasten perintöoikeudesta ja oikeudesta periä tällainen lapsi."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'täilaisten'; cached consolidated XML fin@20240771 has 'tällaisten'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "VaLtion oikeutta kuolleen henkilön jäämistöön valvoo valtiokonttori."
+  correct_text: "Valtion oikeutta kuolleen henkilön jäämistöön valvoo valtiokonttori."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'VaLtion'; cached consolidated XML fin@20240771 has 'Valtion'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Mitä uuden perintökaaren 9 luvun 2 §:ssä säädetään sen hyväksi tehdystä testamentista, joka testamentin tekijän kuollessa ei vielä ole syntynyt eikä siitetty, on, jollei erityisistä seikoista muuta johdu, vastaavasti sovellettava lahjaan tal muuhun sen hyväksi tehtyyn oikeustoimeen, joka oikeustointa päätettäessä ei vielä ele syntynyt eikä siitetty."
+  correct_text: "Mitä uuden perintökaaren 9 luvun 2 §:ssä säädetään sen hyväksi tehdystä testamentista, joka testamentin tekijän kuollessa ei vielä ole syntynyt eikä siitetty, on, jollei erityisistä seikoista muuta johdu, vastaavasti sovellettava lahjaan tai muuhun sen hyväksi tehtyyn oikeustoimeen, joka oikeustointa päätettäessä ei vielä ole syntynyt eikä siitetty."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'tal' and 'ele'; cached consolidated XML fin@20240771 has 'tai' and 'ole'. Minimal body_text patch applies only when the exact faulty sentence is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Luovutus konkurssiin tai pesänselvittäjän hallittavaksi käsittää puolisoiden pesän koko omaisuuden, mikäli puolin oikeudesta omaisuuden erottamiseen ei muuta johdu. Pesänselvittäjäksi on määrättävä eloonjäänyt puoliso, jollei erityisiä vastasyitä ole."
+  correct_text: "Luovutus konkurssiin tai pesänselvittäjän hallittavaksi käsittää puolisoiden pesän koko omaisuuden, mikäli puolison oikeudesta omaisuuden erottamiseen ei muuta johdu. Pesänselvittäjäksi on määrättävä eloonjäänyt puoliso, jollei erityisiä vastasyitä ole."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'puolin oikeudesta'; cached consolidated XML fin@20240771 has 'puolison oikeudesta'. Minimal body_text patch applies only when the exact faulty item text is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Perukirjan on merkittävä puolisoiden pesän omaisuus ja velat. Uuden perintökaaren 20 luvun 4 §:n 3 momentin säännöstä ennakon merkitsemisestä perukirjaan on sovellettava myös ennakkoon, joka on annettu yhteisestä omaisuudesta."
+  correct_text: "Perukirjaan on merkittävä puolisoiden pesän omaisuus ja velat. Uuden perintökaaren 20 luvun 4 §:n 3 momentin säännöstä ennakon merkitsemisestä perukirjaan on sovellettava myös ennakkoon, joka on annettu yhteisestä omaisuudesta."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'Perukirjan'; cached consolidated XML fin@20240771 has 'Perukirjaan'. Minimal body_text patch applies only when the exact faulty item text is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Mitä uuden perintökaaren 21 luvussa sanotaan, on sovellettava puolisoiden pesän varoihin ja velkoihin. Jos puolisoiden pesän omaisuus laissa säädetyssä ajassa luovutetaan konkurssiin tai pesänselvittäjän hallittavaksi, on kuitenkin eloonjääneen puolison velkavastuusta voimassa, mitä siitä konkurssin varalta on onnen 1 päivää tammikuuta 1930 voimassa olleessa laissa säädetty. Omaisuuden erilleen ottamisesta konkurssissa on niin ikään ennen mainittua päivää voimassa ollutta lakia noudatettava."
+  correct_text: "Mitä uuden perintökaaren 21 luvussa sanotaan, on sovellettava puolisoiden pesän varoihin ja velkoihin. Jos puolisoiden pesän omaisuus laissa säädetyssä ajassa luovutetaan konkurssiin tai pesänselvittäjän hallittavaksi, on kuitenkin eloonjääneen puolison velkavastuusta voimassa, mitä siitä konkurssin varalta on ennen 1 päivää tammikuuta 1930 voimassa olleessa laissa säädetty. Omaisuuden erilleen ottamisesta konkurssissa on niin ikään ennen mainittua päivää voimassa ollutta lakia noudatettava."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'onnen 1 päivää'; cached consolidated XML fin@20240771 has 'ennen 1 päivää'. Minimal body_text patch applies only when the exact faulty item text is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Omaisuuden osoituksessa saakoon eloonjäänyt puoliso hänelle tulevan etuosan jakamattomasta pesästä ja sen jälkeen naimaosansa."
+  correct_text: "Omaisuuden osituksessa saakoon eloonjäänyt puoliso hänelle tulevan etuosan jakamattomasta pesästä ja sen jälkeen naimaosansa."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'osoituksessa'; cached consolidated XML fin@20240771 has 'osituksessa'. Minimal body_text patch applies only when the exact faulty item text is present."
+  verified: "2026-06-19"
+
+- amendment_id: "41/1965"
+  wrong_text: "Sopimuksen kuolinpesän yhteishallinnosta on, jolloi toisin ole sovittu, katsottava käsittävän puolisoiden pesän koko omaisuuden."
+  correct_text: "Sopimuksen kuolinpesän yhteishallinnosta on, jollei toisin ole sovittu, katsottava käsittävän puolisoiden pesän koko omaisuuden."
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR 'jolloi'; cached consolidated XML fin@20240771 has 'jollei'. Minimal body_text patch applies only when the exact faulty item text is present."
+  verified: "2026-06-19"

@@ -79,6 +79,83 @@ def test_manual_base_source_patch_1986_762_corrects_two_ocr_typos() -> None:
     assert wrong.encode("utf-8") not in patched
 
 
+def test_manual_base_source_patch_1965_41_corrects_base_ocr_typos() -> None:
+    table = corr.CorrigendumPatchTable.load_from_source()
+    wrongs = [
+        (
+            "Milloin laissa tai asetuksessa on viitattu lainkohtaan, jonka sijaan "
+            "on tullut uuden perintökaaren säännös, on tätä sen asemasta sovellettava."
+        ),
+        (
+            "Mitä avioliittolain voimaanpanosta annetun lain 6 §:n 2 momentissa "
+            "säädetään eräiden ennen avioliittolain voimaantuloa siitettyjen lasten "
+            "oikeudellisesta asemasta, on edelleen voimassa myös täilaisten lasten "
+            "perintöoikeudesta ja oikeudesta periä tällainen lapsi."
+        ),
+        "VaLtion oikeutta kuolleen henkilön jäämistöön valvoo valtiokonttori.",
+        (
+            "Mitä uuden perintökaaren 9 luvun 2 §:ssä säädetään sen hyväksi tehdystä "
+            "testamentista, joka testamentin tekijän kuollessa ei vielä ole syntynyt "
+            "eikä siitetty, on, jollei erityisistä seikoista muuta johdu, vastaavasti "
+            "sovellettava lahjaan tal muuhun sen hyväksi tehtyyn oikeustoimeen, joka "
+            "oikeustointa päätettäessä ei vielä ele syntynyt eikä siitetty."
+        ),
+        (
+            "Luovutus konkurssiin tai pesänselvittäjän hallittavaksi käsittää "
+            "puolisoiden pesän koko omaisuuden, mikäli puolin oikeudesta omaisuuden "
+            "erottamiseen ei muuta johdu. Pesänselvittäjäksi on määrättävä "
+            "eloonjäänyt puoliso, jollei erityisiä vastasyitä ole."
+        ),
+        (
+            "Perukirjan on merkittävä puolisoiden pesän omaisuus ja velat. Uuden "
+            "perintökaaren 20 luvun 4 §:n 3 momentin säännöstä ennakon merkitsemisestä "
+            "perukirjaan on sovellettava myös ennakkoon, joka on annettu yhteisestä "
+            "omaisuudesta."
+        ),
+        (
+            "Mitä uuden perintökaaren 21 luvussa sanotaan, on sovellettava puolisoiden "
+            "pesän varoihin ja velkoihin. Jos puolisoiden pesän omaisuus laissa "
+            "säädetyssä ajassa luovutetaan konkurssiin tai pesänselvittäjän "
+            "hallittavaksi, on kuitenkin eloonjääneen puolison velkavastuusta voimassa, "
+            "mitä siitä konkurssin varalta on onnen 1 päivää tammikuuta 1930 voimassa "
+            "olleessa laissa säädetty. Omaisuuden erilleen ottamisesta konkurssissa on "
+            "niin ikään ennen mainittua päivää voimassa ollutta lakia noudatettava."
+        ),
+        (
+            "Omaisuuden osoituksessa saakoon eloonjäänyt puoliso hänelle tulevan "
+            "etuosan jakamattomasta pesästä ja sen jälkeen naimaosansa."
+        ),
+        (
+            "Sopimuksen kuolinpesän yhteishallinnosta on, jolloi toisin ole sovittu, "
+            "katsottava käsittävän puolisoiden pesän koko omaisuuden."
+        ),
+    ]
+    corrects = [
+        wrongs[0].replace("asemasta", "asemesta"),
+        wrongs[1].replace("täilaisten", "tällaisten"),
+        wrongs[2].replace("VaLtion", "Valtion"),
+        wrongs[3].replace("tal", "tai").replace("ele", "ole"),
+        wrongs[4].replace("puolin oikeudesta", "puolison oikeudesta"),
+        wrongs[5].replace("Perukirjan", "Perukirjaan"),
+        wrongs[6].replace("onnen 1 päivää", "ennen 1 päivää"),
+        wrongs[7].replace("osoituksessa", "osituksessa"),
+        wrongs[8].replace("jolloi", "jollei"),
+    ]
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<akomaNtoso><act><body>"
+        + "".join(f"<section><content><p>{wrong}</p></content></section>" for wrong in wrongs)
+        + "</body></act></akomaNtoso>"
+    ).encode("utf-8")
+
+    patched, applied = table.patch_source_body_xml(xml, "1965/41")
+
+    assert applied == [f"body_patch/1965/41/{idx}" for idx in range(9)]
+    for wrong, correct in zip(wrongs, corrects, strict=True):
+        assert wrong.encode("utf-8") not in patched
+        assert correct.encode("utf-8") in patched
+
+
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
     manual_path = tmp_path / "corrigendum_manual.yaml"
