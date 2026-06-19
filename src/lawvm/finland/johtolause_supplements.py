@@ -37,6 +37,8 @@ _NUMBERED_TABLE_TARGET_RULE_ID = "fi.numbered_table_target.v1"
 _NUMBERED_TABLE_TARGET_TAG = "numbered_table_target"
 _ITEM_AND_MOMENT_TARGET_RULE_ID = "fi.item_and_moment_target_supplement.v1"
 _ITEM_AND_MOMENT_TARGET_TAG = "item_and_moment_target_supplement"
+_MIXED_EXPLICIT_TARGET_RULE_ID = "fi.mixed_explicit_target_supplement.v1"
+_MIXED_EXPLICIT_TARGET_TAG = "mixed_explicit_target_supplement"
 _REPLACE_ITEMS_AND_MOMENT_RE = re.compile(
     r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
     r"(?P<moment>\d{1,3})\s+momentin\s+kohdat\s+"
@@ -49,6 +51,16 @@ _INSERT_ITEM_RE = re.compile(
     r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
     r"(?P<moment>\d{1,3})\s+momenttiin\s+uusi\s+kohta\s+"
     r"(?P<item>\d{1,3})\b",
+    flags=re.I,
+)
+_ITEM_REPLACE_RE = re.compile(
+    r"(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§\s*:\s*n\s+"
+    r"(?P<moment>\d{1,3})\s+momentin\s+kohta\s+"
+    r"(?P<item>\d{1,3}\s*[a-zäöå]?)\b",
+    flags=re.I,
+)
+_BARE_REPLACE_SECTION_RE = re.compile(
+    r"(?<![/\d])(?P<section>\d{1,4}\s*[a-zäöå]?)\s*§(?!\s*:)",
     flags=re.I,
 )
 _SPARSE_OSALTA_ROW_OMISSION_RE = re.compile(
@@ -113,6 +125,24 @@ class ItemInsertClause:
     section: str
     moment: int
     item_label: str
+    raw_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ItemReplaceClause:
+    """Typed supplement for ``N §:n K momentin kohta M`` clauses."""
+
+    section: str
+    moment: int
+    item_label: str
+    raw_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class BareSectionReplaceClause:
+    """Typed supplement for bare whole-section targets inside ``muutetaan``."""
+
+    section: str
     raw_text: str
 
 
@@ -558,6 +588,108 @@ def _has_op(
         and not op.target_special
         for op in ops
     )
+
+
+def _append_unique_op(
+    ops: list[AmendmentOp],
+    *,
+    op_id: str,
+    op_type: str,
+    section: str,
+    moment: int | None = None,
+    item: str | None = None,
+) -> None:
+    if _has_op(
+        ops,
+        op_type=op_type,
+        section=section,
+        moment=moment or 0,
+        item=item,
+    ):
+        return
+    if moment is None and any(
+        op.op_type == op_type
+        and op.target_unit_kind == "section"
+        and op.target_section == section
+        and op.target_paragraph is None
+        and not op.target_item
+        and not op.target_special
+        for op in ops
+    ):
+        return
+    ops.append(
+        AmendmentOp(
+            op_id=op_id,
+            op_type=op_type,
+            target_section=section,
+            target_unit_kind="section",
+            target_paragraph=moment,
+            target_item=item,
+            extraction_provenance_tags=(_MIXED_EXPLICIT_TARGET_TAG,),
+            witness_rule_id=_MIXED_EXPLICIT_TARGET_RULE_ID,
+        )
+    )
+
+
+def _parse_item_replace_clauses(johto: str) -> tuple[ItemReplaceClause, ...]:
+    clauses: list[ItemReplaceClause] = []
+    for match in _ITEM_REPLACE_RE.finditer(johto or ""):
+        section = _norm_num_token(match.group("section"))
+        item_label = _norm_num_token(match.group("item"))
+        if not section or not item_label:
+            continue
+        clauses.append(
+            ItemReplaceClause(
+                section=section,
+                moment=int(match.group("moment")),
+                item_label=item_label,
+                raw_text=match.group(0),
+            )
+        )
+    return tuple(clauses)
+
+
+def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceClause, ...]:
+    muutetaan_segment = re.split(r"\blisätään\b", johto or "", maxsplit=1, flags=re.I)[0]
+    clauses: list[BareSectionReplaceClause] = []
+    seen: set[str] = set()
+    for match in _BARE_REPLACE_SECTION_RE.finditer(muutetaan_segment):
+        section = _norm_num_token(match.group("section"))
+        if not section or section in seen:
+            continue
+        seen.add(section)
+        clauses.append(BareSectionReplaceClause(section=section, raw_text=match.group(0)))
+    return tuple(clauses)
+
+
+def _supplement_mixed_explicit_clause_ops(
+    ops: List[AmendmentOp],
+    johto: str,
+) -> List[AmendmentOp]:
+    """Recover explicit targets skipped by long mixed ``muutetaan`` lists."""
+    item_clauses = _parse_item_replace_clauses(johto)
+    bare_sections = _parse_bare_section_replace_clauses(johto)
+    if not item_clauses and not bare_sections:
+        return ops
+
+    supplemented = list(ops)
+    for idx, clause in enumerate(item_clauses):
+        _append_unique_op(
+            supplemented,
+            op_id=f"mixed_item_replace_{idx}_{clause.section}_{clause.moment}_{clause.item_label}",
+            op_type="REPLACE",
+            section=clause.section,
+            moment=clause.moment,
+            item=clause.item_label,
+        )
+    for idx, clause in enumerate(bare_sections):
+        _append_unique_op(
+            supplemented,
+            op_id=f"mixed_bare_section_replace_{idx}_{clause.section}",
+            op_type="REPLACE",
+            section=clause.section,
+        )
+    return supplemented
 
 
 def _supplement_item_and_moment_clause_ops(

@@ -64,6 +64,7 @@ from lawvm.finland.johto_scope_mentions import (
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause_supplements import (
     _supplement_item_and_moment_clause_ops,
+    _supplement_mixed_explicit_clause_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
     _supplement_sparse_osalta_row_omission_repeals,
@@ -11310,6 +11311,55 @@ def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
     ]
     assert got[0].witness_rule_id == "fi.item_and_moment_target_supplement.v1"
     assert got[0].extraction_provenance_tags == ("item_and_moment_target_supplement",)
+
+
+def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="op0",
+            op_type="REPLACE",
+            target_section="13",
+            target_kind=TargetKind.SECTION,
+            numbered_table_targets=("4",),
+        ),
+        AmendmentOp(
+            op_id="op1",
+            op_type="REPLACE",
+            target_section="26",
+            target_kind=TargetKind.SECTION,
+            numbered_table_targets=("8",),
+        ),
+        AmendmentOp(
+            op_id="op2",
+            op_type="REPLACE",
+            target_section="33",
+            target_kind=TargetKind.SECTION,
+            numbered_table_targets=("11",),
+        ),
+    ]
+    johto = (
+        "muutetaan 13 §:n taulukko 4, 25 §, 26 §:n taulukko 8, "
+        "33 §:n taulukko 11 ja 2 momentti, 41 §:n 1 momentin kohta 1 "
+        "ja 43 § sekä lisätään 24 §:n 1 momenttiin uusi kohta 8 ja "
+        "26 §:ään uusi 3 momentti, seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item, op.numbered_table_targets)
+        for op in got
+    ] == [
+        ("REPLACE", "13", None, None, ("4",)),
+        ("REPLACE", "26", None, None, ("8",)),
+        ("REPLACE", "33", None, None, ("11",)),
+        ("REPLACE", "41", 1, "1", ()),
+        ("REPLACE", "25", None, None, ()),
+        ("REPLACE", "43", None, None, ()),
+    ]
+    recovered = got[3:]
+    assert {op.witness_rule_id for op in recovered} == {"fi.mixed_explicit_target_supplement.v1"}
+    assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
 
 
 def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() -> None:

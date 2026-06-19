@@ -57,6 +57,7 @@ from lawvm.finland.johtolause import (
 from lawvm.finland.johtolause_supplements import (
     _tag_explicit_item_shift_after_repeal_hints,
     _tag_numbered_table_target_clause_ops,
+    _supplement_mixed_explicit_clause_ops,
     _supplement_item_and_moment_clause_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
@@ -2667,6 +2668,7 @@ def normalize_and_compile_ops(
         ops = _tag_named_table_row_single_clause_ops(ops, johto)
         ops = _tag_numbered_table_target_clause_ops(ops, johto)
         ops = _supplement_item_and_moment_clause_ops(ops, johto)
+        ops = _supplement_mixed_explicit_clause_ops(ops, johto)
     else:
         ops = []
     ops, osalta_findings = _supplement_sparse_osalta_row_omission_repeals(
