@@ -54,6 +54,7 @@ def _statute_xml(store, sid: str) -> bytes | None:
     return xml
 
 
+@pytest.mark.slow
 def test_reference_spans_are_not_mis_anchored_into_longer_numbers() -> None:
     """No reference span is lodged inside a longer number across the corpus."""
     store, ids = _corpus_or_skip()

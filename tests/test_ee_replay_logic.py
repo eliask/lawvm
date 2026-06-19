@@ -669,6 +669,7 @@ def test_replay_ee_to_pit_renumbers_old_sections_before_inserting_new_section_on
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_respects_old_format_commencement_range_after_item_gap() -> None:
     result = replay_ee_to_pit(
         "119032013007",
@@ -1165,6 +1166,7 @@ def test_replay_ee_to_pit_covers_live_superscript_section_inside_plain_repeal_ra
     )
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_recovers_same_section_companion_item_repeal() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1206,6 +1208,7 @@ def test_replay_ee_to_pit_treats_kehtetu_child_section_heading_as_empty_in_paren
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_does_not_reapply_whole_mixed_commencement_act_on_later_slice() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1224,6 +1227,7 @@ def test_replay_ee_to_pit_does_not_reapply_whole_mixed_commencement_act_on_later
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_honors_mixed_global_replace_exclusions_in_mahepollumajandus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1606,6 +1610,7 @@ def test_replay_ee_to_pit_replays_riigikogu_term_start_slice_in_erakonnaseadus()
     assert result.divergences == []
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_does_not_reapply_earlier_old_format_target_on_later_omnibus_slice() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -2718,6 +2723,7 @@ def test_replay_ee_to_pit_adjudicates_alkoholiseadus_forward_looking_oracle() ->
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_riigiloivuseadus_forward_looking_oracle() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2898,6 +2904,7 @@ def test_replay_ee_to_pit_applies_section_and_chapter_compound_repeal() -> None:
     assert residual_summary.matched_current_divergence_count == 0
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_riikliku_pensionikindlustuse_same_chain_editorial_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2925,6 +2932,7 @@ def test_replay_ee_to_pit_adjudicates_riikliku_pensionikindlustuse_same_chain_ed
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_kov_valimise_seadus_same_chain_editorial_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -2952,6 +2960,7 @@ def test_replay_ee_to_pit_adjudicates_kov_valimise_seadus_same_chain_editorial_d
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_krediidiandjate_seadus_same_chain_editorial_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -3108,6 +3117,7 @@ def test_replay_ee_to_pit_replays_headerless_old_format_omnibus_paragraph_for_et
     assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
+@pytest.mark.slow
 def test_replay_ee_to_pit_adjudicates_politsei_ja_piirivalve_same_chain_insertions() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
