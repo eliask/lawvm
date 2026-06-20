@@ -1271,18 +1271,6 @@ def _emit_section_snapshot(
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
 
-    def _latest_exact_section_snapshot_is_expired_temporary() -> bool:
-        if target_unit_kind != "section" or resolved_path is None or not op_source.effective:
-            return False
-        latest = _latest_section_snapshot_payload(
-            section_path=tuple(resolved_path),
-            replay_history_ops=lo_ops_out,
-        )
-        if latest is None or latest.source is None:
-            return False
-        latest_expires = latest.source.expires or ""
-        return bool(latest_expires and op_source.effective >= latest_expires)
-
     def _complete_whole_section_source_payload() -> Optional[IRNode]:
         """Return the source-owned section payload for exact whole-section snapshots.
 
@@ -1296,13 +1284,45 @@ def _emit_section_snapshot(
             return None
         candidates: list[IRNode] = []
         descendant_scoped_candidates = 0
-        latest_snapshot_is_expired_temporary = _latest_exact_section_snapshot_is_expired_temporary()
+
+        def _latest_exact_target_op_before_effective(target_path: Path) -> _LegalOperation | None:
+            for prior in reversed(lo_ops_out):
+                if prior.target.special is not None or prior.target.path != target_path:
+                    continue
+                prior_effective = prior.source.effective if prior.source is not None else ""
+                if op_source.effective and prior_effective and prior_effective >= op_source.effective:
+                    continue
+                return prior
+            return None
+
+        def _insert_target_is_not_live_before_effective() -> bool:
+            if resolved_path is None:
+                return False
+            latest = _latest_exact_target_op_before_effective(tuple(resolved_path))
+            if latest is None:
+                return False
+            if latest.action is StructuralAction.REPEAL or latest.payload is None:
+                return True
+            if latest.source is not None:
+                latest_expires = latest.source.expires or ""
+                if latest_expires and op_source.effective and op_source.effective >= latest_expires:
+                    return True
+            return False
+
+        def _whole_section_insert_can_own_snapshot(rop: ResolvedOp) -> bool:
+            if not rop.is_insert_action:
+                return False
+            # A whole-section insert after a prior exact target ended owns the
+            # reborn section child surface.  Initial inserts and existing-section
+            # insert/merge families still need the post-apply fold snapshot
+            # because source payload may need ontology normalization or rebasing.
+            return (not temporary_signal_for_op(rop)) and _insert_target_is_not_live_before_effective()
+
         for rop in group_rops:
             if not rop.targets_whole_unit("section"):
                 continue
             if not rop.is_replace_action and not (
-                rop.is_insert_action and latest_snapshot_is_expired_temporary
-                and not temporary_signal_for_op(rop)
+                _whole_section_insert_can_own_snapshot(rop)
             ):
                 continue
             source_payload = rop.muutos_ir

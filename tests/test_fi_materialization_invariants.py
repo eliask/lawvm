@@ -19,7 +19,7 @@ import pytest
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.tree_ops import check_invariants, iter_tree_invariant_violations
 
 _CORPUS_AVAILABLE = os.path.exists("data/finlex.farchive")
@@ -1399,6 +1399,34 @@ class Test1981_555Section11Split:
             "Lupapäätöksen sisällöstä ja luvan edellyttämien toimenpiteiden määräajasta säädetään "
             "tarkemmin valtioneuvoston asetuksella."
         )
+
+
+def test_1996_1260_complete_section_insert_rebirth_does_not_rehydrate_old_8b_tail() -> None:
+    lo_ops: list[Any] = []
+    replay = pinned_replay(
+        "1996/1260",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+    section = replay.materialized_state.find_section("8b")
+    assert section is not None
+    assert [child.label for child in section.children if child.kind is IRNodeKind.SUBSECTION] == ["1"]
+    section_text = irnode_to_text(section)
+    assert "verotaulukon 1 tuoteryhmien 9 ja 10" in section_text
+    assert "piiritullikamarille" not in section_text
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2022/958"
+        and op.action in {StructuralAction.INSERT, StructuralAction.REPLACE}
+        and op.target.path == (("section", "8b"),)
+    )
+    assert snapshot.payload is not None
+    assert snapshot.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+    assert snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
 
 
 class TestFoldHcontainerOrphanSectionReconcile:
