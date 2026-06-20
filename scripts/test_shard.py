@@ -357,6 +357,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_tree_ops_properties.py",
         "test_z3_proofs.py",
     ),
+    "core_discipline_gates": (
+        "test_replay_conservation.py",
+        "test_downgrade_witness.py",
+        "test_downgrade_witness_lint.py",
+        "test_dual_registration_completeness.py",
+    ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
@@ -643,6 +649,7 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
     "modules": ("core", "evidence", "properties", "properties_timeline", "tools"),
     "evidence": ("evidence_claims", "evidence_core", "evidence_reports"),
     "core": (
+        "core_discipline_gates",
         "core_ir_contracts",
         "core_tree_apply",
         "core_compile_projection",

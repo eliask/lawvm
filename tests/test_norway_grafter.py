@@ -3195,6 +3195,85 @@ def test_apply_no_ops_lowercase_roman_subitem_list_orders_numerically() -> None:
     ]
 
 
+def test_apply_no_ops_spurious_sort_order_downgrade_leaves_a_witness() -> None:
+    """A spurious sort_order downgrade must record an attributable witness.
+
+    Witness-required-for-downgrade discipline (notes/DISCIPLINE_GATES.md): when a
+    ``sort_order`` invariant violation is dropped from the blocking set as
+    spurious (roman-numeral semantics), the downgrade must not vanish silently —
+    it records a reclassification rule id + reason so a future regression in the
+    spurious predicate is auditable rather than invisible.
+    """
+    from lawvm.core.downgrade_witness import (
+        DowngradeRecord,
+        downgrade_witness_violation,
+    )
+
+    statute = IRStatute(
+        statute_id="no/lov/2005-06-03-33",
+        title="Roman sub-item downgrade witness test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=tuple(
+                                IRNode(kind=IRNodeKind.ITEM, label=rn, text=f"romertall {rn}")
+                                for rn in ("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix")
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Gammel tekst."),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="replace-section-2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "1"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Ny tekst."),
+        source=OperationSource(
+            statute_id="no/lovtid/2022-12-20-122",
+            enacted="2022-12-20",
+            effective="2022-12-20",
+        ),
+    )
+
+    sink: list[CompileAdjudication] = []
+    apply_no_ops(statute, [op], adjudications_out=sink, strict_invariants=True)
+
+    downgrades = [
+        a for a in sink if a.kind == "replay_tree_invariant_violation_downgraded"
+    ]
+    assert downgrades, "spurious sort_order downgrade left no witness adjudication"
+    detail = downgrades[0].detail
+    assert detail.get("nonblocking_reclassification_rule_id")
+    assert detail.get("reclassification_reason")
+
+    # The recorded witness satisfies the jurisdiction-agnostic invariant.
+    record = DowngradeRecord(
+        finding_id=downgrades[0].kind,
+        bug_kind="sort_order",
+        downgraded_to_nonblocking=True,
+        reclassification_rule_id=str(detail["nonblocking_reclassification_rule_id"]),
+        reclassification_reason=str(detail["reclassification_reason"]),
+    )
+    assert downgrade_witness_violation(record) is None
+
+
 def test_apply_no_ops_insert_reuses_existing_target_as_replace() -> None:
     statute = IRStatute(
         statute_id="no/lov/2025-01-01-1",
