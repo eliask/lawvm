@@ -278,6 +278,28 @@ _ACTIVE_GRANT_VERBS: frozenset[str] = frozenset(
     {"antaa", "antavat", "vahvistaa", "vahvistavat", "määrää", "määräävät", "hyväksyy"}
 )
 
+#: Necessitive participles ("must be issued/made/drawn up"). With a leading ``on``
+#: auxiliary and an instrument OBJECT (``päätös`` / ``määräys`` / ``ohje``) they
+#: mark a one-off PROCEDURAL DUTY to issue that instrument in a single case
+#: (``hakemukseen on annettava kirjallinen päätös`` = "a written decision must be
+#: issued on the application"; ``Luvassa on annettava tarpeelliset määräykset`` =
+#: "the permit must contain the necessary conditions") — NOT a delegated power to
+#: MAKE general subordinate rules. CLOSED. (``säädettävä`` is here because the
+#: ``säätää``-family is rule-MAKING; a necessitive ``on säädettävä asetuksella``
+#: still grants — the guard excludes the ``asetus`` instrument, so that survives.)
+_NECESSITIVE_PARTICIPLES: frozenset[str] = frozenset(
+    {"annettava", "tehtävä", "laadittava", "säädettävä"}
+)
+
+#: The instrument kinds that, as the OBJECT of a necessitive duty, are a one-off
+#: procedural duty rather than a rule-MAKING delegation. ``asetus`` is DELIBERATELY
+#: absent: ``[säännökset] on annettava asetuksella`` (provisions must be given BY
+#: decree) IS a genuine decree grant — the decree is the MEANS, not the object — so
+#: an ``asetus`` instrument never fires this guard.
+_PROCEDURAL_DUTY_OBJECT_INSTRUMENTS: frozenset[str] = frozenset(
+    {INSTRUMENT_MAARAYS, INSTRUMENT_OHJE, INSTRUMENT_PAATOS}
+)
+
 # ---------------------------------------------------------------------------
 # Shared token-native actor matcher (registry phrases UNION closed role actors).
 # ---------------------------------------------------------------------------
@@ -307,6 +329,7 @@ ResidualKind = (
     "instrument_without_power_verb",    # an instrument noun, no delegation verb
     "anaphoric_reference",              # ``siten kuin hallintolaissa säädetään``
     "subject_np_collision",            # ``Päätös annetaan tiedoksi …``
+    "procedural_duty_object",          # ``hakemukseen on annettava päätös`` (one-off duty)
     "benign_uninterpreted_prose",       # totality filler between owned spans
 )
 
@@ -676,6 +699,64 @@ def _is_subject_np_collision(
         if low in _PASSIVE_PREDICATE_VERBS or low in _COPULAR_AUX:
             return True
     return False
+
+
+def _is_procedural_duty_object(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+    verb_idx: int,
+    clause_text: str,
+) -> bool:
+    """Guard 3: the instrument is the OBJECT of a necessitive procedural DUTY.
+
+    ``Palkkaturvahakemukseen on annettava kirjallinen päätös`` ("a written
+    decision MUST BE ISSUED on the application") / ``Luvassa on annettava
+    tarpeelliset määräykset`` ("the permit must contain the necessary conditions")
+    are one-off procedural duties to issue an instrument in a single case — NOT a
+    delegated power to MAKE general subordinate rules. The bare instrument-noun +
+    power-verb co-occurrence test mints them because the necessitive ``annettava``
+    is in :data:`_POWER_VERBS` and ``päätös`` / ``määräys`` / ``ohje`` is the
+    object. Fires only when ALL hold:
+
+      * the matched power verb is a necessitive participle
+        (``annettava`` / ``tehtävä`` / ``laadittava`` / ``säädettävä``) governed by
+        a leading ``on`` auxiliary (the ``on annettava`` necessitive frame);
+      * the triggering instrument is a procedural-duty OBJECT kind
+        (``määräys`` / ``ohje`` / ``päätös``) — ``asetus`` is excluded so the
+        genuine ``[säännökset] on annettava asetuksella`` decree-by-means grant
+        survives; and
+      * NO genuine rule-MAKING signal stands the guard down: no forward decree
+        anchor (``asetuksella`` / ``asetuksen … nojalla``), and no ACTIVE grant
+        verb (``antaa`` / ``vahvistaa`` / ``määrää`` …) distinct from the
+        necessitive participle (``Ohjeet … antaa viranomainen`` is a genuine
+        grant, not a duty).
+    """
+    if tokens[verb_idx].text.lower() not in _NECESSITIVE_PARTICIPLES:
+        return False
+    instrument = _instrument_kind_for_surface(tokens[inst_idx].text)
+    if instrument not in _PROCEDURAL_DUTY_OBJECT_INSTRUMENTS:
+        return False
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    # A leading ``on`` auxiliary must govern the necessitive participle (the
+    # ``on annettava`` frame). An ``on`` anywhere before the participle suffices —
+    # Finnish allows intervening adverbials (``on viran puolesta annettava``).
+    verb_char = tokens[verb_idx].char_start
+    has_on_aux = any(
+        w.text.lower() == "on" and w.char_start < verb_char for w in words
+    )
+    if not has_on_aux:
+        return False
+    # Stand-down 1: a forward decree anchor → a decree power IS granted.
+    if _clause_has_decree_anchor(clause_text):
+        return False
+    # Stand-down 2: an ACTIVE grant verb distinct from the necessitive participle
+    # (the participle ``annettava`` is NOT in _ACTIVE_GRANT_VERBS, so this only
+    # fires on a separate active ``antaa``/``vahvistaa``/… → genuine grant).
+    if _clause_has_active_grant_verb(words):
+        return False
+    return True
 
 
 #: Generic ISSUER-HEAD suffixes (the morphological tail of an institutional
@@ -1073,6 +1154,23 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
             residuals.append(
                 _residual(
                     "subject_np_collision",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
+                    source_text,
+                )
+            )
+            continue
+        # Guard 3 — procedural-duty object: ``hakemukseen on annettava päätös`` /
+        # ``Luvassa on annettava määräykset`` — the instrument is the OBJECT of a
+        # one-off necessitive duty to ISSUE it, not a delegated rule-MAKING power.
+        if _is_procedural_duty_object(
+            tokens, clause_lo, clause_hi, inst_idx, verb_idx, clause_text
+        ):
+            residuals.append(
+                _residual(
+                    "procedural_duty_object",
                     tokens,
                     inst_idx,
                     instrument,

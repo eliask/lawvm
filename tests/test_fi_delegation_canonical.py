@@ -280,6 +280,68 @@ def test_object_fronted_grant_survives_subject_guard() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Over-recognition guard 3 — procedural-duty object: an instrument that is the
+# OBJECT of a one-off necessitive duty (``on annettava päätös``) to ISSUE it, NOT
+# a delegated power to MAKE general subordinate rules.
+# ---------------------------------------------------------------------------
+
+
+def test_procedural_duty_paatos_object_residualized() -> None:
+    # ``Palkkaturvahakemukseen on annettava kirjallinen päätös`` — "a written
+    # decision MUST BE ISSUED on the application": a one-off procedural duty, not a
+    # delegated decision-MAKING power (the canonical FP example, 2000/1108 §12).
+    scan = _grants("Palkkaturvahakemukseen on annettava kirjallinen päätös.")
+    assert scan.grants == ()
+    assert any(r.kind == "procedural_duty_object" for r in scan.residuals)
+
+
+def test_procedural_duty_maaraykset_object_residualized() -> None:
+    # ``Luvassa on annettava tarpeelliset määräykset`` — "the permit must contain
+    # the necessary conditions": the määräys is the permit's conditions (object of
+    # the duty), not a delegated rule-MAKING power (2000/86).
+    scan = _grants("Luvassa on annettava tarpeelliset määräykset.")
+    assert scan.grants == ()
+    assert any(r.kind == "procedural_duty_object" for r in scan.residuals)
+
+
+def test_procedural_duty_with_intervening_adverbial_residualized() -> None:
+    # Finnish allows an adverbial between ``on`` and the necessitive participle
+    # (``on viran puolesta annettava`` / ``on viipymättä annettava``); the duty
+    # frame still holds.
+    scan = _grants("Veden käyttäjille on viipymättä annettava tarpeelliset ohjeet.")
+    assert scan.grants == ()
+    assert any(r.kind == "procedural_duty_object" for r in scan.residuals)
+
+
+def test_necessitive_decree_by_means_is_grant() -> None:
+    # ``Tarkemmat säännökset on annettava asetuksella`` — the detailed provisions
+    # MUST BE GIVEN BY decree: the decree is the MEANS (instrument == asetus), a
+    # genuine grant. Guard 3 EXCLUDES asetus, so it STANDS DOWN.
+    scan = _grants("Tarkemmat säännökset on annettava valtioneuvoston asetuksella.")
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+    assert scan.grants[0].kind == KIND_VN_ASETUS
+
+
+def test_necessitive_with_decree_anchor_is_grant() -> None:
+    # A päätös duty clause that ALSO carries a forward decree anchor
+    # (``asetuksella``) grants a decree power — guard 3 stands down on the anchor.
+    scan = _grants(
+        "Päätös on annettava ja menettelystä säädetään tarkemmin asetuksella."
+    )
+    assert any(g.instrument == "asetus" for g in scan.grants)
+
+
+def test_active_antaa_grant_not_procedural_duty() -> None:
+    # ``Virasto antaa määräyksiä`` — an ACTIVE present grant verb (not the
+    # necessitive participle ``annettava``); a genuine rule-making grant that guard
+    # 3 must NOT touch.
+    scan = _grants("Virasto voi antaa tarkempia määräyksiä soveltamisesta.")
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "määräys"
+
+
+# ---------------------------------------------------------------------------
 # Projection key shape (census-comparable identity).
 # ---------------------------------------------------------------------------
 
