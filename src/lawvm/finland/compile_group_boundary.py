@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
 from lawvm.core.compile_result import StrictProfile
@@ -31,6 +31,7 @@ class CompileGroupRequest:
     strict_profile: Optional[StrictProfile]
     foreign_scoped_standalone_section_targets: Set[str]
     foreign_scoped_replace_section_targets: Set[str]
+    foreign_scoped_descendant_section_targets: Set[str] = field(default_factory=set)
     foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
     lookups: Optional[ReplayLookups] = None
 

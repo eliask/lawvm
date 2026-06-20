@@ -6079,6 +6079,45 @@ def test_normalize_group_payload_treats_new_container_prune_as_expected_split() 
     assert completeness.kind == "complete"
 
 
+def test_normalize_group_payload_prunes_foreign_descendant_insert_from_new_container() -> None:
+    ctx = _mock_ctx("chapter", "6a", live_node=None)
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.CHAPTER,
+        target_section="6a",
+        source_statute="2014/1020",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="6a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="6 a luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="15a"),
+            IRNode(kind=IRNodeKind.SECTION, label="15b"),
+            IRNode(kind=IRNodeKind.SECTION, label="26"),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [op],
+        muutos_ir,
+        {"26"},
+        foreign_scoped_descendant_section_targets={"26"},
+    )
+
+    observations = _observations(got)
+    assert _pathologies(got) == ()
+    assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
+    assert observations[0].detail is not None
+    assert observations[0].detail["pruned_sections"] == ["26"]
+    assert [child.label for child in _muutos_ir(got).children if child.kind is IRNodeKind.SECTION] == [
+        "15a",
+        "15b",
+    ]
+    assert _completeness(got).kind == "complete"
+
+
 def test_normalize_group_payload_keeps_new_container_members_shadowed_only_by_foreign_replaces() -> None:
     ctx = _mock_ctx("chapter", "5a", live_node=None)
     op = AmendmentOp(

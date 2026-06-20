@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
@@ -221,6 +221,7 @@ class ElaborateGroupRequest:
     johto: str
     profile: ReplayProfile
     strict_profile: Optional[StrictProfile]
+    foreign_scoped_descendant_section_targets: set[str] = field(default_factory=set)
     foreign_scoped_replace_section_target_scopes: frozenset[StandaloneSectionTarget] = frozenset()
 
 
@@ -235,6 +236,9 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         request.foreign_scoped_standalone_section_targets
     )
     foreign_scoped_replace_section_targets = request.foreign_scoped_replace_section_targets
+    foreign_scoped_descendant_section_targets = (
+        request.foreign_scoped_descendant_section_targets
+    )
     foreign_scoped_replace_section_target_scopes = (
         request.foreign_scoped_replace_section_target_scopes
     )
@@ -321,6 +325,7 @@ def elaborate_group(request: ElaborateGroupRequest) -> PhaseResult[ElaboratedGro
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
         foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
         recodification_transfer_context=_has_recodification_transfer_context(

@@ -41,6 +41,9 @@ def compile_group_typed(
     foreign_scoped_replace_section_targets = set(
         request.foreign_scoped_replace_section_targets
     )
+    foreign_scoped_descendant_section_targets = set(
+        request.foreign_scoped_descendant_section_targets
+    )
     foreign_scoped_replace_section_target_scopes = frozenset(
         request.foreign_scoped_replace_section_target_scopes
     )
@@ -93,6 +96,7 @@ def compile_group_typed(
             group_ops=recovery.group_ops,
             standalone_section_targets=standalone_section_targets,
             foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+            foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
             foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
             foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
             effective_target_part=recovery.effective_target_part,

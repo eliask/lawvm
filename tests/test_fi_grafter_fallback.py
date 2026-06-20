@@ -122,6 +122,7 @@ from lawvm.finland.scope import (
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
+    group_shadow_pruning_foreign_scoped_descendant_section_targets as _group_shadow_pruning_foreign_scoped_descendant_section_targets,
     group_shadow_pruning_foreign_scoped_replace_section_targets as _group_shadow_pruning_foreign_scoped_replace_section_targets,
     group_shadow_pruning_foreign_scoped_replace_section_target_scopes as _group_shadow_pruning_foreign_scoped_replace_section_target_scopes,
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
@@ -4452,6 +4453,37 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inser
     )
 
     assert got == {"20a", "20h"}
+
+
+def test_group_shadow_pruning_foreign_scoped_descendant_section_targets_keeps_only_child_inserts() -> None:
+    chapter_insert = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="chapter",
+        target_section="6a",
+    )
+    foreign_section_insert = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="18a",
+        target_chapter="7",
+    )
+    foreign_subsection_insert = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="26",
+        target_chapter="9",
+        target_paragraph=1,
+    )
+
+    got = _group_shadow_pruning_foreign_scoped_descendant_section_targets(
+        [chapter_insert, foreign_section_insert, foreign_subsection_insert],
+        target_unit_kind="chapter",
+        target_norm="6a",
+        target_part=None,
+        duplicate_section_labels=frozenset(),
+    )
+
+    assert got == {"26"}
 
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forward_inserts() -> None:

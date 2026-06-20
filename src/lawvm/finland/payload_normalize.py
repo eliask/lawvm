@@ -3060,6 +3060,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_descendant_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_target_scopes: (
         frozenset[StandaloneSectionTarget] | None
@@ -3077,6 +3078,9 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     standalone_section_targets = {_norm_num_token(label) for label in standalone_section_targets if label}
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
+    }
+    foreign_scoped_descendant_section_targets = {
+        _norm_num_token(label) for label in (foreign_scoped_descendant_section_targets or ()) if label
     }
     foreign_scoped_replace_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_replace_section_targets or ()) if label
@@ -3209,6 +3213,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                 # Prune it even though it's not in the live container.
                 if (
                     child_label in foreign_scoped_standalone_section_targets
+                    or child_label in foreign_scoped_descendant_section_targets
                     or (
                         child_label in foreign_scoped_replace_section_targets
                         and not has_dense_foreign_replace_bridge
@@ -3239,6 +3244,11 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
         # outside the new chapter/part; a separately owned foreign-scoped
         # INSERT belongs to that context too and must not be smuggled into the
         # new container.
+        if child_label in foreign_scoped_descendant_section_targets:
+            changed = True
+            pruned_labels.append(child_label)
+            pruned_witnesses.append(child_witness)
+            continue
         if child_label in foreign_scoped_standalone_section_targets:
             if foreign_replace_payload_overlap:
                 changed = True
@@ -5750,6 +5760,7 @@ def elaborate_payload_against_live(
     standalone_section_targets: Set[str],
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
+    foreign_scoped_descendant_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_targets: Set[str] | None = None,
     foreign_scoped_replace_section_target_scopes: (
         frozenset[StandaloneSectionTarget] | None
@@ -5888,6 +5899,7 @@ def elaborate_payload_against_live(
         muutos_ir,
         standalone_section_targets,
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        foreign_scoped_descendant_section_targets=foreign_scoped_descendant_section_targets,
         foreign_scoped_replace_section_targets=foreign_scoped_replace_section_targets,
         foreign_scoped_replace_section_target_scopes=foreign_scoped_replace_section_target_scopes,
         recodification_transfer_context=recodification_transfer_context,

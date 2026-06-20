@@ -204,6 +204,46 @@ def group_shadow_pruning_foreign_scoped_section_targets(
     return out
 
 
+def group_shadow_pruning_foreign_scoped_descendant_section_targets(
+    ops: list[AmendmentOp],
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_part: str | None,
+    duplicate_section_labels: frozenset[str],
+) -> set[str]:
+    """Return foreign-scoped INSERT labels that only own section descendants."""
+    if target_unit_kind not in {"chapter", "part"}:
+        return set()
+
+    out: set[str] = set()
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op.target_unit_kind != "section" or not section_label:
+            continue
+        if op.op_type != "INSERT":
+            continue
+        if op.target_paragraph is None and not op.target_item and not op.target_special:
+            continue
+        if (
+            op.scope_confidence is not None
+            and op.scope_confidence.source == "carry_forward"
+        ):
+            continue
+        if section_label in duplicate_section_labels:
+            continue
+        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_chapter = _effective_target_chapter(op)
+        if op_part == target_part and op_chapter == target_norm:
+            continue
+        if op_chapter is None and target_unit_kind == "chapter":
+            continue
+        if op_part is None and target_unit_kind == "part":
+            continue
+        out.add(section_label)
+    return out
+
+
 def group_shadow_pruning_foreign_scoped_replace_section_targets(
     ops: list[AmendmentOp],
     *,
