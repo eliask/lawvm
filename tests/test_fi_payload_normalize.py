@@ -3922,6 +3922,79 @@ def test_assign_subsection_slots_binds_lone_sparse_insert_to_trailing_slot() -> 
     assert got.unassigned_payload_slots == ("1:1", "2:2")
 
 
+def test_prepare_payload_surface_does_not_merge_new_subsection_insert_inner_omission() -> None:
+    """A new-moment INSERT with inner omission must not import live siblings.
+
+    Mirrors 1994/1384 §3 under 2012/221: the source says to add a new 3 mom,
+    while live §3 only has moments 1 and 2.  The inner omission belongs to the
+    amendment-local list payload.  Treating it as an item insertion into an
+    existing live subsection splices live moment 2 into the payload and lets the
+    trailing sparse binding rule hijack the new 3 mom target.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Live heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="old first moment"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="old second moment"),),
+            ),
+        ),
+    )
+    amendment = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="new third moment intro"),
+                    IRNode(kind=IRNodeKind.OMISSION),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="new third moment item"),
+                ),
+            ),
+        ),
+    )
+    op_insert = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="3",
+        target_paragraph=3,
+    )
+    ctx = _mock_ctx("section", "3", live_node=live_sec)
+
+    prepared = prepare_payload_surface(
+        ctx,
+        [op_insert],
+        amendment,
+        _replay_profile_stub(),
+        strict_profile=None,
+    )
+
+    assert prepared is not None
+    assert "old second moment" not in irnode_to_text(prepared)
+    slot_inputs = _collect_subsection_slot_inputs(prepared, [op_insert])
+    assert slot_inputs is not None
+
+    got = _assign_subsection_slots(slot_inputs)
+
+    mapped = got.subsec_map.for_op(op_insert)
+    assert mapped is not None
+    assert mapped.label == "1"
+    assert "new third moment intro" in irnode_to_text(mapped)
+    assert "old second moment" not in irnode_to_text(mapped)
+    assert not any(obs.kind == "ELAB.TRAILING_SPARSE_INSERT_BINDING" for obs in got.binding_observations)
+
+
 def test_assign_subsection_slots_marks_singleton_higher_moment_local_dense_binding_owned() -> None:
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,

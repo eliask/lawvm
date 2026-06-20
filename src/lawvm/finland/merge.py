@@ -2798,6 +2798,28 @@ def _pre_resolve_omissions(
             for op in group_ops
         )
 
+    def _plain_insert_targets_exist_in_live() -> bool:
+        if ctx.live_node is None:
+            return False
+        target_paragraphs = {
+            op.target_paragraph
+            for op in group_ops
+            if op.op_type == "INSERT"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        }
+        if not target_paragraphs:
+            return False
+        live_subsecs = [c for c in ctx.live_node.children if c.kind is IRNodeKind.SUBSECTION]
+        live_labels = {
+            int(label)
+            for sub in live_subsecs
+            if sub.attrs.get("lawvm_repeal_placeholder") != "1"
+            and (label := normalized_label_key(sub.label)).isdigit()
+        }
+        return target_paragraphs <= live_labels
+
     # Section-level: REPLACE or INSERT with omissions
     if target_unit_kind == "section":
         master_ref = None
@@ -2825,7 +2847,11 @@ def _pre_resolve_omissions(
             )
             if resolved is not None:
                 return resolved
-        elif ctx.live_node is not None and _is_single_subsection_insert_item_shell_ir(muutos_ir, group_ops):
+        elif (
+            ctx.live_node is not None
+            and _is_single_subsection_insert_item_shell_ir(muutos_ir, group_ops)
+            and _plain_insert_targets_exist_in_live()
+        ):
             # INSERT of items INTO an existing subsection: the inner omissions
             # signal that the full existing subsection content must be preserved.
             # Merge the new items in; do not create a new subsection.
