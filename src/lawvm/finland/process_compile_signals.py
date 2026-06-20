@@ -61,21 +61,17 @@ class ProcessCompileSignalsContext:
 
         structural_groups: set[str] = set()
         for op in self.resolved:
-            source_statute_for_group = str(getattr(op, "resolved_source_statute", ""))
-            if not source_statute_for_group:
-                source_statute_for_group = str(getattr(op, "source_statute", ""))
-            if not source_statute_for_group:
-                source_statute_for_group = str(
-                    getattr(getattr(op, "op", None), "source_statute", "")
-                )
-            if not source_statute_for_group:
-                source_statute_for_group = self.amendment_id
+            source_statute_for_group = (
+                op.resolved_source_statute
+                or op.op.source_statute
+                or self.amendment_id
+            )
             structural_groups.add(f"{fi_johto_prefix}{source_statute_for_group}")
 
         temporal_groups: set[str] = set()
         for event in self.compile_result.temporal_events:
-            group_id = getattr(event, "group_id", "")
-            if isinstance(group_id, str) and group_id.startswith(fi_johto_prefix):
+            group_id = event.group_id or ""
+            if group_id.startswith(fi_johto_prefix):
                 temporal_groups.add(group_id)
 
         missing_groups = tuple(sorted(structural_groups - temporal_groups))
