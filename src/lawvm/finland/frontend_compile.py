@@ -54,6 +54,7 @@ from lawvm.finland.ops import ScopeResolutionConfidence, ScopeResolutionSource
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.ops import normalize_scope_confidence, projection_scope_confidence
 from lawvm.finland.ops import _lo_with_path_update
+from lawvm.finland.ops import _op_target_subsection_label
 from lawvm.finland.normalize import (
     _sec1_fallback_peg_skip_required,
     _extract_root_replace_ops_from_body_fallback,
@@ -3559,6 +3560,8 @@ def normalize_and_compile_ops(
                 target_section=op.target_section or "",
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             detail = {
                 **failed.as_detail(),

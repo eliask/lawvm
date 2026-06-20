@@ -1583,6 +1583,18 @@ class ResolvedOp:
             and self.effective_target_special is None
         )
 
+def _op_target_subsection_label(op: "AmendmentOp") -> Optional[str]:
+    """Return the AmendmentOp subsection coordinate as a bare structural label.
+
+    ``AmendmentOp`` carries the subsection as an int paragraph; FailedOp stores
+    the subsection as a bare label so governance consumers can match it against
+    structural path labels without re-parsing the rendered description.
+    """
+    if op.target_paragraph is None:
+        return None
+    return str(op.target_paragraph)
+
+
 @dataclass
 class FailedOp:
     """A structured record of an operation that could not be applied."""
@@ -1594,6 +1606,12 @@ class FailedOp:
     target_unit_kind: TargetUnitKind
     target_chapter: Optional[str] = None
     target_part: Optional[str] = None
+    # Descendant coordinates of the failed target, carried as typed scope so
+    # governance consumers never re-parse the rendered description. Both are
+    # bare labels (e.g. subsection "2", item "3 a"), matching the structural
+    # path labels rather than the human "N mom / M kohta" rendering.
+    target_subsection: Optional[str] = None
+    target_item: Optional[str] = None
     reason_code: str = ""
     target_statute_id: Optional[str] = None
 
@@ -1611,6 +1629,8 @@ class FailedOp:
             "target_section": self.target_section,
             "target_chapter": self.target_chapter,
             "target_part": self.target_part,
+            "target_subsection": self.target_subsection,
+            "target_item": self.target_item,
         }
 
     def as_detail(self) -> dict[str, object]:
@@ -1635,6 +1655,8 @@ class FailedOp:
         target_unit_kind: TargetUnitKind,
         target_chapter: Optional[str] = None,
         target_part: Optional[str] = None,
+        target_subsection: Optional[str] = None,
+        target_item: Optional[str] = None,
     ) -> "FailedOp":
         """Build a failed-op record from neutral structural scope."""
         return cls(
@@ -1645,6 +1667,8 @@ class FailedOp:
             target_section=target_section,
             target_chapter=target_chapter,
             target_part=target_part,
+            target_subsection=target_subsection,
+            target_item=target_item,
             target_unit_kind=target_unit_kind,
         )
 

@@ -568,6 +568,8 @@ def _apply_intent_section_level(
                     target_section=rop.resolved_target_label,
                     target_chapter=rop.resolved_target_scope_chapter_label,
                     target_part=rop.resolved_target_scope_part_label,
+                    target_subsection=rop.resolved_target_subsection_label,
+                    target_item=rop.resolved_target_item_label,
                     target_unit_kind=rop.target_unit_kind,
                 )
             )
@@ -926,6 +928,8 @@ def _record_unhandled_typed_target_failed_op(
             target_section=rop.resolved_target_label,
             target_chapter=rop.resolved_target_scope_chapter_label,
             target_part=rop.resolved_target_scope_part_label,
+            target_subsection=rop.resolved_target_subsection_label,
+            target_item=rop.resolved_target_item_label,
             target_unit_kind=rop.target_unit_kind,
         )
     )
@@ -2031,6 +2035,8 @@ def _apply_canonical_intent(
                     target_section=rop.resolved_target_label,
                     target_chapter=rop.resolved_target_scope_chapter_label,
                     target_part=rop.resolved_target_scope_part_label,
+                    target_subsection=rop.resolved_target_subsection_label,
+                    target_item=rop.resolved_target_item_label,
                     target_unit_kind=rop.target_unit_kind,
                 )
             )

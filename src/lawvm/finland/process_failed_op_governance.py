@@ -382,14 +382,6 @@ class ProcessFailedOpGovernance:
         if not self.failed_ops or not self.lo_ops:
             return
 
-        item_desc_re = re.compile(
-            r"^\s*(?:INSERT|REPLACE|REPEAL)\s+"
-            r"(?P<section>\d+\s*[a-z]?)\s*§\s+"
-            r"(?P<subsection>\d+)\s+mom\s+"
-            r"(?P<item>\d+\s*[a-z]?)\s+kohta\b",
-            flags=re.I,
-        )
-
         def _payload_has_item(node: IRNode, item_label: str) -> bool:
             wanted = _norm_num_token(item_label)
             stack = [node]
@@ -425,15 +417,14 @@ class ProcessFailedOpGovernance:
         kept: list[FailedOp] = []
         governed: list[_ParentSnapshotGovernedFailure] = []
         for failed in self.failed_ops:
-            match = item_desc_re.match(failed.description)
-            if match is None:
+            if not failed.target_subsection or not failed.target_item:
                 kept.append(failed)
                 continue
-            if _norm_num_token(match.group("section")) != _norm_num_token(failed.target_section or ""):
+            if failed.target_unit_kind != "section" or not failed.target_section:
                 kept.append(failed)
                 continue
-            subsection = match.group("subsection")
-            item = match.group("item")
+            subsection = failed.target_subsection
+            item = failed.target_item
             snapshot = next(
                 (lo for lo in self.lo_ops if _snapshot_matches_failed(lo, failed, subsection, item)),
                 None,

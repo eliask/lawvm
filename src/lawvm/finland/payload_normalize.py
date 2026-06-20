@@ -50,7 +50,7 @@ from lawvm.finland.merge import (
     _drop_suspicious_partial_whole_section_replaces,
     _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update
+from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update, _op_target_subsection_label
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
@@ -709,6 +709,8 @@ def _unsupported_payload_rejected_ops(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
     return tuple(generated)
@@ -4601,6 +4603,8 @@ def _drop_item_replaces_missing_from_sparse_payload(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
         continue
@@ -4761,6 +4765,8 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                 target_section=str(op.target_section or ""),
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=op.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
         )
 

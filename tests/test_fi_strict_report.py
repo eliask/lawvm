@@ -850,6 +850,8 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
             "target_section": "5",
             "target_chapter": "4",
             "target_part": None,
+            "target_subsection": None,
+            "target_item": None,
             "source": "2020/1",
             "target_kind": "P",
         }

@@ -26,6 +26,7 @@ from lawvm.finland.ops import (
     normalize_scope_confidence,
     projection_scope_confidence,
     _lo_with_path_update,
+    _op_target_subsection_label,
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
@@ -757,6 +758,8 @@ def _maybe_apply_replace_to_insert_move(
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in replacement_ops
         ]
@@ -937,6 +940,8 @@ def _maybe_retarget_live_section(
                 target_section=op.target_section or request.target_norm,
                 target_unit_kind=op.target_unit_kind,
                 target_chapter=request.target_chapter,
+                target_subsection=_op_target_subsection_label(op),
+                target_item=op.target_item,
             )
             for op in result.group_ops
             if (

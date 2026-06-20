@@ -121,6 +121,8 @@ def _save_failure_cache(label: str, failures: List[FailedOp]) -> Path:
             "target_section": scope.get("target_section"),
             "target_chapter": scope.get("target_chapter"),
             "target_part": scope.get("target_part"),
+            "target_subsection": scope.get("target_subsection"),
+            "target_item": scope.get("target_item"),
         })
     p.write_text(json.dumps(records, ensure_ascii=False, indent=1))
     return p
@@ -146,6 +148,8 @@ def _load_failure_cache(label: str) -> Optional[List[FailedOp]]:
             target_section=r["target_section"],
             target_chapter=r.get("target_chapter"),
             target_part=r.get("target_part"),
+            target_subsection=r.get("target_subsection"),
+            target_item=r.get("target_item"),
             target_unit_kind=_failure_target_unit_kind(r),
         ))
     return failures
@@ -302,6 +306,8 @@ def _collect_failures_parallel(
                     target_section=r["target_section"],
                     target_chapter=r.get("target_chapter"),
                     target_part=r.get("target_part"),
+                    target_subsection=r.get("target_subsection"),
+                    target_item=r.get("target_item"),
                     target_unit_kind=_failure_target_unit_kind(r),
                 ))
 

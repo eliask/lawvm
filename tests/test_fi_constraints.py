@@ -977,3 +977,128 @@ def test_filter_ops_by_constraints_keeps_all_when_section_present() -> None:
     assert op1 in result
     assert op2 in result
     assert rejected == []
+
+
+# ---------------------------------------------------------------------------
+# Typed FailedOp coordinates: governance reads typed fields, never the
+# rendered description (representation-regression leak rank 24).
+# ---------------------------------------------------------------------------
+
+
+def _section_with_item(section: str, subsection: str, item: str) -> IRNode:
+    """Build a section node holding one subsection that contains an item."""
+    item_node = IRNode(kind=IRNodeKind.PARAGRAPH, label=item)
+    sub_node = IRNode(kind=IRNodeKind.SUBSECTION, label=subsection, children=(item_node,))
+    return IRNode(kind=IRNodeKind.SECTION, label=section, children=(sub_node,))
+
+
+def _subsection_snapshot_lo(
+    *,
+    statute_id: str,
+    section: str,
+    subsection: str,
+    payload: IRNode,
+):
+    from lawvm.core.ir import LegalAddress, LegalOperation
+    from lawvm.core.provenance import OperationSource
+    from lawvm.core.semantic_types import StructuralAction
+
+    return LegalOperation(
+        op_id=f"snapshot_subsection_{subsection}_from_section_{section}",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", section), ("subsection", subsection))),
+        payload=payload,
+        source=OperationSource(statute_id=statute_id),
+    )
+
+
+def _make_governance(failed_ops, lo_ops, findings_out):
+    from lawvm.core.phase_result import Finding
+    from lawvm.finland.migration_ledger import MigrationLedger
+    from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+
+    def _record_finding(**kwargs) -> Finding:
+        finding = Finding(
+            kind=kwargs["kind"],
+            role=kwargs.get("role", "observation"),
+            stage="test",
+            detail=kwargs.get("detail", {}),
+            source_statute=str(kwargs.get("source_statute") or ""),
+            blocking=kwargs.get("blocking", False),
+        )
+        findings_out.append(finding)
+        return finding
+
+    return ProcessFailedOpGovernance(
+        amendment_id="2020/1",
+        johto="",
+        failed_ops=failed_ops,
+        process_findings=[],
+        source_pathologies=[],
+        lo_ops=lo_ops,
+        resolved_ops=[],
+        migration_ledger=MigrationLedger(),
+        migration_ledger_initial_len=0,
+        record_finding=_record_finding,
+    )
+
+
+def test_item_failure_governance_reads_typed_subsection_and_item() -> None:
+    """Governance must consume FailedOp.target_subsection / target_item directly."""
+    failed = FailedOp.from_scope(
+        amendment_id="2020/1",
+        # Deliberately unparseable description: if governance still regexed the
+        # description it would never match and the failure would not be governed.
+        description="opaque rendering with no mom/kohta structure",
+        reason="item missing",
+        reason_code="section_not_found",
+        target_section="76",
+        target_unit_kind="section",
+        target_subsection="1",
+        target_item="4a",
+    )
+    snapshot = _subsection_snapshot_lo(
+        statute_id="2020/1",
+        section="76",
+        subsection="1",
+        payload=_section_with_item("76", "1", "4a"),
+    )
+    failed_ops = [failed]
+    findings: list = []
+    gov = _make_governance(failed_ops, [snapshot], findings)
+
+    gov.govern_item_failures_by_parent_subsection_snapshots()
+
+    assert failed_ops == []  # governed out of the failed list
+    governed = [f for f in findings if f.kind == "APPLY.FAILED_OPERATION_GOVERNED_BY_PARENT_SNAPSHOT"]
+    assert len(governed) == 1
+    assert governed[0].detail["target_subsection"] == "1"
+    assert governed[0].detail["target_item"] == "4a"
+
+
+def test_item_failure_without_typed_coords_is_not_governed() -> None:
+    """A mom/kohta-shaped description alone must not trigger governance now."""
+    failed = FailedOp.from_scope(
+        amendment_id="2020/1",
+        description="INSERT 76 § 1 mom 4a kohta",
+        reason="item missing",
+        reason_code="section_not_found",
+        target_section="76",
+        target_unit_kind="section",
+        # No typed subsection/item coordinates populated.
+    )
+    snapshot = _subsection_snapshot_lo(
+        statute_id="2020/1",
+        section="76",
+        subsection="1",
+        payload=_section_with_item("76", "1", "4a"),
+    )
+    failed_ops = [failed]
+    findings: list = []
+    gov = _make_governance(failed_ops, [snapshot], findings)
+
+    gov.govern_item_failures_by_parent_subsection_snapshots()
+
+    assert failed_ops == [failed]  # untouched: typed coords required
+    assert not [f for f in findings if f.kind == "APPLY.FAILED_OPERATION_GOVERNED_BY_PARENT_SNAPSHOT"]
