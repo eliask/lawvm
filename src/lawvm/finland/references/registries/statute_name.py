@@ -667,7 +667,7 @@ def sample_entries_from_farchive(
         root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT", ".")
         archive_path = os.path.join(root, "data", "finlex.farchive")
 
-    store = TransparentCorpusStore(Farchive(archive_path))
+    store = TransparentCorpusStore(Farchive(archive_path, readonly=True))
     out: list[StatuteNameEntry] = []
     for sid in store.list_statute_ids():
         if len(out) >= limit:
@@ -767,7 +767,7 @@ def all_entries_from_farchive(
         root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT", ".")
         archive_path = os.path.join(root, "data", "finlex.farchive")
 
-    store = TransparentCorpusStore(Farchive(archive_path))
+    store = TransparentCorpusStore(Farchive(archive_path, readonly=True))
     ids = store.list_statute_ids()
     if limit:
         ids = ids[:limit]

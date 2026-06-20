@@ -79,7 +79,7 @@ def main():
     else:
         from farchive import Farchive
         db_path = repo_root / "data" / "uk_legislation.farchive"
-        archive = Farchive(db_path)
+        archive = Farchive(db_path, readonly=True)
         try:
             pipeline = UKReplayPipeline(repo_root)
 

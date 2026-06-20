@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from lawvm.finland.references.registries.statute_name import (
     StatuteNameEntry,
     all_entries_from_farchive,
     build_registry,
+    sample_entries_from_farchive,
 )
 
 
@@ -50,6 +52,19 @@ def test_enumerator_is_lazy_stream() -> None:
     """
     gen = all_entries_from_farchive(limit=1)
     assert isinstance(gen, Iterator)
+
+
+def test_farchive_entry_readers_do_not_create_missing_archive(tmp_path: Path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    with pytest.raises(sqlite3.OperationalError):
+        sample_entries_from_farchive(limit=1, archive_path=str(missing))
+    assert not missing.exists()
+
+    gen = all_entries_from_farchive(limit=1, archive_path=str(missing))
+    with pytest.raises(sqlite3.OperationalError):
+        next(gen)
+    assert not missing.exists()
 
 
 @_skip_no_corpus
@@ -88,10 +103,6 @@ def test_full_enumerator_beats_sample_coverage() -> None:
     compare a 2000-id slice against the 500-id sample's ceiling to keep the test
     cheap while proving the enumerator is not silently truncating.
     """
-    from lawvm.finland.references.registries.statute_name import (
-        sample_entries_from_farchive,
-    )
-
     sample = sample_entries_from_farchive(limit=500)
     bigger = list(all_entries_from_farchive(limit=2000))
     assert len(bigger) > len(sample)

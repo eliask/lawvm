@@ -23,7 +23,7 @@ LEG_BASE = "https://www.legislation.gov.uk"
 def statute_ids_from_archive(db_path: Path, *, classes: list[str] | None = None) -> list[str]:
     from farchive import Farchive
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         current: set[str] = set()
         suffix = "/data.xml"
         for loc in archive.locators(f"{LEG_BASE}/%/data.xml"):
@@ -117,7 +117,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
 
     phrase_ids_scanned = 0
     phrase_witness_act_count = 0
-    with Farchive(args.db) as archive:
+    with Farchive(args.db, readonly=True) as archive:
         if args.source_phrase_only:
             diagnostics: list[dict[str, Any]] = []
             witnesses = []

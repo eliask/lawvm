@@ -26,7 +26,7 @@ def statute_ids_from_archive(db_path: Path, *, classes: list[str] | None = None)
     from farchive import Farchive
 
     allowed = tuple(classes) if classes else SI_CLASSES
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         ids: set[str] = set()
         for doc_class in allowed:
             for loc in archive.locators(f"{LEG_BASE}/{doc_class}/%/%/data.xml"):
@@ -79,7 +79,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
 
     rows: list[dict[str, Any]] = []
     missing: list[str] = []
-    with Farchive(args.db) as archive:
+    with Farchive(args.db, readonly=True) as archive:
         for sid in ids:
             source_path = f"{LEG_BASE}/{sid}/data.xml"
             xml_bytes = archive.get(source_path)

@@ -25,7 +25,7 @@ LEG_BASE = "https://www.legislation.gov.uk"
 def statute_ids_from_archive(db_path: Path, *, classes: list[str] | None = None) -> list[str]:
     from farchive import Farchive
 
-    with Farchive(db_path) as archive:
+    with Farchive(db_path, readonly=True) as archive:
         current: set[str] = set()
         suffix = "/data.xml"
         for loc in archive.locators(f"{LEG_BASE}/%/data.xml"):
@@ -90,7 +90,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("pass --ids, --ids-file, --sample, or --all")
 
     diagnostics: list[dict[str, Any]] = []
-    with Farchive(args.db) as archive:
+    with Farchive(args.db, readonly=True) as archive:
         witnesses = scan_prospective_commencement_witnesses(
             ids,
             archive,
