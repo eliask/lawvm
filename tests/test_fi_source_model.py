@@ -115,7 +115,13 @@ def test_source_model_body_scope_queries_use_observed_inventory() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
 
     assert model.body_section_scope("5") == ("5", None)
+    assert model.body_section_wrapper_scope("5") == ("5", "2")
     assert model.body_section_chapter("5") is None
+    assert not model.body_carries_whole_section("5")
+    assert model.body_carries_whole_section("5", target_part="5")
+    assert model.unique_body_section_chapter("5") == "2"
+    assert model.unique_body_section_chapter("5", target_part="5") == "2"
+    assert model.unique_body_section_chapter("5", target_part="6") is None
     assert model.body_has_section("5")
     assert model.body_has_section("5", target_part="5")
     assert not model.body_has_section("5", target_chapter="2")
