@@ -295,7 +295,12 @@ def equal_rank_same_source_conflicts(
     selection_rail = temporary_versions or [
         version for version in eligible_versions if version.variant_kind == "permanent"
     ]
-    grouped: dict[_VersionSelectionConflictKey, list[ProvisionVersion]] = {}
+    if len(selection_rail) < 2:
+        return ()
+
+    first_by_key: dict[_VersionSelectionConflictKey, ProvisionVersion] = {}
+    key_order: list[_VersionSelectionConflictKey] = []
+    duplicate_groups: dict[_VersionSelectionConflictKey, list[ProvisionVersion]] = {}
     for version in selection_rail:
         source_statute = version.source.statute_id if version.source is not None else ""
         key = _VersionSelectionConflictKey(
@@ -304,11 +309,23 @@ def equal_rank_same_source_conflicts(
             enacted=version.enacted,
             source_statute=source_statute,
         )
-        grouped.setdefault(key, []).append(version)
+        duplicate_group = duplicate_groups.get(key)
+        if duplicate_group is not None:
+            duplicate_group.append(version)
+            continue
+        first_seen = first_by_key.get(key)
+        if first_seen is not None:
+            duplicate_groups[key] = [first_seen, version]
+            continue
+        first_by_key[key] = version
+        key_order.append(key)
+    if not duplicate_groups:
+        return ()
 
     conflicts: list[VersionSelectionTie] = []
-    for key, versions in grouped.items():
-        if len(versions) < 2:
+    for key in key_order:
+        versions = duplicate_groups.get(key)
+        if versions is None:
             continue
         content_hashes = {
             irnode_content_hash(version.content) if version.content is not None else "<absent>"
