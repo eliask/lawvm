@@ -1261,6 +1261,18 @@ class TestNoDuplicatesInPIT:
         assert "6 ja 9-19 §:ssä määrätyt" not in text
         assert "sähköiseen allekirjoitukseen liittyviä laatuvarmenteita" in text
 
+    def test_1995_57_misspelled_momenti_targets_section_8_subsection_3(self) -> None:
+        """2000/235 typo ``8 §:n 3 momenti`` must not widen to whole §8."""
+        ir = _replay("1995/57")
+        assert check_invariants(ir) == []
+
+        section_8 = _first_descendant(ir, IRNodeKind.SECTION, "8")
+        text = irnode_to_text(section_8)
+
+        assert "Jos alueellisen ympäristökeskuksen toimialaan kuuluvan asian vaikutukset" in text
+        assert "hakijana ympäristölupavirastossa" in text
+        assert "hakijana vesioikeuskäsittelyssä" not in text
+
     def test_2016_673_chapters_20_21_in_part_4a_not_part_5(self) -> None:
         """2016/673 chapters 20 and 21 must appear in part:4a after 2019/209 moves them.
 

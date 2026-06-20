@@ -1039,6 +1039,17 @@ class TestResolutionProvenanceFields:
         assert ("113", 0, "") in parsed
         assert ("145", 1, "") in parsed
 
+    def test_misspelled_momenti_preserves_subsection_target(self):
+        """2000/235 typo ``momenti`` must still target the named subsection."""
+
+        result = parse_clause("muutetaan 4 §:n 1 momentti ja 8 §:n 3 momenti")
+
+        assert not result.is_failed
+        parsed = {(op.number, op.momentti, op.item) for op in result.parsed_ops}
+        assert ("4", 1, "") in parsed
+        assert ("8", 3, "") in parsed
+        assert ("8", 0, "") not in parsed
+
     def test_backref_resolution_detail_carries_antecedent(self):
         """resolution_detail must identify the antecedent section label."""
         text = "muutetaan 3 §:n numero 5:ksi ja mainitun pykälän otsikko ja 1 momentti"
