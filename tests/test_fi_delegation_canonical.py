@@ -208,6 +208,78 @@ def test_empty_text() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Over-recognition guards — the two grant-SHAPED-but-not-a-grant shapes the bare
+# instrument-noun + power-verb co-occurrence test minted as FALSE POSITIVES.
+# ---------------------------------------------------------------------------
+
+
+def test_anaphoric_reference_residualized() -> None:
+    # ``siten kuin hallintolaissa säädetään`` — ``säädetään`` is a BACK-reference to
+    # where the matter is ALREADY provided for (the Administrative Procedure Act),
+    # not a forward grant. No decree anchor → guard 1 fires.
+    scan = _grants("Päätös on annettava tiedoksi siten kuin hallintolaissa säädetään.")
+    assert scan.grants == ()
+    assert any(r.kind == "anaphoric_reference" for r in scan.residuals)
+
+
+def test_mita_anaphor_residualized() -> None:
+    # ``noudattaen soveltuvin osin, mitä 13 luvussa säädetään`` — a ``mitä …
+    # säädetään`` back-reference. No grant.
+    scan = _grants("Määräys annetaan noudattaen soveltuvin osin, mitä 13 luvussa säädetään.")
+    assert scan.grants == ()
+    assert any(r.kind == "anaphoric_reference" for r in scan.residuals)
+
+
+def test_anaphor_with_decree_anchor_is_grant() -> None:
+    # ``siten kuin asetuksella tarkemmin säädetään`` — the decree anchor
+    # ``asetuksella`` means a decree power IS granted; guard 1 STANDS DOWN.
+    scan = _grants(
+        "Oikaisua haetaan päätökseen siten kuin asetuksella tarkemmin säädetään."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+
+
+def test_anaphor_with_active_grant_verb_is_grant() -> None:
+    # ``määräyksen antaa viranomainen noudattaen, mitä … säädetään`` — the active
+    # grant verb ``antaa`` makes the ``noudattaen mitä … säädetään`` mere MANNER;
+    # the grant survives.
+    scan = _grants(
+        "Määräyksen antaa mainitun lain mukainen viranomainen noudattaen, "
+        "mitä ympäristönsuojelulaissa säädetään."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "määräys"
+
+
+def test_subject_np_collision_residualized() -> None:
+    # ``Päätös annetaan julkipanon jälkeen`` — ``Päätös`` is the clause SUBJECT of a
+    # passive predicate, not the delegated object. No grant; subject-collision.
+    scan = _grants("Päätös annetaan julkipanon jälkeen ja siitä tiedotetaan.")
+    assert scan.grants == ()
+    assert any(r.kind == "subject_np_collision" for r in scan.residuals)
+
+
+def test_subject_np_collision_genitive_prefix_residualized() -> None:
+    # ``Ministeriön päätös on annettava tiedoksi`` — the subject NP is a genitive
+    # modifier + instrument head; still a subject-collision, not a grant. The
+    # back-reference ``siten kuin … säädetään`` here makes guard 1 own it.
+    scan = _grants("Ministeriön päätös on annettava tiedoksi viipymättä.")
+    assert scan.grants == ()
+    assert any(r.kind == "subject_np_collision" for r in scan.residuals)
+
+
+def test_object_fronted_grant_survives_subject_guard() -> None:
+    # ``Ohjeet … antaa viranomainen`` — the instrument is the FRONTED OBJECT of an
+    # active ``antaa`` with an authority subject; a genuine grant, NOT a collision.
+    scan = _grants(
+        "Ohjeet hakemuksiin liitettävistä selvityksistä antaa valvontaviranomainen."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "ohje"
+
+
+# ---------------------------------------------------------------------------
 # Projection key shape (census-comparable identity).
 # ---------------------------------------------------------------------------
 

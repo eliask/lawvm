@@ -206,6 +206,79 @@ _DEMONSTRATIVES: frozenset[str] = frozenset(
 _MAX_SUBJECT_SPAN = 200
 
 # ---------------------------------------------------------------------------
+# Over-recognition guards (CLOSED) — two grant-SHAPED-but-not-a-grant shapes the
+# bare instrument-noun + power-verb co-occurrence test mints as FALSE POSITIVES.
+# Both are SURGICAL: they fire only on a tightly-specified surface frame and
+# never on a forward decree/agency grant anchor.
+# ---------------------------------------------------------------------------
+
+#: Anaphoric connectives that head an "as provided in …" back-reference. When one
+#: governs ``säädetään`` (the power verb is a BACK-reference to where a matter is
+#: ALREADY regulated, not a forward grant), the clause is an anaphoric reference,
+#: NOT a delegation — PROVIDED no forward decree anchor (``asetuksella`` /
+#: ``asetuksen … nojalla``) also sits in the clause (``siten kuin asetuksella
+#: tarkemmin säädetään`` IS a genuine decree grant and must survive).
+_ANAPHORIC_CONNECTIVE_SURFACES: tuple[tuple[str, ...], ...] = (
+    ("siten", "kuin"),
+    ("sen", "mukaan", "kuin"),
+    ("mukaan", "kuin"),
+    ("noudattaen", "soveltuvin", "osin"),
+)
+
+#: A bare ``mitä …`` / ``, mitä …`` anaphor (``ei sovelleta, mitä … säädetään`` /
+#: ``ottaen huomioon, mitä … säädetään``) also heads a back-reference.
+_ANAPHOR_PRONOUN = "mitä"
+
+#: The power verbs that, under an anaphoric connective, are BACK-references (the
+#: matter is provided FOR elsewhere). Closed: only the ``säätää`` family — an
+#: anaphoric ``annetaan`` is handled by the subject-collision guard, not here.
+_ANAPHORIC_BACKREF_VERBS: frozenset[str] = frozenset(
+    {"säädetään", "säädetä", "säädetty", "säädetyn"}
+)
+
+#: Forward decree anchors. Their presence in an anaphoric clause means a decree
+#: power IS granted (``siten kuin asetuksella säädetään``) — guard 1 must NOT fire.
+_DECREE_ANCHOR_RE = re.compile(
+    r"\basetuksella\b|\basetuksen\b[^.;:]{0,80}\bnojalla\b", re.IGNORECASE
+)
+
+#: Nominative-SINGULAR instrument surfaces. As the clause SUBJECT of a passive /
+#: copular predicate (``Päätös annetaan …`` / ``Määräys on annettava …`` /
+#: ``Ohje voidaan antaa …``) the instrument word is the REGULATED subject, not the
+#: delegated object — a subject-NP collision, NOT a grant. CLOSED.
+_NOMINATIVE_SINGULAR_INSTRUMENTS: frozenset[str] = frozenset(
+    {"asetus", "määräys", "ohje", "päätös"}
+)
+
+#: Passive / copular predicate heads that, with a nominative-singular instrument
+#: SUBJECT, mark the subject-collision shape (``annetaan`` passive "is given";
+#: ``on`` + a ``-tava/-ttava`` necessitive; ``voidaan`` + an infinitive). An
+#: ACTIVE ``antaa`` taking the instrument as OBJECT is a genuine grant and is NOT
+#: in this set (``Ohjeet … antaa viranomainen``).
+_PASSIVE_PREDICATE_VERBS: frozenset[str] = frozenset(
+    {
+        "annetaan",
+        "tehdään",
+        "pannaan",
+        "vahvistetaan",
+        "julkaistaan",
+        "ratkaistaan",
+    }
+)
+#: Copular / necessitive auxiliaries leading a passive obligation (``on pantava
+#: täytäntöön`` / ``on annettava tiedoksi`` / ``on oltava``).
+_COPULAR_AUX = frozenset({"on", "voidaan"})
+
+#: ACTIVE grant verbs — a 3rd-person active ``antaa`` / ``vahvistaa`` taking the
+#: instrument as OBJECT is a genuine forward grant (``määräyksen antaa
+#: viranomainen noudattaen, mitä … säädetään`` — the ``noudattaen mitä …
+#: säädetään`` is mere MANNER; the grant ``antaa määräyksen`` stands). Their
+#: presence makes the anaphoric guard STAND DOWN so such grants survive.
+_ACTIVE_GRANT_VERBS: frozenset[str] = frozenset(
+    {"antaa", "antavat", "vahvistaa", "vahvistavat", "määrää", "määräävät", "hyväksyy"}
+)
+
+# ---------------------------------------------------------------------------
 # Shared token-native actor matcher (registry phrases UNION closed role actors).
 # ---------------------------------------------------------------------------
 
@@ -232,6 +305,8 @@ ResidualKind = (
     "cross_reference_instrument",       # ``asetuksen 34 §:ssä säädetään`` (existing)
     "postposition_complement",          # ``päätöksen mukaisesti säädetään``
     "instrument_without_power_verb",    # an instrument noun, no delegation verb
+    "anaphoric_reference",              # ``siten kuin hallintolaissa säädetään``
+    "subject_np_collision",            # ``Päätös annetaan tiedoksi …``
     "benign_uninterpreted_prose",       # totality filler between owned spans
 )
 
@@ -476,6 +551,129 @@ def _clause_has_may_modal(tokens: tuple[Token, ...], lo: int, hi: int) -> bool:
     for j in range(lo, hi):
         tok = tokens[j]
         if tok.category == "word" and tok.text in _MAY_MODALS:
+            return True
+    return False
+
+
+def _word_tokens(tokens: tuple[Token, ...], lo: int, hi: int) -> list[Token]:
+    return [tokens[j] for j in range(lo, hi) if tokens[j].category == "word"]
+
+
+def _clause_has_anaphoric_connective(words: list[Token]) -> bool:
+    """True iff a closed anaphoric connective heads a back-reference in the clause.
+
+    Matches the multi-word ``siten kuin`` / ``sen mukaan kuin`` / ``noudattaen
+    soveltuvin osin`` connectives over consecutive WORD tokens, or a bare ``mitä``
+    relative pronoun (``ei sovelleta, mitä … säädetään``).
+    """
+    lowered = [w.text.lower() for w in words]
+    if _ANAPHOR_PRONOUN in lowered:
+        return True
+    for phrase in _ANAPHORIC_CONNECTIVE_SURFACES:
+        n = len(phrase)
+        for j in range(0, len(lowered) - n + 1):
+            if tuple(lowered[j : j + n]) == phrase:
+                return True
+    return False
+
+
+def _clause_has_decree_anchor(clause_text: str) -> bool:
+    """True iff a FORWARD decree power anchor sits in the clause.
+
+    ``asetuksella`` (adessive "by decree") or ``asetuksen … nojalla`` — the
+    presence of either means a decree power IS granted even under an anaphoric
+    connective (``siten kuin asetuksella säädetään``), so guard 1 must stand down.
+    """
+    return _DECREE_ANCHOR_RE.search(clause_text) is not None
+
+
+def _clause_has_active_grant_verb(words: list[Token]) -> bool:
+    """True iff a 3rd-person ACTIVE grant verb (``antaa``/``vahvistaa``/…) is in the
+    clause — the signal of a GENUINE forward grant whose ``noudattaen mitä …
+    säädetään`` is mere manner. Makes the anaphoric guard stand down."""
+    return any(w.text.lower() in _ACTIVE_GRANT_VERBS for w in words)
+
+
+def _is_anaphoric_reference_clause(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    verb_idx: int,
+    clause_text: str,
+) -> bool:
+    """Guard 1: the clause's only grant signal is an anaphoric ``… säädetään``.
+
+    A clause's grant was minted on its first power verb, but the actual semantics
+    is a BACK-reference: ``siten kuin / sen mukaan kuin / noudattaen … mitä …
+    säädetään`` cites where the matter is ALREADY provided for. Fires only when
+    ALL hold:
+      * a ``säätää``-family back-reference verb sits in the clause (the matched
+        first power verb may be the subject's passive ``annetaan`` — the anaphoric
+        ``säädetään`` follows it);
+      * a closed anaphoric connective heads the back-reference;
+      * NO forward decree anchor (``asetuksella`` / ``asetuksen … nojalla``) — the
+        genuine ``siten kuin asetuksella säädetään`` decree grant is preserved; and
+      * NO active grant verb (``antaa``/``vahvistaa``/…) — a genuine ``määräyksen
+        antaa viranomainen noudattaen, mitä … säädetään`` grant is preserved.
+    """
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    has_backref_verb = (
+        tokens[verb_idx].text.lower() in _ANAPHORIC_BACKREF_VERBS
+        or any(w.text.lower() in _ANAPHORIC_BACKREF_VERBS for w in words)
+    )
+    if not has_backref_verb:
+        return False
+    if not _clause_has_anaphoric_connective(words):
+        return False
+    if _clause_has_decree_anchor(clause_text):
+        return False
+    if _clause_has_active_grant_verb(words):
+        return False
+    return True
+
+
+def _is_subject_np_collision(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+    inst_idx: int,
+) -> bool:
+    """Guard 2: the instrument word is the clause SUBJECT, not the delegated object.
+
+    Fires only when the triggering instrument is a NOMINATIVE-SINGULAR surface
+    (``Päätös`` / ``Määräys`` / ``Ohje`` / ``Asetus``) heading the clause SUBJECT
+    NP — either the first word token, or preceded ONLY by genitive modifier words
+    (``Ministeriön päätös`` / ``Viranhaltijan päätös``) — governing a PASSIVE /
+    copular-necessitive predicate (``annetaan`` / ``on annettava`` / ``voidaan
+    antaa`` / ``on pantava``). An ACTIVE ``antaa`` taking the instrument as object
+    (a genuine grant) makes the guard stand down; a non-subject instrument is not
+    matched.
+    """
+    if tokens[inst_idx].text.lower() not in _NOMINATIVE_SINGULAR_INSTRUMENTS:
+        return False
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    if not words:
+        return False
+    # Locate the instrument among the clause word tokens.
+    inst_pos = next(
+        (k for k, w in enumerate(words) if w.char_start == tokens[inst_idx].char_start),
+        None,
+    )
+    if inst_pos is None:
+        return False
+    # The instrument must HEAD the subject NP: every preceding word is a genitive
+    # modifier (``…n``) — i.e. the subject is ``[X:n] päätös``, not a deep-clause
+    # object. The clause-initial instrument (inst_pos == 0) trivially qualifies.
+    if any(not words[k].text.lower().endswith("n") for k in range(inst_pos)):
+        return False
+    # A genuine active grant (``antaa``/``vahvistaa``) anywhere → not a collision.
+    if _clause_has_active_grant_verb(words):
+        return False
+    # Walk the WORD tokens after the instrument; the predicate head is a passive
+    # verb or a copular/necessitive auxiliary leading an obligation.
+    for w in words[inst_pos + 1 :]:
+        low = w.text.lower()
+        if low in _PASSIVE_PREDICATE_VERBS or low in _COPULAR_AUX:
             return True
     return False
 
@@ -845,6 +1043,40 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
                     inst_idx,
                     instrument,
                     "",
+                    source_text,
+                )
+            )
+            continue
+
+        # --- over-recognition guards (CLOSED): grant-SHAPED but NOT a grant ---
+        # Guard 1 — anaphoric BACK-reference: ``siten kuin … säädetään`` /
+        # ``mitä … säädetään`` cites where a matter is ALREADY provided for; not a
+        # forward grant (unless a decree anchor ``asetuksella`` also binds).
+        if _is_anaphoric_reference_clause(
+            tokens, clause_lo, clause_hi, verb_idx, clause_text
+        ):
+            residuals.append(
+                _residual(
+                    "anaphoric_reference",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
+                    source_text,
+                )
+            )
+            continue
+        # Guard 2 — subject-NP collision: ``Päätös annetaan tiedoksi …`` — the
+        # instrument noun is the clause SUBJECT of a passive predicate, not the
+        # delegated object.
+        if _is_subject_np_collision(tokens, clause_lo, clause_hi, inst_idx):
+            residuals.append(
+                _residual(
+                    "subject_np_collision",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
                     source_text,
                 )
             )
