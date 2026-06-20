@@ -26,7 +26,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Dict
 
 from lawvm.core.interlinks import INTERLINK_ROW_COLUMNS
@@ -613,6 +613,7 @@ class SurfaceTextSpanPlacer:
         dataclasses.field(default_factory=dict)
     )
     _token_position_index: dict[str, set[tuple[int, int]]] | None = None
+    _token_char_index: dict[str, set[str]] | None = None
     _lower_segment_groups: list[
         tuple[str, list[tuple[RenderedTextSegment, str]]]
     ] | None = None
@@ -647,6 +648,16 @@ class SurfaceTextSpanPlacer:
                     )
         return index
 
+    @staticmethod
+    def _build_token_char_index(
+        token_position_index: dict[str, set[tuple[int, int]]],
+    ) -> dict[str, set[str]]:
+        by_char: dict[str, set[str]] = {}
+        for segment_token in token_position_index:
+            for char in set(segment_token):
+                by_char.setdefault(char, set()).add(segment_token)
+        return by_char
+
     def _segment_groups_for_token(
         self,
         token: str,
@@ -658,10 +669,28 @@ class SurfaceTextSpanPlacer:
             self._lower_segment_groups = self._build_lower_segment_groups()
         if self._token_position_index is None:
             self._token_position_index = self._build_token_position_index()
+        if self._token_char_index is None:
+            self._token_char_index = self._build_token_char_index(
+                self._token_position_index,
+            )
+        candidate_tokens: Iterable[str]
+        if token:
+            token_chars = set(token)
+            if token_chars:
+                rarest_char = min(
+                    token_chars,
+                    key=lambda char: len(self._token_char_index.get(char, ())),
+                )
+                candidate_tokens = self._token_char_index.get(rarest_char, ())
+            else:
+                candidate_tokens = self._token_position_index.keys()
+        else:
+            candidate_tokens = self._token_position_index.keys()
         segment_indexes_by_date: dict[int, set[int]] = {}
-        for segment_token, positions in self._token_position_index.items():
+        for segment_token in candidate_tokens:
             if token not in segment_token:
                 continue
+            positions = self._token_position_index[segment_token]
             for date_index, segment_index in positions:
                 segment_indexes_by_date.setdefault(date_index, set()).add(
                     segment_index
