@@ -4,6 +4,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, SupportsIndex
 
+from lawvm.core.ir import LegalOperation
+from lawvm.core.semantic_types import IRNodeKind
+
+
+def _section_snapshot_index_key(item: Any) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    if not isinstance(item, LegalOperation):
+        return None
+    if not item.op_id.startswith("snapshot_section_"):
+        return None
+    if item.payload is None or item.payload.kind is not IRNodeKind.SECTION:
+        return None
+    return item.op_id, item.target.path
+
 
 class ReplayLegalOperationCaptureList(list[Any]):
     """LawVM-owned legal-operation capture list with invalidatable local indexes."""
@@ -28,9 +41,10 @@ class ReplayLegalOperationCaptureList(list[Any]):
         self.timeline_payload_target_index: object | None = None
         self.timeline_target_exists_cache: object | None = None
 
-    def _invalidate_indexes(self) -> None:
+    def _invalidate_indexes(self, *, preserve_snapshot_index: bool = False) -> None:
         self.base_provision_index_cache = None
-        self.snapshot_index = None
+        if not preserve_snapshot_index:
+            self.snapshot_index = None
         self.timeline_exact_target_index = None
         self.timeline_latest_target_op_index = None
         self.timeline_payload_target_index = None
@@ -47,7 +61,15 @@ class ReplayLegalOperationCaptureList(list[Any]):
         return self
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        self._invalidate_indexes()
+        preserve_snapshot_index = False
+        if isinstance(key, SupportsIndex):
+            index = key.__index__()
+            try:
+                old_item = self[index]
+            except IndexError:
+                old_item = None
+            preserve_snapshot_index = _section_snapshot_index_key(old_item) == _section_snapshot_index_key(value)
+        self._invalidate_indexes(preserve_snapshot_index=preserve_snapshot_index)
         super().__setitem__(key, value)
 
     def __delitem__(self, key: Any) -> None:

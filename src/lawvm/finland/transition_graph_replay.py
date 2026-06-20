@@ -16,10 +16,11 @@ def run_fi_transition_graph_replay(
     profile: TransitionGraphExportProfile,
 ) -> ReplayBundle:
     """Run the Finnish engine once and capture L2 ops plus timelines."""
+    from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
     from lawvm.finland.replay_entrypoint import replay_xml
     from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
-    lo_ops: list[Any] = []
+    lo_ops: list[Any] = ReplayLegalOperationCaptureList()
     replay_findings: list[Any] = []
     failed_ops: list[Any] = []
     source_pathologies: list[Any] = []
