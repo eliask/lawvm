@@ -113,10 +113,21 @@ _MAY_MODALS: frozenset[str] = frozenset({"voidaan", "voi"})
 #: Power-verb surfaces that, with an instrument noun, mark a delegation grant.
 #: Union of B's ``_DELEGATION_VERBS`` and C's ``_POWER_VERBS`` (so neither
 #: rival's accepted shape declines). Matched as exact ``word`` tokens.
+#:
+#: ``säädetä`` is the CONNEGATIVE of ``säätää`` ("(does not) provide"). It marks
+#: the negative-RESERVATION grant ``jollei [issuer] asetuksella toisin säädetä``
+#: ("unless otherwise provided BY decree") — a (negative) decree delegation the
+#: production A regex (``_PAT_BARE_ASETUS``) already treats as a grant. It is
+#: ADMITTED here ONLY when a forward decree anchor (``asetuksella`` /
+#: ``asetuksen … nojalla``) binds: a bare ``jollei muualla laissa toisin
+#: säädetä`` / ``jollei tässä asetuksessa toisin säädetä`` is a back-reference or
+#: a self-reference, NOT a decree grant, and is residualized by the dedicated
+#: negative-reservation guard (:func:`_is_negative_reservation_without_anchor`).
 _POWER_VERBS: frozenset[str] = frozenset(
     {
         "säädetään",
         "säätää",
+        "säädetä",
         "säädettävä",
         "annetaan",
         "antaa",
@@ -300,6 +311,22 @@ _PROCEDURAL_DUTY_OBJECT_INSTRUMENTS: frozenset[str] = frozenset(
     {INSTRUMENT_MAARAYS, INSTRUMENT_OHJE, INSTRUMENT_PAATOS}
 )
 
+#: Issuance verbs that, with a ``päätös`` OBJECT, mark a ONE-OFF decision issuance
+#: (guard 4). The passive-present ``annetaan`` ("is issued") and the active
+#: ``antaa`` under a ``voidaan`` / ``voi`` modal ("may be issued") express the
+#: single-case decision the necessitive ``annettava`` (guard 3) expresses with the
+#: obligation modality. The same one-off-vs-rule-making distinction holds.
+_DECISION_ISSUANCE_VERBS: frozenset[str] = frozenset({"annetaan", "antaa"})
+
+#: ``päätös`` instrument surfaces that are the issued OBJECT of a decision (the
+#: nominative ``päätös`` and the genitive/accusative ``päätöksen``). The
+#: INSTRUMENTAL ``päätöksellä`` is DELIBERATELY absent: ``[tarkemmat määräykset]
+#: annetaan … päätöksellä`` / ``määrätään ministeriön päätöksellä`` is the genuine
+#: decision-as-MEANS rule-making grant (the historical ministerial päätös decree),
+#: exactly parallel to the ``asetus`` exclusion in guard 3 — the päätöksellä is the
+#: instrument the power issues BY, not the one-off decision being issued.
+_DECISION_OBJECT_SURFACES: frozenset[str] = frozenset({"päätös", "päätöksen"})
+
 # ---------------------------------------------------------------------------
 # Shared token-native actor matcher (registry phrases UNION closed role actors).
 # ---------------------------------------------------------------------------
@@ -330,6 +357,8 @@ ResidualKind = (
     "anaphoric_reference",              # ``siten kuin hallintolaissa säädetään``
     "subject_np_collision",            # ``Päätös annetaan tiedoksi …``
     "procedural_duty_object",          # ``hakemukseen on annettava päätös`` (one-off duty)
+    "decision_issuance_object",        # ``hakemukseen annetaan kielteinen päätös`` (one-off)
+    "negative_reservation",            # ``jollei muualla laissa toisin säädetä`` (no anchor)
     "benign_uninterpreted_prose",       # totality filler between owned spans
 )
 
@@ -759,6 +788,84 @@ def _is_procedural_duty_object(
     return True
 
 
+def _is_decision_issuance_object(
+    tokens: tuple[Token, ...],
+    inst_idx: int,
+    verb_idx: int,
+    clause_text: str,
+) -> bool:
+    """Guard 4: a ``päätös`` OBJECT is a one-off decision ISSUANCE, not a grant.
+
+    The passive-present / modal counterpart of guard 3 (the necessitive
+    ``annettava`` duty). ``Muuttamisesta annetaan pyynnöstä päätös`` ("a decision
+    IS ISSUED on request"), ``hakemukseen annetaan kielteinen päätös`` ("a negative
+    decision is issued on the application"), ``Perittävää määrää koskeva päätös
+    voidaan antaa sen jälkeen`` ("the decision MAY BE ISSUED thereafter") are all
+    one-off administrative decisions issued in a single case — NOT a delegated power
+    to MAKE general subordinate rules. The bare instrument-noun + power-verb
+    co-occurrence test mints them because ``annetaan`` / ``antaa`` is in
+    :data:`_POWER_VERBS` and ``päätös`` is the issued object. Fires only when ALL
+    hold:
+
+      * the matched power verb is a decision-issuance verb (``annetaan`` passive
+        present, or an ``antaa`` under a ``voidaan`` / ``voi`` modal);
+      * the triggering instrument is a ``päätös`` OBJECT surface (``päätös`` /
+        ``päätöksen``) — the INSTRUMENTAL ``päätöksellä`` is excluded so the genuine
+        ``[tarkemmat määräykset] annetaan … päätöksellä`` decision-as-MEANS grant
+        survives (parallel to guard 3's ``asetus`` exclusion); and
+      * NO forward decree anchor (``asetuksella`` / ``asetuksen … nojalla``) stands
+        the guard down (``päätös … annetaan asetuksella`` IS a decree grant).
+
+    Scoped to ``päätös`` DELIBERATELY: a ``päätös`` (a single decision) is, in the
+    issued-object position, essentially never a rule-MAKING instrument — whereas
+    ``määräys`` / ``ohje`` objects under ``antaa`` are overwhelmingly genuine agency
+    rule-making grants (``viranomainen voi antaa tarkempia määräyksiä``) the guard
+    must NOT touch.
+    """
+    if tokens[verb_idx].text.lower() not in _DECISION_ISSUANCE_VERBS:
+        return False
+    if tokens[inst_idx].text.lower() not in _DECISION_OBJECT_SURFACES:
+        return False
+    # A forward decree anchor → a decree power IS granted; guard stands down.
+    if _clause_has_decree_anchor(clause_text):
+        return False
+    return True
+
+
+#: Negative-reservation connective heads. A ``jollei`` / ``ellei`` ("unless") that
+#: heads the clause's ``säädetä`` connegative marks a negative RESERVATION. With a
+#: forward decree anchor (``asetuksella``) it IS a grant (``jollei asetuksella
+#: toisin säädetä``); WITHOUT one it is a cross-/back-reference reservation
+#: (``jollei muualla laissa toisin säädetä`` / ``jollei tässä asetuksessa toisin
+#: säädetä``) that does NOT grant a new decree power.
+_NEGATIVE_RESERVATION_HEADS: frozenset[str] = frozenset({"jollei", "ellei"})
+
+
+def _is_negative_reservation_without_anchor(
+    verb_idx: int,
+    tokens: tuple[Token, ...],
+    clause_text: str,
+) -> bool:
+    """Guard 5: a ``säädetä`` connegative reservation lacking a decree anchor.
+
+    ``säädetä`` (the connegative of ``säätää``) marks the negative reservation
+    ``jollei … toisin säädetä``. Production A (``_PAT_BARE_ASETUS``) treats ONLY the
+    decree-anchored form ``asetuksella … toisin säädetä`` as a grant; the bare
+    forms ``jollei muualla laissa toisin säädetä`` (a back-reference to other law)
+    and ``jollei tässä asetuksessa toisin säädetä`` (a self-reference) /
+    ``ministeriön asetuksen liitteen … toisin säädetä`` (a cross-reference to an
+    existing decree) are NOT decree grants. Fires only when the matched power verb
+    is the ``säädetä`` connegative and NO forward decree anchor (``asetuksella`` /
+    ``asetuksen … nojalla``) sits in the clause — so the genuine ``jollei
+    asetuksella toisin säädetä`` reservation grant A catches is preserved.
+    """
+    if tokens[verb_idx].text.lower() != "säädetä":
+        return False
+    if _clause_has_decree_anchor(clause_text):
+        return False
+    return True
+
+
 #: Generic ISSUER-HEAD suffixes (the morphological tail of an institutional
 #: issuer surface the actor registry does not carry as a verbatim inflected
 #: phrase). A ``word`` token whose lowercase form ENDS in one of these is an
@@ -1171,6 +1278,40 @@ def _scan_tape(tape: TokenTape, source_text: str) -> DelegationGrantScan:
             residuals.append(
                 _residual(
                     "procedural_duty_object",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
+                    source_text,
+                )
+            )
+            continue
+        # Guard 4 — decision-issuance object: ``hakemukseen annetaan kielteinen
+        # päätös`` / ``päätös voidaan antaa sen jälkeen`` — a ``päätös`` OBJECT
+        # issued in a single case by passive-present ``annetaan`` / modal ``voidaan
+        # antaa``, NOT a delegated rule-MAKING power (the passive/modal counterpart
+        # of guard 3's necessitive duty).
+        if _is_decision_issuance_object(tokens, inst_idx, verb_idx, clause_text):
+            residuals.append(
+                _residual(
+                    "decision_issuance_object",
+                    tokens,
+                    inst_idx,
+                    instrument,
+                    tokens[verb_idx].text,
+                    source_text,
+                )
+            )
+            continue
+        # Guard 5 — negative reservation without a decree anchor: a ``säädetä``
+        # connegative ``jollei muualla laissa toisin säädetä`` / ``jollei tässä
+        # asetuksessa toisin säädetä`` cites/reserves to OTHER law, not a new decree
+        # grant. The anchored ``jollei asetuksella toisin säädetä`` reservation IS a
+        # grant (anchor present → guard stands down), matching production A.
+        if _is_negative_reservation_without_anchor(verb_idx, tokens, clause_text):
+            residuals.append(
+                _residual(
+                    "negative_reservation",
                     tokens,
                     inst_idx,
                     instrument,

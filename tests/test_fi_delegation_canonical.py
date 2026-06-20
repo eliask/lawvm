@@ -342,6 +342,123 @@ def test_active_antaa_grant_not_procedural_duty() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Over-recognition guard 4 — decision-issuance object: a ``päätös`` OBJECT issued
+# in a single case by passive-present ``annetaan`` / modal ``voidaan antaa`` is a
+# one-off decision, NOT a delegated rule-MAKING power (the passive/modal
+# counterpart of guard 3's necessitive ``annettava`` duty).
+# ---------------------------------------------------------------------------
+
+
+def test_decision_issuance_passive_present_residualized() -> None:
+    # ``Muuttamisesta annetaan pyynnöstä päätös`` — "a decision IS ISSUED on
+    # request": a one-off decision issuance, not a delegated decision-MAKING power
+    # (2000/1224, 2000/1226).
+    scan = _grants("Kansaneläkkeen muuttamisesta annetaan pyynnöstä päätös.")
+    assert scan.grants == ()
+    assert any(r.kind == "decision_issuance_object" for r in scan.residuals)
+
+
+def test_decision_issuance_kielteinen_paatos_residualized() -> None:
+    # ``hakemukseen annetaan kielteinen päätös`` — "a negative decision is issued on
+    # the application": a one-off, not a grant (2000/1065).
+    scan = _grants(
+        "Maksu peritään myös silloin, kun siinä tarkoitettuun hakemukseen "
+        "annetaan kielteinen päätös."
+    )
+    assert scan.grants == ()
+    assert any(r.kind == "decision_issuance_object" for r in scan.residuals)
+
+
+def test_decision_issuance_modal_voidaan_antaa_residualized() -> None:
+    # ``Perittävää määrää koskeva päätös voidaan antaa sen jälkeen`` — the decision
+    # MAY BE ISSUED thereafter: a one-off, not a rule-making grant (2000/1276).
+    scan = _grants(
+        "Perittävää määrää koskeva päätös voidaan antaa sen jälkeen, kun "
+        "henkilöllä on oikeus vanhuuseläkkeeseen."
+    )
+    assert scan.grants == ()
+    assert any(r.kind == "decision_issuance_object" for r in scan.residuals)
+
+
+def test_decision_instrumental_paatoksella_is_grant() -> None:
+    # ``Tarkemmat määräykset … annetaan … päätöksellä`` — the INSTRUMENTAL
+    # ``päätöksellä`` is the decision-as-MEANS rule-making grant (the historical
+    # ministerial päätös decree); guard 4 EXCLUDES päätöksellä, so it STANDS DOWN.
+    scan = _grants(
+        "Tarkemmat muistiinpanoja koskevat säännökset annetaan verohallituksen "
+        "päätöksellä."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "päätös"
+
+
+def test_decision_object_with_decree_anchor_is_grant() -> None:
+    # ``Valtioneuvoston asetuksella voidaan antaa tarkempia säännöksiä päätöksen
+    # sisällöstä`` — the decree anchor ``asetuksella`` means a decree power IS
+    # granted (päätöksen is a mere topic mention); guard 4 stands down (2011/646).
+    scan = _grants(
+        "Valtioneuvoston asetuksella voidaan antaa tarkempia säännöksiä "
+        "päätöksen sisällöstä."
+    )
+    assert any(g.instrument == "asetus" for g in scan.grants)
+
+
+# ---------------------------------------------------------------------------
+# säädetä connegative — the negative-RESERVATION grant ``jollei [issuer]
+# asetuksella toisin säädetä`` IS a (negative) decree delegation production A
+# (``_PAT_BARE_ASETUS``) treats as a grant; the unanchored ``jollei muualla laissa
+# toisin säädetä`` is a back-/cross-reference, NOT a grant (guard 5).
+# ---------------------------------------------------------------------------
+
+
+def test_saadeta_reservation_with_anchor_is_grant() -> None:
+    # ``jollei asetuksella toisin säädetä`` — a decree-anchored negative
+    # reservation: production A treats it as a grant; the canonical now matches
+    # (2000/29, 2000/340).
+    scan = _grants(
+        "Tässä laissa ministeriöllä tarkoitetaan maa- ja "
+        "metsätalousministeriötä, ellei asetuksella toisin säädetä."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].instrument == "asetus"
+    assert scan.grants[0].cue.lower() == "säädetä"
+
+
+def test_saadeta_reservation_vn_anchor_is_grant() -> None:
+    # ``jollei valtioneuvoston asetuksella toisin säädetä`` — VN-issuer reservation.
+    scan = _grants(
+        "Aluevalvojan valvonta-alueena on kihlakunta, jollei valtioneuvoston "
+        "asetuksella toisin säädetä."
+    )
+    assert len(scan.grants) == 1
+    assert scan.grants[0].kind == KIND_VN_ASETUS
+
+
+def test_saadeta_reservation_without_anchor_residualized() -> None:
+    # ``jollei tässä laissa toisin säädetä`` — a back-reference reservation with no
+    # decree anchor; NOT a grant. The clause carries a ``määräyksen`` topic mention
+    # (so the parser considers it), and the säädetä connegative is residualized as a
+    # negative reservation rather than minted as a grant (2001/1489).
+    scan = _grants(
+        "Sääntöihin sisältyvän määräyksen sijasta noudatetaan uuden lain "
+        "säännöksiä, jollei tässä laissa toisin säädetä."
+    )
+    assert all(g.cue.lower() != "säädetä" for g in scan.grants)
+    assert any(r.kind == "negative_reservation" for r in scan.residuals)
+
+
+def test_saadeta_self_reference_residualized() -> None:
+    # ``jollei tässä asetuksessa toisin säädetä`` — a self-reference to the enacting
+    # decree, not a new decree grant. ``Tämä asetus`` heads the clause subject so
+    # the säädetä connegative reservation carries no decree-grant anchor.
+    scan = _grants(
+        "Tämä asetus koskee myös laitoksen suoritteita, jollei niistä erikseen "
+        "muuta säädetä."
+    )
+    assert all(g.cue.lower() != "säädetä" for g in scan.grants)
+
+
+# ---------------------------------------------------------------------------
 # Projection key shape (census-comparable identity).
 # ---------------------------------------------------------------------------
 
