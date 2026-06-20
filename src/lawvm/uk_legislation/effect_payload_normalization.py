@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.tree_ops import _NESTING_ORDER
 from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_field,
@@ -689,12 +690,22 @@ def prepare_uk_operation_payload_node(
     ):
         payload_node_mut.label = target_replacement_leaf_override
 
-    if payload_node_mut is not None and curr_action == "insert":
+    if payload_node_mut is not None and curr_action in ("insert", "replace"):
         leaf_kind = _addr_leaf_kind(target) or ""
         leaf_label = _addr_leaf_label(target) or ""
         payload_kind = payload_node_mut.kind.value
         leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
         canonical_leaf_kind = _uk_core_kind_alias_value(leaf_kind)
+        parent_kind: Optional[str] = None
+        parent_allowed_children: Optional[set[str]] = None
+        if len(target.path) >= 2:
+            parent_kind = _uk_core_kind_alias_value(target.path[-2][0])
+            parent_allowed_children = _NESTING_ORDER.get(parent_kind)
+        payload_kind_would_violate_parent = (
+            curr_action == "replace"
+            and parent_allowed_children is not None
+            and payload_kind not in parent_allowed_children
+        )
         if (
             leaf_kind
             and leaf_label
@@ -705,16 +716,17 @@ def prepare_uk_operation_payload_node(
                 lowering_rejections_out,
                 rule_id=_UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID,
                 family="payload_realignment",
-                reason_code="insert_payload_blank_label_realigned_to_target_leaf",
+                reason_code="payload_blank_label_realigned_to_target_leaf",
                 reason=(
-                    "UK insert payload has a blank label but its kind matches the "
+                    "UK insert/replace payload has a blank label but its kind matches the "
                     "target leaf kind; the payload label is realigned to the target "
-                    "leaf label so the inserted node carries the expected address."
+                    "leaf label so the node carries the expected address."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={
+                    "action": curr_action,
                     "original_payload_label": "",
                     "new_payload_label": leaf_label,
                     "payload_kind": payload_kind,
@@ -730,22 +742,26 @@ def prepare_uk_operation_payload_node(
             and payload_kind in leafish_kinds
             and payload_kind != canonical_leaf_kind
             and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
+            and (curr_action == "insert" or payload_kind_would_violate_parent)
         ):
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=_UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID,
                 family="payload_realignment",
-                reason_code="insert_payload_kind_realigned_to_canonical_target_leaf_kind",
+                reason_code="payload_kind_realigned_to_canonical_target_leaf_kind",
                 reason=(
-                    "UK insert payload has a leafish kind that differs from the "
+                    "UK insert/replace payload has a leafish kind that differs from the "
                     "canonical target leaf kind but whose label number matches the "
                     "target leaf label; the payload kind is realigned to the canonical "
-                    "target leaf kind so the inserted node has the expected structure."
+                    "target leaf kind so the node has the expected structure."
+                    " For replace actions this guard is limited to payloads that would be "
+                    "structurally invalid under the target's parent container."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={
+                    "action": curr_action,
                     "original_payload_kind": payload_kind,
                     "new_payload_kind": canonical_leaf_kind,
                     "payload_label": payload_node_mut.label or "",
