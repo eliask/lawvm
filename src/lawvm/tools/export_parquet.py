@@ -392,12 +392,79 @@ def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     return table.replace_schema_metadata(meta)
 
 
+def _projection_coverage(
+    *,
+    table_name: str,
+    rows: List[Dict[str, Any]],
+    corpus_size: int,
+) -> Dict[str, Any]:
+    """Build the ``projection_coverage`` leaf for one projection table.
+
+    Rank-21 fix (projection plane, silent_drop): the export shipped parquet
+    bodies with NO coverage/verifier leaf, so a partial emission (fewer statutes
+    than the corpus scanned — e.g. a worker silently dropping a failure) read as
+    an all-provision-clean artifact. This declares, PER TABLE, the universe the
+    rows are projected over (the corpus statute set), the distinct statutes that
+    actually contributed a row, and — for the one-row-per-statute ``statutes``
+    table — the omitted count (corpus statutes that produced no statute row).
+
+    Shape mirrors the certificate envelope's ``projection_coverage`` member
+    (CERTIFICATE_SCHEMA_V0.md §5.5): ``universe_kind`` names a formal derivation
+    a checker can recompute, not a prose string. ``omitted_row_count`` is only a
+    DEFECT signal for ``statutes`` (where every corpus statute owes exactly one
+    row even on failure); the per-statute fan-out tables (sections/findings/ops)
+    legitimately emit zero rows for some statutes, so for them the leaf records
+    ``statutes_with_rows`` as an honest derivation, not a defect.
+    """
+    distinct_statutes = {r.get("statute_id", "") for r in rows}
+    distinct_statutes.discard("")
+    leaf: Dict[str, Any] = {
+        "universe_kind": "corpus_statute_set",
+        "address_source": "export_projections.corpus",
+        "corpus_size": corpus_size,
+        "row_count": len(rows),
+        "statutes_with_rows": len(distinct_statutes),
+    }
+    if table_name == "statutes":
+        # One row per corpus statute is owed (the worker emits a minimal row even
+        # on compile failure); a shortfall is a real silent drop.
+        leaf["omitted_row_count"] = max(0, corpus_size - len(rows))
+    else:
+        # Per-statute fan-out: zero rows for a statute is not a defect, so no
+        # omitted-row claim; statutes_with_rows is the honest coverage account.
+        leaf["omitted_row_count"] = 0
+    return leaf
+
+
+def _attach_projection_coverage(table: Any, coverage: Dict[str, Any]) -> Any:
+    """Attach the ``projection_coverage`` leaf to a pyarrow Table's metadata.
+
+    Written under the ``lawvm.projection_coverage`` schema-metadata key as JSON
+    so a reader (and the freshness/verifier tooling) can recover the per-table
+    coverage account from the parquet itself — partial emission can never read as
+    all-provision clean.
+    """
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    meta[b"lawvm.projection_coverage"] = json.dumps(
+        coverage, ensure_ascii=False, sort_keys=True
+    ).encode()
+    return table.replace_schema_metadata(meta)
+
+
 def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
     compile_metadata: Any = None,
+    *,
+    coverage: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Try to write rows as Parquet with optional compile metadata. Returns True if ok."""
+    """Try to write rows as Parquet with optional compile metadata. Returns True if ok.
+
+    ``coverage`` is the per-table :func:`_projection_coverage` leaf; when given it
+    is attached to the parquet schema metadata (rank-21 coverage-leaf fix) so the
+    artifact carries an honest per-table coverage account at write.
+    """
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
@@ -410,6 +477,8 @@ def _try_write_parquet(
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows)
     table = _attach_compile_metadata(table, compile_metadata)
+    if coverage is not None:
+        table = _attach_projection_coverage(table, coverage)
     pq.write_table(table, str(path))
     return True
 
@@ -526,6 +595,27 @@ def export_projections(
     counts["findings"] = _write_jsonl(out / "findings.jsonl", all_findings)
     counts["ops"] = _write_jsonl(out / "ops.jsonl", all_ops)
 
+    # Per-table projection_coverage leaf (rank-21): declare, per table, the
+    # corpus universe + emitted rows so a partial emission cannot read as
+    # all-provision clean. Written both into the parquet schema metadata (below)
+    # and as a ``{name}.coverage.json`` sidecar so it is visible even for the
+    # always-written JSONL bodies (and when pyarrow is absent).
+    coverage_by_table: Dict[str, Dict[str, Any]] = {}
+    for name, rows in [
+        ("statutes", all_statutes),
+        ("sections", all_sections),
+        ("findings", all_findings),
+        ("ops", all_ops),
+    ]:
+        leaf = _projection_coverage(
+            table_name=name, rows=rows, corpus_size=total
+        )
+        coverage_by_table[name] = leaf
+        (out / f"{name}.coverage.json").write_text(
+            json.dumps(leaf, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
     # Try Parquet as well (optional upgrade)
     if use_parquet:
         parquet_ok = False
@@ -535,7 +625,12 @@ def export_projections(
             ("findings", all_findings),
             ("ops", all_ops),
         ]:
-            if _try_write_parquet(out / f"{name}.parquet", rows, compile_metadata):
+            if _try_write_parquet(
+                out / f"{name}.parquet",
+                rows,
+                compile_metadata,
+                coverage=coverage_by_table[name],
+            ):
                 parquet_ok = True
 
         if parquet_ok:

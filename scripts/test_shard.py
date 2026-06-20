@@ -296,6 +296,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_manual_claims_storage.py",
         "test_fi_manual_claims_slice3.py",
         "test_export_fi_refs_authority.py",
+        "test_export_projection_coverage_leak.py",
         # v3 graph-native claims (Step 2 + Step 3 CLI migration)
         "test_fi_strict_profile_v3.py",
         "test_fi_manual_claims_native.py",

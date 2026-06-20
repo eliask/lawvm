@@ -267,6 +267,31 @@ _CHEAP_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 @dataclass(frozen=True)
+class CensusSkip:
+    """One corpus provision the census could NOT classify (a counted skip).
+
+    The bare ``except Exception: continue`` that this replaces understated the
+    partition denominator silently: a statute whose body failed to decode or
+    whose classification raised simply vanished, so the census reported coverage
+    over a SMALLER corpus than it claimed to scan. Each skip is now a counted,
+    self-evidencing residual: it carries the statute id, the phase that failed
+    (``decode`` or ``classify``), and the verbatim exception text — never an
+    opaque drop.
+
+    Attributes:
+        statute_id: The statute that could not be classified.
+        phase:      Where it failed — ``"decode"`` (body decode raised / empty)
+                    or ``"classify"`` (the union partition raised).
+        reason:     The verbatim exception text (or ``"empty_body"`` for a
+                    decode that produced no body), for adjudication.
+    """
+
+    statute_id: str
+    phase: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class UnownedSignalSpan:
     """One cheap-legal-signal span owned by NO family (a worklist item).
 
@@ -291,7 +316,12 @@ class UnionOwnershipResult:
     """Outcome of a cross-family union token-ownership census run.
 
     Attributes:
-        statutes_scanned: Provisions (statute bodies) decoded + segmented.
+        statutes_scanned: Provisions (statute bodies) decoded + segmented AND
+                          successfully classified into the partition.
+        statutes_skipped: Provisions that could NOT be classified (body decode
+                          failed/empty, or classification raised). Counted, not
+                          silently dropped — the denominator-honesty fix. Equals
+                          ``len(skips)``.
         sentences:        Sentence segments fed to the family parsers.
         total_tokens:     Total NON-WHITESPACE body tokens classified (whitespace
                           is contiguous filler, always benign; it is excluded from
@@ -308,9 +338,12 @@ class UnionOwnershipResult:
         unowned_shape_counts: cheap-signal SHAPE -> count of UNOWNED spans of that
                           shape (the ranked grammar-growth worklist).
         unowned_examples: a few self-evidencing example unowned spans per shape.
+        skips:            self-evidencing records of every provision skipped
+                          (decode/classify failure) — counted, never silent.
     """
 
     statutes_scanned: int
+    statutes_skipped: int
     sentences: int
     total_tokens: int
     owned_tokens: int
@@ -320,6 +353,7 @@ class UnionOwnershipResult:
     family_token_counts: dict[str, int]
     unowned_shape_counts: dict[str, int]
     unowned_examples: tuple[UnownedSignalSpan, ...] = field(default_factory=tuple)
+    skips: tuple[CensusSkip, ...] = field(default_factory=tuple)
 
     @property
     def partition_total(self) -> int:
@@ -660,8 +694,20 @@ def _token_overlaps_set(tok: Token, chars: set[int]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _iter_corpus_ids(limit: int, min_year: int) -> Iterator[tuple[str, str]]:
-    """Yield ``(statute_id, body)`` over the corpus slice. Lazy corpus import."""
+def _iter_corpus_ids(
+    limit: int,
+    min_year: int,
+    skips_out: list[CensusSkip] | None = None,
+) -> Iterator[tuple[str, str]]:
+    """Yield ``(statute_id, body)`` over the corpus slice. Lazy corpus import.
+
+    A provision whose source is absent or whose body fails to decode (or decodes
+    empty) is NOT silently dropped: a counted :class:`CensusSkip` (phase
+    ``"decode"``) is appended to ``skips_out`` so the corpus denominator stays
+    honest. A statute with no source at all is skipped silently by design (it is
+    not in the corpus universe being measured); only a present-but-undecodable /
+    empty body is a counted skip.
+    """
     from farchive import Farchive
 
     from lawvm.finland.legal_surface.bundle import decode_body_text
@@ -683,9 +729,17 @@ def _iter_corpus_ids(limit: int, min_year: int) -> Iterator[tuple[str, str]]:
             continue
         try:
             body = decode_body_text(xb)
-        except Exception:
+        except Exception as exc:
+            if skips_out is not None:
+                skips_out.append(
+                    CensusSkip(statute_id=sid, phase="decode", reason=repr(exc))
+                )
             continue
         if not body:
+            if skips_out is not None:
+                skips_out.append(
+                    CensusSkip(statute_id=sid, phase="decode", reason="empty_body")
+                )
             continue
         yield sid, body
 
@@ -709,10 +763,11 @@ def run_union_ownership_census(
     unowned_shape_counts: Counter[str] = Counter()
     unowned_examples: list[UnownedSignalSpan] = []
     shape_example_count: Counter[str] = Counter()
+    skips: list[CensusSkip] = []
     statutes_scanned = 0
     sentences = 0
 
-    for sid, body in _iter_corpus_ids(limit, min_year):
+    for sid, body in _iter_corpus_ids(limit, min_year, skips_out=skips):
         try:
             (
                 bc,
@@ -721,7 +776,12 @@ def run_union_ownership_census(
                 examples,
                 sent_count,
             ) = classify_body(sid, body, max_examples_per_shape=max_examples_per_shape)
-        except Exception:
+        except Exception as exc:
+            # Do NOT silently drop a classification failure: count it as a
+            # self-evidencing skip so the partition denominator stays honest.
+            skips.append(
+                CensusSkip(statute_id=sid, phase="classify", reason=repr(exc))
+            )
             continue
         statutes_scanned += 1
         sentences += sent_count
@@ -741,6 +801,7 @@ def run_union_ownership_census(
 
     return UnionOwnershipResult(
         statutes_scanned=statutes_scanned,
+        statutes_skipped=len(skips),
         sentences=sentences,
         total_tokens=total,
         owned_tokens=owned,
@@ -750,6 +811,7 @@ def run_union_ownership_census(
         family_token_counts=dict(family_counts),
         unowned_shape_counts=dict(unowned_shape_counts),
         unowned_examples=tuple(unowned_examples),
+        skips=tuple(skips),
     )
 
 
@@ -765,6 +827,7 @@ def format_union_ownership_report(result: UnionOwnershipResult) -> str:
     lines.append("FI CROSS-FAMILY UNION TOKEN-OWNERSHIP CENSUS (the SyntaxCoverage ruler)")
     lines.append("=" * 72)
     lines.append(f"  statutes scanned                : {result.statutes_scanned}")
+    lines.append(f"  statutes skipped (decode/classify): {result.statutes_skipped}")
     lines.append(f"  sentences segmented             : {result.sentences}")
     lines.append(f"  signal-bearing tokens classified: {result.total_tokens}")
     lines.append("-" * 72)
@@ -807,6 +870,20 @@ def format_union_ownership_report(result: UnionOwnershipResult) -> str:
             lines.append(f"  [{ex.statute_id}] shape={ex.shape}")
             lines.append(f"    span   : {ex.text!r}")
             lines.append(f"    context: {ex.context!r}")
+        lines.append("")
+
+    if result.skips:
+        lines.append("-" * 72)
+        lines.append(
+            "SKIPPED provisions (counted, not silently dropped — denominator honest)"
+        )
+        lines.append("-" * 72)
+        skip_phase_counts: Counter[str] = Counter(s.phase for s in result.skips)
+        for phase, n in sorted(skip_phase_counts.items()):
+            lines.append(f"  {phase:<10}: {n}")
+        # A few self-evidencing examples (verbatim exception text).
+        for sk in result.skips[:10]:
+            lines.append(f"  [{sk.statute_id}] phase={sk.phase} reason={sk.reason!r}")
         lines.append("")
 
     return "\n".join(lines)
