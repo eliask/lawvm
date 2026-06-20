@@ -1717,14 +1717,32 @@ class TestWireArtifact:
         )
 
     def test_to_wire_artifact_exposes_effect_lifecycle_graph_summary(self):
-        instrument = SourceInstrumentRef(instrument_id="2024/1")
-        witness = SourceProvisionRef(instrument=instrument, path=("1",))
-        target_effect = EffectRef(effect_id="effect:2024/1:op-1", source_instrument=instrument)
+        instrument = SourceInstrumentRef(
+            instrument_id="2024/1",
+            title="Amending Act",
+            enacted="2024-01-01",
+            effective="2024-02-01",
+        )
+        witness = SourceProvisionRef(
+            instrument=instrument,
+            path=("1",),
+            text_excerpt="Effect witness",
+            rule_id="test.effect_graph_wire",
+        )
+        target_effect = EffectRef(
+            effect_id="effect:2024/1:op-1",
+            source_instrument=instrument,
+            target_statute="1991/1",
+            target_address=LegalAddress(path=(("section", "4 a"),)),
+            projection_group_id="g:2024/1:op-1",
+            source_provision=witness,
+        )
         relation = EffectRelation(
             relation_id="relation:2024/1:op-1",
             kind="repeals_effect",
             source_provision=witness,
             target_effect=target_effect,
+            detail={"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
         )
         lifecycle_event = EffectLifecycleEvent(
             lifecycle_event_id="lifecycle:2024/1:op-1:repeal",
@@ -1733,6 +1751,7 @@ class TestWireArtifact:
             effect=target_effect,
             relation=relation,
             executable=False,
+            detail={"projection": "effect_relation_signal"},
         )
         facade = CompileFacade(
             bundle=CanonicalBundle(
@@ -1757,6 +1776,63 @@ class TestWireArtifact:
             "lifecycle:2024/1:op-1:repeal",
         )
         assert payload["bundle"]["effect_lifecycle_event_kinds"] == ("repeal_effect",)
+        assert payload["bundle"]["source_effects"] == (
+            {
+                "effect_id": "effect:2024/1:op-1",
+                "source_instrument": {
+                    "instrument_id": "2024/1",
+                    "title": "Amending Act",
+                    "enacted": "2024-01-01",
+                    "effective": "2024-02-01",
+                    "expires": "",
+                },
+                "target_statute": "1991/1",
+                "target_address": {
+                    "path": ({"kind": "section", "label": "4 a"},),
+                },
+                "projection_group_id": "g:2024/1:op-1",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1",),
+                    "span_id": "",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1",
+                },
+            },
+        )
+        assert payload["bundle"]["effect_relations"] == (
+            {
+                "relation_id": "relation:2024/1:op-1",
+                "kind": "repeals_effect",
+                "source_provision": payload["bundle"]["source_effects"][0]["source_provision"],
+                "target_effect_id": "effect:2024/1:op-1",
+                "target_instrument": None,
+                "source_effect_id": "",
+                "detail": {"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
+            },
+        )
+        assert payload["bundle"]["effect_lifecycle_events"] == (
+            {
+                "lifecycle_event_id": "lifecycle:2024/1:op-1:repeal",
+                "kind": "repeal_effect",
+                "source_provision": payload["bundle"]["source_effects"][0]["source_provision"],
+                "effect_id": "effect:2024/1:op-1",
+                "relation_id": "relation:2024/1:op-1",
+                "effective": "",
+                "expires": "",
+                "expiry_convention": "exclusive_cutoff",
+                "temporal_event": None,
+                "executable": False,
+                "detail": {"projection": "effect_relation_signal"},
+            },
+        )
 
     def test_to_wire_artifact_counts_lifecycle_projected_temporal_events_as_executable(self):
         instrument = SourceInstrumentRef(instrument_id="2024/1")
