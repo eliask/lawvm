@@ -1127,6 +1127,37 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "violation", "hard_fail", "frontend_phase_surface",
                 "frontend phase diagnostic reports an internal compiler error",
                 ("safety_invariant",), role="violation"),
+    # --- XML ingest token-structure observations (self-contained block) ---
+    # Non-blocking observations that witness what the XML→IR ingest boundary
+    # does at the token_structure plane: dropping a source child element,
+    # encountering an unknown XML tag, assigning a positional label, or
+    # mutating tree shape with a structural-repair heuristic. These turn
+    # previously silent drops/guesses into witnessed ones reachable from
+    # IRStatute.metadata["xml_ingest_observations"]. They are deliberately
+    # non-blocking (role=observation) so they do not trip the guard-liveness
+    # ratchet without a dedicated fire-drill.
+    FindingSpec("SCAN.XML_INGEST_DROPPED_CHILD", "xml_ingest",
+                "source_pathology", "warn", "xml_ingest",
+                "a source XML child element was dropped during XML→IR ingest "
+                "because its tag is not a known structural/leaf/table kind and "
+                "its text collapsed to empty; detail.tag/detail.snippet witness it",
+                ("parse_witness", "comparative"), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_UNKNOWN_TAG", "xml_ingest",
+                "source_pathology", "warn", "xml_ingest",
+                "an XML tag encountered during ingest has no mapped IRNodeKind; "
+                "detail.tag carries the offending tag for a class→kind mapping fix",
+                ("parse_witness",), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_POSITIONAL_LABEL", "xml_ingest",
+                "recovery", "warn", "xml_ingest",
+                "an unlabelled subsection/paragraph was assigned a positional label "
+                "by enumeration order during ingest (identity is positional, not "
+                "intrinsic); detail.kind/detail.assigned_label witness the guess",
+                ("ambiguity_resolution",), role="observation"),
+    FindingSpec("SCAN.XML_INGEST_STRUCTURAL_REPAIR", "xml_ingest",
+                "recovery", "warn", "xml_ingest",
+                "an ingest structural-repair heuristic re-parented or merged tree "
+                "shape on a regex/letter-sequence guess; detail.repair names the rule",
+                ("preservation", "ambiguity_resolution"), role="observation"),
 )}
 
 
