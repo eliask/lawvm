@@ -330,6 +330,7 @@ def _call_lower_uk_text_fragment_rewrite(
     is_word_level: bool = True,
     target: Optional[LegalAddress] = None,
     extracted_text: str = "subsection (3A)",
+    lowering_extracted_text: Optional[str] = None,
     lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
 ) -> UKTextFragmentLowering:
     if effect is None:
@@ -359,6 +360,7 @@ def _call_lower_uk_text_fragment_rewrite(
         extracted_el=None,
         source_root=None,
         extracted_text=extracted_text,
+        lowering_extracted_text=lowering_extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )
 
