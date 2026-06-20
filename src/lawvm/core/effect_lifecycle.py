@@ -521,6 +521,12 @@ def effect_graph_wire(
 ) -> dict[str, object]:
     """Project a closed effect graph into core's stable read-model shape."""
 
+    validate_effect_graph_closure(
+        subject="effect_graph_wire",
+        source_effects=source_effects,
+        effect_relations=effect_relations,
+        effect_lifecycle_events=effect_lifecycle_events,
+    )
     return {
         "source_effects": tuple(effect_ref_wire(effect) for effect in source_effects),
         "effect_relations": tuple(

@@ -620,6 +620,39 @@ def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
     }
 
 
+def test_effect_graph_wire_requires_closed_graph() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:2024/1:op-1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:2024/1:op-1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:2024/1:op-1:expiry",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2024-12-31",
+    )
+
+    with pytest.raises(ValueError, match="references missing target_effect"):
+        effect_graph_wire(
+            source_effects=(),
+            effect_relations=(relation,),
+            effect_lifecycle_events=(),
+        )
+    with pytest.raises(ValueError, match="references missing relation"):
+        effect_graph_wire(
+            source_effects=(effect,),
+            effect_relations=(),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     event = EffectLifecycleEvent(
