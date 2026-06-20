@@ -69,6 +69,45 @@ def test_finland_temporal_event_projects_to_effect_lifecycle_event() -> None:
     assert lifecycle.temporal_event is temporal
 
 
+def test_temporal_event_reuses_matching_operation_effect_identity() -> None:
+    op = _op()
+    temporal = TemporalEvent(
+        event_id="fi-temporary:2020/1:op-1:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="1990/1",
+            exact_addresses=(op.target,),
+        ),
+        expires="2021-01-01",
+        source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+        group_id=op.group_id,
+    )
+
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(op,),
+        temporal_events=(temporal,),
+        relation_signals=(
+            EffectRelationSignal.pending_amendment(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                target_title="Target amendment",
+                base_parent_id="1990/1",
+                source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 1
+    assert source_effects[0].effect_id == "fi-effect:2020/1:op-1"
+    assert len(lifecycle_events) == 1
+    assert lifecycle_events[0].effect == source_effects[0]
+    assert len(relations) == 1
+    assert relations[0].target_effect == source_effects[0]
+    assert "target_effect_resolution" not in relations[0].detail
+
+
 def test_finland_canonical_op_mints_source_effect_identity() -> None:
     op = _op()
 

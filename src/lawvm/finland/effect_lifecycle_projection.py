@@ -78,10 +78,14 @@ def _effect_ref_for_temporal_event(
     event: TemporalEvent,
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
 ) -> EffectRef | None:
     source = event.source
     if source is None or not source.statute_id:
         return None
+    matched = _matching_operation_effect_for_temporal_event(event, source_effects)
+    if matched is not None:
+        return matched
     instrument = SourceInstrumentRef.from_operation_source(source)
     witness = SourceProvisionRef(
         instrument=instrument,
@@ -126,6 +130,28 @@ def _effect_ref_for_legal_operation(
     )
 
 
+def _matching_operation_effect_for_temporal_event(
+    event: TemporalEvent,
+    source_effects: Sequence[EffectRef],
+) -> EffectRef | None:
+    source = event.source
+    if source is None or not source.statute_id or not event.group_id:
+        return None
+    if len(event.scope.exact_addresses) != 1:
+        return None
+    target_address = event.scope.exact_addresses[0]
+    matches = tuple(
+        effect
+        for effect in source_effects
+        if effect.source_instrument.instrument_id == source.statute_id
+        and effect.projection_group_id == event.group_id
+        and effect.target_address == target_address
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
 def _source_effects_from_ops_and_temporal_events(
     *,
     target_statute: str,
@@ -138,7 +164,11 @@ def _source_effects_from_ops_and_temporal_events(
         if effect is not None:
             effects_by_id.setdefault(effect.effect_id, effect)
     for event in temporal_events:
-        effect = _effect_ref_for_temporal_event(event, target_statute=target_statute)
+        effect = _effect_ref_for_temporal_event(
+            event,
+            target_statute=target_statute,
+            source_effects=tuple(effects_by_id.values()),
+        )
         if effect is not None:
             effects_by_id.setdefault(effect.effect_id, effect)
     return tuple(effects_by_id.values())
@@ -148,6 +178,7 @@ def _lifecycle_from_temporal_events(
     temporal_events: Sequence[TemporalEvent],
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectLifecycleEvent, ...]:
     lifecycle_events: list[EffectLifecycleEvent] = []
     kind_map: dict[str, EffectLifecycleEventKind] = {
@@ -160,7 +191,11 @@ def _lifecycle_from_temporal_events(
         lifecycle_kind = kind_map.get(event.kind)
         if lifecycle_kind is None:
             continue
-        effect = _effect_ref_for_temporal_event(event, target_statute=target_statute)
+        effect = _effect_ref_for_temporal_event(
+            event,
+            target_statute=target_statute,
+            source_effects=source_effects,
+        )
         if effect is None or effect.source_provision is None:
             continue
         lifecycle_events.append(
@@ -612,7 +647,11 @@ def build_finland_effect_lifecycle(
         + _relations_from_signals(relation_signals, source_effects=source_effect_context)
     )
     lifecycle_events = (
-        _lifecycle_from_temporal_events(temporal_events, target_statute=target_statute)
+        _lifecycle_from_temporal_events(
+            temporal_events,
+            target_statute=target_statute,
+            source_effects=source_effect_context,
+        )
         + _lifecycle_events_from_lifecycle_overrides(
             lifecycle_overrides,
             target_statute=target_statute,
