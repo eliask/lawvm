@@ -231,6 +231,29 @@ def drill_source_pathology_detected_verdict_barrier() -> None:
     assert "APPLY.SOURCE_PATHOLOGY_DETECTED" in barrier_codes
 
 
+def drill_effect_lifecycle_target_unresolved_verdict_barrier() -> None:
+    """APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED reaches strict barrier codes.
+
+    Production lane: unresolved effect-lifecycle target findings flow through
+    ``strict_fail_reasons_from_finding_ledger`` -> ``compute_verdict_from_registry``
+    and surface in ``CompileVerdict.barrier_codes``. This exercises the strict
+    verdict mapping for lifecycle-target composition failures.
+    """
+    finding = Finding(
+        kind="APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED",
+        role="obligation",
+        stage="apply",
+        detail={
+            "target_statute": "2010/100",
+            "target_title": "Target amendment",
+        },
+        source_statute="2011/200",
+        blocking=True,
+    )
+    barrier_codes = _verdict_barrier_codes_from_findings(findings=[finding])
+    assert "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED" in barrier_codes
+
+
 def drill_frontend_internal_error_parse_surface() -> None:
     """PARSE.FRONTEND_INTERNAL_ERROR reaches the parse-layer findings surface.
 
@@ -799,6 +822,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
 # state and asserts the finding reaches its consumer-visible surface.
 FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_duplicate_label,
+    "APPLY.EFFECT_LIFECYCLE_TARGET_UNRESOLVED": drill_effect_lifecycle_target_unresolved_verdict_barrier,
     "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,

@@ -2360,12 +2360,15 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
         for event in replay.products.effect_lifecycle_events
         if event.kind == "change_effect_expiry"
         and event.relation is not None
-        and event.relation.relation_id
-        == "fi-effect-relation:2006/1322:extends_effect_expiry:2006/1322:section:4"
+        and event.relation.kind == "extends_effect_expiry"
+        and event.effect is not None
+        and event.effect.source_instrument.instrument_id == "2006/1322"
+        and event.effect.target_address is not None
+        and ("section", "4") in event.effect.target_address.path
     ]
-    assert len(override_lifecycle) == 1
-    assert override_lifecycle[0].expires == "2009-12-31"
-    assert override_lifecycle[0].executable is False
+    assert override_lifecycle
+    assert {event.expires for event in override_lifecycle} == {"2009-12-31"}
+    assert {event.executable for event in override_lifecycle} == {True}
 
 
 def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:

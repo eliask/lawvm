@@ -11940,13 +11940,17 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
         and event.relation is not None
         and event.relation.target_effect is not None
     }
-    assert "fi-effect:1958/371:lifecycle:section:1" in repeal_lifecycle_targets
-    assert (
-        "fi-effect:2000/90:lifecycle:section:21,section:22,section:23,section:23a,section:24,section:25"
-        in repeal_lifecycle_targets
-    )
+    assert {
+        "fi-effect:1958/371:snapshot_section_1",
+        "fi-effect:2000/90:snapshot_section_21",
+        "fi-effect:2000/90:snapshot_section_22",
+        "fi-effect:2000/90:snapshot_section_23",
+        "fi-effect:2000/90:snapshot_section_23a",
+        "fi-effect:2000/90:snapshot_section_24",
+        "fi-effect:2000/90:snapshot_section_25",
+    }.issubset(repeal_lifecycle_targets)
     assert all(
-        event.executable is False
+        event.executable is True
         for event in replay.products.effect_lifecycle_events
         if event.kind == "repeal_effect"
     )

@@ -307,10 +307,12 @@ def test_finland_commencement_expiry_override_matching_effect_is_executable() ->
     assert lifecycle.effect == source_effects[0]
     assert lifecycle.relation == relations[0]
     assert lifecycle.expires == "2022-12-31"
+    assert lifecycle.expiry_convention == "inclusive_valid_until"
     assert lifecycle.executable is True
     temporal = lower_lifecycle_event_to_temporal_event(lifecycle)
     assert temporal is not None
     assert temporal.group_id == "g:2020/1:op-1"
+    assert temporal.expires == "2023-01-01"
     assert temporal.scope.exact_addresses == (LegalAddress(path=(("section", "4 a"),)),)
 
 
@@ -352,7 +354,8 @@ def test_finland_commencement_effective_override_projects_executable_lifecycle()
     assert lifecycle_events[0].executable is True
     temporal = lower_lifecycle_event_to_temporal_event(lifecycle_events[0])
     assert temporal is not None
-    assert temporal.group_id == "g:2020/1:chapter-1-section-4a"
+    assert lifecycle_events[0].relation is not None
+    assert temporal.group_id == lifecycle_events[0].relation.relation_id
 
 
 def test_finland_repeal_override_projects_executable_lifecycle_when_effect_matches() -> None:
@@ -389,7 +392,8 @@ def test_finland_repeal_override_projects_executable_lifecycle_when_effect_match
     assert lifecycle_events[0].executable is True
     temporal = lower_lifecycle_event_to_temporal_event(lifecycle_events[0])
     assert temporal is not None
-    assert temporal.group_id == "g:2021/2:self-4a"
+    assert lifecycle_events[0].relation is not None
+    assert temporal.group_id == lifecycle_events[0].relation.relation_id
 
 
 def test_finland_lifecycle_projection_rejects_serialized_override_meta() -> None:

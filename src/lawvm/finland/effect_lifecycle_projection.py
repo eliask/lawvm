@@ -335,14 +335,17 @@ def _lifecycle_event_from_override_relation(
         lifecycle_kind: EffectLifecycleEventKind = "change_effect_commencement"
         effective = row.effective
         expires = ""
+        expiry_convention = "exclusive_cutoff"
     elif relation.kind == "repeals_effect":
         lifecycle_kind = "repeal_effect"
         effective = row.effective or row.expiry
         expires = row.expiry or row.effective
+        expiry_convention = "exclusive_cutoff"
     elif relation.kind == "extends_effect_expiry":
         lifecycle_kind = "change_effect_expiry"
         effective = ""
         expires = row.expiry
+        expiry_convention = "inclusive_valid_until"
     else:
         return None
     return EffectLifecycleEvent(
@@ -353,6 +356,7 @@ def _lifecycle_event_from_override_relation(
         relation=relation,
         effective=effective,
         expires=expires,
+        expiry_convention=expiry_convention,
         executable=True,
         detail={
             "projection": "source_lifecycle_override",
