@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import Optional, Sequence
 
+from lawvm.core import tree_ops as _tops
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.phase_result import Finding, PhaseResult
@@ -33,6 +34,15 @@ _STAGE = "_compile_group"
 _BODY_CHAPTER_INSERT_SCOPE_RULE_ID = "LOWER.BODY_CHAPTER_INSERT_SCOPE_CORRECTION"
 _BODY_CHAPTER_MOVE_RULE_ID = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
 _LIVE_SECTION_RETARGET_RULE_ID = "LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET"
+_FI_LABEL_TOKEN = r"\d{1,4}\s{0,3}[a-z]?"
+_FI_RANGE_DASH = r"[\-\u2010-\u2015]"
+_COMBINED_ROOT_INSERT_CHAPTER_SECTION_RANGE_RE = re.compile(
+    rf"\buusi\s+(?P<chapter_start>{_FI_LABEL_TOKEN})\s*{_FI_RANGE_DASH}\s*"
+    rf"(?P<chapter_end>{_FI_LABEL_TOKEN})\s+luku\s+ja\s+"
+    rf"(?P<section_start>{_FI_LABEL_TOKEN})\s*{_FI_RANGE_DASH}\s*"
+    rf"(?P<section_end>{_FI_LABEL_TOKEN})\s*§",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +199,46 @@ def _source_body_is_single_mixed_chapter_wrapper(
         if live_chapter and _norm_num_token(live_chapter) != body_chapter_norm:
             foreign_live_chapters.add(_norm_num_token(live_chapter))
     return len(foreign_live_chapters) >= 2
+
+
+def _label_in_closed_range(label: str, start: str, end: str) -> bool:
+    label_key = _tops.default_label_sort_key(_norm_num_token(label))
+    start_key = _tops.default_label_sort_key(_norm_num_token(start))
+    end_key = _tops.default_label_sort_key(_norm_num_token(end))
+    if end_key < start_key:
+        start_key, end_key = end_key, start_key
+    return start_key <= label_key <= end_key
+
+
+def _combined_root_insert_range_owns_section(
+    source_model: AmendmentSourceModel,
+    *,
+    body_chapter: str,
+    target_norm: str,
+) -> bool:
+    """Return True for formulas like ``uusi 5a-5c luku ja 20a-20h §``.
+
+    In that family the trailing section range belongs to the newly inserted
+    chapter range's body wrapper.  A live stem-host guess is weaker evidence
+    than this explicit combined source range.
+    """
+    preamble = source_model.preamble_text()
+    if "luku" not in preamble or "§" not in preamble:
+        return False
+    for match in _COMBINED_ROOT_INSERT_CHAPTER_SECTION_RANGE_RE.finditer(preamble):
+        if not _label_in_closed_range(
+            body_chapter,
+            match.group("chapter_start"),
+            match.group("chapter_end"),
+        ):
+            continue
+        if _label_in_closed_range(
+            target_norm,
+            match.group("section_start"),
+            match.group("section_end"),
+        ):
+            return True
+    return False
 
 
 def _live_chapter_has_no_section_children(master: ReplayState, chapter_label: str) -> bool:
@@ -372,6 +422,15 @@ def _maybe_apply_body_chapter_insert_correction(
         body_chapter is not None
         and _norm_num_token(body_chapter) in inserted_chapter_labels
     )
+    live_stem_host_scoped = group_has_scope_source(request.group_ops, "live_stem_host")
+    combined_root_insert_range_owns_section = (
+        body_chapter is not None
+        and _combined_root_insert_range_owns_section(
+            request.source_model,
+            body_chapter=body_chapter,
+            target_norm=request.target_norm,
+        )
+    )
     body_chapter_is_empty_live_chapter = (
         body_chapter is not None
         and _live_chapter_has_no_section_children(request.master, body_chapter)
@@ -385,7 +444,6 @@ def _maybe_apply_body_chapter_insert_correction(
             body_chapter,
             request.master,
         )
-        and not body_chapter_is_inserted
         and _group_has_scope_that_overrides_body_wrapper(
             request.group_ops,
             target_chapter=request.target_chapter,
@@ -400,7 +458,6 @@ def _maybe_apply_body_chapter_insert_correction(
             body_chapter,
             request.master,
         )
-        and not body_chapter_is_inserted
         and _group_has_live_scoped_target_path(
             request.master,
             request.group_ops,
@@ -424,7 +481,16 @@ def _maybe_apply_body_chapter_insert_correction(
         and (
             body_chapter_is_subchapter
             or (
-                (body_chapter_is_inserted or body_chapter_is_empty_live_chapter)
+                (
+                    (
+                        body_chapter_is_inserted
+                        and (
+                            not live_stem_host_scoped
+                            or combined_root_insert_range_owns_section
+                        )
+                    )
+                    or body_chapter_is_empty_live_chapter
+                )
                 and not explicit_chapter_scoped
                 and not carry_forward_scoped
             )

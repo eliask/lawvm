@@ -14854,6 +14854,19 @@ def test_inspect_amendment_2007_121_2010_1357_maps_new_45_3_before_moved_old_3()
     )
 
 
+def test_replay_2007_121_keeps_stem_host_inserted_sections_out_of_3b_payload() -> None:
+    result = replay_xml("2007/121", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(result.materialized_state.ir)
+
+    assert "chapter:3b/section:35a" not in sections
+    assert "chapter:3b/section:48a" not in sections
+    assert "chapter:3b/section:112a" not in sections
+    assert "chapter:4/section:35a" in sections
+    assert "chapter:5/section:48a" in sections
+    assert "chapter:7/section:112a" in sections
+    assert "chapter:7/section:112f" in sections
+
+
 def test_inspect_amendment_1992_147_1995_337_maps_historical_top_level_kohta_to_subsections() -> None:
     """Historical top-level `kohta` wording can name direct subsection siblings.
 

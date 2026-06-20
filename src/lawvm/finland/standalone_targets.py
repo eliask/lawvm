@@ -9,6 +9,13 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp
 
+_SCOPE_CONFIDENCE_OVERRIDES_BODY_CHAPTER = frozenset(
+    {
+        "explicit_scope_rewrite",
+        "live_stem_host",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class StandaloneSectionTarget:
@@ -70,6 +77,18 @@ def normalize_standalone_section_targets(
     return tuple(normalized)
 
 
+def _effective_target_chapter(op: AmendmentOp) -> str | None:
+    """Return the chapter that owns section-target shadowing decisions."""
+    witness = op.scope_confidence
+    if (
+        witness is not None
+        and witness.source in _SCOPE_CONFIDENCE_OVERRIDES_BODY_CHAPTER
+        and witness.resolved_chapter
+    ):
+        return _norm_num_token(witness.resolved_chapter)
+    return _norm_num_token(op.target_chapter) if op.target_chapter else None
+
+
 def build_standalone_section_targets(
     ops: list[AmendmentOp],
 ) -> frozenset[StandaloneSectionTarget]:
@@ -90,7 +109,7 @@ def build_standalone_section_targets(
         standalone_targets.add(
             StandaloneSectionTarget(
                 part=_norm_num_token(op.target_part) if op.target_part else None,
-                chapter=_norm_num_token(op.target_chapter) if op.target_chapter else None,
+                chapter=_effective_target_chapter(op),
                 label=norm_label,
             )
         )
@@ -129,7 +148,9 @@ def group_shadow_pruning_section_targets(
             continue
         if section_label in duplicate_section_labels:
             continue
-        if op.target_part == target_part and op.target_chapter == target_norm:
+        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_chapter = _effective_target_chapter(op)
+        if op_part == target_part and op_chapter == target_norm:
             continue
         out.add(section_label)
     return out
@@ -171,11 +192,13 @@ def group_shadow_pruning_foreign_scoped_section_targets(
             continue
         if section_label in duplicate_section_labels:
             continue
-        if op.target_part == target_part and op.target_chapter == target_norm:
+        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_chapter = _effective_target_chapter(op)
+        if op_part == target_part and op_chapter == target_norm:
             continue
-        if op.target_chapter is None and target_unit_kind == "chapter":
+        if op_chapter is None and target_unit_kind == "chapter":
             continue
-        if op.target_part is None and target_unit_kind == "part":
+        if op_part is None and target_unit_kind == "part":
             continue
         out.add(section_label)
     return out
@@ -202,11 +225,13 @@ def group_shadow_pruning_foreign_scoped_replace_section_targets(
             continue
         if section_label in duplicate_section_labels:
             continue
-        if op.target_part == target_part and op.target_chapter == target_norm:
+        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_chapter = _effective_target_chapter(op)
+        if op_part == target_part and op_chapter == target_norm:
             continue
-        if op.target_chapter is None and target_unit_kind == "chapter":
+        if op_chapter is None and target_unit_kind == "chapter":
             continue
-        if op.target_part is None and target_unit_kind == "part":
+        if op_part is None and target_unit_kind == "part":
             continue
         out.add(section_label)
     return out
@@ -233,16 +258,18 @@ def group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
             continue
         if section_label in duplicate_section_labels:
             continue
-        if op.target_part == target_part and op.target_chapter == target_norm:
+        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_chapter = _effective_target_chapter(op)
+        if op_part == target_part and op_chapter == target_norm:
             continue
-        if op.target_chapter is None and target_unit_kind == "chapter":
+        if op_chapter is None and target_unit_kind == "chapter":
             continue
-        if op.target_part is None and target_unit_kind == "part":
+        if op_part is None and target_unit_kind == "part":
             continue
         out.add(
             StandaloneSectionTarget(
-                part=_norm_num_token(op.target_part) if op.target_part else None,
-                chapter=_norm_num_token(op.target_chapter) if op.target_chapter else None,
+                part=op_part,
+                chapter=op_chapter,
                 label=section_label,
             )
         )
