@@ -708,6 +708,19 @@ def test_uk_corpus_stats_does_not_create_missing_archive(tmp_path) -> None:
     assert not missing_archive.exists()
 
 
+def test_uk_corpus_writable_archive_rejects_extensionless_creation(tmp_path) -> None:
+    missing_archive = tmp_path / "unused"
+
+    try:
+        acquire_uk_corpus._open_archive(missing_archive, readonly=False)
+    except ValueError as exc:
+        assert "refusing to create extensionless farchive destination" in str(exc)
+    else:
+        raise AssertionError("extensionless writable farchive path should fail")
+
+    assert not missing_archive.exists()
+
+
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:
     sid = "ukpga/2020/17"
     current_url = f"{acquire_uk_corpus._LEG_BASE}/{sid}/data.xml"

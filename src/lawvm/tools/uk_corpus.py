@@ -43,6 +43,7 @@ from urllib.request import Request, urlopen
 
 from farchive import CompressionPolicy, Farchive
 
+from lawvm.corpus_store import validate_farchive_create_path
 from lawvm.core.http_identity import LAWVM_USER_AGENT
 from lawvm.uk_legislation.source_state import (
     UKSourceStatus,
@@ -927,6 +928,7 @@ def _open_archive(db_path: Path, *, readonly: bool = False) -> Farchive:
         if not db_path.exists():
             raise SystemExit(f"ERROR: archive not found: {db_path}")
     else:
+        validate_farchive_create_path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
     return Farchive(
         db_path,

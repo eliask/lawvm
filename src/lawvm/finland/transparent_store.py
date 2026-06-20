@@ -288,6 +288,10 @@ class TransparentCorpusStore(CorpusStore):
         self._verbose = verbose
         self._last_api_call: float = 0.0
         self._oracle_index_cache: dict[str, str] | None = None
+        self._selected_pit_cache: dict[
+            tuple[str, ConsolidatedArtifactSelector | None],
+            tuple[bytes, str] | None,
+        ] = {}
 
     # ------------------------------------------------------------------
     # Rate limiting
@@ -375,14 +379,21 @@ class TransparentCorpusStore(CorpusStore):
         selector: ConsolidatedArtifactSelector | None = None,
     ) -> tuple[bytes, str] | None:
         """Return (xml_bytes, embedded_version_tag) for the selected cached PIT."""
+        sid = f"{year}/{num}"
+        cache_key = (sid, selector)
+        if cache_key in self._selected_pit_cache:
+            return self._selected_pit_cache[cache_key]
         artifact = select_cached_consolidated_artifact(
             self._archive,
-            f"{year}/{num}",
+            sid,
             selector=selector,
         )
         if artifact is None:
+            self._selected_pit_cache[cache_key] = None
             return None
-        return artifact.xml, artifact.version_tag
+        selected = (artifact.xml, artifact.version_tag)
+        self._selected_pit_cache[cache_key] = selected
+        return selected
 
     def _refresh_oracle(self, sid: str) -> bytes | None:
         """Run the refresh cascade for one statute.
@@ -416,6 +427,7 @@ class TransparentCorpusStore(CorpusStore):
                 storage_class="xml",
             )
             self._oracle_index_cache = None
+            self._selected_pit_cache.clear()
             if self._verbose:
                 print(
                     f"[TransparentStore] {sid}: stored PIT {best_pit} "
