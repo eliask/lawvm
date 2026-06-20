@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Iterable, Literal, Mapping, Optional
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress
@@ -409,10 +409,15 @@ def lower_lifecycle_event_to_temporal_event(
 
 
 def lower_lifecycle_events_to_temporal_events(
-    events: tuple[EffectLifecycleEvent, ...],
+    events: Iterable[EffectLifecycleEvent],
 ) -> tuple[TemporalEvent, ...]:
     lowered: list[TemporalEvent] = []
     for event in events:
+        if not isinstance(event, EffectLifecycleEvent):
+            raise TypeError(
+                "lower_lifecycle_events_to_temporal_events requires "
+                "EffectLifecycleEvent records"
+            )
         temporal_event = lower_lifecycle_event_to_temporal_event(event)
         if temporal_event is not None:
             lowered.append(temporal_event)

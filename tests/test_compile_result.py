@@ -21,6 +21,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
+    lower_lifecycle_events_to_temporal_events,
 )
 from lawvm.core.compile_result import (
     AdmissibleBindingCertificate,
@@ -675,6 +676,11 @@ def test_canonical_bundle_rejects_conflicting_executable_temporal_event_ids() ->
             source_effects=(effect,),
             effect_lifecycle_events=(lifecycle,),
         )
+
+
+def test_lifecycle_event_lowering_rejects_untyped_inputs() -> None:
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        lower_lifecycle_events_to_temporal_events(cast(Any, ("life:1",)))
 
 
 def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
