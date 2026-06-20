@@ -481,3 +481,210 @@ def test_basis_reuse_references_subgrammar() -> None:
     assert len(scan.grants) >= 1
     # at least one grant carries a recognized provision basis target
     assert any("36" in g.basis_targets for g in scan.grants)
+
+
+# ---------------------------------------------------------------------------
+# AGENCY-family precision guards (court / penal / single-case / appeal / bylaw /
+# publishing / single-case-direction). The bare instrument-noun + power-verb
+# co-occurrence test mints these as AGENCY grants; each is a grant-SHAPED-but-not-
+# a-grant frame and
+# must residualize, NEVER emit an AGENCY grant — while the genuine agency
+# rule-making grants must SURVIVE untouched. Corpus-witnessed shapes.
+# ---------------------------------------------------------------------------
+
+
+def _agency_grants(scan) -> list:
+    return [g for g in scan.grants if g.kind == KIND_AGENCY]
+
+
+def test_court_power_paatos_residualized() -> None:
+    # ``vakuutusoikeus voi … poistaa päätöksen ja määrätä asian uudelleen
+    # käsiteltäväksi`` — an in-case adjudication, not a rule-making delegation
+    # (2000/1276).
+    scan = _grants(
+        "Jos päätös on ilmeisesti lainvastainen, vakuutusoikeus voi rahaston "
+        "hakemuksesta poistaa päätöksen ja määrätä asian uudelleen "
+        "käsiteltäväksi."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "court_power" for r in scan.residuals)
+
+
+def test_court_power_tuomioistuin_residualized() -> None:
+    # ``tuomioistuin voi … määrätä, ettei päätöstä saa panna täytäntöön`` (2000/340).
+    scan = _grants(
+        "Kun kanne on pantu vireille, tuomioistuin voi kantajan vaatimuksesta "
+        "ennen asian ratkaisemista määrätä, ettei päätöstä saa panna "
+        "täytäntöön."
+    )
+    assert _agency_grants(scan) == []
+
+
+def test_court_power_with_rulemaking_quantifier_is_grant() -> None:
+    # STAND-DOWN: a court issuer ``antaa tarkempia määräyksiä [aiheesta]`` WOULD be
+    # rule-making — the rule-making quantifier ``tarkempia`` keeps it a grant so the
+    # guard never suppresses a genuine delegation merely because a court is named.
+    scan = _grants(
+        "Markkinaoikeus antaa tarkempia määräyksiä asioiden käsittelystä "
+        "istunnossa."
+    )
+    assert any(g.kind == KIND_AGENCY for g in scan.grants)
+
+
+def test_penal_clause_reference_residualized() -> None:
+    # ``Joka antaa rahalainan … viraston määräyksen vastaisesti … on tuomittava …
+    # sakkoon tai vankeuteen`` — an offence definition referencing a norm, not a
+    # grant. The clause carries a power verb (``antaa``) so it reaches the penal
+    # guard rather than declining as instrument-without-power-verb (2000/340).
+    scan = _grants(
+        "Joka antaa rahalainan viraston määräyksen vastaisesti on tuomittava "
+        "sakkoon tai vankeuteen enintään yhdeksi vuodeksi"
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "penal_clause_reference" for r in scan.residuals)
+
+
+def test_single_case_order_antaneelle_residualized() -> None:
+    # ``Valituskirjelmä voidaan antaa myös määräyksen antaneelle …`` — the genitive
+    # ``määräyksen`` modifies ``antaneelle`` (the one who ISSUED the order); a
+    # back-reference, not a grant (2000/199).
+    scan = _grants(
+        "Valituskirjelmä voidaan antaa myös määräyksen antaneelle kihlakunnan "
+        "poliisilaitoksen päällikölle alioikeuteen toimittamista varten."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "single_case_order" for r in scan.residuals)
+
+
+def test_permit_condition_residualized() -> None:
+    # ``lupa voidaan antaa määräajaksi ja siihen on liitettävä … tarpeelliset
+    # määräykset`` — the määräykset are the permit's CONDITIONS, not a rule-making
+    # grant (2000/287, 2000/288).
+    scan = _grants(
+        "lupa voidaan antaa määräajaksi ja siihen on liitettävä yleisen ja "
+        "yksityisen edun suojaamiseksi tarpeelliset määräykset."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "single_case_order" for r in scan.residuals)
+
+
+def test_appeal_reference_residualized() -> None:
+    # ``saavat valittaa päätöksestä korkeimpaan hallinto-oikeuteen`` — a right to
+    # appeal an existing decision, not a rule-making instrument (2000/340).
+    scan = _grants(
+        "Yhdistys sekä muistutuksentekijä, joka katsoo viraston päätöksen "
+        "loukkaavan oikeuttaan, saavat valittaa päätöksestä korkeimpaan "
+        "hallinto-oikeuteen niin kuin hallintolainkäyttölaissa säädetään."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "appeal_reference" for r in scan.residuals)
+
+
+def test_bylaw_provided_norm_tyojarjestys_residualized() -> None:
+    # ``Tarkemmat määräykset … annetaan työjärjestyksessä`` — the norm is in an
+    # internal bylaw, not a statutory decree / agency rule (2000/234).
+    scan = _grants(
+        "Tarkemmat määräykset hallinnon ja toimintojen järjestämisestä annetaan "
+        "työjärjestyksessä, jonka pääjohtaja vahvistaa."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "bylaw_provided_norm" for r in scan.residuals)
+
+
+def test_bylaw_provided_norm_taloussaanto_residualized() -> None:
+    # ``Taloussäännössä voidaan lisäksi antaa muita … määräyksiä`` (2000/263).
+    scan = _grants(
+        "Taloussäännössä voidaan lisäksi antaa muita tiliviraston toimintaan "
+        "liittyviä määräyksiä."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "bylaw_provided_norm" for r in scan.residuals)
+
+
+def test_decision_paattaa_object_residualized() -> None:
+    # ``voi myös erikseen päättää … merkitykseltään yleisen päätöksen
+    # julkaisemisesta`` — a one-off administrative decision, not rule-making
+    # (2000/188).
+    scan = _grants(
+        "Valtioneuvosto tai ministeriö voi myös erikseen päättää muun "
+        "viranomaisen merkitykseltään yleisen päätöksen julkaisemisesta "
+        "säädöskokoelmassa."
+    )
+    assert _agency_grants(scan) == []
+
+
+def test_published_norm_reference_residualized() -> None:
+    # ``Viranomaisen määräykset julkaistaan … säädöskokoelmassa`` — the clause
+    # regulates WHERE existing norms are published, not the power to make them
+    # (2000/188).
+    scan = _grants(
+        "Viranomaisen määräykset julkaistaan määräyskokoelman lisäksi tai "
+        "sijasta säädöskokoelmassa, jos määräysten antamiseen valtuuttavassa "
+        "laissa niin säädetään."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "published_norm_reference" for r in scan.residuals)
+
+
+def test_single_case_direction_residualized() -> None:
+    # ``antaa … yksittäisessä tapauksessa koskevia määräyksiä ja ohjeita`` — a
+    # one-off direction in a single case, not a general rule (2000/204).
+    scan = _grants(
+        "Ulkoasiainministeriö voi toimialaansa kuuluvassa asiassa antaa "
+        "edustuston toimintaa yksittäisessä tapauksessa koskevia määräyksiä ja "
+        "ohjeita."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "single_case_direction" for r in scan.residuals)
+
+
+def test_single_case_with_general_quantifier_is_grant() -> None:
+    # STAND-DOWN: ``voi antaa YLEISIÄ määräyksiä … ja päättää … yksittäisessä
+    # tapauksessa`` — the general ``yleisiä`` rule-making conjunct survives even
+    # though a single-case clause is coordinated with it (2000/256).
+    scan = _grants(
+        "Ulkoasiainministeriö voi antaa yleisiä määräyksiä ulkomaanedustuksessa "
+        "käytettävistä virka-arvoista ja päättää virka-arvosta yksittäisessä "
+        "tapauksessa."
+    )
+    assert any(g.kind == KIND_AGENCY for g in scan.grants)
+
+
+# --- GENUINE agency grants the guards must NOT suppress ---
+
+
+def test_genuine_agency_ohje_grant_survives() -> None:
+    scan = _grants(
+        "Kansaneläkelaitos voi antaa tarkempia ohjeita tämän pykälän "
+        "soveltamisesta."
+    )
+    assert any(g.kind == KIND_AGENCY and g.instrument == "ohje" for g in scan.grants)
+
+
+def test_genuine_agency_maaraykset_grant_survives() -> None:
+    scan = _grants(
+        "Vakuutusvalvontavirasto antaa tarkemmat määräykset tämän momentin "
+        "soveltamisesta."
+    )
+    assert any(
+        g.kind == KIND_AGENCY and g.instrument == "määräys" for g in scan.grants
+    )
+
+
+def test_genuine_agency_voi_antaa_yleisia_ohjeita_survives() -> None:
+    scan = _grants(
+        "Ympäristöministeriö voi antaa yleisiä ohjeita tämän asetuksen "
+        "täytäntöönpanosta ja valvonnasta."
+    )
+    assert any(g.kind == KIND_AGENCY for g in scan.grants)
+
+
+def test_genuine_decision_as_means_paatoksella_survives() -> None:
+    # The instrumental ``päätöksellä`` decision-as-MEANS rule-making grant (the
+    # historical ministerial/agency päätös decree) must NOT be caught by the
+    # one-off decision-issuance guard.
+    scan = _grants(
+        "Tarkemmat muistiinpanoja koskevat säännökset annetaan verohallituksen "
+        "päätöksellä."
+    )
+    assert any(g.instrument == "päätös" for g in scan.grants)
