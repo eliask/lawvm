@@ -76,7 +76,7 @@ def _scan_patterns(src_root: Path) -> RegexPatternScan:
         except Exception:
             continue
 
-        for node in ast.walk(tree):
+        for node in tree.body:
             if not isinstance(node, ast.Assign):
                 continue
             for target in node.targets:
