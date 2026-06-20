@@ -441,6 +441,13 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "materialized PIT product split fold-owned operative sections out of an attachments wrapper",
                 ("preservation", "safety_invariant"), role="observation"),
+    FindingSpec("REPLAY.CITED_VERSION_SNAPSHOT_DROP", "replay_products",
+                "recovery", "warn", "grafter",
+                "a later amending act's stale item-scoped cited-version ancestor snapshot op was "
+                "dropped from the materialized-state op stream because the cited act's same-effective "
+                "snapshot structurally covers it; recorded as a witness so the legal-state op drop is "
+                "never a silent omission",
+                ("preservation", "provenance"), role="observation"),
     FindingSpec("REPLAY.EDITORIAL_REPEAL_NOTICE_SUBSTRING", "replay_products",
                 "recovery", "warn", "grafter",
                 "replay-fold placeholder restoration recognised an existing editorial repeal notice "

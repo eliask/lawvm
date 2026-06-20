@@ -352,6 +352,48 @@ def editorial_repeal_notice_substring_finding(
     )
 
 
+def cited_version_snapshot_drop_finding(
+    *,
+    source_statute: str,
+    op_id: str,
+    drop_source_statute: str,
+    effective: str,
+    target_path: tuple[str, ...],
+    witness_rule_id: str,
+) -> Finding:
+    """Build the observation emitted when a covered cited-version snapshot op is dropped.
+
+    A later amending act emitted a stale ancestor snapshot for an item-scoped
+    cited-version clause; the cited act's same-effective snapshot structurally
+    covers it, so the stale ``REPLACE``/``INSERT`` op is removed from the
+    materialized-state op stream. The drop alters materialized text-state, so it
+    is surfaced as a typed observation rather than left silent (leak-ledger
+    rank 2; AGENTS §0/§4). The dropped op's identity is embedded so triaging the
+    drop never requires re-running materialization.
+    """
+    return Finding(
+        kind="REPLAY.CITED_VERSION_SNAPSHOT_DROP",
+        role="observation",
+        stage="replay",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": (
+                "A later amending act's item-scoped cited-version clause emitted a "
+                "stale ancestor snapshot op; the cited act's same-effective snapshot "
+                "structurally covers it, so the stale op was dropped from the "
+                "materialized-state op stream. Recorded as a witness so the "
+                "legal-state op drop is never a silent omission."
+            ),
+            "op_id": op_id,
+            "drop_source_statute": drop_source_statute,
+            "effective": effective,
+            "target_path": list(target_path),
+            "witness_rule_id": witness_rule_id,
+        },
+    )
+
+
 def materialized_provisions_wrapper_projection_finding(
     *,
     source_statute: str,
