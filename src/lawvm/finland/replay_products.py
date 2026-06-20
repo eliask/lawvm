@@ -834,6 +834,66 @@ def _merge_temporal_events(
     return tuple(merged)
 
 
+def _cached_temporal_events_from_lo_ops(
+    lo_ops: list[LegalOperation],
+    *,
+    target_statute: str,
+    covered_commence_group_ids: frozenset[str],
+    covered_expiry_signatures: frozenset[tuple[str, str, str]],
+    cache: dict[object, object] | None,
+    cache_key_seed: tuple[object, ...],
+) -> tuple[TemporalEvent, ...]:
+    """Return fallback temporal events, reusing per-export product cache."""
+    cache_key = (
+        "synthesized_temporal_events_from_lo_ops",
+        *cache_key_seed,
+        target_statute,
+        covered_commence_group_ids,
+        covered_expiry_signatures,
+    )
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple):
+            return cast(tuple[TemporalEvent, ...], cached)
+    events = _temporal_events_from_lo_ops(
+        lo_ops,
+        target_statute=target_statute,
+        covered_commence_group_ids=covered_commence_group_ids,
+        covered_expiry_signatures=covered_expiry_signatures,
+    )
+    if cache is not None:
+        cache[cache_key] = events
+    return events
+
+
+def _base_enacted_date_for_products(
+    *,
+    ctx: "StatuteContext",
+    statute_id: str,
+    cache: dict[object, object] | None,
+) -> str:
+    """Return base enacted date for replay products without reparsing per PIT date."""
+    cache_key = (
+        "base_enacted_date_for_replay_products",
+        statute_id,
+        id(ctx.base_xml_bytes),
+        len(ctx.base_xml_bytes),
+    )
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, str):
+            return cached
+    import lxml.etree as _etree
+    from lawvm.finland.metadata import _statute_issue_date as _fi_statute_issue_date
+
+    base_tree = _etree.fromstring(ctx.base_xml_bytes)
+    base_issue_date = _fi_statute_issue_date(base_tree)
+    base_enacted_date = base_issue_date.isoformat() if base_issue_date is not None else ""
+    if cache is not None:
+        cache[cache_key] = base_enacted_date
+    return base_enacted_date
+
+
 def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOperation]:
     """Keep repeal placeholders/tombstones from inheriting a temporary expiry.
 
@@ -1506,8 +1566,6 @@ def build_replay_products(
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit
-    import lxml.etree as _etree
-    from lawvm.finland.metadata import _statute_issue_date as _fi_statute_issue_date
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -1566,11 +1624,18 @@ def build_replay_products(
         and getattr(event, "group_id", "")
         and getattr(event, "expires", "")
     )
-    synthesized_temporal_events = _temporal_events_from_lo_ops(
+    static_temporal_event_cache_key = (
+        statute_id,
+        id(original_lo_ops),
+        len(original_lo_ops),
+    )
+    synthesized_temporal_events = _cached_temporal_events_from_lo_ops(
         lo_ops,
         target_statute=base_ir.statute_id,
         covered_commence_group_ids=covered_commence_group_ids,
         covered_expiry_signatures=covered_expiry_signatures,
+        cache=fold_backfill_preview_cache,
+        cache_key_seed=static_temporal_event_cache_key,
     )
     if synthesized_temporal_events:
         resolved_temporal_events = _merge_temporal_events(
@@ -1584,9 +1649,11 @@ def build_replay_products(
     # when as_of < statute issue date.  The `effective` date of base provisions
     # remains "0000-00-00" so --query-type governing is completely unaffected
     # (governing only checks v.effective, not v.enacted).
-    _base_tree = _etree.fromstring(ctx.base_xml_bytes)
-    _base_issue_date = _fi_statute_issue_date(_base_tree)
-    _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
+    _base_enacted_date = _base_enacted_date_for_products(
+        ctx=ctx,
+        statute_id=statute_id,
+        cache=fold_backfill_preview_cache,
+    )
     from lawvm.finland.replay_fold_timeline_backfill import append_fold_timeline_backfill_ops
 
     preview_raw_timelines = fold_backfill_preview_raw_timelines
@@ -1625,11 +1692,13 @@ def build_replay_products(
         preview_rekeyed_timelines_cache=fold_backfill_preview_cache,
     )
     if fold_timeline_backfills.records:
-        backfill_temporal_events = _temporal_events_from_lo_ops(
+        backfill_temporal_events = _cached_temporal_events_from_lo_ops(
             lo_ops,
             target_statute=base_ir.statute_id,
             covered_commence_group_ids=covered_commence_group_ids,
             covered_expiry_signatures=covered_expiry_signatures,
+            cache=fold_backfill_preview_cache,
+            cache_key_seed=static_temporal_event_cache_key,
         )
         if backfill_temporal_events:
             resolved_temporal_events = _merge_temporal_events(
