@@ -108,13 +108,14 @@ _INSERT_MOMENT_RE = re.compile(
 )
 _BARE_REPLACE_SECTION_RE = re.compile(
     rf"(?<![/\d]){_OPTIONAL_CHAPTER_SECTION_PREFIX}"
-    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?!\s{{0,10}}:)(?!\s{{0,10}}n\b)",
+    rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§"
+    r"(?!\s{0,10}:)(?!\s{0,10}n\b)(?!\s{0,20}\d{1,3}\s+moment)",
     flags=re.I,
 )
 _BARE_SECTION_LIST_RE = re.compile(
     r"(?:(?<=^)|(?<=[,;]))\s{0,20}"
     r"(?P<run>(?:\d{1,4}\s{0,3}[a-zäöå]?\s*[–—―-]\s*\d{1,4}\s{0,3}[a-zäöå]?|\d{1,4}\s{0,3}[a-zäöå]?)(?:\s{0,20}(?:,|ja|sekä)\s{0,20}(?:\d{1,4}\s{0,3}[a-zäöå]?\s*[–—―-]\s*\d{1,4}\s{0,3}[a-zäöå]?|\d{1,4}\s{0,3}[a-zäöå]?)){1,40})"
-    r"\s{0,10}§(?!\s{0,10}:)(?!\s{0,10}n\b)",
+    r"\s{0,10}§(?!\s{0,10}:)(?!\s{0,10}n\b)(?!\s{0,20}\d{1,3}\s+moment)",
     flags=re.I,
 )
 _GLUED_ALPHA_JA_RE = re.compile(

@@ -12471,6 +12471,32 @@ def test_supplement_mixed_explicit_clause_ops_does_not_add_moment_for_section_wi
     ]
 
 
+def test_supplement_mixed_explicit_clause_ops_does_not_add_bare_section_for_moment_item_target() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_8_2_13",
+            op_type="REPLACE",
+            target_section="8",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=2,
+            target_item="13",
+        )
+    ]
+    johto = (
+        "muutetaan työterveyslaitoksen toiminnasta ja rahoituksesta "
+        "29 päivänä kesäkuuta 1978 annetun asetuksen ( 501/1978 ) "
+        "8 § 2 momentin 13 kohta, sellaisena kuin se on asetuksessa "
+        "1307/1993, seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in got
+    ] == [("REPLACE", "8", 2, "13")]
+
+
 def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_moment_insert() -> None:
     ops = [
         AmendmentOp(
