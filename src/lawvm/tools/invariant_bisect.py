@@ -64,6 +64,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from lawvm.core.invariant_detectors import (
     run_descendant_sibling_loss_detector,
+    run_invariant_detector,
     run_invariant_detector_messages,
     run_label_normalization_collision_detector,
     run_same_source_descendant_snapshot_shadow_detector,
@@ -71,6 +72,11 @@ from lawvm.core.invariant_detectors import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_UK_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
+
+# UK sections can be inserted in source position (e.g. "after section 23") rather
+# than strict label-sorted order, so sort_order is a diagnostic lint, not a
+# hard structural invariant suitable for the UK ``all_tree`` gate.
+_UK_ALL_TREE_EXCLUDED_FAMILIES = frozenset({"sort_order"})
 
 
 def _run_fi_invariant_detector_messages(
@@ -88,6 +94,21 @@ def _run_fi_invariant_detector_messages(
                 _norm_num_token,
                 target_path,
             )
+        ]
+    return run_invariant_detector_messages(ir, detector, target_path)
+
+
+def _run_uk_invariant_detector_messages(
+    ir: Any,
+    detector: str,
+    target_path: str = "",
+) -> list[str]:
+    if detector == "all_tree":
+        results = run_invariant_detector(ir, "all_tree", target_path)
+        return [
+            result.message
+            for result in results
+            if result.kind not in _UK_ALL_TREE_EXCLUDED_FAMILIES
         ]
     return run_invariant_detector_messages(ir, detector, target_path)
 
@@ -395,7 +416,7 @@ def build_uk_invariant_bisect_bundle(
     )
 
     # Check pre-window state
-    initial_violations = run_invariant_detector_messages(current_ir.body, detector, target_path)
+    initial_violations = _run_uk_invariant_detector_messages(current_ir.body, detector, target_path)
     initial_clean = len(initial_violations) == 0
 
     # 7. Scan window: apply one amendment group at a time
@@ -431,7 +452,7 @@ def build_uk_invariant_bisect_bundle(
                 )
             ]
         else:
-            violations = run_invariant_detector_messages(current_ir.body, detector, target_path)
+            violations = _run_uk_invariant_detector_messages(current_ir.body, detector, target_path)
         steps.append({
             "source_id": mid,
             "clean": len(violations) == 0,

@@ -253,6 +253,47 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
     )
 
 
+def test_replay_uk_ops_classifies_sort_order_as_observation() -> None:
+    """Sort-order tree invariants are owned as source-order observations, not bugs."""
+    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                # Deliberately out of canonical label order; source inserts section:3 here.
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Section two."),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-sort-order-observation",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="3", text="Section three."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    sort_order_adjs = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_sort_order_observation"
+    ]
+    assert len(sort_order_adjs) == 1, [
+        adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind
+    ]
+    assert "section out of order:" in str(sort_order_adjs[0].detail["violation"])
+    assert classify_uk_replay_adjudication_bucket(sort_order_adjs[0].kind) == "nonblocking_observation"
+    assert sort_order_adjs[0].detail["blocking"] is False
+
+
 def test_replay_uk_ops_rescans_invariants_after_descendant_shape_replace() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/1",
