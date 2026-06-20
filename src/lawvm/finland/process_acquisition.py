@@ -53,12 +53,14 @@ class ProcessAcquisitionContext:
     amendment_lacks_operative_structure: OperativeStructureCheck
 
     def acquire(self) -> ProcessAcquisitionResult:
-        xml_bytes = self._apply_source_corrections(self.xml_bytes)
+        pre_correction_bytes = self.xml_bytes
+        xml_bytes = self._apply_source_corrections(pre_correction_bytes)
         muutos_tree = etree.fromstring(xml_bytes)
         source_model = AmendmentSourceModel.from_tree(
             muutos_tree,
             source_ref=self.amendment_id,
             source_bytes=xml_bytes,
+            pre_correction_bytes=pre_correction_bytes,
         )
         lacks_operative_structure, operative_tags = self.amendment_lacks_operative_structure(muutos_tree)
         source_title = self.tree_title(muutos_tree)

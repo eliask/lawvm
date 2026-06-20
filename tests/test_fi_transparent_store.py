@@ -660,3 +660,62 @@ class TestNetworkSmoke:
 
         assert call_count[0] == 0, "Second call made unexpected HTTP requests"
         assert xml1 == xml2
+
+
+# ---------------------------------------------------------------------------
+# Content-addressed read witnesses
+# ---------------------------------------------------------------------------
+
+
+class TestReadWitness:
+    def test_read_source_witness_is_content_addressed(
+        self,
+        archive: Farchive,
+    ):
+        import hashlib
+
+        from lawvm.corpus_store import statute_url
+
+        store = TransparentCorpusStore(archive=archive, cache_only=True, verbose=False)
+        xml = _make_xml("2002/738")
+        archive.store(statute_url("2002/738"), xml, storage_class="xml")
+
+        result = store.read_source_witness("2002/738")
+        assert result is not None
+        data, witness = result
+        assert data == xml
+        assert witness.digest is not None
+        assert witness.digest.digest_algorithm == "sha256"
+        # Content-addressed: digest of the actual bytes, not the sid.
+        assert witness.digest.digest == hashlib.sha256(xml).hexdigest()
+        assert witness.digest.digest != hashlib.sha256(b"2002/738").hexdigest()
+        assert witness.artifact_id == "2002/738"
+
+    def test_read_source_witness_none_when_absent(
+        self,
+        store: TransparentCorpusStore,
+    ):
+        assert store.read_source_witness("9999/1") is None
+
+    def test_content_change_changes_witness_digest(
+        self,
+        archive: Farchive,
+    ):
+        from lawvm.corpus_store import statute_url
+
+        store = TransparentCorpusStore(archive=archive, cache_only=True, verbose=False)
+        archive.store(statute_url("2002/738"), _make_xml("2002/738"), storage_class="xml")
+        first = store.read_source_witness("2002/738")
+
+        archive.store(
+            statute_url("2002/738"),
+            _make_xml("2002/738") + b"<!--changed-->",
+            storage_class="xml",
+        )
+        # Fresh store to avoid any read cache.
+        store2 = TransparentCorpusStore(archive=archive, cache_only=True, verbose=False)
+        second = store2.read_source_witness("2002/738")
+
+        assert first is not None and second is not None
+        assert first[1].digest is not None and second[1].digest is not None
+        assert first[1].digest.digest != second[1].digest.digest

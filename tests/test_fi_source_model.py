@@ -1073,3 +1073,92 @@ def test_source_model_builds_uncovered_recovery_context() -> None:
     assert "2" in context.owned_chapter_labels
     assert "4" in context.johto_mentioned_labels
     assert "9" in context.source_owned_insert_chapter_labels
+
+
+# ---------------------------------------------------------------------------
+# Intrinsic content-digest binding (source identity plane)
+# ---------------------------------------------------------------------------
+
+
+def _digest_source_bytes(suffix: bytes = b"") -> bytes:
+    return (
+        b"<akomaNtoso><act><body><section><num>1 \xc2\xa7</num>"
+        b"<content>teksti.</content></section></body></act></akomaNtoso>" + suffix
+    )
+
+
+def test_source_model_binds_content_digest_when_bytes_present():
+    import hashlib
+
+    raw = _digest_source_bytes()
+    model = AmendmentSourceModel.from_tree(
+        etree.fromstring(raw),
+        source_ref="2020/100",
+        source_bytes=raw,
+    )
+
+    assert model.source_digest is not None
+    assert model.source_digest.digest_algorithm == "sha256"
+    # Content-addressed: digest is sha256 of the actual bytes, not the source_ref.
+    assert model.source_digest.digest == hashlib.sha256(raw).hexdigest()
+    assert model.source_digest.digest != hashlib.sha256(b"2020/100").hexdigest()
+    assert model.pre_correction_digest is None
+
+
+def test_source_model_digest_is_content_addressed_not_name_addressed():
+    a = _digest_source_bytes(b"<!--a-->")
+    b = _digest_source_bytes(b"<!--b-->")
+
+    # Same source_ref, different bytes -> different digest.
+    model_a = AmendmentSourceModel.from_tree(
+        etree.fromstring(a), source_ref="2020/100", source_bytes=a
+    )
+    model_b = AmendmentSourceModel.from_tree(
+        etree.fromstring(b), source_ref="2020/100", source_bytes=b
+    )
+    assert model_a.source_digest is not None
+    assert model_b.source_digest is not None
+    assert model_a.source_digest.digest != model_b.source_digest.digest
+
+
+def test_source_model_no_digest_when_no_bytes():
+    model = AmendmentSourceModel.from_tree(
+        etree.fromstring(_digest_source_bytes()),
+        source_ref="2020/100",
+    )
+    assert model.source_digest is None
+    assert model.pre_correction_digest is None
+
+
+def test_source_model_pre_post_correction_digest_pair():
+    import hashlib
+
+    pre = _digest_source_bytes(b"<!--uncorrected-->")
+    post = _digest_source_bytes(b"<!--corrected-->")
+
+    model = AmendmentSourceModel.from_tree(
+        etree.fromstring(post),
+        source_ref="2020/100",
+        source_bytes=post,
+        pre_correction_bytes=pre,
+    )
+
+    assert model.source_digest is not None
+    assert model.pre_correction_digest is not None
+    # The pair witnesses the correction as a content change.
+    assert model.pre_correction_digest.digest == hashlib.sha256(pre).hexdigest()
+    assert model.source_digest.digest == hashlib.sha256(post).hexdigest()
+    assert model.source_digest.digest != model.pre_correction_digest.digest
+
+
+def test_source_model_no_pre_correction_digest_when_bytes_unchanged():
+    same = _digest_source_bytes()
+    model = AmendmentSourceModel.from_tree(
+        etree.fromstring(same),
+        source_ref="2020/100",
+        source_bytes=same,
+        pre_correction_bytes=same,
+    )
+    # No correction happened -> no separate pre-correction witness.
+    assert model.pre_correction_digest is None
+    assert model.source_digest is not None

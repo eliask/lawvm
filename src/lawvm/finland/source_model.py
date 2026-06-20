@@ -9,6 +9,7 @@ walk and reinterpret the same XML tree.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.source_witness import DigestWitness
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import (
     ObservedBodyUnit,
@@ -529,13 +531,50 @@ def _source_payload_ir_index(muutos_tree: etree._Element) -> SourcePayloadIrInde
     )
 
 
+def content_digest_witness(source_bytes: bytes) -> DigestWitness:
+    """Return the content-addressed sha256 ``DigestWitness`` for source bytes.
+
+    The digest is computed from the actual artifact bytes — never from a name,
+    id, or locator — so two acquisitions agree iff their bytes agree.
+    """
+    if not isinstance(source_bytes, bytes | bytearray):
+        raise TypeError(
+            "content_digest_witness requires source bytes, "
+            f"got {type(source_bytes).__name__}"
+        )
+    digest = hashlib.sha256(bytes(source_bytes)).hexdigest()
+    if not digest:  # pragma: no cover - hashlib always yields a hex digest
+        raise ValueError("content digest could not be computed for source bytes")
+    return DigestWitness(digest_algorithm="sha256", digest=digest)
+
+
 @dataclass(slots=True)
 class AmendmentSourceModel:
-    """Cached read-only projections over one Finland amendment source tree."""
+    """Cached read-only projections over one Finland amendment source tree.
+
+    ``source_digest`` is the intrinsic content identity of ``source_bytes``
+    (sha256 of the actual artifact bytes, never derived from ``source_ref`` or
+    any name/id). It is bound at construction and is present whenever the carried
+    bytes are present, so downstream witnesses can prove identity from a content
+    hash rather than reconstructing it from a name.
+
+    ``pre_correction_digest`` is the content digest of the bytes *before*
+    ``_apply_source_corrections`` ran, set only when a correction actually
+    changed the bytes. Together with ``source_digest`` it forms a pre/post pair
+    so that a source correction is itself witnessed.
+    """
 
     muutos_tree: etree._Element
     source_ref: str = ""
     source_bytes: bytes | None = None
+    source_digest: DigestWitness | None = None
+    pre_correction_digest: DigestWitness | None = None
+
+    def __post_init__(self) -> None:
+        # Intrinsic content identity: present whenever bytes are present.
+        # content_digest_witness fails loud if a digest cannot be computed.
+        if self.source_bytes is not None and self.source_digest is None:
+            self.source_digest = content_digest_witness(self.source_bytes)
     _observed_body_inventory: tuple[ObservedBodyUnit, ...] | None = field(
         default=None,
         init=False,
@@ -639,11 +678,28 @@ class AmendmentSourceModel:
         *,
         source_ref: str = "",
         source_bytes: bytes | None = None,
+        pre_correction_bytes: bytes | None = None,
     ) -> "AmendmentSourceModel":
+        """Build a source model and bind intrinsic content digests.
+
+        ``source_bytes`` are the post-correction artifact bytes; their sha256
+        becomes ``source_digest``. ``pre_correction_bytes`` are the bytes as
+        acquired *before* ``_apply_source_corrections``; when they differ from
+        ``source_bytes`` their digest is bound as ``pre_correction_digest`` so a
+        correction is witnessed as a content change, not just a name.
+        """
+        pre_correction_digest: DigestWitness | None = None
+        if (
+            pre_correction_bytes is not None
+            and source_bytes is not None
+            and pre_correction_bytes != source_bytes
+        ):
+            pre_correction_digest = content_digest_witness(pre_correction_bytes)
         return cls(
             muutos_tree=muutos_tree,
             source_ref=source_ref,
             source_bytes=source_bytes,
+            pre_correction_digest=pre_correction_digest,
         )
 
     @property
