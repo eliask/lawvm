@@ -84,7 +84,7 @@ class ProcedureLens:
     lens_id: str = _LENS_ID
     jurisdiction: str = "fi"
     schema_version: str = "v0"
-    produces_node_kinds: tuple[str, ...] = ("procedure_frame",)
+    produces_node_kinds: tuple[str, ...] = ("procedure_frame", "procedure_cue")
     produces_edge_kinds: tuple[str, ...] = ()
     required_views: tuple[str, ...] = ("token_tape",)
 
@@ -119,9 +119,22 @@ class ProcedureLens:
                     frame.source_span,
                 )
                 process_kind = frame.process_kind.value
+                actor_payload = _opt_span_payload(frame.actor_span)
+                deadline_payload = _opt_span_payload(frame.deadline_span)
+                # A frame with NONE of its defining flanks (no actor AND no
+                # deadline) carries no frame structure — it is a bare process-noun
+                # CUE. Demote it to ``procedure_cue`` (no-fabrication: the "frame"
+                # name would over-claim), keeping the span + process_kind
+                # (totality). A frame WITH content stays ``procedure_frame``.
+                admissible_as_frame = (
+                    actor_payload is not None or deadline_payload is not None
+                )
+                node_kind = (
+                    "procedure_frame" if admissible_as_frame else "procedure_cue"
+                )
                 node_seeds.append(
                     SurfaceNodeSeed(
-                        node_kind="procedure_frame",
+                        node_kind=node_kind,
                         source_ref=ref,
                         local_discriminator=(
                             f"{process_kind}|{frame.source_span.byte_offset}|"
@@ -133,8 +146,9 @@ class ProcedureLens:
                         status="asserted",
                         payload={
                             "process_kind": process_kind,
-                            "actor_span": _opt_span_payload(frame.actor_span),
-                            "deadline_span": _opt_span_payload(frame.deadline_span),
+                            "actor_span": actor_payload,
+                            "deadline_span": deadline_payload,
+                            "admissible_as_frame": admissible_as_frame,
                         },
                         authority_role="surface_fact",
                     )
@@ -155,7 +169,12 @@ class ProcedureLens:
             diagnostics=(),
             coverage={
                 "units_scanned": units_scanned,
-                "procedure_frames": len(node_seeds),
+                "procedure_frames": sum(
+                    1 for s in node_seeds if s.node_kind == "procedure_frame"
+                ),
+                "procedure_cues": sum(
+                    1 for s in node_seeds if s.node_kind == "procedure_cue"
+                ),
                 "residuals": len(residual_seeds),
             },
         )

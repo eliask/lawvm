@@ -38,6 +38,11 @@ from lawvm.finland.legal_surface.norm_composition import (
 
 _AKN = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
+# A penal-deferral sanction ("rangaistaan … niin kuin §:ssä säädetään") carries no
+# target actor and no trigger, so it is emitted as the demoted ``sanction_cue``
+# kind (not ``sanction_frame``); both anchor the same marker span the pass reads.
+_SANCTION_KINDS = {"sanction_frame", "sanction_cue"}
+
 
 def _xml(*paragraphs: str) -> bytes:
     body = "\n".join(f"      <p>{p}</p>" for p in paragraphs)
@@ -82,7 +87,7 @@ def test_single_deferral_reference_resolves_asserted() -> None:
     asserted = [e for e in edges if e.status == "asserted"]
     assert asserted, "expected resolved (asserted) penal-deferral edges (P1/P2)"
     for edge in asserted:
-        assert graph.nodes[edge.src].node_kind == "sanction_frame"
+        assert graph.nodes[edge.src].node_kind in _SANCTION_KINDS
         assert graph.nodes[edge.dst].node_kind == "reference_expr"
         assert edge.payload.get("attachment") == "resolved_by_penal_reference"
         assert edge.payload.get("source") == "sanction_penal_deferral"

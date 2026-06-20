@@ -78,6 +78,15 @@ NODE_KINDS: frozenset[str] = frozenset(
         "delegation_frame",
         "procedure_frame",
         "sanction_frame",
+        # Bare process/sanction nouns: a known process/sanction noun appears in
+        # the text with NONE of the frame's defining flanks (procedure: neither
+        # actor nor deadline; sanction: neither target actor nor trigger). The
+        # surface fact is real (span + typed sub-kind preserved = totality), but
+        # the node carries no frame structure, so it is NOT kinded ``*_frame``
+        # (no-fabrication: the word "frame" would over-claim). It is a CUE. A
+        # frame WITH content stays ``*_frame``. Both carry ``admissible_as_frame``.
+        "procedure_cue",
+        "sanction_cue",
         "exception_condition_cue",
         # The ENCLOSING-PROVISION ANAPHOR cue (``Tätä pykälää / Tätä momenttia ei
         # sovelleta …`` / ``Tämän pykälän estämättä …`` / ``Tätä lakia
