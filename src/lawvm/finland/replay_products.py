@@ -74,6 +74,9 @@ _TIMELINE_SECTION_MARK_SPACING_RE = re.compile(r"^(\d+[a-z]?)\s*§")
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
 )
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
+    "lawvm:materialize_as_absent_under_detached_horizon"
+)
 _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="replay_fold_tree",
     families=("mixed_hierarchy_child",),
@@ -954,6 +957,66 @@ def _normalize_repeal_op_sources(lo_ops: list[LegalOperation]) -> list[LegalOper
     return normalized
 
 
+def _mark_detached_horizon_future_repeals(
+    lo_ops: list[LegalOperation],
+    *,
+    as_of: str,
+    expires_as_of: str,
+) -> list[LegalOperation]:
+    """Mark repeal ops that must project absence across a detached expiry horizon.
+
+    Official-consolidation replay sometimes materializes at a future effective
+    date to match an oracle-version repeal while keeping expiry checks at the
+    oracle cutoff. Only those future repeal ops may cross that split; unrelated
+    future repeals remain suppressed by core selection.
+    """
+    if not as_of or not expires_as_of or as_of <= expires_as_of:
+        return lo_ops
+    marked: list[LegalOperation] = []
+    for op in lo_ops:
+        source = op.source
+        payload = op.payload
+        is_repeal_placeholder = bool(
+            payload is not None and payload.attrs.get("lawvm_repeal_placeholder") == "1"
+        )
+        target_kind = op.target.path[-1][0] if op.target.path else ""
+        target_label = op.target.path[-1][1] if op.target.path else ""
+        if (
+            (op.action is StructuralAction.REPEAL or is_repeal_placeholder)
+            and target_kind == "section"
+            and target_label != "1"
+            and source is not None
+            and source.effective
+            and expires_as_of < source.effective <= as_of
+            and _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG not in op.provenance_tags
+        ):
+            marked_payload = op.payload
+            if is_repeal_placeholder and marked_payload is not None:
+                marked_payload = IRNode(
+                    kind=marked_payload.kind,
+                    label=marked_payload.label,
+                    text=marked_payload.text,
+                    attrs={
+                        **dict(marked_payload.attrs),
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                    },
+                    children=marked_payload.children,
+                )
+            marked.append(
+                dc_replace(
+                    op,
+                    payload=marked_payload,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG,
+                    ),
+                )
+            )
+            continue
+        marked.append(op)
+    return marked
+
+
 _FI_CITED_VERSION_ID_RE = re.compile(
     r"\bsellais[ei][a-zäöå]*\s+kuin\b.{0,120}?\b(?:laissa|asetuksessa)\s+(\d{1,5})/(\d{4})",
     flags=re.I | re.S,
@@ -1524,12 +1587,19 @@ def build_replay_products(
             statute_id,
             id(original_lo_ops),
             len(original_lo_ops),
+            as_of,
+            expires_as_of,
         )
         cached_prepared = fold_backfill_preview_cache.get(prepared_cache_key)
         if isinstance(cached_prepared, tuple):
             prepared_lo_ops = cast(tuple[LegalOperation, ...], cached_prepared)
         else:
             prepared = _normalize_repeal_op_sources(list(original_lo_ops))
+            prepared = _mark_detached_horizon_future_repeals(
+                prepared,
+                as_of=as_of,
+                expires_as_of=expires_as_of,
+            )
             prepared = _drop_cited_version_item_ancestor_snapshots(prepared)
             prepared_lo_ops = tuple(prepared)
             fold_backfill_preview_cache[prepared_cache_key] = prepared_lo_ops
@@ -1538,6 +1608,11 @@ def build_replay_products(
     else:
         lo_ops = list(original_lo_ops)
         lo_ops = _normalize_repeal_op_sources(lo_ops)
+        lo_ops = _mark_detached_horizon_future_repeals(
+            lo_ops,
+            as_of=as_of,
+            expires_as_of=expires_as_of,
+        )
         lo_ops = _drop_cited_version_item_ancestor_snapshots(lo_ops)
     covered_commence_group_ids = frozenset(
         group_id

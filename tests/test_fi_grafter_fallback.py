@@ -14572,6 +14572,51 @@ def test_official_consolidation_horizon_does_not_use_unreflected_non_repeal_op_e
     assert decision.oracle_materialize_as_of == "2026-05-29"
 
 
+def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="repeal_section_19",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "19"),)),
+            source=OperationSource(
+                statute_id="2005/886",
+                effective="2006-01-01",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2005, 11, 11),
+            amendment_records=[
+                {
+                    "statute_id": "2005/886",
+                    "included": True,
+                    "effective_date": dt.date(2006, 1, 1),
+                    "issue_date": dt.date(2005, 11, 11),
+                }
+            ],
+            oracle_version_amendment_id="2005/886",
+            compiled_ops=[
+                {
+                    "source_statute": "2005/886",
+                    "action": "repeal",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=(),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2006-01-01"
+    assert decision.expires_as_of == "2005-11-11"
+    assert decision.oracle_materialize_as_of == "2006-01-01"
+
+
 def test_extract_temporary_targets_infers_host_section_for_moment_only_scope() -> None:
     """Moment-only temporary clauses must inherit the explicit host section."""
     from lawvm.finland.frontend_compile import _extract_temporary_targets_from_johtolause

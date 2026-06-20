@@ -112,6 +112,9 @@ _BODY_TOP_LEVEL_KINDS: frozenset[str] = frozenset(
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
 )
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
+    "lawvm:materialize_as_absent_under_detached_horizon"
+)
 
 
 def _day_after_iso(iso_date: str) -> str:
@@ -889,7 +892,18 @@ def compile_timelines(
         elif op.action is StructuralAction.TEXT_REPLACE:
             content = op.payload
         elif op.action is StructuralAction.REPEAL:
-            content = None  # tombstone
+            if _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG in op.provenance_tags:
+                kind, label = target.path[-1] if target.path else ("section", "")
+                content = IRNode(
+                    kind=IRNodeKind(kind),
+                    label=label or None,
+                    attrs={
+                        "lawvm_repeal_placeholder": "1",
+                        _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                    },
+                )
+            else:
+                content = None  # tombstone
         else:
             _src_id = op.source.statute_id if op.source else "?"
             _record_timeline_issue(

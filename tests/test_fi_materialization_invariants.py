@@ -1242,7 +1242,24 @@ class TestNoDuplicatesInPIT:
         ir = _replay("2000/812")
         assert check_invariants(ir) == []
 
+    def test_2002_1126_future_repeal_keeps_cutoff_temporary_section_replacements(self) -> None:
+        """Future repeal-only oracle anchors must not expire unrelated temporary text.
 
+        The selected fin@20050886 surface is dated 2005-11-11 but references
+        2005/886, whose section-19 repeal is effective 2006-01-01. Materializing
+        at 2006-01-01 is needed for that repeal, but the expiry horizon must
+        stay at the oracle cutoff so the still-live 2004/466 temporary complete
+        replacement of §2 is not reverted to the base list.
+        """
+        ir = _replay("2002/1126")
+        assert check_invariants(ir) == []
+
+        section_2 = _first_descendant(ir, IRNodeKind.SECTION, "2")
+        text = irnode_to_text(section_2)
+
+        assert "6, 10-13 ja 16-17 b §:ssä määrätyt" in text
+        assert "6 ja 9-19 §:ssä määrätyt" not in text
+        assert "sähköiseen allekirjoitukseen liittyviä laatuvarmenteita" in text
 
     def test_2016_673_chapters_20_21_in_part_4a_not_part_5(self) -> None:
         """2016/673 chapters 20 and 21 must appear in part:4a after 2019/209 moves them.

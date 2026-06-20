@@ -3676,6 +3676,62 @@ def test_materialize_pit_keeps_non_zero_day_repeal_placeholder_visible_under_det
     assert section.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def test_materialize_pit_drops_marked_future_repeal_under_detached_horizon() -> None:
+    def _find_section(node: IRNode, label: str) -> IRNode | None:
+        for child in node.children:
+            if child.kind is IRNodeKind.SECTION and child.label == label:
+                return child
+            found = _find_section(child, label)
+            if found is not None:
+                return found
+        return None
+
+    base = IRStatute(
+        statute_id="test/future-repeal-detached",
+        title="Future repeal under detached horizon",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),)),
+    )
+    addr = LegalAddress(path=(("section", "19"),))
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="19", text="Base 19 §"),
+                ),
+                ProvisionVersion(
+                    effective="2006-01-01",
+                    enacted="2005-11-11",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="19",
+                        attrs={
+                            "lawvm_repeal_placeholder": "1",
+                            _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR: "1",
+                        },
+                    ),
+                    source=OperationSource(
+                        statute_id="2005/886",
+                        enacted="2005-11-11",
+                        effective="2006-01-01",
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pit = materialize_pit(
+        timelines,
+        "2006-01-01",
+        base=base,
+        expires_as_of="2005-11-11",
+    )
+
+    assert _find_section(pit.body, "19") is None
+
+
 def test_build_replay_products_accepts_temporal_events_for_materialization() -> None:
     ctx = StatuteContext(
         id="test/temporal-products",
