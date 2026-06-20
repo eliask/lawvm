@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import csv
 import io
@@ -614,6 +614,12 @@ class _BenchSemanticScore:
     structural_similarity: float
     adjusted_levenshtein_similarity: float
     event_counts: Counter[str]
+    # Events drawn only from PENALIZED sections (diverging and not neutralized).
+    # ``event_counts`` counts every diverging section's events including
+    # neutralized ones; the penalizing subset is what explains the structural
+    # error and is the residue the unified-contract reconciliation checks
+    # against (see lawvm.core.bench_contract.check_residue_reconciliation).
+    penalized_event_counts: Counter[str] = field(default_factory=Counter)
 
 
 def _empty_bench_semantic_score(
@@ -624,6 +630,7 @@ def _empty_bench_semantic_score(
         structural_similarity=structural_similarity,
         adjusted_levenshtein_similarity=adjusted_levenshtein_similarity,
         event_counts=Counter(),
+        penalized_event_counts=Counter(),
     )
 
 
@@ -694,6 +701,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
     non_editorial_count = 0
     penalized_count = 0
     event_counts: Counter[str] = Counter()
+    penalized_event_counts: Counter[str] = Counter()
     replay_chunks: list[str] = []
     oracle_chunks: list[str] = []
 
@@ -725,6 +733,19 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
                 event_counts[event.get("kind", "unknown")] += 1
         if has_diff and not neutralized:
             penalized_count += 1
+            penalized_events_here = 0
+            for event in events:
+                if isinstance(event, dict):
+                    penalized_event_counts[event.get("kind", "unknown")] += 1
+                    penalized_events_here += 1
+            if penalized_events_here == 0:
+                # Section penalized via structural/label/text diff flags but with
+                # no typed event entries. Record a typed residue family so the
+                # structural error is never silently unexplained (the
+                # unified-contract reconciliation invariant).
+                for flag in ("structural", "label", "text"):
+                    if sd.get(flag, 0):
+                        penalized_event_counts[f"section_diff_{flag}"] += 1
 
         if not text_scores:
             continue
@@ -759,6 +780,7 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
         structural_similarity=structural_similarity,
         adjusted_levenshtein_similarity=adjusted_lev,
         event_counts=event_counts,
+        penalized_event_counts=penalized_event_counts,
     )
 
 
@@ -929,6 +951,113 @@ def _score_one_with_warning_summary(
         raise  # programming bugs — fail loud
     except Exception as e:
         return sid, -1.0, str(e), -1.0, Counter()
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — Finland adapter
+#
+# The Finland comparator re-houses the existing structural/Levenshtein numbers
+# into a contract BenchUnitResult without changing them. Registered at import
+# time under the "fi" key; see lawvm.core.bench_comparator_registry and
+# notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def _fi_status_to_bench_status(status: str) -> "BenchStatus":
+    from lawvm.core.bench_contract import BenchStatus
+
+    if status == "OK":
+        return BenchStatus.SCORED
+    if status == "SOURCE_UNAVAILABLE":
+        return BenchStatus.SOURCE_UNAVAILABLE
+    if status == _ORACLE_STALE_DIAGNOSIS:
+        return BenchStatus.ORACLE_STALE
+    if status in {"NO_TRUTH", "NO_ORACLE_TREE", "NO_ORACLE_SECS"}:
+        return BenchStatus.NO_TRUTH
+    # Any other string is an exception message — a genuine crash.
+    return BenchStatus.CRASH
+
+
+def fi_bench_unit_result(
+    sid: str,
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    *,
+    diagnostic_replay: bool = False,
+    fast: bool = False,
+    text_scores: bool = True,
+) -> "BenchUnitResult":
+    """Finland bench comparator — emit a contract ``BenchUnitResult`` for *sid*.
+
+    Maps the existing Finland fidelity numbers onto the two contract error axes
+    without changing them:
+
+    - ``structural_err = 1 - structural section similarity`` (``None`` in the
+      ``fast`` path, which has no structural axis).
+    - ``text_err = 1 - adjusted Levenshtein similarity`` (``None`` when no text
+      score was computed).
+    - ``residue_buckets`` = the typed structural-diff event families drawn from
+      the **penalized** sections, so the structural error reconciles with its
+      residue (see ``check_residue_reconciliation``).
+    """
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    if is_known_missing_source(sid):
+        return BenchUnitResult(unit_id=sid, status=BenchStatus.SOURCE_UNAVAILABLE)
+
+    try:
+        master, _warning_counts = _run_replay_with_bench_warning_capture(
+            sid,
+            mode=mode,
+            diagnostic_replay=diagnostic_replay,
+            replay_kwargs={
+                "quiet": not diagnostic_replay,
+                "build_full_products": True,
+                "oracle_selector": _BENCH_CONSOLIDATED_SELECTOR,
+            },
+        )
+        if fast:
+            lev_sim = _lev_sim_fast(sid, master) if text_scores else -1.0
+            if lev_sim < 0:
+                return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+            # Fast path has no structural axis — only the text axis is attempted.
+            return BenchUnitResult(
+                unit_id=sid,
+                status=BenchStatus.SCORED,
+                structural_err=None,
+                text_err=1.0 - lev_sim,
+            )
+
+        score = _semantic_section_score(sid, master, text_scores=text_scores)
+        sim = score.structural_similarity
+        if sim < 0:
+            return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+        lev_sim = score.adjusted_levenshtein_similarity
+        text_err = None if lev_sim < 0 else 1.0 - lev_sim
+        residue = {k: int(v) for k, v in score.penalized_event_counts.items() if v}
+        return BenchUnitResult(
+            unit_id=sid,
+            status=BenchStatus.SCORED,
+            structural_err=1.0 - sim,
+            text_err=text_err,
+            residue_buckets=residue,
+        )
+    except (NameError, TypeError, AttributeError):
+        raise  # programming bugs — fail loud
+    except Exception as e:
+        return BenchUnitResult(
+            unit_id=sid,
+            status=BenchStatus.CRASH,
+            witnesses=(str(e),),
+        )
+
+
+def _register_fi_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("fi", fi_bench_unit_result)
+
+
+_register_fi_bench_comparator()
 
 
 def _section_score(
