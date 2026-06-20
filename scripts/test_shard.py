@@ -33,6 +33,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "estonia_sources": (
         "test_clause_ast_ee_validation.py",
         "test_ee_act_identity_registry.py",
+        "test_ee_archive_guard.py",
         "test_ee_bench.py",
         "test_ee_authority_grounding.py",
         "test_ee_compare_normalization.py",
