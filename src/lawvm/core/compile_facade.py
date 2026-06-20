@@ -82,6 +82,10 @@ def _finding_sort_key(finding: Finding) -> tuple[object, ...]:
     )
 
 
+def _distinct(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(value for value in values if value))
+
+
 # ---------------------------------------------------------------------------
 # CompileFacade
 # ---------------------------------------------------------------------------
@@ -391,8 +395,17 @@ class CompileFacade:
                     "migration_events_count": len(self.bundle.migration_events),
                     "migration_event_kinds": self.migration_event_kinds,
                     "source_effects_count": len(self.bundle.source_effects),
+                    "source_effect_ids": tuple(effect.effect_id for effect in self.bundle.source_effects),
                     "effect_relations_count": len(self.bundle.effect_relations),
+                    "effect_relation_ids": tuple(relation.relation_id for relation in self.bundle.effect_relations),
+                    "effect_relation_kinds": _distinct(tuple(relation.kind for relation in self.bundle.effect_relations)),
                     "effect_lifecycle_events_count": len(self.bundle.effect_lifecycle_events),
+                    "effect_lifecycle_event_ids": tuple(
+                        event.lifecycle_event_id for event in self.bundle.effect_lifecycle_events
+                    ),
+                    "effect_lifecycle_event_kinds": _distinct(
+                        tuple(event.kind for event in self.bundle.effect_lifecycle_events)
+                    ),
                     "effects_count": len(self.bundle.effects),
                     "groups_count": len(self.bundle.groups),
                     "has_source": self.bundle.source is not None,
