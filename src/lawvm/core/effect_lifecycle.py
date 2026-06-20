@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Literal, Mapping, Optional
+from typing import Any, Callable, Iterable, Literal, Mapping, Optional
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress
@@ -39,6 +39,7 @@ EffectLifecycleEventKind = Literal[
 ]
 
 EffectExpiryConvention = Literal["exclusive_cutoff", "inclusive_valid_until"]
+EffectDetailWireConverter = Callable[[Mapping[str, Any]], object]
 
 
 def _normalized_source_ref_string(subject: str, value: object) -> str:
@@ -63,6 +64,10 @@ def _freeze_effect_detail(subject: str, detail: Mapping[str, Any]) -> Mapping[st
         raise TypeError(f"{subject} must be a mapping")
     _validate_string_mapping_keys(subject, detail)
     return freeze_mapping(detail)
+
+
+def _default_effect_detail_wire(detail: Mapping[str, Any]) -> object:
+    return dict(detail)
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,6 +393,145 @@ class EffectLifecycleEvent:
             "detail",
             _freeze_effect_detail("EffectLifecycleEvent.detail", self.detail),
         )
+
+
+def legal_address_wire(address: Optional[LegalAddress]) -> Optional[dict[str, object]]:
+    """Project a typed legal address into the stable effect-graph wire shape."""
+
+    if address is None:
+        return None
+    payload: dict[str, object] = {
+        "path": tuple({"kind": kind, "label": label} for kind, label in address.path),
+    }
+    if address.special:
+        payload["special"] = str(address.special)
+    return payload
+
+
+def source_instrument_wire(instrument: SourceInstrumentRef) -> dict[str, object]:
+    """Project a source instrument reference into the effect-graph wire shape."""
+
+    return {
+        "instrument_id": instrument.instrument_id,
+        "title": instrument.title,
+        "enacted": instrument.enacted,
+        "effective": instrument.effective,
+        "expires": instrument.expires,
+    }
+
+
+def source_provision_wire(
+    provision: Optional[SourceProvisionRef],
+) -> Optional[dict[str, object]]:
+    """Project a source witness reference into the effect-graph wire shape."""
+
+    if provision is None:
+        return None
+    return {
+        "instrument": source_instrument_wire(provision.instrument),
+        "path": provision.path,
+        "span_id": provision.span_id,
+        "text_excerpt": provision.text_excerpt,
+        "rule_id": provision.rule_id,
+        "witness_id": provision.witness_id,
+    }
+
+
+def effect_ref_wire(effect: EffectRef) -> dict[str, object]:
+    """Project one source-backed effect declaration into the stable wire shape."""
+
+    return {
+        "effect_id": effect.effect_id,
+        "source_instrument": source_instrument_wire(effect.source_instrument),
+        "target_statute": effect.target_statute,
+        "target_address": legal_address_wire(effect.target_address),
+        "projection_group_id": effect.projection_group_id,
+        "source_provision": source_provision_wire(effect.source_provision),
+    }
+
+
+def effect_relation_wire(
+    relation: EffectRelation,
+    *,
+    detail_converter: EffectDetailWireConverter = _default_effect_detail_wire,
+) -> dict[str, object]:
+    """Project one witnessed effect relation into the stable wire shape."""
+
+    return {
+        "relation_id": relation.relation_id,
+        "kind": relation.kind,
+        "source_provision": source_provision_wire(relation.source_provision),
+        "target_effect_id": (
+            relation.target_effect.effect_id if relation.target_effect is not None else ""
+        ),
+        "target_instrument": (
+            source_instrument_wire(relation.target_instrument)
+            if relation.target_instrument is not None
+            else None
+        ),
+        "source_effect_id": (
+            relation.source_effect.effect_id if relation.source_effect is not None else ""
+        ),
+        "detail": detail_converter(relation.detail),
+    }
+
+
+def temporal_event_ref_wire(event: Optional[TemporalEvent]) -> Optional[dict[str, object]]:
+    """Project a temporal event reference embedded in lifecycle wire rows."""
+
+    if event is None:
+        return None
+    return {
+        "event_id": event.event_id,
+        "kind": event.kind,
+        "effective": event.effective,
+        "expires": event.expires,
+        "group_id": event.group_id,
+    }
+
+
+def effect_lifecycle_event_wire(
+    event: EffectLifecycleEvent,
+    *,
+    detail_converter: EffectDetailWireConverter = _default_effect_detail_wire,
+) -> dict[str, object]:
+    """Project one effect lifecycle event into the stable wire shape."""
+
+    return {
+        "lifecycle_event_id": event.lifecycle_event_id,
+        "kind": event.kind,
+        "source_provision": source_provision_wire(event.source_provision),
+        "effect_id": event.effect.effect_id if event.effect is not None else "",
+        "relation_id": event.relation.relation_id if event.relation is not None else "",
+        "effective": event.effective,
+        "expires": event.expires,
+        "expiry_convention": event.expiry_convention,
+        "temporal_event": temporal_event_ref_wire(event.temporal_event),
+        "executable": event.executable,
+        "detail": detail_converter(event.detail),
+    }
+
+
+def effect_graph_wire(
+    *,
+    source_effects: tuple[EffectRef, ...],
+    effect_relations: tuple[EffectRelation, ...],
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...],
+    detail_converter: EffectDetailWireConverter = _default_effect_detail_wire,
+) -> dict[str, object]:
+    """Project a closed effect graph into core's stable read-model shape."""
+
+    return {
+        "source_effects": tuple(effect_ref_wire(effect) for effect in source_effects),
+        "effect_relations": tuple(
+            effect_relation_wire(relation, detail_converter=detail_converter)
+            for relation in effect_relations
+        ),
+        "effect_lifecycle_events": tuple(
+            effect_lifecycle_event_wire(event, detail_converter=detail_converter)
+            for event in effect_lifecycle_events
+        ),
+    }
 
 
 def lower_lifecycle_event_to_temporal_event(

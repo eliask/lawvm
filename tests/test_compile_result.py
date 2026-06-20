@@ -21,6 +21,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRelation,
     SourceInstrumentRef,
     SourceProvisionRef,
+    effect_graph_wire,
     lower_lifecycle_events_to_temporal_events,
 )
 from lawvm.core.compile_result import (
@@ -60,6 +61,7 @@ from lawvm.core.ir import (
     StructuralAction,
 )
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.semantic_types import FacetKind
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.target_scope import normalize_target_unit_kind
 
@@ -468,6 +470,154 @@ def test_canonical_bundle_rejects_stale_effect_graph_endpoint_records() -> None:
             effect_relations=(graph_relation,),
             effect_lifecycle_events=(lifecycle,),
         )
+
+
+def test_effect_graph_wire_projects_typed_lifecycle_graph() -> None:
+    instrument = SourceInstrumentRef(
+        instrument_id="2024/1",
+        title="Amending Act",
+        enacted="2024-01-01",
+        effective="2024-02-01",
+    )
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("1", "2"),
+        span_id="s-1",
+        text_excerpt="Effect witness",
+        rule_id="test.effect_graph_wire",
+    )
+    effect = EffectRef(
+        effect_id="effect:2024/1:op-1",
+        source_instrument=instrument,
+        target_statute="1991/1",
+        target_address=LegalAddress(path=(("section", "4 a"),), special=FacetKind.HEADING),
+        projection_group_id="g:2024/1:op-1",
+        source_provision=witness,
+    )
+    relation = EffectRelation(
+        relation_id="relation:2024/1:op-1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=effect,
+        detail={"source_finding": "APPLY.META_REPEAL_EFFECT_RECORDED"},
+    )
+    temporal = TemporalEvent(
+        event_id="temporal:relation:2024/1:op-1",
+        kind="expire",
+        scope=TemporalScope(target_statute="1991/1"),
+        expires="2024-02-01",
+        group_id="g:2024/1:op-1",
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:2024/1:op-1:repeal",
+        kind="repeal_effect",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        temporal_event=temporal,
+        executable=True,
+        detail={"projection": "effect_relation_signal"},
+    )
+
+    payload = effect_graph_wire(
+        source_effects=(effect,),
+        effect_relations=(relation,),
+        effect_lifecycle_events=(lifecycle,),
+        detail_converter=lambda detail: {"converted": tuple(sorted(detail))},
+    )
+
+    assert payload == {
+        "source_effects": (
+            {
+                "effect_id": "effect:2024/1:op-1",
+                "source_instrument": {
+                    "instrument_id": "2024/1",
+                    "title": "Amending Act",
+                    "enacted": "2024-01-01",
+                    "effective": "2024-02-01",
+                    "expires": "",
+                },
+                "target_statute": "1991/1",
+                "target_address": {
+                    "path": ({"kind": "section", "label": "4 a"},),
+                    "special": "heading",
+                },
+                "projection_group_id": "g:2024/1:op-1",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+            },
+        ),
+        "effect_relations": (
+            {
+                "relation_id": "relation:2024/1:op-1",
+                "kind": "repeals_effect",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+                "target_effect_id": "effect:2024/1:op-1",
+                "target_instrument": None,
+                "source_effect_id": "",
+                "detail": {"converted": ("source_finding",)},
+            },
+        ),
+        "effect_lifecycle_events": (
+            {
+                "lifecycle_event_id": "lifecycle:2024/1:op-1:repeal",
+                "kind": "repeal_effect",
+                "source_provision": {
+                    "instrument": {
+                        "instrument_id": "2024/1",
+                        "title": "Amending Act",
+                        "enacted": "2024-01-01",
+                        "effective": "2024-02-01",
+                        "expires": "",
+                    },
+                    "path": ("1", "2"),
+                    "span_id": "s-1",
+                    "text_excerpt": "Effect witness",
+                    "rule_id": "test.effect_graph_wire",
+                    "witness_id": "2024/1:1/2",
+                },
+                "effect_id": "effect:2024/1:op-1",
+                "relation_id": "relation:2024/1:op-1",
+                "effective": "",
+                "expires": "",
+                "expiry_convention": "exclusive_cutoff",
+                "temporal_event": {
+                    "event_id": "temporal:relation:2024/1:op-1",
+                    "kind": "expire",
+                    "effective": "",
+                    "expires": "2024-02-01",
+                    "group_id": "g:2024/1:op-1",
+                },
+                "executable": True,
+                "detail": {"converted": ("projection",)},
+            },
+        ),
+    }
 
 
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:

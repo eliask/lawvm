@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Optional, Tuple
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
@@ -49,6 +49,7 @@ from lawvm.core.compile_result import (
     CanonicalBundle,
     strict_fail_reasons_from_findings_and_verdict,
 )
+from lawvm.core.effect_lifecycle import effect_graph_wire
 from lawvm.core.ir import IRStatute
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.timeline import (
@@ -64,17 +65,9 @@ if TYPE_CHECKING:
     from lawvm.core.authority import BranchContext
     from lawvm.core.compile_metadata import CompileMetadata
     from lawvm.core.compile_result import CompileVerdict, StrictProfile
-    from lawvm.core.effect_lifecycle import (
-        EffectLifecycleEvent,
-        EffectRef,
-        EffectRelation,
-        SourceInstrumentRef,
-        SourceProvisionRef,
-    )
     from lawvm.core.evidence_policy import EvidencePolicyRegistry
-    from lawvm.core.ir import ProvisionTimeline, ProvisionVersion, LegalAddress
+    from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
     from lawvm.core.provenance_graph import ProvenanceGraph
-    from lawvm.core.temporal import TemporalEvent
     from lawvm.core.timeline_results import TimelineCompilationResult
 
 
@@ -94,97 +87,8 @@ def _distinct(values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
 
 
-def _legal_address_wire(address: Optional["LegalAddress"]) -> Optional[dict[str, object]]:
-    if address is None:
-        return None
-    payload: dict[str, object] = {
-        "path": tuple({"kind": kind, "label": label} for kind, label in address.path),
-    }
-    if address.special:
-        payload["special"] = str(address.special)
-    return payload
-
-
-def _source_instrument_wire(instrument: "SourceInstrumentRef") -> dict[str, object]:
-    return {
-        "instrument_id": instrument.instrument_id,
-        "title": instrument.title,
-        "enacted": instrument.enacted,
-        "effective": instrument.effective,
-        "expires": instrument.expires,
-    }
-
-
-def _source_provision_wire(provision: Optional["SourceProvisionRef"]) -> Optional[dict[str, object]]:
-    if provision is None:
-        return None
-    return {
-        "instrument": _source_instrument_wire(provision.instrument),
-        "path": provision.path,
-        "span_id": provision.span_id,
-        "text_excerpt": provision.text_excerpt,
-        "rule_id": provision.rule_id,
-        "witness_id": provision.witness_id,
-    }
-
-
-def _effect_ref_wire(effect: "EffectRef") -> dict[str, object]:
-    return {
-        "effect_id": effect.effect_id,
-        "source_instrument": _source_instrument_wire(effect.source_instrument),
-        "target_statute": effect.target_statute,
-        "target_address": _legal_address_wire(effect.target_address),
-        "projection_group_id": effect.projection_group_id,
-        "source_provision": _source_provision_wire(effect.source_provision),
-    }
-
-
-def _effect_relation_wire(relation: "EffectRelation") -> dict[str, object]:
-    return {
-        "relation_id": relation.relation_id,
-        "kind": relation.kind,
-        "source_provision": _source_provision_wire(relation.source_provision),
-        "target_effect_id": (
-            relation.target_effect.effect_id if relation.target_effect is not None else ""
-        ),
-        "target_instrument": (
-            _source_instrument_wire(relation.target_instrument)
-            if relation.target_instrument is not None
-            else None
-        ),
-        "source_effect_id": (
-            relation.source_effect.effect_id if relation.source_effect is not None else ""
-        ),
-        "detail": to_wire_jsonable(dict(relation.detail)),
-    }
-
-
-def _temporal_event_ref_wire(event: Optional["TemporalEvent"]) -> Optional[dict[str, object]]:
-    if event is None:
-        return None
-    return {
-        "event_id": event.event_id,
-        "kind": event.kind,
-        "effective": event.effective,
-        "expires": event.expires,
-        "group_id": event.group_id,
-    }
-
-
-def _effect_lifecycle_event_wire(event: "EffectLifecycleEvent") -> dict[str, object]:
-    return {
-        "lifecycle_event_id": event.lifecycle_event_id,
-        "kind": event.kind,
-        "source_provision": _source_provision_wire(event.source_provision),
-        "effect_id": event.effect.effect_id if event.effect is not None else "",
-        "relation_id": event.relation.relation_id if event.relation is not None else "",
-        "effective": event.effective,
-        "expires": event.expires,
-        "expiry_convention": event.expiry_convention,
-        "temporal_event": _temporal_event_ref_wire(event.temporal_event),
-        "executable": event.executable,
-        "detail": to_wire_jsonable(dict(event.detail)),
-    }
+def _effect_detail_wire(detail: Mapping[str, Any]) -> object:
+    return to_wire_jsonable(dict(detail))
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +381,12 @@ class CompileFacade:
                 kind="partial",
                 blockers=blockers,
             )
+        effect_graph_payload = effect_graph_wire(
+            source_effects=self.bundle.source_effects,
+            effect_relations=self.bundle.effect_relations,
+            effect_lifecycle_events=self.bundle.effect_lifecycle_events,
+            detail_converter=_effect_detail_wire,
+        )
         return ArtifactEnvelope(
             schema="lawvm.compile_facade",
             producer=producer,
@@ -501,15 +411,11 @@ class CompileFacade:
                     "migration_event_kinds": self.migration_event_kinds,
                     "source_effects_count": len(self.bundle.source_effects),
                     "source_effect_ids": tuple(effect.effect_id for effect in self.bundle.source_effects),
-                    "source_effects": tuple(
-                        _effect_ref_wire(effect) for effect in self.bundle.source_effects
-                    ),
+                    "source_effects": effect_graph_payload["source_effects"],
                     "effect_relations_count": len(self.bundle.effect_relations),
                     "effect_relation_ids": tuple(relation.relation_id for relation in self.bundle.effect_relations),
                     "effect_relation_kinds": _distinct(tuple(relation.kind for relation in self.bundle.effect_relations)),
-                    "effect_relations": tuple(
-                        _effect_relation_wire(relation) for relation in self.bundle.effect_relations
-                    ),
+                    "effect_relations": effect_graph_payload["effect_relations"],
                     "effect_lifecycle_events_count": len(self.bundle.effect_lifecycle_events),
                     "effect_lifecycle_event_ids": tuple(
                         event.lifecycle_event_id for event in self.bundle.effect_lifecycle_events
@@ -517,10 +423,7 @@ class CompileFacade:
                     "effect_lifecycle_event_kinds": _distinct(
                         tuple(event.kind for event in self.bundle.effect_lifecycle_events)
                     ),
-                    "effect_lifecycle_events": tuple(
-                        _effect_lifecycle_event_wire(event)
-                        for event in self.bundle.effect_lifecycle_events
-                    ),
+                    "effect_lifecycle_events": effect_graph_payload["effect_lifecycle_events"],
                     "effects_count": len(self.bundle.effects),
                     "groups_count": len(self.bundle.groups),
                     "has_source": self.bundle.source is not None,
