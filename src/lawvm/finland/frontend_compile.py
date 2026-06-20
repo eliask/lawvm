@@ -123,6 +123,10 @@ FI_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = (
     "fi.historical_top_level_kohta_as_subsection"
 )
 FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID = "fi.act_wide_body_section_replace"
+FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID = "fi.body_root_replace_fallback"
+FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID = "fi.enacting_formula_body_replace_fallback"
+FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID = "fi.enacting_formula_body_insert_fallback"
+FI_TITLE_FALLBACK_RULE_ID = "fi.title_fallback"
 _PARENTHESIZED_LEADING_LABEL_RE = re.compile(r"^\s*\((\d+(?:\s*[a-z])?)\)")
 _POSTPOSED_KOHTA_LABELS_RE = re.compile(
     r"\bkohd(?:an|at|ien)\s+([0-9a-zA-Z\s,–—\-]+)",
@@ -3409,6 +3413,53 @@ def _extract_act_wide_body_section_replace_ops_fallback(
     return _dedupe_fallback_ops_ir(ops)
 
 
+def _accepted_fallback_op_findings(
+    ops: "list[AmendmentOp]",
+    *,
+    amendment_id: str,
+    source: str,
+    rule_id: str,
+    johto: str,
+) -> "list[Finding]":
+    """Emit one witnessed observation per executable op minted from raw text.
+
+    A heuristic fallback recognizer minted these ops from raw johtolause because
+    no typed parser owned the clause. Each minted op carries ``witness_rule_id``
+    and ``fallback_provenance``; this records the matching finding so the
+    raw-text mint is a first-class evidence object, never a silent legal-state
+    move (no-representation-regression witness exception).
+    """
+    findings: "list[Finding]" = []
+    johto_preview = _WHITESPACE_RE.sub(" ", johto or "").strip()[:240]
+    for op in ops:
+        findings.append(
+            Finding(
+                kind="PARSE.FALLBACK_OP_FROM_RAW_TEXT",
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": (
+                        "Executable op minted from raw johtolause by a heuristic "
+                        "fallback recognizer; no typed parser owned the clause."
+                    ),
+                    "fallback_source": source,
+                    "rule_id": rule_id,
+                    "op_type": op.op_type,
+                    "description": op.description(),
+                    "target_section": op.target_section or "",
+                    "target_unit_kind": op.target_unit_kind,
+                    "target_paragraph": op.target_paragraph,
+                    "target_item": op.target_item or "",
+                    "target_special": op.target_special or "",
+                    "johto_preview": johto_preview,
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
+    return findings
+
+
 def _act_wide_body_section_replace_findings(
     ops: "list[AmendmentOp]",
     *,
@@ -3871,6 +3922,15 @@ def normalize_and_compile_ops(
         )
         frontend_findings_out.extend(rejected_overbroad_fallback_repeals)
         if not ops:
+            frontend_findings_out.extend(
+                _accepted_fallback_op_findings(
+                    enriched_fallback_ops,
+                    amendment_id=amendment_id,
+                    source="parse_ops_fallback_heuristic",
+                    rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                    johto=johto,
+                )
+            )
             ops = enriched_fallback_ops
         elif _allows_additive_subsection_fallback and fallback_plain_insert_count > 0:
             existing_keys = {
@@ -3914,6 +3974,15 @@ def normalize_and_compile_ops(
                     continue
                 if op.target_special is not None:
                     continue
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        [op],
+                        amendment_id=amendment_id,
+                        source="parse_ops_fallback_heuristic_additive_insert",
+                        rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                        johto=johto,
+                    )
+                )
                 ops.append(op)
                 existing_keys.add(key)
     elif fallback_ops:
@@ -3946,9 +4015,20 @@ def normalize_and_compile_ops(
                 for op in ops:
                     op.body_root_replace_fallback = True
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_body_root_replace"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_root_replace_ops_from_body_fallback",
+                        rule_id=FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -3978,9 +4058,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_replace"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_enacting_formula_body_replace_ops_fallback",
+                        rule_id=FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4015,6 +4106,15 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_ceremonial_body_only"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_ceremonial_body_only_ops_fallback",
+                        rule_id=FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4091,9 +4191,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_TITLE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_title_fallback"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="parse_ops_title_fallback",
+                        rule_id=FI_TITLE_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(
@@ -4133,9 +4244,20 @@ def normalize_and_compile_ops(
                 )
                 for op in ops:
                     op.fallback_provenance = True
+                    if not op.witness_rule_id:
+                        op.witness_rule_id = FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_insert"))
                     )
+                frontend_findings_out.extend(
+                    _accepted_fallback_op_findings(
+                        ops,
+                        amendment_id=amendment_id,
+                        source="_extract_enacting_formula_body_insert_ops_fallback",
+                        rule_id=FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID,
+                        johto=johto,
+                    )
+                )
             else:
                 frontend_findings_out.extend(
                     _strict_rejected_op_findings(

@@ -207,6 +207,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_replay_products_core": (
         "test_fi_replay_products.py",
+        "test_fi_seam_raw_text_witness.py",
     ),
     "finland_replay_products_support": (
         "test_fi_replay_fold_timeline_backfill.py",
