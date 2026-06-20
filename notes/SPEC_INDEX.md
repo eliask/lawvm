@@ -74,6 +74,7 @@ the architecture, keep it explanatory.
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
 - [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
+- [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
 
 ## Evidence and Verification
