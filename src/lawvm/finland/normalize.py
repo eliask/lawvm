@@ -34,6 +34,7 @@ from lawvm.finland.ops import (
     AmendmentOp,
     OpType,
 )
+from lawvm.finland.references.lemma_gate import head_case_forms
 
 # ---------------------------------------------------------------------------
 # Compiled regex patterns (module-level constants)
@@ -51,6 +52,29 @@ _RE_NUMBERED_LIST = re.compile(r"\b\d+\)\s")
 _RE_LUU_OR_OSA = re.compile(r"\b(?:luku|osa)\b")
 _RE_MUUTOS_VERBS = re.compile(r"\b(muutetaan|lisätään|korvataan|otetaan)\b")
 _RE_STATUTE_CREATION = re.compile(r"\b(?:lakiin|asetuksen)\s+uusi\s+([^§]{1,120})§")
+
+# Sub-provision unit alternation for the omnibus-repeal fallback discriminator
+# (``§:n kohta/momentti ...``). The ``kohta`` (NOM/GEN) and ``momentti`` (NOM/GEN)
+# case forms are GENERATED from the M1 morphology engine (paradigm inversion)
+# rather than hand-enumerated, so this lane shares the single source of
+# inflection truth with the reference lanes. ``johdantokappale`` is a fixed
+# nominative compound (no case enumeration), kept as an explicit literal.
+# The generated set reproduces the prior hand-written alternation byte-for-byte
+# (``kohta|kohdan|momentti|momentin``); longest-first for alternation safety.
+_SUBPROVISION_UNIT_ALT = "|".join(
+    sorted(
+        {
+            *head_case_forms("kohta", (("NOM", "SG"), ("GEN", "SG"))),
+            *head_case_forms("momentti", (("NOM", "SG"), ("GEN", "SG"))),
+            "johdantokappale",
+        },
+        key=lambda s: (-len(s), s),
+    )
+)
+_RE_SUBPROVISION_TARGET = re.compile(
+    r"§:?n?\s+(?:\d[\d.]*\s+)?(?:" + _SUBPROVISION_UNIT_ALT + r")",
+    flags=re.I,
+)
 _RE_CONTAINER_NOUN = re.compile(r"\b(luku|osa)\b")
 _RE_NEW_SUBSECTION = re.compile(
     r"\buusi\s+("
@@ -181,12 +205,7 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
     lower_tail = johto.lower().split("kumotaan", 1)[1]
     has_non_repeal_ops = bool(_RE_MUUTOS_VERBS.search(lower_tail))
     has_explicit_section_targets = bool(_RE_SECTION_SIGN.search(lower_tail))
-    has_subprovision_targets = bool(
-        re.search(
-            r"§:?n?\s+(?:\d[\d.]*\s+)?(?:kohta|kohdan|momentti|momentin|johdantokappale)",
-            lower_tail,
-        )
-    )
+    has_subprovision_targets = bool(_RE_SUBPROVISION_TARGET.search(lower_tail))
 
     try:
         parent_year, parent_num = parent_id.split("/")
