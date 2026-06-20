@@ -20,6 +20,7 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
+from lawvm.core.effect_lifecycle import EffectRef, SourceInstrumentRef
 from lawvm.core.ir import (
     IRNode,
     LegalAddress,
@@ -228,6 +229,7 @@ def _replay_result_stub(
     migration_events: tuple[object, ...] = (),
     findings: tuple[Finding, ...] = (),
     source_adjudication: Any = None,
+    source_effects: tuple[EffectRef, ...] = (),
 ) -> ReplayResult:
     body = IRNode(kind=IRNodeKind.BODY)
     ctx = StatuteContext(
@@ -243,6 +245,7 @@ def _replay_result_stub(
         temporal_events=temporal_events,
         migration_events=cast(tuple[Any, ...], migration_events),
         source_adjudication=source_adjudication,
+        source_effects=source_effects,
     )
     return ReplayResult(
         ctx=ctx,
@@ -1147,6 +1150,49 @@ def test_compile_fi_facade_from_replay_matches_compile_contract(monkeypatch) -> 
     assert not hasattr(facade, "source_completeness_flags")
     assert not hasattr(facade, "strict_fail_reasons")
     assert not hasattr(facade, "source_completeness")
+
+
+def test_compile_fi_facade_rejects_conflicting_duplicate_effect_ids(monkeypatch) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    canonical_op = LegalOperation(
+        op_id="op-1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "4 a"),)),
+        source=OperationSource(statute_id="2020/1"),
+    )
+    conflicting_product_effect = EffectRef(
+        effect_id="fi-effect:2020/1:op-1",
+        source_instrument=SourceInstrumentRef(instrument_id="2020/1"),
+        target_statute="not-the-parent",
+        target_address=LegalAddress(path=(("section", "4 a"),)),
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        compile_fi_facade_from_replay(
+            parent_id="2009/953",
+            replay_result=_replay_result_stub(source_effects=(conflicting_product_effect,)),
+            replay_mode="legal_pit",
+            compiled_ops=[],
+            replay_meta={},
+            canonical_ops=[canonical_op],
+            failed_ops=[],
+        )
 
 
 def test_compile_fi_facade_projects_rows_from_stored_findings_only() -> None:

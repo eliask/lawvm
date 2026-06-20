@@ -133,6 +133,90 @@ def test_finland_canonical_op_mints_source_effect_identity() -> None:
     assert effect.source_provision.rule_id == "fi.legal_operation.effect_declaration"
 
 
+def test_known_source_effect_context_rejects_conflicting_duplicate_ids() -> None:
+    op = _op()
+    conflicting_known_effect = EffectRef(
+        effect_id="fi-effect:2020/1:op-1",
+        source_instrument=SourceInstrumentRef(instrument_id="2020/1"),
+        target_statute="not-the-parent",
+        target_address=op.target,
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(op,),
+            temporal_events=(),
+            known_source_effects=(conflicting_known_effect,),
+        )
+
+
+def test_duplicate_operation_ids_use_full_effect_discriminator() -> None:
+    source = OperationSource(statute_id="2020/1")
+    first = LegalOperation(
+        op_id="snapshot_section_1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "1"), ("section", "1"))),
+        source=source,
+    )
+    second = LegalOperation(
+        op_id="snapshot_section_1",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("chapter", "2"), ("section", "1"))),
+        source=source,
+    )
+
+    source_effects, _relations, _lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(first, second),
+        temporal_events=(),
+    )
+
+    assert tuple(effect.effect_id for effect in source_effects) == (
+        "fi-effect:2020/1:snapshot_section_1:seq-1:target-chapter:1/section:1",
+        "fi-effect:2020/1:snapshot_section_1:seq-2:target-chapter:2/section:1",
+    )
+    assert tuple(effect.target_address for effect in source_effects) == (first.target, second.target)
+
+
+def test_duplicate_temporal_group_ids_use_event_and_target_discriminator() -> None:
+    source = OperationSource(statute_id="2020/400")
+    first = TemporalEvent(
+        event_id="temporary:58a:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="2016/1227",
+            exact_addresses=(LegalAddress(path=(("section", "58 a"),)),),
+        ),
+        source=source,
+        group_id="finland-johto:2020/400",
+    )
+    second = TemporalEvent(
+        event_id="temporary:58b:expire",
+        kind="expire",
+        scope=TemporalScope(
+            target_statute="2016/1227",
+            exact_addresses=(LegalAddress(path=(("section", "58 b"),)),),
+        ),
+        source=source,
+        group_id="finland-johto:2020/400",
+    )
+
+    source_effects, _relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2016/1227",
+        canonical_ops=(),
+        temporal_events=(first, second),
+    )
+
+    assert tuple(effect.effect_id for effect in source_effects) == (
+        "fi-effect:2020/400:finland-johto:2020/400:event-temporary:58a:expire:target-section:58_a",
+        "fi-effect:2020/400:finland-johto:2020/400:event-temporary:58b:expire:target-section:58_b",
+    )
+    assert tuple(event.effect for event in lifecycle_events) == source_effects
+
+
 def test_section_lifecycle_scope_is_not_an_exact_address() -> None:
     scope = EffectLifecycleOverrideScope.sections(("4 a",))
 

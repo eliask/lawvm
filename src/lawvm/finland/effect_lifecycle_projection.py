@@ -79,6 +79,7 @@ def _effect_ref_for_temporal_event(
     *,
     target_statute: str,
     source_effects: Sequence[EffectRef] = (),
+    effect_id: str | None = None,
 ) -> EffectRef | None:
     source = event.source
     if source is None or not source.statute_id:
@@ -95,7 +96,7 @@ def _effect_ref_for_temporal_event(
         rule_id="fi.temporal_event.lifecycle_projection",
     )
     return EffectRef(
-        effect_id=f"fi-effect:{source.statute_id}:{event.group_id or event.event_id}",
+        effect_id=effect_id or f"fi-effect:{source.statute_id}:{event.group_id or event.event_id}",
         source_instrument=instrument,
         target_statute=event.scope.target_statute or target_statute,
         target_address=event.scope.exact_addresses[0] if len(event.scope.exact_addresses) == 1 else None,
@@ -108,6 +109,7 @@ def _effect_ref_for_legal_operation(
     op: LegalOperation,
     *,
     target_statute: str,
+    effect_id: str | None = None,
 ) -> EffectRef | None:
     source = op.source
     if source is None or not source.statute_id:
@@ -121,7 +123,7 @@ def _effect_ref_for_legal_operation(
         rule_id=op.witness_rule_id or "fi.legal_operation.effect_declaration",
     )
     return EffectRef(
-        effect_id=f"fi-effect:{source.statute_id}:{op.op_id or op.sequence}",
+        effect_id=effect_id or f"fi-effect:{source.statute_id}:{op.op_id or op.sequence}",
         source_instrument=instrument,
         target_statute=target_statute,
         target_address=op.target,
@@ -135,7 +137,19 @@ def _matching_operation_effect_for_temporal_event(
     source_effects: Sequence[EffectRef],
 ) -> EffectRef | None:
     source = event.source
-    if source is None or not source.statute_id or not event.group_id:
+    if source is None or not source.statute_id:
+        return None
+    span_matches = tuple(
+        effect
+        for effect in source_effects
+        if effect.source_instrument.instrument_id == source.statute_id
+        and effect.source_provision is not None
+        and effect.source_provision.rule_id == "fi.temporal_event.lifecycle_projection"
+        and effect.source_provision.span_id == event.event_id
+    )
+    if len(span_matches) == 1:
+        return span_matches[0]
+    if not event.group_id:
         return None
     if len(event.scope.exact_addresses) != 1:
         return None
@@ -152,6 +166,57 @@ def _matching_operation_effect_for_temporal_event(
     return matches[0]
 
 
+def _legal_operation_effect_id(op: LegalOperation, *, duplicated_op_key: bool) -> str:
+    source = op.source
+    if source is None:
+        raise ValueError("operation effect identity requires source")
+    base_id = str(op.op_id or op.sequence)
+    if not duplicated_op_key:
+        return f"fi-effect:{source.statute_id}:{base_id}"
+    target_key = str(op.target).replace(" ", "_")
+    return f"fi-effect:{source.statute_id}:{base_id}:seq-{op.sequence}:target-{target_key}"
+
+
+def _duplicated_operation_effect_keys(
+    canonical_ops: Sequence[LegalOperation],
+) -> frozenset[tuple[str, str]]:
+    counts: dict[tuple[str, str], int] = {}
+    for op in canonical_ops:
+        source = op.source
+        if source is None or not source.statute_id:
+            continue
+        key = (source.statute_id, str(op.op_id or op.sequence))
+        counts[key] = counts.get(key, 0) + 1
+    return frozenset(key for key, count in counts.items() if count > 1)
+
+
+def _temporal_event_effect_id(event: TemporalEvent, *, duplicated_event_key: bool) -> str:
+    source = event.source
+    if source is None:
+        raise ValueError("temporal effect identity requires source")
+    base_id = str(event.group_id or event.event_id)
+    if not duplicated_event_key:
+        return f"fi-effect:{source.statute_id}:{base_id}"
+    if len(event.scope.exact_addresses) == 1:
+        target_key = str(event.scope.exact_addresses[0]).replace(" ", "_")
+    else:
+        target_key = f"scope-{event.scope.target_statute or '-'}"
+    return f"fi-effect:{source.statute_id}:{base_id}:event-{event.event_id}:target-{target_key}"
+
+
+def _duplicated_temporal_effect_keys(
+    temporal_events: Sequence[TemporalEvent],
+) -> frozenset[tuple[str, str]]:
+    counts: dict[tuple[str, str], int] = {}
+    for event in temporal_events:
+        source = event.source
+        if source is None or not source.statute_id:
+            continue
+        key = (source.statute_id, str(event.group_id or event.event_id))
+        counts[key] = counts.get(key, 0) + 1
+    return frozenset(key for key, count in counts.items() if count > 1)
+
+
 def _source_effects_from_ops_and_temporal_events(
     *,
     target_statute: str,
@@ -159,19 +224,85 @@ def _source_effects_from_ops_and_temporal_events(
     temporal_events: Sequence[TemporalEvent],
 ) -> tuple[EffectRef, ...]:
     effects_by_id: dict[str, EffectRef] = {}
+    effects: list[EffectRef] = []
+    duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
+    duplicated_temporal_keys = _duplicated_temporal_effect_keys(temporal_events)
     for op in canonical_ops:
-        effect = _effect_ref_for_legal_operation(op, target_statute=target_statute)
+        source = op.source
+        duplicated_op_key = (
+            source is not None
+            and bool(source.statute_id)
+            and (source.statute_id, str(op.op_id or op.sequence)) in duplicated_op_keys
+        )
+        effect = _effect_ref_for_legal_operation(
+            op,
+            target_statute=target_statute,
+            effect_id=(
+                _legal_operation_effect_id(
+                    op,
+                    duplicated_op_key=duplicated_op_key,
+                )
+                if source is not None and source.statute_id
+                else None
+            ),
+        )
         if effect is not None:
-            effects_by_id.setdefault(effect.effect_id, effect)
+            _append_unique_effect(effects, effects_by_id, effect, subject="operation-derived source effects")
     for event in temporal_events:
+        source = event.source
+        duplicated_temporal_key = (
+            source is not None
+            and bool(source.statute_id)
+            and (source.statute_id, str(event.group_id or event.event_id)) in duplicated_temporal_keys
+        )
         effect = _effect_ref_for_temporal_event(
             event,
             target_statute=target_statute,
             source_effects=tuple(effects_by_id.values()),
+            effect_id=(
+                _temporal_event_effect_id(
+                    event,
+                    duplicated_event_key=duplicated_temporal_key,
+                )
+                if source is not None and source.statute_id
+                else None
+            ),
         )
         if effect is not None:
-            effects_by_id.setdefault(effect.effect_id, effect)
-    return tuple(effects_by_id.values())
+            _append_unique_effect(effects, effects_by_id, effect, subject="temporal-derived source effects")
+    return tuple(effects)
+
+
+def _append_unique_effect(
+    effects: list[EffectRef],
+    effects_by_id: dict[str, EffectRef],
+    effect: EffectRef,
+    *,
+    subject: str,
+) -> None:
+    previous = effects_by_id.get(effect.effect_id)
+    if previous is None:
+        effects_by_id[effect.effect_id] = effect
+        effects.append(effect)
+        return
+    if previous != effect:
+        raise ValueError(f"{subject} conflicting duplicate effect_id: {effect.effect_id!r}")
+
+
+def _merge_unique_source_effect_context(
+    *lanes: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    effects_by_id: dict[str, EffectRef] = {}
+    effects: list[EffectRef] = []
+    for lane in lanes:
+        for effect in lane:
+            _append_unique_effect(
+                effects,
+                effects_by_id,
+                effect,
+                subject="Finland effect lifecycle source context",
+            )
+    return tuple(effects)
 
 
 def _lifecycle_from_temporal_events(
@@ -633,11 +764,7 @@ def build_finland_effect_lifecycle(
         canonical_ops=canonical_ops,
         temporal_events=temporal_events,
     )
-    source_effects_by_id = {
-        effect.effect_id: effect
-        for effect in tuple(known_source_effects) + tuple(source_effects)
-    }
-    source_effect_context = tuple(source_effects_by_id.values())
+    source_effect_context = _merge_unique_source_effect_context(known_source_effects, source_effects)
     relations = (
         _relations_from_lifecycle_overrides(
             lifecycle_overrides,
