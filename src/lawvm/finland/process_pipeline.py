@@ -509,7 +509,11 @@ def process_muutoslaki_resolved(
                 observations_out=compat_elaboration_observations,
                 findings_out=process_findings,
                 observed_touch_results_out=observed_touch_results,
-                write_audits_out=write_audits_out,
+                # write_audits_out is NON-Optional on ApplyOpsSinks; pass the
+                # caller's concrete list when present, else a fresh one (the
+                # fold always accounts every landed write). write_receipts_out
+                # defaults to a fresh accumulator inside the dataclass.
+                write_audits_out=write_audits_out if write_audits_out is not None else [],
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])

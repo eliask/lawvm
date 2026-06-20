@@ -2483,7 +2483,9 @@ def apply_ops_to_tree(
             observations_out=observations_out,
             findings_out=findings_out,
             observed_touch_results_out=observed_touch_results_out,
-            write_audits_out=write_audits_out,
+            # write_audits_out is non-Optional on ApplyOpsSinks; coerce the
+            # test helper's None default to a concrete list.
+            write_audits_out=write_audits_out if write_audits_out is not None else [],
         ),
     )
 
