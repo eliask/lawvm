@@ -173,9 +173,15 @@ def build_morph_overlay(
     """
     index = lemma_index if lemma_index is not None else build_lemma_index()
     annotations: dict[int, MorphAnnotation] = {}
+    analyzed: set[int] = set()
     for token_index, tok in enumerate(tape.tokens):
+        # Only ``word`` tokens are offered to the closed reverse-morphology
+        # analyzer; record exactly which indices were analyzed so a consumer can
+        # tell "analyzed, no known lemma" from "never analyzed" (a non-word
+        # token), instead of inferring it from annotation-absence alone.
         if tok.category != "word":
             continue
+        analyzed.add(token_index)
         lemmas = index.analyze(tok.normalized)
         if not lemmas:
             continue
@@ -187,5 +193,8 @@ def build_morph_overlay(
     return MorphOverlay(
         source_unit_id=tape.source_unit_id,
         text_hash=tape.text_hash,
+        total_tokens=len(tape.tokens),
+        analyzed_token_indices=frozenset(analyzed),
+        vocab_fingerprint=index.fingerprint(),
         annotations=annotations,
     )
