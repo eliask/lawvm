@@ -4884,6 +4884,120 @@ def test_apply_whole_section_op_declines_item_repeal() -> None:
     assert result is None
 
 
+def _suspicious_partial_section_replace_master() -> IRNode:
+    """A section whose single subsection has >=8 distinct paragraph signatures."""
+    return _sec(
+        "5",
+        _sub(
+            "1",
+            *[
+                _para(str(i), f"paragraph text number {i} with distinct words alpha{i}")
+                for i in range(1, 9)
+            ],
+        ),
+    )
+
+
+def test_apply_whole_section_op_witnesses_suspicious_partial_replace_decline() -> None:
+    """A suspicious partial fallback-fragment section REPLACE must be declined with a
+    typed source-pathology on the production ledger, never a bare ``return state``."""
+    master = _suspicious_partial_section_replace_master()
+    # Amend payload reproduces only a strict subset of master's paragraphs — the
+    # `subset_paragraph_signatures` suspicious-partial heuristic must fire.
+    amend = _sec(
+        "5",
+        _sub(
+            "1",
+            _para("1", "paragraph text number 1 with distinct words alpha1"),
+            _para("2", "paragraph text number 2 with distinct words alpha2"),
+        ),
+    )
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="5"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2099/1",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "5"),),
+        amend,
+        None,
+        _LEGAL_PIT,
+        "5 §",
+        base_ir=_body(master),
+        source_pathologies_out=pathologies,
+    )
+
+    # The REPLACE is declined (state unchanged) — but it must be witnessed.
+    assert result is state
+    assert len(pathologies) == 1
+    pathology = pathologies[0]
+    assert pathology.code == "PARTIAL_WHOLE_SECTION_PAYLOAD"
+    assert pathology.target_label == "5 §"
+    assert (
+        pathology.detail["diagnostic_reason"]
+        == "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
+    )
+
+
+def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
+    """A well-formed whole-section REPLACE applies and emits no partial-payload witness."""
+    master = _suspicious_partial_section_replace_master()
+    # Amend payload is a full, non-suspicious replacement body.
+    amend = _sec("5", _sub("1", _content("complete new section body text")))
+    state = _make_state(_body(master))
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="5"),
+        muutos_ir=amend,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="5",
+        target_chapter=None,
+        op_source=OperationSource(
+            statute_id="2099/2",
+            enacted="2099-01-01",
+            effective="2099-01-01",
+            expires="",
+        ),
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        (("section", "5"),),
+        amend,
+        None,
+        _LEGAL_PIT,
+        "5 §",
+        base_ir=_body(master),
+        source_pathologies_out=pathologies,
+    )
+
+    applied = _modified(state, result)
+    live = applied.find_section("5")
+    assert live is not None
+    assert "complete new section body text" in irnode_to_text(live)
+    assert all(
+        p.detail.get("diagnostic_reason")
+        != "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
+        for p in pathologies
+    )
+
+
 def _paragraph_labels(sub: IRNode) -> List[str]:
     return [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label is not None]
 

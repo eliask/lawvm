@@ -2023,9 +2023,28 @@ def _apply_whole_section_op(
                     _tops.replace_at(state.ir, sec_path, _tops._with_children(live_sec, new_children)),
                 )
         if _is_suspicious_partial_section_replace_ir(cast("AmendmentOp | ResolvedOp", view), live_sec, muutos_ir):
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_partial_whole_section_payload_pathology(
+                        source_statute=_source_statute or "",
+                        target_unit_kind=view.target_unit_kind,
+                        target_section=_ts,
+                        target_chapter=_target_chapter or "",
+                        live_paragraph_count=len(
+                            [c for c in live_sec.children if c.kind is IRNodeKind.SUBSECTION]
+                        ),
+                        amend_paragraph_count=len(
+                            [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                        ),
+                        live_text_chars=len(irnode_to_text(live_sec)),
+                        amend_text_chars=len(irnode_to_text(muutos_ir)),
+                        diagnostic_reason=(
+                            "apply_whole_section_op:suspicious_partial_fallback_fragment_replace_declined"
+                        ),
+                    )
+                )
             logger.debug("  %s → section replace skipped (suspicious partial fallback fragment)", ctx_label)
             return state
-            logger.debug("  %s → section replace", ctx_label)
         muutos_ir = _prepare_section_root_payload_for_replay(
             muutos_ir,
             live_sec=live_merge_sec,
