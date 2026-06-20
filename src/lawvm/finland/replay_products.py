@@ -36,7 +36,7 @@ from lawvm.core.timeline_lineage import (
 )
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.timeline_results import (
-    MaterializationCertificate,
+    MaterializationCoverage,
     MaterializationLineageDecision,
     MaterializationLineagePlan,
     TimelineIssue,
@@ -162,7 +162,7 @@ class ReplayProducts:
     ] = ()
     dropped_cited_version_snapshots: tuple["CitedVersionSnapshotDrop", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
-    materialization_certificate: Optional[MaterializationCertificate] = None
+    materialization_coverage: Optional[MaterializationCoverage] = None
 
     @property
     def identity_ledger(self) -> IdentityLedger:
@@ -1995,7 +1995,7 @@ def build_replay_products(
         ),
         dropped_cited_version_snapshots=cited_version_snapshot_drops,
         materialization_issues=materialization_result.issues,
-        materialization_certificate=materialization_result.certificate,
+        materialization_coverage=materialization_result.certificate,
         materialization_spec=MaterializationSpec(
             as_of=as_of,
             query_type=query_type,

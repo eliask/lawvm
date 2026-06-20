@@ -73,7 +73,7 @@ from lawvm.core.timeline_materialization import (
     top_level_supplement_active as _top_level_supplement_active,
 )
 from lawvm.core.timeline_results import (
-    MaterializationCertificate,
+    MaterializationCoverage,
     MaterializationLineagePlan,
     MaterializationResult,
     MaterializationStatus,
@@ -1541,7 +1541,7 @@ def materialize_pit_ex(
         required_dimensions=tuple(sorted(degraded_dimensions)),
         ambiguous_addresses=tuple(sorted(ambiguous_addresses, key=lambda addr: addr.path)),
         issues=tuple(issues),
-        certificate=MaterializationCertificate(
+        certificate=MaterializationCoverage(
             as_of=as_of,
             query_type=query_type,
             territory=territory,
