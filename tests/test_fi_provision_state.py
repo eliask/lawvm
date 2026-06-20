@@ -1934,11 +1934,28 @@ _FINLEX_CORPUS_AVAILABLE = (
 ).exists()
 
 
+@pytest.fixture(scope="module")
+def live_provision_state_runtime_for_statute():
+    from lawvm.provision_state import compile_provision_state_runtime
+
+    runtimes = {}
+
+    def runtime_for(statute_id: str):
+        runtime = runtimes.get(statute_id)
+        if runtime is None:
+            runtime = compile_provision_state_runtime(statute_id=statute_id)
+            runtimes[statute_id] = runtime
+        return runtime
+
+    return runtime_for
+
+
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 @pytest.mark.slow
-def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None:
-    payload = resolve_provision_state(
-        statute_id="1992/1535",
+def test_specimen_1992_1535_section_125_prefers_live_qualified_section(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1992/1535").resolve(
         jurisdiction="fi",
         provision="section:125",
         as_of="2026-06-11",
@@ -1964,9 +1981,10 @@ def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 @pytest.mark.slow
-def test_specimen_1997_1412_section_11_drops_expired_temporary_items() -> None:
-    payload = resolve_provision_state(
-        statute_id="1997/1412",
+def test_specimen_1997_1412_section_11_drops_expired_temporary_items(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1997/1412").resolve(
         jurisdiction="fi",
         provision="section:11",
         as_of="2026-06-11",
@@ -1980,9 +1998,10 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_items() -> None:
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_2009_273_section_10_drops_carried_old_subsection_text() -> None:
-    payload = resolve_provision_state(
-        statute_id="2009/273",
+def test_specimen_2009_273_section_10_drops_carried_old_subsection_text(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("2009/273").resolve(
         jurisdiction="fi",
         provision="section:10",
         as_of="2026-06-10",
@@ -1997,9 +2016,10 @@ def test_specimen_2009_273_section_10_drops_carried_old_subsection_text() -> Non
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text() -> None:
-    payload = resolve_provision_state(
-        statute_id="2016/258",
+def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("2016/258").resolve(
         jurisdiction="fi",
         provision="section:7",
         as_of="2021-12-31",
@@ -2015,10 +2035,11 @@ def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text() -> N
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
+def test_specimen_2023_703_section_9_exposes_operation_source_witness(
+    live_provision_state_runtime_for_statute,
+) -> None:
     """Selected amended versions should carry the source johtolause witness."""
-    payload = resolve_provision_state(
-        statute_id="2023/703",
+    payload = live_provision_state_runtime_for_statute("2023/703").resolve(
         jurisdiction="fi",
         provision="section:9",
         as_of="2026-06-02",
@@ -2040,9 +2061,10 @@ def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 @pytest.mark.slow
-def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness() -> None:
-    payload = resolve_provision_state(
-        statute_id="1972/66",
+def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1972/66").resolve(
         jurisdiction="fi",
         provision="chapter:4/section:27a",
         as_of="2020-12-11",
@@ -2066,9 +2088,10 @@ def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness() -> 
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witness() -> None:
-    payload = resolve_provision_state(
-        statute_id="1996/1128",
+def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witness(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1996/1128").resolve(
         jurisdiction="fi",
         provision="section:4/subsection:4",
         as_of="2021-01-01",
@@ -2094,9 +2117,10 @@ def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witn
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 @pytest.mark.slow
-def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness() -> None:
-    payload = resolve_provision_state(
-        statute_id="1972/66",
+def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1972/66").resolve(
         jurisdiction="fi",
         provision="chapter:4/section:27",
         as_of="2020-12-11",
@@ -2117,9 +2141,10 @@ def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness() -
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
-    payload = resolve_provision_state(
-        statute_id="2023/71",
+def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("2023/71").resolve(
         jurisdiction="fi",
         provision="section:25c",
         as_of="2026-07-01",
@@ -2362,9 +2387,10 @@ def test_specimen_1992_1535_item_replacement_does_not_mutate_section_heading() -
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() -> None:
-    payload = resolve_provision_state(
-        statute_id="1997/1412",
+def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails(
+    live_provision_state_runtime_for_statute,
+) -> None:
+    payload = live_provision_state_runtime_for_statute("1997/1412").resolve(
         jurisdiction="fi",
         provision="section:11",
         as_of="2026-06-11",
