@@ -118,6 +118,22 @@ _KNOWN_DIVERGENT: list[tuple[str, str, str, str, str, str]] = [
 ]
 
 
+@pytest.fixture(scope="module")
+def provision_state_runtime_for_statute():
+    from lawvm.provision_state import compile_provision_state_runtime
+
+    runtimes = {}
+
+    def runtime_for(statute_id: str):
+        runtime = runtimes.get(statute_id)
+        if runtime is None:
+            runtime = compile_provision_state_runtime(statute_id=statute_id)
+            runtimes[statute_id] = runtime
+        return runtime
+
+    return runtime_for
+
+
 def _resolve_hash(statute_id: str, provision: str, as_of: str, query_type: str) -> tuple[str, str, str]:
     """Re-run the consumer's exact seam path; return (status, derived_hash, content_hash)."""
     from lawvm.provision_state import resolve_provision_state
@@ -164,13 +180,15 @@ def _assert_source_locator_span(payload: dict) -> None:
     ids=[f"{p[0]}:{p[1]}@{p[2]}" for p in _PINS],
 )
 def test_provision_state_consumer_pin_reproduces(
-    statute_id: str, provision: str, as_of: str, query_type: str, pinned_hash: str
+    provision_state_runtime_for_statute,
+    statute_id: str,
+    provision: str,
+    as_of: str,
+    query_type: str,
+    pinned_hash: str,
 ) -> None:
     """A CONFIRMED consumer pin must reproduce its hash on the current build."""
-    from lawvm.provision_state import resolve_provision_state
-
-    payload = resolve_provision_state(
-        statute_id=statute_id,
+    payload = provision_state_runtime_for_statute(statute_id).resolve(
         provision=provision,
         as_of=as_of,
         query_type=query_type,
@@ -232,13 +250,13 @@ _BASE_ENACTED_CASES: list[tuple[str, str, str]] = [
     ids=[f"{c[0]}:{c[1]}" for c in _BASE_ENACTED_CASES],
 )
 def test_base_version_reports_populated_enacted_date(
-    statute_id: str, provision: str, expected_enacted: str
+    provision_state_runtime_for_statute,
+    statute_id: str,
+    provision: str,
+    expected_enacted: str,
 ) -> None:
     """Un-amended provisions must report the statute enactment date as `enacted`."""
-    from lawvm.provision_state import resolve_provision_state
-
-    payload = resolve_provision_state(
-        statute_id=statute_id,
+    payload = provision_state_runtime_for_statute(statute_id).resolve(
         provision=provision,
         as_of=_AS_OF,
         query_type=_QT,
