@@ -94,6 +94,33 @@ _US_RULE_SPECS: Dict[str, str] = {
         "text in the target section; a quoted block payload replaces the whole struck "
         "unit."
     ),
+    "us_amend_reconstituted_target_label": (
+        "A structural strike-and-insert payload that omits the repeated label of the "
+        "target provision (common in SBRA redesignations) has the target's canonical "
+        "token prepended by LawVM during lowering so the replacement is a complete "
+        "structural unit."
+    ),
+    "us_amend_strike_insert_tail": (
+        "An open-ended 'striking <anchor> and all that follows and inserting <text>' "
+        "instruction deletes from the anchor through the end of the target node and "
+        "inserts the supplied replacement text."
+    ),
+    "us_amend_strike_insert_end_punctuation": (
+        "A 'striking the period/semicolon/comma at the end and inserting <punct>' "
+        "instruction replaces the terminal punctuation of the target node with the "
+        "inserted punctuation character rather than doing a first-occurrence string "
+        "replace."
+    ),
+    "us_amend_strike_insert_punctuation_word": (
+        "A 'striking <old> and inserting a semicolon/comma/period' instruction maps "
+        "the prose punctuation word to its character and replaces the first (or each) "
+        "occurrence of the quoted old text with that character in the target node."
+    ),
+    "us_amend_insert_end_punctuation": (
+        "An 'inserting <text> before/after the period/semicolon/comma at the end' "
+        "instruction replaces the terminal punctuation of the target node with the "
+        "inserted text."
+    ),
     "us_amend_strike": (
         "A 'strike <text>' instruction deletes the first (or every, for 'each place') "
         "occurrence of the quoted text from the target section."
@@ -105,6 +132,12 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amend_add_at_end": (
         "An 'add at the end' instruction appends the quoted payload (a block or a "
         "string) as a new child at the end of the target section."
+    ),
+    "us_amend_add_at_end_new_sections": (
+        "An 'add at the end the following' instruction whose payload opens with one "
+        "or more new section catchlines (§ <num>.) lowers to one INSERT per enacted "
+        "section number, targeting the new section directly instead of appending to a "
+        "sibling section's body."
     ),
     "us_amend_to_read": (
         "An 'amend ... to read as follows' instruction replaces the whole target "
@@ -121,6 +154,11 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amend_redesignate_range": (
         "A 'redesignating <X> through <Y> as <X'> through <Y'>' instruction emits one "
         "RENUMBER per member of the range, relabelling only each node's leading enumerator."
+    ),
+    "us_amend_redesignate_pairs": (
+        "A 'redesignating <A>, <B>, and <C> as <X>, <Y>, and <Z>, respectively' "
+        "instruction maps in source order and emits one RENUMBER per pair, relabelling "
+        "only each node's leading enumerator."
     ),
     "us_amend_strike_structural_unit": (
         "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
@@ -163,6 +201,33 @@ _US_RULE_SPECS: Dict[str, str] = {
         "a new section/chapter/part head ('§ 2328. …', 'CHAPTER 37—…') is a whole-new-"
         "unit create, not an append to the inherited section's body; held out as a "
         "typed residual rather than corrupting the inherited sibling section's text."
+    ),
+    "us_amendatory_sentence_strike_not_section_representable": (
+        "A 'strike the first/second/... sentence' instruction targets a sentence "
+        "boundary the section-text surface cannot locate without guessing."
+    ),
+    "us_amendatory_heading_strike_not_section_representable": (
+        "A 'strike the section/subsection/paragraph heading' instruction removes a "
+        "node's heading, not its body; structural at sub-section granularity, not a "
+        "section-text patch."
+    ),
+    "us_amendatory_tail_strike_not_section_representable": (
+        "A 'strike <anchor> and all that follows' instruction is an open-ended tail "
+        "deletion not representable as a bounded text patch."
+    ),
+    "us_amendatory_through_tail_strike_not_section_representable": (
+        "A 'strike <anchor> and all that follows through <end>' instruction deletes a "
+        "bounded span, not a simple first-occurrence text replace."
+    ),
+    "us_amendatory_designation_strike_not_section_representable": (
+        "A 'strike the ... designation' instruction removes the node's enumerated "
+        "label, not the node's body; structural, not text."
+    ),
+    "us_amendatory_deferred_amend_to_read": (
+        "An 'amend ... to read as follows' instruction whose effective date is in the "
+        "future (e.g. a sunset that reads 'On the date that is 1 year after ...') is "
+        "owned by the temporal layer; it is not lowered as an immediate REPLACE because "
+        "doing so would corrupt the in-force text for any edition before the effective date."
     ),
     # --- Dry-run outcome rules: the witness classifier --------------------------------
     "us_dry_run_section_materialized_text_matches_oracle": (
@@ -226,6 +291,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "the before text, so it is refused (mirroring the REPEAL absent-node refusal) "
         "rather than composed as a section-tanking divergence that would corrupt a "
         "sibling op's correct materialization of the same section."
+    ),
+    # --- Temporal refusal: source-side effective/expiry places the op outside the window.
+    "us_dry_run_deferred_op_not_yet_effective": (
+        "Refusal: the instruction carries a source-side effective or expiry date that "
+        "places it outside the dry-run window, so it is not composed against the "
+        "after-edition snapshot."
     ),
     # --- Sunset / temporal reclassification (F2) --------------------------------------
     "us_sunset_temporary_provision_reverted_to_prior_permanent": (
@@ -371,17 +442,25 @@ _US_RULE_SPECS: Dict[str, str] = {
 # differently); the structural/refusal/import/skip facts are certain.
 _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert": US_CONFIDENCE_HEURISTIC,
+    "us_amend_reconstituted_target_label": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_after_anchor": US_CONFIDENCE_HEURISTIC,
     "us_amend_add_at_end": US_CONFIDENCE_HEURISTIC,
+    "us_amend_add_at_end_new_sections": US_CONFIDENCE_HEURISTIC,
     "us_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amend_repeal": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_punctuation_word": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
     "us_sunset_temporary_provision_reverted_to_prior_permanent": US_CONFIDENCE_HEURISTIC,
