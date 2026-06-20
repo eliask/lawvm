@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 
 import lawvm.uk_legislation as uk_pkg
+from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_uk_catalog import (
     _UK_DYNAMIC_RULE_ID_PREFIXES,
     _UK_DYNAMIC_RULE_ID_SUFFIXES,
@@ -29,6 +30,7 @@ from lawvm.tools.spec_ledger_uk_catalog import (
 )
 
 _UK_PKG_DIR = Path(uk_pkg.__file__).resolve().parent
+_REPO_ROOT = Path(__file__).resolve().parents[1] / "src"
 _FRONTIER_LITERAL_RE = re.compile(r'"(uk_manual_frontier_[a-z0-9_]+)"')
 
 
@@ -82,9 +84,11 @@ def test_every_discovered_static_rule_id_is_cataloged() -> None:
         for rid in discovered
         if rid not in _UK_RULE_SPECS and not _is_dynamic(rid, discovered)
     )
+    locations = locate_rule_ids(_UK_PKG_DIR, missing, repo_root=_REPO_ROOT)
     assert not missing, (
         "UK rule ids discovered in uk_legislation/ but missing a believed_spec "
-        f"entry in _UK_RULE_SPECS: {missing}"
+        "entry in _UK_RULE_SPECS (id <- emit site):\n"
+        f"{format_uncataloged(missing, locations)}"
     )
 
 

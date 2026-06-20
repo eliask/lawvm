@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from lawvm.tools.spec_ledger import SpecLedger
+from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
     US_NON_RULE_LITERALS,
@@ -111,9 +112,11 @@ def test_every_discovered_rule_id_is_cataloged() -> None:
     discovered = _discover_us_rule_ids()
     assert discovered, "AST discovery found no US rule-id literals"
     uncataloged = sorted(discovered - set(_US_RULE_SPECS))
+    locations = locate_rule_ids(US_DIR, uncataloged, repo_root=REPO_ROOT / "src")
     assert not uncataloged, (
         f"{len(uncataloged)} US witness rule id(s) have no believed_spec entry in "
-        f"_US_RULE_SPECS (cataloged fraction < 100%): {uncataloged}"
+        "_US_RULE_SPECS (cataloged fraction < 100%) (id <- emit site):\n"
+        f"{format_uncataloged(uncataloged, locations)}"
     )
 
 
