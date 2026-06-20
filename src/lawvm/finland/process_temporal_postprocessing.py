@@ -426,7 +426,7 @@ class ProcessTemporalPostprocessContext:
         """
         for record in injected:
             self.record_finding(
-                kind="PARSE.PURE_KUMOTAAN_REPEAL_RECONSTRUCTED",
+                kind="PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED",
                 message=(
                     "Repeal reconstructed from raw kumotaan johtolause; the typed "
                     "pipeline produced no op for this target."
