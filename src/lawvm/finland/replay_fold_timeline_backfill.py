@@ -109,13 +109,22 @@ def _active_timeline_content(
     address: LegalAddress,
     *,
     as_of: str,
+    cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> IRNode | None:
+    if cache is not None and address in cache:
+        return cache[address]
     timeline = timelines.get(address)
     if timeline is None:
+        if cache is not None:
+            cache[address] = None
         return None
     version = select_active_version(timeline, as_of)
     if version is None or version.content is None:
+        if cache is not None:
+            cache[address] = None
         return None
+    if cache is not None:
+        cache[address] = version.content
     return version.content
 
 
@@ -131,12 +140,13 @@ def _timeline_intentionally_absent(
     address: LegalAddress,
     *,
     as_of: str,
+    active_content_cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> bool:
     """Return whether PIT absence is already explained by repeal/expiry authority."""
     timeline = timelines.get(address)
     if timeline is None:
         return False
-    if _active_timeline_content(timelines, address, as_of=as_of) is not None:
+    if _active_timeline_content(timelines, address, as_of=as_of, cache=active_content_cache) is not None:
         return False
     for version in timeline.versions:
         if version.content is None:
@@ -152,19 +162,35 @@ def _has_timeline_authority(
     address: LegalAddress,
     *,
     as_of: str,
+    active_content_cache: dict[LegalAddress, IRNode | None] | None = None,
 ) -> bool:
-    if _timeline_intentionally_absent(timelines, address, as_of=as_of):
+    if _timeline_intentionally_absent(
+        timelines,
+        address,
+        as_of=as_of,
+        active_content_cache=active_content_cache,
+    ):
         return True
-    if _active_timeline_content(timelines, address, as_of=as_of) is not None:
+    if _active_timeline_content(timelines, address, as_of=as_of, cache=active_content_cache) is not None:
         return True
     if not address.path or address.path[-1][0] != "section":
         return False
     section_label = address.path[-1][1]
     for prefix_len in range(len(address.path) - 1, 0, -1):
         ancestor = LegalAddress(path=address.path[:prefix_len])
-        if _timeline_intentionally_absent(timelines, ancestor, as_of=as_of):
+        if _timeline_intentionally_absent(
+            timelines,
+            ancestor,
+            as_of=as_of,
+            active_content_cache=active_content_cache,
+        ):
             continue
-        ancestor_content = _active_timeline_content(timelines, ancestor, as_of=as_of)
+        ancestor_content = _active_timeline_content(
+            timelines,
+            ancestor,
+            as_of=as_of,
+            cache=active_content_cache,
+        )
         if ancestor_content is None:
             continue
         if _container_includes_section_label(ancestor_content, section_label):
@@ -281,11 +307,17 @@ def append_fold_timeline_backfill_ops(
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
     backfill_ops: list[LegalOperation] = []
+    active_content_cache: dict[LegalAddress, IRNode | None] = {}
     for path, node in _iter_fold_section_nodes(replay_fold_ir):
         if _content_is_repeal_placeholder(node):
             continue
         address = LegalAddress(path=path)
-        if _has_timeline_authority(preview.rekeyed_timelines, address, as_of=as_of):
+        if _has_timeline_authority(
+            preview.rekeyed_timelines,
+            address,
+            as_of=as_of,
+            active_content_cache=active_content_cache,
+        ):
             continue
         source_statute, effective = _migration_source_for_address(
             address,
