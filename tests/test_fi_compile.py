@@ -113,6 +113,34 @@ def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> N
     assert AmendmentOp.from_lo(lo, 0) == []
 
 
+def test_amendment_op_with_lo_derives_target_unit_without_section_default() -> None:
+    lo = LegalOperation(
+        op_id="part-scoped-section",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("part", "II"), ("chapter", "2"), ("section", "5"))),
+    )
+
+    op = AmendmentOp(op_id="part-scoped-section", op_type="RENUMBER", lo=lo)
+
+    assert op.target_unit_kind == "section"
+    assert op.target_part == "II"
+    assert op.target_chapter == "2"
+    assert op.target_section == "5"
+
+
+def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -> None:
+    lo = LegalOperation(
+        op_id="descendant-only",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("subsection", "1"),)),
+    )
+
+    with pytest.raises(ValueError, match="no Finland-supported primary unit"):
+        AmendmentOp(op_id="descendant-only", op_type="REPEAL", lo=lo)
+
+
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
     from lawvm.finland.metadata import get_johtolause as _real_get_johtolause
 

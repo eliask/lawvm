@@ -714,8 +714,25 @@ class AmendmentOp:
                 "AmendmentOp direct construction requires explicit target_unit_kind "
                 "unless lo or TargetKind target_kind seed is provided"
             )
+        elif target_unit_kind is None and lo is not None:
+            lo_fields = _lo_target_fields(lo)
+            target_unit_kind = cast(TargetUnitKind, lo_fields["target_unit_kind"])
+            if not target_section:
+                target_section = str(lo_fields["target_section"])
+            if target_chapter is None:
+                target_chapter = cast(Optional[str], lo_fields["target_chapter"])
+            if target_part is None:
+                target_part = cast(Optional[str], lo_fields["target_part"])
+            if target_paragraph is None:
+                target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
+            if target_item is None:
+                target_item = cast(Optional[str], lo_fields["target_item"])
+            if target_special is None:
+                target_special = cast(Optional[str], lo_fields["target_special"])
 
-        resolved_target_unit_kind: TargetUnitKind = target_unit_kind or "section"
+        if target_unit_kind is None:
+            raise ValueError("AmendmentOp target_unit_kind could not be resolved")
+        resolved_target_unit_kind: TargetUnitKind = target_unit_kind
 
         self.op_id = op_id
         self.op_type = op_type
