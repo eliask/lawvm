@@ -56,6 +56,9 @@ from lawvm.core.inline_citation import (
     InlineCitationPatternMatch,
 )
 from lawvm.finland.references.lemma_gate import head_case_forms
+from lawvm.finland.references.ref_mention_extractor import (
+    _PLAIN_TEXT_RECOGNIZER,
+)
 
 # ---------------------------------------------------------------------------
 # XML namespaces
@@ -146,18 +149,23 @@ _OLD_COMMITTEE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Plain-text statute citation:
-#   "-lain (N/YYYY)" or "-asetuksen (N/YYYY)" or "-lakia (N/YYYY)" etc.
-#   Also "lain (N/YYYY)" without prefix, "lakiin (N/YYYY)", etc.
-# Capture the statute number N and year YYYY.
-# Substring guard: "(" — the parenthesized statute id is the key marker.
+# Plain-text statute citation — STATUTE-CITE GRAMMAR RETIRED ONTO THE SHARED
+# RECOGNIZER.
 #
-# The STATUTE-HEAD inflection alternation is built by MORPHOLOGY (M1 paradigm
-# inversion) rather than a hand-written suffix enumeration, killing the
-# consonant-gradation substring bug class.  This recognizer historically
-# encoded an INCOMPLETE, hand-picked case set per head (not the full paradigm),
-# so ``head_case_forms`` generates exactly those cases per head to preserve
-# precisely which forms are recognized (no widening to the full paradigm):
+# The structural statute-cite parse (``name (NNN/YYYY) <provision tail>``) is no
+# longer carried by a rival regex in this lane. It is parsed by the single
+# canonical ``ref_mention_extractor.PlainTextStatuteCitationRecognizer`` (see
+# section 10 of ``InlineCitationRecognizer.recognize_all``), so the inline lane
+# and the ``extract_all_reference_mentions`` lane share ONE grammar and cannot
+# drift (AGENTS.md §1.13, references unity).
+#
+# ``_STATUTE_HEAD_FORMS`` is retained as the documented STATUTE-HEAD inflection
+# CONTRACT: the closed set of head surfaces the inline lane historically
+# recognized. The shared recognizer's head alternation is verified to be a strict
+# SUPERSET of these forms (head/case parity), so retirement drops no capture. The
+# alternation is morphology-generated (M1 paradigm inversion) rather than a
+# hand-written suffix enumeration, killing the consonant-gradation substring bug
+# class:
 #
 #   laki       — GEN/PART/ELA/ILL  (lain, lakia, laista, lakiin)
 #   asetus     — GEN/PART/ELA/ILL  (asetuksen, asetusta, asetuksesta, asetukseen)
@@ -189,13 +197,36 @@ _STATUTE_HEAD_FORMS: tuple[str, ...] = tuple(
         key=lambda s: (-len(s), s),  # longest-first for suffix-alternation safety
     )
 )
-_STATUTE_HEAD_ALT = "|".join(re.escape(f) for f in _STATUTE_HEAD_FORMS)
-_STATUTE_INLINE_RE = re.compile(
-    r'(?:[a-zäöåA-ZÄÖÅ]{2,50})'  # leading word (law/decree name fragment)
-    rf'(?:{_STATUTE_HEAD_ALT})'
-    r'\s*\((?P<sn>\d{1,6})/(?P<sy>\d{4})\)',
-    re.UNICODE,
-)
+
+
+def _invert_statute_id(statute_id: str) -> str:
+    """Convert a YEAR/NUMBER statute id to the inline lane's NUMBER/YEAR contract.
+
+    The shared recognizer mints YEAR/NUMBER (the canonical corpus link-target key,
+    e.g. ``2022/711``). The InlineCitation STATUTE_INLINE ``canonical_id`` contract
+    is the visible NUMBER/YEAR surface (``711/2022``). Split on the FIRST ``/`` so
+    sub-numbered ids (``1889/39-001``) round-trip as ``39-001/1889``.
+    """
+    year, sep, number = statute_id.partition("/")
+    if not sep:
+        return statute_id
+    return f"{number}/{year}"
+
+
+def _split_year_number(statute_id: str) -> Tuple[Optional[int], Optional[int]]:
+    """Return (case_year, case_number) ints from a YEAR/NUMBER statute id.
+
+    ``case_number`` is None when the number component is not a plain integer
+    (sub-numbered historical ids like ``39-001``); the old inline regex never
+    matched those, so emitting them with a None numeric is a strict addition.
+    """
+    year, sep, number = statute_id.partition("/")
+    if not sep:
+        return None, None
+    cy = int(year) if year.isdigit() else None
+    cn = int(number) if number.isdigit() else None
+    return cy, cn
+
 
 # ---------------------------------------------------------------------------
 # InlineCitationRecognizer (AGENTS.md §1.13 — named family, not N parallel scans)
@@ -527,33 +558,45 @@ class InlineCitationRecognizer:
                 ))
 
         # --- 10. Plain-text statute citations ---
-        if "(" in text:
-            for m in _STATUTE_INLINE_RE.finditer(text):
-                sn, sy = int(m.group("sn")), int(m.group("sy"))
-                if not (_YEAR_MIN <= sy <= _YEAR_MAX) or sn > _NUM_MAX:
-                    pattern_matches.append(InlineCitationPatternMatch(
-                        rule_id="fi_inline_statute_sanity_fail",
-                        phase="inline_citation_extraction",
-                        source_doc_id=doc_id,
-                        reason=f"Statute year={sy} or number={sn} out of sanity range",
-                        raw_text=m.group(0),
-                        kind_attempted=InlineCitationKind.STATUTE_INLINE.value,
-                    ))
-                    continue
-                citations.append(InlineCitation(
-                    source_doc_id=doc_id,
-                    source_doc_kind=doc_kind,
-                    source_provision_ref="",
-                    kind=InlineCitationKind.STATUTE_INLINE,
-                    canonical_id=f"{sn}/{sy}",
-                    raw_text=m.group(0),
-                    case_year=sy,
-                    case_number=sn,
-                    context=context,
-                    source_span_file=source_span_file,
-                    source_span_byte_offset=None,
-                    source_span_byte_len=None,
-                ))
+        # Routed through the SHARED statute-cite recognizer
+        # (``ref_mention_extractor.PlainTextStatuteCitationRecognizer``) — the
+        # single canonical parser for ``name (NNN/YYYY) <provision tail>``. The
+        # inline lane no longer carries its own rival statute grammar
+        # (``_STATUTE_INLINE_RE`` is retired as a structural parser); both lanes
+        # now share ONE grammar so they cannot drift (AGENTS.md §1.13, references
+        # unity). The shared recognizer adds section/range/coordination/momentti
+        # structure the inline regex never parsed — strict-superset.
+        #
+        # The inline OUTPUT TYPE is preserved: STATUTE_INLINE with
+        # ``canonical_id`` in the NUMBER/YEAR orientation. The shared recognizer
+        # mints YEAR/NUMBER (the corpus link-target key), so it is inverted back
+        # here to the inline lane's published surface contract.
+        # The inline STATUTE_INLINE record is statute-level (it carries no
+        # section/momentti field), so collapse the shared recognizer's
+        # provision-granular hits to one citation per distinct statute id within
+        # this text node — matching the old regex's statute-level granularity.
+        seen_statute_ids: set[str] = set()
+        for hit in _PLAIN_TEXT_RECOGNIZER.scan_text(text):
+            if hit.statute_id in seen_statute_ids:
+                continue
+            seen_statute_ids.add(hit.statute_id)
+            cy, cn = _split_year_number(hit.statute_id)
+            citations.append(InlineCitation(
+                source_doc_id=doc_id,
+                source_doc_kind=doc_kind,
+                source_provision_ref="",
+                kind=InlineCitationKind.STATUTE_INLINE,
+                # NUMBER/YEAR canonical_id (inline contract). The shared
+                # recognizer's ``statute_id`` is YEAR/NUMBER; invert it.
+                canonical_id=_invert_statute_id(hit.statute_id),
+                raw_text=hit.surface_text,
+                case_year=cy,
+                case_number=cn,
+                context=context,
+                source_span_file=source_span_file,
+                source_span_byte_offset=None,
+                source_span_byte_len=None,
+            ))
 
         return citations, pattern_matches
 

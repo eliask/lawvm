@@ -211,12 +211,20 @@ _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
     r"""
     (?:
         # Named law/statute word with inflection suffix (nominative and case forms)
+        #   ``laki``    GEN/PART/INE/ELA/TRA/ALL/ADE/ABL + ILL ``lakiin`` + ESS ``lakina``
         [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
+        (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakiin|lakina)
       | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
+        #   ``asetus``  + ILL ``asetukseen`` + ESS ``asetuksena``
+        (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetukseen|asetuksena)
       | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{0,60}
         (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
+      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
+        #   ``s\xe4\xe4d\xf6s``   GEN/PART/ILL  (s\xe4\xe4d\xf6ksen / s\xe4\xe4d\xf6st\xe4 / s\xe4\xe4d\xf6kseen)
+        (?:s\xe4\xe4d\xf6ksen|s\xe4\xe4d\xf6st\xe4|s\xe4\xe4d\xf6kseen)
+      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
+        #   ``m\xe4\xe4r\xe4ys`` GEN  (m\xe4\xe4r\xe4yksen)   ``direktiivi`` GEN  (direktiivin)
+        (?:m\xe4\xe4r\xe4yksen|direktiivin)
       | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
       | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
       # NOMINATIVE head ``laki`` / ``asetus`` — the repeal/description johtolause
@@ -441,6 +449,24 @@ class PlainTextStatuteCitationRecognizer:
             # ``(id)`` by the ``<ref>`` boundary becomes adjacent again. Bounded
             # (whitespace only — never merges across intervening words).
             text = _WHITESPACE_RUN_RE.sub(" ", text)
+
+        return self.scan_text(text)
+
+    def scan_text(self, text: str) -> List[PlainTextStatuteHit]:
+        """Scan a plain text STRING for provision-precise statute citation hits.
+
+        Text-level twin of :meth:`scan_precise` (which first extracts non-``<ref>``
+        text from a ``<p>`` element, then delegates here). This is the shared
+        statute-cite recognizer surface for any caller that already holds the body
+        text as a string — e.g. the inline-citation lane, which scans ``<p>`` text
+        nodes directly. Routing both lanes through this one method keeps the
+        statute-id + section/momentti grammar UNIFIED (AGENTS.md §1.13): there is
+        exactly one structural parser for ``name (NNN/YYYY) <provision tail>``.
+
+        Per AGENTS.md §1.11: substring guard applied before regex scan.
+        """
+        if not text:
+            return []
 
         # Substring guard (fast path — eliminates ~99% of non-matching calls).
         # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,
