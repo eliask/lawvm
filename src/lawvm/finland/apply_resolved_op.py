@@ -211,6 +211,12 @@ def _apply_required_resolved_op(
         )
     except (NameError, TypeError, AttributeError):
         raise
+    except WriteReceiptTotalityError:
+        # Waist-level conservation totality is a blocking invariant breach, not a
+        # per-op apply failure: one landed write must yield exactly one receipt +
+        # audit. Re-raise so it propagates as a hard failure instead of being
+        # muted into a generic, catchable APPLY_FAILED with console-only logging.
+        raise
     except Exception as e:
         disposition = "APPLY_FAILED"
         prefix = request.error_prefix

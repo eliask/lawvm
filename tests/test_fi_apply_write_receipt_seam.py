@@ -39,11 +39,15 @@ from lawvm.core.tree_ops import (
     replace_at_witnessed,
 )
 from lawvm.core.write_receipt import WriteReceipt
+import lawvm.finland.apply_resolved_op as _aro
 from lawvm.finland.apply_ops_boundary import ApplyOpsSinks
 from lawvm.finland.apply_resolved_op import (
     WRITE_RECEIPT_VIOLATION_FINDING_CODE,
+    ApplyResolvedOpRequest,
     ApplyResolvedOpSinks,
+    WriteReceiptTotalityError,
     _collect_op_write_receipt,
+    apply_resolved_op_with_audit,
 )
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.statute import ReplayState
@@ -299,6 +303,84 @@ def test_collect_op_write_receipt_noop_yields_no_receipt() -> None:
     )
     assert sinks.write_receipts_out == []
     assert sinks.write_audits_out == []
+
+
+# ---------------------------------------------------------------------------
+# 2b. totality breach is LOUD — not swallowed into APPLY_FAILED
+# ---------------------------------------------------------------------------
+
+
+def test_totality_error_in_apply_lane_propagates_not_swallowed(monkeypatch: Any) -> None:
+    """A WriteReceiptTotalityError raised in the apply lane must propagate.
+
+    The waist-level conservation totality invariant ("one landed write ⇒ one
+    receipt + one audit") is a blocking invariant breach. The apply lane's broad
+    ``except Exception`` must NOT downgrade it to a generic, catchable
+    APPLY_FAILED with console-only logging — that would mute the conservation
+    guarantee. Re-raising is the correct semantics; this pins it.
+    """
+
+    def _no_op_apply(state: Any, *args: Any, **kwargs: Any) -> Any:
+        # Land a write (mutate the IR) so the lane proceeds to receipt collection,
+        # but do not touch any sinks.
+        return ReplayState(ir=_body(_sec("1", "mutated")))
+
+    def _raise_totality(*args: Any, **kwargs: Any) -> None:
+        raise WriteReceiptTotalityError("op 'x' landed a write but produced 0 receipts")
+
+    monkeypatch.setattr(_aro, "apply_op", _no_op_apply)
+    monkeypatch.setattr(_aro, "_collect_op_write_receipt", _raise_totality)
+
+    rop = _resolved_op("totality_op", "REPLACE")
+    request = ApplyResolvedOpRequest(
+        state=ReplayState(ir=_body(_sec("1", "one"))),
+        ctx=cast("Any", object()),  # patched apply_op ignores ctx
+        rop=rop,
+        amendment_id="2020/1",
+        replay_mode="official_consolidation",
+        force_apply_pass=True,
+    )
+
+    try:
+        apply_resolved_op_with_audit(request, ApplyResolvedOpSinks())
+    except WriteReceiptTotalityError:
+        pass  # correct: the invariant breach surfaced loudly
+    else:
+        raise AssertionError(
+            "WriteReceiptTotalityError was swallowed into APPLY_FAILED instead of "
+            "propagating as a hard conservation-invariant failure"
+        )
+
+
+def test_generic_apply_error_still_downgrades_to_apply_failed(monkeypatch: Any) -> None:
+    """Narrowing the except must not change the generic-error path.
+
+    A non-totality Exception raised during apply still downgrades to the
+    APPLY_FAILED disposition (the legacy behavior) — only the conservation
+    totality family is promoted to a hard failure.
+    """
+
+    def _no_op_apply(state: Any, *args: Any, **kwargs: Any) -> Any:
+        return ReplayState(ir=_body(_sec("1", "mutated")))
+
+    def _raise_value_error(*args: Any, **kwargs: Any) -> None:
+        raise ValueError("some ordinary per-op apply failure")
+
+    monkeypatch.setattr(_aro, "apply_op", _no_op_apply)
+    monkeypatch.setattr(_aro, "_collect_op_write_receipt", _raise_value_error)
+
+    rop = _resolved_op("generic_op", "REPLACE")
+    request = ApplyResolvedOpRequest(
+        state=ReplayState(ir=_body(_sec("1", "one"))),
+        ctx=cast("Any", object()),
+        rop=rop,
+        amendment_id="2020/1",
+        replay_mode="official_consolidation",
+        force_apply_pass=True,
+    )
+
+    result = apply_resolved_op_with_audit(request, ApplyResolvedOpSinks())
+    assert result.disposition == "APPLY_FAILED"
 
 
 # ---------------------------------------------------------------------------
