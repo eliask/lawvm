@@ -191,7 +191,7 @@ def test_select_active_version_ex_single_scoped_version_requires_scope() -> None
         effective="2020-01-01",
         enacted="2019-12-01",
         variant_kind="permanent",
-        applicability=(ScopePredicate("territory", frozenset({"AX"})),),
+        applicability=[ScopePredicate("territory", frozenset({"AX"}))],
         content=_section("1", "Scoped text"),
     )
     timeline = ProvisionTimeline(address=addr, versions=[version])

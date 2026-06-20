@@ -634,6 +634,7 @@ def _classify_payload_completeness(
             "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
             "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
             "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+            _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
             "ELAB.CONTAINER_PRUNED_SHADOWED",
         }
     ):
@@ -647,6 +648,7 @@ def _classify_payload_completeness(
                 "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
                 "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
+                _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
             }
         )
@@ -2114,6 +2116,7 @@ class HeadingTaggedSubsectionPayloadResult:
 
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"
 _COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST_RULE = "ELAB.COLLAPSE_FLATTENED_FIRST_SUBSECTION_LIST"
+_SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE = "ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"
 _HEADING_TAGGED_SUBSECTION_PAYLOAD_RULE = "ELAB.HEADING_TAGGED_SUBSECTION_PAYLOAD"
 _TEXT_TABLE_ROW_CONTINUATION_RULE = "ELAB.TEXT_TABLE_ROW_CONTINUATION"
 
@@ -2473,6 +2476,19 @@ def _is_intro_single_item_subsection_ir(sub: IRNode) -> bool:
     return has_intro and para_labels == ["1"]
 
 
+def _subsection_numbered_paragraph_labels(sub: IRNode) -> tuple[str, ...]:
+    return tuple(
+        _norm_num_token(child.label or "")
+        for child in sub.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    )
+
+
+def _has_numbered_paragraph_sequence(sub: IRNode) -> bool:
+    labels = _subsection_numbered_paragraph_labels(sub)
+    return len(labels) >= 2 and labels[:2] == ("1", "2")
+
+
 def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     """Return unlabeled content-only subsection text, excluding list-item starts."""
     if len(sub.children) != 1:
@@ -2484,6 +2500,88 @@ def _content_only_non_item_subsection_text(sub: IRNode) -> Optional[str]:
     if not text or re.match(r"^\d+[.)]\s+", text):
         return None
     return text
+
+
+def _fold_split_target_subsection_intro_list_tail(
+    ctx: PayloadElaborationContext,
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> tuple[Optional[IRNode], bool, dict[str, object]]:
+    """Fold a source-split legal moment back into the explicitly targeted slot.
+
+    Historical Finlex XML can serialize one legal ``N momentti`` as two adjacent
+    AKN subsections: a content-only prefix, followed by an intro/list body.  The
+    source preamble still targets only ``N momentti``.  This rule is deliberately
+    narrow and requires the live target moment to already be a numbered-list
+    moment, so a real sibling moment is not absorbed merely because it is next.
+    """
+    empty_detail: dict[str, object] = {}
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, False, empty_detail
+
+    plain_replace_ops = [
+        op
+        for op in group_ops
+        if (
+            op.op_type == "REPLACE"
+            and op.target_unit_kind == "section"
+            and op.target_paragraph is not None
+            and not op.target_item
+            and not op.target_special
+        )
+    ]
+    if len(plain_replace_ops) != 1 or len(group_ops) != 1:
+        return muutos_ir, False, empty_detail
+    target = int(plain_replace_ops[0].target_paragraph or 0)
+
+    live_target = ctx.subsection_by_label.get(str(target))
+    if live_target is None or not _has_numbered_paragraph_sequence(live_target):
+        return muutos_ir, False, empty_detail
+
+    subsection_pairs = [
+        (idx, child)
+        for idx, child in enumerate(muutos_ir.children)
+        if child.kind is IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_pairs) != 2:
+        return muutos_ir, False, empty_detail
+
+    (prefix_idx, prefix_sub), (tail_idx, tail_sub) = subsection_pairs
+    if tail_idx != prefix_idx + 1:
+        return muutos_ir, False, empty_detail
+    prefix_label = _norm_num_token(prefix_sub.label or "")
+    tail_label = _norm_num_token(tail_sub.label or "")
+    if prefix_label != str(target) or tail_label != str(target + 1):
+        return muutos_ir, False, empty_detail
+    if _content_only_non_item_subsection_text(prefix_sub) is None:
+        return muutos_ir, False, empty_detail
+    if not _is_intro_list_subsection_ir(tail_sub):
+        return muutos_ir, False, empty_detail
+
+    folded = _with_payload_normalization_rule(
+        IRNode(
+            kind=prefix_sub.kind,
+            label=prefix_sub.label,
+            text=prefix_sub.text,
+            attrs=dict(prefix_sub.attrs),
+            children=tuple(prefix_sub.children) + tuple(tail_sub.children),
+        ),
+        _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+    )
+    new_children = [
+        folded if idx == prefix_idx else child
+        for idx, child in enumerate(muutos_ir.children)
+        if idx != tail_idx
+    ]
+    detail: dict[str, object] = {
+        "target_paragraph": target,
+        "prefix_payload_slot_label": str(prefix_sub.label or ""),
+        "tail_payload_slot_label": str(tail_sub.label or ""),
+        "live_target_item_labels": _subsection_numbered_paragraph_labels(live_target),
+        "rule": _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+    }
+    return _tops._with_children(muutos_ir, new_children), True, detail
 
 
 def _fold_split_omission_subsection_prefix_into_following_intro_list(
@@ -4713,6 +4811,7 @@ def _elaborate_sparse_subsection_payload(
     group_ops: List[AmendmentOp],
     source_pathologies: List[SourcePathology],
     surface: Optional[PayloadSurface] = None,
+    prior_observations_for_completeness: tuple[ElaborationObservation, ...] = (),
 ) -> SparseSubsectionElaborationResult:
     """Run the sparse subsection elaboration tail as one typed phase.
 
@@ -4904,7 +5003,7 @@ def _elaborate_sparse_subsection_payload(
         group_ops=group_ops,
         assignment=assignment,
         source_pathologies=source_pathologies,
-        observations=observations,
+        observations=[*prior_observations_for_completeness, *observations],
     )
     rejected_ops.extend(
         _unsupported_payload_rejected_ops(
@@ -5888,6 +5987,24 @@ def elaborate_payload_against_live(
                 target_norm=target_norm,
             )
         )
+    muutos_ir, split_target_intro_list_tail, split_target_intro_list_detail = (
+        _fold_split_target_subsection_intro_list_tail(
+            ctx,
+            target_unit_kind,
+            muutos_ir,
+            group_ops,
+        )
+    )
+    if split_target_intro_list_tail:
+        observations.append(
+            _obs(
+                _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE,
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                **split_target_intro_list_detail,
+            )
+        )
     heading_tagged_payload = _normalize_heading_tagged_subsection_payload(
         target_unit_kind,
         group_ops,
@@ -5961,6 +6078,11 @@ def elaborate_payload_against_live(
         group_ops,
         source_pathologies,
         surface,
+        tuple(
+            obs
+            for obs in observations
+            if obs.kind == _SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL_RULE
+        ),
     )
     muutos_ir = sparse_elab.muutos_ir
     group_ops = list(sparse_elab.group_ops)

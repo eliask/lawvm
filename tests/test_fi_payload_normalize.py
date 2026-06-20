@@ -4572,6 +4572,111 @@ def test_normalize_group_payload_surfaces_unassigned_sparse_payload_slots() -> N
     assert first_detail["unassigned_slots"] == ("2:2", "3:(unlabeled)")
 
 
+def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail() -> None:
+    """A single legal moment may be split into prefix + intro/list source slots.
+
+    Mirrors `1990/848 <- 2000/54` section 34: the johtolause owns only
+    `1 momentti`, while Finlex XML serializes that one moment as two adjacent
+    AKN subsections.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="34",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Vanha vahingonkorvausintro:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="vanha ensimmainen kohta;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="vanha toinen kohta."),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Erillinen toinen momentti."),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "34", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="34",
+        target_paragraph=1,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="34",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="34 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Korvattava vahinko"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Uusi korvauspaalause."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Vahingonkorvausta ei kuitenkaan suoriteta:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="valtiolle aiheutuneesta vahingosta;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="muusta vahingosta."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assignment = _slot_assignment_result(got)
+    mapped = assignment.for_op(got.group_ops[0])
+    assert mapped is not None
+    assert mapped.label == "1"
+    assert assignment.unassigned_payload_slots == ()
+    assert "Uusi korvauspaalause." in irnode_to_text(mapped)
+    assert "Vahingonkorvausta ei kuitenkaan suoriteta:" in irnode_to_text(mapped)
+    assert _slot_ir_has_item(mapped, "1")
+    assert _slot_ir_has_item(mapped, "2")
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.SPLIT_TARGET_SUBSECTION_INTRO_LIST_TAIL"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["prefix_payload_slot_label"] == "1"
+    assert detail["tail_payload_slot_label"] == "2"
+    assert _completeness(got).kind == "sparse_certified"
+
+
 def test_group_payload_normalization_result_defaults_unassigned_sparse_payload_slots() -> None:
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap(),

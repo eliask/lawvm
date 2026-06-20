@@ -1768,11 +1768,20 @@ def _apply_special_targets(
                         )
                     return None
                 replaced = False
+                skipping_leading_intro_block = False
                 new_children = []
                 for c in sub.children:
                     if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and not replaced:
                         new_children.append(amend_intro)
                         replaced = True
+                        skipping_leading_intro_block = True
+                        continue
+                    if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and skipping_leading_intro_block:
+                        continue
+                    if c.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
+                        skipping_leading_intro_block = False
+                    if c.kind in {IRNodeKind.INTRO, IRNodeKind.CONTENT} and not skipping_leading_intro_block:
+                        new_children.append(c)
                     else:
                         new_children.append(c)
                 new_sub = _tops._with_children(sub, new_children)

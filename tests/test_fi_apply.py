@@ -16492,6 +16492,58 @@ def test_subsection_replace_promotes_content_only_intro_and_preserves_items() ->
     assert pathologies == []
 
 
+def test_johd_replace_replaces_whole_contiguous_prelist_leadin() -> None:
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    sec = _sec(
+        "34",
+        _sub(
+            "1",
+            _content("Vanha korvattava vahinko."),
+            _intro("Vahingonkorvausta ei kuitenkaan suoriteta:"),
+            _para("1", "valtiolle aiheutuneesta vahingosta;"),
+            _para("2", "muusta vahingosta."),
+        ),
+    )
+    body = _body(sec)
+    sec_path = [("section", "34")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    amend_sub = _sub(
+        "1",
+        _content(
+            "Uusi korvattava vahinko. Vahingonkorvausta voidaan sovitella. "
+            "Vahingonkorvausta ei kuitenkaan suoriteta:"
+        ),
+    )
+    state = _make_state(body)
+    op = _op(op_type="REPLACE", target_section="34", target_paragraph=1, target_special="johd")
+
+    result = _apply_special_targets(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        amend_sub,
+        _sec("34", amend_sub),
+        "34 § 1 mom johd",
+    )
+
+    assert result is not None
+    result_sec = tree_resolve(result.ir, (("section", "34"),))
+    assert result_sec is not None
+    result_sub = next(c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1")
+    assert [child.kind for child in result_sub.children] == [
+        IRNodeKind.CONTENT,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    text = irnode_to_text(result_sub)
+    assert text.count("Vahingonkorvausta ei kuitenkaan suoriteta:") == 1
+    assert "Uusi korvattava vahinko." in text
+    assert "valtiolle aiheutuneesta vahingosta;" in text
+
+
 def test_johd_replace_does_not_fallback_to_section_intro_for_missing_subsection_target() -> None:
     sec = _sec(
         "20",
