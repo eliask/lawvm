@@ -17,6 +17,7 @@ from lawvm.us_federal.source_tree import (
     split_statutory_subsections,
     strip_replacement_section_catchline,
     summarize_indent_classes,
+    synthetic_usc_section,
     usc_section_address,
 )
 
@@ -716,3 +717,60 @@ def test_replacement_catchline_strip_handles_endash_section() -> None:
     # A mismatched (hyphen) number does NOT strip the en-dash catchline: the dash
     # glyph is part of the key identity, never normalized away.
     assert strip_replacement_section_catchline(payload, "1715z-13a") is None
+
+
+# ---------------------------------------------------------------------------
+# Synthetic-section construction for newly-inserted sections (§1182 SBRA family)
+# ---------------------------------------------------------------------------
+
+
+def test_synthetic_usc_section_splits_quote_wrapped_payload() -> None:
+    """A replacement payload for a new section wraps structural units in nested
+    curly quotes (``“In this subchapter:“(1) Debtor...``). The synthetic section
+    must still expose paragraph-level nodes so later sub-section ops can locate
+    them, and the trailing quote boundary must not be absorbed into the node
+    text (otherwise replacing paragraph (1) would swallow the separator before
+    paragraph (2))."""
+    payload = (
+        "“In this subchapter:“"
+        "(1) Debtor.—The term ‘debtor’ means a small business debtor. "
+        "“(2) Debtor in possession.—The term ‘debtor in possession’ means "
+        "the debtor, unless removed as debtor in possession under section 1185(a) "
+        "of this title. “"
+    )
+    section = synthetic_usc_section(title=11, section="1182", text=payload)
+    nodes, findings = split_statutory_subsections(section)
+    by_addr = {n.address.path[2:]: n for n in nodes}
+    assert (("paragraph", "1"),) in by_addr
+    assert (("paragraph", "2"),) in by_addr
+    para1 = by_addr[(("paragraph", "1"),)]
+    # The node text ends with the statutory period, not the boundary quote that
+    # precedes paragraph (2).
+    assert para1.text.endswith("small business debtor.")
+    assert not para1.text.endswith("“")
+    assert para1.text in section.statutory_text
+
+
+def test_synthetic_usc_section_trailing_quote_boundary_stays_on_adjacent_node() -> None:
+    """When a structural marker is preceded by a quote boundary, the quote must be
+    stripped from the end of the preceding node but retained in the section text
+    as a separator, so ``before_text.replace(node_text, replacement)`` does not
+    delete the next node's wrapper."""
+    payload = (
+        "(1) First.—Text one. "
+        "“(2) Second.—Text two. “"
+    )
+    section = synthetic_usc_section(title=11, section="500", text=payload)
+    nodes, _findings = split_statutory_subsections(section)
+    by_addr = {n.address.path[2:]: n for n in nodes}
+    first = by_addr[(("paragraph", "1"),)]
+    second = by_addr[(("paragraph", "2"),)]
+    # Boundary quote separates the two units in the section text.
+    assert "“" in section.statutory_text
+    # But the first node does not own it.
+    assert not first.text.endswith("“")
+    # The second node still begins with its marker.
+    assert second.text.startswith("(2) Second")
+    # Both nodes are substrings of the whole text.
+    assert first.text in section.statutory_text
+    assert second.text in section.statutory_text

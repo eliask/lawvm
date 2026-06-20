@@ -762,7 +762,7 @@ def _section_heading(head_text: str) -> str:
 # as the target (``§ <num>.``) so it can only ever remove this section's own
 # catchline, never a leading reference that happens to start with ``§``.
 _SECTION_CATCHLINE_PREFIX_RE = re.compile(
-    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\.\s"
+    r"^\s*\[?\s*§+\s*(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑‒–][0-9]+[A-Za-z]*)?)\.\s*"
 )
 
 
@@ -795,9 +795,100 @@ def strip_replacement_section_catchline(payload: str, section_number: str) -> st
     return payload[body_marker:]
 
 
-# ---------------------------------------------------------------------------
-# STRETCH: subsection-level split
-# ---------------------------------------------------------------------------
+def synthetic_usc_section(
+    *,
+    title: int,
+    section: str,
+    text: str,
+    heading: str = "",
+) -> UscSection:
+    """Build a best-effort :class:`UscSection` from plain text.
+
+    Used to seed a synthetic before-section for a section that does not exist in
+    the before edition but is created by a window-level Public Law INSERT, so that
+    later sub-section operations (e.g. an amend-to-read of paragraph (1)) can locate
+    nodes within the newly created section. The text is split into
+    :class:`UscStatutoryParagraph` paragraphs at structural ``(token)`` markers so
+    :func:`split_statutory_subsections` can run on it.
+
+    This is a fallback construction, not a source parse: it assumes markers that
+    open a fresh unit are not preceded by non-whitespace text. It never fabricates
+    structural information beyond what the text itself carries.
+    """
+    normalized = _normalize_text(text)
+    paragraphs: list[UscStatutoryParagraph] = []
+    # Build a paragraph-breach scan surface where curly/straight quote boundaries act
+    # like whitespace: replacement payloads often wrap structural units in nested
+    # quotes (``“In this subchapter:“(1) Debtor...``). We scan this surface for
+    # markers but slice the ORIGINAL normalized text so quote glyphs remain in the
+    # stored paragraph text (the marker substring is still locatable inside the
+    # original text).
+    scan_surface = (
+        normalized.replace("\"", " ")
+        .replace("“", " ")
+        .replace("”", " ")
+        .replace("‘", " ")
+        .replace("’", " ")
+    )
+    marker_re = re.compile(r"(?<!\S)\((?P<token>[0-9A-Za-z]+)\)")
+    prev_end = 0
+    for m in marker_re.finditer(scan_surface):
+        body = normalized[prev_end : m.start()].strip()
+        if body:
+            if paragraphs:
+                # Continuation text attaches to the currently open node.
+                last = paragraphs[-1]
+                paragraphs[-1] = UscStatutoryParagraph(
+                    indent_depth=last.indent_depth,
+                    css_class=last.css_class,
+                    text=_normalize_text(f"{last.text} {body}"),
+                )
+            else:
+                # Leading body text before the first marker.
+                paragraphs.append(
+                    UscStatutoryParagraph(indent_depth=-1, css_class="", text=body)
+                )
+        next_m = marker_re.search(scan_surface, m.end())
+        end = next_m.start() if next_m is not None else len(normalized)
+        node_text = _normalize_text(normalized[m.start() : end])
+        # A nested/straight quote that sits immediately before the next structural
+        # marker (or at the end of the payload) is a source wrapper, not part of the
+        # node's statutory text. Drop it so node replacements do not swallow the
+        # boundary between adjacent units.
+        node_text = node_text.rstrip('"\u201c\u201d\u2018\u2019').strip()
+        paragraphs.append(
+            UscStatutoryParagraph(
+                indent_depth=0,
+                css_class="",
+                text=node_text,
+            )
+        )
+        prev_end = end
+    tail = normalized[prev_end:].strip()
+    if tail and paragraphs:
+        last = paragraphs[-1]
+        paragraphs[-1] = UscStatutoryParagraph(
+            indent_depth=last.indent_depth,
+            css_class=last.css_class,
+            text=_normalize_text(f"{last.text} {tail}"),
+        )
+    if not paragraphs:
+        paragraphs.append(
+            UscStatutoryParagraph(indent_depth=-1, css_class="", text=normalized)
+        )
+    return UscSection(
+        title=title,
+        section=section,
+        heading=heading,
+        address=usc_section_address(title, section),
+        statutory_text=normalized,
+        source_credit_raw="",
+        repealed=False,
+        paragraphs=tuple(paragraphs),
+        notes=(),
+        chapter="",
+        subchapter="",
+    )
 
 
 def split_statutory_subsections(
@@ -866,6 +957,45 @@ def split_statutory_subsections(
             m = _MARKER_RE.match(rest)
 
         if para.indent_depth < 0 or not run_tokens:
+            # A flush, unindented block paragraph (e.g. ``Paragraph (4) shall not
+            # be construed...``) is a structural sibling under the current open
+            # unit, not a continuation of its deepest child. Closing to the parent
+            # keeps amendments like ``inserting after paragraph (10)`` from being
+            # spliced inside the prior node's intro text.
+            if para.css_class == "statutory-body-block" and stack:
+                parent_level = stack[-1][0] if len(stack) == 1 else stack[-2][0]
+                while stack and stack[-1][0] > parent_level:
+                    stack.pop()
+                    label_stack.pop()
+                new_level = parent_level + 1
+                new_path = base_path + tuple(
+                    (
+                        _USC_LADDER[lvl] if lvl < len(_USC_LADDER) else f"level{lvl}",
+                        lbl,
+                    )
+                    for (lvl, _o), lbl in zip(stack, label_stack, strict=True)
+                ) + (
+                    (
+                        _USC_LADDER[new_level]
+                        if new_level < len(_USC_LADDER)
+                        else f"level{new_level}",
+                        "",
+                    ),
+                )
+                nodes.append(
+                    UscSubsectionNode(
+                        address=LegalAddress(path=new_path),
+                        label="",
+                        kind=_USC_LADDER[new_level]
+                        if new_level < len(_USC_LADDER)
+                        else f"level{new_level}",
+                        indent_depth=new_level,
+                        text=_normalize_text(para.text),
+                    )
+                )
+                stack.append((new_level, 0))
+                label_stack.append("")
+                continue
             # Continuation / flush / block line, or a paragraph with no leading
             # enumerator: attach text to the currently-open node.
             _attach_continuation(para.text)
