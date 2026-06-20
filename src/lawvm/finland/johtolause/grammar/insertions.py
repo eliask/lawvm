@@ -59,7 +59,7 @@ rather than miscompiling it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.johtolause.grammar.combinators import Span
@@ -74,6 +74,7 @@ from lawvm.finland.johtolause.grammar.sections import (
     _sep,
 )
 from lawvm.finland.source_verb import SourceVerb
+from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.surface_model import (
     SurfaceInsertion,
     SurfaceNode,
@@ -1934,6 +1935,10 @@ def _fold_doc_section_continuation(scan: _Scan, out_nodes: list[InsNode]) -> boo
         # arm, or any other shape the old parser leaves for the outer target-list
         # loop) rewind to the separator and let the driver own the next arm.
         boundary = _doc_cont_arm_boundary(scan, arm_start)
+        heading_anchor_end = _chapter_heading_anchor_arm_end(scan, arm_start)
+        if heading_anchor_end is not None and heading_anchor_end <= boundary:
+            scan.goto(heading_anchor_end)
+            continue
         if _arm_has_oos_marker(scan, arm_start, boundary):
             # An anaphoric heading-placement arm (``[sen] edellä uusi [N luvun]
             # (väli|ala)otsikko``) is NOT folded into the insertion batch by the
@@ -1957,6 +1962,45 @@ def _doc_cont_arm_boundary(scan: _Scan, start: int) -> int:
         if toks[i].cat in ("VERB", "END", "END_SENTINEL_SPAN", "COMMA", "CONJ", "SEKA"):
             return i
     return len(toks)
+
+
+def _chapter_heading_anchor_arm_end(scan: _Scan, start: int) -> int | None:
+    """End of ``luvun otsikko N §:n edelle`` chapter-placement metadata.
+
+    This arm is not a replay operation on its own. The amendment-body chapter
+    insertion and apply-time chapter-membership migration consume it as placement
+    evidence; the insertion grammar must only step over it so a following
+    operative insert arm remains reachable.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = start
+    if not (i < n and toks[i].cat == "LUKU" and toks[i].case == "GEN"):
+        return None
+    i += 1
+    if not (i < n and toks[i].cat == "OTSIKKO"):
+        return None
+    i += 1
+    nums = _number_list_at(toks, i)
+    if nums is None:
+        return None
+    i = nums
+    if not (i < n and toks[i].cat == "PYKALA" and toks[i].case == "GEN"):
+        return None
+    i += 1
+    if not (i < n and toks[i].cat == "EDELLA"):
+        return None
+    return i + 1
+
+
+def _number_list_at(toks: Sequence[Token], start: int) -> int | None:
+    i = start
+    if not (i < len(toks) and toks[i].cat == "NUM"):
+        return None
+    i += 1
+    if i < len(toks) and toks[i].cat == "LETTER":
+        i += 1
+    return i
 
 
 def _arm_has_oos_marker(scan: _Scan, start: int, end: int) -> bool:
@@ -2241,17 +2285,16 @@ def _try_doc_ill(
         kind = TargetKind.SECTION if t.cat == "PYKALA" else TargetKind.CHAPTER
         scan.advance()
         out_nodes = [InsNode(kind=kind, label=n + sf, chapter="") for n, sf in all_nums]
-        # Post-``§`` NOM-section continuation: the old Pattern C (lines 2726-2764)
-        # folds further ``[sekä/ja] [DOC:ILL] [uusi] <nums> § (NOM)`` whole-section
-        # arms into the SAME batch (one shared witness span). Reproduce ONLY the
-        # plain NOM-section arms. A trailing heading-placement / postfix-chapter
-        # arm (which the old parser would ALSO fold into this batch) cannot have
-        # its in-batch span reproduced here, so its presence forces a decline of
-        # the whole insertion (cursor rewound to ``saved``). A §:ILL / §:GEN
-        # sub-target continuation (which the old parser leaves for the outer loop)
-        # is left un-folded: the cursor is rewound to just after the last folded
-        # section so the driver's separator loop owns the next arm.
-        if kind == TargetKind.SECTION:
+        # DOC-level whole-section continuation: after a statute-level section or
+        # chapter insert, fold further ``[sekä/ja] [DOC:ILL] [uusi] <nums> §
+        # (NOM)`` arms into the same insertion batch. Reproduce ONLY the plain
+        # NOM-section arms. A trailing heading-placement / postfix-chapter arm
+        # cannot have its in-batch span reproduced here, so its presence forces
+        # a decline of the whole insertion (cursor rewound to ``saved``). A
+        # §:ILL / §:GEN sub-target continuation is left un-folded: the cursor is
+        # rewound to just after the last folded section so the driver's separator
+        # loop owns the next arm.
+        if kind in {TargetKind.SECTION, TargetKind.CHAPTER}:
             if not _fold_doc_section_continuation(scan, out_nodes):
                 scan.goto(saved)
                 return None

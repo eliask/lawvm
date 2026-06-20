@@ -248,6 +248,22 @@ def test_doc_section_chain_shares_one_batch_witness_span() -> None:
     assert len(spans) == 1, f"expected one shared batch span, got {spans}"
 
 
+def test_doc_chapter_insert_skips_heading_anchor_and_keeps_later_section_inserts() -> None:
+    text = (
+        "lisätään lakiin uusi 5 a luku ja luvun otsikko 44 §:n edelle "
+        "sekä lakiin uusi 47 a, 49 a ja 49 b § seuraavasti:"
+    )
+    model = parse_text_with(text, new_parser.parse)
+    (vg,) = model.verb_groups
+
+    assert [(_as_insertion(node).kind, _as_insertion(node).label) for node in vg.nodes] == [
+        (TargetKind.CHAPTER, "5a"),
+        (TargetKind.SECTION, "47a"),
+        (TargetKind.SECTION, "49a"),
+        (TargetKind.SECTION, "49b"),
+    ]
+
+
 def test_section_ill_sub_target_folds_trailing_whole_section() -> None:
     # ``130 §:ään uusi 2 ja 3 momentti sekä uusi 145 a §`` — the trailing whole
     # section is folded into the §:ILL sub-target arm's batch (old Pattern A's

@@ -32,6 +32,12 @@ _CHAPTER_HEADING_ANCHOR_RE = re.compile(
     r"(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luvun\s+otsikko",
     re.IGNORECASE,
 )
+_NEW_CHAPTER_AND_HEADING_ANCHOR_RE = re.compile(
+    r"uusi\s+(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luku\s+ja\s+"
+    r"luvun\s+otsikko\s+"
+    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle",
+    re.IGNORECASE,
+)
 _UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
     r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
     r"luvun\s+otsikko",
@@ -230,6 +236,11 @@ def _chapter_heading_anchors(johto: str) -> dict[str, str]:
     if "luvun otsikko" not in johto or "§:n edelle" not in johto:
         return anchors
     for match in _CHAPTER_HEADING_ANCHOR_RE.finditer(johto):
+        section_label = _section_label_from_num_text(match.group("section"))
+        chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
+        if section_label and chapter_label:
+            anchors[chapter_label] = section_label
+    for match in _NEW_CHAPTER_AND_HEADING_ANCHOR_RE.finditer(johto):
         section_label = _section_label_from_num_text(match.group("section"))
         chapter_label = _norm_num_token(match.group("chapter")).removesuffix("luku")
         if section_label and chapter_label:
@@ -595,10 +606,37 @@ def _existing_chapter_start_labels(tree: IRNode) -> tuple[str, ...]:
     return tuple(starts)
 
 
+def _existing_chapter_start_successors(tree: IRNode) -> dict[str, str]:
+    successors: dict[str, str] = {}
+    ambiguous_starts: set[str] = set()
+
+    def walk(node: IRNode) -> None:
+        if node.kind is IRNodeKind.CHAPTER:
+            section_labels = [
+                _norm_num_token(child.label)
+                for child in node.children
+                if child.kind is IRNodeKind.SECTION and child.label
+            ]
+            if len(section_labels) >= 2:
+                first, second = section_labels[0], section_labels[1]
+                if first in successors and successors[first] != second:
+                    ambiguous_starts.add(first)
+                else:
+                    successors[first] = second
+        for child in node.children:
+            walk(child)
+
+    walk(tree)
+    for label in ambiguous_starts:
+        successors.pop(label, None)
+    return successors
+
+
 def _next_start_after(
     start_label: str,
     starts: tuple[tuple[str, str, str], ...],
     existing_chapter_starts: tuple[str, ...],
+    existing_chapter_start_successors: dict[str, str],
 ) -> str:
     start_key = _tops.default_label_sort_key(start_label)
     candidates = [
@@ -606,6 +644,9 @@ def _next_start_after(
         for _part_label, _chapter_label, label in starts
         if _tops.default_label_sort_key(label) > start_key
     ]
+    successor = existing_chapter_start_successors.get(start_label)
+    if successor and _tops.default_label_sort_key(successor) > start_key:
+        candidates.append(successor)
     candidates.extend(
         label
         for label in existing_chapter_starts
@@ -676,6 +717,7 @@ def _migrate_flat_sections_into_source_chapters(
 
     migrations: list[ChapterMembershipMigration] = []
     existing_chapter_starts = _existing_chapter_start_labels(state.ir)
+    existing_chapter_start_successors = _existing_chapter_start_successors(state.ir)
     candidate_labels = {
         *(_flat_section_labels(state.ir)),
         *(
@@ -698,7 +740,12 @@ def _migrate_flat_sections_into_source_chapters(
         if not _section_label_is_in_chapter_span(
             section_label,
             start_label=start_label,
-            next_start_label=_next_start_after(start_label, starts, existing_chapter_starts),
+            next_start_label=_next_start_after(
+                start_label,
+                starts,
+                existing_chapter_starts,
+                existing_chapter_start_successors,
+            ),
         ):
             continue
         from_path = _find_direct_flat_section_path(state.ir, section_label)

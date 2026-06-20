@@ -2025,6 +2025,68 @@ def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections()
     assert [migration.section_label for migration in result.membership_migrations] == ["68a", "68b"]
 
 
+def test_precreate_new_chapter_heading_at_existing_chapter_start_migrates_anchor_only() -> None:
+    """A new chapter title before an existing chapter start does not absorb the old chapter."""
+    from lxml import etree
+
+    from lawvm.finland.amendment_chapter_precreate import (
+        PrecreateApplyChaptersRequest,
+        precreate_apply_chapters,
+        source_chapters_from_tree,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("5", _sec("43")),
+            _chapter("6", _sec("44"), _sec("45"), _sec("46"), _sec("47")),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act>
+            <body>
+              <chapter>
+                <num>5 a luku</num>
+                <heading>Jäsenvaltioiden rajat ylittävä tiedoksianto</heading>
+                <section><num>44 §</num></section>
+                <section><num>45 §</num></section>
+                <section><num>46 §</num></section>
+                <section><num>47 §</num></section>
+              </chapter>
+            </body>
+          </act>
+        </akomaNtoso>
+        """
+    )
+
+    result = precreate_apply_chapters(
+        PrecreateApplyChaptersRequest(
+            state=state,
+            resolved=[],
+            amendment_id="2021/546",
+            vts_ops_enrich_done=False,
+            source_chapters=source_chapters_from_tree(muutos_tree),
+            johto=(
+                "lisätään lakiin uusi 5 a luku ja luvun otsikko "
+                "44 §:n edelle seuraavasti:"
+            ),
+        )
+    )
+
+    chapter_5a = result.state.find_chapter("5a")
+    chapter_6 = result.state.find_chapter("6")
+    assert chapter_5a is not None
+    assert chapter_6 is not None
+    assert [child.label for child in chapter_5a.children if child.kind is IRNodeKind.SECTION] == ["44"]
+    assert [child.label for child in chapter_6.children if child.kind is IRNodeKind.SECTION] == [
+        "45",
+        "46",
+        "47",
+    ]
+    assert [migration.section_label for migration in result.membership_migrations] == ["44"]
+
+
 def test_precreate_unnumbered_chapter_heading_list_migrates_all_declared_spans() -> None:
     """A coordinated ``1, 3 ja 6 §`` heading list creates every source chapter."""
     from lxml import etree
@@ -2213,6 +2275,42 @@ def test_2019_571_2025_863_chapter_heading_migration_orders_existing_sections() 
     assert direct_hcontainer_sections == []
     assert len(migrations) >= 12
     assert findings
+
+
+def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
+    """Real corpus anchor for chapter insert + heading anchor + later section inserts."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2011/948",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+    root = replay.materialized_state.ir
+    chapters = {
+        child.label: [grand.label for grand in child.children if grand.kind is IRNodeKind.SECTION]
+        for child in root.children
+        if child.kind is IRNodeKind.CHAPTER
+    }
+    migrations = [
+        event
+        for event in getattr(replay, "migration_events", ())
+        if getattr(event, "source_statute", "") == "2021/546"
+        and getattr(event, "kind", "") == "move"
+        and isinstance(getattr(event, "witness", None), dict)
+        and event.witness.get("rule_id") == "fi.chapter_membership_migration_from_source_starts"
+    ]
+    tree_invariant_findings = [
+        finding
+        for finding in getattr(replay, "findings", ())
+        if getattr(finding, "kind", "") == "APPLY.TREE_INVARIANT_VIOLATION"
+    ]
+
+    assert chapters["5a"] == ["44", "44a", "44b", "44c", "44d"]
+    assert chapters["6"][:8] == ["45", "46", "47", "47a", "48", "49", "49a", "49b"]
+    assert [event.witness.get("section_label") for event in migrations] == ["44"]
+    assert tree_invariant_findings == []
 
 
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
