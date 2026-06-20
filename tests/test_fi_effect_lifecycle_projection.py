@@ -265,6 +265,54 @@ def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     assert lifecycle_events[0].detail["projection"] == "effect_relation_signal"
 
 
+def test_relation_signal_duplicate_id_conflict_is_not_silently_skipped() -> None:
+    with pytest.raises(ValueError, match="conflicting duplicate relation_id"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(),
+            temporal_events=(),
+            relation_signals=(
+                EffectRelationSignal.pending_amendment(
+                    source_statute="2021/2",
+                    target_statute="2020/1",
+                    target_title="First title",
+                    resolved=True,
+                ),
+                EffectRelationSignal.pending_amendment(
+                    source_statute="2021/2",
+                    target_statute="2020/1",
+                    target_title="Second title",
+                    resolved=True,
+                ),
+            ),
+        )
+
+
+def test_unresolved_relation_signal_duplicate_event_conflict_is_not_silently_skipped() -> None:
+    with pytest.raises(ValueError, match="conflicting duplicate lifecycle_event_id"):
+        build_finland_effect_lifecycle(
+            target_statute="1990/1",
+            canonical_ops=(),
+            temporal_events=(),
+            relation_signals=(
+                EffectRelationSignal.pending_amendment(
+                    source_statute="2021/2",
+                    target_statute="",
+                    message="first unresolved target",
+                    source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                    resolved=False,
+                ),
+                EffectRelationSignal.pending_amendment(
+                    source_statute="2021/2",
+                    target_statute="",
+                    message="second unresolved target",
+                    source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
+                    resolved=False,
+                ),
+            ),
+        )
+
+
 def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
     source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
