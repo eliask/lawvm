@@ -67,6 +67,9 @@ def _definition_ordered_list_grounding_label(node: UKMutableNode) -> str:
 def _slugify_grounding_heading(text: str) -> str:
     if not text:
         return ""
+    # Match the source-side slug convention in ``uk_grafter._slugify``: apostrophes
+    # are removed entirely rather than becoming slug separators.
+    text = text.replace("'", "").replace("\u2019", "").replace("\u2018", "")
     return re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
 
 

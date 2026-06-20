@@ -14,6 +14,7 @@ from lawvm.uk_legislation.uk_grafter import (
     UKStatuteIR,
     _clean_num,
     _definition_ordered_list_term,
+    _slugify,
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
 )
@@ -696,17 +697,22 @@ def test_parse_uk_statute_ir_bytes_preserves_definition_ordered_list_children() 
     )
 
     subsection = ir.body.children[0].children[0]
+    # Single-nested flat path: the nested list's items are the only homed
+    # children, so the defined-term intros are NOT carried by any child and must
+    # stay in the subsection's own text (no double-count, no silent drop).
     assert subsection.text == (
         "In this section- “coronavirus” means severe acute respiratory syndrome coronavirus 2; "
         "“relevant provision” means-"
     )
+    # Body-section definition ordered lists are normalized to replay-addressable
+    # paragraphs while preserving source-list provenance.
     assert [child.kind for child in subsection.children] == [
-        IRNodeKind.ITEM,
-        IRNodeKind.ITEM,
-        IRNodeKind.ITEM,
-        IRNodeKind.ITEM,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
     ]
-    assert [child.label for child in subsection.children] == [None, None, None, None]
+    assert [child.label for child in subsection.children] == ["a", "b", "c", "d"]
     assert [child.attrs["definition_child_label"] for child in subsection.children] == ["a", "b", "c", "d"]
     assert subsection.children[3].text == "paragraph 1(3) or 18(1) of Schedule 11."
     assert subsection.children[3].attrs["source_rule_id"] == "uk_definition_ordered_list_child_preserved"
@@ -722,22 +728,22 @@ def test_parse_uk_statute_ir_bytes_preserves_definition_ordered_list_children() 
             "count": 4,
             "samples": (
                 {
-                    "kind": "item",
+                    "kind": "paragraph",
                     "definition_term": "relevant provision",
                     "definition_child_label": "a",
                 },
                 {
-                    "kind": "item",
+                    "kind": "paragraph",
                     "definition_term": "relevant provision",
                     "definition_child_label": "b",
                 },
                 {
-                    "kind": "item",
+                    "kind": "paragraph",
                     "definition_term": "relevant provision",
                     "definition_child_label": "c",
                 },
                 {
-                    "kind": "item",
+                    "kind": "paragraph",
                     "definition_term": "relevant provision",
                     "definition_child_label": "d",
                 },
@@ -864,6 +870,147 @@ def test_parse_uk_statute_ir_bytes_preserves_schedule_unordered_list_entries() -
         "text": "Scottish Children's Reporter Administration",
     }
     assert schedule_observation["blocking"] is False
+
+
+def test_schedule_p1group_with_single_paragraph_keeps_title_as_crossheading() -> None:
+    """Enacted schedules use P1group/Title as a crossheading group.
+
+    A P1group that wraps exactly one paragraph must still preserve its title on
+    the wrapper node, otherwise the schedule crossheading EID disappears and the
+    paragraph title is incorrectly treated as the paragraph's own heading.
+    """
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <Metadata>
+    <dc:title>Schedule Crossheading Test Act</dc:title>
+  </Metadata>
+  <Body />
+  <Schedules>
+    <Schedule eId="schedule-1">
+      <Number>SCHEDULE 1</Number>
+      <Title>Further provision</Title>
+      <ScheduleBody>
+        <P1group>
+          <Title>Power to modify notice periods</Title>
+          <P1 eId="schedule-1-paragraph-8">
+            <Pnumber>8</Pnumber>
+            <P1para>
+              <P2 eId="schedule-1-paragraph-8-1">
+                <Pnumber>1</Pnumber>
+                <P2para><Text>The power applies.</Text></P2para>
+              </P2>
+            </P1para>
+          </P1>
+        </P1group>
+      </ScheduleBody>
+    </Schedule>
+  </Schedules>
+</Legislation>
+"""
+    ir = parse_uk_statute_ir_bytes(
+        xml,
+        statute_id="asp/2020/7",
+        version_label="enacted",
+        source_path="https://www.legislation.gov.uk/asp/2020/7/enacted/data.xml",
+    )
+
+    schedule = ir.supplements[0]
+    assert [child.kind for child in schedule.children] == [IRNodeKind.P1GROUP]
+    p1group = schedule.children[0]
+    assert p1group.text == "Power to modify notice periods"
+    assert [child.kind for child in p1group.children] == [IRNodeKind.PARAGRAPH]
+    paragraph = p1group.children[0]
+    assert paragraph.label == "8"
+    assert not any(child.kind is IRNodeKind.HEADING for child in paragraph.children)
+
+
+def test_body_p1group_with_single_section_still_carries_title_as_heading() -> None:
+    """Body P1group wrappers retain the existing behaviour: a sole section gets
+    the group title as its heading child so enacted and inserted sections share
+    one shape."""
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <Metadata>
+    <dc:title>Body Heading Carrier Test Act</dc:title>
+  </Metadata>
+  <Body>
+    <P1group>
+      <Title>Electronic signatures</Title>
+      <P1 eId="section-1">
+        <Pnumber>1</Pnumber>
+        <P1para><Text>Main text.</Text></P1para>
+      </P1>
+    </P1group>
+  </Body>
+</Legislation>
+"""
+    ir = parse_uk_statute_ir_bytes(
+        xml,
+        statute_id="ukpga/2020/17",
+        version_label="enacted",
+        source_path="https://www.legislation.gov.uk/ukpga/2020/17/enacted/data.xml",
+    )
+
+    section = ir.body.children[0].children[0]
+    assert section.kind == IRNodeKind.SECTION
+    headings = [child for child in section.children if child.kind is IRNodeKind.HEADING]
+    assert [h.text for h in headings] == ["Electronic signatures"]
+
+
+def test_empty_pblock_crossheading_title_inferred_from_p1group_eid_suffix() -> None:
+    """Current-oracle CLML may wrap a schedule paragraph in a Pblock whose own
+    Title is empty but whose EID carries the crossheading slug.  The eid_map
+    should expose that slug as a replay-addressable crossheading alias so a
+    source-side P1group wrapper can be grounded to the official EID.
+    """
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Primary>
+    <Body />
+    <Schedules>
+      <Schedule id="schedule-1">
+        <Number>SCHEDULE 1</Number>
+        <ScheduleBody>
+          <Part id="schedule-1-part-1">
+            <Number>PART 1</Number>
+            <Pblock id="schedule-1-part-1-crossheading-power-to-modify-notice-periods">
+              <Title><Emphasis/></Title>
+              <P1 id="schedule-1-paragraph-1">
+                <Pnumber>1</Pnumber>
+                <P1para><Text>The power applies.</Text></P1para>
+              </P1>
+            </Pblock>
+          </Part>
+        </ScheduleBody>
+      </Schedule>
+    </Schedules>
+  </Primary>
+</Legislation>
+"""
+    result = extract_eid_map_bytes(xml)
+    eid_map = result["eid_map"]
+    eid = "schedule-1-part-1-crossheading-power-to-modify-notice-periods"
+    assert eid_map.get("schedule-1:part-1:crossheading-power-to-modify-notice-periods") == eid
+    assert eid_map.get("schedule-1:suffix:crossheading-power-to-modify-notice-periods") == eid
+
+    observations = [o for o in result["oracle_identity_observations"] if o["rule_id"] == "uk_oracle_empty_crossheading_title_inferred_from_p1group"]
+    assert len(observations) == 1
+    assert observations[0]["inferred_crossheading_slug"] == "power-to-modify-notice-periods"
+
+
+def test_slugify_strips_apostrophes_for_crossheading_matching() -> None:
+    """Source titles use curly apostrophes ("children’s"); official EIDs drop the
+    apostrophe entirely ("childrens").  Both slug helpers must collapse the
+    apostrophe so source and oracle slugs are commensurable.
+    """
+    from lawvm.uk_legislation.replay_grounding import _slugify_grounding_heading
+
+    assert _slugify("children’s hearings") == "childrens-hearings"
+    assert _slugify("commissioner's ability") == "commissioners-ability"
+    assert _slugify_grounding_heading("children’s hearings") == "childrens-hearings"
+    assert _slugify_grounding_heading("commissioner's ability") == "commissioners-ability"
 
 
 def test_parse_uk_statute_ir_bytes_preserves_schedule_p_text_entries() -> None:
