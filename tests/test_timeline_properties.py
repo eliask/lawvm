@@ -4162,7 +4162,7 @@ from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.diff import _extract_sections_ir
-from tests.corpus_pin_helpers import pinned_replay
+from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
 
 
 @pytest.fixture(scope="module")
@@ -4382,6 +4382,23 @@ def test_mixed_muutetaan_tail_supplement_recovers_1988_718_base_section_updates(
 
     assert "Vuoden 1993 alusta lukien tässä laissa vapaakunnalle säädettyä kokeilua voi harjoittaa myös muu kunta" in text
     assert "31 päivään joulukuuta 1996" in text
+
+
+def test_mixed_muutetaan_tail_supplement_recovers_1978_501_section_list_and_moments() -> None:
+    """The 1993/1307 source typo ``16 aja 18 §`` must not drop explicit targets."""
+    master = replay_xml_for_test("1978/501", mode="official_consolidation", quiet=True)
+
+    sec16a = master.find_section("16a")
+    assert sec16a is not None
+    sec16a_text = irnode_to_text(sec16a)
+    assert "Hyväksyessään laitoksen talousarvion" in sec16a_text
+    assert "yhden viidesosan 1 momentissa tarkoitetuista valtionosuuteen" in sec16a_text
+
+    sec19 = master.find_section("19")
+    assert sec19 is not None
+    sec19_text = irnode_to_text(sec19)
+    assert "vuosikertomus, tilinpäätös, tilintarkastajien lausunto" in sec19_text
+    assert "toiminnastaan muitakin tietoja" in sec19_text
 
 
 def test_archaic_a_separator_recovers_1966_332_update_for_1956_463() -> None:

@@ -12397,6 +12397,80 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
 
 
+def test_supplement_mixed_explicit_clause_ops_recovers_terminal_section_list_and_moments() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_18",
+            op_type="REPLACE",
+            target_section="18",
+            target_kind=TargetKind.SECTION,
+        ),
+        AmendmentOp(
+            op_id="replace_23",
+            op_type="REPLACE",
+            target_section="23",
+            target_kind=TargetKind.SECTION,
+        ),
+    ]
+    johto = (
+        "kumotaan työterveyslaitoksen toiminnasta ja rahoituksesta annetun "
+        "asetuksen 3-5, 13 ja 15 §, muutetaan 3 §:n edellä oleva väliotsikko, "
+        "6-9, 11, 12, 16 aja 18 §, 19 §:n 1 momentti, "
+        "20 §:n 1 momentti, 21 §:n 1 momentti ja 23 §,"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+        if op.op_type == "REPLACE" and op.target_unit_kind == "section"
+    ] == [
+        ("REPLACE", "18", None),
+        ("REPLACE", "23", None),
+        ("REPLACE", "19", 1),
+        ("REPLACE", "20", 1),
+        ("REPLACE", "21", 1),
+        ("REPLACE", "6", None),
+        ("REPLACE", "7", None),
+        ("REPLACE", "8", None),
+        ("REPLACE", "9", None),
+        ("REPLACE", "11", None),
+        ("REPLACE", "12", None),
+        ("REPLACE", "16a", None),
+    ]
+    recovered = got[2:]
+    assert {op.witness_rule_id for op in recovered} == {"fi.mixed_explicit_target_supplement.v1"}
+    assert {op.extraction_provenance_tags for op in recovered} == {("mixed_explicit_target_supplement",)}
+
+
+def test_supplement_mixed_explicit_clause_ops_does_not_add_moment_for_section_with_subtarget() -> None:
+    ops = [
+        AmendmentOp(
+            op_id="replace_7_1",
+            op_type="REPLACE",
+            target_section="7",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=1,
+        )
+    ]
+    johto = (
+        "muutetaan asetuksen 7 §:n 1 momentin 2, 7 §:n 3 momentti "
+        "ja 8 §:n 1 momentti, sellaisina kuin niistä on 7 §:n 1 "
+        "momentin 2 kohta asetuksessa 869/2023, seuraavasti:"
+    )
+
+    got = _supplement_mixed_explicit_clause_ops(ops, johto)
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in got
+    ] == [
+        ("REPLACE", "7", 1),
+        ("REPLACE", "8", 1),
+    ]
+
+
 def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_moment_insert() -> None:
     ops = [
         AmendmentOp(

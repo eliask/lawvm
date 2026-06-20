@@ -45,7 +45,10 @@ from lawvm.finland.johtolause.clause_surface import (
     parse_item_shift_clauses,
 )
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets
+from lawvm.finland.johto_scope_mentions import (
+    collect_johto_numbered_table_targets,
+    expand_johto_section_label_range,
+)
 from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
@@ -91,6 +94,12 @@ _TABLE_AND_MOMENT_RE = re.compile(
     r"(?P<moment>\d{1,3})\s+momentti\b",
     flags=re.I,
 )
+_MOMENT_REPLACE_RE = re.compile(
+    _OPTIONAL_CHAPTER_SECTION_PREFIX
+    + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}n\s+"
+    r"(?P<moment>\d{1,3})\s+momentti\b",
+    flags=re.I,
+)
 _INSERT_MOMENT_RE = re.compile(
     _OPTIONAL_CHAPTER_SECTION_PREFIX
     + rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§\s{{0,10}}:\s{{0,10}}ään\s+uusi\s+"
@@ -100,6 +109,21 @@ _INSERT_MOMENT_RE = re.compile(
 _BARE_REPLACE_SECTION_RE = re.compile(
     rf"(?<![/\d]){_OPTIONAL_CHAPTER_SECTION_PREFIX}"
     rf"(?P<section>{_SECTION_LABEL_PATTERN})\s{{0,10}}§(?!\s{{0,10}}:)(?!\s{{0,10}}n\b)",
+    flags=re.I,
+)
+_BARE_SECTION_LIST_RE = re.compile(
+    r"(?:(?<=^)|(?<=[,;]))\s{0,20}"
+    r"(?P<run>(?:\d{1,4}\s{0,3}[a-zäöå]?\s*[–—―-]\s*\d{1,4}\s{0,3}[a-zäöå]?|\d{1,4}\s{0,3}[a-zäöå]?)(?:\s{0,20}(?:,|ja|sekä)\s{0,20}(?:\d{1,4}\s{0,3}[a-zäöå]?\s*[–—―-]\s*\d{1,4}\s{0,3}[a-zäöå]?|\d{1,4}\s{0,3}[a-zäöå]?)){1,40})"
+    r"\s{0,10}§(?!\s{0,10}:)(?!\s{0,10}n\b)",
+    flags=re.I,
+)
+_GLUED_ALPHA_JA_RE = re.compile(
+    r"\b(?P<num>\d{1,4})\s{0,3}(?P<suffix>[a-zäöå])ja\s+(?P<next>\d{1,4})\b",
+    flags=re.I,
+)
+_SECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*", flags=re.I)
+_SECTION_RANGE_RE = re.compile(
+    r"(?P<start>\d{1,4}\s{0,3}[a-zäöå]?)\s*[–—―-]\s*(?P<end>\d{1,4}\s{0,3}[a-zäöå]?)",
     flags=re.I,
 )
 _CHAPTER_HEADING_PAIR_PREFIX_RE = re.compile(
@@ -577,6 +601,27 @@ def _has_op(
     )
 
 
+def _blocks_moment_supplement(
+    ops: list[AmendmentOp],
+    *,
+    section: str,
+    chapter: str | None,
+) -> bool:
+    chapter_filter: str | None | object = chapter if chapter is not None else _ANY_CHAPTER
+    return any(
+        op.target_unit_kind == "section"
+        and op.target_section == section
+        and _chapter_matches(op.target_chapter, chapter_filter)
+        and (
+            op.target_paragraph is not None
+            or bool(op.target_item)
+            or bool(op.target_special)
+            or not op.numbered_table_targets
+        )
+        for op in ops
+    )
+
+
 def _append_unique_op(
     ops: list[AmendmentOp],
     *,
@@ -662,17 +707,96 @@ def _parse_bare_section_replace_clauses(johto: str) -> tuple[BareSectionReplaceC
         muutetaan_segment = muutetaan_segment[: min(stop_matches)]
     clauses: list[BareSectionReplaceClause] = []
     seen: set[tuple[str | None, str]] = set()
+
+    def append_clause(section: str, chapter: str | None, raw_text: str) -> None:
+        key = (chapter, section)
+        if not section or key in seen:
+            return
+        seen.add(key)
+        clauses.append(
+            BareSectionReplaceClause(
+                section=section,
+                chapter=chapter,
+                raw_text=raw_text,
+            )
+        )
+
+    for match in _BARE_SECTION_LIST_RE.finditer(muutetaan_segment):
+        prefix = " ".join(muutetaan_segment[: match.start()].split())
+        if _CHAPTER_HEADING_PAIR_PREFIX_RE.search(prefix):
+            continue
+        for section in _parse_bare_section_list_run(match.group("run")):
+            append_clause(section, None, match.group(0))
+
     for match in _BARE_REPLACE_SECTION_RE.finditer(muutetaan_segment):
         prefix = " ".join(muutetaan_segment[: match.start()].split())
         if _CHAPTER_HEADING_PAIR_PREFIX_RE.search(prefix):
             continue
         section = _norm_num_token(match.group("section"))
         chapter = _match_chapter(match)
-        key = (chapter, section)
-        if not section or key in seen:
+        append_clause(section, chapter, match.group(0))
+    return tuple(clauses)
+
+
+def _parse_bare_section_list_run(run: str) -> tuple[str, ...]:
+    """Expand a terminal-section-sign list such as ``6-9, 11 ja 12 §``.
+
+    Historical source typo ``16 aja 18 §`` means ``16 a ja 18 §``.  The
+    correction is scoped to a number+letter list immediately before a terminal
+    section sign; it does not rewrite the source text globally.
+    """
+    normalized = _GLUED_ALPHA_JA_RE.sub(
+        lambda m: f"{m.group('num')} {m.group('suffix')} ja {m.group('next')}",
+        run or "",
+    )
+    labels: list[str] = []
+    for raw_part in _SECTION_LIST_SPLIT_RE.split(normalized):
+        part = raw_part.strip()
+        if not part:
             continue
-        seen.add(key)
-        clauses.append(BareSectionReplaceClause(section=section, chapter=chapter, raw_text=match.group(0)))
+        range_match = _SECTION_RANGE_RE.fullmatch(part)
+        if range_match is not None:
+            expanded = expand_johto_section_label_range(
+                range_match.group("start"),
+                range_match.group("end"),
+            )
+        else:
+            expanded = (_norm_num_token(part),)
+        for label in expanded:
+            if label and label not in labels:
+                labels.append(label)
+    return tuple(labels)
+
+
+def _parse_moment_replace_clauses(johto: str) -> tuple[MomentTargetClause, ...]:
+    clauses: list[MomentTargetClause] = []
+    muutetaan_match = re.search(r"\bmuutetaan\b", johto or "", flags=re.I)
+    if muutetaan_match is None:
+        return ()
+    muutetaan_segment = (johto or "")[muutetaan_match.end() :]
+    stop_matches = [
+        match.start()
+        for match in re.finditer(
+            r"\b(?:lisätään|kumotaan|seuraavasti)\b",
+            muutetaan_segment,
+            flags=re.I,
+        )
+    ]
+    if stop_matches:
+        muutetaan_segment = muutetaan_segment[: min(stop_matches)]
+    for match in _MOMENT_REPLACE_RE.finditer(muutetaan_segment):
+        section = _norm_num_token(match.group("section"))
+        if not section:
+            continue
+        clauses.append(
+            MomentTargetClause(
+                section=section,
+                chapter=_match_chapter(match),
+                moment=int(match.group("moment")),
+                op_type="REPLACE",
+                raw_text=match.group(0),
+            )
+        )
     return tuple(clauses)
 
 
@@ -725,6 +849,7 @@ def _supplement_mixed_explicit_clause_ops(
     item_clauses = _parse_item_replace_clauses(johto)
     bare_sections = _parse_bare_section_replace_clauses(johto)
     moment_clauses = (
+        *_parse_moment_replace_clauses(johto),
         *_parse_table_and_moment_replace_clauses(johto),
         *_parse_moment_insert_clauses(johto),
     )
@@ -744,6 +869,12 @@ def _supplement_mixed_explicit_clause_ops(
             item=clause.item_label,
         )
     for idx, clause in enumerate(moment_clauses):
+        if clause.op_type == "REPLACE" and _blocks_moment_supplement(
+            ops,
+            section=clause.section,
+            chapter=clause.chapter,
+        ):
+            continue
         _append_unique_op(
             supplemented,
             op_id=f"mixed_moment_{clause.op_type.lower()}_{idx}_{clause.section}_{clause.moment}",
