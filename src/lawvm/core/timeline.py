@@ -1428,6 +1428,8 @@ def materialize_pit_ex(
     for addr in list(active):
         if len(addr.path) >= 3 or not addr.path or addr.path[-1][0] != "section":
             continue
+        if active.get(addr) is None:
+            continue
         deeper_addr = unique_deeper_section_labels.get(addr.path[-1])
         if deeper_addr is None:
             continue

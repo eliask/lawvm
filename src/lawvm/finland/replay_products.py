@@ -1156,7 +1156,7 @@ def _drop_explicitly_repealed_source_move_events(
     timelines: dict["LegalAddress", ProvisionTimeline],
     migration_events: tuple[MigrationEvent, ...],
 ) -> tuple[MigrationEvent, ...]:
-    """Drop ``move`` events whose source slot is already repealed by the same act.
+    """Drop ``move`` events whose source slot is already repealed.
 
     A section relocated into a newly created sibling chapter (for example
     ``5 luku §41`` moved under a freshly inserted ``5 a luku`` by the same
@@ -1172,11 +1172,15 @@ def _drop_explicitly_repealed_source_move_events(
     leaves the old chapter slot with no tombstone. The base content then
     survives as an orphan copy in the old chapter.
 
-    When the old-address timeline already carries a tombstone authored by the
-    same source statute as the move, the relocation is fully expressed by the
-    explicit repeal/insert ops; keeping the move event for rekey is redundant
-    and destructive. Drop it (lineage consumers still see the event elsewhere).
-    Genuine cross-parent moves with no explicit source repeal keep their event.
+    When the old-address timeline already carries a tombstone at or before the
+    move's effective date, the source slot is not live legal state available to
+    move. If the tombstone is authored by the same source statute as the move,
+    the relocation is fully expressed by the explicit repeal/insert ops. If an
+    earlier act authored the tombstone, the later source is reusing labels for a
+    new chapter, not migrating the repealed old text. In both cases, keeping the
+    move event for rekey is redundant and destructive. Drop it (lineage
+    consumers still see the event elsewhere). Genuine cross-parent moves with a
+    live source keep their event.
     """
     if not migration_events:
         return migration_events
@@ -1192,12 +1196,14 @@ def _drop_explicitly_repealed_source_move_events(
         )
         if not move_source_statute:
             return False
-        return any(
-            version.content is None
-            and version.source is not None
-            and version.source.statute_id == move_source_statute
-            for version in source_timeline.versions
-        )
+        for version in source_timeline.versions:
+            if version.content is not None or version.source is None:
+                continue
+            if version.source.statute_id == move_source_statute:
+                return True
+            if event.effective and version.effective and version.effective <= event.effective:
+                return True
+        return False
 
     filtered = tuple(
         event for event in migration_events if not _source_repealed_by(event)

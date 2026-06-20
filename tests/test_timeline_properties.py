@@ -1688,6 +1688,77 @@ def test_materialize_pit_removes_unique_shallow_section_alias_after_deeper_proje
     assert "stale shallow alias" not in text
 
 
+def test_materialize_pit_keeps_unique_shallow_section_tombstone_after_deeper_projection() -> None:
+    shallow_addr = LegalAddress(path=(("chapter", "5"), ("section", "32")))
+    deeper_chapter_addr = LegalAddress(path=(("chapter", "6"),))
+    deeper_addr = LegalAddress(path=(("chapter", "6"), ("section", "32")))
+    base = IRStatute(
+        statute_id="test/shallow-section-tombstone",
+        title="Shallow section tombstone",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="5",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="5 luku"),
+                        IRNode(kind=IRNodeKind.SECTION, label="31", text="31 § surviving section"),
+                        IRNode(kind=IRNodeKind.SECTION, label="32", text="32 § repealed shallow section"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    timelines = {
+        shallow_addr: ProvisionTimeline(
+            address=shallow_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    content=None,
+                    source=OperationSource(statute_id="2000/1", effective="2000-01-01"),
+                )
+            ],
+        ),
+        deeper_chapter_addr: ProvisionTimeline(
+            address=deeper_chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2001-01-01",
+                    enacted="2001-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(IRNode(kind=IRNodeKind.NUM, text="6 luku"),),
+                    ),
+                    source=OperationSource(statute_id="2001/1", effective="2001-01-01"),
+                )
+            ],
+        ),
+        deeper_addr: ProvisionTimeline(
+            address=deeper_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2001-01-01",
+                    enacted="2001-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="32", text="32 § deeper live section"),
+                    source=OperationSource(statute_id="2001/1", effective="2001-01-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2002-01-01", base=base)
+    text = irnode_to_text(pit.body)
+
+    assert "32 § deeper live section" in text
+    assert "32 § repealed shallow section" not in text
+    chapter_5 = next(child for child in pit.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "5")
+    assert [child.label for child in chapter_5.children if child.kind == IRNodeKind.SECTION] == ["31"]
+
+
 # ---------------------------------------------------------------------------
 # Property 4: Identity (diff same date → empty)
 # ---------------------------------------------------------------------------

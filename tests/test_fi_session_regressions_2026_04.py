@@ -2113,6 +2113,23 @@ def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() 
     assert replay.materialized_state.find_section("32", "5") is None
 
 
+def test_1996_579_1998_518_new_chapter_does_not_reanimate_repealed_section_32() -> None:
+    """A new chapter reusing section labels must not migrate already-repealed old sections."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1996/579",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("32", "5") is None
+    chapter_6_section_32 = replay.materialized_state.find_section("32", "6")
+    assert chapter_6_section_32 is not None
+    assert "Korvausrahaston jäsenyys" in irnode_to_text(chapter_6_section_32)
+
+
 def test_1992_1243_2016_118_chapter_8a_repealed_by_2024_853() -> None:
     """Real corpus anchor for single unnumbered chapter-heading migration."""
     from lawvm.provision_state import resolve_provision_state
