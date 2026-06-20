@@ -498,6 +498,19 @@ def _maybe_apply_body_chapter_insert_correction(
         and not op.target_special
         for op in request.group_ops
     )
+    source_owned_existing_chapter_insert_scope = (
+        body_chapter is not None
+        and request.target_chapter is not None
+        and body_chapter == request.target_chapter
+        and group_targets_whole_section
+        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and not live_stem_host_scoped
+        and request.source_model.body_has_real_chapter_container(body_chapter)
+        and request.source_model.body_has_section(
+            request.target_norm,
+            target_chapter=body_chapter,
+        )
+    )
     source_owned_inserted_chapter_scope = (
         body_chapter is not None
         and request.target_chapter is not None
@@ -542,6 +555,7 @@ def _maybe_apply_body_chapter_insert_correction(
     if body_chapter is not None and (
         not source_owned_inserted_subchapter_scope
         and not source_owned_unscoped_inserted_chapter_scope
+        and not source_owned_existing_chapter_insert_scope
         and group_targets_whole_section
         and (
             not request.target_chapter
@@ -817,12 +831,29 @@ def _maybe_retarget_live_section(
         and not op.target_special
         for op in request.group_ops
     )
+    source_owned_existing_chapter_insert_scope = False
+    body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
+    if body_scope is not None:
+        body_part, body_chapter = body_scope
+        source_owned_existing_chapter_insert_scope = (
+            body_part == request.target_part
+            and body_chapter == request.target_chapter
+            and group_targets_whole_section
+            and any(op.op_type == "INSERT" for op in request.group_ops)
+            and not group_has_scope_source(request.group_ops, "live_stem_host")
+            and body_chapter is not None
+            and request.source_model.body_has_real_chapter_container(body_chapter)
+            and request.source_model.body_has_section(
+                request.target_norm,
+                target_chapter=body_chapter,
+            )
+        )
     if (
         scoped_path is None
         and request.target_norm in request.master.duplicate_section_labels
         and group_targets_whole_section
+        and not source_owned_existing_chapter_insert_scope
     ):
-        body_scope = request.source_model.source_body_scope_for_section_target(request.target_norm)
         if body_scope is not None:
             body_part, body_chapter = body_scope
             sibling_consensus_live_scope = request.source_model.retarget_duplicate_body_section_scope_from_close_live_siblings(

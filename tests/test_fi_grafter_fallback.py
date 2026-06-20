@@ -12040,6 +12040,24 @@ def test_replay_xml_1989_1045_recovers_damaged_1994_section_list() -> None:
     } <= got
 
 
+def test_replay_xml_2014_122_keeps_2018_1134_new_sections_in_source_owned_chapter_two() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    replay = replay_xml("2014/122", mode="legal_pit", quiet=True, compiled_ops_out=compiled_ops)
+
+    rows = {
+        row.get("target_norm"): row
+        for row in compiled_ops
+        if row.get("source_statute") == "2018/1134"
+        and row.get("action") == "insert"
+        and row.get("target_norm") in {"5", "6"}
+    }
+
+    assert set(rows) == {"5", "6"}
+    assert {row.get("target_chapter") for row in rows.values()} == {"2"}
+    assert replay.state.find_section("5", "2") is not None
+    assert replay.state.find_section("6", "2") is not None
+
+
 @pytest.mark.slow
 def test_replay_xml_dedupes_duplicate_amendment_records_for_1978_38() -> None:
     replay_meta: dict[str, object] = {}

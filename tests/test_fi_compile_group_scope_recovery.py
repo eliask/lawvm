@@ -478,3 +478,88 @@ def test_unscoped_insert_inferred_to_live_family_keeps_existing_source_body_chap
     assert result.output.group_ops[0].target_chapter == "6"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6"), ("section", "37a"))
+
+
+def test_source_owned_existing_chapter_insert_is_not_retargeted_to_duplicate_live_section() -> None:
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="4"),
+                        IRNode(kind=IRNodeKind.SECTION, label="5"),
+                        IRNode(kind=IRNodeKind.SECTION, label="6"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="2b"),
+                        IRNode(kind=IRNodeKind.SECTION, label="3"),
+                    ),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>2 luku</num>
+              <section>
+                <num>5 §</num>
+                <heading>Tutkinta-arestiin liittyvät ilmoitukset</heading>
+                <subsection><content><p>Uusi pykälä.</p></content></subsection>
+              </section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    insert_op = AmendmentOp(
+        op_id="insert_2_5",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="5",
+        target_chapter="2",
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_from_explicit_chunk",
+            source="explicit_chunk",
+            confidence="explicit",
+            resolved_chapter="2",
+        ),
+        scope_provenance_tags=("chapter_scope_from_explicit_chunk",),
+        source_statute="2018/1134",
+        lo=LegalOperation(
+            op_id="insert_2_5",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("section", "5"))),
+            payload=None,
+        ),
+    )
+
+    result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind="section",
+            target_norm="5",
+            target_chapter="2",
+            target_part=None,
+            group_ops=[insert_op],
+            inserted_chapter_labels=set(),
+            source_model=AmendmentSourceModel.from_tree(muutos_tree),
+            strict_profile=None,
+        )
+    )
+
+    assert result.output.effective_target_chapter == "2"
+    assert result.output.group_ops[0].target_chapter == "2"
+    assert result.output.group_ops[0].lo is not None
+    assert result.output.group_ops[0].lo.target.path == (("chapter", "2"), ("section", "5"))
+    assert result.findings() == ()
