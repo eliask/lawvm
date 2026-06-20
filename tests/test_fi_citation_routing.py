@@ -107,6 +107,30 @@ class TestJohtolauseCitedTargetIds:
         )
         assert johtolause_cited_target_ids(johto, 1965) == ["1958/100"]
 
+    def test_typo_selaisena_kuin_still_cuts_provenance_citation(self) -> None:
+        # 1978/676 has source typo "selaisena kuin"; the following 323/64 is
+        # version provenance for the target item, not the amended parent act.
+        johto = (
+            "muutetaan yleisistä teistä 21 päivänä toukokuuta 1954 annetun lain "
+            "11 §:n 2 momentin 1 kohta selaisena kuin se on 12 päivänä "
+            "kesäkuuta 1964 annetussa laissa (323/64), näin kuuluvaksi:"
+        )
+        surface = parse_routing_surface(johto, source_year=1978)
+
+        assert surface.normalized_target_ids() == ()
+        assert surface.references_statute("1954/243")
+        should_apply, reason = route_amendment(
+            johto,
+            "",
+            johto,
+            "1954/243",
+            "1978/676",
+            source_title="Laki yleisistä teistä annetun lain 11 §:n muuttamisesta",
+            parent_title="Laki yleisistä teistä",
+        )
+        assert should_apply is True
+        assert reason == "references_parent"
+
     def test_no_citation_returns_empty(self) -> None:
         assert johtolause_cited_target_ids("muutetaan 5 § seuraavasti:", 1965) == []
 

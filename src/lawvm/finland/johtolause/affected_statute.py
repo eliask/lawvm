@@ -16,7 +16,9 @@ import re
 from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 
 _TARGET_ZONE_CUT_RE = re.compile(
-    r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
+    # Historical OCR/source typo seen in 1978/676: ``selaisena kuin``.  It
+    # still marks a version-provenance clause, not the amended statute target.
+    r"\bsell?ais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
     re.IGNORECASE,
 )
 _WHITESPACE_RE = re.compile(r"\s+")

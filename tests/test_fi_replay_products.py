@@ -786,6 +786,16 @@ def test_build_amendment_bundle_2002_1000_does_not_collapse_dotted_kohta_repeal_
     assert "REPEAL 1 §" not in all_ops
 
 
+def test_build_amendment_bundle_1954_243_routes_selaisena_typo_provenance() -> None:
+    bundle = build_amendment_bundle("1954/243", "1978/676", "official_consolidation")
+
+    assert bundle["route"]["should_apply"] is True
+    assert bundle["route"]["reason"] == "references_parent"
+
+    all_ops = [op for group in bundle["groups"] for op in group["ops_final"]]
+    assert all_ops == ["REPLACE 1 luku 11 § 2 mom 1 kohta"]
+
+
 def test_replay_xml_2002_1000_keeps_section_1_after_dotted_kohta_repeal_clause() -> None:
     replay = pinned_replay("2002/1000", mode="official_consolidation", quiet=True)
 
