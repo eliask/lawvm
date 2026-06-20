@@ -11710,6 +11710,24 @@ def test_restrict_sec1_fallback_narrows_multi_parent_clause() -> None:
     assert "14 §" in restricted
 
 
+def test_restrict_sec1_fallback_drops_foreign_sentence_before_parent_repeal() -> None:
+    sec1 = (
+        "Ulosottokaaren (705/2007) 1 luvun 11 §:n 1 ja 2 momentti, 12 § sekä "
+        "muut hallintovirastoa koskevat säännökset tulevat voimaan 1 päivänä "
+        "tammikuuta 2010. Tällä lailla kumotaan ulosottotoimen hallinnosta "
+        "20 päivänä joulukuuta 2007 annetun valtioneuvoston asetuksen "
+        "(1321/2007) 11 §."
+    )
+
+    restricted = _restrict_sec1_fallback_to_parent(sec1, "2007/1321")
+
+    assert restricted.startswith("Tällä lailla kumotaan")
+    assert "(1321/2007)" in restricted
+    assert "11 §" in restricted
+    assert "(705/2007)" not in restricted
+    assert "12 §" not in restricted
+
+
 def test_snapshot_source_falls_back_to_amendment_dates_for_supplement_ops() -> None:
     aop = AmendmentOp(
         op_id="",

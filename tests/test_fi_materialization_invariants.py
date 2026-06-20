@@ -535,6 +535,36 @@ class TestNoDuplicatesInPIT:
             for pathology in source_pathologies
         )
 
+    def test_2007_1321_sec1_parent_filter_keeps_section_12_commencement(self) -> None:
+        """2009/520 sec_1 fallback must not route Ulosottokaari §12 into 1321/2007.
+
+        The source paragraph first names Ulosottokaari (705/2007) chapter 1
+        §§11-12, then separately repeals 1321/2007 §11.  Parent-restricted
+        fallback must preserve the latter while rejecting the former for this
+        replay graph, otherwise official-consolidation materialization blanks
+        the 1321/2007 commencement section.
+        """
+        compiled_ops: list[dict[str, object]] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay(
+                "2007/1321",
+                quiet=True,
+                compiled_ops_out=compiled_ops,
+            ),
+        )
+
+        assert not any(
+            row.get("source") == "2009/520"
+            and row.get("action") in {"replace", "repeal"}
+            and row.get("target_section") == "12"
+            for row in compiled_ops
+        )
+        section_12 = replay.materialized_state.find_section("12")
+        assert section_12 is not None
+        section_text = " ".join(irnode_to_text(section_12).split())
+        assert "Tämä asetus tulee voimaan 1 päivänä tammikuuta 2008." in section_text
+
     def test_1989_819_sparse_subsection_replace_does_not_rehydrate_old_paragraphs(self) -> None:
         """1998/1103 §15(2) must not graft stale old-register items into §15(1).
 

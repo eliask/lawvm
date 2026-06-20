@@ -44,6 +44,8 @@ _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
 # Module-scope constants for restrict_sec1_fallback_to_parent hot path
 _FI_NUMBERED_ITEM_RE = re.compile(r"^\d+\)\s*", re.M)
 _FI_CUT_RE = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiitä\s+on\b", re.I)
+_FI_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÅÄÖ])")
+_FI_SCOPE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1486,7 +1488,10 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
     ]
     if len(parts) <= 1:
         generic_refs = re.findall(r"\(\s*\d+\s*/\s*\d{2,4}\s*\)", sec1_text)
-        if len(generic_refs) > 1 and re.search(r"\bsekä\b", sec1_text, re.I):
+        sentence_parts = [p.strip() for p in _FI_SENTENCE_BOUNDARY_RE.split(sec1_text) if p.strip()]
+        if len(sentence_parts) > 1:
+            parts = sentence_parts
+        elif len(generic_refs) > 1 and re.search(r"\bsekä\b", sec1_text, re.I):
             parts = [p.strip() for p in re.split(r"\bsekä\b", sec1_text) if p.strip()]
         else:
             parts = [p.strip() for p in re.split(r"(?<=;)", sec1_text) if p.strip()]
@@ -1522,10 +1527,8 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
         piece = part[:cut.start()].strip() if cut else part.strip()
         trimmed.append(piece)
 
-    lead_in_match = re.match(
-        r"(?is)^(.*?\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*)",
-        sec1_text,
-    )
+    lead_in_source = " ".join(trimmed) if any(_FI_SCOPE_VERB_RE.search(part) for part in trimmed) else sec1_text
+    lead_in_match = re.match(r"(?is)^(.*?\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*)", lead_in_source)
     lead_in = lead_in_match.group(1).strip() if lead_in_match else ""
     if lead_in:
         leadless = [
