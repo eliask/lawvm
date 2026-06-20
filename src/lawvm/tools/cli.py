@@ -10633,6 +10633,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit machine-readable JSON",
     )
 
+    # --- analyze-bill ---
+    analyze_bill_p = sub.add_parser(
+        "analyze-bill",
+        help="structured BILL IMPACT REPORT for one amending statute",
+        description=(
+            "Produce a structured bill-impact report for one amending statute "
+            "(read-only; composes the existing johtolause + Legal Surface Graph "
+            "machinery, no new parsing). Reports WHAT the bill does (lowered "
+            "ops), the surface delta (new delegations / references / definitions "
+            "/ broken-reference risk), and a clearly-labelled judgment-frontier "
+            "layer of unowned-channel CANDIDATES (not findings). Supports --json."
+        ),
+    )
+    analyze_bill_p.add_argument(
+        "statute_id",
+        metavar="STATUTE_ID",
+        help="amending statute id, e.g. 2018/1138",
+    )
+    analyze_bill_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- fi-refs ---
     fi_refs_p = sub.add_parser(
         "fi-refs",
@@ -13497,6 +13521,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_view import main as fi_parse_view_main
 
         fi_parse_view_main(args)
+
+    elif args.command == "analyze-bill":
+        from lawvm.tools.bill_analysis import main as analyze_bill_main
+
+        analyze_bill_main(args)
 
     elif args.command == "parse-bench":
         from lawvm.tools.parse_bench import main as parse_bench_main
