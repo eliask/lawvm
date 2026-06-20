@@ -288,6 +288,61 @@ def test_effect_modifying_lifecycle_event_requires_relation() -> None:
         )
 
 
+def test_effect_modifying_lifecycle_event_relation_must_match_event() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    other_witness = SourceProvisionRef(instrument=instrument, path=("2",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    other_effect = EffectRef(effect_id="effect:2", source_instrument=instrument)
+    matching_relation = EffectRelation(
+        relation_id="relation:1",
+        kind="changes_effect_commencement",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="relation kind must be 'changes_effect_commencement'",
+    ):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-kind",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            relation=EffectRelation(
+                relation_id="relation:wrong-kind",
+                kind="extends_effect_expiry",
+                source_provision=witness,
+                target_effect=effect,
+            ),
+            effective="2020-01-01",
+        )
+    with pytest.raises(ValueError, match="relation target must match event effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-target",
+            kind="change_effect_commencement",
+            source_provision=witness,
+            effect=effect,
+            relation=EffectRelation(
+                relation_id="relation:wrong-target",
+                kind="changes_effect_commencement",
+                source_provision=witness,
+                target_effect=other_effect,
+            ),
+            effective="2020-01-01",
+        )
+    with pytest.raises(ValueError, match="source_provision must match relation source_provision"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:wrong-source",
+            kind="change_effect_commencement",
+            source_provision=other_witness,
+            effect=effect,
+            relation=matching_relation,
+            effective="2020-01-01",
+        )
+
+
 def test_pending_amendment_effect_unresolved_blocks_strict_mode() -> None:
     finding = Finding(
         kind="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",

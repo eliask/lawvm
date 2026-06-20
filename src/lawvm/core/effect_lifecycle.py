@@ -216,6 +216,31 @@ class EffectLifecycleEvent:
             raise ValueError(
                 "effect-modifying EffectLifecycleEvent requires EffectRelation"
             )
+        if self.relation is not None and self.kind in {
+            "change_effect_commencement",
+            "change_effect_expiry",
+            "repeal_effect",
+        }:
+            expected_relation_kind = {
+                "change_effect_commencement": "changes_effect_commencement",
+                "change_effect_expiry": "extends_effect_expiry",
+                "repeal_effect": "repeals_effect",
+            }[self.kind]
+            if self.relation.kind != expected_relation_kind:
+                raise ValueError(
+                    "effect-modifying EffectLifecycleEvent relation kind "
+                    f"must be {expected_relation_kind!r}"
+                )
+            if self.relation.target_effect != self.effect:
+                raise ValueError(
+                    "effect-modifying EffectLifecycleEvent relation target "
+                    "must match event effect"
+                )
+            if self.relation.source_provision != self.source_provision:
+                raise ValueError(
+                    "effect-modifying EffectLifecycleEvent source_provision "
+                    "must match relation source_provision"
+                )
         if (
             self.executable
             and self.temporal_event is None
