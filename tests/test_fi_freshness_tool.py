@@ -30,8 +30,8 @@ def test_replay_section_count_replays_quietly(monkeypatch) -> None:
 def test_replay_section_count_suppresses_raw_replay_chatter_for_1978_38(monkeypatch, capsys) -> None:
     class DummyMaster:
         ir = IRNode(
-            kind="body",
-            children=(IRNode(kind="section", label="1"),),
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
         )
 
     def fake_replay_xml(_sid: str, **_kwargs):

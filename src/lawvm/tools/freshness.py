@@ -121,9 +121,10 @@ def _replay_section_count(sid: str) -> tuple[int, str]:
 
         def _count(node: object) -> int:
             from lawvm.core.ir import IRNode
+            from lawvm.core.ir_helpers import kind_str
             if not isinstance(node, IRNode):
                 return 0
-            n = 1 if node.kind == "section" else 0
+            n = 1 if kind_str(node.kind) == "section" else 0
             for c in node.children:
                 n += _count(c)
             return n
