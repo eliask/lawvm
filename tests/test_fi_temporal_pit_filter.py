@@ -144,6 +144,92 @@ def test_timeline_selection_rejects_malformed_as_of_queries() -> None:
         select_active_version_ex(timeline, "2021-02-29")
 
 
+def test_select_active_version_ex_single_permanent_version_selected() -> None:
+    addr = LegalAddress(path=(("section", "1"),))
+    version = ProvisionVersion(
+        effective="2020-01-01",
+        enacted="2019-12-01",
+        variant_kind="permanent",
+        content=_section("1", "Permanent text"),
+    )
+    selection = select_active_version_ex(
+        ProvisionTimeline(address=addr, versions=[version]),
+        "2021-01-01",
+    )
+
+    assert selection.status == "selected"
+    assert selection.version is version
+    assert selection.certificate is not None
+    assert selection.certificate.selected_rail == "background"
+    assert selection.certificate.candidate_count == 1
+
+
+def test_select_active_version_ex_single_temporary_version_selected() -> None:
+    addr = LegalAddress(path=(("section", "1"),))
+    version = ProvisionVersion(
+        effective="2020-01-01",
+        enacted="2019-12-01",
+        expires="2022-01-01",
+        variant_kind="temporary",
+        content=_section("1", "Temporary text"),
+    )
+    selection = select_active_version_ex(
+        ProvisionTimeline(address=addr, versions=[version]),
+        "2021-01-01",
+    )
+
+    assert selection.status == "selected"
+    assert selection.version is version
+    assert selection.certificate is not None
+    assert selection.certificate.selected_rail == "overlay"
+    assert selection.certificate.candidate_count == 1
+
+
+def test_select_active_version_ex_single_scoped_version_requires_scope() -> None:
+    addr = LegalAddress(path=(("section", "1"),))
+    version = ProvisionVersion(
+        effective="2020-01-01",
+        enacted="2019-12-01",
+        variant_kind="permanent",
+        applicability=(ScopePredicate("territory", frozenset({"AX"})),),
+        content=_section("1", "Scoped text"),
+    )
+    timeline = ProvisionTimeline(address=addr, versions=[version])
+
+    ambiguous = select_active_version_ex(timeline, "2021-01-01")
+    selected = select_active_version_ex(timeline, "2021-01-01", territory="AX")
+    absent = select_active_version_ex(timeline, "2021-01-01", territory="FI")
+
+    assert ambiguous.status == "ambiguous_missing_scope"
+    assert ambiguous.required_dimensions == ("territory",)
+    assert ambiguous.certificate is not None
+    assert ambiguous.certificate.candidate_count == 1
+    assert selected.status == "selected"
+    assert selected.version is version
+    assert absent.status == "absent"
+    assert absent.certificate is not None
+    assert absent.certificate.candidate_count == 1
+
+
+def test_select_active_version_ex_single_future_tombstone_absent_under_detached_horizon() -> None:
+    addr = LegalAddress(path=(("section", "1"),))
+    tombstone = ProvisionVersion(
+        effective="2026-01-01",
+        enacted="2025-12-22",
+        variant_kind="permanent",
+        content=None,
+    )
+    selection = select_active_version_ex(
+        ProvisionTimeline(address=addr, versions=[tombstone]),
+        "9999-12-31",
+        expires_as_of="2025-12-22",
+    )
+
+    assert selection.status == "absent"
+    assert selection.certificate is not None
+    assert selection.certificate.candidate_count == 1
+
+
 def test_timeline_selection_preserves_base_date_sentinel() -> None:
     timeline = ProvisionTimeline(
         address=LegalAddress(path=(("section", "1"),)),

@@ -455,6 +455,109 @@ def _select_temporary_version_from_eligible(
     )
 
 
+def _select_single_active_version(
+    timeline: ProvisionTimeline,
+    version: ProvisionVersion,
+    *,
+    as_of: str,
+    query_type: str,
+    territory: Optional[str],
+    expires_as_of: str,
+) -> VersionSelectionResult | None:
+    """Fast path for one-version timelines, preserving selector certificates."""
+    if not eligible(version, as_of, query_type, expires_as_of=expires_as_of):
+        return VersionSelectionResult(
+            status="absent",
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="absent",
+                candidate_count=0,
+            ),
+        )
+
+    required_dimensions = _required_scope_dimensions_from_eligible([version])
+    if territory is None and required_dimensions:
+        return VersionSelectionResult(
+            status="ambiguous_missing_scope",
+            required_dimensions=required_dimensions,
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="ambiguous_missing_scope",
+                candidate_count=1,
+                required_dimensions=required_dimensions,
+            ),
+        )
+    if not applicability_matches(version, territory=territory):
+        return VersionSelectionResult(
+            status="absent",
+            certificate=VersionSelectionCertificate(
+                address=timeline.address,
+                as_of=as_of,
+                query_type=query_type,
+                territory=territory,
+                selected_rail="absent",
+                candidate_count=1,
+            ),
+        )
+
+    if version.variant_kind == "temporary":
+        selected_rail = "overlay"
+    elif version.variant_kind == "permanent":
+        expiry_horizon = expires_as_of or as_of
+        if (
+            version.expires
+            and version.expires <= expiry_horizon
+            and (
+                version.content is None
+                or content_is_repeal_placeholder(version.content)
+            )
+        ) or (
+            expires_as_of
+            and as_of > expires_as_of
+            and (
+                version.content is None
+                or content_is_repeal_placeholder(version.content)
+            )
+            and not _projects_as_absent_under_detached_horizon(version.content)
+            and version.effective > expires_as_of
+        ):
+            return VersionSelectionResult(
+                status="absent",
+                certificate=VersionSelectionCertificate(
+                    address=timeline.address,
+                    as_of=as_of,
+                    query_type=query_type,
+                    territory=territory,
+                    selected_rail="absent",
+                    candidate_count=1,
+                ),
+            )
+        selected_rail = "background"
+    else:
+        return None
+
+    return VersionSelectionResult(
+        status="selected",
+        version=version,
+        certificate=VersionSelectionCertificate(
+            address=timeline.address,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            selected_rail=selected_rail,
+            candidate_count=1,
+            selected_effective=version.effective,
+            selected_enacted=version.enacted,
+        ),
+    )
+
+
 def select_background_version(
     timeline: ProvisionTimeline,
     as_of: str,
@@ -520,6 +623,17 @@ def select_active_version_ex(
         query_type=query_type,
         expires_as_of=expires_as_of,
     )
+    if len(timeline.versions) == 1:
+        fast = _select_single_active_version(
+            timeline,
+            timeline.versions[0],
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            expires_as_of=expires_as_of,
+        )
+        if fast is not None:
+            return fast
     eligible_versions = [
         version
         for version in timeline.versions
