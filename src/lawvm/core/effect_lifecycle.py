@@ -341,3 +341,44 @@ def lower_lifecycle_events_to_temporal_events(
         if temporal_event is not None:
             lowered.append(temporal_event)
     return tuple(lowered)
+
+
+def validate_effect_graph_closure(
+    *,
+    subject: str,
+    source_effects: tuple[EffectRef, ...],
+    effect_relations: tuple[EffectRelation, ...],
+    effect_lifecycle_events: tuple[EffectLifecycleEvent, ...],
+) -> None:
+    """Validate that a final effect graph carrier contains referenced nodes.
+
+    Phase outputs may carry partial graph fragments while a pipeline stage is
+    still accumulating context. Final semantic products must be closed: every
+    relation endpoint and lifecycle-owned relation/effect must be present in
+    the same carrier, otherwise the graph is not auditable from the product.
+    """
+
+    effect_ids = {effect.effect_id for effect in source_effects}
+    relation_ids = {relation.relation_id for relation in effect_relations}
+    for relation in effect_relations:
+        if relation.target_effect is not None and relation.target_effect.effect_id not in effect_ids:
+            raise ValueError(
+                f"{subject}.effect_relations references missing target_effect: "
+                f"{relation.target_effect.effect_id!r}"
+            )
+        if relation.source_effect is not None and relation.source_effect.effect_id not in effect_ids:
+            raise ValueError(
+                f"{subject}.effect_relations references missing source_effect: "
+                f"{relation.source_effect.effect_id!r}"
+            )
+    for event in effect_lifecycle_events:
+        if event.effect is not None and event.effect.effect_id not in effect_ids:
+            raise ValueError(
+                f"{subject}.effect_lifecycle_events references missing effect: "
+                f"{event.effect.effect_id!r}"
+            )
+        if event.relation is not None and event.relation.relation_id not in relation_ids:
+            raise ValueError(
+                f"{subject}.effect_lifecycle_events references missing relation: "
+                f"{event.relation.relation_id!r}"
+            )

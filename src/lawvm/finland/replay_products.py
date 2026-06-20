@@ -13,6 +13,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRef,
     EffectRelation,
     lower_lifecycle_events_to_temporal_events,
+    validate_effect_graph_closure,
 )
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
@@ -178,6 +179,12 @@ class ReplayProducts:
                     f"lifecycle_event_id: {event.lifecycle_event_id!r}"
                 )
             seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+        validate_effect_graph_closure(
+            subject="ReplayProducts",
+            source_effects=source_effects,
+            effect_relations=effect_relations,
+            effect_lifecycle_events=effect_lifecycle_events,
+        )
         self.source_effects = source_effects
         self.effect_relations = effect_relations
         self.effect_lifecycle_events = effect_lifecycle_events

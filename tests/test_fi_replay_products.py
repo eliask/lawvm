@@ -4210,6 +4210,8 @@ def test_build_replay_products_accepts_lifecycle_events_for_materialization() ->
         replay_fold_state=replay_fold_state,
         lo_ops_out=lo_ops,
         as_of="2011-01-01",
+        source_effects=(effect,),
+        effect_relations=(relation,),
         effect_lifecycle_events=(lifecycle,),
     )
 
@@ -4306,6 +4308,43 @@ def test_replay_products_reject_duplicate_effect_graph_ids() -> None:
             materialized_state=state,
             timelines=None,
             effect_lifecycle_events=(lifecycle_a, lifecycle_b),
+        )
+
+
+def test_replay_products_require_closed_effect_graph() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="missing target_effect"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            effect_relations=(relation,),
+        )
+    with pytest.raises(ValueError, match="missing relation"):
+        ReplayProducts(
+            replay_fold_state=state,
+            materialized_state=state,
+            timelines=None,
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
         )
 
 

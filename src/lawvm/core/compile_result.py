@@ -27,6 +27,7 @@ from lawvm.core.effect_lifecycle import (
     EffectRef,
     EffectRelation,
     lower_lifecycle_events_to_temporal_events,
+    validate_effect_graph_closure,
 )
 from lawvm.core.event_summaries import (
     count_events_with_activation_rules,
@@ -669,6 +670,12 @@ class CanonicalBundle:
                     f"lifecycle_event_id: {event.lifecycle_event_id!r}"
                 )
             seen_lifecycle_event_ids.add(event.lifecycle_event_id)
+        validate_effect_graph_closure(
+            subject="CanonicalBundle",
+            source_effects=self.source_effects,
+            effect_relations=self.effect_relations,
+            effect_lifecycle_events=self.effect_lifecycle_events,
+        )
 
     def validate_purity(self) -> list[str]:
         """Return a list of purity violations (empty means pure).

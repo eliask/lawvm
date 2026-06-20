@@ -220,6 +220,34 @@ def test_canonical_bundle_rejects_duplicate_effect_graph_ids() -> None:
         CanonicalBundle(effect_lifecycle_events=(lifecycle_a, lifecycle_b))
 
 
+def test_canonical_bundle_requires_closed_effect_graph() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:1",
+        kind="extends_effect_expiry",
+        source_provision=witness,
+        target_effect=effect,
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="change_effect_expiry",
+        source_provision=witness,
+        effect=effect,
+        relation=relation,
+        expires="2021-01-01",
+    )
+
+    with pytest.raises(ValueError, match="missing target_effect"):
+        CanonicalBundle(effect_relations=(relation,))
+    with pytest.raises(ValueError, match="missing relation"):
+        CanonicalBundle(
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
+
+
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     event = EffectLifecycleEvent(
@@ -403,7 +431,10 @@ def test_effect_lifecycle_event_lowers_to_temporal_event_semantics() -> None:
         effect=effect,
         effective="2020-06-01",
     )
-    bundle = CanonicalBundle(effect_lifecycle_events=(event,))
+    bundle = CanonicalBundle(
+        source_effects=(effect,),
+        effect_lifecycle_events=(event,),
+    )
 
     (temporal_event,) = bundle.lifecycle_projected_temporal_events
     assert temporal_event.kind == "commence"
@@ -424,20 +455,22 @@ def test_canonical_bundle_executable_temporal_events_dedupes_lifecycle_projectio
     )
     instrument = SourceInstrumentRef(instrument_id="2020/1", effective="2020-06-01")
     witness = SourceProvisionRef(instrument=instrument, path=("2 §",))
+    effect = EffectRef(
+        effect_id="effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1999/1",
+        source_provision=witness,
+    )
     lifecycle = EffectLifecycleEvent(
         lifecycle_event_id="life:2020/1:op-1:commence",
         kind="commence_effect",
         source_provision=witness,
-        effect=EffectRef(
-            effect_id="effect:2020/1:op-1",
-            source_instrument=instrument,
-            target_statute="1999/1",
-            source_provision=witness,
-        ),
+        effect=effect,
         effective="2020-06-01",
     )
     bundle = CanonicalBundle(
         temporal_events=(direct,),
+        source_effects=(effect,),
         effect_lifecycle_events=(lifecycle,),
     )
 
@@ -741,20 +774,24 @@ class TestCanonicalBundleTemporalSummaries:
             path=("2 §",),
             text_excerpt="Tulee voimaan 1.6.2020.",
         )
+        effect = EffectRef(
+            effect_id="effect:2020/1:op-1",
+            source_instrument=instrument,
+            target_statute="1999/1",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            source_provision=witness,
+        )
         lifecycle = EffectLifecycleEvent(
             lifecycle_event_id="life:2020/1:commence",
             kind="commence_effect",
             source_provision=witness,
-            effect=EffectRef(
-                effect_id="effect:2020/1:op-1",
-                source_instrument=instrument,
-                target_statute="1999/1",
-                target_address=LegalAddress(path=(("section", "1"),)),
-                source_provision=witness,
-            ),
+            effect=effect,
             effective="2020-06-01",
         )
-        bundle = CanonicalBundle(effect_lifecycle_events=(lifecycle,))
+        bundle = CanonicalBundle(
+            source_effects=(effect,),
+            effect_lifecycle_events=(lifecycle,),
+        )
 
         assert bundle.temporal_event_kinds == ("commence",)
         assert bundle.temporal_events_with_activation_rules == 1

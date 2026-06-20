@@ -306,7 +306,10 @@ class TestFromPhaseResult:
         with pytest.raises(TypeError, match="canonical bundle owns effect relations"):
             CompileFacade.from_phase_result(
                 PhaseResult(
-                    output=CanonicalBundle(effect_relations=(relation,)),
+                    output=CanonicalBundle(
+                        source_effects=(target_effect,),
+                        effect_relations=(relation,),
+                    ),
                     effect_relations=(relation,),
                 ),
                 replay_mode="legal_pit",
@@ -314,7 +317,11 @@ class TestFromPhaseResult:
         with pytest.raises(TypeError, match="canonical bundle owns effect lifecycle events"):
             CompileFacade.from_phase_result(
                 PhaseResult(
-                    output=CanonicalBundle(effect_lifecycle_events=(event,)),
+                    output=CanonicalBundle(
+                        source_effects=(target_effect,),
+                        effect_relations=(relation,),
+                        effect_lifecycle_events=(event,),
+                    ),
                     effect_lifecycle_events=(event,),
                 ),
                 replay_mode="legal_pit",
