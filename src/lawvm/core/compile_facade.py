@@ -387,7 +387,11 @@ class CompileFacade:
                     "source_statute": self.bundle.source_statute,
                     "target_statute": self.bundle.target_statute,
                     "structural_ops_count": len(self.bundle.structural_ops),
-                    "temporal_events_count": len(self.bundle.temporal_events),
+                    "temporal_events_count": len(self.bundle.executable_temporal_events),
+                    "direct_temporal_events_count": len(self.bundle.temporal_events),
+                    "lifecycle_projected_temporal_events_count": len(
+                        self.bundle.lifecycle_projected_temporal_events
+                    ),
                     "temporal_event_kinds": self.temporal_event_kinds,
                     "temporal_events_with_activation_rules": self.temporal_events_with_activation_rules,
                     "temporal_events_with_source": self.temporal_events_with_source,

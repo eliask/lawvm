@@ -1685,6 +1685,8 @@ class TestWireArtifact:
         assert "strict_pass" not in payload
         assert payload["bundle"]["structural_ops_count"] == 0
         assert payload["bundle"]["temporal_events_count"] == 1
+        assert payload["bundle"]["direct_temporal_events_count"] == 1
+        assert payload["bundle"]["lifecycle_projected_temporal_events_count"] == 0
         assert payload["bundle"]["temporal_event_kinds"] == ("commence",)
         assert payload["bundle"]["temporal_events_with_activation_rules"] == 1
         assert payload["bundle"]["temporal_events_with_source"] == 1
@@ -1742,6 +1744,40 @@ class TestWireArtifact:
             "lifecycle:2024/1:op-1:repeal",
         )
         assert payload["bundle"]["effect_lifecycle_event_kinds"] == ("repeal_effect",)
+
+    def test_to_wire_artifact_counts_lifecycle_projected_temporal_events_as_executable(self):
+        instrument = SourceInstrumentRef(instrument_id="2024/1")
+        witness = SourceProvisionRef(instrument=instrument, path=("1",))
+        effect = EffectRef(
+            effect_id="effect:2024/1:op-1",
+            source_instrument=instrument,
+            target_statute="1991/1",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            source_provision=witness,
+        )
+        lifecycle_event = EffectLifecycleEvent(
+            lifecycle_event_id="lifecycle:2024/1:op-1:commence",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=effect,
+            effective="2024-01-01",
+        )
+        facade = CompileFacade(
+            bundle=CanonicalBundle(
+                source_effects=(effect,),
+                effect_lifecycle_events=(lifecycle_event,),
+            ),
+            finding_ledger=(),
+            replay_mode="legal_pit",
+        )
+
+        artifact = facade.to_wire_artifact()
+        payload = cast(Any, artifact.payload)
+
+        assert payload["bundle"]["temporal_events_count"] == 1
+        assert payload["bundle"]["direct_temporal_events_count"] == 0
+        assert payload["bundle"]["lifecycle_projected_temporal_events_count"] == 1
+        assert payload["bundle"]["temporal_event_kinds"] == ("commence",)
 
     def test_to_wire_artifact_wraps_projection_with_versioned_status(self):
         obl = _obl("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY", blocking=True)
