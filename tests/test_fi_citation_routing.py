@@ -422,6 +422,37 @@ class TestRouteAmendmentCitationMismatchSkip:
         assert head.issue_date is not None and head.issue_date.isoformat() == "1958-08-16"
         assert head.instrument == "laki"
 
+    def test_corrupt_citation_with_valtioneuvoston_paatos_head_matches_parent_metadata(self) -> None:
+        johto_raw = (
+            "muutetaan ylimääräisistä taiteilijaeläkkeistä 24 päivänä tammikuuta "
+            "1974 annetun valtioneuvoston päätöksen (75/75) 3 §:n 1 momentin "
+            "ja 5 §:n näin kuuluviksi:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1974/75",
+            "1984/929",
+            source_title=(
+                "Valtioneuvoston päätös ylimääräisistä taiteilijaeläkkeistä "
+                "annetun valtioneuvoston päätöksen 3 ja 5 §:n muuttamisesta"
+            ),
+            parent_title="Valtioneuvoston päätös ylimääräisistä taiteilijaeläkkeistä.",
+            parent_issue_date="1974-01-24",
+        )
+
+        assert should_apply is True
+        assert reason == "citation_typo_rewrite_parent_validated"
+        head = parse_affected_statute_head(johto_raw)
+        assert head is not None
+        assert head.title_phrase == (
+            "ylimääräisistä taiteilijaeläkkeistä annetun valtioneuvoston päätöksen"
+        )
+        assert head.issue_date is not None and head.issue_date.isoformat() == "1974-01-24"
+        assert head.instrument == "päätös"
+
     def test_title_before_date_corrupt_citation_uses_amendment_title_metadata(self) -> None:
         johto_raw = (
             "kumotaan Euroopan talousalueen valtioiden kansalaisten koulutuksen "

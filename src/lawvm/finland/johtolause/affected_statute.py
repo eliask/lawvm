@@ -30,7 +30,7 @@ _AFFECTED_HEAD_TITLE_DATE_RE = re.compile(
     r"(?P<day>\d{1,2})\s{1,4}+päivänä\s{1,4}+"
     r"(?P<month>[a-zäöå]{1,15})\s{1,4}+"
     r"(?P<year>\d{4})\s{1,4}+annetun\s{1,4}+"
-    r"(?P<instrument>lain|asetuksen|päätöksen)\s{0,4}+"
+    r"(?P<instrument>lain|asetuksen|(?:valtioneuvoston\s{1,4}+)?päätöksen)\s{0,4}+"
     r"\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
     re.IGNORECASE,
 )

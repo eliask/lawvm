@@ -2952,3 +2952,24 @@ def test_2009_862_flat_statute_2025_item_replace_strips_spurious_chapter_scope()
 
     assert "elinvoimakeskusten toiminnallisesta ohjauksesta" in text
     assert "elinkeino-, liikenne- ja ympäristökeskusten toiminnallisesta ohjauksesta" not in text
+
+
+def test_1974_75_1984_929_corrupt_citation_routes_valtioneuvoston_paatos() -> None:
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1974/75",
+            mode="official_consolidation",
+            quiet=True,
+            build_full_products=True,
+            oracle_selector=ConsolidatedArtifactSelector.bench_comparable(),
+        ),
+    )
+
+    section_5 = replay.materialized_state.find_section("5")
+    assert section_5 is not None
+    text = irnode_to_text(section_5)
+
+    assert "edellisen vuoden syyskuun loppuun mennessä" in text
+    assert "taiteen keskustoimikunnan lausunto" in text
+    assert "maaliskuun loppuun mennessä" not in text
