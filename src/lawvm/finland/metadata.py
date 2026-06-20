@@ -20,7 +20,6 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.fi_dates import (
     FI_MONTH_GENITIVE_TO_NUMBER,
-    FI_MONTH_PARTITIVE_TO_NUMBER,
     fi_partitive_month_number,
     parse_fi_day_month_year,
 )
@@ -441,9 +440,6 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Amendment and statute date extraction
 # ---------------------------------------------------------------------------
-
-# Finnish month names in partitive (the form used in "N päivään <month> YYYY").
-FI_MONTH_MAP = FI_MONTH_PARTITIVE_TO_NUMBER
 
 # Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
 # YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift

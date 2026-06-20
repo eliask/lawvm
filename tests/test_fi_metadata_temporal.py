@@ -859,13 +859,11 @@ def test_q3_temporal_lens_shares_canonical_month_table() -> None:
         fi_partitive_month_number,
         parse_fi_day_month_year,
     )
-    from lawvm.finland.metadata import FI_MONTH_MAP
     from lawvm.finland.references.temporal import _MONTHS_PARTITIVE
     from lawvm.finland.temporal_lowering import _MONTH_MAP
 
     assert _MONTHS_PARTITIVE is FI_MONTH_PARTITIVE_TO_NUMBER
     assert _MONTH_MAP is FI_MONTH_PARTITIVE_TO_NUMBER
-    assert FI_MONTH_MAP is FI_MONTH_PARTITIVE_TO_NUMBER
     assert fi_partitive_month_number("joulukuu-ta", tolerate_finlex_typos=True) == 12
     assert fi_partitive_month_number("joulukuutta", tolerate_finlex_typos=True) == 12
     assert fi_partitive_month_number("joulukuu-ta") is None
