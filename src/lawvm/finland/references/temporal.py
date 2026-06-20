@@ -42,6 +42,13 @@ from typing import List, Optional
 
 from lawvm.core.reference_mention import SourceSpan
 
+# Q3 node-identity reconciliation: ONE canonical Finnish month table for the
+# temporal family — ``temporal_lowering._MONTH_MAP`` (the production date
+# extractor's table that ``legal_surface.temporal_parse`` already reuses). This
+# surface lens imports it rather than keeping a rival copy, so the two temporal
+# recognizers cannot drift on the month vocabulary.
+from lawvm.finland.temporal_lowering import _MONTH_MAP as _MONTHS_PARTITIVE
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -152,25 +159,10 @@ class TemporalExpr:
             raise ValueError("RESOLVED FIXED_DATE must carry a parsed bound")
 
 
-# ---------------------------------------------------------------------------
-# Finnish month-name table (closed list — partitive forms as they appear in
-# long-form dates: "1 päivänä tammikuuta 2027")
-# ---------------------------------------------------------------------------
-
-_MONTHS_PARTITIVE: dict[str, int] = {
-    "tammikuuta": 1,
-    "helmikuuta": 2,
-    "maaliskuuta": 3,
-    "huhtikuuta": 4,
-    "toukokuuta": 5,
-    "kesäkuuta": 6,
-    "heinäkuuta": 7,
-    "elokuuta": 8,
-    "syyskuuta": 9,
-    "lokakuuta": 10,
-    "marraskuuta": 11,
-    "joulukuuta": 12,
-}
+# The canonical Finnish month-name table (``_MONTHS_PARTITIVE``) is imported
+# above from ``temporal_lowering`` — partitive forms as they appear in long-form
+# dates ("1 päivänä tammikuuta 2027"). The long-form patterns and parse below
+# read it directly, so the lens and the production extractor share one table.
 
 # ---------------------------------------------------------------------------
 # Cheap substring pre-guards (§1.11) — if none appears, no matcher can fire.

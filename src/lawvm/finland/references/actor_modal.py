@@ -195,9 +195,9 @@ _MAX_OBJECT_SPAN = 200
 class SurfaceModality:
     """A surface deontic/modal marker. SURFACE FACT ONLY.
 
-    This records the *form* of the marker, never its legal force. ``token="voi"``
-    is the surface fact, not "discretionary power"; ``token="on velvollinen"`` is
-    the surface fact, not "an obligation".
+    This records the *form* of the marker, never its legal force. a ``token`` of
+    ``"voi"`` is the surface fact, not "discretionary power"; ``"on velvollinen"``
+    is the surface fact, not "an obligation".
 
     Attributes:
         token:       The exact surface marker from the closed list (e.g. "ei saa").

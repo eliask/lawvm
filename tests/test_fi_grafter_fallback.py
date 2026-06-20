@@ -12147,6 +12147,42 @@ def test_supplement_missing_repeals_after_item_shift_clause_adds_lost_moment_rep
     }
 
 
+def test_johtolause_supplements_item_shift_delegates_to_canonical_clause_surface() -> None:
+    """Q4 demotion invariant: the supplement lane owns NO rival item-shift regex.
+
+    The ``jolloin … muuttuvat kohdiksi`` family has a single canonical parser in
+    ``johtolause.clause_surface``; ``johtolause_supplements`` must call it rather
+    than carry a duplicate regex (two rival parsers = audit state). Pin both the
+    delegation (identical results) and the absence of a private copy.
+    """
+    from lawvm.finland.johtolause import clause_surface as _clause_surface
+    from lawvm.finland import johtolause_supplements as _supplements
+
+    # No private item-shift parser survives in the supplement module.
+    assert not hasattr(_supplements, "_parse_item_shift_clauses")
+    assert not hasattr(_supplements, "_parse_item_shift_after_repeal_clauses")
+
+    johto = (
+        "kumotaan 2 §:n 1 momentin d kohdan, jolloin kohdat e-h muuttuvat "
+        "kohdiksi d-g ja muutetaan 2 §:n 1 momentin c kohdan"
+    )
+    ops = [
+        AmendmentOp(
+            op_id="repeal_d",
+            op_type="REPEAL",
+            target_section="2",
+            target_kind=TargetKind.SECTION,
+            target_paragraph=1,
+            target_item="d",
+        ),
+    ]
+    # The supplement tagger threads its parse through the canonical recognizer.
+    canonical = _clause_surface.parse_item_shift_clauses(johto)
+    assert canonical, "canonical parser must recognize the sample item-shift clause"
+    tagged = _tag_explicit_item_shift_after_repeal_hints(ops, johto)
+    assert tagged[0].post_repeal_item_shift_label == "d"
+
+
 def test_supplement_named_table_row_mixed_clause_ops_adds_missing_replace_and_tags_rows() -> None:
     ops = [
         AmendmentOp(
@@ -14717,6 +14753,48 @@ def test_collect_johto_mentioned_section_labels_expands_alpha_suffix_ranges() ->
     )
 
     assert {"20a", "21a", "21b", "21c", "23a", "49a"} <= labels
+
+
+def test_collect_johto_mentioned_section_labels_grammar_recovers_alpha_suffix_lists() -> None:
+    # NEW-better (regex->grammar demotion): the legacy section regex dropped
+    # comma-listed alpha-suffix labels; the grammar driver recovers them.
+    labels = _collect_johto_mentioned_section_labels(
+        "muutetaan patenttiasetuksen 17 a, 17 b, 25 a, 25 b ja 25 c §"
+    )
+
+    assert {"17a", "17b", "25a", "25b", "25c"} <= labels
+
+
+def test_collect_johto_mentioned_section_labels_grammar_recovers_glued_suffix_range() -> None:
+    # NEW-better: spaced/glued alpha-suffix range "87 a - 87 c §" the legacy
+    # regex could not expand; the grammar driver yields every endpoint.
+    labels = _collect_johto_mentioned_section_labels(
+        "kumotaan alkoholilain 87 a - 87 c §"
+    )
+
+    assert {"87a", "87b", "87c"} <= labels
+
+
+def test_collect_johto_mentioned_section_labels_anchor_keeps_illative_target() -> None:
+    # The grammar deliberately declines the illative insertion target
+    # "N §:ään"; the bounded anchor supplements it so the mentioned section is
+    # not silently dropped from scope.
+    labels = _collect_johto_mentioned_section_labels(
+        "lisätään valtiopäiväjärjestyksen 16 §:ään uusi 4 momentti"
+    )
+
+    assert "16" in labels
+
+
+def test_collect_johto_mentioned_section_labels_anchor_keeps_partitive_plural_list() -> None:
+    # The lexer does not classify the partitive-plural "§:ien" as a PYKALA
+    # marker, so the grammar declines the whole list; the anchor keeps every
+    # listed section in scope.
+    labels = _collect_johto_mentioned_section_labels(
+        "vahvistanut yhtiöjärjestyksen 2, 4, 14, 17, 18, 21 ja 34 §:ien muutetun sanamuodon"
+    )
+
+    assert {"2", "4", "14", "17", "18", "21", "34"} <= labels
 
 
 def test_collect_johto_chapter_mentions_accepts_luvun_otsikko_form() -> None:

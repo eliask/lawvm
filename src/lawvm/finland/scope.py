@@ -32,12 +32,32 @@ if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
 
 
+# --- same-label MOVE clause ANCHORs (grammar-subordinate typed residue) -------
+#
+# The SIIRTAA (siirretään ... N lukuun) move family is modelled by the grammar
+# move recognizers (johtolause/grammar/moves.py: recognize_inline_move_tail /
+# recognize_relabel_from_context). When the clause-level grammar parser owns the
+# johtolause it sets ``move_clause_target_unit_kind`` on the moved op, and the
+# carrier check in ``strip_unjustified_chapter_scope_from_unique_sections``
+# (``lo.move_clause_target_unit_kind in {"chapter", "part"}``) is the PRIMARY,
+# grammar-authoritative signal — these anchors are only consulted AFTER it.
+#
+# They cannot be routed onto the grammar today: the clause-level parser DECLINES
+# the plural ``joista … § … siirretään N lukuun`` move-coordination shape
+# (``parse_clause`` falls to ``legacy_reference_fallback`` with
+# ``"section näistä/niistä provenance leak"``), so the moved-section→destination
+# map this guard needs is not produced grammar-owned for that shape. Until the
+# grammar owns the coordination, these stay as a bounded label-collection
+# residue floor: every quantifier is explicitly bounded (``\s{0,8}``,
+# ``\d{1,4}``, ``[^§]{0,120}``), so the patterns are provably linear; the
+# residual "nested backtracking quantifiers" flag is the benign-linear false
+# positive (bounded × bounded), exactly as for ``kumotaan._WHOLE_SECTION_SITE_RE``.
 _SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"joista\s+([^§]{0,120})\s*§\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
+    r"joista\s{1,8}([^§]{0,120})\s{0,8}§\s{1,8}(?:samalla\s{1,8})?siirretään\s{1,8}(\d{1,4}\s{0,8}[a-z]?)\s{1,8}lukuun",
     flags=re.I,
 )
 _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"(\d+\s*[a-z]?)\s*§\s*,?\s*joka\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
+    r"(\d{1,4}\s{0,8}[a-z]?)\s{0,8}§\s{0,8},?\s{0,8}joka\s{1,8}(?:samalla\s{1,8})?siirretään\s{1,8}(\d{1,4}\s{0,8}[a-z]?)\s{1,8}lukuun",
     flags=re.I,
 )
 
@@ -1084,6 +1104,10 @@ def strip_unjustified_chapter_scope_from_unique_sections(
         if explicit_scope_notes.intersection(scope_tags):
             result.append(lo)
             continue
+        # PRIMARY: grammar-authoritative move carrier. When the clause-level
+        # grammar owned the johtolause it stamped the moved op with this carrier;
+        # the same-label-move text anchor below is only the residue fallback for
+        # ops the grammar move family did not own (see _SAME_LABEL_MOVE_CLAUSE_RE).
         if lo.move_clause_target_unit_kind in {"chapter", "part"}:
             result.append(lo)
             continue
