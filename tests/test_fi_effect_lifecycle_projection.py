@@ -454,6 +454,51 @@ def test_finland_meta_repeal_relation_signal_binds_known_effect() -> None:
     assert lower_lifecycle_event_to_temporal_event(lifecycle) is None
 
 
+def test_finland_meta_repeal_signal_does_not_bind_multiple_effects_by_instrument() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op-old-amendment-4a",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "4 a"),)),
+                source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+                group_id="g:2020/1:old-4a",
+            ),
+            LegalOperation(
+                op_id="op-old-amendment-5",
+                sequence=2,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "5"),)),
+                source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+                group_id="g:2020/1:old-5",
+            ),
+        ),
+        temporal_events=(),
+        relation_signals=(
+            EffectRelationSignal.meta_repeal(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                route_reason="citation_mismatch_skip",
+                source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
+                resolved=True,
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 2
+    assert len(relations) == 1
+    relation = relations[0]
+    assert relation.kind == "repeals_effect"
+    assert relation.target_effect is None
+    assert relation.target_instrument is not None
+    assert relation.target_instrument.instrument_id == "2020/1"
+    assert relation.detail["target_effect_resolution"] == "ambiguous_multiple_effects"
+    assert relation.detail["matched_effect_count"] == 2
+    assert lifecycle_events == ()
+
+
 def test_meta_repeal_lifecycle_uses_source_rule_id_not_detail_metadata() -> None:
     instrument = SourceInstrumentRef(instrument_id="2021/2")
     witness = SourceProvisionRef(

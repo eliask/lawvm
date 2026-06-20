@@ -673,14 +673,14 @@ def _relations_from_signals(
     relations_by_id: dict[str, EffectRelation] = {}
     for signal in _typed_relation_signals(relation_signals):
         matched_effects = _effects_matching_relation_signal(signal, source_effects)
-        if signal.signal_kind == "pending_amendment" and len(matched_effects) > 1:
+        if len(matched_effects) > 1:
             relation = _relation_from_signal(
                 signal,
                 detail={
                     "target_effect_resolution": "ambiguous_multiple_effects",
                     "matched_effect_count": len(matched_effects),
                     "non_executable_reason": (
-                        "pending amendment signal names an instrument but not "
+                        "effect relation signal names an instrument but not "
                         "a unique source-backed effect"
                     ),
                 },
