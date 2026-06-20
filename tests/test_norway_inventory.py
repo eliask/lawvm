@@ -8,7 +8,7 @@ from typing import Any, cast
 from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry
 from lawvm.norway.index import build_no_amendment_index, save_no_amendment_index
 from lawvm.norway.inventory import NOInventory, build_no_inventory, build_no_missing_base_report
-from lawvm.norway.sources import ingest_no_public_archives
+from lawvm.norway.sources import ingest_no_public_archives, open_no_archive
 
 
 _BASE_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -24,6 +24,19 @@ _BASE_XML = """<?xml version="1.0" encoding="utf-8"?>
   </body>
 </html>
 """.encode("utf-8")
+
+
+def test_open_no_archive_defaults_readonly_without_creating_missing_archive(tmp_path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    try:
+        archive = open_no_archive(missing)
+    except Exception:
+        pass
+    else:
+        archive.close()
+
+    assert not missing.exists()
 
 
 def _amendment_xml(date_in_force: str) -> bytes:

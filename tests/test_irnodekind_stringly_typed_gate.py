@@ -95,7 +95,12 @@ def _scan() -> list[str]:
     violations: list[str] = []
     for pyfile in sorted(_SRC_ROOT.rglob("*.py")):
         try:
-            tree = ast.parse(pyfile.read_text(), filename=str(pyfile))
+            source = pyfile.read_text()
+            if ".kind" not in source or not any(
+                token in source for token in _BANNED_IRNODE_ONLY_VALUES
+            ):
+                continue
+            tree = ast.parse(source, filename=str(pyfile))
         except Exception:
             continue
         rel = pyfile.relative_to(_REPO_ROOT).as_posix()

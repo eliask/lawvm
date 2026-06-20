@@ -66,6 +66,8 @@ def _scan_patterns(src_root: Path) -> RegexPatternScan:
             continue  # don't lint the linter itself
         try:
             source = pyfile.read_text()
+            if "_RE" not in source and "_PATTERN" not in source:
+                continue
             tree = ast.parse(source, filename=str(pyfile))
         except Exception:
             continue

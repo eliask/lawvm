@@ -212,7 +212,7 @@ def resolve_us_federal_farchive_path() -> tuple[Path, str]:
 def open_us_federal_farchive(
     db_path: Path | None = None,
     *,
-    readonly: bool = False,
+    readonly: bool = True,
     allow_create: bool = False,
 ) -> Farchive:
     """Open the U.S. federal farchive.

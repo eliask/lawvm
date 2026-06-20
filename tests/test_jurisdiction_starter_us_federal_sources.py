@@ -98,6 +98,19 @@ def test_resolve_path_honors_explicit_override(
     assert "explicit" in rule
 
 
+def test_open_us_federal_farchive_defaults_readonly_without_creating_missing_archive(tmp_path: Path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    try:
+        archive = open_us_federal_farchive(missing)
+    except Exception:
+        pass
+    else:
+        archive.close()
+
+    assert not missing.exists()
+
+
 def test_archive_store_and_resolution_round_trip(tmp_path: Path) -> None:
     db_path = tmp_path / "us_federal.farchive"
     archive = open_us_federal_farchive(db_path, allow_create=True)
