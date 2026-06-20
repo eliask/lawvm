@@ -673,15 +673,16 @@ class SurfaceTextSpanPlacer:
             self._token_char_index = self._build_token_char_index(
                 self._token_position_index,
             )
+        token_char_index = self._token_char_index
         candidate_tokens: Iterable[str]
         if token:
             token_chars = set(token)
             if token_chars:
                 rarest_char = min(
                     token_chars,
-                    key=lambda char: len(self._token_char_index.get(char, ())),
+                    key=lambda char: len(token_char_index.get(char, ())),
                 )
-                candidate_tokens = self._token_char_index.get(rarest_char, ())
+                candidate_tokens = token_char_index.get(rarest_char, ())
             else:
                 candidate_tokens = self._token_position_index.keys()
         else:
