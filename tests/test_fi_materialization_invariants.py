@@ -27,6 +27,7 @@ pytestmark = pytest.mark.skipif(not _CORPUS_AVAILABLE, reason="corpus data not a
 
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.statute import ReplayResult
+from lawvm.finland.ops import FailedOp
 
 def _replay(sid: str, **kwargs: Any) -> IRNode:
     master = pinned_replay(sid, quiet=True, **kwargs)
@@ -80,6 +81,22 @@ def replay_2017_320_legal_pit_with_meta() -> tuple[ReplayResult, dict[str, objec
 @pytest.fixture(scope="module")
 def replay_2017_519() -> ReplayResult:
     return cast(ReplayResult, pinned_replay("2017/519", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1984_602_no_full_products_with_failed() -> tuple[ReplayResult, list[FailedOp]]:
+    failed: list[FailedOp] = []
+    replay = cast(
+        ReplayResult,
+        pinned_replay(
+            "1984/602",
+            mode="official_consolidation",
+            quiet=True,
+            failed_ops_out=failed,
+            build_full_products=False,
+        ),
+    )
+    return replay, failed
 
 
 def _subsection_text(
@@ -1416,14 +1433,14 @@ class TestSubsectionInsertChapterCarryforward:
     chapter:2. The scope strip must remove chapter:1 so the dispatch can find §5.
     """
 
-    def test_1984_602_no_failed_ops_from_1994_1317_and_1990_1367(self) -> None:
+    def test_1984_602_no_failed_ops_from_1994_1317_and_1990_1367(
+        self,
+        replay_1984_602_no_full_products_with_failed: tuple[ReplayResult, list[FailedOp]],
+    ) -> None:
         """1984/602 must not have FAILED ops from 1994/1317 (§5 mom:1 item:14,
         §13 mom:3/4) or from 1990/1367 (§47 mom:1) — chapter carry-forward must
         be stripped for subsection INSERT ops."""
-        from lawvm.finland.ops import FailedOp
-
-        failed: list[FailedOp] = []
-        pinned_replay("1984/602", quiet=True, failed_ops_out=failed, build_full_products=False)
+        _replay, failed = replay_1984_602_no_full_products_with_failed
         problem_amendments = {"1994/1317", "1990/1367"}
         bad = [f for f in failed if f.amendment_id in problem_amendments]
         assert not bad, (
@@ -1431,14 +1448,11 @@ class TestSubsectionInsertChapterCarryforward:
             + "; ".join(f"{f.amendment_id}: {f.description}" for f in bad)
         )
 
-    def test_1984_602_1996_666_glued_muutetaan_group_reaches_replay(self) -> None:
-        replay = pinned_replay(
-            "1984/602",
-            mode="official_consolidation",
-            quiet=True,
-            build_full_products=False,
-        )
-
+    def test_1984_602_1996_666_glued_muutetaan_group_reaches_replay(
+        self,
+        replay_1984_602_no_full_products_with_failed: tuple[ReplayResult, list[FailedOp]],
+    ) -> None:
+        replay, _failed = replay_1984_602_no_full_products_with_failed
         section_12 = replay.find_section("12")
         section_23 = replay.find_section("23")
         assert section_12 is not None
