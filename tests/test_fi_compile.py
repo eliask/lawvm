@@ -2315,6 +2315,21 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
     ]
 
 
+def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:
+    replay = pinned_replay("1970/258", oracle_version="20041297", mode="official_consolidation", quiet=True)
+    section12 = extract_ir_sections(replay.materialized_state.ir)["section:12"]
+    text = " ".join(irnode_to_text(section12).split())
+
+    edunsaaja = "Edunsaajalla, jolle on 4 momentissa tarkoitetun kuolemantapauksen"
+    vanha_kuudes = "Jos henkilö tämän lain voimaan tullessa on edunjättäjä"
+    inserted = "Milloin 6 momentissa tarkoitettu henkilö kuolee"
+    final_tail = "Seurakunnan vastuulle 4 ja 6 momentin mukaan jäävän perhe-eläkkeen"
+
+    assert text.index(edunsaaja) < text.index(vanha_kuudes)
+    assert text.index(vanha_kuudes) < text.index(inserted)
+    assert text.index(inserted) < text.index(final_tail)
+
+
 def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair() -> None:
     """Current replay keeps the sparse override text instead of inferring prior-law tail repair."""
     replay = pinned_replay("1974/16", mode="official_consolidation", quiet=True)
