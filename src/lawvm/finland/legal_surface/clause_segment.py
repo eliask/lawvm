@@ -243,6 +243,52 @@ def _dot_is_sentence_end(tokens: tuple[Token, ...], idx: int) -> bool:
     return True
 
 
+def sentence_terminator_between(
+    tokens: tuple[Token, ...], lo: int, hi: int
+) -> bool:
+    """Does a SENTENCE boundary fall strictly between char offsets ``lo`` and ``hi``?
+
+    Uses the SAME sentence-split authority as :func:`build_clause_index`: a
+    ``!``/``?`` punct token, a ``.`` punct token that :func:`_dot_is_sentence_end`
+    (so dotted dates/decimals, ordinal/section-number dots, and closed-list
+    abbreviation dots do NOT count), or a whitespace token containing a newline.
+    The boundary must lie within the half-open interval ``[lo, hi)`` — ``lo`` is
+    the actor's exclusive end offset, so a terminator AT ``lo`` is the char
+    immediately after the actor (its sentence ending right there) and DOES
+    separate it from a later modal. A terminator at/after ``hi`` does not.
+
+    This is the shared guard the surface frame recognizers use to refuse fusing an
+    actor in one sentence with a modal/sanction predicate in the next: it scans
+    the lossless tape's tokens, so no raw-text reconstruction is needed.
+    """
+    if hi <= lo:
+        return False
+    for idx, tok in enumerate(tokens):
+        # A punct/word terminator counts at its own char_start; a newline counts
+        # at the position of the newline char inside the whitespace run. The
+        # half-open window [lo, hi) admits a terminator abutting the actor end.
+        if tok.char_end <= lo:
+            continue
+        if tok.char_start >= hi:
+            break
+        if tok.category == "whitespace":
+            if "\n" in tok.text:
+                nl = tok.char_start + tok.text.index("\n")
+                if lo <= nl < hi:
+                    return True
+            continue
+        if tok.category != "punct":
+            continue
+        ch = tok.text
+        if ch in _HARD_SENTENCE_END:
+            if lo <= tok.char_start < hi:
+                return True
+        elif ch == "." and _dot_is_sentence_end(tokens, idx):
+            if lo <= tok.char_start < hi:
+                return True
+    return False
+
+
 def _match_phrase(
     tokens: tuple[Token, ...], start_idx: int, phrase: tuple[str, ...]
 ) -> int | None:

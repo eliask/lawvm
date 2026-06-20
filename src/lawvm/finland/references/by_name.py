@@ -345,7 +345,22 @@ _NAME_HOMONYM_OBLIQUES: frozenset[tuple[str, str]] = frozenset(
 # known, or typed STATUTE_ONLY ``eu-nickname:`` when not). The by-name lane must
 # therefore decline it — otherwise it mis-types the EU instrument as a
 # ``fi-name:`` Finnish statute and double-counts the eu_directive lane's mention.
+#
+# ``asetus`` is artikla-GATED because Finland ALSO has domestic ``-asetus``
+# decrees (a real ``fi-name:`` family) — only an artikla tail proves the EU
+# reading. ``direktiivi`` is in a SEPARATE set below: there is NO domestic
+# ``-direktiivi`` statute family (a directive is an EU instrument by definition),
+# so a ``<compound>direktiivi`` head is ALWAYS an EU-nickname surface owned by
+# the ``eu_directive`` lane and the by-name lane must decline it UNCONDITIONALLY
+# — with OR without an artikla tail. (Witnessed: ``tietosuojadirektiivin
+# mukainen`` in 2018/1054 has no artikla, yet the by-name lane wrongly minted a
+# duplicate ``fi-name:tietosuojadirektiivi`` mis-typed as CROSS_STATUTE.)
 _EU_NAME_HEADS: frozenset[str] = frozenset({"asetus", "direktiivi"})
+
+# EU-instrument heads with NO domestic statute family: a ``<compound>direktiivi``
+# is always an EU directive nickname, never a Finnish ``fi-name:`` statute, so the
+# by-name lane declines it unconditionally (the ``eu_directive`` lane owns it).
+_EU_ONLY_NAME_HEADS: frozenset[str] = frozenset({"direktiivi"})
 
 # A directly-following article phrase: optional whitespace, a number (with an
 # optional letter suffix), then an inflected ``artikla``. Anchored at the slice
@@ -1306,12 +1321,20 @@ def _recognize_by_name_refs_cached(text: str) -> tuple[ReferenceMention, ...]:
         if _ID_PAREN_RE.match(text, m.end()):
             continue
 
-        # Exclusion: an EU-instrument head (``…asetus`` / ``…direktiivi``)
-        # DIRECTLY GOVERNING an ``N artikla`` is an EU regulation/directive
-        # reference owned by the ``eu_directive`` lane (Finnish acts use § not
-        # artikla). Declining it here both avoids mis-typing the EU instrument as
-        # a ``fi-name:`` Finnish statute AND avoids double-counting the
-        # eu_directive lane's EU mention.
+        # Exclusion: a ``…direktiivi`` head is an EU directive nickname with no
+        # domestic statute family — the ``eu_directive`` lane owns it
+        # UNCONDITIONALLY (with or without an artikla tail). Minting a
+        # ``fi-name:`` Finnish statute for it would mis-type the EU instrument as
+        # CROSS_STATUTE and double-emit a surface the EU lane already covers.
+        if head_form.head_lemma in _EU_ONLY_NAME_HEADS:
+            continue
+
+        # Exclusion: a ``…asetus`` head DIRECTLY GOVERNING an ``N artikla`` is an
+        # EU regulation reference owned by the ``eu_directive`` lane (Finnish acts
+        # use § not artikla). ``asetus`` is artikla-gated (not unconditional) so
+        # genuine domestic ``-asetus`` decrees still emit. Declining the EU shape
+        # here avoids mis-typing the EU instrument as a ``fi-name:`` Finnish
+        # statute AND avoids double-counting the eu_directive lane's EU mention.
         if head_form.head_lemma in _EU_NAME_HEADS and _ARTIKLA_AFTER_HEAD_RE.match(
             text[m.end() :]
         ):

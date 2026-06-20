@@ -1,4 +1,4 @@
-"""OPEN-vocabulary deterministic morphological ANALYZER (M1 inverted).
+"""OPEN-vocabulary deterministic morphological CANDIDATE GENERATOR (M1 inverted).
 
 :mod:`lemma_index` inverts M1 only for a CLOSED known-head set: it enumerates
 each known lemma's whole paradigm and reverse-maps the surfaces.  On real legal
@@ -7,24 +7,43 @@ lemma that is not in the closed head table.
 
 This module generalizes the inversion to OPEN vocabulary WITHOUT abandoning the
 LawVM discipline (deterministic, no statistical model, generation-first,
-fail-loud).  The trick is that M1 generation is the ground truth: we never need
-to *trust* a hypothesized analysis, we only need to *propose* candidates and
-then VERIFY each one by forward round-trip.
+fail-loud).  The trick is that M1 generation is round-trip ground truth: we
+never need to *trust* a hypothesized analysis, we only need to *propose*
+candidates and then VERIFY each one by forward round-trip.
 
-THE ROUND-TRIP SAFETY GATE (what makes this provably sound):
-    An analysis ``(lemma, morph_class, case, number)`` (plus the lexical
-    ``gradation`` / ``single_k`` flags) is VALID iff ``generate_forms`` of the
-    reconstructed :class:`MorphEntry` produces the EXACT input surface for that
-    ``(case, number)``.  So the analyzer is:
+WHAT THIS IS (and is NOT) --- the admissibility boundary:
+    Round-trip verification proves a candidate is *generable* by M1, NOT that
+    its hypothesized lemma is a real attested word.  For ``säännöksen`` M1
+    happily generates ``säännöknen`` (``-nen``), ``säännökse`` (``vowel_final``)
+    and the real ``säännös`` (``-Os->-Okse-``) --- all round-trip, but only
+    ``säännös`` is a real lemma; the others are fabricated stem-inversion
+    artifacts.  So this module is a CANDIDATE GENERATOR / hypothesis proposer,
+    NOT a deterministic lemma analyzer.
+
+    A round-trip-sound candidate is therefore NOT an admissible lemma FACT.
+    Admissibility is decided separately, by membership in the CLOSED attested
+    set (the known-head inventory / :class:`LemmaIndex`), via
+    :func:`analyze_candidates` (every candidate tagged with a
+    :class:`LemmaAdmissibility` status) and :func:`analyze_admissible_lemmas`
+    (ONLY the attested results, possibly EMPTY = honest "unknown lemma").
+    Treating the raw candidate set as lemma facts would fabricate lemmas, which
+    violates fail-loud / never-fabricate; do not do it.
+
+THE ROUND-TRIP SAFETY GATE (what makes a CANDIDATE generable, not attested):
+    A candidate analysis ``(lemma, morph_class, case, number)`` (plus the
+    lexical ``gradation`` / ``single_k`` flags) is GENERABLE iff
+    ``generate_forms`` of the reconstructed :class:`MorphEntry` produces the
+    EXACT input surface for that ``(case, number)``.  So the generator is:
 
         hypothesize plausible (lemma, class, flags) candidates
             -> for each, generate the full paradigm
             -> keep every (case, number) whose surface == input
-            -> return the deduplicated set.
+            -> return the deduplicated CANDIDATE set.
 
-    Because the keep-filter is a real M1 output check, the analyzer can NEVER
-    return an analysis the generator would not produce.  Liberal hypothesis
-    generation is therefore safe: false hypotheses are filtered, not emitted.
+    Because the keep-filter is a real M1 output check, the generator can NEVER
+    return a candidate the generator would not produce.  Liberal hypothesis
+    generation is therefore safe: non-generable hypotheses are filtered.  But
+    generable != attested --- see the admissibility boundary above.
 
 HYPOTHESIS GENERATION (recall side --- liberal, the gate keeps it sound):
     1. CASE/NUMBER SUFFIX STRIPPING over the closed Finnish nominal suffix
@@ -43,11 +62,22 @@ HYPOTHESIS GENERATION (recall side --- liberal, the gate keeps it sound):
 SCOPE: NOMINALS in the ``reference_v1`` case set (the M1 nominal classes).
 Verbs are out of scope.  An out-of-vocabulary or un-invertible surface returns
 the EMPTY tuple --- an honest unknown, never a fabricated lemma.
+
+ADMISSIBILITY (Pro D6, conceptual roles):
+    * ``analyze_open`` is the MorphCandidateGenerator: round-trip-sound
+      hypotheses, lemmas NOT attested.
+    * ``analyze_candidates`` / ``analyze_admissible_lemmas`` are the
+      MorphAdjudicator: they gate candidates against the closed attested set
+      (the known-head ``LexiconGate``), so an unattested candidate is clearly
+      ``admissible_as_lemma=False``.  A pinned in-house lexicon snapshot that
+      would attest common-noun lemmas beyond the ~25 heads (so ``säännös``
+      becomes attested) is a LATER step, deliberately NOT built here.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from functools import lru_cache
 from itertools import product
 
@@ -57,6 +87,8 @@ from .api import (
     MorphNumber,
 )
 from .generate import generate_forms
+from .heads import is_known_head
+from .lemma_index import build_lemma_index
 from .stems import _CLASS_BUILDERS
 
 _VOWELS = frozenset("aeiouyäö")
@@ -100,6 +132,71 @@ class MorphAnalysis:
         return (self.lemma, self.morph_class, self.case.name, self.number.name)
 
 
+class LemmaAdmissibility(Enum):
+    """Whether a round-trip candidate's lemma may be treated as a lemma FACT.
+
+    Round-trip soundness proves a candidate is *generable* by M1, never that its
+    lemma is a real attested word (see the module docstring).  Admissibility is
+    decided against the CLOSED attested set --- the known-head inventory and the
+    default :class:`LemmaIndex` built over it.  Only
+    :data:`ATTESTED_DETERMINISTIC` is admissible as a lemma fact; every other
+    status carries ``admissible_as_lemma=False``.
+
+    The taxonomy (Pro D6):
+
+    * ``ATTESTED_DETERMINISTIC`` --- the lemma is in the closed attested set
+      (a known head / present in the default ``LemmaIndex``).  Admissible.
+    * ``AMBIGUOUS_KNOWN_ENTRIES`` --- the surface maps (in the closed
+      ``LemmaIndex``) to MORE THAN ONE attested lemma; this particular candidate
+      is one of them but the surface is ambiguous.  Reserved for closed-set
+      collisions; not admissible as a single resolved lemma.
+    * ``GENERATED_FROM_KNOWN_ENTRY`` --- the candidate's lemma is NOT itself
+      attested, but the surface IS produced by some attested lemma in the closed
+      ``LemmaIndex`` (i.e. this is a fabricated rival reading of a surface that
+      the closed set already explains).  Not admissible.
+    * ``UNATTESTED_GENERATED_CANDIDATE`` --- round-trips, but the lemma is in NO
+      attested set AND no attested lemma produces this surface either.  A pure
+      hypothesis (e.g. ``säännöknen``).  Not admissible.
+    * ``UNKNOWN_SURFACE`` --- the surface yields no generable candidate at all
+      (honest unknown).  Not represented as a candidate; surfaced as the EMPTY
+      result.
+    """
+
+    ATTESTED_DETERMINISTIC = "attested_deterministic"
+    AMBIGUOUS_KNOWN_ENTRIES = "ambiguous_known_entries"
+    GENERATED_FROM_KNOWN_ENTRY = "generated_from_known_entry"
+    UNATTESTED_GENERATED_CANDIDATE = "unattested_generated_candidate"
+    UNKNOWN_SURFACE = "unknown_surface"
+
+
+@dataclass(frozen=True, slots=True)
+class MorphCandidate:
+    """A round-trip candidate tagged with its lemma admissibility.
+
+    ``analysis`` is the generable ``(lemma, morph_class, case, number)``;
+    ``admissibility`` says whether its lemma is attested in the closed set;
+    ``admissible_as_lemma`` is the single, impossible-to-ignore boolean a
+    consumer must check before treating ``analysis.lemma`` as a fact.
+
+    Generable but not attested => ``admissible_as_lemma=False``: the candidate
+    is a hypothesis, not a lemma fact.  The GRAMMATICAL CASE/NUMBER of a
+    candidate is round-trip-sound regardless of lemma admissibility (it is a
+    property of the surface's inflection, not of the hypothesized lemma), so a
+    consumer that needs only the case may read ``analysis.case`` from any
+    candidate; a consumer that needs the LEMMA must gate on
+    ``admissible_as_lemma``.
+    """
+
+    analysis: MorphAnalysis
+    admissibility: LemmaAdmissibility
+    admissible_as_lemma: bool
+
+    def _sort_key(self) -> tuple[str, str, str, str, str]:
+        a = self.analysis
+        return (a.lemma, a.morph_class, a.case.name, a.number.name,
+                self.admissibility.value)
+
+
 # --------------------------------------------------------------------------- #
 # Suffix inventory (derived from paradigm.py / plurals.py).  Each entry strips a
 # known surface suffix to expose the stem the suffix attached to.  These are
@@ -129,13 +226,22 @@ _PLURAL_SUFFIXES: tuple[str, ...] = (
 
 
 def analyze_open(surface: str) -> tuple[MorphAnalysis, ...]:
-    """Return every M1-round-trip-verified analysis of ``surface`` (open vocab).
+    """Return every M1-round-trip-GENERABLE CANDIDATE of ``surface`` (open vocab).
+
+    NOT a lemma analyzer: the returned ``(lemma, morph_class, case, number)``
+    tuples are HYPOTHESES proven generable by M1, including fabricated lemmas
+    (``säännöksen`` yields ``säännöknen``/``säännökse`` alongside the real
+    ``säännös``).  A candidate's lemma is NOT a fact --- for admissibility use
+    :func:`analyze_admissible_lemmas` (attested only) or
+    :func:`analyze_candidates` (every candidate tagged).  The GRAMMATICAL
+    CASE/NUMBER of each candidate IS round-trip-sound (it is a property of the
+    surface inflection, lemma-independent), so a case-only consumer may use this.
 
     Hypothesizes candidate ``(lemma, morph_class, gradation, single_k)`` tuples
     from suffix stripping + stem inversion, then keeps only the ``(case,
-    number)`` analyses whose forward generation reproduces ``surface`` exactly.
+    number)`` candidates whose forward generation reproduces ``surface`` exactly.
 
-    Ambiguity is SURFACED, never ranked: when several analyses round-trip (e.g.
+    Ambiguity is SURFACED, never ranked: when several candidates round-trip (e.g.
     a surface that is both a genitive of lemma X and an inessive of lemma Y, or a
     lemma that round-trips under two morph_classes), ALL are returned, sorted.
     An out-of-vocabulary / un-invertible surface returns the EMPTY tuple.
@@ -145,6 +251,87 @@ def analyze_open(surface: str) -> tuple[MorphAnalysis, ...]:
         return ()
 
     return _analyze_open_norm(norm)
+
+
+def analyze_candidates(surface: str) -> tuple[MorphCandidate, ...]:
+    """Return every generable candidate of ``surface``, each tagged admissible.
+
+    Wraps :func:`analyze_open` (the candidate generator) and adjudicates each
+    candidate's lemma against the CLOSED attested set (known-head inventory /
+    default :class:`LemmaIndex`).  The result makes the attested/hypothesis
+    distinction impossible to ignore: each candidate carries a
+    :class:`LemmaAdmissibility` and a single ``admissible_as_lemma`` boolean.
+
+    Sorted and deterministic.  An out-of-vocabulary surface returns the EMPTY
+    tuple (honest ``UNKNOWN_SURFACE`` --- never a fabricated lemma fact).
+    """
+    candidates = analyze_open(surface)
+    if not candidates:
+        return ()
+    surface_known_lemmas = _attested_lemmas_for_surface(surface)
+    surface_is_ambiguous = len(surface_known_lemmas) > 1
+    out: list[MorphCandidate] = []
+    for analysis in candidates:
+        admissibility = _adjudicate(
+            analysis.lemma, surface_known_lemmas, surface_is_ambiguous,
+        )
+        out.append(
+            MorphCandidate(
+                analysis=analysis,
+                admissibility=admissibility,
+                admissible_as_lemma=(
+                    admissibility is LemmaAdmissibility.ATTESTED_DETERMINISTIC
+                ),
+            ),
+        )
+    return tuple(sorted(out, key=MorphCandidate._sort_key))
+
+
+def analyze_admissible_lemmas(surface: str) -> tuple[MorphCandidate, ...]:
+    """Return ONLY the candidates whose lemma is attested (admissible as fact).
+
+    This is the honest lemma-analysis surface: it returns the attested-lemma
+    candidate(s) and NOTHING ELSE.  When no candidate's lemma is in the closed
+    attested set the result is EMPTY --- an honest "the lemma is unknown to the
+    closed vocabulary", never a fabricated guess (``säännöksen`` -> () until
+    ``säännös`` enters a pinned attested set).
+    """
+    return tuple(
+        c
+        for c in analyze_candidates(surface)
+        if c.admissible_as_lemma
+    )
+
+
+def _adjudicate(
+    lemma: str,
+    surface_known_lemmas: frozenset[str],
+    surface_is_ambiguous: bool,
+) -> LemmaAdmissibility:
+    """Classify one candidate ``lemma`` against the closed attested set.
+
+    The closed attested set is the known-head inventory (== the default
+    :class:`LemmaIndex` lemma set); no new lexicon is introduced here.
+    """
+    if is_known_head(lemma):
+        if surface_is_ambiguous and lemma in surface_known_lemmas:
+            return LemmaAdmissibility.AMBIGUOUS_KNOWN_ENTRIES
+        return LemmaAdmissibility.ATTESTED_DETERMINISTIC
+    # The candidate's own lemma is not attested.  Distinguish a fabricated rival
+    # reading of a surface the closed set ALREADY explains (some attested lemma
+    # produces this surface) from a pure out-of-vocabulary hypothesis.
+    if surface_known_lemmas:
+        return LemmaAdmissibility.GENERATED_FROM_KNOWN_ENTRY
+    return LemmaAdmissibility.UNATTESTED_GENERATED_CANDIDATE
+
+
+def _attested_lemmas_for_surface(surface: str) -> frozenset[str]:
+    """Attested lemmas (closed ``LemmaIndex``) whose paradigm contains ``surface``.
+
+    The default index is memoized over the closed known-head inventory, so this
+    is the closed attested set's verdict on the surface, not a new lexicon.
+    """
+    return frozenset(build_lemma_index().analyze(surface))
 
 
 @lru_cache(maxsize=4096)
@@ -565,4 +752,11 @@ def _plural_tail_to_singular_stems(tail: str) -> set[str]:
     return out
 
 
-__all__ = ["MorphAnalysis", "analyze_open"]
+__all__ = [
+    "LemmaAdmissibility",
+    "MorphAnalysis",
+    "MorphCandidate",
+    "analyze_admissible_lemmas",
+    "analyze_candidates",
+    "analyze_open",
+]

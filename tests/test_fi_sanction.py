@@ -261,3 +261,43 @@ def test_empty_and_guardless_text_no_frames() -> None:
     assert recognize_sanction_frames("").frames == ()
     assert recognize_sanction_frames("Tässä laissa säädetään asioista.").frames == ()
     assert recognize_sanction_frames("Tässä laissa säädetään asioista.").residuals == ()
+
+
+def test_sanction_target_not_fused_across_sentence_boundary() -> None:
+    """A target actor in sentence N must NOT bind a sanction marker in sentence N+1.
+
+    Without a same-sentence guard the nearest-preceding-actor join fuses an actor
+    at the tail of the prior sentence with the marker of the next (the coverage
+    triage's cross-sentence sanction false positive). The marker keeps its frame
+    but acquires NO cross-sentence target.
+    """
+    text = (
+        "Vahinko korvataan täysimääräisenä työnantajalle. "
+        "Erityisestä syystä voidaan hyvityssakko jättää tuomitsematta."
+    )
+    scan = recognize_sanction_frames(text)
+    sakko = _frames_of_kind(scan, SanctionKind.SAKKO)
+    assert sakko, "expected the hyvityssakko (SAKKO) frame"
+    boundary = text.index(". ") + 1
+    for frame in scan.frames:
+        span = frame.source_span
+        assert not (
+            span.byte_offset < boundary < span.byte_offset + span.byte_len
+        ), f"sanction frame fuses across the sentence boundary: {frame!r}"
+        if frame.target_actor_span is not None:
+            assert frame.target_actor_span.byte_offset >= boundary or (
+                frame.target_actor_span.byte_offset
+                + frame.target_actor_span.byte_len
+            ) <= frame.source_span.byte_offset, (
+                f"target actor pulled across a sentence boundary: {frame!r}"
+            )
+
+
+def test_sanction_same_sentence_target_still_binds() -> None:
+    """A genuine target actor + sanction marker in ONE sentence still binds."""
+    text = "Työnantaja, joka rikkoo tätä lakia, tuomitaan sakkoon."
+    scan = recognize_sanction_frames(text)
+    framed = [f for f in scan.frames if f.target_actor_span is not None]
+    assert framed, "expected a same-sentence sanction frame with a target actor"
+    actor_text = _slice(text, framed[0].target_actor_span)
+    assert actor_text.startswith("Työnantaja")

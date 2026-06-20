@@ -43,6 +43,7 @@ from typing import Iterable, Iterator, Optional
 from lawvm.finland.morphology import (
     MorphEntry,
     MorphNumber,
+    analyze_open,
     classify,
     generate_forms,
     head_entry,
@@ -302,6 +303,24 @@ def derive_nicknames(title: str) -> list[str]:
     return [(candidate + head)]
 
 
+def _strip_title_terminator(title: str) -> str:
+    """Strip a trailing sentence terminator (``.``) from a canonical title.
+
+    Many older Finlex titles are stored with a trailing full stop
+    (``Palolaki.``, ``Verotuslaki.``, ``Laki eräistä naapuruussuhteista.``).
+    The terminator is orthography, not part of the act's NAME — but it breaks
+    BOTH the head split (``palolaki.`` does not ``endswith('laki')``, so NO
+    inflected surfaces are generated and only the literal nominative-with-period
+    key is registered) AND every cite match (a citation ``palolain`` carries no
+    period). Stripping it is a pure punctuation normalization: it does not invent
+    or alter any name token, it only removes the terminator so the real
+    head-split + inflection runs. A title that is nothing but punctuation (never
+    seen in the corpus) collapses to empty and is handled by the caller as
+    before.
+    """
+    return title.rstrip().rstrip(".").rstrip()
+
+
 def _inflected_surfaces(title: str) -> dict[str, str]:
     """Map every generated surface variant of ``title`` -> its normalized key.
 
@@ -309,6 +328,12 @@ def _inflected_surfaces(title: str) -> dict[str, str]:
     engine, re-attach the invariant modifier.  Always includes the nominative
     title itself.  If the title has no known head (cannot be inflected) only the
     nominative surface is registered --- fail loud, never guess inflection.
+
+    A trailing sentence terminator (``Palolaki.``) is stripped first (see
+    :func:`_strip_title_terminator`): it is orthography, not a name token, and
+    leaving it on blocks the head split AND every period-free citation. The
+    stripped title is what is keyed/inflected; the entry keeps the original
+    ``canonical_title`` for display.
 
     Returns ``{normalized_surface_key: display_surface}``.
     """
@@ -328,6 +353,8 @@ def _inflected_surfaces(title: str) -> dict[str, str]:
             if form.certainty != "deterministic" or not form.surface:
                 continue
             _add(modifier + form.surface)
+
+    title = _strip_title_terminator(title)
 
     _add(title)
 
@@ -358,6 +385,177 @@ def _normalize_key(surface: str) -> str:
     return " ".join(surface.lower().split())
 
 
+# ---------------------------------------------------------------------------
+# Content-word-set title index (inflection-robust descriptive-title matching).
+# ---------------------------------------------------------------------------
+#
+# A head-first descriptive cite (``viranomaisten toiminnan julkisuudesta annetun
+# lain``) is reconstructed by the by-name lane head-first as ``laki <complement>``
+# — the SAME surface the registry indexes for the official title ``Laki
+# viranomaisten toiminnan julkisuudesta``. Exact-key matching resolves it WHEN the
+# complement is byte-identical. But a citing author often inflects a PREMODIFIER
+# differently from the official title (singular ``viranomaisen`` vs official plural
+# ``viranomaisten``; ``luopumiskorvauksista`` PL vs official ``luopumiskorvauksesta``
+# SG), so the exact key differs and the act misses.
+#
+# The content-word-set index keys a BASE-ACT descriptive title on the SET of its
+# content-word STEMS (function words dropped; each word reduced to the shortest
+# M1-round-trippable lemma stem). The SAME reduction applied to the citation's
+# complement collapses many inflection differences onto the same set, so the cite
+# resolves. This is a STRICT FP-GATED FALLBACK consulted only after the exact-key
+# lookup has missed (see resolve.py): it never overrides an exact match, requires a
+# WHOLE-SET match (not a loose subset), requires the cite head (laki/asetus) to
+# match the title head (a laki cite never resolves to an asetus act), and refuses a
+# garbage / under-specified complement. >1 candidate is AMBIGUOUS (never picked).
+#
+# Discipline note: this is a recall lever, NOT a relaxation of fail-loud. The set
+# match is a deterministic function applied identically to both sides; a stem that
+# does not collapse a pair leaves them apart (a miss, never a wrong resolution).
+
+# Function words / coordinators that carry no act-identity content and are dropped
+# from the set. ``ja``/``sekä``/``tai`` (coordinators) are dropped so a coordinated
+# title and its citation key on the same content words; the closed determiner /
+# adverb / conjunction set below is the EXTRACTION-NOISE guard — a complement that
+# CONTAINS one of these (other than a bare coordinator between content words) is
+# clause-leak garbage from the by-name complement walk, not a clean title, and is
+# refused entirely (``_content_complement_is_clean``).
+_CWS_COORDINATORS: frozenset[str] = frozenset({"ja", "sekä", "tai", "eli"})
+
+# Tokens whose PRESENCE in a reconstructed complement marks it as extraction noise
+# (a clause / determiner / adverb leak from the by-name complement walk), e.g.
+# ``laki mitä valtioneuvoston …``, ``laki osin eläinten …``, ``laki kun
+# finanssivalvonnasta``, ``laki perustuvan sosiaaliturvalainsäädännön …``. A
+# complement containing any of these is refused (no set is built), so a garbage
+# complement can never coincidentally hit a registered set.
+_CWS_GARBAGE_TOKENS: frozenset[str] = frozenset(
+    {
+        # determiners / pronouns
+        "mitä", "mikä", "joka", "jonka", "jota", "jossa", "se", "sitä", "sen",
+        "tämä", "tämän", "tätä", "tuo", "tuon", "niitä", "niiden",
+        # adverbs / conjunctions frequently leaked by the complement walk
+        "kun", "jos", "vaikka", "koska", "siten", "kuin", "vain", "osin",
+        "myös", "sekä", "mutta", "että", "kuitenkin",
+        # stray participles that signal a clause boundary, not a title head
+        "perustuvan", "koskevan", "annetun", "annetussa", "annettu",
+    }
+)
+
+# A title-content set must carry at least this many content-word stems to be a
+# distinctive identity. A single-stem set (``laki edistämisestä`` ->
+# ``{edistäminen}``) is too generic — many acts share one common-noun head, so a
+# 1-stem match is high-FP. The exact-key lane already resolves clean single-noun
+# titles, so the content-word fallback can safely require >=2 distinctive stems.
+_CWS_MIN_STEMS = 2
+
+
+def _content_word_stem(word: str) -> str:
+    """Reduce one title/complement word to its shortest M1-round-trippable stem.
+
+    The open-vocabulary analyzer returns every lemma that round-trips to the
+    surface; the SHORTEST is the most aggressive (inflection-stripped) stem, and
+    applying it IDENTICALLY to both the registry title word and the citation word
+    collapses many singular/plural and case differences onto one key. A surface the
+    analyzer cannot invert (an unknown / non-Finnish token) keeps its own surface —
+    a conservative fallback that still matches an identical surface on both sides.
+    """
+    cands = analyze_open(word)
+    if cands:
+        lemmas = {c.lemma for c in cands}
+        return min(lemmas, key=lambda s: (len(s), s))
+    return word
+
+
+def _content_complement_is_clean(complement: str) -> bool:
+    """True when ``complement`` is a clean descriptive-title body (no leak noise).
+
+    Refuses (returns ``False``) a complement that contains an extraction-noise
+    token (a determiner / adverb / conjunction / stray participle from the by-name
+    complement walk — see ``_CWS_GARBAGE_TOKENS``). A clean complement is the body
+    of a real descriptive title (``viranomaisten toiminnan julkisuudesta``); a
+    leaked clause (``mitä valtioneuvoston kanslian tehtävistä valtioneuvostosta``,
+    ``kun finanssivalvonnasta``) is not.
+    """
+    words = [w.strip(".,:;§") for w in complement.lower().split()]
+    return not any(w in _CWS_GARBAGE_TOKENS for w in words if w)
+
+
+def content_word_set(complement: str) -> frozenset[str]:
+    """Content-word-STEM set of a descriptive-title body, or empty if not usable.
+
+    Drops coordinators / very short tokens, reduces each remaining word to its
+    shortest M1 stem (:func:`_content_word_stem`), and returns the resulting set.
+    Returns the EMPTY set (an explicit "no usable content set" signal the caller
+    treats as a non-match) when the complement is extraction-noise
+    (:func:`_content_complement_is_clean`) or carries fewer than
+    :data:`_CWS_MIN_STEMS` distinctive stems. The reduction is deterministic and
+    applied identically to titles (at index build) and citations (at lookup).
+    """
+    if not _content_complement_is_clean(complement):
+        return frozenset()
+    stems: set[str] = set()
+    for raw in complement.lower().split():
+        w = raw.strip(".,:;§")
+        if not w or w in _CWS_COORDINATORS or len(w) < 3:
+            continue
+        stems.add(_content_word_stem(w))
+    if len(stems) < _CWS_MIN_STEMS:
+        return frozenset()
+    return frozenset(stems)
+
+
+def _title_content_key(title: str) -> tuple[str, frozenset[str]] | None:
+    """Build the ``(head, content-word-set)`` index key for a BASE-ACT title.
+
+    Returns ``None`` for any title that is NOT a clean head-first base-act
+    descriptive title: a non-``Laki``/``Asetus`` title, an AMENDMENT / REPEAL title
+    (``… annetun lain muuttamisesta``, ``… kumoamisesta``), or a title whose body
+    yields no usable content set. The head (``laki``/``asetus``) is carried IN the
+    key so a ``laki`` citation can never match an ``asetus`` act of the same
+    subject (a real distinction: a law and a decree on the same matter are
+    different statutes).
+    """
+    low = _strip_title_terminator(title).lower()
+    parts = low.split(" ", 1)
+    if len(parts) != 2 or parts[0] not in ("laki", "asetus"):
+        return None
+    head, complement = parts
+    # Amendment / repeal titles name an amending act, not a base identity; the
+    # descriptive cite ``X annetun lain`` denotes the BASE act, so these must not
+    # be indexed (else a cite would resolve to an amendment statute).
+    if (
+        "muuttamisesta" in complement
+        or "kumoamisesta" in complement
+        or "muuttamista" in complement
+        or "annetun" in complement
+    ):
+        return None
+    cws = content_word_set(complement)
+    if not cws:
+        return None
+    return head, cws
+
+
+def citation_content_key(fi_name_key: str) -> tuple[str, frozenset[str]] | None:
+    """Build the ``(head, content-word-set)`` lookup key for a ``fi-name:`` payload.
+
+    ``fi_name_key`` is the normalized payload the by-name lane mints, head-first for
+    descriptive cites (``laki viranomaisten toiminnan julkisuudesta``). Returns the
+    same shape as :func:`_title_content_key`, or ``None`` when the cite is not a
+    head-first ``Laki/Asetus <body>`` shape or its body is garbage / too generic.
+    A compound-nickname key (``verotuslaki``) is NOT head-first (no space), so it
+    returns ``None`` and is left to the exact-key lane — the content-word fallback
+    is for the multi-word descriptive shape only.
+    """
+    parts = fi_name_key.split(" ", 1)
+    if len(parts) != 2 or parts[0] not in ("laki", "asetus"):
+        return None
+    head, complement = parts
+    cws = content_word_set(complement)
+    if not cws:
+        return None
+    return head, cws
+
+
 class StatuteNameRegistry:
     """Surface (possibly inflected) -> statute id(s), with temporal resolution.
 
@@ -366,16 +564,41 @@ class StatuteNameRegistry:
     the caller decides, the registry never picks.
     """
 
-    __slots__ = ("_index",)
+    __slots__ = ("_index", "_content_index")
 
     def __init__(self) -> None:
         # normalized surface key -> list of entries (one per (id, window) that
         # generates this surface).  A surface may appear under several entries.
         self._index: dict[str, list[StatuteNameEntry]] = {}
+        # (head, content-word-set) -> list of base-act entries.  The FP-gated
+        # inflection-robust fallback index (see ``lookup_content_word_set``); only
+        # clean head-first base-act descriptive titles are indexed here.
+        self._content_index: dict[
+            tuple[str, frozenset[str]], list[StatuteNameEntry]
+        ] = {}
 
     def _register(self, entry: StatuteNameEntry) -> None:
         for key in _inflected_surfaces(entry.canonical_title):
             self._register_key(key, entry)
+        content_key = _title_content_key(entry.canonical_title)
+        if content_key is not None:
+            self._register_content_key(content_key, entry)
+
+    def _register_content_key(
+        self,
+        key: tuple[str, frozenset[str]],
+        entry: StatuteNameEntry,
+    ) -> None:
+        """Bind a ``(head, content-word-set)`` key to ``entry`` (idempotent).
+
+        Same dedup discipline as :meth:`_register_key`: a colliding (id, window)
+        is deduped, and a content set shared by a DIFFERENT id accumulates so the
+        content-word lookup lands ``multiple`` (fail-loud, never picked).
+        """
+        bucket = self._content_index.setdefault(key, [])
+        sig = (entry.statute_id, entry.valid_from, entry.valid_to)
+        if all((e.statute_id, e.valid_from, e.valid_to) != sig for e in bucket):
+            bucket.append(entry)
 
     def _register_key(self, key: str, entry: StatuteNameEntry) -> None:
         """Bind one already-normalized surface ``key`` to ``entry`` (idempotent).
@@ -410,6 +633,48 @@ class StatuteNameRegistry:
             )
             self._register_key(_normalize_key(alias.alias_key), entry)
 
+    @staticmethod
+    def _result_from_bucket(
+        bucket: list[StatuteNameEntry],
+        surface: str,
+        as_of: Optional[dt.date],
+    ) -> RegistryResult:
+        """Build a :class:`RegistryResult` from a matched entry bucket.
+
+        Shared by :meth:`lookup` (exact-surface) and
+        :meth:`lookup_content_word_set` (content-word fallback): applies the
+        as-of filter, collapses to DISTINCT statute ids (one act registered under
+        several surfaces counts once), and types the result single / multiple /
+        none with the same fail-loud discipline (never picks among >1).
+        """
+        entries = (
+            [e for e in bucket if e.covers(as_of)] if as_of is not None else list(bucket)
+        )
+        distinct: dict[str, StatuteNameEntry] = {}
+        for e in entries:
+            distinct.setdefault(e.statute_id, e)
+        candidates = tuple(
+            Candidate(
+                statute_id=e.statute_id,
+                canonical_title=e.canonical_title,
+                valid_from=e.valid_from,
+                valid_to=e.valid_to,
+            )
+            for e in distinct.values()
+        )
+        if not candidates:
+            status = "none"
+        elif len(candidates) == 1:
+            status = "single"
+        else:
+            status = "multiple"
+        return RegistryResult(
+            status=status,
+            candidates=candidates,
+            surface=surface,
+            as_of=as_of,
+        )
+
     def lookup(
         self,
         name_surface: str,
@@ -425,39 +690,44 @@ class StatuteNameRegistry:
         bucket = self._index.get(key)
         if not bucket:
             return RegistryResult(status="none", surface=name_surface, as_of=as_of)
+        return self._result_from_bucket(bucket, name_surface, as_of)
 
-        entries = (
-            [e for e in bucket if e.covers(as_of)] if as_of is not None else list(bucket)
-        )
+    def lookup_content_word_set(
+        self,
+        fi_name_key: str,
+        as_of: Optional[dt.date] = None,
+    ) -> RegistryResult:
+        """FP-gated inflection-robust fallback: match a descriptive cite by content.
 
-        # Collapse to distinct statute ids: the same act registered under
-        # several generated surfaces must count once.
-        distinct: dict[str, StatuteNameEntry] = {}
-        for e in entries:
-            distinct.setdefault(e.statute_id, e)
+        ``fi_name_key`` is the ``fi-name:`` payload the by-name lane mints
+        (head-first for descriptive cites: ``laki <body>``). The cite's
+        ``(head, content-word-set)`` key (:func:`citation_content_key`) is matched
+        against the base-act content index. The match is STRICT:
 
-        candidates = tuple(
-            Candidate(
-                statute_id=e.statute_id,
-                canonical_title=e.canonical_title,
-                valid_from=e.valid_from,
-                valid_to=e.valid_to,
-            )
-            for e in distinct.values()
-        )
+        * the cite must be a clean head-first ``Laki/Asetus <body>`` shape with a
+          clean (non-leak) body carrying >=2 distinctive content stems — otherwise
+          ``citation_content_key`` returns ``None`` and this is a ``none`` result
+          (a compound nickname / garbage / under-specified complement never enters);
+        * the head (laki/asetus) must match the title head (a ``laki`` cite never
+          resolves to an ``asetus`` act);
+        * the match is on the WHOLE content-word set (an exact set equality via the
+          index hash), NOT a loose subset — subset matching is higher-FP and is
+          deliberately not done here;
+        * >1 candidate is ``multiple`` (fail-loud, never picked), exactly as
+          :meth:`lookup`.
 
-        if not candidates:
-            status = "none"
-        elif len(candidates) == 1:
-            status = "single"
-        else:
-            status = "multiple"
-        return RegistryResult(
-            status=status,
-            candidates=candidates,
-            surface=name_surface,
-            as_of=as_of,
-        )
+        Returns ``status="none"`` when the cite is not a usable content key or no
+        base act carries that exact content set. This method is intended to be
+        consulted by the resolution projection ONLY after the exact-surface
+        :meth:`lookup` has missed.
+        """
+        content_key = citation_content_key(fi_name_key)
+        if content_key is None:
+            return RegistryResult(status="none", surface=fi_name_key, as_of=as_of)
+        bucket = self._content_index.get(content_key)
+        if not bucket:
+            return RegistryResult(status="none", surface=fi_name_key, as_of=as_of)
+        return self._result_from_bucket(bucket, fi_name_key, as_of)
 
 
 def build_registry(
@@ -728,6 +998,45 @@ def _extract_title_and_date(xb: bytes) -> tuple[str, Optional[dt.date]] | None:
     return title, valid_from
 
 
+_FINLEX_NS = "http://data.finlex.fi/schema/finlex"
+
+
+def _extract_repeal_date(oracle_xb: bytes) -> Optional[dt.date]:
+    """Extract a statute's REPEAL date from its consolidated oracle XML.
+
+    Finlex publishes the repeal as authoritative consolidation metadata: a
+    repealed act's oracle carries a ``finlex:repealedBy`` block whose
+    ``finlex:statuteReference / finlex:inForce / finlex:dateEntryIntoForce[@date]``
+    is the date the repealing act entered into force --- i.e. the date the
+    repealed version stopped being the act of that name (exclusive ``valid_to``).
+    This is the deterministic, IN-CORPUS supersession date; no external fetch.
+
+    Returns the parsed date, or ``None`` (fail-loud, never fabricated) when the
+    oracle does not parse, carries no ``repealedBy`` block, or that block has no
+    parseable ``dateEntryIntoForce`` --- a repealed act whose supersession date
+    the corpus does not expose stays an OPEN window, never a guessed date.
+    """
+    from lxml import etree
+
+    try:
+        tree = etree.fromstring(oracle_xb)
+    except etree.XMLSyntaxError:
+        return None
+    repealed_by = tree.find(f".//{{{_FINLEX_NS}}}repealedBy")
+    if repealed_by is None:
+        return None
+    date_el = repealed_by.find(f".//{{{_FINLEX_NS}}}dateEntryIntoForce")
+    if date_el is None:
+        return None
+    raw = date_el.get("date")
+    if not raw:
+        return None
+    try:
+        return dt.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def all_entries_from_farchive(
     *,
     archive_path: Optional[str] = None,
@@ -746,14 +1055,15 @@ def all_entries_from_farchive(
 
     * ``valid_from`` = the source XML's ``FRBRWork/FRBRdate[@name='dateIssued']``
       (the real enactment date) when present, else ``None`` (open).
-    * ``valid_to`` = ALWAYS ``None`` (open).  The farchive exposes only the
-      CURRENT consolidated ``docTitle`` per statute — a single point-in-time
-      title, NOT a title-change history.  An act's title END date (renamed /
-      repealed) is therefore NOT derivable from this source and is left open.
-      The temporal dimension here is single-version-per-statute until a
-      title-history source exists; the registry's ``covers``/``as_of`` machinery
-      still applies (a ``valid_from``-bounded entry is simply treated as current
-      from its enactment onward, whole-history fallback otherwise).
+    * ``valid_to`` = the REPEAL date read from the statute's consolidated oracle
+      (``finlex:repealedBy / ... / dateEntryIntoForce[@date]``, the date the
+      repealing act entered into force) when the act has been repealed and the
+      corpus exposes that date; else ``None`` (open).  This closes the window of
+      a repealed-and-superseded version so as-of-citing disambiguation can drop
+      it (an act repealed and re-enacted under the same name).  A still-in-force
+      act, or a repealed act whose supersession date the corpus does not expose
+      (no oracle / no ``repealedBy`` / unparseable date), keeps an OPEN window —
+      the date is never guessed.
 
     ``limit`` (0 = unbounded) caps the number of ids walked, for cheap tests.
     ``archive_path`` defaults to ``$LAWVM_CANONICAL_DATA_ROOT/data/finlex.farchive``.
@@ -776,27 +1086,36 @@ def all_entries_from_farchive(
         if not xb:
             continue
         extracted = _extract_title_and_date(xb)
-        del xb  # release the XML blob immediately (bounded peak memory)
+        del xb  # release the source XML blob immediately (bounded peak memory)
         if extracted is None:
             continue
         title, valid_from = extracted
+        # The repeal/supersession date lives ONLY in the consolidated oracle
+        # (the source XML carries no repealedBy block); read it separately and
+        # discard it immediately to keep peak memory at one blob.
+        oracle_xb = store.read_oracle(sid)
+        valid_to = _extract_repeal_date(oracle_xb) if oracle_xb else None
+        del oracle_xb
         yield StatuteNameEntry(
             statute_id=sid,
             canonical_title=title,
             valid_from=valid_from,
-            valid_to=None,
+            valid_to=valid_to,
         )
 
 
 __all__ = [
     "STATUTE_NAME_ALIASES",
     "Candidate",
+    "_extract_repeal_date",
     "all_entries_from_farchive",
     "RegistryResult",
     "StatuteNameAlias",
     "StatuteNameEntry",
     "StatuteNameRegistry",
     "build_registry",
+    "citation_content_key",
+    "content_word_set",
     "default_artifact_path",
     "derive_nicknames",
     "load_statute_name_entries",

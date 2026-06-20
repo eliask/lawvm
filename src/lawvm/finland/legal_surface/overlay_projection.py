@@ -64,7 +64,12 @@ OVERLAY_KIND_BY_NODE_KIND: Mapping[str, str] = {
     "temporal_expr": "temporal",
     "delegation_frame": "delegation",
     "procedure_frame": "procedure",
+    # Bare process/sanction nouns demoted to cues keep the SAME viewer highlight
+    # (procedure / sanction) as their frame siblings — the cue carries the same
+    # span + typed sub-kind, so the overlay label is identical.
+    "procedure_cue": "procedure",
     "sanction_frame": "sanction",
+    "sanction_cue": "sanction",
     "exception_condition_cue": "exception_condition",
     "actor_modal_frame": "actor_modal",
 }

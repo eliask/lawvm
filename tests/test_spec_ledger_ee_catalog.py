@@ -18,9 +18,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_ee_catalog import _EE_RULE_SPECS
 
 _ESTONIA_DIR = Path(__file__).resolve().parents[1] / "src" / "lawvm" / "estonia"
+_SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 
 # Documented non-rule ``ee_*`` literals excluded from the rule-id denominator.  Kept in
 # sync with the catalog module docstring; if either changes, this test should be updated
@@ -74,9 +76,11 @@ def test_every_discovered_rule_id_is_cataloged() -> None:
     discovered = _discover_ee_rule_ids()
     assert discovered, "AST discovery found no EE rule-id literals"
     uncataloged = sorted(discovered - set(_EE_RULE_SPECS))
+    locations = locate_rule_ids(_ESTONIA_DIR, uncataloged, repo_root=_SRC_ROOT)
     assert not uncataloged, (
         f"{len(uncataloged)} EE witness rule id(s) have no believed_spec entry in "
-        f"_EE_RULE_SPECS (cataloged fraction < 100%): {uncataloged}"
+        "_EE_RULE_SPECS (cataloged fraction < 100%) (id <- emit site):\n"
+        f"{format_uncataloged(uncataloged, locations)}"
     )
 
 

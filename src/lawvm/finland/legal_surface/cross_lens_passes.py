@@ -50,12 +50,18 @@ from lawvm.core.legal_surface_lens import SurfaceEdgeSeed
 # against the Finnish lens emitters (lenses/{delegation,procedure,sanction,
 # exception_condition,actor_modal}.py): the exception lens emits the CUE kind
 # ``exception_condition_cue`` (not a ``*_frame`` alias).
+# A bare process/sanction noun is demoted to ``procedure_cue`` / ``sanction_cue``
+# but anchors the SAME span the ``*_frame`` did; these colocation passes attach by
+# SPAN PROXIMITY only, so including the cue kinds keeps the frame↔reference and
+# frame↔temporal edge sets identical to before the demote.
 FRAME_NODE_KINDS: tuple[str, ...] = (
     "actor_modal_frame",
     "delegation_frame",
     "exception_condition_cue",
     "procedure_frame",
+    "procedure_cue",
     "sanction_frame",
+    "sanction_cue",
 )
 
 # EXPERIMENTAL tunable: max character gap between the frame span and the child

@@ -83,7 +83,7 @@ class SanctionLens:
     lens_id: str = _LENS_ID
     jurisdiction: str = "fi"
     schema_version: str = "v0"
-    produces_node_kinds: tuple[str, ...] = ("sanction_frame",)
+    produces_node_kinds: tuple[str, ...] = ("sanction_frame", "sanction_cue")
     produces_edge_kinds: tuple[str, ...] = ()
     required_views: tuple[str, ...] = ("token_tape",)
 
@@ -124,7 +124,12 @@ class SanctionLens:
             diagnostics=(),
             coverage={
                 "units_scanned": units_scanned,
-                "sanction_frames": len(node_seeds),
+                "sanction_frames": sum(
+                    1 for s in node_seeds if s.node_kind == "sanction_frame"
+                ),
+                "sanction_cues": sum(
+                    1 for s in node_seeds if s.node_kind == "sanction_cue"
+                ),
                 "residuals": len(residual_seeds),
             },
         )
@@ -141,8 +146,19 @@ class SanctionLens:
             frame.source_span,
         )
         sanction_kind = frame.sanction_kind.value
+        target_payload = _opt_span_payload(frame.target_actor_span)
+        trigger_payload = _opt_span_payload(frame.trigger_span)
+        # A frame with NONE of its defining flanks (no target actor AND no
+        # trigger) carries no frame structure — it is a bare sanction-marker
+        # CUE. Demote it to ``sanction_cue`` (no-fabrication: the "frame" name
+        # would over-claim), keeping the span + sanction_kind + marker_surface
+        # (totality). A frame WITH content stays ``sanction_frame``.
+        admissible_as_frame = (
+            target_payload is not None or trigger_payload is not None
+        )
+        node_kind = "sanction_frame" if admissible_as_frame else "sanction_cue"
         return SurfaceNodeSeed(
-            node_kind="sanction_frame",
+            node_kind=node_kind,
             source_ref=ref,
             local_discriminator=(
                 f"{sanction_kind}|{frame.marker_surface}|"
@@ -155,8 +171,9 @@ class SanctionLens:
             payload={
                 "sanction_kind": sanction_kind,
                 "marker_surface": frame.marker_surface,
-                "target_actor_span": _opt_span_payload(frame.target_actor_span),
-                "trigger_span": _opt_span_payload(frame.trigger_span),
+                "target_actor_span": target_payload,
+                "trigger_span": trigger_payload,
+                "admissible_as_frame": admissible_as_frame,
             },
             authority_role="surface_fact",
         )

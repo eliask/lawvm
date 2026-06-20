@@ -373,6 +373,36 @@ class SyntaxCoverage:
         """The four buckets sum to the classified-token total (no leak)."""
         return self.partition_total == self.total_tokens
 
+    # ── Pro D2 four-class vocabulary (additive aliases) ──────────────────────
+    # Pro ruling D2 renames the partition classes so that the fourth class is a
+    # FAILURE state, not an accepted bucket. The storage fields keep their L0
+    # names (``benign_tokens`` / ``residual_tokens`` / ``silent_tokens``) so no
+    # existing consumer breaks; these accessors expose the Pro-named view.
+    #   benign_tokens   -> benign_uninterpreted_tokens
+    #   residual_tokens -> typed_residual_tokens
+    #   silent_tokens   -> unowned_violation_tokens  (a VIOLATION, drive to 0)
+
+    @property
+    def benign_uninterpreted_tokens(self) -> int:
+        """Pro D2 alias of ``benign_tokens`` (unowned, no cheap legal signal)."""
+        return self.benign_tokens
+
+    @property
+    def typed_residual_tokens(self) -> int:
+        """Pro D2 alias of ``residual_tokens`` (unowned, inside a typed residual)."""
+        return self.residual_tokens
+
+    @property
+    def unowned_violation_tokens(self) -> int:
+        """Pro D2 name for ``silent_tokens``.
+
+        Semantically a VIOLATION (an unowned cheap-legal-signal token the total
+        parse did not account for), NOT an accepted bucket. The target invariant
+        is ``unowned_violation_tokens == 0``; a non-zero value is the honest
+        violation surface to drive down, never a steady state.
+        """
+        return self.silent_tokens
+
 
 @dataclass(frozen=True, slots=True)
 class SourceSyntaxGraph:

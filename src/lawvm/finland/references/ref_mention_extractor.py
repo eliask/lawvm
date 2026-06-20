@@ -75,6 +75,7 @@ from lawvm.finland.references.sections import (
     chapter_akn_path,
     parse_body_provision_tail,
 )
+from lawvm.finland.references.lemma_gate import head_case_forms
 from lawvm.finland.references.eu_directive import recognize_eu_directive_refs
 from lawvm.finland.references.eu_nickname_binding import (
     build_statute_local_nicknames,
@@ -206,19 +207,94 @@ _SECTION_NUM_LABEL_RE = re.compile(
 # with the SAME expressiveness as the johtolause amendment grammar. The regex
 # remains the prefilter/anchor only (statute identity), per AGENTS.md §1.13.
 #
+# STATUTE-HEAD INFLECTION DEMOTION (single source of inflection truth):
+#   The head-inflection alternations are no longer hand-written suffix lists.
+#   They are GENERATED from the M1 morphology engine (``head_case_forms``,
+#   paradigm inversion) for a CURATED ``(case, number)`` set per head — exactly
+#   the case set each arm historically recognized — killing the consonant-
+#   gradation substring bug class and giving the by-name / inline lanes ONE
+#   source of statute-head inflection truth (mirrors
+#   ``inline_citation_extractor._STATUTE_HEAD_FORMS``).
+#
+#   The curated case sets reproduce the prior hand-written alternations
+#   BYTE-FOR-BYTE (verified superset with zero extra, zero dropped), so this is
+#   a pure refactor with no output change. Where M1's ``reference_v1`` profile
+#   cannot generate a form (it omits the ESSIVE), the form is supplied as a
+#   closed explicit supplement, same pattern as the inline lane.
+#
 #   group 1 = statute number, group 2 = statute year.
+_STEM = r"[a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]"
+
+def _head_alt(
+    lemma: str,
+    case_numbers: tuple[tuple[str, str], ...],
+    *,
+    supplement: tuple[str, ...] = (),
+) -> str:
+    """Morphology-generated inflection alternation body for one statute head.
+
+    Produces the ``form|form|...`` alternation (longest-first, for suffix-
+    alternation safety) of the M1 surfaces of ``lemma`` for the curated
+    ``(case, number)`` set, plus an explicit ``supplement`` for forms M1's
+    ``reference_v1`` profile cannot generate (the ESSIVE — supplied per call
+    only where the original arm carried it). This replaces the hand-written
+    suffix lists with the single morphology source of truth; the curated case
+    set + per-call supplement reproduce the prior alternation byte-for-byte.
+    """
+    forms = set(head_case_forms(lemma, case_numbers)) | set(supplement)
+    if not forms:  # pragma: no cover - reference_v1 always emits these heads
+        raise AssertionError(f"M1 generated no surfaces for statute head {lemma!r}")
+    return "|".join(sorted(forms, key=lambda s: (-len(s), s)))
+
+
+# Curated (case, number) sets — exactly the cases each arm historically matched.
+_LAKI_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ALL", "SG"), ("ADE", "SG"), ("ABL", "SG"), ("ILL", "SG"),
+)
+_LAKI_BARE_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ALL", "SG"), ("ADE", "SG"), ("ABL", "SG"),
+)
+_ASETUS_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"), ("ILL", "SG"),
+)
+_ASETUS_BARE_CASES = (
+    ("GEN", "SG"), ("PART", "SG"), ("INE", "SG"), ("ELA", "SG"),
+    ("TRA", "SG"), ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"),
+)
+_PAATOS_CASES = (
+    ("GEN", "SG"), ("INE", "SG"), ("ELA", "SG"), ("TRA", "SG"),
+    ("ADE", "SG"), ("ALL", "SG"), ("ABL", "SG"), ("PART", "SG"),
+)
+_SAADOS_CASES = (("GEN", "SG"), ("PART", "SG"), ("ILL", "SG"))
+_GEN_ONLY = (("GEN", "SG"),)
+
 _PLAIN_TEXT_FI_STATUTE_RE = re.compile(
     r"""
     (?:
-        # Named law/statute word with inflection suffix (nominative and case forms)
-        [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
-      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
-        (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
-      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{0,60}
-        (?:p\xe4\xe4t\xf6ksen|p\xe4\xe4t\xf6ksess\xe4|p\xe4\xe4t\xf6ksest\xe4|p\xe4\xe4t\xf6kseksi|p\xe4\xe4t\xf6ksell\xe4|p\xe4\xe4t\xf6kselle|p\xe4\xe4t\xf6kselt\xe4|p\xe4\xe4t\xf6st\xe4)
-      | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
-      | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
+        # Named law/statute word with inflection suffix (case forms; NOM is NOT
+        # in these arms — bare ``laki``/``asetus`` are handled by the discriminating
+        # ``annettu``-participle arm below). Alternations are M1-generated.
+        #   ``laki``    GEN/PART/INE/ELA/TRA/ALL/ADE/ABL/ILL + ESS ``lakina``
+    """ + _STEM + r"""{1,60}
+        (?:""" + _head_alt("laki", _LAKI_CASES, supplement=("lakina",)) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``asetus``  GEN/PART/INE/ELA/TRA/ADE/ALL/ABL/ILL + ESS ``asetuksena``
+        (?:""" + _head_alt("asetus", _ASETUS_CASES, supplement=("asetuksena",)) + r""")
+      | """ + _STEM + r"""{0,60}
+        #   ``päätös``  GEN/INE/ELA/TRA/ADE/ALL/ABL/PART
+        (?:""" + _head_alt("päätös", _PAATOS_CASES) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``säädös``  GEN/PART/ILL
+        (?:""" + _head_alt("säädös", _SAADOS_CASES) + r""")
+      | """ + _STEM + r"""{1,60}
+        #   ``määräys`` GEN  (määräyksen)   ``direktiivi`` GEN  (direktiivin)
+        (?:""" + _head_alt("määräys", _GEN_ONLY) + r"""|"""
+        + _head_alt("direktiivi", _GEN_ONLY) + r""")
+      | \b(?:""" + _head_alt("laki", _LAKI_BARE_CASES) + r""")
+      | \b(?:""" + _head_alt("asetus", _ASETUS_BARE_CASES) + r""")
       # NOMINATIVE head ``laki`` / ``asetus`` — the repeal/description johtolause
       # form ``[…sta/stä] annettu asetus/laki (NNN/YYYY)`` (``kumotaan … annettu
       # asetus (875/1983)``). The nominative heads are extremely common bare
@@ -441,6 +517,24 @@ class PlainTextStatuteCitationRecognizer:
             # ``(id)`` by the ``<ref>`` boundary becomes adjacent again. Bounded
             # (whitespace only — never merges across intervening words).
             text = _WHITESPACE_RUN_RE.sub(" ", text)
+
+        return self.scan_text(text)
+
+    def scan_text(self, text: str) -> List[PlainTextStatuteHit]:
+        """Scan a plain text STRING for provision-precise statute citation hits.
+
+        Text-level twin of :meth:`scan_precise` (which first extracts non-``<ref>``
+        text from a ``<p>`` element, then delegates here). This is the shared
+        statute-cite recognizer surface for any caller that already holds the body
+        text as a string — e.g. the inline-citation lane, which scans ``<p>`` text
+        nodes directly. Routing both lanes through this one method keeps the
+        statute-id + section/momentti grammar UNIFIED (AGENTS.md §1.13): there is
+        exactly one structural parser for ``name (NNN/YYYY) <provision tail>``.
+
+        Per AGENTS.md §1.11: substring guard applied before regex scan.
+        """
+        if not text:
+            return []
 
         # Substring guard (fast path — eliminates ~99% of non-matching calls).
         # A statute citation always carries the ``(NUMBER/YEAR)`` parenthetical,

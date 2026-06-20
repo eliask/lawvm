@@ -233,17 +233,23 @@ class UnattachedQualifier:
 
 
 def _node_index_by_unit_kind(
-    nodes: Mapping[str, SurfaceNode], kind: str
+    nodes: Mapping[str, SurfaceNode], kind: str | frozenset[str]
 ) -> dict[str, list[tuple[str, SourceSpanRef]]]:
-    """Index source-fact nodes of one kind by source unit, sorted by char_start.
+    """Index source-fact nodes of one (or several) kind(s) by source unit.
 
     Returns ``{source_unit_id: [(node_id, source_ref), …]}`` for nodes carrying a
-    ``source_ref``. Entity-handle nodes (no ``source_ref``) are skipped — they have
-    no span to match a construction span against.
+    ``source_ref``, sorted by char_start. Entity-handle nodes (no ``source_ref``)
+    are skipped — they have no span to match a construction span against.
+
+    ``kind`` may be a single kind string or a frozenset of kinds (used to admit a
+    demoted ``*_cue`` alongside its ``*_frame`` sibling: a bare process/sanction
+    noun carries the same span + typed sub-kind a frame does, so a span-based
+    construction pass treats them identically).
     """
+    kinds = frozenset({kind}) if isinstance(kind, str) else kind
     index: dict[str, list[tuple[str, SourceSpanRef]]] = {}
     for nid, node in nodes.items():
-        if node.node_kind != kind:
+        if node.node_kind not in kinds:
             continue
         ref = node.source_ref
         if ref is None:
@@ -725,6 +731,14 @@ RULE_SANCTIONED_BY = "fi.norm_composition.sanctioned_by"
 #: targets are the production ``delegation_frame`` / ``sanction_frame`` nodes.
 DELEGATION_FRAME_KIND = "delegation_frame"
 SANCTION_FRAME_KIND = "sanction_frame"
+#: A bare sanction noun is demoted to ``sanction_cue`` (no target actor / no
+#: trigger) but carries the SAME span + ``sanction_kind`` + ``marker_surface`` a
+#: ``sanction_frame`` does. The penal-deferral construction ("rangaistaan … niin
+#: kuin §:ssä säädetään") is precisely a bare sanction, so these span-based passes
+#: must admit BOTH kinds to keep their edge sets identical to before the demote.
+SANCTION_FRAME_KINDS: frozenset[str] = frozenset(
+    {SANCTION_FRAME_KIND, "sanction_cue"}
+)
 
 #: deontic-core ``kind`` (payload) that licenses each edge family.
 _POWER_KIND = "power"
@@ -813,6 +827,7 @@ class DeonticFrameAttachmentPass:
         CORE_NODE_KIND,
         DELEGATION_FRAME_KIND,
         SANCTION_FRAME_KIND,
+        "sanction_cue",
     )
     emits_edge_kinds: tuple[str, ...] = (EDGE_DELEGATES_TO, EDGE_SANCTIONED_BY)
     # Typed diagnostics for cores that produced no edge. Populated on run(); read by
@@ -823,7 +838,7 @@ class DeonticFrameAttachmentPass:
         self.unattached = []
         core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
         deleg_index = _node_index_by_unit_kind(graph.nodes, DELEGATION_FRAME_KIND)
-        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KIND)
+        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KINDS)
 
         seeds: list[SurfaceEdgeSeed] = []
         for unit in self.units:
@@ -1334,7 +1349,11 @@ class SanctionReferencePass:
 
     units: tuple[SourceSurfaceUnit, ...]
     pass_id: str = PASS_ID_SANCTION_REF
-    reads_node_kinds: tuple[str, ...] = (SANCTION_FRAME_KIND, REFERENCE_EXPR_KIND)
+    reads_node_kinds: tuple[str, ...] = (
+        SANCTION_FRAME_KIND,
+        "sanction_cue",
+        REFERENCE_EXPR_KIND,
+    )
     emits_edge_kinds: tuple[str, ...] = (EDGE_SANCTION_DEFERS,)
     # Typed diagnostics for sanctions with no deferral reference. Populated on
     # run(); read by the differential report. NOT a graph element.
@@ -1342,7 +1361,7 @@ class SanctionReferencePass:
 
     def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
         self.unattached = []
-        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KIND)
+        sanct_index = _node_index_by_unit_kind(graph.nodes, SANCTION_FRAME_KINDS)
         ref_index = _node_index_by_unit_kind(graph.nodes, REFERENCE_EXPR_KIND)
 
         seeds: list[SurfaceEdgeSeed] = []
@@ -1746,6 +1765,12 @@ RULE_GOVERNED_BY_PROCEDURE = "fi.norm_composition.governed_by_procedure"
 
 #: The procedure node kind this pass joins (the H5 ProcedureLens node).
 PROCEDURE_FRAME_KIND = "procedure_frame"
+#: A bare process noun is demoted to ``procedure_cue`` (no actor / no deadline)
+#: but carries the SAME span + ``process_kind`` a ``procedure_frame`` does. This
+#: span-based co-occurrence pass admits BOTH so its edge set is unchanged.
+PROCEDURE_FRAME_KINDS: frozenset[str] = frozenset(
+    {PROCEDURE_FRAME_KIND, "procedure_cue"}
+)
 
 #: deontic-core ``kind`` values that license a governed_by_procedure edge.
 _PROCEDURE_GOVERNED_KINDS = frozenset({"obligation", "power"})
@@ -1765,14 +1790,18 @@ class ProcedureGovernancePass:
 
     units: tuple[SourceSurfaceUnit, ...]
     pass_id: str = PASS_ID_PROCEDURE
-    reads_node_kinds: tuple[str, ...] = (CORE_NODE_KIND, PROCEDURE_FRAME_KIND)
+    reads_node_kinds: tuple[str, ...] = (
+        CORE_NODE_KIND,
+        PROCEDURE_FRAME_KIND,
+        "procedure_cue",
+    )
     emits_edge_kinds: tuple[str, ...] = (EDGE_GOVERNED_BY_PROCEDURE,)
     unattached: list[UnattachedCore] = field(default_factory=list)
 
     def run(self, graph: LegalSurfaceGraph) -> tuple[SurfaceEdgeSeed, ...]:
         self.unattached = []
         core_index = _node_index_by_unit_kind(graph.nodes, CORE_NODE_KIND)
-        proc_index = _node_index_by_unit_kind(graph.nodes, PROCEDURE_FRAME_KIND)
+        proc_index = _node_index_by_unit_kind(graph.nodes, PROCEDURE_FRAME_KINDS)
 
         seeds: list[SurfaceEdgeSeed] = []
         for unit in self.units:
@@ -2626,8 +2655,10 @@ __all__ = [
     "DELEGATED_INSTRUMENT_KIND",
     "DELEGATION_FRAME_KIND",
     "PROCEDURE_FRAME_KIND",
+    "PROCEDURE_FRAME_KINDS",
     "REFERENCE_EXPR_KIND",
     "SANCTION_FRAME_KIND",
+    "SANCTION_FRAME_KINDS",
     "ConditionAttachmentPass",
     "DelegationInstrumentPass",
     "DeonticFrameAttachmentPass",

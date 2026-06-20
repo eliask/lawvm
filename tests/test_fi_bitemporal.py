@@ -95,7 +95,7 @@ def _cross_statute_mention(
 
 def test_present_provision_yields_no_finding() -> None:
     mention = _cross_statute_mention(
-        source_statute="711/2022",
+        source_statute="2022/711",
         target_statute="500/2010",
         target_section="5",
         cited_on=date(2022, 1, 1),
@@ -116,7 +116,7 @@ def test_present_provision_yields_no_finding() -> None:
 
 def test_repealed_provision_yields_repealed_since() -> None:
     mention = _cross_statute_mention(
-        source_statute="711/2022",
+        source_statute="2022/711",
         target_statute="500/2010",
         target_section="5",
         cited_on=date(2012, 1, 1),
@@ -145,7 +145,7 @@ def test_repealed_provision_yields_repealed_since() -> None:
 
 def test_moved_provision_yields_renumbered_since() -> None:
     mention = _cross_statute_mention(
-        source_statute="711/2022",
+        source_statute="2022/711",
         target_statute="500/2010",
         target_section="5",
         cited_on=date(2012, 1, 1),
@@ -172,7 +172,7 @@ def test_moved_provision_yields_renumbered_since() -> None:
 
 def test_unmaterializable_tree_yields_unavailable_not_broken() -> None:
     mention = _cross_statute_mention(
-        source_statute="711/2022",
+        source_statute="2022/711",
         target_statute="999/9999",
         target_section="5",
         cited_on=date(2022, 1, 1),
@@ -201,8 +201,12 @@ def test_unmaterializable_tree_yields_unavailable_not_broken() -> None:
 
 
 def test_citation_anchor_from_statute_year() -> None:
-    assert citation_anchor_for_statute("711/2022") == date(2022, 1, 1)
-    # tail after the last "/" is the number, not the year -> implausible -> None.
+    # Finnish ids are YEAR/NUMBER: the leading segment is the enactment year.
+    assert citation_anchor_for_statute("2022/711") == date(2022, 1, 1)
+    # The trailing number can itself look like a year (1725th act of 1991);
+    # anchoring must take the LEADING segment, not the trailing ordinal.
+    assert citation_anchor_for_statute("1991/1725") == date(1991, 1, 1)
+    # Leading segment not a plausible year -> no anchor (fail-soft).
     assert citation_anchor_for_statute("eu/dir/2019/790") is None
     assert citation_anchor_for_statute("garbage") is None
 
@@ -240,13 +244,13 @@ _BODY_WITH_REF = (
 
 
 def test_scan_one_statute_reports_unavailable_when_target_tree_missing() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
         return None  # target 500/2010 cannot be materialized
 
     result = scan_one_statute(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=tree_as_of,
         provision_present=_present,
@@ -261,13 +265,13 @@ def test_scan_one_statute_reports_unavailable_when_target_tree_missing() -> None
 
 
 def test_scan_one_statute_no_body_is_not_an_error() -> None:
-    store = _FakeStore({})  # 711/2022 has no body
+    store = _FakeStore({})  # 2022/711 has no body
 
     def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
         return _statute_tree("5")
 
     result = scan_one_statute(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=tree_as_of,
         provision_present=_present,
@@ -279,17 +283,17 @@ def test_scan_one_statute_no_body_is_not_an_error() -> None:
 
 
 def test_scan_one_statute_repealed_target_is_a_finding() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
-        # The citing statute is 711/2022 -> anchor 2022-01-01. § 5 of 500/2010
+        # The citing statute is 2022/711 -> anchor 2022-01-01. § 5 of 500/2010
         # was present at the anchor but is gone (and statute empty) now.
         if on <= date(2022, 6, 1):
             return _statute_tree("1", "5")
         return _statute_tree()
 
     result = scan_one_statute(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=tree_as_of,
         provision_present=_present,
@@ -307,7 +311,7 @@ def test_scan_one_statute_repealed_target_is_a_finding() -> None:
 
 
 def test_scan_broken_references_aggregates_by_reason() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
         if on <= date(2022, 6, 1):
@@ -315,7 +319,7 @@ def test_scan_broken_references_aggregates_by_reason() -> None:
         return _statute_tree()
 
     report: BrokenRefReport = scan_broken_references(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=tree_as_of,
         provision_present=_present,
@@ -327,7 +331,7 @@ def test_scan_broken_references_aggregates_by_reason() -> None:
     assert report.total_findings == 1
     assert report.reason_counts == {"repealed_since": 1}
     assert report.unavailable_count == 0
-    assert report.top_statutes(5)[0].sid == "711/2022"
+    assert report.top_statutes(5)[0].sid == "2022/711"
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +389,7 @@ def test_cache_remembers_misses_no_re_replay() -> None:
 
 def test_cache_does_not_change_findings() -> None:
     """Same scan, cached vs uncached adapter -> byte-identical findings."""
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def base_tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
         if on <= date(2022, 6, 1):
@@ -393,14 +397,14 @@ def test_cache_does_not_change_findings() -> None:
         return _statute_tree()
 
     uncached = scan_broken_references(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=base_tree_as_of,
         provision_present=_present,
         current_as_of=date(2026, 1, 1),
     )
     cached = scan_broken_references(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=cached_tree_as_of(base_tree_as_of, cache=PitCache()),
         provision_present=_present,
@@ -427,13 +431,13 @@ def test_cache_eviction_bounds_size() -> None:
 
 
 def test_scan_broken_references_unavailable_counted_separately() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def tree_as_of(statute_id: str, on: date) -> Optional[IRNode]:
         return None
 
     report = scan_broken_references(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         tree_as_of=tree_as_of,
         provision_present=_present,
@@ -475,13 +479,13 @@ _TARGET_NO_SEC5 = (
 
 
 def test_current_state_present_section_yields_no_finding() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_HAS_SEC5 if statute_id == "2010/500" else None
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
     )
@@ -492,13 +496,13 @@ def test_current_state_present_section_yields_no_finding() -> None:
 
 
 def test_current_state_absent_section_yields_finding() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
     )
@@ -516,13 +520,13 @@ def test_current_state_absent_section_yields_finding() -> None:
 
 
 def test_current_state_unavailable_target_is_not_called_absent() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return None  # target current body unavailable -> fail-loud
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
     )
@@ -535,13 +539,13 @@ def test_current_state_unavailable_target_is_not_called_absent() -> None:
 
 
 def test_current_state_unparseable_target_is_unavailable_not_absent() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return b"<<<not xml"  # parse fails -> presence undetermined
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
     )
@@ -551,13 +555,13 @@ def test_current_state_unparseable_target_is_unavailable_not_absent() -> None:
 
 
 def test_scan_current_state_aggregates_by_kind() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
 
     report: CurrentStateReport = scan_current_state(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
     )
@@ -567,7 +571,7 @@ def test_scan_current_state_aggregates_by_kind() -> None:
     assert report.total_findings == 1
     assert report.kind_counts == {"reference.target_provision_absent": 1}
     assert report.unavailable_count == 0
-    assert report.top_statutes(5)[0].sid == "711/2022"
+    assert report.top_statutes(5)[0].sid == "2022/711"
 
 
 def test_scan_current_state_no_body_is_not_an_error() -> None:
@@ -579,7 +583,7 @@ def test_scan_current_state_no_body_is_not_an_error() -> None:
     # A citer with no oracle has no consolidated text-state -> out of scope, so
     # it is skipped (not checked), but never an error.
     report = scan_current_state(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
         in_scope=lambda sid: True,  # force in-scope so "no body" path is exercised
@@ -601,20 +605,20 @@ def test_scan_current_state_no_body_is_not_an_error() -> None:
 
 
 def test_out_of_scope_citer_is_skipped_not_checked() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_NO_SEC5  # would yield a finding IF the citer were checked
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
         in_scope=lambda sid: False,  # no consolidated text-state -> out of scope
     )
     assert result.error is None
     assert result.skipped is not None
-    assert result.skipped.sid == "711/2022"
+    assert result.skipped.sid == "2022/711"
     assert "consolidated text-state" in result.skipped.reason
     # Skipped citers are NOT checked: no findings manufactured.
     assert result.findings == ()
@@ -623,17 +627,17 @@ def test_out_of_scope_citer_is_skipped_not_checked() -> None:
 
 
 def test_scan_current_state_surfaces_skipped_count() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF, "712/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF, "2022/712": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
 
-    # 711/2022 in scope (checked -> a finding); 712/2022 out of scope (skipped).
+    # 2022/711 in scope (checked -> a finding); 2022/712 out of scope (skipped).
     report = scan_current_state(
-        ["711/2022", "712/2022"],
+        ["2022/711", "2022/712"],
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
-        in_scope=lambda sid: sid == "711/2022",
+        in_scope=lambda sid: sid == "2022/711",
     )
     assert report.statutes_scanned == 2
     assert report.skipped_count == 1
@@ -643,13 +647,13 @@ def test_scan_current_state_surfaces_skipped_count() -> None:
 
 
 def test_in_scope_citer_is_still_checked() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
 
     def body_for(statute_id: str) -> Optional[bytes]:
         return _TARGET_NO_SEC5 if statute_id == "2010/500" else None
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
         in_scope=lambda sid: True,
@@ -660,7 +664,7 @@ def test_in_scope_citer_is_still_checked() -> None:
 
 
 # A citer body whose ref is an INTERNAL self-reference: a bare "9 §:ssä" that the
-# extractor resolves to SELF (target statute == the citing statute 711/2022). The
+# extractor resolves to SELF (target statute == the citing statute 2022/711). The
 # product scopes to CROSS-statute citations, so this must be excluded (surfaced),
 # never checked against the citer's own parsed body and never made a finding.
 _BODY_WITH_SELF_REF = (
@@ -673,7 +677,7 @@ _BODY_WITH_SELF_REF = (
 
 
 def test_self_reference_is_excluded_not_checked() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_SELF_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_SELF_REF})
 
     # body_for must never be consulted for an excluded self-ref; if it were and
     # returned a body lacking §5, that would (wrongly) become a finding.
@@ -681,7 +685,7 @@ def test_self_reference_is_excluded_not_checked() -> None:
         return _TARGET_NO_SEC5
 
     result = scan_one_statute_current_state(
-        "711/2022",
+        "2022/711",
         store,  # ty: ignore[invalid-argument-type]
         body_for=body_for,
         in_scope=lambda sid: True,
@@ -695,13 +699,187 @@ def test_self_reference_is_excluded_not_checked() -> None:
 
 
 def test_scan_current_state_surfaces_self_refs_excluded() -> None:
-    store = _FakeStore({"711/2022": _BODY_WITH_SELF_REF})
+    store = _FakeStore({"2022/711": _BODY_WITH_SELF_REF})
 
     report = scan_current_state(
-        ["711/2022"],
+        ["2022/711"],
         store,  # ty: ignore[invalid-argument-type]
         body_for=lambda sid: _TARGET_NO_SEC5,
         in_scope=lambda sid: True,
     )
     assert report.self_refs_excluded >= 1
     assert report.total_findings == 0
+
+
+# ---------------------------------------------------------------------------
+# Statute-lifecycle layer (registry/oracle-driven, no replay) integration
+# ---------------------------------------------------------------------------
+#
+# The current-state scan ALSO runs the statute-lifecycle detector: the cited ACT
+# itself repealed / not-yet-in-force at the citing date. These inject a fake
+# ``lifecycle_of`` (and exercise the real LifecycleCache against a synthetic
+# store) — NO corpus, no replay.
+
+from lawvm.finland.legal_surface.bitemporal import (  # noqa: E402
+    LifecycleCache,
+    oracle_lifecycle_lookup,
+)
+from lawvm.finland.references.broken_detection import StatuteLifecycle  # noqa: E402
+
+# A consolidated oracle carrying a finlex repeal block (repealing act entered
+# into force 2015-04-01 -> exclusive valid_to). Mirrors the real oracle shape
+# _extract_repeal_date reads.
+_ORACLE_REPEALED = (
+    b'<?xml version="1.0" encoding="UTF-8"?>'
+    b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" '
+    b'xmlns:finlex="http://data.finlex.fi/schema/finlex">'
+    b"<finlex:repealedBy><finlex:statuteReference><finlex:inForce>"
+    b'<finlex:dateEntryIntoForce date="2015-04-01"/>'
+    b"</finlex:inForce></finlex:statuteReference></finlex:repealedBy>"
+    b'<body><section eId="sec_5"><num>5 \xc2\xa7</num><p>x.</p></section></body>'
+    b"</akomaNtoso>"
+)
+
+# A source XML carrying an enactment date (FRBRWork dateIssued).
+_SOURCE_2010 = (
+    b'<?xml version="1.0" encoding="UTF-8"?>'
+    b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+    b'<act><meta><identification><FRBRWork>'
+    b'<FRBRdate date="2010-06-01" name="dateIssued"/>'
+    b"</FRBRWork></identification></meta>"
+    b"<body><docTitle>Testilaki</docTitle></body></act></akomaNtoso>"
+)
+
+
+def _lifecycle_table(table: dict[str, StatuteLifecycle]):
+    def _lookup(statute_id: str) -> StatuteLifecycle:
+        return table.get(
+            statute_id, StatuteLifecycle(valid_from=None, valid_to=None, known=False)
+        )
+
+    return _lookup
+
+
+def test_current_state_lifecycle_repealed_target_is_a_finding() -> None:
+    """Citer 2022/711 -> target 2010/500 repealed 2015 -> dead at the 2022 anchor."""
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
+    lifecycle = _lifecycle_table(
+        {
+            "2010/500": StatuteLifecycle(
+                valid_from=date(2010, 1, 1), valid_to=date(2015, 4, 1)
+            )
+        }
+    )
+    result = scan_one_statute_current_state(
+        "2022/711",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=lambda sid: _TARGET_HAS_SEC5,  # provision present -> only lifecycle fires
+        in_scope=lambda sid: True,
+        lifecycle_of=lifecycle,
+    )
+    assert result.error is None
+    assert result.findings == ()  # provision is present in current text-state
+    assert len(result.lifecycle_findings) == 1
+    lf = result.lifecycle_findings[0]
+    assert lf.reason is BrokenReason.TARGET_STATUTE_REPEALED
+    assert lf.target.statute_id == "2010/500"
+    assert lf.target_window == (date(2010, 1, 1), date(2015, 4, 1))
+
+
+def test_current_state_lifecycle_unknown_is_unverifiable_not_broken() -> None:
+    """Unknown target lifecycle -> unverifiable bucket, never a lifecycle finding."""
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
+    result = scan_one_statute_current_state(
+        "2022/711",
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=lambda sid: _TARGET_HAS_SEC5,
+        in_scope=lambda sid: True,
+        lifecycle_of=_lifecycle_table({}),  # no entry -> known=False
+    )
+    assert result.lifecycle_findings == ()
+    assert len(result.lifecycle_unverifiable) == 1
+    assert result.lifecycle_unverifiable[0].unavailable_for == "target_lifecycle"
+
+
+def test_scan_current_state_aggregates_lifecycle_by_reason() -> None:
+    store = _FakeStore({"2022/711": _BODY_WITH_REF})
+    lifecycle = _lifecycle_table(
+        {
+            "2010/500": StatuteLifecycle(
+                valid_from=date(2010, 1, 1), valid_to=date(2015, 4, 1)
+            )
+        }
+    )
+    report = scan_current_state(
+        ["2022/711"],
+        store,  # ty: ignore[invalid-argument-type]
+        body_for=lambda sid: _TARGET_HAS_SEC5,
+        in_scope=lambda sid: True,
+        lifecycle_of=lifecycle,
+    )
+    assert report.total_lifecycle_findings == 1
+    assert report.lifecycle_reason_counts == {"target_statute_repealed": 1}
+    assert report.statutes_with_findings == 1
+
+
+def test_lifecycle_cache_reads_repeal_date_from_oracle() -> None:
+    """LifecycleCache reads valid_from from source + valid_to from the oracle block."""
+
+    class _S:
+        def read_source(self, sid):
+            return _SOURCE_2010 if sid == "2010/500" else None
+
+        def read_amendment(self, sid):
+            return None
+
+        def read_oracle(self, sid):
+            return _ORACLE_REPEALED if sid == "2010/500" else None
+
+    cache = LifecycleCache(_S())  # ty: ignore[invalid-argument-type]
+    lc = cache.get("2010/500")
+    assert lc.known is True
+    assert lc.valid_from == date(2010, 6, 1)
+    assert lc.valid_to == date(2015, 4, 1)
+    # Second read is a cache hit (no re-parse).
+    cache.get("2010/500")
+    assert cache.hits == 1
+    assert cache.misses == 1
+
+
+def test_lifecycle_cache_unknown_when_no_corpus_xml() -> None:
+    """A statute with no source/amendment/oracle -> known=False (fail-loud)."""
+
+    class _Empty:
+        def read_source(self, sid):
+            return None
+
+        def read_amendment(self, sid):
+            return None
+
+        def read_oracle(self, sid):
+            return None
+
+    lookup = oracle_lifecycle_lookup(_Empty())  # ty: ignore[invalid-argument-type]
+    lc = lookup("999/1999")
+    assert lc.known is False
+
+
+def test_lifecycle_cache_in_force_when_no_repeal_block() -> None:
+    """A live act (source date, no repeal block) -> known with OPEN valid_to."""
+
+    class _Live:
+        def read_source(self, sid):
+            return _SOURCE_2010
+
+        def read_amendment(self, sid):
+            return None
+
+        def read_oracle(self, sid):
+            # Oracle present but carries no repealedBy block -> no valid_to.
+            return _TARGET_HAS_SEC5
+
+    lookup = oracle_lifecycle_lookup(_Live())  # ty: ignore[invalid-argument-type]
+    lc = lookup("2010/500")
+    assert lc.known is True
+    assert lc.valid_from == date(2010, 6, 1)
+    assert lc.valid_to is None  # open = in force

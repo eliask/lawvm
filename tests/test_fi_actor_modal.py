@@ -249,3 +249,54 @@ def test_hand_sample_coverage_tally() -> None:
     # All frame-bearing hand-sample clauses must be covered.
     assert coverage == 1.0, f"coverage {coverage:.2%} ({covered}/{frame_clauses})"
     assert residual_only == 1
+
+
+def test_actor_modal_not_fused_across_sentence_boundary() -> None:
+    """An actor at the tail of sentence N must NOT bind a modal in sentence N+1.
+
+    Without a same-sentence guard the small char-gap fuses two sentences into one
+    fabricated frame (the coverage triage's cross-sentence false positive). With
+    the guard the fabrication is gone, and the second sentence's modal — which has
+    no actor in its OWN sentence — becomes a typed ``modal_without_actor`` residual
+    (fail-loud), never a guessed cross-sentence frame.
+    """
+    text = (
+        "Valtioneuvosto asettaa kuntaselvitykselle määräajan. "
+        "Päätös voidaan peruuttaa, jos aihetta ei enää ole."
+    )
+    scan = recognize_actor_modal_frames(text)
+    # No frame may span the sentence boundary: the '.' before "Päätös".
+    boundary = text.index(". ") + 1
+    for frame in scan.frames:
+        span = frame.source_span
+        assert not (
+            span.byte_offset < boundary < span.byte_offset + span.byte_len
+        ), f"frame fuses across the sentence boundary: {frame!r}"
+    # The cross-sentence Valtioneuvosto+voidaan fabrication must be gone.
+    assert not any(
+        f.actor_surface == "Valtioneuvosto" and f.modal.token == "voidaan"
+        for f in scan.frames
+    )
+    # The orphaned modal is a typed residual (fail-loud), never a guessed frame.
+    assert any(
+        r.kind == "modal_without_actor" and r.surface_text == "voidaan"
+        for r in scan.residuals
+    )
+
+
+def test_actor_modal_same_sentence_frame_still_binds() -> None:
+    """A genuine actor+modal in ONE sentence is unaffected by the guard."""
+    text = "Valtioneuvosto voi antaa tarkemmat säännökset asiasta."
+    scan = recognize_actor_modal_frames(text)
+    frame = _frame_for_actor(scan, "Valtioneuvosto")
+    assert frame.modal.token == "voi"
+
+
+def test_actor_modal_terminator_abutting_actor_end() -> None:
+    """A '.' directly abutting the actor end still separates it from a later modal."""
+    text = "Pidättämisestä päättää tuomioistuin. Laillisuus voidaan tutkia."
+    scan = recognize_actor_modal_frames(text)
+    assert not any(
+        f.actor_surface == "tuomioistuin" and f.modal.token == "voidaan"
+        for f in scan.frames
+    )

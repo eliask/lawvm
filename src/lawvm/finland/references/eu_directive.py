@@ -39,6 +39,26 @@ johtolause lexer and running the shared recognizers from
 This module owns NO number-list logic of its own; it only locates the
 ``<numbers> artikla<case>`` window and a preceding nickname head, then delegates
 the numeric expansion to the shared helpers.
+
+Grammar boundary (window location = bounded typed residue)
+----------------------------------------------------------
+The numeric ENUMERATION core — the part structurally analogous to the Finnish
+``momentti``/``kohta`` coordination — is already grammar-routed: every article,
+kohta and alakohta number list (and a ``33—35`` range) is expanded by the shared
+``_number_list``/``_expand_range`` grammar, yielding exactly one mention per
+expanded element. What is NOT grammar-modelled is the *window location* itself:
+``_ARTIKLA_RE`` / ``_KOHTA_TAIL_RE`` / ``_NICKNAME_RE`` / ``_BARE_HEAD_RE`` find
+the ``<numbers> artikla<case>`` span and its governing nickname head in free
+prose. The johtolause construction grammar models Finnish statute-INTERNAL
+structure (``§`` / ``momentti`` / ``kohta``); it carries no ``artikla``
+construction, so locating an EU-instrument-internal article window via the
+grammar would require a new construction family — disproportionate for this
+recognizer's (low) yield. These window-locating patterns are therefore retained
+as DELIBERATE bounded typed residue: every quantifier is explicitly bounded
+(``\\d{1,4}``, ``{0,30}``/``{0,10}`` list caps, literal-anchored ``artikla`` /
+``kohta`` heads), so each is provably linear and passes the §1.11 regex perf
+gate cleanly (no allowlist entry needed). The grammar does not yet model
+EU-internal article structure; that is the documented residue, not a leak.
 """
 from __future__ import annotations
 
