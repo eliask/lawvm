@@ -182,6 +182,13 @@ def test_phase_result_rejects_untyped_effect_side_channel_values() -> None:
         )
 
 
+def test_phase_result_rejects_untyped_temporal_and_migration_side_channel_values() -> None:
+    with pytest.raises(TypeError, match="temporal_events"):
+        PhaseResult(output=None, temporal_events=cast(Any, ("temporal:a",)))
+    with pytest.raises(TypeError, match="migration_events"):
+        PhaseResult(output=None, migration_events=cast(Any, ("migration:a",)))
+
+
 def test_phase_result_rejects_duplicate_effect_graph_ids() -> None:
     instrument = SourceInstrumentRef(instrument_id="2024/1")
     witness = SourceProvisionRef(instrument=instrument, path=("1",))
@@ -241,6 +248,19 @@ def test_phase_builder_rejects_untyped_effect_side_channel_values() -> None:
         builder.add_effect_relation(cast(Any, "relation:a"))
     with pytest.raises(TypeError, match="EffectLifecycleEvent"):
         builder.add_effect_lifecycle_event(cast(Any, "lifecycle:a"))
+
+
+def test_phase_builder_rejects_untyped_temporal_and_migration_side_channel_values() -> None:
+    builder: PhaseBuilder[None] = PhaseBuilder()
+
+    with pytest.raises(TypeError, match="TemporalEvent"):
+        builder.add_temporal_event(cast(Any, "temporal:a"))
+    with pytest.raises(TypeError, match="TemporalEvent"):
+        builder.add_temporal_events(cast(Any, ("temporal:a",)))
+    with pytest.raises(TypeError, match="MigrationEvent"):
+        builder.add_migration_event(cast(Any, "migration:a"))
+    with pytest.raises(TypeError, match="MigrationEvent"):
+        builder.add_migration_events(cast(Any, ("migration:a",)))
 
 
 def test_phase_result_summary_accessors_project_derived_kinds() -> None:
