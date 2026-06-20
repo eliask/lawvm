@@ -252,16 +252,18 @@ def append_fold_timeline_backfill_ops(
         title=base_title,
         body=base_ir,
     )
+    preview_cache: dict[object, object] | None = None
     preview_cache_key: tuple[object, ...] | None = None
     preview: FoldTimelineBackfillResult | None = None
     if preview_raw_timelines is not None and preview_rekeyed_timelines_cache is not None:
+        preview_cache = preview_rekeyed_timelines_cache
         preview_cache_key = (
             "fold_backfill_preview_rekeyed_timelines",
             id(preview_raw_timelines),
             len(preview_raw_timelines),
             _active_migration_signature_key(migration_events, as_of=as_of),
         )
-        cached_preview = preview_rekeyed_timelines_cache.get(preview_cache_key)
+        cached_preview = preview_cache.get(preview_cache_key)
         if isinstance(cached_preview, FoldTimelineBackfillResult):
             preview = cached_preview
     if preview is None:
@@ -274,8 +276,8 @@ def append_fold_timeline_backfill_ops(
             base_enacted_date=base_enacted_date,
             raw_timelines=preview_raw_timelines,
         )
-        if preview_cache_key is not None:
-            preview_rekeyed_timelines_cache[preview_cache_key] = preview
+        if preview_cache is not None and preview_cache_key is not None:
+            preview_cache[preview_cache_key] = preview
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
     backfill_ops: list[LegalOperation] = []

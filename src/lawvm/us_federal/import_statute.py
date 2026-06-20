@@ -50,7 +50,6 @@ from lxml import etree
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
     content_digest,
-    open_us_federal_farchive,
     open_us_federal_import_farchive,
     plaw_locator,
     resolve_us_federal_farchive_path,

@@ -208,6 +208,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_replay_products.py",
     ),
     "finland_replay_products_support": (
+        "test_fi_replay_fold_timeline_backfill.py",
         "test_fi_replay_pipeline.py",
         "test_fi_replay_revision.py",
         "test_fi_session_regressions_2026_04.py",

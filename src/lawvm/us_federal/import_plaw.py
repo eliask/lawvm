@@ -33,7 +33,6 @@ import zipfile
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
     content_digest,
-    open_us_federal_farchive,
     open_us_federal_import_farchive,
     parse_plaw_member_name,
     resolve_us_federal_farchive_path,

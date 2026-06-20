@@ -36,7 +36,6 @@ from lawvm.us_federal.sources import (
     UscAnnualIdentity,
     content_digest,
     extract_usc_edition_currency,
-    open_us_federal_farchive,
     open_us_federal_import_farchive,
     parse_usc_member_name,
     resolve_us_federal_farchive_path,
