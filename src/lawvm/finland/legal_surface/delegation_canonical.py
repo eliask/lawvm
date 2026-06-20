@@ -1404,7 +1404,12 @@ def _is_published_norm_reference(
         and
       * a ``julkais-`` publishing verb (``julkaistaan`` / ``julkaiseminen`` /
         ``julkaisemisesta`` / ``julkaista``) sits in the clause; and
-      * NO forward decree anchor binds.
+      * NO forward decree anchor binds; and
+      * NO rule-making quantifier (``tarkempia`` / ``yleisiä`` / ``teknisiä`` …)
+        heads the object — ``voi antaa TARKEMPIA määräyksiä julkaistavista
+        tiedoista`` is a genuine general rule-making grant ABOUT publication, not
+        a mere "[norms] julkaistaan säädöskokoelmassa" publishing reference (the
+        same stand-down the single-case / bylaw / court guards apply).
     """
     if _instrument_kind_for_surface(tokens[inst_idx].text) not in (
         INSTRUMENT_MAARAYS,
@@ -1414,9 +1419,10 @@ def _is_published_norm_reference(
     if _clause_has_decree_anchor(clause_text):
         return False
     words = _word_tokens(tokens, clause_lo, clause_hi)
-    return any(
-        w.text.lower().startswith(_PUBLISHING_VERB_PREFIX) for w in words
-    )
+    lowered = [w.text.lower() for w in words]
+    if any(low in _RULEMAKING_QUANTIFIERS for low in lowered):
+        return False
+    return any(low.startswith(_PUBLISHING_VERB_PREFIX) for low in lowered)
 
 
 def _is_single_case_direction(

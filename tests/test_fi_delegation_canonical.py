@@ -655,6 +655,37 @@ def test_single_case_with_general_quantifier_is_grant() -> None:
     assert any(g.kind == KIND_AGENCY for g in scan.grants)
 
 
+def test_published_norm_reference_quantified_grant_is_grant() -> None:
+    # STAND-DOWN: ``voi antaa TARKEMPIA määräyksiä julkaistavista … tiedoista`` —
+    # the ``julkais-`` word names the SUBJECT MATTER of a genuine general
+    # rule-making grant, NOT a "[norms] julkaistaan säädöskokoelmassa" publishing
+    # reference. The rule-making quantifier (``tarkempia``) must stand the
+    # publishing guard down even though a publishing word is present
+    # (2013/588 §48, 2017/587 §34 — energy-market acts the guard previously ate).
+    scan = _grants(
+        "Energiamarkkinavirasto voi antaa tarkempia määräyksiä julkaistavista "
+        "ja ilmoitettavista tiedoista sekä julkaisu- ja ilmoitusmenettelystä."
+    )
+    assert any(g.kind == KIND_AGENCY for g in scan.grants)
+    assert not any(
+        r.kind == "published_norm_reference" for r in scan.residuals
+    )
+
+
+def test_published_norm_reference_unquantified_still_residualized() -> None:
+    # NEGATIVE regression: a TRUE publishing reference carrying NO rule-making
+    # quantifier (``määräykset julkaistaan … säädöskokoelmassa``) must STILL be
+    # residualized — the stand-down keys on the quantifier, not on mere absence
+    # of a publishing word (2000/188).
+    scan = _grants(
+        "Viranomaisen määräykset julkaistaan määräyskokoelman lisäksi tai "
+        "sijasta säädöskokoelmassa, jos määräysten antamiseen valtuuttavassa "
+        "laissa niin säädetään."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "published_norm_reference" for r in scan.residuals)
+
+
 # --- GENUINE agency grants the guards must NOT suppress ---
 
 
