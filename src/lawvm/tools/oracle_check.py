@@ -1553,16 +1553,20 @@ def _classify_statute(
         #     empty seed, so the section exists but its text is a fragment of the
         #     oracle's full body.  The length/similarity divergence is intrinsic to
         #     the abridged source, not a replay fault, so reclassify it too.
-        # ORACLE_STALE / EDITORIAL_CONVENTION verdicts from the prior passes already
-        # explain those sections and are left untouched.  This runs after the
-        # oracle-staleness / source-pathology passes; divergences outside the
-        # abridged span (genuine drops) are untouched.
+        # ORACLE_STALE verdicts from the prior passes already explain those
+        # sections and are left untouched. EDITORIAL_CONVENTION rows inside the
+        # abridged span are still source-limited: the matching editorial shape is
+        # only a rendering of a fragment that replay could not reconstruct from
+        # the omitted base. This runs after the oracle-staleness /
+        # source-pathology passes; divergences outside the abridged span
+        # (genuine drops) are untouched.
         if abridged_unreconstructable_chapters:
             _abridged_reclassifiable = {
                 "MISSING",
                 "REPLAY_MISSING",
                 "REPLAY_EXTRA",
                 "UNKNOWN",
+                "EDITORIAL_CONVENTION",
             }
             for sec in section_results:
                 if sec["diagnosis"] not in _abridged_reclassifiable:

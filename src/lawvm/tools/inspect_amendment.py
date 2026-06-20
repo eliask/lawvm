@@ -25,12 +25,14 @@ from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_tabl
 from lawvm.finland.helpers import _norm_row_anchor_text
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.ops import (
+    AmendmentOp,
     get_replay_profile,
     legacy_target_kind_for_unit_kind,
     scope_authority_parity_for_op,
 )
 from lawvm.finland.scope import find_body_section_chapter as _find_body_section_chapter
 from lawvm.finland.source_model import AmendmentSourceModel
+from lawvm.finland.statute import ReplayState
 from lawvm.finland.standalone_targets import (
     group_shadow_pruning_foreign_scoped_section_targets as _group_shadow_pruning_foreign_scoped_section_targets,
     group_shadow_pruning_section_targets as _group_shadow_pruning_section_targets,
@@ -262,6 +264,32 @@ def _working_johtolause(
     )
 
 
+def _has_unresolved_named_row_targets(
+    original_ops: list[AmendmentOp],
+    normalized_ops: tuple[AmendmentOp, ...],
+) -> bool:
+    has_named_rows = any(op.named_row_targets for op in original_ops)
+    if not has_named_rows:
+        return False
+    return not any(op.named_row_targets and op.target_item for op in normalized_ops)
+
+
+def _named_row_debug_ops(ops: list[AmendmentOp]) -> list[AmendmentOp]:
+    item_ops = [op for op in ops if op.named_row_targets and op.target_item]
+    if not item_ops:
+        return []
+    replace_ops = [op for op in item_ops if op.op_type == "REPLACE"]
+    repeal_ops = [op for op in item_ops if op.op_type == "REPEAL"]
+    if len(replace_ops) == 1 and repeal_ops:
+        return replace_ops
+
+    def sort_key(op: AmendmentOp) -> tuple[int, str, str]:
+        item = op.target_item or ""
+        return (int(item) if item.isdigit() else 10**9, item, op.op_type)
+
+    return sorted(item_ops, key=sort_key)
+
+
 def build_amendment_bundle(
     statute_id: str,
     source_id: str,
@@ -457,6 +485,52 @@ def build_amendment_bundle(
                 standalone_section_targets,
                 foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
             )
+            if _has_unresolved_named_row_targets(filtered_pre, payload_norm.group_ops):
+                # Diagnostic-only recovery for amendment inspection: replay may
+                # correctly elaborate against the current live tree, while the
+                # human-facing bundle still needs to show historical named-row
+                # claims from the base table. This does not feed compiled replay
+                # products or authorize any mutation.
+                base_state = ReplayState(ir=before_master.ctx.base_ir)
+                base_lookups = snapshot_replay_lookups(base_state)
+                base_target_ctx = snapshot_target_context(
+                    base_state,
+                    target_unit_kind_value,
+                    target_norm,
+                    target_chapter,
+                    base_lookups,
+                    target_part=target_part,
+                )
+                if base_target_ctx.live_node is not None:
+                    base_payload_ctx = build_payload_elaboration_context(
+                        base_target_ctx,
+                        base_lookups,
+                        row_anchor_normalizer=_norm_row_anchor_text,
+                    )
+                    base_standalone_section_targets = _group_shadow_pruning_section_targets(
+                        ops,
+                        target_unit_kind=target_unit_kind_value,
+                        target_norm=target_norm,
+                        target_part=target_part,
+                        duplicate_section_labels=frozenset(base_state.duplicate_section_labels),
+                    )
+                    base_foreign_scoped_standalone_section_targets = _group_shadow_pruning_foreign_scoped_section_targets(
+                        ops,
+                        target_unit_kind=target_unit_kind_value,
+                        target_norm=target_norm,
+                        target_part=target_part,
+                        duplicate_section_labels=frozenset(base_state.duplicate_section_labels),
+                    )
+                    base_payload_norm = elaborate_payload_against_live(
+                        base_payload_ctx,
+                        filtered_pre,
+                        prepared,
+                        base_standalone_section_targets,
+                        foreign_scoped_standalone_section_targets=base_foreign_scoped_standalone_section_targets,
+                    )
+                    if not _has_unresolved_named_row_targets(filtered_pre, base_payload_norm.group_ops):
+                        payload_ctx = base_payload_ctx
+                        payload_norm = base_payload_norm
             slot_assignment = payload_norm.slot_assignment
             fctx.slot_assignment = slot_assignment
             rejected_post = []
@@ -465,6 +539,7 @@ def build_amendment_bundle(
                 fctx,
                 rejected_ops_out=rejected_post,
             )
+            named_row_debug_ops = _named_row_debug_ops(filtered_post)
             _final_op_descriptions = [
                 _format_compiled_op_row(row)
                 for row in _compiled_group_rows.get(
@@ -476,7 +551,9 @@ def build_amendment_bundle(
                     ),
                     [],
                 )
-            ] or [op.description() for op in filtered_post]
+            ] if not named_row_debug_ops else [op.description() for op in named_row_debug_ops]
+            if not _final_op_descriptions:
+                _final_op_descriptions = [op.description() for op in filtered_post]
             group_bundle = {
                 **_scope_bundle(
                     target_unit_kind=target_unit_kind_value,
