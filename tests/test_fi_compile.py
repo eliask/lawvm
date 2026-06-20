@@ -2349,6 +2349,22 @@ def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> 
     assert text.index(moved_fifth) < text.index(moved_sixth)
 
 
+def test_replay_xml_2009_273_splits_2015_section_10_tail_moments_before_later_replaces() -> None:
+    replay = pinned_replay("2009/273", oracle_version="20251076", mode="official_consolidation", quiet=True)
+    section = extract_ir_sections(replay.replay_fold_state.ir)["section:10"]
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    text = " ".join(irnode_to_text(section).split())
+
+    old_penalty = "Uhkasakon tuomitsee valtiontalouden tarkastusvirastosta annetun lain (676/2000) 15 §:ssä"
+    new_penalty = "15 a §:ssä tarkoitettu seuraamuslautakunta"
+    tail = "Valtiontalouden tarkastusviraston suorittama valvonta päättyy"
+
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert old_penalty not in text
+    assert text.count(new_penalty) == 1
+    assert text.index(new_penalty) < text.index(tail)
+
+
 def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair() -> None:
     """Current replay keeps the sparse override text instead of inferring prior-law tail repair."""
     replay = pinned_replay("1974/16", mode="official_consolidation", quiet=True)

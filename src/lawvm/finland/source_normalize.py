@@ -510,9 +510,9 @@ def _promote_dotted_paragraph_subsections(
     return rewritten if changed else children
 
 
-def _first_tail_starts_with_prior_moment_anaphora(node: IRNode) -> bool:
+def _first_tail_has_peer_moment_signal(node: IRNode) -> bool:
     text = irnode_to_text(node).strip().lower()
-    return text.startswith("edellä 1 momentissa tarkoitet")
+    return text.startswith("edellä 1 momentissa tarkoitet") or text.startswith("jos ")
 
 
 def _split_intro_list_tail_moment_subsections(
@@ -564,7 +564,7 @@ def _split_intro_list_tail_moment_subsections(
         return children
     if not all(child.kind in {IRNodeKind.CONTENT, IRNodeKind.WRAP_UP} for child in trailing):
         return children
-    if not _first_tail_starts_with_prior_moment_anaphora(trailing[0]):
+    if not _first_tail_has_peer_moment_signal(trailing[0]):
         return children
 
     split_subsections: list[IRNode] = [
@@ -604,9 +604,10 @@ def _split_intro_list_tail_moment_subsections(
             explanation=(
                 "The source encoded later momentti prose as content/wrap-up children "
                 "inside the first subsection after an intro plus consecutive numbered "
-                "kohta list.  The first tail starts with an explicit prior-moment "
-                "anaphora and multiple tail children follow, so they are split into "
-                "peer momentti subsections rather than preserved as list wrap-up."
+                "kohta list.  The first tail has a peer-moment signal (prior-moment "
+                "anaphora or conditional Jos-clause) and multiple tail children "
+                "follow, so they are split into peer momentti subsections rather "
+                "than preserved as list wrap-up."
             ),
             path=parent_path + (_node_path_label(subsection),),
             confidence=0.94,

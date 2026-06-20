@@ -176,6 +176,64 @@ class TestTagReclassify:
         assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
         assert "subsection:1" in split_facts[0].path
 
+    def test_splits_conditional_intro_list_tail_moments_into_peer_subsections(self) -> None:
+        """A conditional first tail plus another prose tail is peer momentti content."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="10",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.INTRO,
+                            text="Viranomainen valvoo velvollisuutta. Tässä tarkoituksessa se:",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="tarkastaa ilmoitukset;"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="pyytää selvitykset."),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="Jos ilmoitusta ei tehdä, viranomainen voi asettaa uhkasakon.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.WRAP_UP,
+                            text="Viranomaisen valvonta päättyy vuoden kuluttua.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2009/273")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        assert "Jos ilmoitusta ei tehdä" in irnode_to_text(subsections[1])
+        assert "valvonta päättyy" in irnode_to_text(subsections[2])
+        assert check_invariants(normalized) == []
+
+        split_facts = [
+            fact for fact in facts if fact.kind_value == BASE_INTRO_LIST_TAIL_MOMENT_SPLIT
+        ]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "peer momentti subsections" in split_facts[0].explanation
+
     def test_keeps_single_generic_first_moment_tail_inside_intro_list(self) -> None:
         """A lone generic first-moment tail remains ordinary wrap-up prose."""
         section = IRNode(
