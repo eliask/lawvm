@@ -12798,6 +12798,50 @@ class TestApplySpecialTargets:
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § otsikko")
         assert _unchanged(state, result)
 
+    def test_subsection_johd_repeal_preserves_items(self):
+        sub1 = _sub(
+            "1",
+            _intro("Ministeriö voi:"),
+            _para("1", "keep first item"),
+            _para("2", "keep second item"),
+        )
+        sec = _sec("1", sub1)
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd")
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        assert all(c.kind is not IRNodeKind.INTRO for c in new_sub.children)
+        assert [c.label for c in new_sub.children if c.kind is IRNodeKind.PARAGRAPH] == ["1", "2"]
+        assert "keep first item" in irnode_to_text(new_sub)
+        assert "keep second item" in irnode_to_text(new_sub)
+
+    def test_section_johd_repeal_preserves_subsections(self):
+        sec = _sec(
+            "1",
+            _intro("Section intro."),
+            _sub("1", _content("first moment")),
+        )
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = [("section", "1")]
+        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § johd")
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        assert all(c.kind is not IRNodeKind.INTRO for c in new_sec.children)
+        assert [c.label for c in new_sec.children if c.kind is IRNodeKind.SUBSECTION] == ["1"]
+        assert "first moment" in irnode_to_text(new_sec)
+
     def test_heading_insert_adds_heading_to_headingless_section(self):
         """INSERT otsikko adds heading to a section that has none."""
         sub1 = _sub("1", _content("text"))
@@ -12886,6 +12930,30 @@ class TestDispatchIntegration:
         result = _modified(state, result)
         new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
         assert len([c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION]) == 1
+
+    def test_dispatch_routes_johd_repeal_before_subsection_repeal(self):
+        sec = _sec(
+            "1",
+            _sub(
+                "1",
+                _intro("Ministeriö voi:"),
+                _para("1", "keep first item"),
+                _para("2", "keep second item"),
+            ),
+        )
+        body = _body(sec)
+        state = _make_state(body)
+        sec_path = (("section", "1"),)
+        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+
+        result = _apply_deterministic_subsection_op(state, op, sec_path, None, None, None, _LEGAL_PIT, "1 § 1 mom johd")
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        assert new_sub.attrs.get("lawvm_repeal_placeholder") is None
+        assert all(c.kind is not IRNodeKind.INTRO for c in new_sub.children)
+        assert [c.label for c in new_sub.children if c.kind is IRNodeKind.PARAGRAPH] == ["1", "2"]
 
     def test_replace_subsection_via_dispatch(self):
         sec = _sec("1", _sub("1", _content("original")))

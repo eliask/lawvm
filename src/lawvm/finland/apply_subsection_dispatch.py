@@ -660,6 +660,21 @@ def _apply_deterministic_subsection_op(
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
     amend_sub = routing.amend_sub_ir
+    if item_view.target_item is None and item_view.target_special in {"otsikko", "johd"}:
+        result = _apply_special_targets(
+            state,
+            item_view,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            ctx_label,
+            source_pathologies_out=source_pathologies_out,
+            strict_profile=strict_profile,
+        )
+        if result is not None:
+            return _maybe_update_section_heading(result, sec_path, dispatch_op, muutos_ir, cross_ir)
     result = _apply_subsection_repeal(
         state,
         subsection_view,

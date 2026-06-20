@@ -232,6 +232,7 @@ def process_muutoslaki_resolved(
                 xml_bytes=xml_bytes,
                 strict_profile=strict_profile,
                 processed_amendment_titles=processed_amendment_titles,
+                effect_relation_signals=runtime.effect_relation_signals,
                 finding_recorder=finding_recorder,
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
@@ -271,6 +272,7 @@ def process_muutoslaki_resolved(
                     lo_ops_out=lo_ops_out,
                     vts_skipped_targets=vts_skipped_targets,
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
+                    effect_relation_signals=runtime.effect_relation_signals,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
                 ).handle(),
@@ -314,6 +316,7 @@ def process_muutoslaki_resolved(
                     lo_ops_out=lo_ops_out,
                     vts_skipped_targets=vts_skipped_targets,
                     commencement_expiry_override_notes=commencement_expiry_override_notes,
+                    effect_relation_signals=runtime.effect_relation_signals,
                     record_finding=record_process_finding,
                     replay_print=_replay_print,
                 ).handle(),
@@ -514,7 +517,6 @@ def process_muutoslaki_resolved(
             target_statute=parent_id,
             canonical_ops=amendment_lo_ops,
             temporal_events=(),
-            findings=(),
         )
         existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
         for effect in source_effects:

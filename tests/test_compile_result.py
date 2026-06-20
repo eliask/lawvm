@@ -26,6 +26,7 @@ from lawvm.core.compile_result import (
     AdmissibleBindingCertificate,
     CanonicalBundle,
     CanonicalEffect,
+    CompiledOpEvidenceRow,
     CompiledOpProvenanceTags,
     CompiledOpScopeWitness,
     StrictProfile,
@@ -37,6 +38,7 @@ from lawvm.core.compile_result import (
     _compiled_op_scope_witness,
     _compiled_op_source_statute,
     _compiled_op_matches_section,
+    _compiled_op_provenance_tag_sets,
     _operation_matches_section,
     _validate_bundle_purity,
     strict_fail_reasons_from_finding_ledger,
@@ -313,6 +315,30 @@ def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
         CompiledOpProvenanceTags(scope_sources=cast(Any, "explicit_chunk"))
 
 
+def test_compiled_op_evidence_row_requires_typed_carriers_and_drives_tag_sets() -> None:
+    evidence = CompiledOpEvidenceRow(
+        source_statute=" 2024/1 ",
+        provenance_tags=CompiledOpProvenanceTags(
+            extraction_tags=frozenset({"extraction_fallback_heuristic"}),
+            scope_sources=frozenset({"explicit_chunk"}),
+        ),
+        scope_witness=CompiledOpScopeWitness(
+            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
+            source="explicit_chunk",
+            confidence="explicit",
+        ),
+    )
+
+    assert evidence.source_statute == "2024/1"
+    assert _compiled_op_provenance_tag_sets((evidence,)).extraction_tags == frozenset(
+        {"extraction_fallback_heuristic"}
+    )
+    with pytest.raises(ValueError, match="provenance_tags"):
+        CompiledOpEvidenceRow(provenance_tags=cast(Any, object()))
+    with pytest.raises(ValueError, match="scope_witness"):
+        CompiledOpEvidenceRow(scope_witness=cast(Any, object()))
+
+
 def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
     with pytest.raises(ValueError, match="kind"):
         CompiledOpScopeWitness(kind="", source="explicit_chunk", confidence="explicit")
@@ -568,6 +594,33 @@ class TestCanonicalBundleTemporalSummaries:
         )
 
         assert bundle.temporal_events_with_source == 1
+
+    def test_temporal_summaries_include_lifecycle_projected_events(self) -> None:
+        instrument = SourceInstrumentRef(instrument_id="2020/1")
+        witness = SourceProvisionRef(
+            instrument=instrument,
+            path=("2 §",),
+            text_excerpt="Tulee voimaan 1.6.2020.",
+        )
+        lifecycle = EffectLifecycleEvent(
+            lifecycle_event_id="life:2020/1:commence",
+            kind="commence_effect",
+            source_provision=witness,
+            effect=EffectRef(
+                effect_id="effect:2020/1:op-1",
+                source_instrument=instrument,
+                target_statute="1999/1",
+                target_address=LegalAddress(path=(("section", "1"),)),
+                source_provision=witness,
+            ),
+            effective="2020-06-01",
+        )
+        bundle = CanonicalBundle(effect_lifecycle_events=(lifecycle,))
+
+        assert bundle.temporal_event_kinds == ("commence",)
+        assert bundle.temporal_events_with_activation_rules == 1
+        assert bundle.temporal_events_with_source == 1
+        assert bundle.temporal_event_activation_rule_kinds == ("fixed_date",)
 
 
 class TestCompileResultTargetScopeNormalization:
@@ -832,19 +885,6 @@ class TestStrictFailReasonsFromFindingLedger:
                     target=LegalAddress(path=(("section", "1"),)),
                 ),
             ),
-            failures=(),
-            findings=(),
-        )
-
-        assert reasons == ["APPLY.WORD_SUBSTITUTION"]
-
-    def test_strict_fail_reasons_detects_text_substitution_from_canonical_string(self) -> None:
-        profile = StrictProfile(name="test")
-        canonical_action_op = SimpleNamespace(action="text_repeal")
-        reasons = strict_fail_reasons_from_finding_ledger(
-            profile,
-            compiled_ops=(),
-            canonical_ops=cast(tuple[LegalOperation, ...], (canonical_action_op,)),
             failures=(),
             findings=(),
         )

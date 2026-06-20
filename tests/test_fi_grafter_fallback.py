@@ -11940,13 +11940,17 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
         and event.relation is not None
         and event.relation.target_effect is not None
     }
-    assert "fi-effect:1958/371:lifecycle:section:1" in repeal_lifecycle_targets
-    assert (
-        "fi-effect:2000/90:lifecycle:section:21,section:22,section:23,section:23a,section:24,section:25"
-        in repeal_lifecycle_targets
-    )
+    assert {
+        "fi-effect:1958/371:snapshot_section_1",
+        "fi-effect:2000/90:snapshot_section_21",
+        "fi-effect:2000/90:snapshot_section_22",
+        "fi-effect:2000/90:snapshot_section_23",
+        "fi-effect:2000/90:snapshot_section_23a",
+        "fi-effect:2000/90:snapshot_section_24",
+        "fi-effect:2000/90:snapshot_section_25",
+    }.issubset(repeal_lifecycle_targets)
     assert all(
-        event.executable is False
+        event.executable is True
         for event in replay.products.effect_lifecycle_events
         if event.kind == "repeal_effect"
     )
@@ -15905,6 +15909,14 @@ def test_rewrite_compiled_op_activation_rule_effective_for_addresses_limits_to_e
 
 
 def test_reject_overbroad_section_repeal_for_deep_target() -> None:
+    child_repeal = AmendmentOp(
+        op_id="parsed_child",
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=3,
+        target_item="2",
+    )
     repeal = AmendmentOp(
         op_id="fb",
         op_type="REPEAL",
@@ -15913,12 +15925,12 @@ def test_reject_overbroad_section_repeal_for_deep_target() -> None:
     )
 
     kept, findings = _reject_overbroad_section_repeals_for_deep_targets(
-        [repeal],
+        [child_repeal, repeal],
         johto="Tällä päätöksellä kumotaan päätöksen 1 §:n 3.3.2. kohta.",
         amendment_id="2007/180",
     )
 
-    assert kept == []
+    assert kept == [child_repeal]
     assert len(findings) == 1
     assert findings[0].detail["reason_code"] == "ELAB.OVERBROAD_SECTION_REPEAL_FOR_DEEP_TARGET"
 
@@ -15939,6 +15951,42 @@ def test_reject_overbroad_section_repeal_for_deep_target_keeps_plain_section_rep
 
     assert kept == [repeal]
     assert findings == []
+
+
+def test_reject_overbroad_section_repeal_for_deep_target_keeps_other_section_repeal() -> None:
+    child_repeal = AmendmentOp(
+        op_id="parsed_child",
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+        target_paragraph=1,
+        target_item="9",
+    )
+    repeal_deep_host = AmendmentOp(
+        op_id="fb1",
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_section="12",
+    )
+    repeal_other_section = AmendmentOp(
+        op_id="fb2",
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_section="12f",
+    )
+
+    kept, findings = _reject_overbroad_section_repeals_for_deep_targets(
+        [child_repeal, repeal_deep_host, repeal_other_section],
+        johto=(
+            "Tällä lailla kumotaan 12 §:n 1 momentin 9 kohta sekä "
+            "12 f §."
+        ),
+        amendment_id="2015/521",
+    )
+
+    assert kept == [child_repeal, repeal_other_section]
+    assert len(findings) == 1
+    assert findings[0].detail["target_section"] == "12"
 
 
 @pytest.mark.slow

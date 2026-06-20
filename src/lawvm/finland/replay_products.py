@@ -8,7 +8,12 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Callable, Literal, Optional, cast
 
 from lawvm.core.regex_safety import compile_classifier_regex
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, EffectRelation
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    EffectRelation,
+    lower_lifecycle_events_to_temporal_events,
+)
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress
@@ -1560,7 +1565,10 @@ def build_replay_products(
     but replay products still preserve a bounded fallback synthesis from
     replay-owned structural ops until the producer path is fully migrated.
     """
-    resolved_temporal_events = tuple(temporal_events)
+    resolved_temporal_events = _merge_temporal_events(
+        tuple(temporal_events),
+        lower_lifecycle_events_to_temporal_events(effect_lifecycle_events),
+    )
     if not build_full_products:
         return ReplayProducts(
             replay_fold_state=replay_fold_state,

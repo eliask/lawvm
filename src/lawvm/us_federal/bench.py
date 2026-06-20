@@ -756,6 +756,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(_render_table(report))
+
+    # Unified cross-jurisdiction headline (worst-of axes over the contract
+    # BenchUnitResults). US has no text axis, so the headline is the structural
+    # (verified-agreement coverage) axis; render_summary omits the text line.
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = [us_bench_unit_result(r) for r in report.results]
+    print()
+    for line in render_summary(unit_results, corpus_path.stem, jurisdiction="us"):
+        print(line)
+
     agg = report.aggregate()
     print()
     print(

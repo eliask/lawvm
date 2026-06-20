@@ -740,6 +740,22 @@ def _format_progress_line(
     )
 
 
+def _render_unified_summary(results: list[_WorkResult], label: str) -> None:
+    """Print the shared cross-jurisdiction headline via the bench contract.
+
+    NZ scores two axes — structural (target-slice agreement) and text
+    (text similarity over actually-replayed transitions) — so the worst-of
+    headline is the binding (max) of the two. The detailed bespoke NZ report
+    (``_print_report``), which keeps the per-lane structural/text/tree numbers
+    and coverage lanes separate, follows and is preserved in full.
+    """
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = [nz_bench_unit_result(r) for r in results]
+    for line in render_summary(unit_results, label, jurisdiction="nz"):
+        print(line)
+
+
 def _print_report(results: list[_WorkResult], agg: dict[str, Any], corpus: Path) -> None:
     print(f"\n=== NZ actual-replay bench: {corpus} ===")
     print(
@@ -892,7 +908,9 @@ def main(args: Any) -> None:
         if getattr(args, "json", False):
             print(text)
         if not getattr(args, "json", False):
+            _render_unified_summary(results, str(corpus))
             _print_report(results, agg, corpus)
         return
 
+    _render_unified_summary(results, str(corpus))
     _print_report(results, agg, corpus)

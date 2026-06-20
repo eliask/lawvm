@@ -7,12 +7,14 @@ They sit above replay: executable parent-statute projection still happens via
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Optional
 
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress
 from lawvm.core.provenance import OperationSource
+from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 
 
@@ -35,6 +37,8 @@ EffectLifecycleEventKind = Literal[
     "repeal_effect",
     "unresolved_effect_target",
 ]
+
+EffectExpiryConvention = Literal["exclusive_cutoff", "inclusive_valid_until"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +171,7 @@ class EffectLifecycleEvent:
     relation: Optional[EffectRelation] = None
     effective: str = ""
     expires: str = ""
+    expiry_convention: EffectExpiryConvention = "exclusive_cutoff"
     temporal_event: Optional[TemporalEvent] = None
     executable: bool = True
     detail: Mapping[str, Any] = field(default_factory=dict)
@@ -193,6 +198,10 @@ class EffectLifecycleEvent:
             raise ValueError("EffectLifecycleEvent.relation must be an EffectRelation when provided")
         if self.temporal_event is not None and not isinstance(self.temporal_event, TemporalEvent):
             raise ValueError("EffectLifecycleEvent.temporal_event must be a TemporalEvent when provided")
+        if self.expiry_convention not in {"exclusive_cutoff", "inclusive_valid_until"}:
+            raise ValueError(f"unsupported EffectLifecycleEvent.expiry_convention: {self.expiry_convention!r}")
+        if self.expiry_convention == "inclusive_valid_until" and self.expires:
+            dt.date.fromisoformat(self.expires)
         if self.executable and self.kind == "unresolved_effect_target":
             raise ValueError("unresolved EffectLifecycleEvent cannot be executable")
         if self.kind != "unresolved_effect_target" and self.effect is None:
@@ -216,10 +225,24 @@ def lower_lifecycle_event_to_temporal_event(
 
     source_text = event.source_provision.text_excerpt
     source = event.source_provision.instrument.to_operation_source(raw_text=source_text)
-    group_id = (
+    # Expiry changes must bind to the operation-backed version they modify.
+    # Relationless commencement events are already direct operation projections
+    # and should also bind to the operation group. Relation-backed non-expiry
+    # lifecycle events execute independently so they do not contaminate sibling
+    # operations in a broad amendment group.
+    if (
         event.effect.projection_group_id
-        or (event.relation.relation_id if event.relation is not None else event.effect.effect_id)
-    )
+        and (
+            event.kind == "change_effect_expiry"
+            or (
+                event.relation is None
+                and event.kind in {"commence_effect", "change_effect_commencement"}
+            )
+        )
+    ):
+        group_id = event.effect.projection_group_id
+    else:
+        group_id = event.relation.relation_id if event.relation is not None else event.effect.effect_id
     scope = TemporalScope(
         target_statute=event.effect.target_statute,
         exact_addresses=(event.effect.target_address,) if event.effect.target_address is not None else (),
@@ -239,11 +262,14 @@ def lower_lifecycle_event_to_temporal_event(
             group_id=group_id,
         )
     if event.kind in {"expire_effect", "change_effect_expiry", "repeal_effect"}:
+        expires = event.expires or event.effective
+        if expires and event.expiry_convention == "inclusive_valid_until":
+            expires = expires_on_from_valid_until(dt.date.fromisoformat(expires)).isoformat()
         return TemporalEvent(
             event_id=f"{event.lifecycle_event_id}:temporal",
             kind="expire",
             scope=scope,
-            expires=event.expires or event.effective,
+            expires=expires,
             source=source,
             group_id=group_id,
         )

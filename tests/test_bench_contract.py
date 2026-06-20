@@ -247,6 +247,26 @@ def test_render_summary_reports_counts_and_reconciliation_ok() -> None:
     assert "Residue reconciliation: OK" in text
 
 
+def test_render_summary_structural_only_axis_binds_headline_no_text_line() -> None:
+    """Jurisdictions with no text axis (EE/US: text_err=None) render correctly.
+
+    The worst-of headline binds on the structural axis alone, and render_summary
+    emits no spurious text-axis line for an axis the jurisdiction never attempts.
+    """
+    results = [
+        _scored("a", structural_err=0.0, text_err=None),
+        _scored("b", structural_err=0.25, text_err=None, residue={"section_mismatch": 1}),
+    ]
+    lines = render_summary(results, "v1", jurisdiction="ee")
+    text = "\n".join(lines)
+    # Mean accuracy = (1.0 + 0.75) / 2 = 0.875 -> mean error 12.50%.
+    assert "Mean error : 12.50%" in text
+    assert "2 scored" in text
+    assert "Residue reconciliation: OK" in text
+    # No spurious per-axis text line for an unattempted axis.
+    assert "text" not in text.lower()
+
+
 def test_render_summary_flags_reconciliation_violation() -> None:
     # A unit that violates the invariant must surface, not hide.
     bad = BenchUnitResult(

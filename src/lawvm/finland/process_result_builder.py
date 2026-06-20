@@ -25,7 +25,7 @@ from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
 )
-from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
+from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride, EffectRelationSignal
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.ops import FailedOp
@@ -60,6 +60,7 @@ class ProcessSignalBuffers:
     sparse_slot_bindings: list[dict[str, object]]
     sparse_leftovers: list[dict[str, object]]
     commencement_expiry_override_notes: list[EffectLifecycleOverride]
+    effect_relation_signals: list[EffectRelationSignal]
     vts_skipped_targets: list[VtsSkippedTarget]
 
     @classmethod
@@ -76,6 +77,7 @@ class ProcessSignalBuffers:
             sparse_slot_bindings=[],
             sparse_leftovers=[],
             commencement_expiry_override_notes=[],
+            effect_relation_signals=[],
             vts_skipped_targets=[],
         )
 
@@ -203,7 +205,7 @@ class ProcessResultBuilder:
             self.sinks.mutation_invariant_reports_out.extend(mutation_invariant_reports)
         self._append_apply_mutation_findings(merged_findings, mutation_invariant_reports)
         self._append_apply_fallback_findings(merged_findings)
-        self._append_effect_lifecycle_projection(merged_findings)
+        self._append_effect_lifecycle_projection()
 
         self.project_compat_sinks()
         return PhaseResult(
@@ -216,14 +218,14 @@ class ProcessResultBuilder:
             effect_lifecycle_events=tuple(self.buffers.effect_lifecycle_events),
         )
 
-    def _append_effect_lifecycle_projection(self, findings: Sequence[Finding]) -> None:
+    def _append_effect_lifecycle_projection(self) -> None:
         """Project process-level findings and override notes into effect evidence."""
         _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
             target_statute=self.target_statute,
             canonical_ops=(),
             temporal_events=(),
-            findings=tuple(findings),
             lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            relation_signals=tuple(self.buffers.effect_relation_signals),
             known_source_effects=tuple(self.buffers.source_effects),
         )
         existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}

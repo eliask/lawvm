@@ -448,7 +448,10 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         target_unit_kind = "part"
         chapter = None
     else:
-        section, target_unit_kind, chapter = "", "section", None
+        raise ValueError(
+            "LegalOperation target path has no Finland-supported primary unit "
+            f"(part/chapter/section): {tuple(lo.target.path)!r}"
+        )
     sub_val = pd.get("subsection", "")
     special = lo.target.special
     if special == FacetKind.HEADING or str(special) == "heading":
@@ -575,6 +578,19 @@ def classify_legal_operation_conversion_skip(
             message="LegalOperation had an empty target path; no AmendmentOp was emitted.",
             blocking=True,
         )
+    if target_kinds.isdisjoint({"part", "chapter", "section"}):
+        return LegalOperationConversionSkip(
+            finding_kind="ELAB.REJECTED_OPERATION",
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET",
+            message=(
+                "LegalOperation target has subsection/item scope without a "
+                "part, chapter, or section anchor; no AmendmentOp was emitted."
+            ),
+            blocking=True,
+        )
 
     return None
 
@@ -698,8 +714,25 @@ class AmendmentOp:
                 "AmendmentOp direct construction requires explicit target_unit_kind "
                 "unless lo or TargetKind target_kind seed is provided"
             )
+        elif target_unit_kind is None and lo is not None:
+            lo_fields = _lo_target_fields(lo)
+            target_unit_kind = cast(TargetUnitKind, lo_fields["target_unit_kind"])
+            if not target_section:
+                target_section = str(lo_fields["target_section"])
+            if target_chapter is None:
+                target_chapter = cast(Optional[str], lo_fields["target_chapter"])
+            if target_part is None:
+                target_part = cast(Optional[str], lo_fields["target_part"])
+            if target_paragraph is None:
+                target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
+            if target_item is None:
+                target_item = cast(Optional[str], lo_fields["target_item"])
+            if target_special is None:
+                target_special = cast(Optional[str], lo_fields["target_special"])
 
-        resolved_target_unit_kind: TargetUnitKind = target_unit_kind or "section"
+        if target_unit_kind is None:
+            raise ValueError("AmendmentOp target_unit_kind could not be resolved")
+        resolved_target_unit_kind: TargetUnitKind = target_unit_kind
 
         self.op_id = op_id
         self.op_type = op_type
@@ -853,7 +886,11 @@ class AmendmentOp:
                 target_unit_kind = unit_kind
                 break
         else:
-            raw_section, path_key, target_unit_kind = "", "section", "section"
+            logging.getLogger("lawvm.finland.ops").debug(
+                "Skipping LegalOperation conversion for %s: no primary target unit",
+                lo.op_id,
+            )
+            return []
 
         sections = _expand_section_range(raw_section) if target_unit_kind == "section" else [raw_section]
         for s_idx, sec in enumerate(sections):

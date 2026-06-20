@@ -29,7 +29,7 @@ from lawvm.finland.johtolause.api import (
     ClauseParseResult,
     derive_features,
 )
-from lawvm.finland.johtolause.surface_model import ScopeKind
+from lawvm.finland.johtolause.surface_model import ScopeKind, SurfaceSubRef
 from lawvm.finland.johtolause.surface_resolve import (
     ResolvedDescendantCoordination,
     ResolvedHeadingPlacement,
@@ -77,10 +77,26 @@ def _explicit_chunk_scope_confidence_for_target(
     )
 
 
+def _sub_ref_lowers_to_clause_node(sub_ref: SurfaceSubRef) -> bool:
+    """Return false for named sub-provisions without a concrete address carrier."""
+    return not (
+        sub_ref.special
+        and sub_ref.facet is None
+        and not sub_ref.momentti
+        and not sub_ref.item
+    )
+
+
+def _lowerable_sub_refs(sub_refs: tuple[SurfaceSubRef, ...]) -> tuple[SurfaceSubRef | None, ...]:
+    if not sub_refs:
+        return (None,)
+    return tuple(sub_ref for sub_ref in sub_refs if _sub_ref_lowers_to_clause_node(sub_ref))
+
+
 def _resolved_node_scope_confidences(node: ResolvedNode) -> list[ScopeConfidence | None]:
     if isinstance(node, ResolvedTargetRef):
         witness = _explicit_chunk_scope_confidence_for_target(node)
-        return [witness] * max(1, len(node.sub_refs))
+        return [witness] * len(_lowerable_sub_refs(node.sub_refs))
     if isinstance(node, ResolvedInsertion):
         if (
             node.chapter
@@ -119,12 +135,16 @@ def _resolved_node_scope_confidences(node: ResolvedNode) -> list[ScopeConfidence
             chapter_override = node.scope_label if node.scope_kind == ScopeKind.CHAPTER else ""
             out.extend(
                 [_explicit_chunk_scope_confidence_for_target(target, chapter_override=chapter_override)]
-                * max(1, len(target.sub_refs))
+                * len(_lowerable_sub_refs(target.sub_refs))
             )
         return out
     if isinstance(node, ResolvedDescendantCoordination):
         witness = _explicit_chunk_scope_confidence_for_target(node.base)
-        return [witness] * len(node.arms)
+        return [
+            witness
+            for arm in node.arms
+            if _sub_ref_lowers_to_clause_node(arm)
+        ]
     return []
 
 
@@ -156,7 +176,7 @@ def _resolved_node_move_clause_kinds(node: ResolvedNode) -> list[TargetUnitKind 
     """
     if isinstance(node, ResolvedTargetRef):
         per_subref: list[TargetUnitKind | None] = []
-        sub_refs = node.sub_refs or (None,)
+        sub_refs = _lowerable_sub_refs(node.sub_refs)
         for sr in sub_refs:
             whole_section = sr is None or (
                 not sr.momentti and not sr.item and sr.facet is None
@@ -172,7 +192,7 @@ def _resolved_node_move_clause_kinds(node: ResolvedNode) -> list[TargetUnitKind 
         for target in node.targets:
             if not isinstance(target, ResolvedTargetRef):
                 continue
-            sub_refs = target.sub_refs or (None,)
+            sub_refs = _lowerable_sub_refs(target.sub_refs)
             for sr in sub_refs:
                 whole_section = sr is None or (
                     not sr.momentti and not sr.item and sr.facet is None
@@ -180,7 +200,11 @@ def _resolved_node_move_clause_kinds(node: ResolvedNode) -> list[TargetUnitKind 
                 out.append(_move_clause_kind_for_target(target) if whole_section else None)
         return out
     if isinstance(node, ResolvedDescendantCoordination):
-        return [None] * len(node.arms)
+        return [
+            None
+            for arm in node.arms
+            if _sub_ref_lowers_to_clause_node(arm)
+        ]
     return []
 
 

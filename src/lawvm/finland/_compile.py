@@ -863,7 +863,6 @@ def compile_fi_facade_from_replay(
         target_statute=parent_id,
         canonical_ops=tuple(canonical_ops),
         temporal_events=resolved_temporal_events,
-        findings=artifact_findings,
     )
     source_effects_by_id = {
         effect.effect_id: effect

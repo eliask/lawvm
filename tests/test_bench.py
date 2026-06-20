@@ -819,3 +819,121 @@ def test_show_summary_prints_oracle_aware_headline(capsys) -> None:
     out = capsys.readouterr().out
     assert "Oracle-aware mean error" in out
     assert "Raw mean error" in out
+
+
+# ---------------------------------------------------------------------------
+# FI unified-summary env-var gate (default = legacy output unchanged)
+# ---------------------------------------------------------------------------
+
+
+def test_fi_unified_summary_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv(bench._FI_BENCH_UNIFIED_ENV, raising=False)
+    assert bench._fi_bench_unified_enabled() is False
+
+
+def test_fi_unified_summary_enabled_by_env(monkeypatch) -> None:
+    for truthy in ("1", "true", "YES", "on"):
+        monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, truthy)
+        assert bench._fi_bench_unified_enabled() is True
+    monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, "0")
+    assert bench._fi_bench_unified_enabled() is False
+
+
+def test_fi_unit_results_from_rows_maps_axes_and_statuses() -> None:
+    from lawvm.core.bench_contract import BenchStatus
+
+    flat = [
+        ("2004/1037", 0.9, "OK"),  # scored, text-only
+        ("2012/916", -1.0, "NO_TRUTH"),  # non-scored exclusion
+        ("2018/1", -1.0, "SOURCE_UNAVAILABLE"),  # non-scored exclusion
+        ("2020/5", -1.0, "ValueError: boom"),  # genuine crash
+    ]
+    units = bench._fi_unit_results_from_rows(flat)
+    by_id = {u.unit_id: u for u in units}
+
+    scored = by_id["2004/1037"]
+    assert scored.status is BenchStatus.SCORED
+    assert scored.text_err == pytest.approx(0.1)
+    assert scored.structural_err is None  # no section score on a text-only run
+    assert by_id["2012/916"].status is BenchStatus.NO_TRUTH
+    assert by_id["2018/1"].status is BenchStatus.SOURCE_UNAVAILABLE
+    crash = by_id["2020/5"]
+    assert crash.status is BenchStatus.CRASH
+    assert crash.witnesses == ("ValueError: boom",)
+
+
+def test_fi_unit_results_fold_in_section_structural_axis() -> None:
+    # When section scoring ran, the structural axis is the worse axis and binds
+    # the worst-of headline (Liebig): section 0.80 (20% err) > text 0.95 (5% err).
+    flat = [("2004/1037", 0.95, "OK")]
+    units = bench._fi_unit_results_from_rows(flat, section_sims={"2004/1037": 0.80})
+    u = units[0]
+    assert u.structural_err == pytest.approx(0.20)
+    assert u.text_err == pytest.approx(0.05)
+    assert u.headline_error() == pytest.approx(0.20)
+
+
+def _drive_fi_main(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.csv"
+    corpus.write_text("amendments,statute_id\n1,2000/1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        bench,
+        "_run_benchmark",
+        lambda *args, **kwargs: ([(1, "2000/1", 0.9, "OK", 0.1)], None),
+    )
+    monkeypatch.setattr(bench, "_show_worst", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_show_errors", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_load_verified_statutes", lambda: {})
+    monkeypatch.setattr(bench, "_save_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_append_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_write_bench_evidence_surface", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bench, "_save_bench_diagnostic_sidecar", lambda *args, **kwargs: None)
+    bench.main(
+        argparse.Namespace(
+            corpus=str(corpus),
+            label="gate",
+            top=5,
+            no_save=True,
+            no_text_scores=True,
+            parallel=None,
+        )
+    )
+
+
+def test_fi_main_default_output_has_no_unified_summary(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.delenv(bench._FI_BENCH_UNIFIED_ENV, raising=False)
+    _drive_fi_main(monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    # Legacy summary is present; the unified summary is NOT (default unchanged).
+    assert "=== BENCHMARK SUMMARY" in out
+    assert "UNIFIED BENCH SUMMARY" not in out
+
+
+def test_fi_main_unified_summary_renders_under_env_var(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv(bench._FI_BENCH_UNIFIED_ENV, "1")
+    _drive_fi_main(monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    # Both summaries present: legacy unchanged AND the opt-in unified headline.
+    assert "=== BENCHMARK SUMMARY" in out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=fi" in out
+    assert "1 scored" in out
+    assert "Mean error : 10.00%" in out
+
+
+def test_fi_unified_summary_render_is_gated_and_meaningful(capsys) -> None:
+    # The render path itself (gating is exercised in main; here we assert the
+    # rendered headline carries the worst-of mean error + partition + honesty).
+    flat = [
+        ("a", 0.90, "OK"),  # text 10% err
+        ("b", -1.0, "NO_TRUTH"),  # excluded
+        ("c", -1.0, "boom"),  # crash
+    ]
+    bench._show_unified_summary_fi(flat, "demo")
+    out = capsys.readouterr().out
+    assert "=== UNIFIED BENCH SUMMARY" in out
+    assert "jurisdiction=fi" in out
+    assert "1 scored" in out
+    assert "crashed: 1" in out
+    assert "excluded(non-scored): 1" in out
+    assert "Mean error : 10.00%" in out

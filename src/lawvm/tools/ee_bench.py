@@ -509,6 +509,21 @@ def _run_bench(
 # ---------------------------------------------------------------------------
 
 
+def _render_unified_summary(results: list[_BenchResult], label: str) -> None:
+    """Print the shared cross-jurisdiction headline via the bench contract.
+
+    EE scores only the structural (section exact-match) axis — it has no
+    continuous text axis — so the worst-of headline is the structural axis and
+    ``render_summary`` omits a text line. The detailed bespoke EE report
+    (``_print_report``) follows and is preserved in full.
+    """
+    from lawvm.core.bench_aggregate import render_summary
+
+    unit_results = [ee_bench_unit_result(r) for r in results]
+    for line in render_summary(unit_results, label, jurisdiction="ee"):
+        print(line)
+
+
 def _print_report(results: list[_BenchResult], label: str) -> None:
     ok = [r for r in results if r.status == "OK" and r.o_secs > 0]
     core = [r for r in ok if r.core_benchmark]
@@ -873,5 +888,6 @@ def main(args) -> None:
     results = _run_bench(pairs, meta, archive, workers=workers)
     archive.close()
 
+    _render_unified_summary(results, label)
     _print_report(results, label)
     _save_results(results, label)

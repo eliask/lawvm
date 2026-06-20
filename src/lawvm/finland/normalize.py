@@ -180,7 +180,12 @@ def _expand_spaced_insert_label_list_ir(text: str) -> List[str]:
     return labels
 
 
-def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
+def _sec1_fallback_peg_skip_required(
+    johto: str,
+    parent_id: str,
+    *,
+    parser_has_structural_targets: bool = False,
+) -> bool:
     """True when sec_1 fallback text should suppress PEG extraction.
 
     The skip is only justified for omnibus repeal structures where the fallback
@@ -206,6 +211,10 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
     has_non_repeal_ops = bool(_RE_MUUTOS_VERBS.search(lower_tail))
     has_explicit_section_targets = bool(_RE_SECTION_SIGN.search(lower_tail))
     has_subprovision_targets = bool(_RE_SUBPROVISION_TARGET.search(lower_tail))
+    if parser_has_structural_targets and (
+        has_explicit_section_targets or has_subprovision_targets
+    ):
+        return False
 
     try:
         parent_year, parent_num = parent_id.split("/")
@@ -214,13 +223,17 @@ def _sec1_fallback_peg_skip_required(johto: str, parent_id: str) -> bool:
         return True
 
     parent_year_short = parent_year[-2:]
+    normalized_refs: list[tuple[int, str]] = []
     for ref_num, ref_year in refs:
         try:
-            ref_num_i = int(ref_num)
+            normalized_refs.append((int(ref_num), ref_year))
         except ValueError:
             return True
-        if ref_num_i != parent_num_i or ref_year not in {parent_year, parent_year_short}:
-            return True
+
+    for ref_num_i, ref_year in normalized_refs:
+        if ref_num_i == parent_num_i and ref_year in {parent_year, parent_year_short}:
+            continue
+        return True
     if has_explicit_section_targets:
         return False
     if has_subprovision_targets:

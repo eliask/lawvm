@@ -42,7 +42,7 @@ from lawvm.core.observation_registry import (
     strict_fail_codes_by_family,
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
-from lawvm.finland.ops import FailedOp
+from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
@@ -96,6 +96,49 @@ def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
         args = tuple(patched_args)
 
     return _real_compile_amendment_ops(*args, **kwargs)
+
+
+def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> None:
+    lo = LegalOperation(
+        op_id="descendant-only",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("subsection", "1"),)),
+    )
+
+    skip = classify_legal_operation_conversion_skip(lo)
+
+    assert skip is not None
+    assert skip.reason_code == "ELAB.UNSUPPORTED_DESCENDANT_ONLY_TARGET"
+    assert AmendmentOp.from_lo(lo, 0) == []
+
+
+def test_amendment_op_with_lo_derives_target_unit_without_section_default() -> None:
+    lo = LegalOperation(
+        op_id="part-scoped-section",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("part", "II"), ("chapter", "2"), ("section", "5"))),
+    )
+
+    op = AmendmentOp(op_id="part-scoped-section", op_type="RENUMBER", lo=lo)
+
+    assert op.target_unit_kind == "section"
+    assert op.target_part == "II"
+    assert op.target_chapter == "2"
+    assert op.target_section == "5"
+
+
+def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -> None:
+    lo = LegalOperation(
+        op_id="descendant-only",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("subsection", "1"),)),
+    )
+
+    with pytest.raises(ValueError, match="no Finland-supported primary unit"):
+        AmendmentOp(op_id="descendant-only", op_type="REPEAL", lo=lo)
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
@@ -2317,12 +2360,15 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
         for event in replay.products.effect_lifecycle_events
         if event.kind == "change_effect_expiry"
         and event.relation is not None
-        and event.relation.relation_id
-        == "fi-effect-relation:2006/1322:extends_effect_expiry:2006/1322:section:4"
+        and event.relation.kind == "extends_effect_expiry"
+        and event.effect is not None
+        and event.effect.source_instrument.instrument_id == "2006/1322"
+        and event.effect.target_address is not None
+        and ("section", "4") in event.effect.target_address.path
     ]
-    assert len(override_lifecycle) == 1
-    assert override_lifecycle[0].expires == "2009-12-31"
-    assert override_lifecycle[0].executable is False
+    assert override_lifecycle
+    assert {event.expires for event in override_lifecycle} == {"2009-12-31"}
+    assert {event.executable for event in override_lifecycle} == {True}
 
 
 def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:
@@ -4010,7 +4056,7 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     muutos_tree = etree.fromstring("<root/>")
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
-    monkeypatch.setattr(frontend_compile, "_sec1_fallback_peg_skip_required", lambda _johto, _parent_id: True)
+    monkeypatch.setattr(frontend_compile, "_sec1_fallback_peg_skip_required", lambda _johto, _parent_id, **_kwargs: True)
     monkeypatch.setattr(
         frontend_compile,
         "parse_ops_fallback_heuristic_with_coverage",
@@ -4046,6 +4092,54 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     ]
     assert peg_skip
     assert peg_skip[0].detail.get("used_sec1_fallback") is True
+
+
+def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path() -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    johto = (
+        "Tällä lailla kumotaan eläintautilailla (441/2013) voimaan jätetyt "
+        "kumotun eläintautilain (55/1980) 12 §:n 1 momentin johdantokappale "
+        "ja 9 kohta sekä 2-4 momentti, 12 f § ja 15 §:n 5 momentti, "
+        "sellaisina kuin ne ovat laissa 303/2006."
+    )
+    muutos_tree = etree.fromstring("<root/>")
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2015/521",
+        source_title="Laki kumotun eläintautilain voimaan jätettyjen säännösten kumoamisesta",
+        used_sec1_fallback=True,
+        parent_id="1980/55",
+        strict_profile=None,
+    )
+
+    assert [
+        (
+            op.op_type,
+            op.target_section,
+            op.target_paragraph,
+            op.target_item,
+            op.target_special,
+        )
+        for op in phase2.output
+    ] == [
+        ("REPEAL", "12", 1, None, "johd"),
+        ("REPEAL", "12", 1, "9", None),
+        ("REPEAL", "12", 2, None, None),
+        ("REPEAL", "12", 3, None, None),
+        ("REPEAL", "12", 4, None, None),
+        ("REPEAL", "12f", None, None, None),
+        ("REPEAL", "15", 5, None, None),
+    ]
+    assert [
+        finding
+        for finding in phase2.findings()
+        if finding.kind == "PARSE.PEG_SKIP_SEC1_REPEAL_LIST"
+    ] == []
 
 
 def test_strict_fail_reasons_detect_source_pathology_findings() -> None:

@@ -221,6 +221,16 @@ def _fi_statute_citation_re(parent_id: str) -> "re.Pattern[str] | None":
     )
 
 
+def fi_statute_citation_spans(text: str, parent_id: str) -> tuple[tuple[int, int], ...]:
+    """Return character spans for lexical citations to ``parent_id`` in ``text``."""
+    if not text or not parent_id:
+        return ()
+    ref_re = _fi_statute_citation_re(parent_id)
+    if ref_re is None:
+        return ()
+    return tuple((match.start(), match.end()) for match in ref_re.finditer(text))
+
+
 def duplicate_section_labels_across_chapters(master_ir: IRNode) -> Set[str]:
     counts: dict[str, set[str]] = {}
 
@@ -1575,5 +1585,6 @@ __all__ = [
     "strip_unjustified_chapter_scope_from_unique_sections",
     "assign_chapter_scope_from_johtolause",
     "assign_scope_from_renumber_destinations",
+    "fi_statute_citation_spans",
     "restrict_sec1_fallback_to_parent",
 ]

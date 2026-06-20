@@ -21,6 +21,45 @@ def _sec1_fallback_xml() -> bytes:
     """.encode("utf-8")
 
 
+def _sec1_keeper_repeal_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <formula name="enactingClause">Eduskunnan päätöksen mukaisesti säädetään:</formula>
+      <body>
+        <section eId="sec_1">
+          <num>1 §</num>
+          <content>
+            Tällä lailla kumotaan eläintautilailla (441/2013) voimaan jätetyt
+            kumotun eläintautilain (55/1980) 12 §:n 1 momentin johdantokappale
+            ja 9 kohta sekä 2-4 momentti, 12 f § ja 15 §:n 5 momentti,
+            sellaisina kuin ne ovat laissa 303/2006.
+          </content>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+
+
+def _sec1_multi_parent_repeal_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <formula name="enactingClause">Eduskunnan päätöksen mukaisesti säädetään:</formula>
+      <body>
+        <section eId="sec_1">
+          <num>1 §</num>
+          <content>
+            Tällä lailla kumotaan 17 päivänä syyskuuta 1982 annetun
+            sosiaalihuoltolain (710/1982) 30-38 § ja 30 §:n edellä oleva
+            väliotsikko sekä 29 päivänä kesäkuuta 1983 annetun
+            sosiaalihuoltoasetuksen (607/1983) 14 §, sellaisina kuin niistä
+            ovat lain 34 § osaksi laissa 736/1992 ja 38 § mainitussa laissa.
+          </content>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+
+
 def _body_lead_fallback_xml() -> bytes:
     return """
     <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -102,6 +141,38 @@ def test_build_amendment_acquisition_result_uses_sec1_pre_routing_fallback() -> 
     assert result.decision.pre_routing_sec1_applied is True
     assert "rakennuslain (370/1958) 3 §" in result.decision.chosen_normalized_text
     assert result.decision.should_apply is True
+
+
+def test_build_amendment_acquisition_result_keeps_parent_owned_sec1_repeal_list() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_sec1_keeper_repeal_xml(),
+        parent_id="1980/55",
+        amendment_id="2015/521",
+        source_title="Laki kumotun eläintautilain voimaan jätettyjen säännösten kumoamisesta",
+        parent_title="Eläintautilaki",
+    )
+
+    assert result.decision.selected_lane == "sec1_fallback_pre_routing"
+    assert "12 f §" in result.sec1_text
+    assert "15 §:n 5 momentti" in result.sec1_text
+    assert "(441/2013)" in result.sec1_text
+    assert "(55/1980)" in result.sec1_text
+
+
+def test_build_amendment_acquisition_result_still_narrows_multi_parent_sec1_repeal() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_sec1_multi_parent_repeal_xml(),
+        parent_id="1983/607",
+        amendment_id="1992/736",
+        source_title="Laki sosiaalihuollon muutoksista",
+        parent_title="Sosiaalihuoltoasetus",
+    )
+
+    assert result.decision.selected_lane == "sec1_fallback_pre_routing"
+    assert "(607/1983)" in result.sec1_text
+    assert "14 §" in result.sec1_text
+    assert "(710/1982)" not in result.sec1_text
+    assert "30-38 §" not in result.sec1_text
 
 
 def test_build_amendment_acquisition_result_reuses_supplied_tree(monkeypatch) -> None:
