@@ -500,10 +500,10 @@ def se_legacy_sfspdf_search_url() -> str:
     return "https://rkrattsdb.gov.se/sfspdf/sql_search_rsp.asp"
 
 
-def open_se_archive(db_path: Path | None = None):  # returns Farchive
+def open_se_archive(db_path: Path | None = None, *, readonly: bool = True):  # returns Farchive
     from farchive import Farchive
 
-    return Farchive(db_path or _DEFAULT_CACHE)
+    return Farchive(db_path or _DEFAULT_CACHE, readonly=readonly)
 
 
 def se_official_doc_locator(sfs_id: str) -> str:

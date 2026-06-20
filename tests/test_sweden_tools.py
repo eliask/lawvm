@@ -6,6 +6,7 @@ from argparse import Namespace as SimpleNamespace
 import pytest
 
 from lawvm.sweden.fetch import (
+    open_se_archive,
     se_backfill_official_checkpoint_locator,
     se_backfill_official_completeness_locator,
     se_backfill_official_chunk_plan_locator,
@@ -38,6 +39,19 @@ class _FakeArchiveContext:
     def store(self, locator: str, data: bytes, *, observed_at: int | None = None, storage_class: str | None = None, metadata: dict | None = None) -> str:
         self.stored[locator] = data
         return "fakehash"
+
+
+def test_open_se_archive_defaults_readonly_without_creating_missing_archive(tmp_path) -> None:
+    missing = tmp_path / "unused.farchive"
+
+    try:
+        archive = open_se_archive(missing)
+    except Exception:
+        pass
+    else:
+        archive.close()
+
+    assert not missing.exists()
 
 
 def _write_json(tmp_path, payload: dict) -> str:
@@ -215,7 +229,7 @@ def test_sweden_ingest_scrape_json_command_reports_summary(tmp_path, capsys) -> 
 
 def test_sweden_fetch_current_command_prints_locator(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_current(
         sfs_id: str,
@@ -248,7 +262,7 @@ def test_sweden_fetch_current_command_prints_locator(monkeypatch, capsys) -> Non
 
 def test_sweden_fetch_current_command_prints_diagnostic_on_failure(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_current(
         sfs_id: str,
@@ -296,7 +310,7 @@ def test_sweden_hydrate_live_command_prints_archive_locators(monkeypatch, capsys
     archive = _FakeArchiveContext(
         stored={"se://sfs/2025:399/official.cleaned.txt": b"Recovered PDF text"}
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_hydrate_live(
         sfs_id: str,
@@ -385,7 +399,7 @@ def test_sweden_show_official_command_prints_summary(monkeypatch, capsys) -> Non
             ).encode("utf-8")
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -405,7 +419,7 @@ def test_sweden_show_official_command_prints_summary(monkeypatch, capsys) -> Non
 
 def test_sweden_compile_official_command_prints_compiled_ops(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     def fake_compile_ops(archive_obj, sfs_id):
         archive_obj.store(
             f"se://sfs/{sfs_id}/official.ops.adjudications.json",
@@ -486,7 +500,7 @@ def test_sweden_show_official_ops_command_prints_summary(monkeypatch, capsys) ->
             ).encode("utf-8"),
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -533,7 +547,7 @@ def test_sweden_show_official_ops_command_emits_json_with_adjudications(monkeypa
             ).encode("utf-8"),
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -574,7 +588,7 @@ def test_sweden_materialize_current_command_prints_summary(monkeypatch, capsys) 
     archive = _FakeArchiveContext(
         stored={"se://sfs/2026:106/rk.current.json": json.dumps(payload, ensure_ascii=False).encode("utf-8")}
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -637,7 +651,7 @@ def test_sweden_replay_check_command_reports_matches(monkeypatch, capsys) -> Non
             "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -658,7 +672,7 @@ def test_sweden_replay_check_command_reports_matches(monkeypatch, capsys) -> Non
 
 def test_sweden_replay_check_command_prints_heading_and_appendix_rows(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.check_se_official_replay",
         lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None: {
@@ -746,7 +760,7 @@ def test_sweden_replay_check_command_uses_table_canonicalization(monkeypatch, ca
             "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -766,7 +780,7 @@ def test_sweden_replay_check_command_uses_table_canonicalization(monkeypatch, ca
 
 def test_sweden_diagnose_replay_command_reports_contamination(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.analyze_se_official_replay_feasibility",
         lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None: {
@@ -857,7 +871,7 @@ def test_sweden_diagnose_replay_command_reports_contamination(monkeypatch, capsy
 
 def test_sweden_diagnose_replay_json_attaches_older_base_plan(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.analyze_se_official_replay_feasibility",
         lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None: {
@@ -913,7 +927,7 @@ def test_sweden_diagnose_replay_json_attaches_older_base_plan(monkeypatch, capsy
 
 def test_sweden_plan_older_base_command_prints_summary(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.plan_se_older_base_rebuild",
         lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None, fetch_missing=False, probe_sources=False: {
@@ -970,7 +984,7 @@ def test_sweden_plan_older_base_command_prints_summary(monkeypatch, capsys) -> N
 
 def test_sweden_probe_command_prints_summary(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr("lawvm.tools.sweden.fetch_se_official_artifacts", lambda sfs_id, archive_obj, force_reextract=False: object())
     monkeypatch.setattr(
         "lawvm.tools.sweden.load_se_official_act_from_archive",
@@ -1034,7 +1048,7 @@ def test_sweden_probe_command_prints_summary(monkeypatch, capsys) -> None:
 
 def test_sweden_probe_command_prints_historical_blocked_summary(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr("lawvm.tools.sweden.fetch_se_official_artifacts", lambda sfs_id, archive_obj, force_reextract=False: object())
     monkeypatch.setattr(
         "lawvm.tools.sweden.load_se_official_act_from_archive",
@@ -1083,7 +1097,7 @@ def test_sweden_probe_command_prints_historical_blocked_summary(monkeypatch, cap
 def test_sweden_probe_base_command_uses_amendment_register(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
     probe_calls: list[dict[str, object]] = []
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.fetch_se_rk_current_json",
         lambda sfs_id, archive_obj: json.dumps(
@@ -1159,7 +1173,7 @@ def test_sweden_hydrate_bulk_command_skips_complete_archive_rows(monkeypatch, ca
             "se://sfs/2025:399/rk.current.json": b"{}",
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -1199,7 +1213,7 @@ def test_sweden_hydrate_bulk_command_ingests_scrape_and_hydrates(monkeypatch, tm
         encoding="utf-8",
     )
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(
         sfs_id: str,
@@ -1291,7 +1305,7 @@ def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, ca
             "se://sfs/2025:399/official.doc.html": b"<main></main>",
         }
     )
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(
         sfs_id: str,
@@ -1377,7 +1391,7 @@ def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, ca
 
 def test_sweden_backfill_official_command_generates_candidate_ids(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     seen: list[str] = []
 
@@ -1445,7 +1459,7 @@ def test_sweden_backfill_official_command_prints_skip_progress_to_stderr(monkeyp
     archive.store("se://sfs/1999:1/official.pdf.txt", b"Recovered PDF text")
     archive.store("se://sfs/1999:1/official.cleaned.txt", b"Recovered PDF text")
     archive.store("se://sfs/1999:1/official.act.json", json.dumps({"sfs_id": "1999:1", "is_amending_act": False}).encode("utf-8"))
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     sweden_main(
         SimpleNamespace(
@@ -1473,7 +1487,7 @@ def test_sweden_backfill_official_command_prints_skip_progress_to_stderr(monkeyp
 
 def test_sweden_backfill_official_command_emits_json(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.fetch_se_official_artifacts",
         lambda sfs_id, archive_obj, max_age_hours=float("inf"), force_reextract=False, diagnostics_out=None: (
@@ -1515,7 +1529,7 @@ def test_sweden_backfill_official_command_emits_json(monkeypatch, capsys) -> Non
 
 def test_sweden_backfill_official_command_writes_and_resumes_checkpoint(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     seen: list[str] = []
 
@@ -1605,7 +1619,7 @@ def test_sweden_backfill_official_command_writes_and_resumes_checkpoint(monkeypa
 
 def test_sweden_backfill_official_command_writes_live_status_artifact(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         status = json.loads(archive_obj.stored[se_backfill_official_status_locator()].decode("utf-8"))
@@ -1660,7 +1674,7 @@ def test_sweden_backfill_official_command_writes_live_status_artifact(monkeypatc
 
 def test_sweden_backfill_official_command_records_error_kind_counts(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         if sfs_id == "1999:1":
@@ -1741,7 +1755,7 @@ def test_sweden_backfill_official_command_records_error_kind_counts(monkeypatch,
 
 def test_sweden_backfill_official_command_handles_recovered_word_substitution_family(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(
@@ -1817,7 +1831,7 @@ def test_sweden_backfill_official_command_handles_recovered_word_substitution_fa
 
 def test_sweden_backfill_official_command_classifies_missing_base_act(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
@@ -1892,7 +1906,7 @@ def test_sweden_backfill_official_command_classifies_missing_base_act(monkeypatc
 
 def test_sweden_backfill_official_command_appends_history_artifact(monkeypatch) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
@@ -1953,7 +1967,7 @@ def test_sweden_backfill_official_command_appends_history_artifact(monkeypatch) 
 
 def test_sweden_backfill_official_command_tracks_sweep_and_chunk_sizes(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
@@ -2013,7 +2027,7 @@ def test_sweden_backfill_official_command_tracks_sweep_and_chunk_sizes(monkeypat
 
 def test_sweden_backfill_official_command_prints_priority_range(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
@@ -2084,7 +2098,7 @@ def test_sweden_backfill_official_command_prints_priority_range(monkeypatch, cap
 
 def test_sweden_backfill_official_command_records_year_coverage_buckets(monkeypatch) -> None:
     archive = _FakeArchiveContext()
-    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None, **_kwargs: archive)
 
     def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         act: dict[str, object] = {
