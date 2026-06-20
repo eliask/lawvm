@@ -11,6 +11,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import compile_timelines, select_active_version
+from lawvm.core.timeline_lineage import prefix_migration_event_signatures
 from lawvm.finland.apply_runtime_support import _stamp_exact_section_snapshot_payload
 
 FI_REPLAY_FOLD_TIMELINE_BACKFILL_RULE_ID = "fi.replay.fold_timeline_backfill"
@@ -206,6 +207,25 @@ def _preview_rekeyed_timelines(
     )
 
 
+def _active_migration_signature_key(
+    migration_events: tuple[MigrationEvent, ...],
+    *,
+    as_of: str,
+) -> tuple[object, ...]:
+    """Return the migration-projection state visible at ``as_of``.
+
+    Prefix migration projection only changes when a migration event becomes
+    active. Transition-graph exports materialize many non-migration change
+    dates, so caching by this signature avoids rekeying the same timeline map
+    for every ordinary amendment date.
+    """
+    return tuple(
+        signature
+        for signature in prefix_migration_event_signatures(migration_events)
+        if not signature.effective or not as_of or signature.effective <= as_of
+    )
+
+
 def append_fold_timeline_backfill_ops(
     *,
     lo_ops: list[LegalOperation],
@@ -218,6 +238,7 @@ def append_fold_timeline_backfill_ops(
     temporal_events: tuple[object, ...] = (),
     base_enacted_date: str = "",
     preview_raw_timelines: dict[LegalAddress, ProvisionTimeline] | None = None,
+    preview_rekeyed_timelines_cache: dict[object, object] | None = None,
 ) -> FoldTimelineBackfillResult:
     """Append snapshot LOs for fold sections that lack timeline authority.
 
@@ -231,15 +252,30 @@ def append_fold_timeline_backfill_ops(
         title=base_title,
         body=base_ir,
     )
-    preview = _preview_rekeyed_timelines(
-        base_ir=preview_base,
-        lo_ops=lo_ops,
-        migration_events=migration_events,
-        as_of=as_of,
-        temporal_events=temporal_events,
-        base_enacted_date=base_enacted_date,
-        raw_timelines=preview_raw_timelines,
-    )
+    preview_cache_key: tuple[object, ...] | None = None
+    preview: FoldTimelineBackfillResult | None = None
+    if preview_raw_timelines is not None and preview_rekeyed_timelines_cache is not None:
+        preview_cache_key = (
+            "fold_backfill_preview_rekeyed_timelines",
+            id(preview_raw_timelines),
+            len(preview_raw_timelines),
+            _active_migration_signature_key(migration_events, as_of=as_of),
+        )
+        cached_preview = preview_rekeyed_timelines_cache.get(preview_cache_key)
+        if isinstance(cached_preview, FoldTimelineBackfillResult):
+            preview = cached_preview
+    if preview is None:
+        preview = _preview_rekeyed_timelines(
+            base_ir=preview_base,
+            lo_ops=lo_ops,
+            migration_events=migration_events,
+            as_of=as_of,
+            temporal_events=temporal_events,
+            base_enacted_date=base_enacted_date,
+            raw_timelines=preview_raw_timelines,
+        )
+        if preview_cache_key is not None:
+            preview_rekeyed_timelines_cache[preview_cache_key] = preview
     existing_op_ids = {op.op_id for op in lo_ops}
     records: list[FoldTimelineBackfillRecord] = []
     backfill_ops: list[LegalOperation] = []

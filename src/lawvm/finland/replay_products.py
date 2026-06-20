@@ -1696,6 +1696,7 @@ def build_replay_products(
         temporal_events=resolved_temporal_events,
         base_enacted_date=_base_enacted_date,
         preview_raw_timelines=preview_raw_timelines,
+        preview_rekeyed_timelines_cache=fold_backfill_preview_cache,
     )
     if fold_timeline_backfills.records:
         backfill_temporal_events = _temporal_events_from_lo_ops(
