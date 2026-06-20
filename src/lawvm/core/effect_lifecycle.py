@@ -105,6 +105,7 @@ class EffectRef:
     source_instrument: SourceInstrumentRef
     target_statute: str = ""
     target_address: Optional[LegalAddress] = None
+    projection_group_id: str = ""
     source_provision: Optional[SourceProvisionRef] = None
 
     def __post_init__(self) -> None:
@@ -215,6 +216,10 @@ def lower_lifecycle_event_to_temporal_event(
 
     source_text = event.source_provision.text_excerpt
     source = event.source_provision.instrument.to_operation_source(raw_text=source_text)
+    group_id = (
+        event.effect.projection_group_id
+        or (event.relation.relation_id if event.relation is not None else event.effect.effect_id)
+    )
     scope = TemporalScope(
         target_statute=event.effect.target_statute,
         exact_addresses=(event.effect.target_address,) if event.effect.target_address is not None else (),
@@ -231,7 +236,7 @@ def lower_lifecycle_event_to_temporal_event(
                 if event.effective
                 else ActivationRule(kind="immediate", raw_text=source_text)
             ),
-            group_id=event.relation.relation_id if event.relation is not None else event.effect.effect_id,
+            group_id=group_id,
         )
     if event.kind in {"expire_effect", "change_effect_expiry", "repeal_effect"}:
         return TemporalEvent(
@@ -240,7 +245,7 @@ def lower_lifecycle_event_to_temporal_event(
             scope=scope,
             expires=event.expires or event.effective,
             source=source,
-            group_id=event.relation.relation_id if event.relation is not None else event.effect.effect_id,
+            group_id=group_id,
         )
     if event.kind == "suspend_effect":
         temporal_kind = "suspend"
@@ -254,7 +259,7 @@ def lower_lifecycle_event_to_temporal_event(
         scope=scope,
         effective=event.effective,
         source=source,
-        group_id=event.relation.relation_id if event.relation is not None else event.effect.effect_id,
+        group_id=group_id,
     )
 
 

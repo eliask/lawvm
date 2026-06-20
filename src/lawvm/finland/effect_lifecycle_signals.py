@@ -7,7 +7,7 @@ from typing import Iterable, Literal
 
 from lawvm.core.ir import LegalAddress
 
-EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address"]
+EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address", "mixed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +37,9 @@ class EffectLifecycleOverrideScope:
             if not addresses:
                 raise ValueError("address lifecycle override scope requires addresses")
             labels = ()
+        elif self.kind == "mixed":
+            if not labels or not addresses:
+                raise ValueError("mixed lifecycle override scope requires labels and addresses")
         else:
             raise ValueError(f"unknown lifecycle override scope kind: {self.kind!r}")
         object.__setattr__(self, "labels", labels)
@@ -62,20 +65,37 @@ class EffectLifecycleOverrideScope:
             return cls.instrument()
         return cls(kind="address", addresses=cleaned)
 
+    @classmethod
+    def mixed(
+        cls,
+        *,
+        labels: Iterable[object],
+        addresses: Iterable[LegalAddress],
+    ) -> "EffectLifecycleOverrideScope":
+        cleaned_labels = tuple(str(label).strip() for label in labels if str(label).strip())
+        cleaned_addresses = tuple(sorted(tuple(addresses), key=str))
+        if cleaned_labels and cleaned_addresses:
+            return cls(kind="mixed", labels=tuple(sorted(cleaned_labels)), addresses=cleaned_addresses)
+        if cleaned_addresses:
+            return cls.exact_addresses(cleaned_addresses)
+        return cls.sections(cleaned_labels)
+
     @property
     def key(self) -> str:
         if self.kind == "instrument":
             return "instrument:*"
         if self.kind == "section":
             return ",".join(f"section:{label}" for label in self.labels)
-        return ",".join(f"address:{address}" for address in self.addresses)
+        if self.kind == "address":
+            return ",".join(f"address:{address}" for address in self.addresses)
+        section_part = ",".join(f"section:{label}" for label in self.labels)
+        address_part = ",".join(f"address:{address}" for address in self.addresses)
+        return f"mixed:{section_part}|{address_part}"
 
     @property
     def exact_target_address(self) -> LegalAddress | None:
         if self.kind == "address" and len(self.addresses) == 1:
             return self.addresses[0]
-        if self.kind == "section" and len(self.labels) == 1:
-            return LegalAddress(path=(("section", self.labels[0]),))
         return None
 
     def to_meta(self) -> dict[str, object]:

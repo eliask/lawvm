@@ -451,6 +451,7 @@ def _kumotaan_override_scope(
         return EffectLifecycleOverrideScope.sections(sorted(set(labels)))
 
     addresses: list[LegalAddress] = []
+    uncovered_labels: list[str] = []
     covered: set[str] = set()
     for chapter, sections in sorted(
         chapter_section_map.items(), key=lambda item: str(item[0] or "")
@@ -458,13 +459,15 @@ def _kumotaan_override_scope(
         for section in sorted(sections):
             label = str(section)
             covered.add(label.lower())
+            if chapter is None:
+                uncovered_labels.append(label)
+                continue
             path: list[tuple[str, str]] = []
-            if chapter:
-                path.append(("chapter", str(chapter)))
+            path.append(("chapter", str(chapter)))
             path.append(("section", label))
             addresses.append(LegalAddress(path=tuple(path)))
     for label in sorted(set(labels)):
         if label.lower() in covered:
             continue
-        addresses.append(LegalAddress(path=(("section", str(label)),)))
-    return EffectLifecycleOverrideScope.exact_addresses(addresses)
+        uncovered_labels.append(str(label))
+    return EffectLifecycleOverrideScope.mixed(labels=uncovered_labels, addresses=addresses)

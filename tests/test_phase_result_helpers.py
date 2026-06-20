@@ -5,6 +5,9 @@ Run:
 """
 from __future__ import annotations
 
+import pytest
+from typing import Any, cast
+
 from lawvm.core.ir import LegalAddress, OperationSource
 from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
@@ -13,7 +16,7 @@ from lawvm.core.effect_lifecycle import (
     SourceInstrumentRef,
     SourceProvisionRef,
 )
-from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.core.temporal import ActivationRule
 from lawvm.core.provenance import MigrationEvent
@@ -155,6 +158,39 @@ def test_effect_lifecycle_side_channels_preserve_order_after_merge() -> None:
     assert merged.source_effects == (target_effect, effect_b)
     assert merged.effect_relations == (relation_a, relation_b)
     assert merged.effect_lifecycle_events == (event_a, event_b)
+
+
+def test_phase_result_rejects_untyped_effect_side_channel_values() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect = EffectRef(effect_id="effect:a", source_instrument=instrument)
+    relation = EffectRelation(
+        relation_id="relation:a",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=effect,
+    )
+
+    with pytest.raises(TypeError, match="source_effects"):
+        PhaseResult(output=None, source_effects=cast(Any, ("effect:a",)))
+    with pytest.raises(TypeError, match="effect_relations"):
+        PhaseResult(output=None, effect_relations=cast(Any, ("relation:a",)))
+    with pytest.raises(TypeError, match="effect_lifecycle_events"):
+        PhaseResult(
+            output=None,
+            effect_lifecycle_events=cast(Any, (relation,)),
+        )
+
+
+def test_phase_builder_rejects_untyped_effect_side_channel_values() -> None:
+    builder: PhaseBuilder[None] = PhaseBuilder()
+
+    with pytest.raises(TypeError, match="EffectRef"):
+        builder.add_source_effect(cast(Any, "effect:a"))
+    with pytest.raises(TypeError, match="EffectRelation"):
+        builder.add_effect_relation(cast(Any, "relation:a"))
+    with pytest.raises(TypeError, match="EffectLifecycleEvent"):
+        builder.add_effect_lifecycle_event(cast(Any, "lifecycle:a"))
 
 
 def test_phase_result_summary_accessors_project_derived_kinds() -> None:

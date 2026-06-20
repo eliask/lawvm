@@ -224,6 +224,7 @@ class ProcessResultBuilder:
             temporal_events=(),
             findings=tuple(findings),
             lifecycle_overrides=tuple(self.buffers.commencement_expiry_override_notes),
+            known_source_effects=tuple(self.buffers.source_effects),
         )
         existing_relations = {relation.relation_id for relation in self.buffers.effect_relations}
         for relation in relations:

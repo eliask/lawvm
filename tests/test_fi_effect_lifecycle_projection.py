@@ -4,7 +4,13 @@ import pytest
 from typing import Any, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
-from lawvm.core.effect_lifecycle import EffectLifecycleEvent, EffectRef, SourceInstrumentRef, SourceProvisionRef
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    SourceInstrumentRef,
+    SourceProvisionRef,
+    lower_lifecycle_event_to_temporal_event,
+)
 from lawvm.core.phase_result import Finding
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.finland.effect_lifecycle_signals import (
@@ -23,6 +29,7 @@ def _op() -> LegalOperation:
         action=StructuralAction.INSERT,
         target=LegalAddress(path=(("section", "4 a"),)),
         source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+        group_id="g:2020/1:op-1",
     )
 
 
@@ -78,10 +85,30 @@ def test_finland_canonical_op_mints_source_effect_identity() -> None:
     assert len(source_effects) == 1
     effect = source_effects[0]
     assert effect.effect_id == "fi-effect:2020/1:op-1"
+    assert effect.projection_group_id == "g:2020/1:op-1"
     assert effect.target_statute == "1990/1"
     assert effect.target_address == op.target
     assert effect.source_provision is not None
     assert effect.source_provision.rule_id == "fi.legal_operation.effect_declaration"
+
+
+def test_section_lifecycle_scope_is_not_an_exact_address() -> None:
+    scope = EffectLifecycleOverrideScope.sections(("4 a",))
+
+    assert scope.kind == "section"
+    assert scope.exact_target_address is None
+    assert scope.to_meta()["scope_labels"] == ["4 a"]
+
+
+def test_mixed_lifecycle_scope_keeps_labels_and_addresses_distinct() -> None:
+    address = LegalAddress(path=(("chapter", "2"), ("section", "8"),))
+
+    scope = EffectLifecycleOverrideScope.mixed(labels=("4 a",), addresses=(address,))
+
+    assert scope.kind == "mixed"
+    assert scope.exact_target_address is None
+    assert scope.to_meta()["scope_labels"] == ["4 a"]
+    assert scope.to_meta()["scope_addresses"] == ["chapter:2/section:8"]
 
 
 def test_finland_pending_amendment_unresolved_emits_relation_and_nonexecuting_lifecycle() -> None:
@@ -167,7 +194,7 @@ def test_finland_meta_repeal_unresolved_emits_nonexecuting_lifecycle() -> None:
     assert lifecycle_events[0].executable is False
 
 
-def test_finland_commencement_expiry_override_projects_relation() -> None:
+def test_finland_commencement_expiry_override_without_effect_stays_unresolved() -> None:
     source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
         canonical_ops=(),
@@ -187,23 +214,67 @@ def test_finland_commencement_expiry_override_projects_relation() -> None:
     assert source_effects == ()
     assert len(relations) == 1
     assert relations[0].kind == "extends_effect_expiry"
-    assert relations[0].target_effect is not None
-    assert relations[0].target_effect.source_instrument.instrument_id == "2020/1"
-    assert relations[0].target_effect.effect_id == "fi-effect:2020/1:lifecycle:section:4 a"
-    assert relations[0].target_effect.target_address == LegalAddress(path=(("section", "4 a"),))
+    assert relations[0].target_effect is None
+    assert relations[0].target_instrument is not None
+    assert relations[0].target_instrument.instrument_id == "2020/1"
+    assert relations[0].detail["resolved"] is False
     assert len(lifecycle_events) == 1
     lifecycle = lifecycle_events[0]
-    assert lifecycle.kind == "change_effect_expiry"
-    assert lifecycle.effect == relations[0].target_effect
+    assert lifecycle.kind == "unresolved_effect_target"
+    assert lifecycle.effect is None
     assert lifecycle.relation == relations[0]
-    assert lifecycle.expires == "2022-12-31"
+    assert lifecycle.detail["intended_lifecycle_kind"] == "change_effect_expiry"
     assert lifecycle.executable is False
 
 
-def test_finland_commencement_effective_override_projects_nonexecuting_lifecycle() -> None:
-    _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+def test_finland_commencement_expiry_override_matching_effect_is_executable() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
-        canonical_ops=(),
+        canonical_ops=(_op(),),
+        temporal_events=(),
+        findings=(),
+        lifecycle_overrides=(
+            EffectLifecycleOverride(
+                source_statute="2021/2",
+                target_statute="2020/1",
+                scope=EffectLifecycleOverrideScope.sections(("4 a",)),
+                expiry="2022-12-31",
+                context="accepted_amendment",
+            ),
+        ),
+    )
+
+    assert len(source_effects) == 1
+    assert len(relations) == 1
+    assert relations[0].kind == "extends_effect_expiry"
+    assert relations[0].target_effect == source_effects[0]
+    assert relations[0].target_instrument is None
+    assert relations[0].detail["resolved"] is True
+    assert len(lifecycle_events) == 1
+    lifecycle = lifecycle_events[0]
+    assert lifecycle.kind == "change_effect_expiry"
+    assert lifecycle.effect == source_effects[0]
+    assert lifecycle.relation == relations[0]
+    assert lifecycle.expires == "2022-12-31"
+    assert lifecycle.executable is True
+    temporal = lower_lifecycle_event_to_temporal_event(lifecycle)
+    assert temporal is not None
+    assert temporal.group_id == "g:2020/1:op-1"
+    assert temporal.scope.exact_addresses == (LegalAddress(path=(("section", "4 a"),)),)
+
+
+def test_finland_commencement_effective_override_projects_executable_lifecycle() -> None:
+    op = LegalOperation(
+        op_id="op-chapter-1-section-4a",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "1"), ("section", "4 a"))),
+        source=OperationSource(statute_id="2020/1", effective="2020-01-01"),
+        group_id="g:2020/1:chapter-1-section-4a",
+    )
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(op,),
         temporal_events=(),
         findings=(),
         lifecycle_overrides=(
@@ -221,23 +292,32 @@ def test_finland_commencement_effective_override_projects_nonexecuting_lifecycle
 
     assert len(relations) == 1
     assert relations[0].kind == "changes_effect_commencement"
-    assert relations[0].target_effect is not None
-    assert relations[0].target_effect.effect_id == (
-        "fi-effect:2020/1:lifecycle:address:chapter:1/section:4 a"
-    )
-    assert relations[0].target_effect.target_address == LegalAddress(
+    assert relations[0].target_effect == source_effects[0]
+    assert source_effects[0].target_address == LegalAddress(
         path=(("chapter", "1"), ("section", "4 a"))
     )
     assert len(lifecycle_events) == 1
     assert lifecycle_events[0].kind == "change_effect_commencement"
     assert lifecycle_events[0].effective == "2022-01-01"
-    assert lifecycle_events[0].executable is False
+    assert lifecycle_events[0].executable is True
+    temporal = lower_lifecycle_event_to_temporal_event(lifecycle_events[0])
+    assert temporal is not None
+    assert temporal.group_id == "g:2020/1:chapter-1-section-4a"
 
 
-def test_finland_repeal_override_projects_nonexecuting_lifecycle() -> None:
-    _source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
+def test_finland_repeal_override_projects_executable_lifecycle_when_effect_matches() -> None:
+    source_effects, relations, lifecycle_events = build_finland_effect_lifecycle(
         target_statute="1990/1",
-        canonical_ops=(),
+        canonical_ops=(
+            LegalOperation(
+                op_id="op-self-4a",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "4 a"),)),
+                source=OperationSource(statute_id="2021/2", effective="2022-01-01"),
+                group_id="g:2021/2:self-4a",
+            ),
+        ),
         temporal_events=(),
         findings=(),
         lifecycle_overrides=(
@@ -253,10 +333,14 @@ def test_finland_repeal_override_projects_nonexecuting_lifecycle() -> None:
 
     assert len(relations) == 1
     assert relations[0].kind == "repeals_effect"
+    assert relations[0].target_effect == source_effects[0]
     assert len(lifecycle_events) == 1
     assert lifecycle_events[0].kind == "repeal_effect"
     assert lifecycle_events[0].expires == "2022-01-01"
-    assert lifecycle_events[0].executable is False
+    assert lifecycle_events[0].executable is True
+    temporal = lower_lifecycle_event_to_temporal_event(lifecycle_events[0])
+    assert temporal is not None
+    assert temporal.group_id == "g:2021/2:self-4a"
 
 
 def test_finland_lifecycle_projection_rejects_serialized_override_meta() -> None:

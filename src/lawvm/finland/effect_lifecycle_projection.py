@@ -85,6 +85,7 @@ def _effect_ref_for_temporal_event(
         source_instrument=instrument,
         target_statute=event.scope.target_statute or target_statute,
         target_address=event.scope.exact_addresses[0] if len(event.scope.exact_addresses) == 1 else None,
+        projection_group_id=str(event.group_id or ""),
         source_provision=witness,
     )
 
@@ -110,6 +111,7 @@ def _effect_ref_for_legal_operation(
         source_instrument=instrument,
         target_statute=target_statute,
         target_address=op.target,
+        projection_group_id=str(op.group_id or ""),
         source_provision=witness,
     )
 
@@ -170,28 +172,54 @@ def _lifecycle_from_temporal_events(
     return tuple(lifecycle_events)
 
 
-def _target_effect_from_row(
+def _effect_matches_override_scope(effect: EffectRef, row: EffectLifecycleOverride) -> bool:
+    if effect.source_instrument.instrument_id != row.target_statute:
+        return False
+    if row.scope.kind == "instrument":
+        return True
+    if effect.target_address is None:
+        return False
+    if row.scope.kind == "address":
+        return effect.target_address in row.scope.addresses
+    if row.scope.kind == "section":
+        section_labels = set(row.scope.labels)
+        return any(
+            kind == "section" and label in section_labels
+            for kind, label in effect.target_address.path
+        )
+    if row.scope.kind == "mixed":
+        if effect.target_address in row.scope.addresses:
+            return True
+        section_labels = set(row.scope.labels)
+        return any(
+            kind == "section" and label in section_labels
+            for kind, label in effect.target_address.path
+        )
+    return False
+
+
+def _matched_target_effects(
     *,
-    target_statute: str,
     row: EffectLifecycleOverride,
-    witness: SourceProvisionRef,
-) -> EffectRef | None:
-    instrument = _source_instrument(row.target_statute)
-    if instrument is None:
-        return None
-    return EffectRef(
-        effect_id=f"fi-effect:{row.target_statute}:lifecycle:{row.scope.key}",
-        source_instrument=instrument,
-        target_statute=target_statute,
-        target_address=row.scope.exact_target_address,
-        source_provision=witness,
-    )
+    source_effects: Sequence[EffectRef],
+) -> tuple[EffectRef, ...]:
+    matches: list[EffectRef] = []
+    seen: set[str] = set()
+    for effect in source_effects:
+        if effect.effect_id in seen:
+            continue
+        if not _effect_matches_override_scope(effect, row):
+            continue
+        seen.add(effect.effect_id)
+        matches.append(effect)
+    return tuple(matches)
 
 
 def _relations_from_lifecycle_overrides(
     lifecycle_overrides: Sequence[EffectLifecycleOverride],
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectRelation, ...]:
     relations: list[EffectRelation] = []
     for row in _typed_override_rows(lifecycle_overrides):
@@ -200,16 +228,7 @@ def _relations_from_lifecycle_overrides(
             path=("voimaantulo",),
             rule_id="fi.commencement_lifecycle_override",
         )
-        target_effect = (
-            _target_effect_from_row(
-                target_statute=target_statute,
-                row=row,
-                witness=witness,
-            )
-            if witness is not None
-            else None
-        )
-        if witness is None or target_effect is None:
+        if witness is None:
             continue
         if row.effective:
             kind: EffectRelationKind = "changes_effect_commencement"
@@ -217,21 +236,82 @@ def _relations_from_lifecycle_overrides(
             kind = "repeals_effect"
         else:
             kind = "extends_effect_expiry"
-        relations.append(
-            EffectRelation(
-                relation_id=_relation_id(
-                    row.source_statute,
-                    kind,
-                    row.target_statute,
-                    row.scope.key,
-                ),
-                kind=kind,
-                source_provision=witness,
-                target_effect=target_effect,
-                detail=row.to_meta_row(),
+        target_effects = _matched_target_effects(row=row, source_effects=source_effects)
+        if not target_effects:
+            target_instrument = _source_instrument(row.target_statute)
+            if target_instrument is None:
+                continue
+            relations.append(
+                EffectRelation(
+                    relation_id=_relation_id(
+                        row.source_statute,
+                        kind,
+                        row.target_statute,
+                        row.scope.key,
+                    ),
+                    kind=kind,
+                    source_provision=witness,
+                    target_instrument=target_instrument,
+                    detail={
+                        **row.to_meta_row(),
+                        "resolved": False,
+                        "unresolved_reason": "no matching source effect in current projection context",
+                    },
+                )
             )
-        )
+            continue
+        for target_effect in target_effects:
+            relations.append(
+                EffectRelation(
+                    relation_id=_relation_id(
+                        row.source_statute,
+                        kind,
+                        target_effect.effect_id,
+                    ),
+                    kind=kind,
+                    source_provision=witness,
+                    target_effect=target_effect,
+                    detail={
+                        **row.to_meta_row(),
+                        "resolved": True,
+                    },
+                )
+            )
     return tuple(relations)
+
+
+def _intended_lifecycle_kind_for_relation(relation: EffectRelation) -> EffectLifecycleEventKind | None:
+    if relation.kind == "changes_effect_commencement":
+        return "change_effect_commencement"
+    if relation.kind == "repeals_effect":
+        return "repeal_effect"
+    if relation.kind == "extends_effect_expiry":
+        return "change_effect_expiry"
+    return None
+
+
+def _lifecycle_event_from_unmatched_override_relation(
+    *,
+    row: EffectLifecycleOverride,
+    relation: EffectRelation,
+) -> EffectLifecycleEvent | None:
+    lifecycle_kind = _intended_lifecycle_kind_for_relation(relation)
+    if lifecycle_kind is None:
+        return None
+    return EffectLifecycleEvent(
+        lifecycle_event_id=_lifecycle_id(relation.relation_id, "unresolved"),
+        kind="unresolved_effect_target",
+        source_provision=relation.source_provision,
+        relation=relation,
+        executable=False,
+        detail={
+            "projection": "source_lifecycle_override",
+            "executable_projection": False,
+            "intended_lifecycle_kind": lifecycle_kind,
+            "non_executable_reason": "override row did not match a source-backed target effect",
+            **row.to_meta_row(),
+        },
+    )
 
 
 def _lifecycle_event_from_override_relation(
@@ -263,11 +343,10 @@ def _lifecycle_event_from_override_relation(
         relation=relation,
         effective=effective,
         expires=expires,
-        executable=False,
+        executable=True,
         detail={
             "projection": "source_lifecycle_override",
-            "executable_projection": False,
-            "non_executable_reason": "override row does not carry exact target effect identity",
+            "executable_projection": True,
             **row.to_meta_row(),
         },
     )
@@ -277,6 +356,7 @@ def _lifecycle_events_from_lifecycle_overrides(
     lifecycle_overrides: Sequence[EffectLifecycleOverride],
     *,
     target_statute: str,
+    source_effects: Sequence[EffectRef] = (),
 ) -> tuple[EffectLifecycleEvent, ...]:
     events: list[EffectLifecycleEvent] = []
     seen: set[str] = set()
@@ -284,14 +364,20 @@ def _lifecycle_events_from_lifecycle_overrides(
         relations = _relations_from_lifecycle_overrides(
             (row,),
             target_statute=target_statute,
+            source_effects=source_effects,
         )
-        if not relations:
-            continue
-        event = _lifecycle_event_from_override_relation(row=row, relation=relations[0])
-        if event is None or event.lifecycle_event_id in seen:
-            continue
-        seen.add(event.lifecycle_event_id)
-        events.append(event)
+        for relation in relations:
+            if relation.target_effect is None:
+                event = _lifecycle_event_from_unmatched_override_relation(
+                    row=row,
+                    relation=relation,
+                )
+            else:
+                event = _lifecycle_event_from_override_relation(row=row, relation=relation)
+            if event is None or event.lifecycle_event_id in seen:
+                continue
+            seen.add(event.lifecycle_event_id)
+            events.append(event)
     return tuple(events)
 
 
@@ -450,6 +536,7 @@ def build_finland_effect_lifecycle(
     temporal_events: Sequence[TemporalEvent],
     findings: Sequence[Finding],
     lifecycle_overrides: Sequence[EffectLifecycleOverride] = (),
+    known_source_effects: Sequence[EffectRef] = (),
 ) -> tuple[tuple[EffectRef, ...], tuple[EffectRelation, ...], tuple[EffectLifecycleEvent, ...]]:
     """Build Finland's current effect-lifecycle evidence projection.
 
@@ -463,14 +550,27 @@ def build_finland_effect_lifecycle(
         canonical_ops=canonical_ops,
         temporal_events=temporal_events,
     )
+    source_effects_by_id = {
+        effect.effect_id: effect
+        for effect in tuple(known_source_effects) + tuple(source_effects)
+    }
+    source_effect_context = tuple(source_effects_by_id.values())
     relations = (
-        _relations_from_lifecycle_overrides(lifecycle_overrides, target_statute=target_statute)
+        _relations_from_lifecycle_overrides(
+            lifecycle_overrides,
+            target_statute=target_statute,
+            source_effects=source_effect_context,
+        )
         + _pending_relations_from_findings(findings)
         + _meta_repeal_relations_from_findings(findings)
     )
     lifecycle_events = (
         _lifecycle_from_temporal_events(temporal_events, target_statute=target_statute)
-        + _lifecycle_events_from_lifecycle_overrides(lifecycle_overrides, target_statute=target_statute)
+        + _lifecycle_events_from_lifecycle_overrides(
+            lifecycle_overrides,
+            target_statute=target_statute,
+            source_effects=source_effect_context,
+        )
         + _unresolved_lifecycle_from_pending_findings(findings)
         + _unresolved_lifecycle_from_meta_repeal_findings(findings)
     )
