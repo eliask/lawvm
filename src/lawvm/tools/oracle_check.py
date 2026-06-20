@@ -1430,11 +1430,22 @@ def _classify_statute(
         }
         raw_master_gap_pre_blame_cache: dict[str, PreBlameSnapshot] = {}
         if raw_master_gap_sources:
-            raw_master_gap_pre_blame_cache = _batch_pre_blame_sections(
-                sid,
-                list(raw_master_gap_sources),
-                mode,
+            raw_master_gap_pre_blame_cache = {
+                source: snapshot
+                for source, snapshot in _pre_blame_cache.items()
+                if source in raw_master_gap_sources
+            }
+            missing_raw_master_sources = (
+                raw_master_gap_sources - raw_master_gap_pre_blame_cache.keys()
             )
+            if missing_raw_master_sources:
+                raw_master_gap_pre_blame_cache.update(
+                    _batch_pre_blame_sections(
+                        sid,
+                        list(missing_raw_master_sources),
+                        mode,
+                    )
+                )
         empty_body_origin_cache: dict[tuple[str, str], bool] = {}
         raw_master_missing_cache: dict[str, bool] = {}
         pre_blame_absent_cache: dict[tuple[str, str], bool] = {}
