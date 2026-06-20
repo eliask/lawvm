@@ -401,7 +401,7 @@ class CompiledOpEvidenceRow:
 
 
 @dataclass(frozen=True)
-class AdmissibleBindingCertificate:
+class AdmissibleBindingCoverage:
     """Certificate that a subsection slot binding was deterministic."""
 
     slot_id: int
@@ -410,14 +410,14 @@ class AdmissibleBindingCertificate:
     admissibility: Literal["single", "ambiguous", "fallback"]
 
     def __post_init__(self) -> None:
-        _require_nonnegative_int("AdmissibleBindingCertificate", "slot_id", self.slot_id)
-        _require_nonnegative_int("AdmissibleBindingCertificate", "candidate_count", self.candidate_count)
+        _require_nonnegative_int("AdmissibleBindingCoverage", "slot_id", self.slot_id)
+        _require_nonnegative_int("AdmissibleBindingCoverage", "candidate_count", self.candidate_count)
         if self.admissibility not in {"single", "ambiguous", "fallback"}:
-            raise ValueError("AdmissibleBindingCertificate.admissibility must be single, ambiguous, or fallback")
+            raise ValueError("AdmissibleBindingCoverage.admissibility must be single, ambiguous, or fallback")
         if self.admissibility == "single" and self.candidate_count != 1:
-            raise ValueError("AdmissibleBindingCertificate single admissibility requires candidate_count=1")
+            raise ValueError("AdmissibleBindingCoverage single admissibility requires candidate_count=1")
         if self.admissibility == "ambiguous" and self.candidate_count <= 1:
-            raise ValueError("AdmissibleBindingCertificate ambiguous admissibility requires candidate_count > 1")
+            raise ValueError("AdmissibleBindingCoverage ambiguous admissibility requires candidate_count > 1")
 
 
 @dataclass(frozen=True)

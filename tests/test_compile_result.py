@@ -23,7 +23,7 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
 )
 from lawvm.core.compile_result import (
-    AdmissibleBindingCertificate,
+    AdmissibleBindingCoverage,
     CanonicalBundle,
     CanonicalEffect,
     CompiledOpEvidenceRow,
@@ -358,9 +358,9 @@ def test_compiled_op_scope_witness_rejects_unrecognized_scope_source() -> None:
     ) is None
 
 
-def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
+def test_admissible_binding_coverage_rejects_count_contradictions() -> None:
     assert (
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="",
             candidate_count=1,
@@ -369,14 +369,14 @@ def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
         == ""
     )
     with pytest.raises(ValueError, match="single admissibility"):
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="2024/100",
             candidate_count=2,
             admissibility="single",
         )
     with pytest.raises(ValueError, match="ambiguous admissibility"):
-        AdmissibleBindingCertificate(
+        AdmissibleBindingCoverage(
             slot_id=1,
             amendment_id="2024/100",
             candidate_count=1,

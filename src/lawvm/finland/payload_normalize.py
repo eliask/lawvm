@@ -26,7 +26,7 @@ from dataclasses import replace as dc_replace
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
-from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
+from lawvm.core.compile_result import AdmissibleBindingCoverage, SourcePathology
 from lawvm.core.recovery_kind import RecoveryKind
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
@@ -414,7 +414,7 @@ class SubsectionSlotAssignmentResult:
     sparse_slot_bindings: tuple[SparsePayloadSlotBinding, ...]
     used_subs: tuple[int, ...]
     unassigned_payload_slots: tuple[str, ...]
-    binding_certificates: tuple[AdmissibleBindingCertificate, ...] = ()
+    binding_certificates: tuple[AdmissibleBindingCoverage, ...] = ()
     binding_observations: tuple[ElaborationObservation, ...] = ()
     binding_admissibility_by_op_id: tuple[tuple[str, str], ...] = ()
 
@@ -4296,7 +4296,7 @@ def _assign_subsection_slots(
     # binding was deterministic ("single admissible"); > 1 means there were
     # competing slots with the same label ("ambiguous").  Ops assigned through
     # sequential/positional fallback (no exact label match) get "fallback".
-    binding_certificates: List[AdmissibleBindingCertificate] = []
+    binding_certificates: List[AdmissibleBindingCoverage] = []
     binding_admissibility_by_op_id: Dict[str, str] = {}
     # Pre-build label → count map across all payload slots
     label_counts: Dict[str, int] = {}
@@ -4363,7 +4363,7 @@ def _assign_subsection_slots(
                 source_statute = str(op.source_statute or "")
                 break
         binding_certificates.append(
-            AdmissibleBindingCertificate(
+            AdmissibleBindingCoverage(
                 slot_id=binding.payload_slot_index,
                 amendment_id=source_statute,
                 candidate_count=count,
