@@ -4277,14 +4277,12 @@ def test_replay_products_reject_duplicate_effect_graph_ids() -> None:
         lifecycle_event_id="lifecycle:1",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_a,
         executable=False,
     )
     lifecycle_b = EffectLifecycleEvent(
         lifecycle_event_id="lifecycle:1",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_b,
         executable=False,
     )
 

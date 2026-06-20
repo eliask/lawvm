@@ -161,6 +161,14 @@ def test_effect_relation_requires_source_witness_and_target_identifier() -> None
             kind="extends_effect_expiry",
             source_provision=witness,
         )
+    with pytest.raises(ValueError, match="exactly one target endpoint"):
+        EffectRelation(
+            relation_id="rel:both",
+            kind="extends_effect_expiry",
+            source_provision=witness,
+            target_effect=EffectRef(effect_id="effect:target", source_instrument=instrument),
+            target_instrument=SourceInstrumentRef(instrument_id="2019/1"),
+        )
 
     relation = EffectRelation(
         relation_id="rel:2",
@@ -201,14 +209,12 @@ def test_canonical_bundle_rejects_duplicate_effect_graph_ids() -> None:
         lifecycle_event_id="lifecycle:1",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_a,
         executable=False,
     )
     lifecycle_b = EffectLifecycleEvent(
         lifecycle_event_id="lifecycle:1",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_b,
         executable=False,
     )
 
@@ -315,6 +321,35 @@ def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -
     bundle = CanonicalBundle(effect_lifecycle_events=(event,))
 
     assert bundle.lifecycle_projected_temporal_events == ()
+
+
+def test_unresolved_effect_lifecycle_event_cannot_smuggle_resolved_target() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+
+    with pytest.raises(ValueError, match="cannot name effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:effect",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            effect=target_effect,
+            executable=False,
+        )
+
+    with pytest.raises(ValueError, match="relation cannot name target_effect"):
+        EffectLifecycleEvent(
+            lifecycle_event_id="life:relation",
+            kind="unresolved_effect_target",
+            source_provision=witness,
+            relation=EffectRelation(
+                relation_id="relation:resolved",
+                kind="modifies_effect",
+                source_provision=witness,
+                target_effect=target_effect,
+            ),
+            executable=False,
+        )
 
 
 def test_resolved_effect_lifecycle_event_requires_target_effect() -> None:

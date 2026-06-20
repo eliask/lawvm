@@ -151,6 +151,8 @@ class EffectRelation:
             raise ValueError("EffectRelation.source_provision must be a SourceProvisionRef")
         if self.target_effect is None and self.target_instrument is None:
             raise ValueError("EffectRelation requires target_effect or target_instrument")
+        if self.target_effect is not None and self.target_instrument is not None:
+            raise ValueError("EffectRelation requires exactly one target endpoint")
         if self.target_effect is not None and not isinstance(self.target_effect, EffectRef):
             raise ValueError("EffectRelation.target_effect must be an EffectRef when provided")
         if self.target_instrument is not None and not isinstance(self.target_instrument, SourceInstrumentRef):
@@ -204,6 +206,16 @@ class EffectLifecycleEvent:
             dt.date.fromisoformat(self.expires)
         if self.executable and self.kind == "unresolved_effect_target":
             raise ValueError("unresolved EffectLifecycleEvent cannot be executable")
+        if self.kind == "unresolved_effect_target" and self.effect is not None:
+            raise ValueError("unresolved EffectLifecycleEvent cannot name effect")
+        if (
+            self.kind == "unresolved_effect_target"
+            and self.relation is not None
+            and self.relation.target_effect is not None
+        ):
+            raise ValueError(
+                "unresolved EffectLifecycleEvent relation cannot name target_effect"
+            )
         if self.kind != "unresolved_effect_target" and self.effect is None:
             raise ValueError("resolved EffectLifecycleEvent requires effect")
         if self.executable and self.effect is None:

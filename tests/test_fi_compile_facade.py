@@ -241,7 +241,7 @@ class TestFromPhaseResult:
             relation_id="relation:1",
             kind="modifies_effect",
             source_provision=witness,
-            target_effect=target_effect,
+            target_instrument=instrument,
         )
         event = EffectLifecycleEvent(
             lifecycle_event_id="lifecycle:1",
@@ -285,7 +285,7 @@ class TestFromPhaseResult:
             relation_id="relation:1",
             kind="modifies_effect",
             source_provision=witness,
-            target_effect=target_effect,
+            target_instrument=instrument,
         )
         event = EffectLifecycleEvent(
             lifecycle_event_id="lifecycle:1",

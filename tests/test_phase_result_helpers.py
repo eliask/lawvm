@@ -117,13 +117,13 @@ def test_effect_lifecycle_side_channels_preserve_order_after_merge() -> None:
         relation_id="relation:a",
         kind="modifies_effect",
         source_provision=witness,
-        target_effect=target_effect,
+        target_instrument=instrument,
     )
     relation_b = EffectRelation(
         relation_id="relation:b",
         kind="extends_effect_expiry",
         source_provision=witness,
-        target_effect=target_effect,
+        target_instrument=instrument,
     )
     event_a = EffectLifecycleEvent(
         lifecycle_event_id="lifecycle:a",
@@ -204,14 +204,12 @@ def test_phase_result_rejects_duplicate_effect_graph_ids() -> None:
         lifecycle_event_id="lifecycle:a",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_a,
         executable=False,
     )
     lifecycle_b = EffectLifecycleEvent(
         lifecycle_event_id="lifecycle:a",
         kind="unresolved_effect_target",
         source_provision=witness,
-        relation=relation_b,
         executable=False,
     )
 
