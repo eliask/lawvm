@@ -728,6 +728,45 @@ def _extract_title_and_date(xb: bytes) -> tuple[str, Optional[dt.date]] | None:
     return title, valid_from
 
 
+_FINLEX_NS = "http://data.finlex.fi/schema/finlex"
+
+
+def _extract_repeal_date(oracle_xb: bytes) -> Optional[dt.date]:
+    """Extract a statute's REPEAL date from its consolidated oracle XML.
+
+    Finlex publishes the repeal as authoritative consolidation metadata: a
+    repealed act's oracle carries a ``finlex:repealedBy`` block whose
+    ``finlex:statuteReference / finlex:inForce / finlex:dateEntryIntoForce[@date]``
+    is the date the repealing act entered into force --- i.e. the date the
+    repealed version stopped being the act of that name (exclusive ``valid_to``).
+    This is the deterministic, IN-CORPUS supersession date; no external fetch.
+
+    Returns the parsed date, or ``None`` (fail-loud, never fabricated) when the
+    oracle does not parse, carries no ``repealedBy`` block, or that block has no
+    parseable ``dateEntryIntoForce`` --- a repealed act whose supersession date
+    the corpus does not expose stays an OPEN window, never a guessed date.
+    """
+    from lxml import etree
+
+    try:
+        tree = etree.fromstring(oracle_xb)
+    except etree.XMLSyntaxError:
+        return None
+    repealed_by = tree.find(f".//{{{_FINLEX_NS}}}repealedBy")
+    if repealed_by is None:
+        return None
+    date_el = repealed_by.find(f".//{{{_FINLEX_NS}}}dateEntryIntoForce")
+    if date_el is None:
+        return None
+    raw = date_el.get("date")
+    if not raw:
+        return None
+    try:
+        return dt.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def all_entries_from_farchive(
     *,
     archive_path: Optional[str] = None,
@@ -746,14 +785,15 @@ def all_entries_from_farchive(
 
     * ``valid_from`` = the source XML's ``FRBRWork/FRBRdate[@name='dateIssued']``
       (the real enactment date) when present, else ``None`` (open).
-    * ``valid_to`` = ALWAYS ``None`` (open).  The farchive exposes only the
-      CURRENT consolidated ``docTitle`` per statute — a single point-in-time
-      title, NOT a title-change history.  An act's title END date (renamed /
-      repealed) is therefore NOT derivable from this source and is left open.
-      The temporal dimension here is single-version-per-statute until a
-      title-history source exists; the registry's ``covers``/``as_of`` machinery
-      still applies (a ``valid_from``-bounded entry is simply treated as current
-      from its enactment onward, whole-history fallback otherwise).
+    * ``valid_to`` = the REPEAL date read from the statute's consolidated oracle
+      (``finlex:repealedBy / ... / dateEntryIntoForce[@date]``, the date the
+      repealing act entered into force) when the act has been repealed and the
+      corpus exposes that date; else ``None`` (open).  This closes the window of
+      a repealed-and-superseded version so as-of-citing disambiguation can drop
+      it (an act repealed and re-enacted under the same name).  A still-in-force
+      act, or a repealed act whose supersession date the corpus does not expose
+      (no oracle / no ``repealedBy`` / unparseable date), keeps an OPEN window —
+      the date is never guessed.
 
     ``limit`` (0 = unbounded) caps the number of ids walked, for cheap tests.
     ``archive_path`` defaults to ``$LAWVM_CANONICAL_DATA_ROOT/data/finlex.farchive``.
@@ -776,21 +816,28 @@ def all_entries_from_farchive(
         if not xb:
             continue
         extracted = _extract_title_and_date(xb)
-        del xb  # release the XML blob immediately (bounded peak memory)
+        del xb  # release the source XML blob immediately (bounded peak memory)
         if extracted is None:
             continue
         title, valid_from = extracted
+        # The repeal/supersession date lives ONLY in the consolidated oracle
+        # (the source XML carries no repealedBy block); read it separately and
+        # discard it immediately to keep peak memory at one blob.
+        oracle_xb = store.read_oracle(sid)
+        valid_to = _extract_repeal_date(oracle_xb) if oracle_xb else None
+        del oracle_xb
         yield StatuteNameEntry(
             statute_id=sid,
             canonical_title=title,
             valid_from=valid_from,
-            valid_to=None,
+            valid_to=valid_to,
         )
 
 
 __all__ = [
     "STATUTE_NAME_ALIASES",
     "Candidate",
+    "_extract_repeal_date",
     "all_entries_from_farchive",
     "RegistryResult",
     "StatuteNameAlias",
