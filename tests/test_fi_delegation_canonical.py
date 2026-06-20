@@ -525,12 +525,65 @@ def test_court_power_tuomioistuin_residualized() -> None:
     assert _agency_grants(scan) == []
 
 
+def test_court_power_compound_tuomioistuin_issuer_residualized() -> None:
+    # ``Hallintotuomioistuin voi … antaa … väliaikaisen määräyksen`` (2019/808 §123)
+    # — a ``…tuomioistuin`` COMPOUND court issuer (not the bare ``tuomioistuin``)
+    # exercising a case-specific power. The old guard recognized only the exact
+    # ``tuomioistuin`` head and leaked the compound as an AGENCY edge.
+    scan = _grants(
+        "Hallintotuomioistuin voi myös muussa sen käsiteltävänä olevassa "
+        "hallintolainkäyttöasiassa kuin valitusasiassa antaa asianosaisen oikeuden "
+        "tai edun toteuttamista turvaavan väliaikaisen määräyksen."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "court_power" for r in scan.residuals)
+
+
+def test_court_power_sentential_complement_maaraa_etta_residualized() -> None:
+    # ``jollei tuomioistuin erityisestä syystä määrää, että …`` (2004/120 §11) — the
+    # ``määrä…, että …`` sentential-complement court order. The matched FIRST power
+    # verb is the trailing passive ``määrätään``, which the old bare-verb test did
+    # not treat as adjudicative, so the päätös instrument leaked as AGENCY.
+    scan = _grants(
+        "Konkurssin alkamisen oikeusvaikutukset lakkaavat, jollei tuomioistuin "
+        "erityisestä syystä määrää, että oikeusvaikutukset ovat voimassa, kunnes "
+        "päätös on lainvoimainen tai asiassa toisin määrätään."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "court_power" for r in scan.residuals)
+
+
+def test_court_power_clause_internal_adjudicative_verb_residualized() -> None:
+    # ``ylempi tuomioistuin antaa asiassa uuden määräyksen`` (2007/705 §23) — the
+    # adjudicative ``antaa`` is NOT the clause's first power verb (an unrelated
+    # ``annettava`` precedes it), so the old first-power-verb test missed the
+    # order frame and leaked the määräys instrument as AGENCY.
+    scan = _grants(
+        "Voimassaoloaikaa saadaan lyhentää tai pidentää, kuitenkin enintään kunnes "
+        "annettava pääasiaratkaisu tulee lainvoimaiseksi tai ylempi tuomioistuin "
+        "antaa asiassa uuden määräyksen."
+    )
+    assert _agency_grants(scan) == []
+    assert any(r.kind == "court_power" for r in scan.residuals)
+
+
 def test_court_power_with_rulemaking_quantifier_is_grant() -> None:
     # STAND-DOWN: a court issuer ``antaa tarkempia määräyksiä [aiheesta]`` WOULD be
     # rule-making — the rule-making quantifier ``tarkempia`` keeps it a grant so the
     # guard never suppresses a genuine delegation merely because a court is named.
     scan = _grants(
         "Markkinaoikeus antaa tarkempia määräyksiä asioiden käsittelystä "
+        "istunnossa."
+    )
+    assert any(g.kind == KIND_AGENCY for g in scan.grants)
+
+
+def test_court_compound_issuer_rulemaking_quantifier_is_grant() -> None:
+    # STAND-DOWN even for a ``…tuomioistuin`` COMPOUND issuer: a genuine
+    # ``antaa tarkempia määräyksiä [aiheesta]`` rule-MAKING delegation must survive
+    # — the widened compound-court issuer recognition must not suppress it.
+    scan = _grants(
+        "Hallintotuomioistuin antaa tarkempia määräyksiä asioiden käsittelystä "
         "istunnossa."
     )
     assert any(g.kind == KIND_AGENCY for g in scan.grants)

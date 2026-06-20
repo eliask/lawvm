@@ -1101,6 +1101,61 @@ def _clause_has_court_issuer(words: list[Token]) -> bool:
         # (``hallinto-oikeuteen`` / ``oikeuttaan``) — only the bare nominative head.
         if low.endswith("oikeus") and low not in ("oikeus",):
             return True
+        # the ``…tuomioistuin`` court family in the nominative
+        # (``hallintotuomioistuin`` / ``muutoksenhakutuomioistuin`` /
+        # ``markkinaoikeustuomioistuin``). ``tuomioistuin`` is exclusively a court
+        # morpheme; only the bare nominative ends in ``tuomioistuin`` (the genitive
+        # ``…tuomioistuimen`` / inessive ``…tuomioistuimessa`` do NOT), so this
+        # stays the NOMINATIVE-issuer test, parallel to the ``…oikeus`` arm.
+        if low.endswith("tuomioistuin"):
+            return True
+    return False
+
+
+def _clause_has_court_order_frame(
+    tokens: tuple[Token, ...],
+    clause_lo: int,
+    clause_hi: int,
+) -> bool:
+    """True iff the clause carries an in-case ADJUDICATIVE order frame.
+
+    A court order surfaces in three frames the bare matched-verb test misses:
+
+      * a clause-internal ADJUDICATIVE verb (``…antaa … määräyksen`` /
+        ``kieltää …``) anywhere in the clause — not necessarily the FIRST power
+        verb the candidate matched (e.g. ``ylempi tuomioistuin antaa asiassa
+        uuden määräyksen`` whose first power verb is an unrelated ``annettava``);
+        and
+      * the sentential-complement order ``määrä…, että …`` / ``…, ettei …`` (a
+        ``määrä``-family verb governing an ``että`` / ``ettei`` complement: the
+        court orders THAT something hold — a case-specific ruling, not a rule);
+        and
+      * the passive in-case order ``…toisin määrätään`` (the passive ``määrätään``
+        a court issuer governs — ``jollei tuomioistuin … määrää, että … tai
+        asiassa toisin määrätään``).
+
+    Keys on clause STRUCTURE, not on the matched verb, so it catches the leaks the
+    first-power-verb adjudicative test drops. Caller already requires a court
+    issuer + no rule-making quantifier, so a genuine ``[court] antaa tarkempia
+    määräyksiä`` rule-making grant never reaches here.
+    """
+    words = _word_tokens(tokens, clause_lo, clause_hi)
+    lowered = [w.text.lower() for w in words]
+    # Frame 1: a clause-internal adjudicative verb anywhere in the clause.
+    if any(low in _ADJUDICATIVE_VERBS for low in lowered):
+        return True
+    # Frames 2 & 3: a ``määrä``-family verb (incl. the passive ``määrätään``)
+    # governing an ``että`` / ``ettei`` complement, or the passive ``määrätään``
+    # itself (``…toisin määrätään``).
+    for idx, low in enumerate(lowered):
+        if not low.startswith("määrä"):
+            continue
+        if low in ("määrätään", "määräävät", "määrätköön"):
+            return True
+        # ``määrä…`` directly followed by an ``että`` / ``ettei`` complement head.
+        nxt = lowered[idx + 1] if idx + 1 < len(lowered) else ""
+        if nxt in ("että", "ettei"):
+            return True
     return False
 
 
@@ -1122,7 +1177,11 @@ def _is_court_power(
       * the triggering instrument is a ``päätös`` / ``määräys`` (the AGENCY family
         a court touches — never ``asetus``/``ohje``);
       * a NOMINATIVE court issuer heads the clause subject; and
-      * the matched power verb is an adjudicative verb; and
+      * the clause carries an adjudicative-ORDER frame — either the matched power
+        verb is an adjudicative verb, or a clause-internal adjudicative verb /
+        sentential-complement ``määrä…, että …`` / passive ``…toisin määrätään``
+        order frame holds (the matched FIRST power verb is often an unrelated
+        ``annettava`` / passive ``määrätään`` the bare-verb test missed); and
       * NO rule-making quantifier heads the object (a hypothetical court ``antaa
         tarkempia määräyksiä`` would be rule-making — stand down) and NO forward
         decree anchor binds.
@@ -1130,14 +1189,14 @@ def _is_court_power(
     instrument = _instrument_kind_for_surface(tokens[inst_idx].text)
     if instrument not in (INSTRUMENT_MAARAYS, INSTRUMENT_PAATOS):
         return False
-    if tokens[verb_idx].text.lower() not in _ADJUDICATIVE_VERBS:
-        return False
     words = _word_tokens(tokens, clause_lo, clause_hi)
     if not _clause_has_court_issuer(words):
         return False
     if any(w.text.lower() in _RULEMAKING_QUANTIFIERS for w in words):
         return False
-    return True
+    if tokens[verb_idx].text.lower() in _ADJUDICATIVE_VERBS:
+        return True
+    return _clause_has_court_order_frame(tokens, clause_lo, clause_hi)
 
 
 def _is_penal_clause_reference(

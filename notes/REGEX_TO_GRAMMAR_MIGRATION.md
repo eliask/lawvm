@@ -36,6 +36,67 @@ bespoke-parser case.
    typed selector objects (`UKTextSelector` union). This is §1.9 at the IR
    level and is arguably higher value than shaving regex time.
 
+## Core + Finland audit & checkable doctrine (2026-06-20)
+
+A fresh 7-cluster, per-site audit of `core/` (13 files) + `finland/` (~129 files), cross-checked by an independent non-Anthropic pass. **~1391 regex sites: 91 keep / 18 wrap / 25 move / 35 violation-flagged.** Headline: the architecture is healthy. The kernel holds no domain parser (one Finnish-idiom leak), the canonical surface parser is regex-free, the Legal Surface Graph lenses are regex-clean (0 violations), and the flagged "violations" are honest fallback/residue/oracle layers (mostly witnessed), not silent producers. **Do not do a big-bang migration** — most regex is benign-forever lexical/date/path/display and stays.
+
+### The firewall as a yes/no test (refines §1.13)
+
+A regex is an **outright violation** when raw statute / johtolause / transitional **prose is the sole evidence** for any of the six prime-directive facts: (a) action family (REPEAL/REPLACE/INSERT/MOVE), (b) target scope/ownership (chapter/section/momentti/kohta/luku/osa, or which sections a range absorbs), (c) lifecycle (expiry/commencement/validity-bound selection, repeal-vs-not), (d) saved/excepted effect (`lukuun ottamatta` / `siltä osin` / `jää voimaan`), (e) routing/applicability (which statute is affected), (f) drop/widen of a mutation. Date and citation **tokens** are not this; selecting *which* date is the bound or *which* unit is in scope is. Bright line: **if deleting the regex would force you to explain a legal operation differently, it is not lexical.**
+
+### Decision procedure (apply per site, no judgment)
+
+1. Regex over an **owned/structured string** (label, eId/AKN path, rendered `LegalAddress`, citation id, date token, whitespace, display text) → **KEEP** (benign forever).
+2. Regex over prose that only **lexes** a token/range/list, **repairs surface pre-tokenization** (witnessed via a `rule_id`), or is a **site anchor supplementing a shared grammar** (proven 0-loss superset) → **KEEP** (lexer-primitive floor).
+3. Regex over prose emitting a **boolean/feature** used as a gate/recall signal that does **not** by itself decide a prime-directive fact → **WRAP** through `core/regex_safety.py` `compile_classifier_regex` (mandatory, not optional, for any classifier over long/adversarial text).
+4. Regex deciding a prime-directive fact but with address/structure delegated to the shared grammar and tokens lexical — only the **precedence/ambiguity/attachment** choice lives in regex evaluation order → **EXTRACT_POLICY** (lift the implicit rule into a named, evidence-carrying policy object; keep the lexers).
+5. Regex deciding a prime-directive fact with overlapping production-named patterns, semantic-object captures, action-family-from-keyword-map, "add a variant = add a regex" → **MOVE**: a hidden drafting grammar (kind 3) / string-encoded selector (kind 4). Migrate family-by-family into the canonical recognizer **in shadow mode** against the existing regex; flip authority only at corpus parity; preserve `witness_rule_id`; delete the branch.
+
+### Benign-forever / already-terminal (do not touch)
+
+- **Benign-forever** (never migrate, wrap only if profiling/lint demands): label/number normalization & sort keys, roman↔arabic, `1 a)`→`1a)`, §-selector/locator/eId/AKN/href lexers, citation-id & date **token** lexers, month tables, whitespace/punctuation/display normalization, comparison-lane normalization (`oracle_comparison`, `replay_products` display), within-document text-patch matching with uniqueness checks (corrigendum text-replace, merge row-splice), range/list expansion over already-parsed endpoints.
+- **Already-terminal** (keep, do **not** re-promote and do **not** delete): a demoted regex pile superseded by a canonical token-native parser, surviving only as a fallible differential **oracle / typed residue / metadata enricher** — `delegation.py` (behind `delegation_canonical`/`delegation_edge_adapter`), the `kumotaan` whole-section path (structure delegated to `parse_body_provision_tail`), the `johto_scope_mentions` §-anchor floor, `metadata.py`'s per-family date grammar (with `rule_id`s + ambiguity-**blocking**). This *is* the prescribed end-state for a migrated kind-3 family; a `violation=true` flag there describes what it computes, but its **role** is oracle/residue, so it is warranted.
+
+### Core/ kernel policy (sharper than the Constitution's §12)
+
+The cleanroom kernel may hold **only jurisdiction-agnostic** regex — its own canonical address/selector/locator lexers, date-shape lexers, structural-label classifiers, display/comparison normalization, and the `regex_safety` wrapper itself. It must **never** hold a jurisdiction-language classifier. Two standing core concerns:
+
+- `core/tree_ops.py` `_FI_DEFINITION_INTRO_PHRASES` (Finnish `tarkoitetaan` idiom deciding a definitions-list structural fact in the kernel) — **a firewall leak; de-leak it**: the frontend supplies a definition-introducer predicate, or the IR carries a typed definition-list flag, so the kernel branches on an owned/typed signal.
+- `core/selector.py` embeds `§`/`momentti`/`kohta` + a Finlex materialized-ordinal rule — acceptable as a legacy analyst/CLI compatibility shim **only if fenced**: no replay authority, no frontend parse authority; eventually the Finnish surface moves to `finland/tools` while core keeps `HierarchicalLocator`-style typed locator plumbing.
+
+No new domain regex may enter core.
+
+### Per-cluster state
+
+| Cluster | Sites | State | Notable |
+|---|---|---|---|
+| core | 42 | clean for regex | 1 leak (`tree_ops._FI_DEFINITION_INTRO_PHRASES`) + `selector.py` to fence |
+| johtolause | 95 | sound core, 3 piles | `surface_parse` regex-free (the model end-state); MOVE `clause_patterns` rows + `johtolause_supplements` + `api._TEXT_AMEND_RE`; `affected_statute` = the model (typed + morphology) |
+| references | 141 | good shape | bulk = stable citation/address lexers; MOVE `defined_terms`; EXTRACT eu embedded-repeal; cluster-wide WRAP gap |
+| legal_surface | 89 | **0 violations** | all `replay_authorized=False`; WRAP the 3 producers (`enclosing_anaphora`, `norm_composition`, `delegation_parse`) |
+| apply_ops | 95 | benign | label/display normalization; the 1 prose-scope site (`apply_runtime_support`) already wrapped |
+| semantic_dense | 389 | the real work | `scope`/`vts`/`citation_routing`/`metadata`-expiry/`kumotaan`-residual = violation core; delegation + kumotaan-whole-section already terminal |
+| finland_tail | 540 | mixed | `normalize`/`scope`/`supplements`/`vts`/`kumotaan` = MOVE core; rest lexical/display |
+
+### Ranked Finland backlog (EV-ordered; targeted, shadow-mode, 0-delta gate)
+
+1. **`scope.py` scope-ownership** (MOVE, EV high) — answer from typed op target paths + witnesses; route address matching through `scan_legal_addresses`; extract the chapter-chunk verb-binding precedence as a policy. The canonical violation.
+2. **`normalize.py` fallback cluster → PEG3** (MOVE, high) — lowest-risk-class high-EV; the PEG exists and docstrings already ask for removal.
+3. **`johtolause_supplements` productions** (MOVE, high) — extract the `muutetaan`/`lisätään` verb-zone segmentation as a named policy; keep witnesses.
+4. **`citation_routing` amendment-title grammar** (MOVE, med) — one typed title recognizer vs 5+ variants; gates corpus routing.
+5. **`vts.py` repeal-ordering + cut-point + name-exclusion** (EXTRACT/MOVE, med) — named recognizer over typed clause spans.
+6. **`references/defined_terms` definition-entry parser** (MOVE, high) — typed `DefinitionEntry` + explicit scope-ambiguity policy; the home for the core `tree_ops` de-leak.
+7. **`metadata` temporary-expiry scope + `ValidityBound` selection** (MOVE/EXTRACT, med) — address onto grammar, bound-selection precedence as policy; fix the `_parse_section_list_labels` FIXME.
+8. **`clause_patterns` named-rows + `api._TEXT_AMEND_RE`** (MOVE, med) — typed `RepealRow`/`ReplaceRow` + a quote-aware text-amend production.
+9. **`kumotaan` subsection/container + `kumotaan_replay` range-absorption** (MOVE, med) — finish the model; collapse the triplicated clause-boundary/range algorithm (rule-of-three).
+10. **Cross-cutting WRAP** (WRAP, low risk) — route every over-long-prose classifier through `compile_classifier_regex`; **adoption is ~zero today — the single biggest, cheapest mechanical win.**
+11. **`core/tree_ops` definition-introducer de-leak** + **`selector.py` fence** (EXTRACT, med) — the only kernel firewall concerns.
+12. **Surface-lens ambiguity policies** (EXTRACT, low) — name embedded-repeal precedes/follows, exception-wins, gap windows; opportunistic.
+
+### Enforcement gate (keeps the doctrine true — build on what exists, don't reinvent)
+
+The repo already has the right primitives: `core/regex_recognition_coverage.py` declares regex rows **passive evidence, not replay authority** and forbids `regex_match_as_complete_parse` / `bounded_wildcard_as_semantic_proof` / `regex_coverage_as_replay_authorization`; `tests/test_regex_perf_gate.py` validates module-scope patterns; `scripts/inventory_parser_smells.py` is a **starter sensor**. Add a two-part CI lint by **expanding `inventory_parser_smells.py`** (not a second mechanism): (1) any classifier-pattern over prose in `finland/**` must be built via `compile_classifier_regex`, not raw `re.compile` — the biggest current gap; (2) a frozen-residue check that no **new** raw-prose regex deciding a prime-directive fact lands in the migration-cluster files, plus sensors for production-named patterns, semantic capture names (`target`/`action`/`scope`/`repeal`/`range`/`occurrence`), dynamic per-op f-string regex, multiple `finditer` over the same source text, span-overlap dedup, and 3+ copies of the clause-boundary/range algorithm (rule-of-three as a sensor). Fail new `core/` regex containing jurisdiction tokens (`§`/`momentti`/`kohta`/`luku`) unless in an explicit tools/compat allowlist. This converts the hand-maintained §1.11/§1.13 discipline into a standing gate so the firewall cannot silently re-leak.
+
 ## Ranked replacement targets
 
 1. **UK `nlp_parser.py` → UK amendment-instruction grammar.** `parse_fragment_substitution()`
