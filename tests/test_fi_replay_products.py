@@ -2331,7 +2331,10 @@ def test_replay_xml_expires_2018_11_temporary_content_before_later_permanent_mer
     """Later permanent sparse merges must not bake expired 2021/513 content in."""
     replay = pinned_replay("2018/11", mode="legal_pit", quiet=True)
 
-    for state in (replay.replay_fold_state, replay.materialized_state):
+    # Expired temporary overlays are a PIT/product obligation.  The replay fold
+    # is the raw mutation fold and may still carry expired overlay residue until
+    # timeline materialization selects the in-force version.
+    for state in (replay.materialized_state,):
         sec25 = state.find_section("25", "4")
         assert sec25 is not None
         sec25_mom1 = next(

@@ -535,6 +535,34 @@ class TestNoDuplicatesInPIT:
             for pathology in source_pathologies
         )
 
+    def test_1989_819_sparse_subsection_replace_does_not_rehydrate_old_paragraphs(self) -> None:
+        """1998/1103 §15(2) must not graft stale old-register items into §15(1).
+
+        The 1998 source wrapper is sparse: it carries an omission marker plus the
+        replacement second moment.  Timeline export must rebuild the section over
+        the latest clean prior section snapshot, not over the mutable replay fold
+        that still contains old paragraph descendants from the pre-1995 §15.
+        """
+        source_pathologies: list[object] = []
+        replay = cast(
+            ReplayResult,
+            pinned_replay("1989/819", quiet=True, source_pathologies_out=source_pathologies),
+        )
+        section_15 = replay.materialized_state.find_section("15")
+        assert section_15 is not None
+        section_text = " ".join(irnode_to_text(section_15).split())
+        assert "tietoja kiinnitysasian vireilläolosta ja vahvistamisesta" in section_text
+        assert "muita tietoja siten kuin autokiinnityslaissa" in section_text
+        assert "sopimusrekisteröijän sopimuksenmukaisissa rekisteröintitehtävissä" in section_text
+        assert "poliisiviranomaisille liikennevalvontaa" not in section_text
+        assert "Ahvenanmaan maakuntahallitukselle" not in section_text
+        assert any(
+            getattr(pathology, "code", "") == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+            and getattr(pathology, "detail", {}).get("recovery_kind")
+            == "section_snapshot_single_subsection_sparse_merge"
+            for pathology in source_pathologies
+        )
+
     @pytest.mark.slow
     def test_2014_917_section_265_no_duplicate_subsection(self) -> None:
         """Tietoyhteiskuntakaari § 265 had duplicate subsection:1."""

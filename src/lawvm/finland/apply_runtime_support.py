@@ -1068,6 +1068,14 @@ def _normalized_snapshot_text_len(node: IRNode) -> int:
     return len(" ".join(irnode_to_text(node).split()))
 
 
+def _payload_has_in_place_merge_child(node: IRNode) -> bool:
+    return any(
+        child.attrs.get("lawvm_in_place_merge") == "1"
+        for child in node.children
+        if child.kind is IRNodeKind.SUBSECTION
+    )
+
+
 def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
     *,
     state: "ReplayState",
@@ -1100,7 +1108,11 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
 
     live_len = _normalized_snapshot_text_len(live_payload)
     payload_len = _normalized_snapshot_text_len(payload)
-    if live_len <= payload_len:
+    complete_owner_should_win = (
+        _snapshot_payload_is_complete_owner(payload)
+        and not _payload_has_in_place_merge_child(payload)
+    )
+    if live_len <= payload_len or complete_owner_should_win:
         return payload, payload_from_muutos_ir
 
     if source_pathologies_out is not None:
@@ -2451,7 +2463,23 @@ def _emit_section_snapshot(
                     pending_payload.item_norm
                 )
 
-        if len(subsection_payloads) < 2 and not renumber_destinations:
+        single_sparse_whole_subsection_replace = (
+            len(subsection_payloads) == 1
+            and not renumber_destinations
+            and not repealed_item_labels_by_subsection
+            and not item_target_labels_by_subsection
+            and len(section_group_rops) == 1
+            and section_group_rops[0].is_replace_action
+            and section_group_rops[0].targets_subsection_only()
+            and section_group_rops[0].payload_completeness is not None
+            and str(section_group_rops[0].payload_completeness.tail_policy or "").strip()
+            == "preserve_unstated_tail"
+        )
+        if (
+            len(subsection_payloads) < 2
+            and not renumber_destinations
+            and not single_sparse_whole_subsection_replace
+        ):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in section_group_rops)
             if not has_item_payload or not subsection_payloads:
                 return None
@@ -2461,12 +2489,19 @@ def _emit_section_snapshot(
             for child in section_payload.children
             if child.kind is IRNodeKind.SUBSECTION and child.label
         }
-        if not repealed_item_labels_by_subsection and all(
-            label in current_by_label and irnode_to_text(current_by_label[label]) == irnode_to_text(subsection_payload)
-            for label, subsection_payload in subsection_payloads.items()
+        if (
+            not single_sparse_whole_subsection_replace
+            and not repealed_item_labels_by_subsection
+            and all(
+                label in current_by_label
+                and irnode_to_text(current_by_label[label])
+                == irnode_to_text(subsection_payload)
+                for label, subsection_payload in subsection_payloads.items()
+            )
         ):
             return None
 
+        rebased_from_expired_temporary_snapshot = False
         latest = _latest_section_snapshot_payload(
             section_path=section_path,
             replay_history_ops=lo_ops_out,
@@ -2481,6 +2516,7 @@ def _emit_section_snapshot(
                     base_ir=base_ir,
                 )
                 base_section = prior_payload if prior_payload is not None else latest.payload
+                rebased_from_expired_temporary_snapshot = prior_payload is not None
             else:
                 base_section = latest.payload
         else:
@@ -2657,6 +2693,21 @@ def _emit_section_snapshot(
                     + flattened_item_payload_count,
                 )
             )
+        if single_sparse_whole_subsection_replace and source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=normalized_target_norm,
+                    recovery_kind="section_snapshot_single_subsection_sparse_merge",
+                    live_sibling_count=sum(
+                        1
+                        for child in base_section.children
+                        if child.kind is IRNodeKind.SUBSECTION
+                    ),
+                    payload_sibling_count=len(subsection_payloads),
+                )
+            )
         merged_section = IRNode(
             kind=section_payload.kind,
             label=section_payload.label,
@@ -2664,6 +2715,8 @@ def _emit_section_snapshot(
             attrs=dict(section_payload.attrs),
             children=tuple(current_children[:first_current_subsection] + merged_subsections),
         )
+        if single_sparse_whole_subsection_replace and rebased_from_expired_temporary_snapshot:
+            merged_section = _stamp_exact_section_snapshot_payload(merged_section)
         return _drop_shifted_expired_temporary_subsection_payload(section_path, merged_section) or merged_section
 
     def _whole_target_renumber_without_payload() -> bool:
@@ -3518,6 +3571,45 @@ def _emit_section_snapshot(
             if child.kind is IRNodeKind.SUBSECTION and child.label
             and _norm_num_token(child.label) not in explicitly_repealed_subsection_labels
         }
+
+        def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
+            labels: set[str] = set()
+            base_child = _subsection_node_from_base_ir(base_ir, child_path)
+            if base_child is not None:
+                labels.update(
+                    _normalize_snapshot_item_label(grandchild.label)
+                    for grandchild in base_child.children
+                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                )
+            for prior in lo_ops_out:
+                if prior.target.special is not None or not prior.target.path:
+                    continue
+                if prior.source is not None:
+                    prior_effective = prior.source.effective or prior.source.enacted or ""
+                    if op_source.effective and prior_effective and prior_effective > op_source.effective:
+                        continue
+                if prior.target.path == child_path and prior.payload is not None:
+                    if prior.payload.kind is IRNodeKind.SUBSECTION:
+                        labels.update(
+                            _normalize_snapshot_item_label(grandchild.label)
+                            for grandchild in prior.payload.children
+                            if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                        )
+                    continue
+                if (
+                    len(prior.target.path) == len(child_path) + 1
+                    and prior.target.path[:-1] == child_path
+                    and prior.target.path[-1][0] == "paragraph"
+                ):
+                    paragraph_label = _normalize_snapshot_item_label(prior.target.path[-1][1])
+                    if not paragraph_label:
+                        continue
+                    if prior.action is StructuralAction.REPEAL:
+                        labels.discard(paragraph_label)
+                    else:
+                        labels.add(paragraph_label)
+            return labels
+
         for child in payload.children:
             if child.kind is not IRNodeKind.SUBSECTION or not child.label:
                 continue
@@ -3573,6 +3665,61 @@ def _emit_section_snapshot(
                     group_id=f"finland-johto:{amendment_id or 'unknown'}",
                 )
             )
+            if _snapshot_payload_is_complete_owner(child_payload):
+                payload_paragraphs = [
+                    grandchild
+                    for grandchild in child_payload.children
+                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                ]
+                payload_paragraph_labels = {
+                    _normalize_snapshot_item_label(grandchild.label)
+                    for grandchild in payload_paragraphs
+                }
+                if payload_paragraph_labels:
+                    prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
+                    for paragraph in payload_paragraphs:
+                        assert paragraph.label is not None
+                        paragraph_label = _normalize_snapshot_item_label(paragraph.label)
+                        lo_ops_out.append(
+                            _LegalOperation(
+                                op_id=(
+                                    "snapshot_paragraph_"
+                                    f"{paragraph_label}_from_subsection_{child.label}_section_{target_norm}"
+                                ),
+                                sequence=0,
+                                action=(
+                                    StructuralAction.REPLACE
+                                    if paragraph_label in prior_paragraph_labels
+                                    else StructuralAction.INSERT
+                                ),
+                                target=LegalAddress(
+                                    path=child_path + (("paragraph", paragraph.label),)
+                                ),
+                                payload=paragraph,
+                                source=op_source,
+                                group_id=f"finland-johto:{amendment_id or 'unknown'}",
+                            )
+                        )
+                    for paragraph_label in sorted(
+                        prior_paragraph_labels - payload_paragraph_labels,
+                        key=default_label_sort_key,
+                    ):
+                        lo_ops_out.append(
+                            _LegalOperation(
+                                op_id=(
+                                    "snapshot_repeal_paragraph_"
+                                    f"{paragraph_label}_from_subsection_{child.label}_section_{target_norm}"
+                                ),
+                                sequence=0,
+                                action=StructuralAction.REPEAL,
+                                target=LegalAddress(
+                                    path=child_path + (("paragraph", paragraph_label),)
+                                ),
+                                payload=None,
+                                source=op_source,
+                                group_id=f"finland-johto:{amendment_id or 'unknown'}",
+                            )
+                        )
         missing_repealed_subsections: list[str] = []
         for rop in group_rops:
             if not rop.is_repeal_action or not rop.targets_subsection_only():
