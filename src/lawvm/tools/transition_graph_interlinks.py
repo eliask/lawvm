@@ -806,6 +806,10 @@ class SurfaceTextSpanPlacer:
 _DASH_CHARS = "-‐‑‒–—―−"
 _DASH_CHAR_SET = frozenset(_DASH_CHARS)
 _WS_RE = re.compile(r"\s+")
+_NON_ASCII_DASH_CHARS = _DASH_CHARS.replace("-", "")
+_SURFACE_NORMALIZATION_CHANGE_RE = re.compile(
+    rf"[^\S ]|\s{{2,}}|[{re.escape(_NON_ASCII_DASH_CHARS)}]"
+)
 PLACEMENT_NORMALIZATION_ID = "fi.viewer_place.norm.nbsp_ws_dash.v1"
 
 
@@ -843,8 +847,17 @@ def _normalize_surface_with_map(text: str) -> tuple[str, list[int]]:
 
 
 def _normalize_surface(text: str) -> str:
+    if _surface_normalization_is_identity(text):
+        return text
     normalized, _ = _normalize_surface_with_map(text)
     return normalized
+
+
+def _surface_normalization_is_identity(text: str) -> bool:
+    return (
+        _SURFACE_NORMALIZATION_CHANGE_RE.search(text) is None
+        and unicodedata.is_normalized("NFC", text)
+    )
 
 
 def _find_all(haystack: str, needle: str) -> list[int]:
@@ -954,24 +967,28 @@ def place_occurrence_spans(
             )
             continue
         # 2/3. normalized matches with offset map back to exact rendered coords.
-        norm_hits: list[tuple[RenderedTextSegment, int, int, str, list[int]]] = []
+        norm_hits: list[tuple[RenderedTextSegment, int, int, list[int] | None]] = []
         for segment in scan_scoped:
-            norm_text, offset_map = _normalize_surface_with_map(segment.text)
+            if _surface_normalization_is_identity(segment.text):
+                norm_text = segment.text
+                offset_map = None
+            else:
+                norm_text, offset_map = _normalize_surface_with_map(segment.text)
             for nstart in _find_all(norm_text, norm_surface):
                 nend = nstart + len(norm_surface)
-                norm_hits.append((segment, nstart, nend, norm_text, offset_map))
+                norm_hits.append((segment, nstart, nend, offset_map))
         if not norm_hits and not exact_hits:
             # Per-date surface absence: do not paint.
             continue
         if len(norm_hits) == 1:
-            segment, nstart, nend, _norm_text, offset_map = norm_hits[0]
+            segment, nstart, nend, offset_map = norm_hits[0]
             placements.append(
                 OccurrencePlacement(
                     date=date,
                     address=segment.address,
                     segment_index=segment.segment_index,
-                    char_start=offset_map[nstart],
-                    char_end=offset_map[nend],
+                    char_start=offset_map[nstart] if offset_map is not None else nstart,
+                    char_end=offset_map[nend] if offset_map is not None else nend,
                     status="placed_normalized_unique",
                     rule_id="lawvm.viewer_place.normalized_unique.v1",
                     diagnostic={
@@ -991,14 +1008,14 @@ def place_occurrence_spans(
             #    explicitly opts into the experimental scoped-ordinal fallback.
             ordinal_used = False
             if enable_ordinal_experimental:
-                segment, nstart, nend, _norm_text, offset_map = norm_hits[0]
+                segment, nstart, nend, offset_map = norm_hits[0]
                 placements.append(
                     OccurrencePlacement(
                         date=date,
                         address=segment.address,
                         segment_index=segment.segment_index,
-                        char_start=offset_map[nstart],
-                        char_end=offset_map[nend],
+                        char_start=offset_map[nstart] if offset_map is not None else nstart,
+                        char_end=offset_map[nend] if offset_map is not None else nend,
                         status="placed_ordinal_experimental",
                         rule_id="lawvm.viewer_place.ordinal_experimental.v1",
                         diagnostic={
