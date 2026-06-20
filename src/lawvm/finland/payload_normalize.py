@@ -840,6 +840,86 @@ def _assign_duplicate_target_slot_ops(
         state.used_subs.add(shifted_idx)
 
 
+def _assign_insert_before_moved_same_target_slot_ops(
+    slot_inputs: SubsectionSlotInputs,
+    state: SubsectionSlotAssignmentState,
+) -> None:
+    """Bind ``INSERT N`` before the source slot for an explicitly moved ``REPLACE N``.
+
+    Finnish formulas can say ``lisätään N momentti, jolloin muutettu N momentti
+    ja nykyinen ... siirtyvät ...``. The body then serializes the new N slot
+    immediately before the amended old N slot. This is not the ordinary
+    duplicate-target shape where the insert owns exact slot N and the replace
+    owns the following slot.
+    """
+    occupied_targets = {
+        int(op.target_paragraph)
+        for op in slot_inputs.payload_subsec_ops
+        if op.target_paragraph is not None and not op.target_item and not op.target_special
+    }
+    renumber_destinations = {
+        int(op.target_paragraph): int(destination)
+        for op in slot_inputs.renumber_subsec_ops
+        if (
+            op.target_paragraph is not None
+            and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
+        )
+    }
+    for target in slot_inputs.duplicate_targets:
+        if renumber_destinations.get(target) != target + 1:
+            continue
+        insert_ops = [
+            op
+            for op in slot_inputs.payload_subsec_ops
+            if op.target_paragraph == target and op.op_type == "INSERT" and not op.target_item
+        ]
+        replace_ops = [
+            op
+            for op in slot_inputs.payload_subsec_ops
+            if op.target_paragraph == target and op.op_type == "REPLACE" and not op.target_item
+        ]
+        if len(insert_ops) != 1 or len(replace_ops) != 1:
+            continue
+        exact_idx = next(
+            (
+                idx
+                for idx, sub in enumerate(slot_inputs.amend_subs)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(target)
+            ),
+            None,
+        )
+        if exact_idx is None:
+            continue
+        prior_idx = exact_idx - 1
+        if prior_idx < 0 or prior_idx in state.used_subs:
+            continue
+        prior_label = _norm_num_token(slot_inputs.amend_subs[prior_idx].label or "")
+        if (
+            not prior_label.isdigit()
+            or int(prior_label) in occupied_targets
+            or int(prior_label) != target - 1
+        ):
+            continue
+        state.subsec_map.assign(insert_ops[0], slot_inputs.amend_subs[prior_idx])
+        state.used_subs.add(prior_idx)
+        state.subsec_map.assign(replace_ops[0], slot_inputs.amend_subs[exact_idx])
+        state.used_subs.add(exact_idx)
+        state.binding_rule_by_op_id[id(insert_ops[0])] = "insert_before_moved_same_target_slot"
+        state.binding_rule_by_op_id[id(replace_ops[0])] = "insert_before_moved_same_target_slot"
+        state.binding_observations.append(
+            _obs(
+                "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT",
+                "sparse_subsection_elaboration",
+                target_paragraph=target,
+                insert_payload_slot_label=str(slot_inputs.amend_subs[prior_idx].label or ""),
+                replace_payload_slot_label=str(slot_inputs.amend_subs[exact_idx].label or ""),
+                renumber_destination=renumber_destinations[target],
+                insert_op_description=insert_ops[0].description(),
+                replace_op_description=replace_ops[0].description(),
+            )
+        )
+
+
 def _assign_multi_paragraph_item_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
@@ -4045,6 +4125,7 @@ def _assign_subsection_slots(
         used_subs=set(),
     )
 
+    _assign_insert_before_moved_same_target_slot_ops(slot_inputs, state)
     _assign_duplicate_target_slot_ops(slot_inputs, state)
     _assign_multi_paragraph_item_slot_ops(slot_inputs, state)
     _assign_item_matched_slot_ops(slot_inputs, state)

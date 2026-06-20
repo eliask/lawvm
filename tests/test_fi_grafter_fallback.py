@@ -14829,6 +14829,31 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     assert group["ops_after_normalization"] == group["ops_raw"]
 
 
+def test_inspect_amendment_2007_121_2010_1357_maps_new_45_3_before_moved_old_3() -> None:
+    bundle = build_amendment_bundle("2007/121", "2010/1357", mode="official_consolidation")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "45")
+
+    assert "INSERT 5 luku 45 § 3 mom" in group["ops_final"]
+    assert [
+        (row["op"], row["slot_label"], row["target_paragraph"])
+        for row in group["sparse_slot_bindings"]
+        if row["op"] in {"INSERT 5 luku 45 § 3 mom", "REPLACE 5 luku 45 § 3 mom"}
+    ] == [
+        ("INSERT 5 luku 45 § 3 mom", "2", 3),
+        ("REPLACE 5 luku 45 § 3 mom", "3", 3),
+    ]
+    assert any(
+        observation["kind"] == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
+        and observation["detail"]["target_paragraph"] == 3
+        for observation in group["elaboration_observations"]
+    )
+    assert not any(
+        observation["kind"] == "ELAB.UNASSIGNED_SPARSE_SLOTS"
+        and "2:2" in observation["detail"].get("unassigned_slots", ())
+        for observation in group["elaboration_observations"]
+    )
+
+
 def test_inspect_amendment_1992_147_1995_337_maps_historical_top_level_kohta_to_subsections() -> None:
     """Historical top-level `kohta` wording can name direct subsection siblings.
 

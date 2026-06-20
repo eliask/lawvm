@@ -6947,3 +6947,83 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
     assert [obs.kind for obs in assignment.binding_observations].count(
         "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT"
     ) == 2
+
+
+def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="45",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="45 §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Changed item list."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Changed old third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="Carried old fourth moment."),
+        ),
+    )
+    replace_item = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=1,
+        target_item="4",
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+    )
+    replace3 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "45"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "45"), ("subsection", "4"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(
+        muutos_ir,
+        [replace_item, renumber3, insert3, replace3],
+    )
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    replace_item_slot = assignment.for_op(replace_item)
+    insert3_slot = assignment.for_op(insert3)
+    replace3_slot = assignment.for_op(replace3)
+    renumber3_slot = assignment.for_op(renumber3)
+
+    assert replace_item_slot is not None
+    assert insert3_slot is not None
+    assert replace3_slot is not None
+    assert renumber3_slot is not None
+    assert replace_item_slot.label == "1"
+    assert insert3_slot.label == "2"
+    assert replace3_slot.label == "3"
+    assert renumber3_slot.label == "4"
+    assert assignment.unassigned_payload_slots == ()
+    found_binding_observation = False
+    for obs in assignment.binding_observations:
+        if obs.kind != "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT" or obs.detail is None:
+            continue
+        if (
+            obs.detail["target_paragraph"] == 3
+            and obs.detail["insert_payload_slot_label"] == "2"
+            and obs.detail["replace_payload_slot_label"] == "3"
+        ):
+            found_binding_observation = True
+    assert found_binding_observation
