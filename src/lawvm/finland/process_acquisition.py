@@ -200,7 +200,7 @@ class ProcessAcquisitionContext:
                 base_parent_id=self.parent_id,
                 message="Pending amendment-of-amendment composed onto already-processed target amendment.",
                 source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             )
         )
         self.record_finding(

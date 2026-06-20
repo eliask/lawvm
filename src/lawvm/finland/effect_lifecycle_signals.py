@@ -11,6 +11,10 @@ from lawvm.finland.helpers import _norm_num_token
 EffectLifecycleOverrideScopeKind = Literal["instrument", "section", "address", "mixed"]
 EffectRelationSignalKind = Literal["pending_amendment", "meta_repeal"]
 EffectRelationSignalRelationKind = Literal["modifies_effect", "repeals_effect"]
+EffectRelationSignalTargetResolution = Literal[
+    "target_instrument_resolved",
+    "target_instrument_unresolved",
+]
 
 
 def _normalized_signal_string(subject: str, value: object) -> str:
@@ -199,7 +203,7 @@ class EffectRelationSignal:
     route_reason: str = ""
     message: str = ""
     source_finding: str = ""
-    resolved: bool = False
+    target_resolution: EffectRelationSignalTargetResolution = "target_instrument_unresolved"
 
     def __post_init__(self) -> None:
         signal_kind = _normalized_signal_string(
@@ -245,10 +249,19 @@ class EffectRelationSignal:
             raise ValueError("pending amendment relation signal must modify an effect")
         if signal_kind == "meta_repeal" and relation_kind != "repeals_effect":
             raise ValueError("meta-repeal relation signal must repeal an effect")
-        if not isinstance(self.resolved, bool):
-            raise ValueError("effect relation signal resolved must be a bool")
-        if self.resolved and not target_statute:
-            raise ValueError("resolved effect relation signal requires target_statute")
+        target_resolution = _normalized_signal_string(
+            "EffectRelationSignal.target_resolution",
+            self.target_resolution,
+        )
+        if target_resolution not in {
+            "target_instrument_resolved",
+            "target_instrument_unresolved",
+        }:
+            raise ValueError(
+                f"unknown effect relation signal target resolution: {self.target_resolution!r}"
+            )
+        if target_resolution == "target_instrument_resolved" and not target_statute:
+            raise ValueError("resolved target-instrument relation signal requires target_statute")
         object.__setattr__(self, "signal_kind", signal_kind)
         object.__setattr__(self, "relation_kind", relation_kind)
         object.__setattr__(self, "source_statute", source_statute)
@@ -258,6 +271,7 @@ class EffectRelationSignal:
         object.__setattr__(self, "route_reason", route_reason)
         object.__setattr__(self, "message", message)
         object.__setattr__(self, "source_finding", source_finding)
+        object.__setattr__(self, "target_resolution", target_resolution)
 
     @classmethod
     def pending_amendment(
@@ -269,7 +283,7 @@ class EffectRelationSignal:
         base_parent_id: str = "",
         message: str = "",
         source_finding: str = "",
-        resolved: bool,
+        target_resolution: EffectRelationSignalTargetResolution,
     ) -> "EffectRelationSignal":
         return cls(
             signal_kind="pending_amendment",
@@ -280,7 +294,7 @@ class EffectRelationSignal:
             base_parent_id=base_parent_id,
             message=message,
             source_finding=source_finding,
-            resolved=resolved,
+            target_resolution=target_resolution,
         )
 
     @classmethod
@@ -292,7 +306,7 @@ class EffectRelationSignal:
         route_reason: str = "",
         message: str = "",
         source_finding: str = "",
-        resolved: bool,
+        target_resolution: EffectRelationSignalTargetResolution,
     ) -> "EffectRelationSignal":
         return cls(
             signal_kind="meta_repeal",
@@ -302,7 +316,7 @@ class EffectRelationSignal:
             route_reason=route_reason,
             message=message,
             source_finding=source_finding,
-            resolved=resolved,
+            target_resolution=target_resolution,
         )
 
     def to_meta_row(self) -> dict[str, object]:
@@ -310,7 +324,7 @@ class EffectRelationSignal:
             "signal_kind": self.signal_kind,
             "relation_kind": self.relation_kind,
             "source_statute": self.source_statute,
-            "resolved": self.resolved,
+            "target_resolution": self.target_resolution,
         }
         if self.target_statute:
             row["target_amendment_id"] = self.target_statute

@@ -104,7 +104,7 @@ def test_temporal_event_reuses_matching_operation_effect_identity() -> None:
                 target_title="Target amendment",
                 base_parent_id="1990/1",
                 source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -317,7 +317,7 @@ def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
                 base_parent_id="1990/1",
                 message="pending target unresolved",
                 source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-                resolved=False,
+                target_resolution="target_instrument_unresolved",
             ),
         ),
     )
@@ -328,6 +328,7 @@ def test_finland_pending_amendment_relation_signal_is_authority_input() -> None:
     assert relations[0].target_instrument is not None
     assert relations[0].target_instrument.instrument_id == "2020/1"
     assert relations[0].detail["source_finding"] == "APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED"
+    assert "resolved" not in relations[0].detail
     assert len(lifecycle_events) == 1
     assert lifecycle_events[0].kind == "unresolved_effect_target"
     assert lifecycle_events[0].detail["projection"] == "effect_relation_signal"
@@ -344,13 +345,13 @@ def test_relation_signal_duplicate_id_conflict_is_not_silently_skipped() -> None
                     source_statute="2021/2",
                     target_statute="2020/1",
                     target_title="First title",
-                    resolved=True,
+                    target_resolution="target_instrument_resolved",
                 ),
                 EffectRelationSignal.pending_amendment(
                     source_statute="2021/2",
                     target_statute="2020/1",
                     target_title="Second title",
-                    resolved=True,
+                    target_resolution="target_instrument_resolved",
                 ),
             ),
         )
@@ -368,14 +369,14 @@ def test_unresolved_relation_signal_duplicate_event_conflict_is_not_silently_ski
                     target_statute="",
                     message="first unresolved target",
                     source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-                    resolved=False,
+                    target_resolution="target_instrument_unresolved",
                 ),
                 EffectRelationSignal.pending_amendment(
                     source_statute="2021/2",
                     target_statute="",
                     message="second unresolved target",
                     source_finding="APPLY.PENDING_AMENDMENT_EFFECT_UNRESOLVED",
-                    resolved=False,
+                    target_resolution="target_instrument_unresolved",
                 ),
             ),
         )
@@ -393,7 +394,7 @@ def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
                 target_title="Target amendment",
                 base_parent_id="1990/1",
                 source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -403,6 +404,7 @@ def test_finland_pending_amendment_relation_signal_binds_known_effect() -> None:
     assert relations[0].kind == "modifies_effect"
     assert relations[0].target_effect == source_effects[0]
     assert relations[0].target_instrument is None
+    assert "resolved" not in relations[0].detail
     assert "target_effect_id" not in relations[0].detail
     assert lifecycle_events == ()
 
@@ -429,7 +431,7 @@ def test_finland_pending_amendment_signal_does_not_bind_multiple_effects_by_inst
                 target_title="Target amendment",
                 base_parent_id="1990/1",
                 source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -475,7 +477,7 @@ def test_finland_meta_repeal_relation_signal_is_authority_input() -> None:
                 route_reason="citation_mismatch_skip",
                 message="meta repeal recorded",
                 source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -522,7 +524,7 @@ def test_finland_meta_repeal_relation_signal_binds_known_effect() -> None:
                 target_statute="2020/1",
                 route_reason="citation_mismatch_skip",
                 source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -573,7 +575,7 @@ def test_finland_meta_repeal_signal_does_not_bind_multiple_effects_by_instrument
                 target_statute="2020/1",
                 route_reason="citation_mismatch_skip",
                 source_finding="APPLY.META_REPEAL_EFFECT_RECORDED",
-                resolved=True,
+                target_resolution="target_instrument_resolved",
             ),
         ),
     )
@@ -646,7 +648,7 @@ def test_finland_meta_repeal_unresolved_signal_emits_nonexecuting_lifecycle() ->
                 route_reason="citation_mismatch_skip",
                 message="meta repeal unresolved",
                 source_finding="APPLY.META_REPEAL_EFFECT_UNRESOLVED",
-                resolved=False,
+                target_resolution="target_instrument_unresolved",
             ),
         ),
     )
@@ -681,7 +683,7 @@ def test_finland_commencement_expiry_override_without_effect_stays_unresolved() 
     assert relations[0].target_effect is None
     assert relations[0].target_instrument is not None
     assert relations[0].target_instrument.instrument_id == "2020/1"
-    assert relations[0].detail["resolved"] is False
+    assert "resolved" not in relations[0].detail
     assert len(lifecycle_events) == 1
     lifecycle = lifecycle_events[0]
     assert lifecycle.kind == "unresolved_effect_target"
@@ -712,7 +714,7 @@ def test_finland_commencement_expiry_override_matching_effect_is_executable() ->
     assert relations[0].kind == "extends_effect_expiry"
     assert relations[0].target_effect == source_effects[0]
     assert relations[0].target_instrument is None
-    assert relations[0].detail["resolved"] is True
+    assert "resolved" not in relations[0].detail
     assert len(lifecycle_events) == 1
     lifecycle = lifecycle_events[0]
     assert lifecycle.kind == "change_effect_expiry"
@@ -876,14 +878,26 @@ def test_finland_relation_signal_rejects_untyped_string_fields() -> None:
             source_statute="2021/2",
             target_statute="2020/1",
             target_title=cast(Any, object()),
-            resolved=True,
+            target_resolution="target_instrument_resolved",
         )
     with pytest.raises(TypeError, match="message"):
         EffectRelationSignal.meta_repeal(
             source_statute="2021/2",
             target_statute="2020/1",
             message=cast(Any, object()),
-            resolved=True,
+            target_resolution="target_instrument_resolved",
+        )
+    with pytest.raises(ValueError, match="target resolution"):
+        EffectRelationSignal.pending_amendment(
+            source_statute="2021/2",
+            target_statute="2020/1",
+            target_resolution=cast(Any, "resolved"),
+        )
+    with pytest.raises(ValueError, match="requires target_statute"):
+        EffectRelationSignal.meta_repeal(
+            source_statute="2021/2",
+            target_statute="",
+            target_resolution="target_instrument_resolved",
         )
 
 
@@ -932,7 +946,7 @@ def test_process_result_builder_projects_pending_relation_from_typed_signal() ->
             target_title="Laki valmiuslain 109 §:n muuttamisesta",
             base_parent_id="2011/1552",
             source_finding="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-            resolved=True,
+            target_resolution="target_instrument_resolved",
         )
     )
     builder = ProcessResultBuilder(
@@ -984,7 +998,7 @@ def test_process_result_builder_rejects_conflicting_projected_relation_id() -> N
             target_statute="2020/1233",
             target_title="New title",
             source_finding="new",
-            resolved=True,
+            target_resolution="target_instrument_resolved",
         )
     )
     builder = ProcessResultBuilder(

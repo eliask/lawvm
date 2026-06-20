@@ -458,7 +458,6 @@ def _relations_from_lifecycle_overrides(
                     target_instrument=target_instrument,
                     detail={
                         **row.to_meta_row(),
-                        "resolved": False,
                         "unresolved_reason": "no matching source effect in current projection context",
                     },
                 )
@@ -475,10 +474,7 @@ def _relations_from_lifecycle_overrides(
                     kind=kind,
                     source_provision=witness,
                     target_effect=target_effect,
-                    detail={
-                        **row.to_meta_row(),
-                        "resolved": True,
-                    },
+                    detail=row.to_meta_row(),
                 )
             )
     return tuple(relations)
@@ -595,7 +591,7 @@ def _effects_matching_relation_signal(
     signal: EffectRelationSignal,
     source_effects: Sequence[EffectRef],
 ) -> tuple[EffectRef, ...]:
-    if not signal.resolved or not signal.target_statute:
+    if signal.target_resolution != "target_instrument_resolved" or not signal.target_statute:
         return ()
     matches: list[EffectRef] = []
     seen: set[str] = set()
@@ -695,7 +691,7 @@ def _unresolved_lifecycle_from_relation_signals(
 ) -> tuple[EffectLifecycleEvent, ...]:
     events: list[EffectLifecycleEvent] = []
     for signal in _typed_relation_signals(relation_signals):
-        if signal.resolved:
+        if signal.target_statute:
             continue
         relation = _relation_from_signal(signal)
         witness = (
@@ -777,8 +773,6 @@ def _lifecycle_events_from_unresolved_signal_relations(
         if relation.source_provision.rule_id not in signal_rule_ids:
             continue
         if relation.target_effect is not None:
-            continue
-        if relation.detail.get("resolved") is not True:
             continue
         detail: dict[str, object] = dict(relation.detail)
         source_finding = str(detail.get("source_finding") or "").strip()
