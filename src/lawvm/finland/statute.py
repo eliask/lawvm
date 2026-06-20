@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
 from lawvm.core.compile_views import source_pathology_rows_from_findings
 from lawvm.core.phase_result import Finding
+from lawvm.core.write_receipt import WriteReceipt
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +666,12 @@ class ReplayResult:
         ``oracle_selector`` was provided to ``replay_xml``.  ``None`` means
         the default selection path was used or no cached artifact was
         available.
+    write_receipts : tuple[WriteReceipt, ...]
+        Landed-write receipts accumulated across the replay fold (contract
+        §4). Carried up from ``ApplyOpsSinks.write_receipts_out`` so the
+        certificate stage can cross-check its covering-state transitions
+        against the writes that actually landed. Empty when no receipts were
+        captured (e.g. replays that take no apply path).
     """
 
     ctx: StatuteContext
@@ -672,6 +679,7 @@ class ReplayResult:
     findings: tuple["Finding", ...] = field(default_factory=tuple, repr=False)
     compile_facade: Optional["CompileFacade"] = field(default=None, repr=False)
     oracle_selector_info: Optional[OracleSelectorInfo] = field(default=None, repr=False)
+    write_receipts: tuple[WriteReceipt, ...] = field(default_factory=tuple, repr=False)
 
     # ------------------------------------------------------------------
     # Convenience accessors — mirror old XMLStatute / _MasterAdapter API

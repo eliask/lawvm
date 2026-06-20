@@ -173,6 +173,7 @@ def process_muutoslaki_resolved(
     regex_recognition_coverage_out = process_call.regex_recognition_coverage_out
     mutation_events_out = process_call.mutation_events_out
     write_audits_out = process_call.write_audits_out
+    write_receipts_out = process_call.write_receipts_out
     migration_events_out = process_call.migration_events_out
     runtime = build_process_runtime(process_call)
     amendment_temporal_events = runtime.amendment_temporal_events
@@ -509,11 +510,14 @@ def process_muutoslaki_resolved(
                 observations_out=compat_elaboration_observations,
                 findings_out=process_findings,
                 observed_touch_results_out=observed_touch_results,
-                # write_audits_out is NON-Optional on ApplyOpsSinks; pass the
-                # caller's concrete list when present, else a fresh one (the
-                # fold always accounts every landed write). write_receipts_out
-                # defaults to a fresh accumulator inside the dataclass.
+                # write_audits_out / write_receipts_out are NON-Optional on
+                # ApplyOpsSinks; pass the caller's concrete list when present,
+                # else a fresh one (the fold always accounts every landed
+                # write). Threading write_receipts_out up carries the landed
+                # WriteReceipts into ReplayResult so the certificate stage can
+                # cross-check covering-state transitions against them.
                 write_audits_out=write_audits_out if write_audits_out is not None else [],
+                write_receipts_out=write_receipts_out if write_receipts_out is not None else [],
             ),
         )
         amendment_lo_ops = tuple((lo_ops_out or [])[lo_ops_start:])

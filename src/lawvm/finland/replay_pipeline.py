@@ -11,6 +11,7 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, PhaseResult
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
@@ -88,6 +89,7 @@ class ReplaySignalBuffers:
     mutation_events: list[ApplyMutationEvent]
     mutation_invariant_reports: list[Any]
     write_audits: list[ObservedWriteAudit]
+    write_receipts: list[WriteReceipt]
     migration_events: list[MigrationEvent]
     temporal_events: list[Any]
     source_effects: list[EffectRef]
@@ -108,6 +110,7 @@ class ReplaySignalBuffers:
             mutation_events=[],
             mutation_invariant_reports=[],
             write_audits=[],
+            write_receipts=[],
             migration_events=[],
             temporal_events=[],
             source_effects=[],
@@ -129,6 +132,7 @@ class ReplaySignalBuffers:
         commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
         mutation_events_out: Optional[List[Any]] = None,
         write_audits_out: Optional[List[Any]] = None,
+        write_receipts_out: Optional[List[Any]] = None,
         migration_events_out: Optional[List[MigrationEvent]] = None,
         temporal_events_out: Optional[List[Any]] = None,
         restructure_plans_out: Optional[List[Any]] = None,
@@ -160,6 +164,7 @@ class ReplaySignalBuffers:
             mutation_events=mutation_events_out if mutation_events_out is not None else [],
             mutation_invariant_reports=[],
             write_audits=write_audits_out if write_audits_out is not None else [],
+            write_receipts=write_receipts_out if write_receipts_out is not None else [],
             migration_events=(
                 migration_events_out if migration_events_out is not None else []
             ),
@@ -193,6 +198,7 @@ class ReplaySignalBuffers:
             mutation_events_out=self.mutation_events,
             mutation_invariant_reports_out=self.mutation_invariant_reports,
             write_audits_out=self.write_audits,
+            write_receipts_out=self.write_receipts,
             migration_events_out=migration_events_out,
             restructure_plans_out=self.restructure_plans,
         )
@@ -519,6 +525,7 @@ def execute_replay_plan(
     commencement_expiry_overrides_out: Optional[List[EffectLifecycleOverride]] = None,
     mutation_events_out: Optional[List[Any]] = None,
     write_audits_out: Optional[List[Any]] = None,
+    write_receipts_out: Optional[List[Any]] = None,
     migration_events_out: Optional[List[MigrationEvent]] = None,
     temporal_events_out: Optional[List[Any]] = None,
     strict_profile: Any = None,
@@ -539,6 +546,7 @@ def execute_replay_plan(
         commencement_expiry_overrides_out=commencement_expiry_overrides_out,
         mutation_events_out=mutation_events_out,
         write_audits_out=write_audits_out,
+        write_receipts_out=write_receipts_out,
         migration_events_out=migration_events_out,
         temporal_events_out=temporal_events_out,
         restructure_plans_out=restructure_plans_out,

@@ -233,6 +233,7 @@ def replay_xml(
                 parent_id=parent_id,
                 oracle_selector=oracle_selector,
             ),
+            write_receipts=tuple(signals.write_receipts),
         )
     finally:
         _reset_replay_verbose(verbose_token)
