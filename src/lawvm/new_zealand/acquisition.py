@@ -747,7 +747,8 @@ def _request_with_rate_limit_recovery(
         if response.status_code in {403, 429}:
             attempts += 1
             if attempts <= max(options.rate_limit_retry_attempts, 0):
-                retry_sleep = _retry_after_seconds(response.headers) or min(2 ** attempts, 30)
+                retry_after = _retry_after_seconds(response.headers)
+                retry_sleep = retry_after if retry_after is not None else min(2 ** attempts, 30)
                 if options.verbose or options.progress:
                     print(
                         f"NZ API {response.status_code}; retrying {rule_id} after {retry_sleep}s",
@@ -807,7 +808,8 @@ def _sleep_for_rate_limit(
 ) -> bool:
     if not options.sleep_on_rate_limit:
         return False
-    sleep_seconds = _retry_after_seconds(headers or {}) or client.seconds_until_reset()
+    retry_after = _retry_after_seconds(headers or {})
+    sleep_seconds = retry_after if retry_after is not None else client.seconds_until_reset()
     if sleep_seconds <= 0:
         sleep_seconds = 60
     if options.max_sleep_seconds is not None and sleep_seconds > options.max_sleep_seconds:
@@ -822,14 +824,14 @@ def _sleep_for_rate_limit(
     return True
 
 
-def _retry_after_seconds(headers: Mapping[str, str]) -> int:
+def _retry_after_seconds(headers: Mapping[str, str]) -> int | None:
     raw = _header_get(headers, "Retry-After")
     if not raw:
-        return 0
+        return None
     try:
         return max(int(float(raw)), 0)
     except ValueError:
-        return 0
+        return None
 
 
 def _decode_json(

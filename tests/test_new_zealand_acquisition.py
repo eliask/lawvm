@@ -18,6 +18,7 @@ from lawvm.new_zealand.acquisition import (
     open_farchive,
     sync_nz_corpus,
 )
+from lawvm.new_zealand import acquisition as nz_acquisition
 from lawvm.tools.cli import _build_parser
 
 
@@ -380,7 +381,10 @@ def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
     assert xml_url not in archive.rows
 
 
-def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> None:
+def test_nz_corpus_sync_retries_429_before_recording_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     version_id = "act_public_1990_109_en_2022-08-30"
     version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
     archive = _FakeArchive()
@@ -401,10 +405,13 @@ def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> 
         delay=0.0,
         rate_limit_retry_attempts=1,
     )
+    sleeps: list[int] = []
+    monkeypatch.setattr(nz_acquisition.time, "sleep", sleeps.append)
 
     stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert transport.calls == 2
+    assert sleeps == [0]
     assert stats.stored_json == 1
     assert stats.diagnostics[0].rule_id == "nz_acquire_xml_format_missing"
 
