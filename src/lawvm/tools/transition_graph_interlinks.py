@@ -553,17 +553,17 @@ def place_surface_text_spans_many(
     for token, token_surfaces in token_to_surfaces.items():
         group_prefilter = surface_group_prefilters.get(token)
         for date, segments in segments_by_exact_token.get(token, {}).items():
-            for surface in token_surfaces:
-                matches: list[tuple[RenderedTextSegment, int]] = []
-                for segment in segments:
-                    if (
-                        group_prefilter is not None
-                        and group_prefilter.search(segment.text) is None
-                    ):
-                        continue
-                    start = segment.text.find(surface)
+            matches_by_surface: dict[str, list[tuple[RenderedTextSegment, int]]] = {}
+            for segment in segments:
+                segment_text = segment.text
+                if group_prefilter is not None and group_prefilter.search(segment_text) is None:
+                    continue
+                for surface in token_surfaces:
+                    start = segment_text.find(surface)
                     if start >= 0:
-                        matches.append((segment, start))
+                        matches_by_surface.setdefault(surface, []).append((segment, start))
+            for surface in token_surfaces:
+                matches = matches_by_surface.get(surface, [])
                 if len(matches) == 1:
                     segment, start = matches[0]
                     placements[surface].append((date, segment, start))
