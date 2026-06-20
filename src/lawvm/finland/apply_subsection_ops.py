@@ -300,7 +300,12 @@ def _extract_predecessor_tail_paragraph_as_insert(
     predecessor_tail_text = " ".join(irnode_to_text(predecessor_tail).split()).strip()
     current_target_text = " ".join(irnode_to_text(subsecs[target_idx]).split()).strip()
     has_numbered_predecessor_body = any(child.kind == IRNodeKind.PARAGRAPH for child in predecessor.children[:predecessor_tail_idx])
-    if not replacement_text or not predecessor_tail_text or current_target_text == replacement_text:
+    if (
+        not replacement_text
+        or not predecessor_tail_text
+        or current_target_text == replacement_text
+        or predecessor_tail_text == current_target_text
+    ):
         return None
     if predecessor_tail.kind == IRNodeKind.PARAGRAPH:
         if predecessor_tail_text != replacement_text:

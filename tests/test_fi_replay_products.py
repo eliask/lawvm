@@ -898,6 +898,29 @@ def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -
     assert root_30b is None or select_active_version(root_30b, "2020-01-02") is None
 
 
+def test_replay_xml_2005_623_applies_2018_947_after_separate_commencement_law() -> None:
+    replay = replay_xml_for_test("2005/623", mode="legal_pit", quiet=True, as_of="2026-01-01")
+    section = replay.materialized_state.find_section("2")
+
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Liikenne- ja viestintävirastoa" in text
+    assert "Väylävirastoa" in text
+    assert "Liikenteen turvallisuusvirastoa" not in text
+
+    resolved = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "TIME.RESOLVED_CONTINGENT_EFFECTIVE_DATE"
+        and finding.source_statute == "2018/947"
+    ]
+    assert resolved
+    assert resolved[0].detail.get("target_amendment") == "2018/947"
+    assert resolved[0].detail.get("effective_date") == "2019-01-01"
+    assert resolved[0].detail.get("witness_statute") == "2018/937"
+    assert resolved[0].detail.get("witness_ref") == "2018/937/1"
+
+
 def test_replay_xml_2011_1552_composes_pending_amendment_children() -> None:
     replay = pinned_replay("2011/1552", mode="official_consolidation", quiet=True)
 

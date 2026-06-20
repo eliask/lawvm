@@ -2315,6 +2315,56 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
     ]
 
 
+def test_replay_xml_1970_258_folds_base_item_subsection_run_before_renumber_insert() -> None:
+    replay = pinned_replay("1970/258", oracle_version="20041297", mode="official_consolidation", quiet=True)
+    section12 = extract_ir_sections(replay.materialized_state.ir)["section:12"]
+    text = " ".join(irnode_to_text(section12).split())
+
+    edunsaaja = "Edunsaajalla, jolle on 4 momentissa tarkoitetun kuolemantapauksen"
+    vanha_kuudes = "Jos henkilö tämän lain voimaan tullessa on edunjättäjä"
+    inserted = "Milloin 6 momentissa tarkoitettu henkilö kuolee"
+    final_tail = "Seurakunnan vastuulle 4 ja 6 momentin mukaan jäävän perhe-eläkkeen"
+
+    assert text.index(edunsaaja) < text.index(vanha_kuudes)
+    assert text.index(vanha_kuudes) < text.index(inserted)
+    assert text.index(inserted) < text.index(final_tail)
+
+
+def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> None:
+    replay = pinned_replay("2014/610", oracle_version="20260352", mode="official_consolidation", quiet=True)
+    section = extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:15/section:11"]
+    text = " ".join(irnode_to_text(section).split())
+
+    first_tail = "Tässä momentissa tarkoitettuna vakuutena ei pidetä henkilötakausta"
+    new_third = "Finanssivalvonta voi asuntomarkkinoiden laskusuhdanteen"
+    new_fourth = "Finanssivalvonnan on vähintään vuosittain tehtävä päätös"
+    moved_fifth = "Päätös, jolla tässä pykälässä tarkoitettua luoton enimmäismäärää alennetaan"
+    moved_sixth = "Finanssivalvonta voi antaa määräyksiä tässä pykälässä"
+
+    assert "edellä 2 momentissa säädettyjä luoton enimmäismääriä" not in text
+    assert text.count(moved_sixth) == 1
+    assert text.index(first_tail) < text.index(new_third)
+    assert text.index(new_third) < text.index(new_fourth)
+    assert text.index(new_fourth) < text.index(moved_fifth)
+    assert text.index(moved_fifth) < text.index(moved_sixth)
+
+
+def test_replay_xml_2009_273_splits_2015_section_10_tail_moments_before_later_replaces() -> None:
+    replay = pinned_replay("2009/273", oracle_version="20251076", mode="official_consolidation", quiet=True)
+    section = extract_ir_sections(replay.replay_fold_state.ir)["section:10"]
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    text = " ".join(irnode_to_text(section).split())
+
+    old_penalty = "Uhkasakon tuomitsee valtiontalouden tarkastusvirastosta annetun lain (676/2000) 15 §:ssä"
+    new_penalty = "15 a §:ssä tarkoitettu seuraamuslautakunta"
+    tail = "Valtiontalouden tarkastusviraston suorittama valvonta päättyy"
+
+    assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+    assert old_penalty not in text
+    assert text.count(new_penalty) == 1
+    assert text.index(new_penalty) < text.index(tail)
+
+
 def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair() -> None:
     """Current replay keeps the sparse override text instead of inferring prior-law tail repair."""
     replay = pinned_replay("1974/16", mode="official_consolidation", quiet=True)

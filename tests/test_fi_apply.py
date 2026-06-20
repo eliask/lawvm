@@ -15911,6 +15911,60 @@ def test_subsection_replace_extracts_predecessor_tail_into_inserted_new_moment()
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_predecessor_tail_extract_insert"
 
 
+def test_subsection_replace_does_not_extract_predecessor_tail_duplicate_of_target() -> None:
+    """A copied target in the predecessor tail is stale source shape, not a new slot."""
+    sec = _sec(
+        "10",
+        _sub(
+            "1",
+            _intro("Viranomainen valvoo seuraavia asioita:"),
+            _para("1", "asia 1"),
+            _para("2", "asia 2"),
+            _content("Vanha uhkasakkoteksti."),
+        ),
+        _sub("2", _content("Vanha uhkasakkoteksti.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "10")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+    replace_sub = _sub("2", _content("Uusi uhkasakkoteksti."))
+    muutos_ir = _sec(
+        "10",
+        IRNode(kind=IRNodeKind.OMISSION),
+        replace_sub,
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    state = _make_state(body)
+    op = _op(op_type="REPLACE", target_section="10", target_paragraph=2)
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        muutos_ir,
+        _FINLEX_ORACLE,
+        "10 § 2 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "10"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2"]
+    assert irnode_to_text(result_subsecs[1]) == "Uusi uhkasakkoteksti."
+    assert not any(
+        pathology.detail.get("recovery_kind") == "subsection_replace_predecessor_tail_extract_insert"
+        for pathology in pathologies
+    )
+
+
 def test_subsection_replace_missing_target_does_not_gap_fill_before_higher_labeled_tail() -> None:
     """Missing-target REPLACE must not silently degrade into gap-fill INSERT."""
     sec = _sec(

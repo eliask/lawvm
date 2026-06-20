@@ -10,6 +10,7 @@ from typing import Callable, Optional
 from lawvm.core.compile_result import ActivationRule
 from lawvm.core.phase_result import Finding
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
+from lawvm.finland.metadata import separate_commencement_law_witness
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_lowering import (
     activation_rules_from_meta_clauses,
@@ -70,6 +71,26 @@ class ProcessTemporalAuthorityContext:
                     "step": effective_step,
                     "activation_rule_kind": primary_rule.kind,
                 },
+            )
+        elif effective_step == "separate_commencement_law":
+            witness = separate_commencement_law_witness(self.amendment_id)
+            self.record_finding(
+                kind="TIME.RESOLVED_CONTINGENT_EFFECTIVE_DATE",
+                message=(
+                    "Contingent commencement was resolved from a separate "
+                    "commencement-law list witness."
+                ),
+                source_statute=self.amendment_id,
+                detail={
+                    "step": effective_step,
+                    "target_amendment": self.amendment_id,
+                    "effective_date": effective_date.isoformat() if effective_date else "",
+                    "witness_statute": witness.commencement_statute_id if witness else "",
+                    "witness_ref": witness.source_provision_ref if witness else "",
+                    "rule_id": witness.rule_id if witness else "fi_separate_commencement_law_list",
+                },
+                role="observation",
+                blocking=False,
             )
         elif effective_step in ("text_regex", "publication_date"):
             self.record_finding(
