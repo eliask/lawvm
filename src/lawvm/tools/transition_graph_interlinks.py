@@ -345,6 +345,7 @@ _PLACEABLE_SURFACE_KINDS = frozenset({
     "manual_claim_ref",
 })
 _SURFACE_PREFILTER_TOKEN_RE = re.compile(r"[0-9A-Za-zÄÖÅäöå]{3,}")
+_SURFACE_GROUP_PREFILTER_MIN_SIZE = 4
 
 
 def _child_text(node: IRNode, kind: str) -> str:
@@ -523,6 +524,18 @@ def place_surface_text_spans_many(
             token_to_surfaces.setdefault(token, []).append(surface)
         else:
             fallback_surfaces.append(surface)
+    surface_group_prefilters: dict[str, re.Pattern[str]] = {}
+    for token, token_surfaces in token_to_surfaces.items():
+        if len(token_surfaces) < _SURFACE_GROUP_PREFILTER_MIN_SIZE:
+            continue
+        # Fast negative check only; exact ``str.find(surface)`` below still owns
+        # match identity and coordinates.
+        surface_group_prefilters[token] = re.compile(
+            "|".join(
+                re.escape(surface)
+                for surface in sorted(token_surfaces, key=len, reverse=True)
+            )
+        )
 
     placements: dict[str, list[tuple[str, RenderedTextSegment, int]]] = {
         surface: [] for surface in surfaces
@@ -538,10 +551,16 @@ def place_surface_text_spans_many(
                     ).append(segment)
 
     for token, token_surfaces in token_to_surfaces.items():
+        group_prefilter = surface_group_prefilters.get(token)
         for date, segments in segments_by_exact_token.get(token, {}).items():
             for surface in token_surfaces:
                 matches: list[tuple[RenderedTextSegment, int]] = []
                 for segment in segments:
+                    if (
+                        group_prefilter is not None
+                        and group_prefilter.search(segment.text) is None
+                    ):
+                        continue
                     start = segment.text.find(surface)
                     if start >= 0:
                         matches.append((segment, start))
