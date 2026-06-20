@@ -1,8 +1,8 @@
-"""Tests for TriggerCoverageCertificate end-to-end (feature #9).
+"""Tests for TriggerCoverage end-to-end (feature #9).
 
 Covers:
   - CoverageStatus enum values
-  - TriggerCoverageCertificate construction, validation, and to_dict
+  - TriggerCoverage construction, validation, and to_dict
   - TriggerCoverageSearchFailure construction and to_dict
   - Strict mode: SATISFIED + PENDING_NEGATIVE accepted; UNKNOWN rejected
   - search_commencement_decrees with various amendment_children inputs
@@ -30,7 +30,7 @@ from lawvm.finland.trigger_coverage import (
     FINLAND_SIMULTANEOUS_TRIGGER_CLASS,
     CoverageStatus,
     DecreeSearchResult,
-    TriggerCoverageCertificate,
+    TriggerCoverage,
     TriggerCoverageSearchFailure,
     assert_coverage_status_satisfies_strict_mode,
     make_predicate_activation_id,
@@ -76,14 +76,14 @@ class TestCoverageStatusEnum:
 
 
 # ---------------------------------------------------------------------------
-# TriggerCoverageCertificate construction
+# TriggerCoverage construction
 # ---------------------------------------------------------------------------
 
 
-class TestTriggerCoverageCertificateConstruction:
+class TestTriggerCoverageConstruction:
     def test_satisfied_requires_satisfied_by(self) -> None:
         with pytest.raises(ValueError, match="satisfied_by"):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 predicate_activation_id=_PRED_ID,
                 target_statute_id=_STATUTE_ID,
                 coverage_status=CoverageStatus.SATISFIED,
@@ -93,7 +93,7 @@ class TestTriggerCoverageCertificateConstruction:
             )
 
     def test_satisfied_valid(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.SATISFIED,
@@ -105,7 +105,7 @@ class TestTriggerCoverageCertificateConstruction:
         assert cert.satisfied_by == "2025/200"
 
     def test_pending_negative_valid(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -117,7 +117,7 @@ class TestTriggerCoverageCertificateConstruction:
         assert cert.satisfied_by == ""
 
     def test_unknown_valid(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.UNKNOWN,
@@ -129,7 +129,7 @@ class TestTriggerCoverageCertificateConstruction:
 
     def test_non_satisfied_rejects_satisfied_by(self) -> None:
         with pytest.raises(ValueError, match="satisfied_by must be empty"):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 predicate_activation_id=_PRED_ID,
                 target_statute_id=_STATUTE_ID,
                 coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -140,7 +140,7 @@ class TestTriggerCoverageCertificateConstruction:
 
     def test_empty_predicate_activation_id_rejected(self) -> None:
         with pytest.raises(ValueError, match="predicate_activation_id"):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 predicate_activation_id="",
                 target_statute_id=_STATUTE_ID,
                 coverage_status=CoverageStatus.UNKNOWN,
@@ -151,7 +151,7 @@ class TestTriggerCoverageCertificateConstruction:
 
     def test_invalid_as_of_type_rejected(self) -> None:
         with pytest.raises((ValueError, TypeError)):
-            TriggerCoverageCertificate(
+            TriggerCoverage(
                 predicate_activation_id=_PRED_ID,
                 target_statute_id=_STATUTE_ID,
                 coverage_status=CoverageStatus.UNKNOWN,
@@ -161,7 +161,7 @@ class TestTriggerCoverageCertificateConstruction:
             )
 
     def test_frozen(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.UNKNOWN,
@@ -178,9 +178,9 @@ class TestTriggerCoverageCertificateConstruction:
 # ---------------------------------------------------------------------------
 
 
-class TestTriggerCoverageCertificateToDict:
+class TestTriggerCoverageToDict:
     def test_satisfied_to_dict_keys(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.SATISFIED,
@@ -199,7 +199,7 @@ class TestTriggerCoverageCertificateToDict:
         }
 
     def test_satisfied_to_dict_values(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.SATISFIED,
@@ -215,7 +215,7 @@ class TestTriggerCoverageCertificateToDict:
         assert d["as_of"] == "2026-06-04"
 
     def test_pending_negative_to_dict_coverage_status(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -228,7 +228,7 @@ class TestTriggerCoverageCertificateToDict:
         assert d["satisfied_by"] == ""
 
     def test_unknown_to_dict_coverage_status(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.UNKNOWN,
@@ -249,7 +249,7 @@ class TestNoLeakBetweenStatuses:
     """Ensure no sentinel strings from UNKNOWN leak into SATISFIED/PENDING_NEGATIVE."""
 
     def test_satisfied_by_absent_in_pending_negative(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -262,7 +262,7 @@ class TestNoLeakBetweenStatuses:
         assert d["satisfied_by"] == ""
 
     def test_satisfied_observation_basis_does_not_say_unknown(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.SATISFIED,
@@ -285,7 +285,7 @@ class TestStrictMode:
     """Strict mode: SATISFIED and PENDING_NEGATIVE accepted; UNKNOWN rejected."""
 
     def test_satisfied_accepted_by_strict_mode(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.SATISFIED,
@@ -297,7 +297,7 @@ class TestStrictMode:
         assert_coverage_status_satisfies_strict_mode(cert)
 
     def test_pending_negative_accepted_by_strict_mode(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.PENDING_NEGATIVE,
@@ -309,7 +309,7 @@ class TestStrictMode:
         assert_coverage_status_satisfies_strict_mode(cert)
 
     def test_unknown_rejected_by_strict_mode(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.UNKNOWN,
@@ -321,7 +321,7 @@ class TestStrictMode:
             assert_coverage_status_satisfies_strict_mode(cert)
 
     def test_strict_mode_error_message_contains_pred_id(self) -> None:
-        cert = TriggerCoverageCertificate(
+        cert = TriggerCoverage(
             predicate_activation_id=_PRED_ID,
             target_statute_id=_STATUTE_ID,
             coverage_status=CoverageStatus.UNKNOWN,
