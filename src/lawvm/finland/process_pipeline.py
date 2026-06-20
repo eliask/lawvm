@@ -28,6 +28,10 @@ from lawvm.finland.citation_routing import (
 )
 from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.constraints import muutos_node_lookup_cache_scope
+from lawvm.finland.effect_graph_merge import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+)
 from lawvm.finland.elaboration_rule_dispatch import (
     PROCESS_AMENDMENT_PIPELINE,
     emit_elaboration_pipeline_observation,
@@ -402,8 +406,16 @@ def process_muutoslaki_resolved(
             )
             ops = list(phase2_result.ops)
             amendment_temporal_events.extend(phase2_result.temporal_events)
-            runtime.source_effects.extend(phase2_result.source_effects)
-            runtime.effect_lifecycle_events.extend(phase2_result.effect_lifecycle_events)
+            append_unique_effect_refs(
+                runtime.source_effects,
+                phase2_result.source_effects,
+                subject="process frontend normalization",
+            )
+            append_unique_effect_lifecycle_events(
+                runtime.effect_lifecycle_events,
+                phase2_result.effect_lifecycle_events,
+                subject="process frontend normalization",
+            )
             compat_elaboration_observations.extend(phase2_result.elaboration_observations)
             process_findings.extend(phase2_result.process_findings)
 
@@ -518,12 +530,11 @@ def process_muutoslaki_resolved(
             canonical_ops=amendment_lo_ops,
             temporal_events=(),
         )
-        existing_source_effect_ids = {effect.effect_id for effect in runtime.source_effects}
-        for effect in source_effects:
-            if effect.effect_id in existing_source_effect_ids:
-                continue
-            existing_source_effect_ids.add(effect.effect_id)
-            runtime.source_effects.append(effect)
+        append_unique_effect_refs(
+            runtime.source_effects,
+            source_effects,
+            subject="process canonical operation projection",
+        )
         project_transition_detector_findings(
             before_ir=before_apply_ir,
             operations=amendment_lo_ops,

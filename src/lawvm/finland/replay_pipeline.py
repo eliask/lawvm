@@ -16,6 +16,11 @@ from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallba
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.effect_graph_merge import (
+    append_unique_effect_lifecycle_events,
+    append_unique_effect_refs,
+    append_unique_effect_relations,
+)
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealDiagnostic,
@@ -642,9 +647,21 @@ def execute_replay_plan(
                 ir_snapshot=lambda _s=_cp_state: _s.ir,
             ))
         signals.temporal_events.extend(_pm_result.temporal_events)
-        signals.source_effects.extend(_pm_result.source_effects)
-        signals.effect_relations.extend(_pm_result.effect_relations)
-        signals.effect_lifecycle_events.extend(_pm_result.effect_lifecycle_events)
+        append_unique_effect_refs(
+            signals.source_effects,
+            _pm_result.source_effects,
+            subject="replay phase result",
+        )
+        append_unique_effect_relations(
+            signals.effect_relations,
+            _pm_result.effect_relations,
+            subject="replay phase result",
+        )
+        append_unique_effect_lifecycle_events(
+            signals.effect_lifecycle_events,
+            _pm_result.effect_lifecycle_events,
+            subject="replay phase result",
+        )
         signals.findings.extend(phase_findings)
         # Per-amendment invariant checks are expensive for heavily-amended
         # statutes (O(amendments * nodes)).  Skip them when the final
