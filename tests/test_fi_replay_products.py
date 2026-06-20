@@ -16,6 +16,12 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.ir import OperationSource
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
+from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
+    EffectRef,
+    SourceInstrumentRef,
+    SourceProvisionRef,
+)
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.provenance import MigrationEvent
@@ -4016,6 +4022,70 @@ def test_build_replay_products_accepts_temporal_events_for_materialization() -> 
     assert products.temporal_events[0].source is not None
     assert products.temporal_events[0].source.statute_id == "test/temporal-products:source"
     assert products.temporal_events[0].source.effective == "2010-01-01"
+    active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
+    assert active.effective == "2010-01-01"
+    assert products.materialized_state.ir.children[0].text == "Updated"
+
+
+def test_build_replay_products_accepts_lifecycle_events_for_materialization() -> None:
+    ctx = StatuteContext(
+        id="test/lifecycle-products",
+        title="Lifecycle replay products",
+        base_ir=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),)),
+        base_xml_bytes=b"<body/>",
+    )
+    replay_fold_state = ReplayState(ir=copy.deepcopy(ctx.base_ir))
+    lo_ops = [
+        LegalOperation(
+            op_id="replace_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Updated"),
+            group_id="g:fi-lifecycle-replay",
+            source=OperationSource(
+                statute_id="2010/100",
+                enacted="2005-01-01",
+            ),
+        )
+    ]
+    instrument = SourceInstrumentRef(
+        instrument_id="2011/200",
+        effective="2010-01-01",
+    )
+    witness = SourceProvisionRef(
+        instrument=instrument,
+        path=("voimaantulo",),
+        text_excerpt="Tulee voimaan 1.1.2010.",
+    )
+    lifecycle = EffectLifecycleEvent(
+        lifecycle_event_id="life:2011/200:replace_1:commence",
+        kind="change_effect_commencement",
+        source_provision=witness,
+        effect=EffectRef(
+            effect_id="effect:2010/100:replace_1",
+            source_instrument=SourceInstrumentRef(instrument_id="2010/100"),
+            target_statute="test/lifecycle-products",
+            target_address=LegalAddress(path=(("section", "1"),)),
+            projection_group_id="g:fi-lifecycle-replay",
+        ),
+        effective="2010-01-01",
+        executable=True,
+    )
+
+    products = build_replay_products(
+        ctx=ctx,
+        statute_id="test/lifecycle-products",
+        replay_fold_state=replay_fold_state,
+        lo_ops_out=lo_ops,
+        as_of="2011-01-01",
+        effect_lifecycle_events=(lifecycle,),
+    )
+
+    assert products.timelines is not None
+    assert len(products.temporal_events) == 1
+    assert products.temporal_events[0].event_id == "life:2011/200:replace_1:commence:temporal"
+    assert products.temporal_events[0].group_id == "g:fi-lifecycle-replay"
     active = products.timelines[LegalAddress(path=(("section", "1"),))].versions[-1]
     assert active.effective == "2010-01-01"
     assert products.materialized_state.ir.children[0].text == "Updated"
