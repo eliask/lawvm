@@ -612,7 +612,7 @@ class SurfaceTextSpanPlacer:
     _token_segment_groups_cache: Dict[str, list[tuple[str, list[RenderedTextSegment]]]] = (
         dataclasses.field(default_factory=dict)
     )
-    _token_position_index: dict[str, set[tuple[int, int]]] | None = None
+    _token_position_index: dict[str, list[tuple[int, int]]] | None = None
     _token_char_index: dict[str, set[str]] | None = None
     _lower_segment_groups: list[
         tuple[str, list[tuple[RenderedTextSegment, str]]]
@@ -636,21 +636,21 @@ class SurfaceTextSpanPlacer:
             for date, segments in self.segments_by_date.items()
         ]
 
-    def _build_token_position_index(self) -> dict[str, set[tuple[int, int]]]:
+    def _build_token_position_index(self) -> dict[str, list[tuple[int, int]]]:
         if self._lower_segment_groups is None:
             self._lower_segment_groups = self._build_lower_segment_groups()
-        index: dict[str, set[tuple[int, int]]] = {}
+        index: dict[str, list[tuple[int, int]]] = {}
         for date_index, (_date, segments) in enumerate(self._lower_segment_groups):
             for segment_index, (_segment, lower_text) in enumerate(segments):
                 for segment_token in set(_SURFACE_PREFILTER_TOKEN_RE.findall(lower_text)):
-                    index.setdefault(segment_token, set()).add(
+                    index.setdefault(segment_token, []).append(
                         (date_index, segment_index)
                     )
         return index
 
     @staticmethod
     def _build_token_char_index(
-        token_position_index: dict[str, set[tuple[int, int]]],
+        token_position_index: dict[str, list[tuple[int, int]]],
     ) -> dict[str, set[str]]:
         by_char: dict[str, set[str]] = {}
         for segment_token in token_position_index:
