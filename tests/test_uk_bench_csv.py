@@ -5876,6 +5876,8 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
                 kind="uk_replay_target_not_found",
                 message="Target missing",
                 source_statute="ukpga/2000/1",
+                blocking=True,
+                phase="replay",
                 op_id="op-1",
                 detail={"target": "section:1"},
             )

@@ -114,6 +114,8 @@ def _append_eu_replay_adjudication(
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
+            blocking=bool(detail_payload["blocking"]),
+            phase=str(detail_payload["phase"]),
             detail=detail_payload,
         )
     )
@@ -123,6 +125,12 @@ def _eu_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     """Project replay-lint findings into the EU replay compatibility bag."""
     detail = dict(finding.detail)
     blocking = bool(finding.blocking)
+    phase = str(detail.get("phase") or "")
+    if not phase:
+        raise ValueError(
+            f"EU replay-lint finding kind={finding.kind!r} carries no phase; "
+            "the finding emitter must set detail['phase']."
+        )
     detail.setdefault("blocking", blocking)
     detail.setdefault("strict_disposition", "block" if blocking else "record")
     detail.setdefault("quirks_disposition", "record")
@@ -131,6 +139,8 @@ def _eu_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
         kind=str(finding.kind or ""),
         message=message,
         source_statute=str(finding.source_statute or ""),
+        blocking=blocking,
+        phase=phase,
         detail=detail,
     )
 
@@ -143,6 +153,8 @@ def _eu_adjudication_from_pipeline_diagnostic(
         kind=diagnostic.rule_id,
         message=diagnostic.reason,
         source_statute=diagnostic.celex,
+        blocking=bool(diagnostic.blocking),
+        phase=str(diagnostic.phase),
         detail=detail,
     )
 
@@ -157,6 +169,8 @@ def _eu_adjudication_from_parser_diagnostic(
         kind=diagnostic.rule_id,
         message=diagnostic.reason,
         source_statute=act_celex,
+        blocking=bool(diagnostic.blocking),
+        phase=str(diagnostic.phase),
         detail=detail,
     )
 
@@ -242,6 +256,8 @@ def apply_eu_ops(
                     message="Replay output contains a suspicious duplicated text tract.",
                     source_statute=op.source.statute_id if op.source else "",
                     op_id=op.op_id,
+                    blocking=False,
+                    phase="apply_op",
                     detail=diagnostic_detail(
                         rule_id="text_duplication_warning",
                         phase="apply_op",

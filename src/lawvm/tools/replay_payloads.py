@@ -40,6 +40,8 @@ def _adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
         "message": _text_field(getattr(adjudication, "message", None)),
         "source_statute": _text_field(getattr(adjudication, "source_statute", None)),
         "op_id": _text_field(getattr(adjudication, "op_id", None)),
+        "blocking": bool(adjudication.blocking),
+        "phase": _text_field(getattr(adjudication, "phase", None)),
         "detail": dict(getattr(adjudication, "detail", {}) or {}),
     }
 

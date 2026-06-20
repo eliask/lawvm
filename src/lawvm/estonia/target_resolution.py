@@ -99,6 +99,8 @@ def _record_ee_parse_rejection(
             kind=kind,
             message=message,
             source_statute=source_id,
+            blocking=True,
+            phase="parse",
             detail=diagnostic_detail(
                 rule_id=rule_id,
                 phase="parse",
@@ -150,6 +152,8 @@ def _record_ee_old_format_unparsed_meta_rejection(
             ),
             source_statute=source_id,
             op_id=op.op_id,
+            blocking=True,
+            phase="parse",
             detail=diagnostic_detail(
                 rule_id=_EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE,
                 phase="parse",

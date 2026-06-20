@@ -34,15 +34,32 @@ class SourceAdjudication:
 
 @dataclass(frozen=True)
 class CompileAdjudication:
-    """Interop adjudication record for frontend replay surfaces."""
+    """Interop adjudication record for frontend replay surfaces.
+
+    ``blocking`` and ``phase`` are enforcement-significant and must be supplied
+    by the emitting frontend. They are intentionally non-defaulting: the
+    emitter knows whether a finding blocks and which phase produced it. Reading
+    them from the untyped ``detail`` payload with a permissive default would
+    let an emitter that forgot to classify a finding silently inherit
+    ``blocking=True`` / a substring-guessed phase, which is the boundary leak
+    this carrier closes.
+    """
 
     kind: str
     message: str
     source_statute: str
+    blocking: bool
+    phase: str
     op_id: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.blocking, bool):
+            raise TypeError(
+                f"CompileAdjudication.blocking must be a bool, got {type(self.blocking)!r}"
+            )
+        if not self.phase:
+            raise ValueError("CompileAdjudication requires a non-empty phase")
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
 

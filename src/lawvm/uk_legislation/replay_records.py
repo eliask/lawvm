@@ -72,11 +72,16 @@ def _build_uk_replay_adjudication(
         detail_payload.setdefault("blocking", True)
         detail_payload.setdefault("strict_disposition", "block")
         detail_payload.setdefault("quirks_disposition", "record")
+    blocking = detail_payload.get("blocking")
+    if not isinstance(blocking, bool):
+        blocking = True
     return CompileAdjudication(
         kind=str(kind),
         message=message,
         source_statute=op.source.statute_id if op.source else "",
         op_id=op.op_id,
+        blocking=blocking,
+        phase=str(detail_payload.get("phase") or "replay"),
         detail=detail_payload,
     )
 
@@ -295,6 +300,12 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     detail = dict(finding.detail)
     message = str(detail.pop("message", "") or "")
     blocking = bool(finding.blocking)
+    phase = str(detail.get("phase") or "")
+    if not phase:
+        raise ValueError(
+            f"UK replay-lint finding kind={finding.kind!r} carries no phase; "
+            "the finding emitter must set detail['phase']."
+        )
     detail.setdefault("blocking", blocking)
     detail.setdefault("strict_disposition", "block" if blocking else "record")
     detail.setdefault("quirks_disposition", "record")
@@ -302,6 +313,8 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
         kind=str(finding.kind or ""),
         message=message,
         source_statute=str(finding.source_statute or ""),
+        blocking=blocking,
+        phase=phase,
         detail=detail,
     )
 

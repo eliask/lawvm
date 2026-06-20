@@ -4773,6 +4773,8 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
                     "message": "Replay output contains a suspicious duplicated text tract.",
                     "source_statute": "ukpga/2000/1",
                     "op_id": "",
+                    "blocking": False,
+                    "phase": "replay_fold",
                     "detail": {
                         "blocking": False,
                         "kind": "duplicate_suffix_text",
@@ -4788,6 +4790,8 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
                     "message": "target not found",
                     "source_statute": "ukpga/2001/2",
                     "op_id": "op-1",
+                    "blocking": True,
+                    "phase": "replay",
                     "detail": {"blocking": True, "target": "section:99"},
                 },
             ),

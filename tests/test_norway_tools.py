@@ -2567,6 +2567,8 @@ def test_no_verify_tool_preserves_replay_adjudication_evidence(monkeypatch, caps
         kind="no_replay_missing_amendment_source",
         message="Norway replay skipped amendment: source not found.",
         source_statute="no/lovtid/2025-02-02-5",
+        blocking=True,
+        phase="acquisition",
         op_id="no-op-1",
         detail={
             "rule_id": "no.replay.missing_amendment_source",

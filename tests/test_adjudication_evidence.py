@@ -13,12 +13,14 @@ from lawvm.core.diagnostic_records import validate_diagnostic_detail
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 
 
-def test_adjudication_diagnostic_detail_defaults_to_blocking_compile_envelope() -> None:
+def test_adjudication_diagnostic_detail_reads_carrier_blocking_and_phase() -> None:
     adjudication = CompileAdjudication(
         kind="uk_replay_target_not_found",
         message="target missing",
         source_statute="ukpga/2000/1",
         op_id="op-1",
+        blocking=True,
+        phase="replay",
         detail={"target": "section:99"},
     )
 
@@ -33,6 +35,28 @@ def test_adjudication_diagnostic_detail_defaults_to_blocking_compile_envelope() 
     assert validate_diagnostic_detail(detail) == ()
 
 
+def test_compile_adjudication_requires_typed_blocking() -> None:
+    with pytest.raises(TypeError, match="blocking must be a bool"):
+        CompileAdjudication(
+            kind="uk_replay_target_not_found",
+            message="target missing",
+            source_statute="ukpga/2000/1",
+            blocking=cast(Any, None),
+            phase="replay",
+        )
+
+
+def test_compile_adjudication_requires_non_empty_phase() -> None:
+    with pytest.raises(ValueError, match="non-empty phase"):
+        CompileAdjudication(
+            kind="uk_replay_target_not_found",
+            message="target missing",
+            source_statute="ukpga/2000/1",
+            blocking=True,
+            phase="",
+        )
+
+
 def test_adjudication_payloads_are_frozen_recursively() -> None:
     detail: dict[str, Any] = {"nested": {"targets": ["section:1"]}}
     adjudication = CompileAdjudication(
@@ -40,6 +64,8 @@ def test_adjudication_payloads_are_frozen_recursively() -> None:
         message="target missing",
         source_statute="ukpga/2000/1",
         op_id="op-1",
+        blocking=True,
+        phase="replay",
         detail=detail,
     )
     detail["nested"]["targets"].append("mutated")
@@ -69,9 +95,9 @@ def test_adjudication_record_diagnostic_detail_preserves_nonblocking_detail() ->
     detail = adjudication_record_diagnostic_detail(
         {
             "kind": "text_duplication_warning",
+            "blocking": False,
+            "phase": "replay_fold",
             "detail": {
-                "phase": "replay_fold",
-                "blocking": False,
                 "kind": "duplicate_suffix_text",
                 "path": "body/section:1",
             },
@@ -87,12 +113,48 @@ def test_adjudication_record_diagnostic_detail_preserves_nonblocking_detail() ->
     assert validate_diagnostic_detail(detail) == ()
 
 
+def test_adjudication_record_requires_top_level_blocking() -> None:
+    with pytest.raises(TypeError, match="typed bool 'blocking'"):
+        adjudication_record_diagnostic_detail(
+            {
+                "kind": "text_duplication_warning",
+                "phase": "replay_fold",
+                "detail": {"kind": "duplicate_suffix_text"},
+            }
+        )
+
+
+def test_adjudication_record_requires_top_level_phase() -> None:
+    with pytest.raises(ValueError, match="non-empty 'phase'"):
+        adjudication_record_diagnostic_detail(
+            {
+                "kind": "text_duplication_warning",
+                "blocking": False,
+                "detail": {"kind": "duplicate_suffix_text"},
+            }
+        )
+
+
+def test_blocking_finding_without_blocking_disposition_fails_loud() -> None:
+    with pytest.raises(ValueError, match="must carry a blocking disposition"):
+        adjudication_record_diagnostic_detail(
+            {
+                "kind": "uk_replay_target_not_found",
+                "blocking": True,
+                "phase": "replay",
+                "detail": {"strict_disposition": "record"},
+            }
+        )
+
+
 def test_adjudication_finding_rows_expose_raw_and_normalized_details() -> None:
     adjudication = CompileAdjudication(
         kind="no_replay_missing_amendment_source",
         message="missing source",
         source_statute="no/lovtid/2025-02-02-5",
         op_id="no-op-1",
+        blocking=True,
+        phase="acquisition",
         detail={"rule_id": "no.replay.missing_amendment_source"},
     )
 

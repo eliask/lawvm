@@ -80,6 +80,8 @@ def _no_replay_skip_adjudication(
         kind=kind,
         message=message,
         source_statute=source_id,
+        blocking=blocking,
+        phase=phase,
         detail=normalized_detail,
     )
 
@@ -112,6 +114,8 @@ def _no_replay_temporal_skip_adjudication(
         kind=kind,
         message=message,
         source_statute=source_id,
+        blocking=blocking,
+        phase="temporal",
         detail=normalized_detail,
     )
 
@@ -333,6 +337,8 @@ def replay_no_to_pit(
                 ),
                 source_statute=op.source.statute_id if op.source else "",
                 op_id=op.op_id,
+                blocking=False,
+                phase="parse",
                 detail=diagnostic_detail(
                     rule_id=NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
                     phase="parse",

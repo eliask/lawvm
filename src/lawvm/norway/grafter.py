@@ -18,7 +18,7 @@ import itertools
 import re
 import tarfile
 from dataclasses import dataclass, replace as dc_replace
-from typing import Any, Generator, List, Optional, Sequence, Tuple, cast
+from typing import Any, Generator, List, Mapping, Optional, Sequence, Tuple, cast
 
 from lxml import etree
 
@@ -2121,9 +2121,31 @@ def _append_no_parse_adjudication(
             kind=kind,
             message=message,
             source_statute=source_id,
+            blocking=_no_adjudication_blocking(kind, detail),
+            phase=_no_adjudication_phase(kind, detail),
             detail=detail,
         )
     )
+
+
+def _no_adjudication_blocking(kind: str, detail: Mapping[str, object]) -> bool:
+    blocking = detail.get("blocking")
+    if not isinstance(blocking, bool):
+        raise ValueError(
+            f"Norway adjudication kind={kind!r} envelope is missing a typed "
+            "'blocking'; build the detail via diagnostic_detail()."
+        )
+    return blocking
+
+
+def _no_adjudication_phase(kind: str, detail: Mapping[str, object]) -> str:
+    phase = detail.get("phase")
+    if not isinstance(phase, str) or not phase:
+        raise ValueError(
+            f"Norway adjudication kind={kind!r} envelope is missing 'phase'; "
+            "build the detail via diagnostic_detail()."
+        )
+    return phase
 
 
 def _no_structured_spec_detail(
@@ -3084,6 +3106,8 @@ def _append_no_replay_adjudication(
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
+            blocking=True,
+            phase="replay",
             detail=normalized_detail,
         )
     )

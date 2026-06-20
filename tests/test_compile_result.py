@@ -710,6 +710,8 @@ class TestCompileResultTargetScopeNormalization:
             kind="replay_target_not_found",
             message="target missing",
             source_statute="2024/1",
+            blocking=True,
+            phase="replay",
             op_id="op-1",
         )
         assert adjudication.kind == "replay_target_not_found"
