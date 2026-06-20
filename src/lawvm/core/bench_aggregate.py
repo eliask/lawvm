@@ -208,6 +208,50 @@ def load_history(history_path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def render_summary(
+    results: Sequence[BenchUnitResult],
+    label: str,
+    *,
+    jurisdiction: str = "",
+) -> list[str]:
+    """Render the shared, jurisdiction-agnostic benchmark summary as text lines.
+
+    Lifts the Finland bench's ``_show_summary`` shape into core so every
+    jurisdiction prints the same headline framing: scored / non-scored / crashed
+    counts, worst-of mean error, the distribution buckets, and a
+    residue-reconciliation line (the honesty property). Returns lines so callers
+    can print or test them.
+    """
+    scored, non_scored, crashed = partition_by_status(results)
+    dist = compute_distribution(results)
+    violations = check_all_reconcile(results)
+    header = "=== UNIFIED BENCH SUMMARY"
+    if jurisdiction:
+        header += f"  jurisdiction={jurisdiction}"
+    header += f"  label={label} ==="
+    lines = [
+        header,
+        f"  Units      : {dist.n} scored  crashed: {len(crashed)}  "
+        f"excluded(non-scored): {len(non_scored)}",
+        f"  Mean error : {format_error_pct(dist.mean if dist.n else None)}  (worst-of axes)",
+        f"  Perfect  : {dist.perfect}  >=99%: {dist.above_99}  "
+        f">=95%: {dist.above_95}  <90%: {dist.below_90}",
+    ]
+    if violations:
+        lines.append(
+            f"  RESIDUE RECONCILIATION: {len(violations)} VIOLATION(S) — "
+            "structural error not explained by typed residue (fail loud):"
+        )
+        for msg in violations[:5]:
+            lines.append(f"    - {msg}")
+    else:
+        lines.append(
+            "  Residue reconciliation: OK "
+            "(every scored unit's structural error is explained by typed residue)"
+        )
+    return lines
+
+
 @dataclass(frozen=True, slots=True)
 class Regression:
     unit_id: str

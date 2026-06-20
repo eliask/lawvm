@@ -37,7 +37,10 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
 
 from lawvm.us_federal.dry_run import (
     USDryRunReport,
@@ -140,6 +143,72 @@ class WindowResult:
             }
         )
         return payload
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — US federal adapter
+#
+# Re-house the existing US verified-agreement coverage into a contract
+# BenchUnitResult without changing it. US scores per window:
+# - structural_err = 1 - agreements / oracle_changed (verified-agreement coverage)
+# - text_err       = None (count-based, no continuous text axis)
+# residue is the non-agreement sections (lawvm_wrong / oracle_suspect /
+# missing_source / sunset_reversion and any remainder), which is non-zero iff
+# coverage is below 1 — so the structural error reconciles.
+# See lawvm.core.bench_comparator_registry and notes/UNIFIED_BENCH_CONTRACT.md.
+# ---------------------------------------------------------------------------
+
+
+def us_bench_unit_result(result: "WindowResult") -> "BenchUnitResult":
+    """Map a US ``WindowResult`` onto a contract ``BenchUnitResult``."""
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    unit_id = result.window.key
+    if result.status != "evaluated":
+        # Typed skip — non-scored, not a failure (mirrors the US aggregate, which
+        # only scores evaluated windows).
+        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+    if result.oracle_changed <= 0:
+        # No oracle-changed sections in this window — nothing to score against.
+        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+
+    non_agreement = max(0, result.oracle_changed - result.agreements)
+    structural_err = non_agreement / result.oracle_changed
+    residue: dict[str, int] = {}
+    if non_agreement > 0:
+        for name, count in (
+            ("lawvm_wrong", result.lawvm_wrong),
+            ("oracle_suspect", result.oracle_suspect),
+            ("missing_source", result.missing_source),
+            ("sunset_reversion", result.sunset_reversion),
+        ):
+            if count:
+                residue[name] = int(count)
+        accounted = sum(residue.values())
+        remainder = non_agreement - accounted
+        if remainder > 0:
+            # Non-agreement sections not captured by a named disposition bucket;
+            # record them explicitly so the structural error is never silently
+            # unexplained.
+            residue["unclassified_non_agreement"] = remainder
+        if not residue:
+            residue["unclassified_non_agreement"] = non_agreement
+    return BenchUnitResult(
+        unit_id=unit_id,
+        status=BenchStatus.SCORED,
+        structural_err=structural_err,
+        text_err=None,
+        residue_buckets=residue,
+    )
+
+
+def _register_us_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("us", us_bench_unit_result)
+
+
+_register_us_bench_comparator()
 
 
 def _coverage_by_title_class(ev: list["WindowResult"]) -> dict[str, Any]:

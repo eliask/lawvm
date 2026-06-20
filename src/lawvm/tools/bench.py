@@ -32,7 +32,10 @@ import sys
 import time
 import warnings as py_warnings
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
 from rapidfuzz.distance import Indel as _RapidFuzzIndel
 

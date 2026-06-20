@@ -14,6 +14,7 @@ from lawvm.core.bench_aggregate import (
     format_error_pct,
     load_history,
     partition_by_status,
+    render_summary,
 )
 from lawvm.core.bench_comparator_registry import (
     get_bench_comparator,
@@ -222,6 +223,39 @@ def test_check_all_reconcile_reports_violations() -> None:
     violations = check_all_reconcile(results)
     assert len(violations) == 1
     assert "bad" in violations[0]
+
+
+# ---------------------------------------------------------------------------
+# Shared summary renderer
+# ---------------------------------------------------------------------------
+
+
+def test_render_summary_reports_counts_and_reconciliation_ok() -> None:
+    results = [
+        _scored("a", structural_err=0.0),
+        _scored("b", structural_err=0.2, residue={"k": 1}),
+        BenchUnitResult("c", BenchStatus.NO_TRUTH),
+        BenchUnitResult("d", BenchStatus.CRASH),
+    ]
+    lines = render_summary(results, "v1", jurisdiction="fi")
+    text = "\n".join(lines)
+    assert "jurisdiction=fi" in text
+    assert "2 scored" in text
+    assert "crashed: 1" in text
+    assert "excluded(non-scored): 1" in text
+    assert "worst-of axes" in text
+    assert "Residue reconciliation: OK" in text
+
+
+def test_render_summary_flags_reconciliation_violation() -> None:
+    # A unit that violates the invariant must surface, not hide.
+    bad = BenchUnitResult(
+        "bad", BenchStatus.SCORED, structural_err=0.5, residue_buckets={}
+    )
+    lines = render_summary([bad], "v1")
+    text = "\n".join(lines)
+    assert "VIOLATION" in text
+    assert "bad" in text
 
 
 # ---------------------------------------------------------------------------

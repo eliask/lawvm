@@ -48,7 +48,10 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from lawvm.core.bench_contract import BenchUnitResult
 
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.corpus_cache import (
@@ -394,6 +397,66 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
         },
         transition_scores=transition_scores,
     )
+
+
+# ---------------------------------------------------------------------------
+# Unified cross-jurisdiction bench contract — New Zealand adapter
+#
+# Re-house the existing NZ per-work numbers into a contract BenchUnitResult
+# without changing them. NZ computes a discrete target-slice agreement count
+# (reconcilable) alongside a continuous text similarity:
+# - structural_err = 1 - slice_agreements / slice_nodes (discrete agreement)
+# - text_err       = 1 - text_similarity (continuous)
+# residue is the disagreeing slice nodes, which is non-zero iff the agreement
+# ratio is below 1 — so the structural error reconciles. The continuous tree
+# similarity is not the reconciling axis (see notes/UNIFIED_BENCH_CONTRACT.md).
+# ---------------------------------------------------------------------------
+
+
+def nz_bench_unit_result(result: "_WorkResult") -> "BenchUnitResult":
+    """Map an NZ ``_WorkResult`` onto a contract ``BenchUnitResult``."""
+    from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
+
+    if result.status != "OK":
+        # "EXC:..." — a genuine failure.
+        return BenchUnitResult(
+            unit_id=result.work_id,
+            status=BenchStatus.CRASH,
+            witnesses=(result.status,),
+        )
+    if result.slice_nodes <= 0:
+        # No target slice nodes materialized — nothing to score against.
+        return BenchUnitResult(unit_id=result.work_id, status=BenchStatus.NO_TRUTH)
+
+    disagreements = max(0, result.slice_nodes - result.slice_agreements)
+    structural_err = disagreements / result.slice_nodes
+    residue: dict[str, int] = {}
+    if disagreements > 0:
+        residue["slice_disagreement"] = disagreements
+        # Fold in the typed oracle residual families for triage. Only when the
+        # structural axis is non-zero, so the reconciliation invariant (no
+        # phantom residue at zero error) holds.
+        for family, count in result.residual_family_counts.items():
+            if count and family != "agreement":
+                residue[f"oracle_{family}"] = int(count)
+    text_err = 1.0 - result.text_similarity
+    text_err = min(1.0, max(0.0, text_err))
+    return BenchUnitResult(
+        unit_id=result.work_id,
+        status=BenchStatus.SCORED,
+        structural_err=structural_err,
+        text_err=text_err,
+        residue_buckets=residue,
+    )
+
+
+def _register_nz_bench_comparator() -> None:
+    from lawvm.core.bench_comparator_registry import register_bench_comparator
+
+    register_bench_comparator("nz", nz_bench_unit_result)
+
+
+_register_nz_bench_comparator()
 
 
 # ---------------------------------------------------------------------------
