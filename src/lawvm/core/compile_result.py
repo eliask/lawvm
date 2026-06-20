@@ -656,9 +656,12 @@ class CanonicalBundle:
         canonical_migration_events = _canonical_migration_events(self.migration_events)
         if canonical_migration_events != self.migration_events:
             object.__setattr__(self, "migration_events", canonical_migration_events)
+        object.__setattr__(self, "temporal_events", tuple(self.temporal_events))
         object.__setattr__(self, "source_effects", tuple(self.source_effects))
         object.__setattr__(self, "effect_relations", tuple(self.effect_relations))
         object.__setattr__(self, "effect_lifecycle_events", tuple(self.effect_lifecycle_events))
+        if not all(isinstance(event, TemporalEvent) for event in self.temporal_events):
+            raise TypeError("CanonicalBundle.temporal_events must contain TemporalEvent records")
         if not all(isinstance(effect, EffectRef) for effect in self.source_effects):
             raise TypeError("CanonicalBundle.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in self.effect_relations):

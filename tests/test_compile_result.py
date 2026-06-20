@@ -187,6 +187,20 @@ def test_canonical_bundle_requires_source_effect_records() -> None:
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
 
 
+def test_canonical_bundle_requires_temporal_event_records_and_normalizes_sequence() -> None:
+    temporal = TemporalEvent(
+        event_id="temporal:1",
+        kind="commence",
+        scope=TemporalScope(target_statute="1999/1"),
+        effective="2020-01-01",
+    )
+    bundle = CanonicalBundle(temporal_events=cast(Any, [temporal]))
+
+    assert bundle.temporal_events == (temporal,)
+    with pytest.raises(TypeError, match="temporal_events"):
+        CanonicalBundle(temporal_events=cast(Any, ("not-a-temporal-event",)))
+
+
 def test_canonical_bundle_rejects_duplicate_effect_graph_ids() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     witness = SourceProvisionRef(instrument=instrument, path=("1",))
