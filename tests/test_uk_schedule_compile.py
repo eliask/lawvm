@@ -26878,7 +26878,7 @@ def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_membe
         )
 
 
-def test_compile_repeal_table_broad_schedule_repeal_blocks_descendant_feed_row() -> None:
+def test_compile_repeal_table_broad_schedule_repeal_lowers_descendant_feed_row() -> None:
     source_root = ET.fromstring(
         """
         <Legislation>
@@ -26927,15 +26927,20 @@ def test_compile_repeal_table_broad_schedule_repeal_blocks_descendant_feed_row()
         source_root=source_root,
     )
 
-    assert ops == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "12"), ("paragraph", "1"))
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
+    )
     assert any(
-        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
-        and record["reason_code"] == "broad_container_repeal_requires_grouped_feed_compilation"
+        record["rule_id"] == "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
+        and record["reason_code"] == "broad_container_repeal_table_feed_descendant_derived"
         and record["target"] == "schedule:12/paragraph:1"
         and record["broad_container_target"] == "schedule:12"
         and record["extent_cell"] == "Schedule 12."
-        and record["blocking"] is True
-        and record["strict_disposition"] == "block"
+        and record["blocking"] is False
         for record in lowering_records
     )
 

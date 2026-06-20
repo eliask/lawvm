@@ -86,6 +86,21 @@ _UK_PARAGRAPH_SCOPE_RE = re.compile(
     r"\b(?:paragraphs?|paras?\.?|sub-?paragraphs?|subsections?)\b",
     re.I,
 )
+_UK_CONTAINER_BOUNDARY_RE = compile_classifier_regex(
+    r"\b(?:section|sections|s|schedule|schedules|sch|part|pt|chapter|ch)\.?\s+(?:\d+|[a-zA-Z]\b)",
+    flags=re.I,
+    classifier_id="uk_container_boundary",
+)
+_UK_CONTAINER_CONNECTOR_BOUNDARY_RE = compile_classifier_regex(
+    r"(?:\b(?:to|and)|[,;])\s+\d+[a-z]?\b",
+    flags=re.I,
+    classifier_id="uk_container_connector_boundary",
+)
+_UK_CONTAINER_DESCENDANT_MARKER_RE = compile_classifier_regex(
+    r"(?:\(\s*\d+[a-z]?\s*\)|\b(?:subsection|paragraph|sub-?paragraph|subparagraph)\b)",
+    flags=re.I,
+    classifier_id="uk_container_descendant_marker",
+)
 _UK_QUOTED_TEXT_STRIP_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
 _UK_REPEAL_TABLE_STRUCTURAL_TERM_RE = re.compile(
     r"\b(?:part|parts|chapter|chapters|section|sections|schedule|schedules|paragraph|paragraphs|"
@@ -2577,6 +2592,58 @@ def _uk_cell_has_reversed_section_descendant_scope(
     return False
 
 
+@functools.lru_cache(maxsize=4096)
+def _uk_container_label_mention_re(kind: str, label: str) -> re.Pattern[str]:
+    """Return a compiled regex that matches mentions of a specific container label.
+
+    The pattern is a bounded, label-specific detector (not a generic classifier),
+    so it is compiled per label and cached.  It has no adjacent unbounded
+    quantifiers and therefore no catastrophic-backtracking risk.
+    """
+    if kind == "section":
+        prefix = r"(?:section|sections|s)\.?"
+    elif kind == "schedule":
+        prefix = r"(?:schedule|schedules|sch)\.?"
+    else:
+        return re.compile(r"(?!)", re.I)
+    label_pat = re.escape(label.lower())
+    return re.compile(rf"\b{prefix}\s*{label_pat}\b", re.I)
+
+
+def _uk_table_cell_extent_restricts_container_descendants(
+    cell_text: str,
+    container: LegalAddress,
+) -> bool:
+    """Return True when the extent cell narrows descendants of *container*.
+
+    Used to reject a source-owned ancestor container when the extent clause is
+    not a whole-container mention.  For example, ``Section 44(3) to (5)`` names
+    section 44 but restricts its descendants, so it is not a broad whole-section
+    repeal.  ``Schedule 12`` or ``Section 44`` alone are whole-container.
+    """
+    if not container.path:
+        return False
+    kind, label = container.path[-1]
+    if kind not in {"section", "schedule"} or not label:
+        return False
+    scope_text = " ".join((cell_text or "").split()).lower()
+    scope_text = _UK_QUOTED_TEXT_STRIP_RE.sub("", scope_text)
+    mention_re = _uk_container_label_mention_re(kind, label)
+    for m in mention_re.finditer(scope_text):
+        tail = scope_text[m.end():]
+        segment_end = len(tail)
+        boundary = _UK_CONTAINER_BOUNDARY_RE.search(tail)
+        if boundary:
+            segment_end = boundary.start()
+        connector_boundary = _UK_CONTAINER_CONNECTOR_BOUNDARY_RE.search(tail)
+        if connector_boundary:
+            segment_end = min(segment_end, connector_boundary.start())
+        segment = tail[:segment_end]
+        if _UK_CONTAINER_DESCENDANT_MARKER_RE.search(segment):
+            return True
+    return False
+
+
 def _uk_table_cell_mentions_target_ancestor_container(
     cell_text: str,
     *,
@@ -2609,12 +2676,18 @@ def _uk_table_cell_mentions_target_ancestor_container(
     if _UK_PARAGRAPH_SCOPE_RE.search(scope_text):
         return ""
     for ancestor in ancestor_candidates:
-        if _uk_table_cell_mentions_target(
+        if not _uk_table_cell_mentions_target(
             cell_text,
             target=ancestor,
             affected_year=affected_year,
         ):
-            return str(ancestor)
+            continue
+        if _uk_table_cell_extent_restricts_container_descendants(
+            cell_text,
+            container=ancestor,
+        ):
+            continue
+        return str(ancestor)
     return ""
 
 
