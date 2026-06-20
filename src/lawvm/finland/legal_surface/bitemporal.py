@@ -60,10 +60,15 @@ from lawvm.finland.references.broken_detection import (
     BrokenCheckUnavailable,
     BrokenReason,
     BrokenReferenceFinding,
+    LifecycleLookup,
     ProvisionPresent,
+    StatuteLifecycle,
+    StatuteLifecycleFinding,
+    StatuteLifecycleUnverifiable,
     TreeAsOf,
     default_provision_present,
     detect_broken,
+    detect_statute_lifecycle_broken,
 )
 
 if TYPE_CHECKING:
@@ -88,6 +93,9 @@ __all__ = [
     "BodyFor",
     "scan_one_statute_current_state",
     "scan_current_state",
+    # Statute-lifecycle (registry/oracle-driven, no-replay) layer
+    "LifecycleCache",
+    "oracle_lifecycle_lookup",
 ]
 
 
@@ -296,16 +304,18 @@ def citation_anchor_for_statute(citing_statute_id: str) -> Optional[date]:
     """Coarse lower-bound citation date for a citing statute.
 
     A citation cannot have been written before the citing statute existed, so we
-    anchor to 1 January of the statute's enactment year, parsed from the
-    ``NUMBER/YEAR`` id. Returns ``None`` when the id carries no parseable year
-    (then ``detect_broken`` runs without a temporal anchor for that statute and
-    can only surface NEVER_EXISTED, never REPEALED/RENUMBERED — fail-soft, not a
-    fabricated date).
+    anchor to 1 January of the statute's enactment year. Finnish statute ids are
+    ``YEAR/NUMBER`` (e.g. ``1991/1725`` = the 1725th act of 1991), so the year is
+    the FIRST segment — NOT the last (the trailing number is an in-year ordinal
+    that can itself look like a year, e.g. ``1991/1725``). Returns ``None`` when
+    the leading segment is not a plausible year (then the lifecycle / replay
+    checks run without a temporal anchor for that statute — fail-soft into the
+    unverifiable bucket, never a fabricated date).
     """
-    tail = citing_statute_id.rsplit("/", 1)[-1]
-    if not tail.isdigit():
+    head = citing_statute_id.split("/", 1)[0]
+    if not head.isdigit():
         return None
-    year = int(tail)
+    year = int(head)
     if year < 1700 or year > 2100:
         return None
     return date(year, 1, 1)
@@ -583,6 +593,109 @@ def scan_broken_references(
 
 
 # ===========================================================================
+# Statute-lifecycle layer (registry/oracle-driven, NO replay)
+# ===========================================================================
+#
+# The cheap statute-level bitemporal signal: each target act's in-force window
+# (valid_from = enactment, valid_to = the in-corpus oracle repeal/supersession
+# date). Read straight from the corpus XML (source for valid_from, consolidated
+# oracle's ``finlex:repealedBy`` for valid_to) — the exact extraction the
+# statute-name registry uses — with NO point-in-time replay. A target id is read
+# at most once per process via ``LifecycleCache``.
+#
+# This answers BROKEN kind #1 ("target statute repealed-since / not-yet-in-force"
+# at the citing date) corpus-wide for free, complementing the provision-level
+# checks. Unknown lifecycle (no XML / unparseable) → ``known=False`` → the
+# detector emits ``StatuteLifecycleUnverifiable``, never a false BROKEN.
+
+
+class LifecycleCache:
+    """Process-local memo of ``statute_id -> StatuteLifecycle``.
+
+    Each target act's lifecycle window is read from the corpus once and reused
+    across every citation into it (and across citing statutes within a worker /
+    in-process scan). Unbounded but tiny: one small dataclass per distinct cited
+    act (a few thousand at most), no large IR trees retained.
+    """
+
+    __slots__ = ("_store", "_cache", "hits", "misses")
+
+    def __init__(self, store: "CorpusStore") -> None:
+        self._store = store
+        self._cache: dict[str, StatuteLifecycle] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, statute_id: str) -> StatuteLifecycle:
+        cached = self._cache.get(statute_id)
+        if cached is not None:
+            self.hits += 1
+            return cached
+        self.misses += 1
+        lifecycle = self._read(statute_id)
+        self._cache[statute_id] = lifecycle
+        return lifecycle
+
+    def _read(self, statute_id: str) -> StatuteLifecycle:
+        """Read one act's lifecycle window from the corpus (fail-loud on unknown).
+
+        ``valid_from`` from the source/amendment XML's ``dateIssued``; ``valid_to``
+        from the consolidated oracle's ``finlex:repealedBy`` block (the same
+        extraction the registry uses). When NEITHER source nor oracle is present
+        the act has no lifecycle on record → ``known=False`` (→ unverifiable). An
+        act with a body but no repeal date keeps an OPEN ``valid_to`` (= in force),
+        which is correct and NOT "unknown".
+        """
+        from lawvm.finland.references.registries.statute_name import (
+            _extract_repeal_date,
+            _extract_title_and_date,
+        )
+
+        valid_from: Optional[date] = None
+        valid_to: Optional[date] = None
+        saw_any = False
+
+        try:
+            src = self._store.read_source(statute_id) or self._store.read_amendment(
+                statute_id
+            )
+        except Exception:
+            src = None
+        if src:
+            saw_any = True
+            extracted = _extract_title_and_date(src)
+            if extracted is not None:
+                _title, valid_from = extracted
+
+        try:
+            oracle = self._store.read_oracle(statute_id)
+        except Exception:
+            oracle = None
+        if oracle:
+            saw_any = True
+            valid_to = _extract_repeal_date(oracle)
+
+        if not saw_any:
+            return StatuteLifecycle(valid_from=None, valid_to=None, known=False)
+        return StatuteLifecycle(valid_from=valid_from, valid_to=valid_to, known=True)
+
+
+def oracle_lifecycle_lookup(
+    store: "CorpusStore", *, cache: Optional[LifecycleCache] = None
+) -> LifecycleLookup:
+    """Build a ``LifecycleLookup`` reading each act's in-force window from the corpus.
+
+    Archive-only (no replay): ``valid_from`` from the source XML, ``valid_to``
+    from the consolidated oracle's repeal block. Memoized via ``LifecycleCache``
+    (pass an explicit cache in tests; ``None`` makes a fresh per-call cache).
+    Returns ``StatuteLifecycle(known=False)`` for an act with no corpus XML at all
+    (→ ``StatuteLifecycleUnverifiable``), never a guessed window.
+    """
+    lc = cache if cache is not None else LifecycleCache(store)
+    return lc.get
+
+
+# ===========================================================================
 # DEFAULT MODE: current-state detection (no replay)
 # ===========================================================================
 #
@@ -728,6 +841,13 @@ class CurrentStateScanResult:
     error: Optional[str] = None
     skipped: Optional[CurrentStateSkipped] = None
     self_refs_excluded: int = 0
+    # Statute-lifecycle layer (registry/oracle-driven, no replay): the cited ACT
+    # itself was repealed / not-yet-in-force at the citing date. Orthogonal to the
+    # provision-presence findings above (a finding here can co-occur with one
+    # there). ``lifecycle_unverifiable`` is the fail-loud bucket (unknown
+    # lifecycle / no citing anchor) — never counted as broken.
+    lifecycle_findings: tuple[StatuteLifecycleFinding, ...] = ()
+    lifecycle_unverifiable: tuple[StatuteLifecycleUnverifiable, ...] = ()
 
 
 @dataclass
@@ -759,16 +879,35 @@ class CurrentStateReport:
     unavailable_count: int = 0
     skipped_count: int = 0
     self_refs_excluded: int = 0
+    # Statute-lifecycle layer (no replay): the cited ACT was repealed /
+    # not-yet-in-force at the citing date. Tallied by ``BrokenReason`` value
+    # (target_statute_repealed / target_statute_not_yet_in_force).
+    lifecycle_reason_counts: dict[str, int] = field(default_factory=dict)
+    lifecycle_unverifiable_count: int = 0
     per_statute: list[CurrentStateScanResult] = field(default_factory=list)
 
     @property
     def total_findings(self) -> int:
         return sum(self.kind_counts.values())
 
+    @property
+    def total_lifecycle_findings(self) -> int:
+        return sum(self.lifecycle_reason_counts.values())
+
     def top_statutes(self, n: int) -> list[CurrentStateScanResult]:
-        """Statutes ranked by finding count (errored statutes excluded)."""
-        scored = [r for r in self.per_statute if r.error is None and r.findings]
-        return sorted(scored, key=lambda r: -len(r.findings))[:n]
+        """Statutes ranked by total finding count (errored statutes excluded).
+
+        Counts BOTH provision-absence findings and statute-lifecycle findings so
+        the worst-offenders worklist reflects the whole dangling-ref ledger.
+        """
+        scored = [
+            r
+            for r in self.per_statute
+            if r.error is None and (r.findings or r.lifecycle_findings)
+        ]
+        return sorted(
+            scored, key=lambda r: -(len(r.findings) + len(r.lifecycle_findings))
+        )[:n]
 
 
 def _provision_ref_to_address_path(ref: "ProvisionRef"):
@@ -888,6 +1027,7 @@ def scan_one_statute_current_state(
     *,
     body_for: Optional[BodyFor] = None,
     in_scope: Optional[InScope] = None,
+    lifecycle_of: Optional[LifecycleLookup] = None,
 ) -> CurrentStateScanResult:
     """Scan one citing statute for citations absent in the target's CURRENT text-state.
 
@@ -914,6 +1054,8 @@ def scan_one_statute_current_state(
         body_for = _default_body_for(store)
     if in_scope is None:
         in_scope = _default_in_scope(store)
+    if lifecycle_of is None:
+        lifecycle_of = oracle_lifecycle_lookup(store)
 
     # CITER SCOPE GATE — fail-loud out-of-scope, never silently dropped.
     try:
@@ -968,6 +1110,34 @@ def scan_one_statute_current_state(
             unavailable=(),
             error=f"extract: {exc!r}",
         )
+
+    # STATUTE-LIFECYCLE LAYER (registry/oracle-driven, no replay): flag citations
+    # to an ACT that is not in force when measured against the CURRENT text-state.
+    #
+    # ANCHOR = NOW, deliberately (not the citer's enactment year). The body we
+    # extracted from is the CURRENT consolidated text-state: it accumulates every
+    # amendment up to today, so a reference in it may have been INSERTED by a much
+    # later amendment than the citer's original enactment. Anchoring to the
+    # enactment year therefore manufactures a huge false-positive class
+    # ("not_yet_in_force": an act citing a future act, because a later amendment
+    # added that reference) — exactly the FP discipline we must preserve. The
+    # honest question for a consolidated text is "does the law AS IT STANDS NOW
+    # point at an act that is not in force NOW?": a live consolidated body still
+    # citing an act repealed years ago is the genuine dangling-citation finding
+    # (target_statute_repealed). The detector itself stays date-general; this
+    # corpus driver pins the anchor to now so the only findings it can surface are
+    # cheap, defensible ones (no enactment-year amendment-accretion artifacts).
+    now = date.today()
+    anchored = _anchor_mentions(list(extraction.mentions), now)
+    lifecycle_results = detect_statute_lifecycle_broken(
+        anchored, lifecycle_of=lifecycle_of
+    )
+    lifecycle_findings = tuple(
+        r for r in lifecycle_results if isinstance(r, StatuteLifecycleFinding)
+    )
+    lifecycle_unverifiable = tuple(
+        r for r in lifecycle_results if isinstance(r, StatuteLifecycleUnverifiable)
+    )
 
     # Cache parsed target bodies per target statute within this citing statute
     # (sentinel distinguishes "unavailable/unparseable" from "not yet parsed").
@@ -1041,6 +1211,8 @@ def scan_one_statute_current_state(
         findings=tuple(findings),
         unavailable=tuple(unavailable),
         self_refs_excluded=self_refs_excluded,
+        lifecycle_findings=lifecycle_findings,
+        lifecycle_unverifiable=lifecycle_unverifiable,
     )
 
 
@@ -1050,32 +1222,44 @@ def scan_current_state(
     *,
     body_for: Optional[BodyFor] = None,
     in_scope: Optional[InScope] = None,
+    lifecycle_of: Optional[LifecycleLookup] = None,
 ) -> CurrentStateReport:
     """Corpus current-state (no-replay) broken-reference scan over ``statute_ids``.
 
     The DEFAULT mode: for each citing statute, extract resolved cross-statute
-    mentions and check whether each cited target provision is present in the
-    TARGET's current consolidated text-state. No point-in-time replay — cheap
-    enough to run corpus-wide. Aggregates findings by surface-fact ``kind`` and
-    counts ``CurrentStateUnavailable`` separately (fail-loud — undetermined,
-    never absent).
+    mentions and check (a) whether each cited target provision is present in the
+    TARGET's current consolidated text-state and (b) whether the cited ACT itself
+    was repealed / not-yet-in-force at the citing date (the statute-lifecycle
+    layer, registry/oracle-driven). No point-in-time replay — cheap enough to run
+    corpus-wide. Aggregates provision findings by surface-fact ``kind`` and
+    lifecycle findings by ``BrokenReason``; counts the fail-loud undetermined
+    buckets separately (never broken).
 
     Citers with no consolidated text-state (amendment-act / source-only bodies)
     are SKIPPED as out-of-scope and surfaced in ``skipped_count`` (the
     characterized false-positive guard) — never silently dropped. ``in_scope``
-    defaults to a real-consolidated-text-state predicate over the store.
+    defaults to a real-consolidated-text-state predicate over the store;
+    ``lifecycle_of`` defaults to a corpus-XML lifecycle lookup shared across all
+    citers (one read per distinct cited act).
     """
+    from lawvm.finland.references.broken_detection import BrokenReason
+
     report = CurrentStateReport()
     kind_ct: collections.Counter[str] = collections.Counter()
+    lifecycle_ct: collections.Counter[str] = collections.Counter()
 
     # Build the default scope predicate once (one oracle read per citer) rather
-    # than per-statute inside scan_one_statute_current_state.
+    # than per-statute inside scan_one_statute_current_state. Likewise share ONE
+    # lifecycle lookup so each distinct cited act's window is read at most once
+    # across the whole scan (not once per citing statute).
     if in_scope is None:
         in_scope = _default_in_scope(store)
+    if lifecycle_of is None:
+        lifecycle_of = oracle_lifecycle_lookup(store)
 
     for sid in statute_ids:
         result = scan_one_statute_current_state(
-            sid, store, body_for=body_for, in_scope=in_scope
+            sid, store, body_for=body_for, in_scope=in_scope, lifecycle_of=lifecycle_of
         )
         report.per_statute.append(result)
         report.statutes_scanned += 1
@@ -1087,11 +1271,20 @@ def scan_current_state(
             continue
         report.self_refs_excluded += result.self_refs_excluded
         report.mentions_checked += result.mentions_checked
-        if result.findings:
+        if result.findings or result.lifecycle_findings:
             report.statutes_with_findings += 1
         for finding in result.findings:
             kind_ct[finding.kind] += 1
         report.unavailable_count += len(result.unavailable)
+        for lf in result.lifecycle_findings:
+            lifecycle_ct[lf.reason.value] += 1
+        report.lifecycle_unverifiable_count += len(result.lifecycle_unverifiable)
 
     report.kind_counts = dict(sorted(kind_ct.items()))
+    # Stable lifecycle-reason ordering (closed enum) for a deterministic report.
+    report.lifecycle_reason_counts = {
+        r.value: lifecycle_ct.get(r.value, 0)
+        for r in BrokenReason
+        if lifecycle_ct.get(r.value, 0)
+    }
     return report

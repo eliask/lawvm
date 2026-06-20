@@ -10892,13 +10892,18 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "broken-refs",
         help="corpus broken-reference report (fi); current-state default, replay opt-in",
         description=(
-            "Corpus broken-reference report: per citing statute, extract resolved "
-            "cross-statute citations and check whether each cited target provision "
-            "exists in the target statute's text-state. DEFAULT (current-state, no "
-            "replay): checks presence in the target's CURRENT consolidated body "
-            "(the Finlex oracle gives that for free), so it is a cheap structural "
-            "check that runs corpus-wide without timing out; a finding is 'the "
-            "cited target provision is absent in the current text-state'. "
+            "Corpus dangling-reference (full-accounting) report: per citing "
+            "statute, extract resolved cross-statute citations and flag two BROKEN "
+            "kinds. (1) PROVISION absent: the cited section/momentti does not exist "
+            "in the target statute's text-state. (2) TARGET STATUTE not in force: "
+            "the cited ACT itself was repealed (its registry/oracle `valid_to` is "
+            "past) — a live consolidated text still pointing at a dead act. "
+            "DEFAULT (current-state, no replay): provision presence is checked "
+            "against the target's CURRENT consolidated body and the statute "
+            "lifecycle against the current date (the Finlex oracle gives both for "
+            "free), so it is a cheap structural check that runs corpus-wide "
+            "without timing out. An unknown target lifecycle is reported as "
+            "UNVERIFIABLE (fail-loud), never broken. "
             "--provenance: adds the temporal premium via point-in-time `legal_pit` "
             "replay of the TARGET trees as of the citation AND now, classifying the "
             "disappearance (repealed_since / renumbered_since / never_existed) — "
@@ -10923,6 +10928,16 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         type=int,
         default=0,
         help="cap the corpus to the first N citing statutes (default: no cap)",
+    )
+    broken_refs_p.add_argument(
+        "--stride",
+        type=int,
+        default=0,
+        help=(
+            "scan every Nth citing statute (representative corpus-wide sample "
+            "instead of a contiguous prefix); applied before --limit (default: "
+            "off = every statute)"
+        ),
     )
     broken_refs_p.add_argument(
         "--workers",
