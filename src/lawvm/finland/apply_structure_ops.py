@@ -51,10 +51,13 @@ from lawvm.finland.standalone_targets import (
     normalize_standalone_section_targets,
 )
 from lawvm.finland.source_pathology import (
+    build_container_otsikko_payload_absent_pathology,
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
     build_partial_whole_section_payload_pathology,
+    build_section_insert_scoped_parent_absent_pathology,
     build_section_replace_bootstrap_parent_missing_pathology,
+    build_unhandled_structure_op_pathology,
     build_sparse_merge_invariant_skip_pathology,
     build_same_effective_container_repeal_shadowed_pathology,
     build_temporary_section_rebase_pathology,
@@ -949,6 +952,60 @@ def _container_resolver_contract_error_binding(
     )
 
 
+def _normalize_container_unit_kind(target_unit_kind: object) -> TargetUnitKind:
+    """Map a container target-unit kind onto a neutral SourcePathology scope kind."""
+    text = str(target_unit_kind or "").strip().lower()
+    return cast(TargetUnitKind, text if text in {"chapter", "part"} else "chapter")
+
+
+def _container_otsikko_payload_heading(muutos_ir: IRNode) -> Optional[IRNode]:
+    """Return the heading node a container otsikko REPLACE payload installs, if any.
+
+    The amendment body for a chapter/part heading replacement may carry the new
+    title either as a ``heading`` child (the canonical case) or, when the lowering
+    represents a container title as a cross-heading, as a ``crossHeading`` child.
+    Both encode the same legal effect (the container's heading text), so either is
+    accepted; a ``crossHeading`` is normalized to a ``heading`` node so the live
+    tree keeps a single canonical heading facet. A bare ``num`` (the unit label
+    such as ``II OSA`` / ``7 luku.``) is NOT a heading and is never treated as one.
+    """
+    heading = next((c for c in muutos_ir.children if c.kind == IRNodeKind.HEADING), None)
+    if heading is not None:
+        return heading
+    cross = next((c for c in muutos_ir.children if c.kind == IRNodeKind.CROSS_HEADING), None)
+    if cross is not None and (cross.text or "").strip():
+        return IRNode(
+            kind=IRNodeKind.HEADING,
+            label=cross.label,
+            text=cross.text or "",
+            attrs=cross.attrs,
+            children=cross.children,
+        )
+    return None
+
+
+def _replace_container_heading_children(node: IRNode, amend_heading: IRNode) -> list[IRNode]:
+    """Install ``amend_heading`` as the container's single heading facet.
+
+    If the live container already has a ``heading`` child, replace it in place. If
+    it has none, splice the new heading directly behind the ``num`` (so render
+    order is ``<num> <heading>``), or at the front when there is no num — mirroring
+    the section-otsikko placement convention.
+    """
+    if any(c.kind == IRNodeKind.HEADING for c in node.children):
+        return [amend_heading if c.kind == IRNodeKind.HEADING else c for c in node.children]
+    new_children: list[IRNode] = []
+    placed = False
+    for child in node.children:
+        new_children.append(child)
+        if not placed and child.kind == IRNodeKind.NUM:
+            new_children.append(amend_heading)
+            placed = True
+    if not placed:
+        new_children.insert(0, amend_heading)
+    return new_children
+
+
 def _apply_container_op(
     state,
     op: "_StructureApplyView | AmendmentOp | ResolvedOp",
@@ -1198,13 +1255,27 @@ def _apply_container_op(
         node = _tops.resolve(state.ir, path)
         assert node is not None, f"resolve failed for {path}"
         if _op_type == "REPLACE" and muutos_ir is not None:
-            amend_heading = next((c for c in muutos_ir.children if c.kind == IRNodeKind.HEADING), None)
+            amend_heading = _container_otsikko_payload_heading(muutos_ir)
             if amend_heading is not None:
-                new_children = [amend_heading if c.kind == IRNodeKind.HEADING else c for c in node.children]
+                new_children = _replace_container_heading_children(node, amend_heading)
                 logger.debug("  %s → container otsikko replace", ctx_label)
                 return _with_preserved_provision_index(
                     state,
                     _tops.replace_at(state.ir, path, _tops._with_children(node, new_children)),
+                )
+            # REPLACE resolved its live target but the payload carries no heading
+            # (nor crossHeading) to install — an under-determined/dropped heading
+            # edit, NOT a satisfied no-op. Witness it rather than vanish silently.
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_container_otsikko_payload_absent_pathology(
+                        source_statute=view.source_statute or "",
+                        target_unit_kind=_normalize_container_unit_kind(_target_unit_kind),
+                        target_section=_target_section or "",
+                        target_chapter=view.target_chapter or "",
+                        op_type=_op_type or "",
+                        payload_child_kinds=[_kind_str(c.kind) for c in muutos_ir.children],
+                    )
                 )
             logger.debug("  %s → container otsikko replace (no heading in amendment body — no-op)", ctx_label)
             return state
@@ -1214,6 +1285,24 @@ def _apply_container_op(
             return _with_preserved_provision_index(
                 state,
                 _tops.replace_at(state.ir, path, _tops._with_children(node, new_children)),
+            )
+        # Unhandled container otsikko op-type (not REPLACE/REPEAL): the authored op
+        # resolved a live target but no apply arm executes, so it would silently
+        # drop. Witness the fall-through.
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_container_otsikko_payload_absent_pathology(
+                    source_statute=view.source_statute or "",
+                    target_unit_kind=_normalize_container_unit_kind(_target_unit_kind),
+                    target_section=_target_section or "",
+                    target_chapter=view.target_chapter or "",
+                    op_type=_op_type or "",
+                    payload_child_kinds=(
+                        [_kind_str(c.kind) for c in muutos_ir.children]
+                        if muutos_ir is not None
+                        else []
+                    ),
+                )
             )
         logger.debug("  %s → container otsikko %s (no-op)", ctx_label, _op_type)
         return state
@@ -1664,6 +1753,18 @@ def _apply_container_op(
         )
         return state.with_ir(new_ir)
 
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_unhandled_structure_op_pathology(
+                source_statute=view.source_statute or "",
+                target_unit_kind=_normalize_container_unit_kind(_target_unit_kind),
+                target_section=_target_section or "",
+                target_chapter=view.target_chapter or "",
+                op_type=_op_type or "",
+                target_special=_target_special or "",
+                helper="_apply_container_op",
+            )
+        )
     replay_print(f"  {ctx_label} → FAILED (unhandled non-section op)")
     return state
 
@@ -1779,10 +1880,19 @@ def _apply_whole_section_op(
         live_sec = _tops.resolve(state.ir, sec_path)
         if live_sec is None:
             return None
-        amend_heading = next(
-            (c for c in muutos_ir.children if c.kind == IRNodeKind.HEADING), None
-        )
+        amend_heading = _container_otsikko_payload_heading(muutos_ir)
         if amend_heading is None:
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_container_otsikko_payload_absent_pathology(
+                        source_statute=_source_statute or "",
+                        target_unit_kind="section",
+                        target_section=_ts or "",
+                        target_chapter=_target_chapter or "",
+                        op_type=_op_type or "",
+                        payload_child_kinds=[_kind_str(c.kind) for c in muutos_ir.children],
+                    )
+                )
             logger.debug(
                 "  %s → section otsikko %s (no heading in amendment body — no-op)",
                 ctx_label,
@@ -1833,6 +1943,20 @@ def _apply_whole_section_op(
             )
             logger.debug("  %s → otsikko_edella insert", ctx_label)
             return state.with_ir(_tops.insert_sorted(state.ir, insert_path, new_chapter))
+        # otsikko_edella op that is not an applicable INSERT (e.g. missing live
+        # anchor or non-INSERT op-type) — witness the decline rather than vanish.
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_unhandled_structure_op_pathology(
+                    source_statute=_source_statute or "",
+                    target_unit_kind="section",
+                    target_section=_ts or "",
+                    target_chapter=_target_chapter or "",
+                    op_type=_op_type or "",
+                    target_special=_target_special or "",
+                    helper="_apply_whole_section_op:otsikko_edella",
+                )
+            )
         return state
 
     if _op_type == "REPLACE" and sec_path is not None and muutos_ir is not None:
@@ -2822,12 +2946,32 @@ def _apply_whole_section_op(
                             )
                         )
                 else:
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_section_insert_scoped_parent_absent_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind="section",
+                                target_section=_ts or "",
+                                target_chapter=_target_chapter or "",
+                                target_part=_target_part or "",
+                            )
+                        )
                     logger.debug(
                         "  %s → section insert rejected (missing scoped parent)",
                         ctx_label,
                     )
                     return state
             if parent_path is None:
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_section_insert_scoped_parent_absent_pathology(
+                            source_statute=_source_statute or "",
+                            target_unit_kind="section",
+                            target_section=_ts or "",
+                            target_chapter=_target_chapter or "",
+                            target_part=_target_part or "",
+                        )
+                    )
                 logger.debug(
                     "  %s → section insert rejected (missing scoped parent)",
                     ctx_label,
@@ -2898,6 +3042,18 @@ def _apply_whole_section_op(
         logger.debug("  %s → section insert (sorted)", ctx_label)
         return state.with_ir(new_ir)
 
+    if source_pathologies_out is not None:
+        source_pathologies_out.append(
+            build_unhandled_structure_op_pathology(
+                source_statute=_source_statute or "",
+                target_unit_kind="section",
+                target_section=_ts or "",
+                target_chapter=_target_chapter or "",
+                op_type=_op_type or "",
+                target_special=_target_special or "",
+                helper="_apply_whole_section_op",
+            )
+        )
     replay_print(f"  {ctx_label} → FAILED (section not found or unhandled op)")
     return state
 

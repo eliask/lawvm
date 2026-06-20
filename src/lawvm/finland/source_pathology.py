@@ -167,6 +167,9 @@ def build_same_effective_container_repeal_shadowed_pathology(
 
 __all__ = [
     "build_container_replace_target_absent_pathology",
+    "build_container_otsikko_payload_absent_pathology",
+    "build_section_insert_scoped_parent_absent_pathology",
+    "build_unhandled_structure_op_pathology",
     "build_container_membership_mismatch_pathology",
     "build_recodification_source_chain_gap_pathology",
     "build_recodification_omission_only_section_shell_pathology",
@@ -557,6 +560,116 @@ def build_container_replace_target_absent_pathology(
             "target_item": target_item,
             "target_special": target_special,
             "has_payload": has_payload,
+        },
+    )
+
+
+def build_container_otsikko_payload_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    op_type: str = "",
+    payload_child_kinds: list[str] | None = None,
+) -> SourcePathology:
+    """Build a typed record for a container heading op carrying no usable heading.
+
+    A container (chapter/part) ``otsikko`` REPLACE/other op resolved its target
+    but the amendment payload exposed no ``heading`` (nor ``crossHeading``) node to
+    install, so the authored heading edit applies nothing. Rather than vanish as a
+    silent ``return state`` NO_APPLY_PASS, the missing-payload-heading condition is
+    witnessed: a heading REPLACE with no heading in the body is a dropped/under-
+    determined edit, not a satisfied no-op. (LAWVM_PIPELINE_CONTRACT §1.1 no
+    silent drop.)
+    """
+    return SourcePathology.from_scope(
+        code="CONTAINER_OTSIKKO_PAYLOAD_ABSENT",
+        message=(
+            "Container heading operation resolved its live target but the amendment "
+            "payload exposed no heading node to install, so the authored heading "
+            "edit applied nothing."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "op_type": op_type,
+            "payload_child_kinds": list(payload_child_kinds or []),
+        },
+    )
+
+
+def build_section_insert_scoped_parent_absent_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    target_part: str = "",
+) -> SourcePathology:
+    """Build a typed record for a scoped section INSERT refused for a missing parent.
+
+    A section INSERT named an explicit scoped parent (part/chapter) that is absent
+    from the live state, and no proven scaffold could be seeded for it. Replay
+    refuses to insert at an unproven parent (mirroring the whole-section bootstrap
+    refusal) rather than guess a destination, but the refusal must be witnessed:
+    the authored insert applies nothing. (LAWVM_PIPELINE_CONTRACT §1.1 no silent
+    drop.)
+    """
+    return SourcePathology.from_scope(
+        code="SECTION_INSERT_SCOPED_PARENT_ABSENT",
+        message=(
+            "Scoped section INSERT could not be applied because its explicit scoped "
+            "parent container was absent and no proven scaffold could be seeded; "
+            "replay refused to insert at an unproven parent."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_part": target_part,
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+        },
+    )
+
+
+def build_unhandled_structure_op_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    op_type: str = "",
+    target_special: str = "",
+    helper: str = "",
+) -> SourcePathology:
+    """Build a typed record for a structure op that matched no apply arm.
+
+    A resolved structural op reached the terminal fall-through of an apply helper
+    without any arm executing it (an unhandled op-type / target-shape combination).
+    Rather than vanish as a silent ``return state``, the unhandled op is witnessed
+    so the unbounded fall-through cannot drop an authored op unaccounted-for.
+    (LAWVM_PIPELINE_CONTRACT §1.1 no silent drop, §1.2 no silent guess.)
+    """
+    return SourcePathology.from_scope(
+        code="UNHANDLED_STRUCTURE_OP",
+        message=(
+            "Structural operation matched no apply arm and reached the helper "
+            "fall-through; the authored op applied nothing."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "op_type": op_type,
+            "target_special": target_special,
+            "helper": helper,
         },
     )
 

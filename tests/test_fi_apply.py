@@ -17789,3 +17789,162 @@ def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -
     assert result is None
     assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_omission_item_merge"
+
+
+def _otsikko_container_op(
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    op_type: OpType = "REPLACE",
+) -> AmendmentOp:
+    return AmendmentOp(
+        op_id="container_otsikko_op",
+        op_type=op_type,
+        target_section=target_section,
+        target_unit_kind=target_unit_kind,
+        target_special="otsikko",
+        source_statute="2020/1",
+        source_issue_date=_DATE,
+    )
+
+
+def test_apply_container_otsikko_replace_applies_crossheading_payload() -> None:
+    """A container heading REPLACE whose payload carries the new title as a
+    crossHeading (not a heading node) installs the new heading instead of
+    silently dropping the edit."""
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.CROSS_HEADING, text="New chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    new_chapter = next(c for c in result.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["New chapter heading"]
+    # crossHeading recovery is a clean apply, not a pathology.
+    assert pathologies == []
+
+
+def test_apply_container_otsikko_replace_witnesses_missing_heading_payload() -> None:
+    """A container heading REPLACE whose payload exposes no heading (nor
+    crossHeading) is witnessed rather than vanishing as a silent no-op."""
+    chapter = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old chapter heading"),
+            _sec("93", _content("body")),
+        ),
+    )
+    state = _make_state(_body(chapter))
+    payload = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="7",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+            _sec("93", _content("body")),
+        ),
+    )
+    op = ResolvedOp.from_amendment_op(
+        _otsikko_container_op(target_unit_kind="chapter", target_section="7"),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="chapter",
+        target_norm="7",
+        target_chapter=None,
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_container_op(
+        state,
+        op,
+        payload,
+        _LEGAL_PIT,
+        "7 luku otsikko",
+        source_pathologies_out=pathologies,
+    )
+
+    # No-op: the live heading is untouched.
+    assert result is state
+    new_chapter = next(c for c in state.ir.children if c.kind is IRNodeKind.CHAPTER)
+    headings = [c.text for c in new_chapter.children if c.kind is IRNodeKind.HEADING]
+    assert headings == ["Old chapter heading"]
+    assert [p.code for p in pathologies] == ["CONTAINER_OTSIKKO_PAYLOAD_ABSENT"]
+    assert pathologies[0].detail["op_type"] == "REPLACE"
+    assert "heading" not in pathologies[0].detail["payload_child_kinds"]
+
+
+def test_apply_section_insert_missing_scoped_parent_is_witnessed() -> None:
+    """A scoped section INSERT whose explicit parent container is absent is
+    witnessed rather than silently declined."""
+    state = _make_state(_body())
+    payload = _sec("145a", _content("new section body"))
+    op = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="insert_145a",
+            op_type="INSERT",
+            target_section="145a",
+            target_unit_kind="section",
+            target_chapter="16a",
+            target_part="3a",
+            source_statute="2020/1",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="145a",
+        target_chapter="16a",
+    )
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        payload,
+        None,
+        _LEGAL_PIT,
+        "145a §",
+        base_ir=_body(),
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is state
+    assert [p.code for p in pathologies] == ["SECTION_INSERT_SCOPED_PARENT_ABSENT"]
+    assert pathologies[0].detail["target_part"] == "3a"
+    assert pathologies[0].detail["target_chapter"] == "16a"
