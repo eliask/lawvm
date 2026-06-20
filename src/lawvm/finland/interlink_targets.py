@@ -326,9 +326,10 @@ def _consolidated_preview_header(
         cached = preview_cache.get(cache_key)
         if isinstance(cached, _ConsolidatedPreviewHeader):
             return cached
-    title, chapter_titles = _title_and_chapter_titles(xml_bytes)
+    root = ET.fromstring(xml_bytes)
+    title, chapter_titles = _title_and_chapter_titles_from_root(root)
     header = _ConsolidatedPreviewHeader(
-        identity=_consolidated_preview_identity(xml_bytes),
+        identity=_consolidated_preview_identity_from_root(root),
         title=title,
         chapter_titles=chapter_titles,
     )
@@ -355,7 +356,10 @@ def _consolidated_section_text_result(
 
 
 def _consolidated_preview_identity(xml_bytes: bytes) -> dict[str, str]:
-    root = ET.fromstring(xml_bytes)
+    return _consolidated_preview_identity_from_root(ET.fromstring(xml_bytes))
+
+
+def _consolidated_preview_identity_from_root(root: ET.Element) -> dict[str, str]:
     date_consolidated = ""
     version_tag = ""
     for date_el in root.iter(f"{{{_AKN_NS}}}FRBRdate"):
@@ -380,7 +384,10 @@ def _doc_title(xml_bytes: bytes) -> str:
 
 
 def _title_and_chapter_titles(xml_bytes: bytes) -> tuple[str, dict[str, str]]:
-    root = ET.fromstring(xml_bytes)
+    return _title_and_chapter_titles_from_root(ET.fromstring(xml_bytes))
+
+
+def _title_and_chapter_titles_from_root(root: ET.Element) -> tuple[str, dict[str, str]]:
     title_el = root.find(f".//{{{_AKN_NS}}}docTitle")
     title = " ".join("".join(title_el.itertext()).split()) if title_el is not None else ""
     chapter_titles: dict[str, str] = {}
