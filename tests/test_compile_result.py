@@ -179,6 +179,47 @@ def test_canonical_bundle_requires_source_effect_records() -> None:
         CanonicalBundle(source_effects=cast(Any, ("not-an-effect",)))
 
 
+def test_canonical_bundle_rejects_duplicate_effect_graph_ids() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2020/1")
+    witness = SourceProvisionRef(instrument=instrument, path=("1",))
+    effect_a = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    effect_b = EffectRef(effect_id="effect:1", source_instrument=instrument)
+    target_effect = EffectRef(effect_id="effect:target", source_instrument=instrument)
+    relation_a = EffectRelation(
+        relation_id="relation:1",
+        kind="modifies_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    relation_b = EffectRelation(
+        relation_id="relation:1",
+        kind="repeals_effect",
+        source_provision=witness,
+        target_effect=target_effect,
+    )
+    lifecycle_a = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_a,
+        executable=False,
+    )
+    lifecycle_b = EffectLifecycleEvent(
+        lifecycle_event_id="lifecycle:1",
+        kind="unresolved_effect_target",
+        source_provision=witness,
+        relation=relation_b,
+        executable=False,
+    )
+
+    with pytest.raises(ValueError, match="duplicate effect_id"):
+        CanonicalBundle(source_effects=(effect_a, effect_b))
+    with pytest.raises(ValueError, match="duplicate relation_id"):
+        CanonicalBundle(effect_relations=(relation_a, relation_b))
+    with pytest.raises(ValueError, match="duplicate lifecycle_event_id"):
+        CanonicalBundle(effect_lifecycle_events=(lifecycle_a, lifecycle_b))
+
+
 def test_unresolved_effect_lifecycle_event_cannot_emit_executable_projection() -> None:
     instrument = SourceInstrumentRef(instrument_id="2020/1")
     event = EffectLifecycleEvent(
