@@ -347,6 +347,87 @@ def test_precise_text_strike_with_letter_subsection_head_keeps_full_path():
     )
 
 
+def test_ancestor_target_carrier_threads_its_own_subunit_anchor_to_leaf():
+    # Regression for 10 U.S.C. §8090 (PL 118-159 §923). A subsection carries the
+    # section target in its chapeau AND a scope anchor in the same chapeau:
+    # "Section 8090 ... is amended, in subsection (a)-". A nested paragraph then
+    # says "(1) in paragraph (4), by striking ...". The ancestor's "in
+    # subsection (a)" anchor must thread onto the section address before the leaf
+    # anchor refines it, so the resolved target is /subsection:a/paragraph:4,
+    # not a phantom /paragraph:4 directly under the section.
+    body = (
+        '<section identifier="/us/pl/118/159/dA/tIX/stB/s923">'
+        '<num value="923">SEC. 923. </num>'
+        "<heading>CODIFICATION.</heading>"
+        '<subsection identifier="/us/pl/118/159/dA/tIX/stB/s923/a" role="instruction">'
+        '<num value="a">(a) </num>'
+        "<heading>Codification.-</heading>"
+        '<chapeau><ref href="/us/usc/t10/s8090">Section 8090 of title 10, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction>, '
+        "in subsection (a)-</chapeau>"
+        '<paragraph identifier="/us/pl/118/159/dA/tIX/stB/s923/a/1">'
+        '<num value="1">(1) </num>'
+        '<content>in paragraph (4), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>and</quotedText>";'
+        "</content>"
+        "</paragraph>"
+        "</subsection>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    assert len(report.instructions) == 1
+    instr = report.instructions[0]
+    expected = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "8090"),
+            ("subsection", "a"),
+            ("paragraph", "4"),
+        )
+    )
+    assert instr.target_address == expected
+
+
+def test_ancestor_target_carrier_without_subunit_anchor_leaves_section_scope_to_leaf():
+    # Negative control for test_ancestor_target_carrier_threads_its_own_subunit_anchor_to_leaf.
+    # When the ancestor chapeau names only the section target (no "in subsection (a)-"
+    # scope anchor), a leaf "in paragraph (4), by striking ..." resolves directly
+    # under the section and does not invent a phantom subsection.
+    body = (
+        '<section identifier="/us/pl/118/159/dA/tIX/stB/s923">'
+        '<num value="923">SEC. 923. </num>'
+        "<heading>CODIFICATION.</heading>"
+        '<subsection identifier="/us/pl/118/159/dA/tIX/stB/s923/a" role="instruction">'
+        '<num value="a">(a) </num>'
+        "<heading>Codification.-</heading>"
+        '<chapeau><ref href="/us/usc/t10/s8090">Section 8090 of title 10, '
+        "United States Code</ref>, "
+        '<amendingAction type="amend">is amended</amendingAction>-</chapeau>'
+        '<paragraph identifier="/us/pl/118/159/dA/tIX/stB/s923/a/1">'
+        '<num value="1">(1) </num>'
+        '<content>in paragraph (4), by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '"<quotedText>and</quotedText>";'
+        "</content>"
+        "</paragraph>"
+        "</subsection>"
+        "</section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    assert len(report.instructions) == 1
+    instr = report.instructions[0]
+    expected = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "8090"),
+            ("paragraph", "4"),
+        )
+    )
+    assert instr.target_address == expected
+
+
 def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     # Targets title 18, not 11: resolvable, but withheld from Title-11 scope.
     report = lower_plaw_amendatory(_read("PLAW-117publ177.xml"))

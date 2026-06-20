@@ -854,6 +854,20 @@ _LEADING_SUBUNIT_ANCHOR_RE = re.compile(
 )
 
 
+# Same shape as ``_LEADING_SUBUNIT_ANCHOR_RE`` but not anchored to the start of
+# the string, used when an ancestor unit's chapeau carries the section target and
+# a scope anchor later in the same prose ("Section X ... is amended, in subsection
+# (a)—"). The terminator guard still keeps the match specific; we intentionally
+# do not require a leading word boundary because the match is applied to the
+# ancestor's own chapeau text, not arbitrary mid-prose.
+_ANY_SUBUNIT_ANCHOR_RE = re.compile(
+    r"in\s+(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
+    r"\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?P<more>(?:\s*\([0-9A-Za-z]+\))*)"
+    r"\s*(?:,|[—–-])"
+)
+
+
 # A positional tail anchor: "in paragraph (9), in the matter following
 # subparagraph (B), by striking 'or'".  The edit applies to the text after the
 # named sub-unit inside the inherited container.  When that sub-unit is the last
@@ -865,6 +879,36 @@ _MATTER_FOLLOWING_ANCHOR_RE = re.compile(
     r"\s*(?:,|—)",
     re.IGNORECASE,
 )
+
+
+def _apply_subunit_anchor_match(
+    address: LegalAddress, match: re.Match[str]
+) -> LegalAddress:
+    """Apply a parsed ``in <kind> (label)[(more)]`` anchor to ``address``."""
+    head_kind = match.group("kind")
+    head_label = match.group("label")
+    # If the inherited address already terminates at this exact node, the anchor
+    # is a restatement, not a descent. Skip it so the edit targets the right node.
+    if address.path and address.path[-1] == (head_kind, head_label):
+        return address
+    segments: list[tuple[str, str]] = [(head_kind, head_label)]
+    # Any further parenthesised tokens ("(a)(1)(A)") descend BELOW the prose verb's
+    # level: thread the frontier from the named kind so they type by position.
+    more = _SEGMENT_RE.findall(match.group("more") or "")
+    if more:
+        head_level = _USC_LEVELS.index(head_kind) if head_kind in _USC_LEVELS else 0
+        segments.extend(_type_usc_segment_chain(more, start_frontier=head_level))
+    refined = LegalAddress(path=(*address.path, *segments))
+
+    # Handle positional tail anchor: "in the matter following subparagraph (B)".
+    matter = _MATTER_FOLLOWING_ANCHOR_RE.search(match.string)
+    if matter is not None:
+        kind = matter.group("kind").lower()
+        label = matter.group("label")
+        if refined.path and refined.path[-1] != (kind, label):
+            refined = LegalAddress(path=(*refined.path, (kind, label)))
+
+    return refined
 
 
 def _refine_with_leading_subunit_anchor(address: LegalAddress, raw_text: str) -> LegalAddress:
@@ -890,32 +934,23 @@ def _refine_with_leading_subunit_anchor(address: LegalAddress, raw_text: str) ->
     match = _LEADING_SUBUNIT_ANCHOR_RE.match(raw_text)
     if match is None:
         return address
-    # The named sub-unit's USC kind comes from the prose verb ("subsection"/
-    # "paragraph"/...) — the enacted language is authoritative for the first level.
-    head_kind = match.group("kind")
-    head_label = match.group("label")
-    # If the inherited address already terminates at this exact node, the anchor
-    # is a restatement, not a descent. Skip it so the edit targets the right node.
-    if address.path and address.path[-1] == (head_kind, head_label):
+    return _apply_subunit_anchor_match(address, match)
+
+
+def _refine_with_any_subunit_anchor(address: LegalAddress, raw_text: str) -> LegalAddress:
+    """Append the last "in subsection (X)[(Y)...]" anchor found anywhere in text.
+
+    This is for ancestor chapeaux that carry the section target before the scope
+    anchor ("Section X ... is amended, in subsection (a)—"). The last match is used
+    so any earlier cross-reference ("except as provided in paragraph (1), ...")
+    does not take precedence over the final list-introducing anchor.
+    """
+    last_match: re.Match[str] | None = None
+    for match in _ANY_SUBUNIT_ANCHOR_RE.finditer(raw_text):
+        last_match = match
+    if last_match is None:
         return address
-    segments: list[tuple[str, str]] = [(head_kind, head_label)]
-    # Any further parenthesised tokens ("(a)(1)(A)") descend BELOW the prose verb's
-    # level: thread the frontier from the named kind so they type by position.
-    more = _SEGMENT_RE.findall(match.group("more") or "")
-    if more:
-        head_level = _USC_LEVELS.index(head_kind) if head_kind in _USC_LEVELS else 0
-        segments.extend(_type_usc_segment_chain(more, start_frontier=head_level))
-    address = LegalAddress(path=(*address.path, *segments))
-
-    # Handle positional tail anchor: "in the matter following subparagraph (B)".
-    matter = _MATTER_FOLLOWING_ANCHOR_RE.search(raw_text)
-    if matter is not None:
-        kind = matter.group("kind").lower()
-        label = matter.group("label")
-        if address.path and address.path[-1] != (kind, label):
-            address = LegalAddress(path=(*address.path, (kind, label)))
-
-    return address
+    return _apply_subunit_anchor_match(address, last_match)
 
 
 def _label_level(label: str, index: int) -> str:
@@ -2985,6 +3020,15 @@ def _iter_instruction_units(
                     )
                 if inherited is None:
                     intermediate_anchors.append(_text_of(ancestor))
+                else:
+                    # The ancestor that furnishes the inherited address may itself
+                    # introduce a sub-unit anchor in its chapeau (e.g. "Section X ...
+                    # is amended, in subsection (a)—"). Thread that anchor so the leaf
+                    # lands inside the named sub-unit instead of on the inherited
+                    # section.
+                    inherited = _refine_with_any_subunit_anchor(
+                        inherited, _shallow_text(ancestor, exclude=exclusions)
+                    )
                 ancestor = parent_of.get(ancestor)
             if inherited is None:
                 # Fall back to the section's own content ref ("Section X ... — (1)...").
