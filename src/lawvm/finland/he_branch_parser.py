@@ -72,7 +72,7 @@ from typing import Optional
 
 from lxml import etree
 
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
+from lawvm.finland.fi_dates import parse_fi_day_month_year
 
 
 # ---------------------------------------------------------------------------
@@ -403,13 +403,7 @@ def _extract_proposed_voimaantulo(full_body_text: str) -> Optional[date]:
         except ValueError:
             return None
     # Finnish-text group
-    month = FI_MONTH_PARTITIVE_TO_NUMBER.get(m.group(2).lower() if m.group(2) else "")
-    if month is None:
-        return None
-    try:
-        return date(int(m.group(3)), month, int(m.group(1)))
-    except ValueError:
-        return None
+    return parse_fi_day_month_year(m.group(1), m.group(2), m.group(3))
 
 
 def _element_text(element: etree._Element) -> str:

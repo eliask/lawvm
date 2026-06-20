@@ -13,7 +13,7 @@ from datetime import date
 from functools import lru_cache
 import re
 
-from lawvm.finland.fi_dates import FI_MONTH_PARTITIVE_TO_NUMBER
+from lawvm.finland.fi_dates import parse_fi_day_month_year
 from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 
 _TARGET_ZONE_CUT_RE = re.compile(
@@ -153,15 +153,7 @@ def target_zone(text: str) -> str:
 
 
 def _parse_finnish_date(day_s: str | None, month_s: str | None, year_s: str | None) -> date | None:
-    if not day_s or not month_s or not year_s:
-        return None
-    month = FI_MONTH_PARTITIVE_TO_NUMBER.get(month_s.lower())
-    if month is None:
-        return None
-    try:
-        return date(int(year_s), month, int(day_s))
-    except ValueError:
-        return None
+    return parse_fi_day_month_year(day_s, month_s, year_s)
 
 
 def normalize_source_citation_id(raw: str, source_year: int) -> str | None:
