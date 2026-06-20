@@ -1323,6 +1323,13 @@ def export_transition_graph(
 
     conn = sqlite3.connect(str(out_path))
     try:
+        # The export DB is a freshly generated artifact; if the process is
+        # interrupted, callers rerun the export rather than recovering partial
+        # writes. Keep durability overhead out of the hot path.
+        conn.execute("PRAGMA journal_mode=MEMORY")
+        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA locking_mode=EXCLUSIVE")
         conn.executescript(_SCHEMA)
 
         blob_hashes: set[str] = set()
