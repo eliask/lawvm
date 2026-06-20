@@ -803,13 +803,13 @@ def _temporal_events_from_lo_ops(
     seen_group_ids: set[str] = set()
     seen_expiry_keys: set[tuple[str, str, str]] = set()
     for op in lo_ops:
-        group_id = str(getattr(op, "group_id", "") or "")
+        group_id = str(op.group_id or "")
         if not group_id:
             continue
-        source = getattr(op, "source", None)
+        source = op.source
         if source is None:
             continue
-        effective_from = str(getattr(source, "effective", "") or "")
+        effective_from = str(source.effective or "")
         if (
             effective_from
             and group_id not in seen_group_ids
@@ -827,15 +827,15 @@ def _temporal_events_from_lo_ops(
                     activation_rule=ActivationRule(
                         kind=FIXED_DATE_KIND,
                         effective_date=effective_from,
-                        raw_text=str(getattr(source, "raw_text", "") or ""),
+                        raw_text=str(source.raw_text or ""),
                     ),
                     group_id=group_id,
                 )
             )
-        expires = str(getattr(source, "expires", "") or "")
+        expires = str(source.expires or "")
         if not expires:
             continue
-        target_address = getattr(op, "target", None)
+        target_address = op.target
         target_key = str(target_address) if target_address is not None else ""
         expiry_key = (group_id, target_key, expires)
         if expiry_key in seen_expiry_keys:
@@ -1685,23 +1685,21 @@ def build_replay_products(
             expires_as_of=expires_as_of,
         )
     covered_commence_group_ids = frozenset(
-        group_id
+        event.group_id
         for event in resolved_temporal_events
         if event.kind == "commence"
-        and isinstance((group_id := getattr(event, "group_id", "")), str)
-        and group_id
+        and event.group_id
     )
     covered_expiry_signatures = frozenset(
         (
-            str(getattr(event, "group_id", "") or ""),
-            str(next(iter(getattr(event.scope, "exact_addresses", ()) or ()), "") or ""),
-            str(getattr(event, "expires", "") or ""),
+            str(event.group_id or ""),
+            str(next(iter(event.scope.exact_addresses or ()), "") or ""),
+            str(event.expires or ""),
         )
         for event in resolved_temporal_events
         if event.kind == "expire"
-        and isinstance(getattr(event, "group_id", ""), str)
-        and getattr(event, "group_id", "")
-        and getattr(event, "expires", "")
+        and event.group_id
+        and event.expires
     )
     static_temporal_event_cache_key = (
         statute_id,

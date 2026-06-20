@@ -29,6 +29,7 @@ from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.core.phase_result import Finding
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.target_scope import NeutralTargetUnitKind, resolve_internal_target_scope
+from lawvm.core.temporal import TemporalEvent
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
@@ -734,7 +735,7 @@ def _compile_findings(
 def _collect_fi_temporal_coverage_findings(
     *,
     canonical_ops: Sequence[_LegalOperation],
-    temporal_events: Sequence[object],
+    temporal_events: Sequence[TemporalEvent],
     source_statute: str,
     compile_mode: Literal["strict", "quirks"],
 ) -> tuple[Finding, ...]:
@@ -745,7 +746,7 @@ def _collect_fi_temporal_coverage_findings(
     }
     temporal_groups: set[str] = set()
     for event in temporal_events:
-        event_group_id = getattr(event, "group_id", None)
+        event_group_id = event.group_id
         if isinstance(event_group_id, str) and event_group_id.strip():
             temporal_groups.add(event_group_id.strip())
     missing_groups = tuple(sorted(structural_groups - temporal_groups))
