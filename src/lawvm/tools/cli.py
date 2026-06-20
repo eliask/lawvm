@@ -70,6 +70,7 @@ Subcommands:
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
     fi-parse-explain <sid>          Dump everything needed to diagnose one statute's johtolause parse.
     fi-parse                        Visualize Finnish parse structures (forest/johtolause/morph/clauses).
+    fi-refs <sid>                   Annotated-source-canvas viewer for the references overlay.
     topic --topic STRING            Keyword/FTS search across statute sections and HE body atoms.
     follow-refs --start REF         Multi-hop reference traversal from a provision.
     pit-timeline --provision REF    Provision amendment history (index-backed).
@@ -10632,6 +10633,82 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit machine-readable JSON",
     )
 
+    # --- fi-refs ---
+    fi_refs_p = sub.add_parser(
+        "fi-refs",
+        help="annotated-source-canvas viewer for the references overlay",
+        description=(
+            "Render a Finnish statute's references as annotations over its source "
+            "text (read-only; no new parsing). Levels (cheapest→richest): "
+            "counts / digest / context (default) / full. --only filters to residue "
+            "statuses (the audit instrument). --json emits the machine dict."
+        ),
+    )
+    fi_refs_p.add_argument(
+        "statute",
+        metavar="STATUTE_ID",
+        help="statute id, e.g. 2009/953",
+    )
+    fi_refs_p.add_argument(
+        "--level",
+        choices=("counts", "digest", "context", "full"),
+        default="context",
+        help="graduated disclosure level (default: context)",
+    )
+    fi_refs_p.add_argument(
+        "-C",
+        "--context",
+        type=int,
+        default=1,
+        metavar="N",
+        help="context radius in CLAUSES for the context level (default: 1)",
+    )
+    fi_refs_p.add_argument(
+        "--merge-gap",
+        type=int,
+        default=0,
+        metavar="N",
+        help="char gap under which adjacent context windows merge (default: 0)",
+    )
+    fi_refs_p.add_argument(
+        "--split",
+        action="store_true",
+        help="context level: one window per ref (disable window merge)",
+    )
+    fi_refs_p.add_argument(
+        "--only",
+        metavar="STATUSES",
+        default=None,
+        help=(
+            "filter marks to these comma-separated resolution statuses "
+            "(e.g. ambiguous,open,broken,unresolved) — the audit spotlight"
+        ),
+    )
+    fi_refs_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        default=None,
+        help="bitemporal filter: drop refs whose valid interval excludes this date",
+    )
+    fi_refs_p.add_argument(
+        "--provision",
+        metavar="ADDR",
+        default=None,
+        help="narrow to the provision matching this eId/address",
+    )
+    fi_refs_p.add_argument(
+        "--grep",
+        metavar="TEXT",
+        default=None,
+        help="narrow to the window around this literal text",
+    )
+    fi_refs_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON",
+    )
+
     # --- parse-bench ---
     parse_bench_p = sub.add_parser(
         "parse-bench",
@@ -13410,6 +13487,11 @@ def _main_impl() -> None:
         from lawvm.tools.fi_parse_explain import main as fi_parse_explain_main
 
         fi_parse_explain_main(args)
+
+    elif args.command == "fi-refs":
+        from lawvm.tools.fi_refs_view import main as fi_refs_view_main
+
+        fi_refs_view_main(args)
 
     elif args.command == "fi-parse":
         from lawvm.tools.fi_parse_view import main as fi_parse_view_main

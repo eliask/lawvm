@@ -564,6 +564,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_freshness_tool.py",
         "test_fi_provision_state.py",
         "test_fi_parse_view.py",
+        "test_fi_refs_view.py",
         "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",
