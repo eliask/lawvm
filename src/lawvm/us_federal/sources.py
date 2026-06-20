@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from lawvm.corpus_store import resolve_farchive_path
+from lawvm.corpus_store import resolve_farchive_path, validate_farchive_create_path
 
 if TYPE_CHECKING:
     from farchive import Farchive
@@ -234,6 +234,7 @@ def open_us_federal_farchive(
         path = Path(db_path)
 
     if allow_create:
+        validate_farchive_create_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         return Farchive(path, readonly=False)
     return Farchive(path, readonly=readonly)

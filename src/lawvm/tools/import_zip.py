@@ -24,7 +24,7 @@ import urllib.request
 import zipfile
 from typing import Any, Callable, Protocol
 
-from lawvm.corpus_store import akn_path_to_url
+from lawvm.corpus_store import akn_path_to_url, validate_farchive_create_path
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     extract_consolidated_xml_identity,
@@ -66,11 +66,7 @@ def _open_import_archive(dest: Path, *, dry_run: bool) -> _ClosableArchive:
         if dest.exists():
             return Farchive(dest, readonly=True)
         return _MissingDryRunArchive()
-    if not dest.exists() and dest.suffix != ".farchive":
-        raise ValueError(
-            f"refusing to create extensionless farchive destination: {dest}; "
-            "use a .farchive path"
-        )
+    validate_farchive_create_path(dest)
     return Farchive(dest)
 
 

@@ -1014,8 +1014,10 @@ def _version_date_from_version_id(version_id: str) -> str:
 
 def _open_farchive_uncached(path: Path, *, readonly: bool = True) -> ArchiveStore:
     from farchive import Farchive
+    from lawvm.corpus_store import validate_farchive_create_path
 
     if not readonly:
+        validate_farchive_create_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
     return cast(ArchiveStore, Farchive(path, readonly=readonly))
 

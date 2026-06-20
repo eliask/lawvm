@@ -134,6 +134,18 @@ def test_open_farchive_writable_mode_creates_archive(tmp_path: Path) -> None:
         archive.close()
 
 
+def test_open_farchive_writable_mode_rejects_extensionless_archive(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "created" / "unused"
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        open_farchive(archive_path, readonly=False)
+
+    assert not archive_path.exists()
+    assert not archive_path.parent.exists()
+
+
 def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
     metadata: dict[str, Any] = {"work_id": "act_public_2020_1", "formats": ["XML"]}
     source_lane_selection: dict[str, Any] = {"attempted_lanes": [{"lane": "version_detail"}]}

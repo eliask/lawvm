@@ -180,6 +180,16 @@ def test_allow_create_creates_missing_archive(tmp_path, monkeypatch):
         archive.close()
 
 
+def test_allow_create_rejects_extensionless_archive_path(tmp_path, monkeypatch):
+    target = tmp_path / "unused"
+    monkeypatch.setenv("LAWVM_FARCHIVE_DB", str(target))
+
+    with pytest.raises(ValueError, match="extensionless farchive destination"):
+        open_corpus_archive("finlex.farchive", allow_create=True)
+
+    assert not target.exists()
+
+
 def test_writable_open_on_populated_does_not_recreate(tmp_path, monkeypatch):
     archive_path = tmp_path / "rw.farchive"
     _make_populated_archive(archive_path)
