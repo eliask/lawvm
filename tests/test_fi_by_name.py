@@ -154,6 +154,25 @@ def test_eu_head_governing_artikla_not_emitted() -> None:
     assert recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
 
 
+def test_direktiivi_head_never_emits_fi_name() -> None:
+    """A ``...direktiivi`` head is an EU directive nickname with NO domestic
+    statute family, so the by-name lane declines it UNCONDITIONALLY — with or
+    without an artikla tail. (Witnessed in 2018/1054: ``tietosuojadirektiivin
+    mukainen`` has no artikla, yet the by-name lane wrongly minted a duplicate
+    ``fi-name:tietosuojadirektiivi`` mis-typed as a Finnish CROSS_STATUTE while
+    the eu_directive lane already owned the surface.) The eu_directive lane owns
+    every directive surface; the by-name lane must never claim it."""
+    # No artikla tail — the regression case: must NOT mint a fi-name mention.
+    assert recognize_by_name_refs("rikosasioiden tietosuojadirektiivin mukainen") == []
+    # With an artikla tail — also declined here (the eu_directive lane owns it).
+    assert recognize_by_name_refs("tietosuojadirektiivin 36 artiklassa tarkoitettu") == []
+    # A bare ``direktiivin`` head (no compound modifier) was never emitted anyway.
+    assert recognize_by_name_refs("direktiivin mukaisesti") == []
+    # An ``-asetus`` head WITHOUT an artikla tail is a genuine domestic decree
+    # family and still fires — the direktiivi exclusion must not over-reach.
+    assert recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
+
+
 def test_compound_asetus_head() -> None:
     """A compound ``...asetuksen`` head normalizes to its nominative compound."""
     mentions = recognize_by_name_refs("ympäristönsuojeluasetuksen 4 §:ssä")
